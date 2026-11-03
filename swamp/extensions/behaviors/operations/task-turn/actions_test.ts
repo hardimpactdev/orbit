@@ -206,3 +206,27 @@ Deno.test("task turn ships no scripts", async () => {
   await assertRejects(() => Deno.stat(`${root}/scripts`), Deno.errors.NotFound);
   assert(!("additionalFiles" in (parse(await Deno.readTextFile(`${root}/manifest.yaml`)) as object)));
 });
+
+Deno.test("no turn step copies a file to the Node", async () => {
+    const flow = parse(
+        await Deno.readTextFile(
+            `${ROOT}/workflows/workflow-operation-task-turn.yaml`,
+        ),
+    ) as {
+        jobs: {
+            steps: {
+                task: { methodName?: string; inputs: { direction?: string } };
+            }[];
+        }[];
+    };
+    assertEquals(
+        flow.jobs.flatMap((job) => job.steps).filter((step) =>
+            step.task.methodName === "copy" &&
+            step.task.inputs.direction !== "from"
+        ),
+        [],
+    );
+    for (const marker of ["/scripts", "python3", ".git/orbit/turn"]) {
+        assert(!JSON.stringify(flow).includes(marker));
+    }
+});

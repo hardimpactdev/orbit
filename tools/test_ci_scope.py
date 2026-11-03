@@ -99,14 +99,14 @@ class ScopeActionTest(unittest.TestCase):
         self.assertEqual(values['swamp-base-ref'], self.source)
         self.assertEqual(self.scope('', enabled=False)[1], {'selected': 'true'})
 
-    def test_workflow_always_runs_cheap_gates_and_plans_native_before_toolchains(self):
+    def test_workflow_always_runs_cheap_gates_before_toolchains(self):
         ci = (ROOT / '.github/workflows/ci.yml').read_text()
         swamp = ci.split('  swamp:\n', 1)[1].split('  gateway-release:', 1)[0]
         self.assertNotIn('needs:', swamp)
         self.assertIn('changed-only: false', swamp)
         source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
         self.assertIn('working-directory: ${{ github.workspace }}', ACTION)
-        for name, end in [('shape', 'validate'), ('validate', 'native-plan'), ('test-shards', None)]:
+        for name, end in [('shape', 'validate'), ('validate', 'tests'), ('test-shards', None)]:
             job = source.split('  ' + name + ':\n', 1)[1]
             if end:
                 job = job.split('  ' + end + ':\n', 1)[0]
@@ -115,9 +115,6 @@ class ScopeActionTest(unittest.TestCase):
                 if 'id: scope' in step:
                     continue
                 self.assertIn("steps.scope.outputs.selected == 'true'", step)
-        native = source.split('  native-tests:', 1)[1].split('  tests:', 1)[0]
-        self.assertIn('needs: native-plan', native)
-        self.assertIn("if: needs.native-plan.outputs.selected == 'true'", native)
         shape = source.split('  shape:', 1)[1].split('  validate:', 1)[0]
         self.assertIn('fetch-depth: 0', shape)
         self.assertIn('steps.scope.outputs.swamp-base-ref', shape)

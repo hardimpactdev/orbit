@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Analytics\PlausibleProcess;
+use App\Domain\Metrics\MetricsContainerPlan;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Routes\RouteExecutionProof;
@@ -79,7 +80,8 @@ final readonly class NativeNodeRoleRuntimeInput
             $paths = array_values(array_unique(array_map(dirname(...), array_keys($files))));
             usort($paths, static fn (string $a, string $b): int => substr_count($a, '/') <=> substr_count($b, '/'));
             $runtime['directories'] = array_map(static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'], $paths);
-            $runtime['metrics'] = ['assignment_id' => $assignment->id, 'address' => $node->wireguard_ip, 'files' => $public];
+            $runtime['metrics'] = ['assignment_id' => $assignment->id, 'address' => $node->wireguard_ip, 'files' => $public,
+                'plan' => app(MetricsContainerPlan::class)->for($assignment->id, (string) $node->wireguard_ip, ValidatedData::stringMap(array_column($public, 'content', 'path')))];
             $runtime['probes'] = [['url' => 'http://127.0.0.1:9090/-/ready', 'require_success' => true],
                 ['url' => 'http://'.$node->wireguard_ip.':3000/api/health', 'require_success' => true]];
         } else {
