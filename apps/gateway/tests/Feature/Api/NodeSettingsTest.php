@@ -4,10 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\NodeConverger;
-use App\Domain\Nodes\NodeObservation;
-use App\Domain\Nodes\NodeProvisioningIdentity;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -15,7 +11,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Operation;
 use Illuminate\Support\Str;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -33,28 +28,6 @@ function fake_storage_preparer(): NodeStorageRootPreparer
 
 describe('node storage settings', function (): void {
     beforeEach(function (): void {
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
-        {
-            public function converge(Node $node, NodeRole $assignment): void {}
-
-            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-        });
-        app()->instance(NodeConverger::class, new class implements NodeConverger
-        {
-            public function converge(
-                Node $node,
-                NodeProvisioningIdentity $identity,
-                ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false, ?Closure $recordObservation = null,
-            ): NodeObservation {
-                $observation = new NodeObservation('x86_64');
-                $recordObservation?->__invoke($observation);
-
-                return $observation;
-            }
-        });
         app()->instance(NodeStorageRootPreparer::class, fake_storage_preparer());
         app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
         {

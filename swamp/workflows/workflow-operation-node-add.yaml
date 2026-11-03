@@ -496,20 +496,57 @@ jobs:
   labels:
     role: swamp
   steps:
-  - name: Load the tunnel key
+  - name: Stage the tunnel key
     labels:
       role: swamp
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-tunnel-key-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
           "node-add-tunnel-key-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
             }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: [timeout, '60', wg, set, orbit, private-key,
-          /etc/wireguard/orbit.key], sudo: true, timeoutSec: 65}}
+              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","60","sed","-n","-e","1s/^/[Interface]\\nPrivateKey = /","-e","w "+inputs.intent.network.sync_path,inputs.intent.network.private_key_file] }}', sudo: true, timeoutSec: 65}}
     writes: true
     forEach:
       item: linux
       in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
   dependsOn:
   - {job: retired_tunnel_address, condition: {type: succeeded}}
+- name: tunnel_body
+  labels:
+    role: swamp
+  steps:
+  - name: Finish tunnel config
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-add-tunnel-body-"+string(inputs.node_id)+"-"+string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "node-add-tunnel-body-"+string(inputs.node_id)+"-"+string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.bootstrap.user }}
+          port: ${{ inputs.intent.bootstrap.port }}
+          identityContent: ${{ vault.get('orbit-control-inputs',inputs.execution_secrets.bootstrap_identity.key) }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.bootstrap.host }}
+          transport:
+            hostKeys: ${{ [steps["Read the host key"].outputs.publicKey] }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["timeout","60","dd","of="+inputs.intent.network.sync_path,"oflag=append","conv=notrunc","status=none"] }}
+        sudo: true
+        timeoutSec: 65
+        stdin: ${{ inputs.intent.network.sync_body }}
+    writes: true
+    forEach:
+      item: linux
+      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+  dependsOn:
+  - job: phase_21
+    condition:
+      type: succeeded
 - name: phase_22
   labels:
     role: swamp
@@ -520,14 +557,14 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-tunnel-peers-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
         name: '${{ "node-add-tunnel-peers-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
             }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: [timeout, '60', wg, syncconf, orbit, /etc/wireguard/orbit.peers],
+              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","60","wg","syncconf","orbit",inputs.intent.network.sync_path] }}',
         sudo: true, timeoutSec: 65}}
     writes: true
     forEach:
       item: linux
       in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
   dependsOn:
-  - {job: phase_21, condition: {type: succeeded}}
+  - {job: tunnel_body, condition: {type: succeeded}}
 - name: phase_23
   labels:
     role: swamp
@@ -1018,6 +1055,7 @@ jobs:
   - {job: phase_19, condition: {type: completed}}
   - {job: phase_20, condition: {type: completed}}
   - {job: phase_21, condition: {type: completed}}
+  - {job: tunnel_body, condition: {type: completed}}
   - {job: phase_22, condition: {type: completed}}
   - {job: phase_23, condition: {type: completed}}
   - {job: phase_24, condition: {type: completed}}

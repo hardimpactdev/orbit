@@ -174,7 +174,7 @@ it('reads the existing canonical admitted leaf containers for every issuing fami
 
 it('rechecks the original live intent after signing before releasing a public bundle', function (): void {
     $operation = $this->operation;
-    app()->instance(ProcessRunner::class, new class($operation) implements ProcessRunner
+    app()->instance(ProcessRunner::class, new readonly class($operation) implements ProcessRunner
     {
         public function __construct(private Operation $operation) {}
 
@@ -314,7 +314,7 @@ it('does not grant Route signing authority from the opposite phase or a flat fal
 function direct_sign_websocket_parent(string $kind, array $input): void
 {
     if (app(DirectOperation::class)->definition($kind) === null) {
-        app()->instance(DirectOperation::class, new DirectOperation([new class($kind) implements DirectOperationContribution
+        app()->instance(DirectOperation::class, new DirectOperation([new readonly class($kind) implements DirectOperationContribution
         {
             public function __construct(private string $kind) {}
 

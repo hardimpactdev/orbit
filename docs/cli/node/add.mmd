@@ -103,7 +103,8 @@ sequenceDiagram
   SW->>N: Start the tunnel<br/>cfgmgmt systemd
   SW->>N: Set the tunnel address<br/>SSH argv
   SW->>N: Remove the retired address<br/>cfgmgmt exec
-  SW->>N: Load the tunnel key<br/>SSH argv
+  SW->>N: Stage the tunnel key<br/>SSH argv
+  SW->>N: Finish tunnel config<br/>SSH argv
   SW->>N: Apply the tunnel peers<br/>SSH argv
   SW->>N: Trust WireGuard members<br/>SSH argv
   end

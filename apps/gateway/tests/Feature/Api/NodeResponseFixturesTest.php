@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Nodes\NodeConverger;
-use App\Domain\Nodes\NodeObservation;
-use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -33,21 +30,6 @@ describe('node response fixtures', function (): void {
 
             public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
-        app()->instance(NodeConverger::class, new class implements NodeConverger
-        {
-            public function converge(
-                Node $node,
-                NodeProvisioningIdentity $identity,
-                ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false, ?Closure $recordObservation = null,
-            ): NodeObservation {
-                $observation = new NodeObservation('x86_64');
-                $recordObservation?->__invoke($observation);
-
-                return $observation;
-            }
-        });
-
         $operator = Node::query()->create([
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,

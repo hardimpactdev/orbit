@@ -2,83 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\Metrics\MetricsAccessRevoker;
-use App\Domain\Nodes\NodeAgentRuntime;
-use App\Domain\Nodes\NodeRoleFirewallManager;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\WireGuard\GatewayPeerProjectionManager;
-use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\HostKeyScanner;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
-use Tests\Support\FakeMacAdmissionAgentRunner;
-use Tests\Support\FakeNodeAgentRuntime;
 
 beforeEach(function (): void {
-    app()->instance(AdmissionAgentRunner::class, new FakeMacAdmissionAgentRunner);
-    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
-    {
-        public function scan(string $host, int $port, ?Node $via = null): HostKey
-        {
-            return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:'.str_repeat('M', 43));
-        }
-    });
-    app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-gateway-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 GATEWAY';
-        }
-    });
-    app()->instance(KnownHostsStore::class, new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    });
-    app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
-    app()->instance(NodeRoleFirewallManager::class, new class implements NodeRoleFirewallManager
-    {
-        public function convergeBase(Node $node, string $managedUser): void {}
-
-        public function converge(Node $node, RoleName $role, string $managedUser): void {}
-
-        public function remove(Node $node, RoleName $role, string $managedUser): void {}
-
-        public function trustWireGuardMembers(Node $node, string $managedUser): void {}
-
-        public function restorePublicSsh(Node $node, string $managedUser): void {}
-    });
-    app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager
-    {
-        public function converge(Node $node): void {}
-
-        public function remove(Node $node): void {}
-
-        public function restore(Node $node): void {}
-    });
-    app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
-    {
-        public function converge(?Node $pendingNode = null): void {}
-    });
-    app()->instance(MetricsAccessRevoker::class, new class implements MetricsAccessRevoker
-    {
-        public function revoke(): void {}
-    });
-
     $operator = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,

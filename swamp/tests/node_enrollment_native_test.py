@@ -42,7 +42,7 @@ class NodeEnrollmentNative(NativeTestCase):
                                  'roles': [], 'cli': None, 'dns': [], 'private_dns': [], 'packages': [], 'authorized_keys': [],
                                  'sudo': {'path': '', 'candidate': '', 'content': ''},
                                  'agent': {'url': '', 'sha256': '', 'unit': '', 'files': []},
-                                 'network': {'is_hub': False, 'address': '', 'retired_address': None, 'files': [], 'hubs': [], 'hub_files': [], 'trust_argv': []},
+                                 'network': {'is_hub': False, 'sync_path': '', 'private_key_file': '', 'sync_body': '', 'address': '', 'retired_address': None, 'files': [], 'hubs': [], 'hub_files': [], 'trust_argv': []},
                                  'public_ssh_argv': [], 'known_hosts_path': '/synthetic/known_hosts',
                                  'control_ssh': {'identity_file': '/synthetic/control', 'target': {'host': 'control.example', 'port': 22, 'user': 'orbit', 'host_keys': [public]}},
                                  'identity': {'identity_file': '/synthetic/control', 'public_key': public}}}
@@ -91,6 +91,12 @@ class NodeEnrollmentNative(NativeTestCase):
         self.assertNotEqual(steps.get('Install base packages-0', {}).get('status'), 'succeeded')
 
     def test_hub_sync_keeps_the_file_key_without_returning_it_in_run_data(self):
+        self.check_peer_sync(hub=True)
+
+    def test_node_sync_keeps_the_file_key_without_returning_it_in_run_data(self):
+        self.check_peer_sync(hub=False)
+
+    def check_peer_sync(self, hub):
         private = base64.b64encode(b'enrollment-private-key-sentinel!!').decode()
         key = self.repo / 'hub.key'
         key.write_text(private + '\n')
@@ -122,9 +128,12 @@ class NodeEnrollmentNative(NativeTestCase):
             'host': 'hub.example', 'port': 22, 'user': 'orbit', 'host_keys': [self.native_env['FIXTURE_PUBLIC_KEY']]}},
             'sync_path': str(config), 'private_key_file': str(key), 'public_key': 'public-hub-key',
             'sync_body': 'ListenPort = 51820\n\n[Peer]\nPublicKey = peer-key\nAllowedIPs = 10.44.0.42/32\n'}]
+        self.input['intent']['network'].update(sync_path=str(config), private_key_file=str(key),
+            sync_body='ListenPort = 51820\n\n[Peer]\nPublicKey = peer-key\nAllowedIPs = 10.44.0.42/32\n')
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-node-add.yaml').read_text())
         selected = {'Stage the hub private key', 'Finish hub configuration', 'Apply the hub peers',
-                    'Read the hub public key', 'Check the hub key'}
+                    'Read the hub public key', 'Check the hub key'} if hub else {
+                        'Stage the tunnel key', 'Finish tunnel config', 'Apply the tunnel peers'}
         jobs = []
         for job in workflow['jobs']:
             steps = [s for s in job['steps'] if s['name'] in selected]
@@ -138,6 +147,9 @@ class NodeEnrollmentNative(NativeTestCase):
                 task = step['task']
                 if task.get('behaviorType') == '@swamp/ssh':
                     task['globalArgs']['sshBinary'] = str(tools / 'ssh')
+                    task['globalArgs']['transport'].pop('identityContent', None)
+                    task['globalArgs']['transport']['identityFile'] = str(identity)
+                    task['globalArgs']['hosts'][0]['transport']['hostKeys'] = [self.native_env['FIXTURE_PUBLIC_KEY']]
                     task['inputs']['stdin'] = task['inputs'].get('stdin', '').replace(
                         'steps["Read WireGuard public key-0"].outputs.stdout.trim()', '"peer-key"')
             jobs.append(job)

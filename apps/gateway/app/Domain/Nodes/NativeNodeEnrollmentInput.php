@@ -59,7 +59,7 @@ final readonly class NativeNodeEnrollmentInput
             'identity' => $identity, 'control_ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209)),
             'packages' => [], 'sudo' => ['path' => '', 'candidate' => '', 'content' => ''],
             'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'files' => []],
-            'network' => ['is_hub' => false, 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
+            'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
             'public_ssh_argv' => [], 'roles' => [], 'dns' => [], 'private_dns' => [], 'cli' => null,
             'authorized_keys' => [$identity['public_key']], 'known_hosts_path' => '/home/orbit/.ssh/known_hosts'];
@@ -173,7 +173,9 @@ final readonly class NativeNodeEnrollmentInput
 
             return ['is_hub' => true, 'files' => [['path' => '/etc/wireguard/orbit.conf',
                 'content' => explode('PostUp = for f in', ValidatedData::string($hub['config']))[0]."\n".$peers],
-                ['path' => '/etc/wireguard/orbit.peers', 'content' => "[Interface]\nListenPort = ".ValidatedData::integer($hub['port'])."\n\n".$peers]],
+                ['path' => '/etc/wireguard/orbit.peers', 'content' => '']],
+                'sync_path' => '/etc/wireguard/orbit.peers', 'private_key_file' => '/etc/wireguard/orbit.key',
+                'sync_body' => 'ListenPort = '.ValidatedData::integer($hub['port'])."\n\n".$peers,
                 'trust_argv' => ['timeout', '60', 'ufw', ...array_slice($trust->arguments, 2)],
                 'hubs' => [], 'hub_files' => [], 'participant_node_ids' => []];
         }
@@ -194,9 +196,10 @@ final readonly class NativeNodeEnrollmentInput
         $syncBody = 'ListenPort = '.ValidatedData::integer($hubPlan['port'])."\n\n".$peers;
         $ssh = ValidatedData::object($joining['ssh']);
         $files = [['path' => '/etc/wireguard/orbit.conf', 'content' => $network['config']],
-            ['path' => '/etc/wireguard/orbit.peers', 'content' => "[Interface]\n".ValidatedData::string($network['peers'])]];
+            ['path' => '/etc/wireguard/orbit.peers', 'content' => '']];
 
-        return ['is_hub' => false, 'files' => $files, 'trust_argv' => ['timeout', '60', ...ValidatedData::stringList($network['trust_argv'])],
+        return ['is_hub' => false, 'files' => $files, 'sync_path' => '/etc/wireguard/orbit.peers',
+            'private_key_file' => '/etc/wireguard/orbit.key', 'sync_body' => ValidatedData::string($network['peers']), 'trust_argv' => ['timeout', '60', ...ValidatedData::stringList($network['trust_argv'])],
             'hubs' => [['ssh' => $ssh, 'sync_path' => '/etc/wireguard/orbit.enrollment-sync',
                 'private_key_file' => '/etc/wireguard/orbit.key', 'public_key' => $hub->wireguard_public_key, 'sync_body' => $syncBody]],
             'hub_files' => [['ssh' => $ssh, 'path' => $joining['file'], 'content' => $joining['section']],

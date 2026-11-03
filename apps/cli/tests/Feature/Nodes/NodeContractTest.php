@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
-use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 /**
  * Contract tests replay recorded Gateway responses and compare the complete command
@@ -34,11 +34,10 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-
-function run_node_enrollment_contract(string $fixture, array $arguments, string $expected): void
+function run_node_enrollment_contract(string $fixture, string $completed, array $arguments, string $expected): void
 {
     MockClient::destroyGlobal();
-    MockClient::global([...gateway_fixture_mock($fixture, $fixture.'-completed'),
+    MockClient::global([...gateway_fixture_mock($fixture, $completed),
         ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404)]);
     expect(Artisan::call('node:add', $arguments))->toBe(0);
     expect_output(Artisan::output(), $expected);
@@ -67,8 +66,8 @@ describe('node contract', function () use ($addArguments): void {
     });
 
     it('renders a created node', function () use ($addArguments): void {
-        run_node_enrollment_contract('nodes/node-add/created', $addArguments, 'nodes/node-add/created.human.txt');
-        run_node_enrollment_contract('nodes/node-add/created', [...$addArguments, '--json' => true], 'nodes/node-add/created.json');
+        run_node_enrollment_contract('nodes/node-add/created', 'nodes/node-add/created-completed', $addArguments, 'nodes/node-add/created.human.txt');
+        run_node_enrollment_contract('nodes/node-add/created', 'nodes/node-add/created-completed', [...$addArguments, '--json' => true], 'nodes/node-add/created.json');
     });
 
     it('renders an enrolled mac and its removal', function (): void {
@@ -81,8 +80,8 @@ describe('node contract', function () use ($addArguments): void {
             '--wireguard-ip' => '10.44.0.40',
             '--host-key-fingerprint' => 'SHA256:'.str_repeat('M', 43),
         ];
-        run_node_enrollment_contract('nodes/node-add/macos-enrolled', $arguments, 'nodes/node-add/macos-enrolled.human.txt');
-        run_node_enrollment_contract('nodes/node-add/macos-enrolled', [...$arguments, '--json' => true], 'nodes/node-add/macos-enrolled.json');
+        run_node_enrollment_contract('nodes/node-add/macos-enrolled', 'nodes/node-add/macos-enrolled-completed', $arguments, 'nodes/node-add/macos-enrolled.human.txt');
+        run_node_enrollment_contract('nodes/node-add/macos-enrolled', 'nodes/node-add/macos-enrolled-completed', [...$arguments, '--json' => true], 'nodes/node-add/macos-enrolled.json');
 
     });
 

@@ -14,7 +14,7 @@ function nativeRunResultFixture(string $status, array $steps): array
 
 function nativeRunResultTerminal(array $run, array $selector): array
 {
-    return (new ReflectionMethod(SwampCommandStep::class, 'terminalOutput'))->invoke(app(SwampCommandStep::class), $run, $selector);
+    return new ReflectionMethod(SwampCommandStep::class, 'terminalOutput')->invoke(app(SwampCommandStep::class), $run, $selector);
 }
 
 it('retains an exact typed failure code without copying exception text', function (): void {
