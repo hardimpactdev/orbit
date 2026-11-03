@@ -123,6 +123,7 @@ final readonly class NativeNodeRoleAddInput
                 $artifactDigests[$name] = $digest;
             }
         }
+        $publicationByNode = array_column($publications, null, 'node_id');
         $exporters = [];
         $prometheus = null;
         if ($snapshot['metrics_fleet'] !== null) {
@@ -133,11 +134,19 @@ final readonly class NativeNodeRoleAddInput
             foreach (MetricsFleetCapture::members($fleet) as $member) {
                 $target = Node::query()->findOrFail(ValidatedData::integer($member['node_id']));
                 $enabled = $member['selected'] === true;
+                $service = app(RouteRenderContext::class)->renderRoleCertificates($prospective,
+                    fn (): array => app(MetricsFleetCapture::class)->forExporter($metrics, $target, $enabled));
+                $publication = $publicationByNode[$target->id]['after'] ?? [];
+                if (($publication['caddy'] ?? null) !== null) {
+                    $service['caddy'] = null;
+                }
+                if (($publication['php'] ?? null) !== null) {
+                    $service['pools'] = [];
+                }
                 $exporters[] = ['exporter_node_id' => $target->id, 'enabled' => $enabled, 'metrics_address' => $metrics->wireguard_ip,
                     'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
                     'runtime' => ['ssh_execution' => $metricsSsh, 'configuration' => $configuration], 'compose_only' => true,
-                    'service' => app(RouteRenderContext::class)->renderRoleCertificates($prospective,
-                        fn (): array => app(MetricsFleetCapture::class)->forExporter($metrics, $target, $enabled))];
+                    'service' => $service];
             }
             $prometheus = ['node_id' => $metrics->id, 'ssh' => $metricsSsh, 'configuration' => $configuration,
                 'candidate' => '/etc/orbit/metrics/prometheus-role-'.$operation->id.'.yml', 'checks' => []];

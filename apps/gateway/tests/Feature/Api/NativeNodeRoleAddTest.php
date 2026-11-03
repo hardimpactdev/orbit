@@ -103,8 +103,17 @@ it('vaults complete private role files and exposes only their descriptors', func
     }
     expect($file['owner'])->toBe($role === RoleName::Metrics ? 'orbit-grafana' : $this->node->user);
     if ($role === RoleName::Metrics) {
-        $gateway = collect($input['intent']['exporters'])->first(fn (array $exporter): bool => $exporter['service']['caddy'] !== null);
-        expect($gateway['service']['caddy']['caddy']['content'])->toContain('/etc/caddy/orbit-metrics-cert-current/');
+        $gateway = collect($input['intent']['publications'])->first(fn (array $publication): bool => $publication['after']['caddy'] !== null);
+        expect($gateway['after']['caddy']['content'])->toContain('/etc/caddy/orbit-metrics-cert-current/');
+        foreach ($input['intent']['exporters'] as $exporter) {
+            $publication = collect($input['intent']['publications'])->firstWhere('node_id', $exporter['exporter_node_id']);
+            if (($publication['after']['caddy'] ?? null) !== null) {
+                expect($exporter['service']['caddy'])->toBeNull();
+            }
+            if (($publication['after']['php'] ?? null) !== null) {
+                expect($exporter['service']['pools'])->toBe([]);
+            }
+        }
     }
 })->with([RoleName::WebSocket, RoleName::Metrics]);
 
