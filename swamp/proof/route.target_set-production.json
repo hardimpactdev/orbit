@@ -10,14 +10,14 @@
       [
         "sh",
         "-c",
-        "set -eu; id orbit-app-9009 >/dev/null 2>&1 || useradd -r -m -s /usr/sbin/nologin orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0700 /home/orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases /home/orbit-app-9009/releases/initial /home/orbit-app-9009/releases/initial/public; printf 'production target proof\\n' > /home/orbit-app-9009/releases/initial/public/index.html; chown orbit-app-9009:orbit-app-9009 /home/orbit-app-9009/releases/initial/public/index.html"
+        "set -eu; id orbit-app-9009 >/dev/null 2>&1 || useradd -r -m -s /usr/sbin/nologin orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0700 /home/orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases; rm -rf -- /home/orbit-app-9009/releases/initial; runuser -u orbit-app-9009 -- timeout 90 git clone -q --depth 1 --branch 13.x https://github.com/laravel/laravel.git /home/orbit-app-9009/releases/initial; runuser -u orbit-app-9009 -- ln -sfn releases/initial /home/orbit-app-9009/current; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases/initial/storage/app/public"
       ]
     ],
     "peer": [
       [
         "sh",
         "-c",
-        "set -eu; id orbit-app-9009 >/dev/null 2>&1 || useradd -r -m -s /usr/sbin/nologin orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0700 /home/orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases /home/orbit-app-9009/releases/initial /home/orbit-app-9009/releases/initial/public; printf 'production target proof\\n' > /home/orbit-app-9009/releases/initial/public/index.html; chown orbit-app-9009:orbit-app-9009 /home/orbit-app-9009/releases/initial/public/index.html"
+        "set -eu; id orbit-app-9009 >/dev/null 2>&1 || useradd -r -m -s /usr/sbin/nologin orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0700 /home/orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases; rm -rf -- /home/orbit-app-9009/releases/initial; runuser -u orbit-app-9009 -- timeout 90 git clone -q --depth 1 --branch 13.x https://github.com/laravel/laravel.git /home/orbit-app-9009/releases/initial; runuser -u orbit-app-9009 -- ln -sfn releases/initial /home/orbit-app-9009/current; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases/initial/storage/app/public"
       ]
     ],
     "metrics": [

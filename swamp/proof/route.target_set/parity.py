@@ -3,6 +3,7 @@ under a leaf the Orbit root verifies, and answers TLS for the domain."""
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,9 @@ site = caddyfile.split(f"https://{domain} {{", 1)
 check(len(site) == 2, "the Caddy site still serves the domain")
 # Each site starts after an "# orbit:" marker line; its own nested blocks close at column 0 too.
 block = site[1].split("\n# orbit: ", 1)[0]
+check("php_fastcgi" in block, "the moved Route serves PHP")
+roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", block)
+check(bool(roots) and all("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots), "the moved Route serves a Laravel checkout")
 check("/n-" + run + "/" in block, "the site's root is the new Instance's checkout")
 check("o-" + run not in block, "the site no longer names the old Instance's checkout")
 listen = target("ss", "-ltnH", "sport = :443").stdout.split()[3]

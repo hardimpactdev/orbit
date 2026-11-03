@@ -21,3 +21,8 @@ for name in ('target', 'peer', 'metrics'):
     subprocess.run(['incus', 'exec', name, '--', 'systemctl', 'is-active', '--quiet', 'caddy'], check=True, timeout=30)
     subprocess.run(['incus', 'exec', name, '--', 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'], check=True, timeout=60)
 print('Production pool adds the peer after two required TLS probe phases; the Router file equals the captured pool and all Caddy services remain active.')
+
+for node in ('target', 'peer'):
+    composer = json.loads(subprocess.check_output(['incus','exec',node,'--','cat','/home/orbit-app-9009/releases/initial/composer.json'],text=True,timeout=30))
+    assert 'laravel/framework' in composer['require']
+    subprocess.run(['incus','exec',node,'--','systemctl','is-active','--quiet','orbit-orbit-app-9009-php8.5-fpm.service'],check=True,timeout=30)
