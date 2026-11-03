@@ -35,6 +35,8 @@ Every Orbit command is designed as a flow chart first, and the code follows the 
 23. **Required parameters make the main path.** The main path is the command with only its required arguments. Each optional parameter appears only in its own `opt --flag` block, with the steps it adds. The main call line shows no optional flags, and no branch reads `alt no --flag … else --flag`. The workflow matches: a step for an optional input is conditional on that input. Example: `instance:register --project=7` checks and records; `opt --setup` and `opt --domain` hold the Node work.
 24. **Caller-agnostic.** A chart shows the generic caller (CLI, MCP, API). A client that calls the command, such as Conn, is not drawn in; its steps belong in its own flow.
 
+25. **Minimal charts.** A chart holds the flow steps and the true exceptions only. A step explanation says what the label does not: why, when, what happens on failure. Never restate the label. What a command covers (for example the parts a converge applies) and what a flag means (`--force`) go in the docs page description and option table, not in the chart. A flag that adds no steps, only a different check, gets no `opt` block. If an explanation has more than a few bullets, cut it or move it to the docs page.
+
 ## Swamp gotchas
 
 Swamp's own skill (`swamp`, installed by `swamp repo upgrade`) explains how to build a workflow. These points change the design:
@@ -49,7 +51,7 @@ Swamp's own skill (`swamp`, installed by `swamp repo upgrade`) explains how to b
 ## The loop
 
 1. For a new command, draft the chart by the README rules first. Then read the chart and the kind's live facts: its workflow in `swamp/workflows/`, its Gateway declaration, and recent runs (`operation-list --kind <kind>`). Use `gh api` only; never `git clone` or `git fetch`.
-2. Walk the steps in order and test each one against rules 1–24. Note the step number, the rule and the change.
+2. Walk the steps in order and test each one against rules 1–25. Note the step number, the rule and the change.
 3. Write the proposal: each change with its step numbers and the reason in one line. Add the step count of the common path before and after, and what you keep on purpose and why.
 4. Ask before applying to a reviewed chart. Show Nick the chart rendered (a local docs preview, see the README's "Edit, render and preview") and explain by step number. Change one chart at a time.
 5. Apply the agreed changes:
