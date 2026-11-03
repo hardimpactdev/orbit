@@ -1,7 +1,8 @@
-"""Prove a deny on 7297 holds against a WireGuard-trusted peer while the allowed source gets in, then check order.
+"""Check deny or restored access after removal on 7297, then check rule order.
 
 The target trusts 10.231.0.0/24 as `orbit:wireguard-members` and listens on 7297 and 7298. The peer 10.231.0.3
-reaches 7298 through that trust, so only the deny keeps it from 7297. The arguments go to check.py.
+reaches 7298 through that trust, so only the deny keeps it from 7297. With --removed, both sources reach 7297.
+The remaining arguments go to check.py.
 """
 import http.client
 import os
