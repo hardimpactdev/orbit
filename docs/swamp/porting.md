@@ -169,9 +169,11 @@ Put each test where its project's CI runs it.
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script directly, with shellcheck or ruff. Real-Docker tests clean up with `docker rm --force --volumes` (#2358). |
-| `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. A secret-handling test sets `self.secrets` so history is scanned. |
+| `operations/<family>/*_native_test.ts` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
 | Parity tests from the legacy feature tests, and a generator drift test when a generator writes the workflow | Each legacy case gives the same public result natively. Committed YAML equals readable generator output. |
 | `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or the v0 design on beast until it lands) | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. No secret appears in it or in argv. |
+
+Native tests use `swamp/tests/_support/native_harness.ts`. `nativeRepo()` gives a disposable repo that runs the pinned runtime, and `fakeBinary()` writes a fake tool. A test that handles a secret sets `repo.secrets`, so the harness scans native history for it. Python native tests are being ported to Deno; add no new ones.
 
 ## Check all seven boundary decisions
 

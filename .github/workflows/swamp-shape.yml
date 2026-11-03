@@ -138,6 +138,41 @@ jobs:
             ${{ runner.temp }}/workflow-validation.json
             ${{ runner.temp }}/grant-validation.json
 
+  native-extensions:
+    name: Swamp native test extensions
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        if: inputs.changed-only
+        id: scope
+        with:
+          job: swamp
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        with:
+          deno-version: v2.9.8
+          cache: true
+      - name: Pull the pinned registry extensions for native tests
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        env:
+          SWAMP_RUNTIME_CACHE: ${{ runner.temp }}/native-runtime
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+        run: deno run -A tests/_support/native_harness.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        with:
+          name: swamp-native-extensions
+          path: ${{ runner.temp }}/native-runtime/pulled
+          include-hidden-files: true
+          retention-days: 1
+
   tests:
     name: Swamp Deno tests
     needs: [test-shards]
@@ -155,6 +190,7 @@ jobs:
 
   test-shards:
     name: Swamp Deno shard ${{ matrix.name }}
+    needs: [native-extensions]
     runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
@@ -196,6 +232,17 @@ jobs:
         with:
           deno-version: v2.9.8
           cache: true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        with:
+          path: ~/.cache/orbit-shape-runtime
+          key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
+      # Native tests copy these; the shards themselves never hold registry credentials.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        with:
+          name: swamp-native-extensions
+          path: ~/.cache/orbit-shape-runtime/pulled
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
