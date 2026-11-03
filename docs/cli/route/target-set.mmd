@@ -26,15 +26,15 @@ sequenceDiagram
     SW->>GW: Sign the CSRs<br/>operation:direct:certificate-sign
     GW-->>SW: Signed certificates<br/>Orbit CA key stays in Gateway
     SW->>N: Install cert, publish site<br/>route:create's publish step
-    opt --targets
+    opt --targets, --reassign or --remove
       SW->>N: Stage the new targets<br/>@swamp/cfgmgmt/file · firewall
       SW->>N: Probe each new target<br/>@swamp/ssh exec · SNI domain
       %%> Runs from 209. A failed target probe stops the Router switch.
       SW->>N: Switch the Router pool<br/>Router Caddy · reload
       SW->>N: Retire detached targets<br/>@swamp/cfgmgmt · absent
-      opt Node-scoped, outside TLD
-        SW->>V: Move private DNS<br/>records + catalog, then reload
-      end
+    end
+    opt Node-scoped, outside TLD
+      SW->>V: Move private DNS<br/>records + catalog, then reload
     end
     alt every step succeeds
       SW-->>GW: Run succeeded<br/>Swamp's run data
