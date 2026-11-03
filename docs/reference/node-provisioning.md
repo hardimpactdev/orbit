@@ -57,7 +57,7 @@ After review and fleet agent update, prove each selected Node before announcing 
 
 Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are removed. `node:add` admits its native enrollment Operation through the public API.
 
-Standalone `node.macos_inspect` runs on 209 with the admitted SSH host keys and an execution-copy bootstrap key. It reads only platform, architecture and interface addresses, then uses a native assert. It checks or installs no agent, account, package or runtime on the Mac.
+`node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and an execution-copy bootstrap key. It checks no agent, account, package or runtime ownership on the Mac.
 
 ## Add a Node
 
