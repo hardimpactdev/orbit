@@ -31,5 +31,6 @@
 # systemd's module accepts one name; this reload also covers active dedicated FPM masters.
 - name: Reload PHP-FPM # noqa command-instead-of-module no-handler
   when: runtime_ini is changed or runtime_link is changed or stop_timeout is changed
-  ansible.builtin.command: "systemctl try-reload-or-restart php{{ php.version }}-fpm.service orbit-*-php{{ php.version }}-fpm.service"
+  ansible.builtin.command: >-
+    systemctl try-reload-or-restart php{{ php.version }}-fpm.service orbit-*-php{{ php.version }}-fpm.service
   changed_when: true

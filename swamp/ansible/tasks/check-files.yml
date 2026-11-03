@@ -32,7 +32,7 @@
 - name: Check private files
   ansible.builtin.assert:
     that:
-      - "item.stat.checksum == secrets[item.item.secret] | hash('sha256')"
+      - item.stat.checksum == secrets[item.item.secret] | hash('sha256')
       - item.stat.mode == '0600'
       - item.stat.pw_name == item.item.owner
       - item.stat.gr_name == item.item.group

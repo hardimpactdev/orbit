@@ -46,9 +46,13 @@ export const behavior = {
                     JSON.stringify({ ci, clickhouse: clickhouseFiles }),
                     { mode: 0o600 },
                 );
-                const assets = ctx.extensionFile(
-                    "ansible/operation-node-role-add.yml",
-                ).slice(0, -"/operation-node-role-add.yml".length);
+                const requirementsPath = ctx.extensionFile(
+                    "ansible/requirements.txt",
+                );
+                const assets = requirementsPath.slice(
+                    0,
+                    requirementsPath.lastIndexOf("/"),
+                );
                 const requirements = await Deno.readTextFile(
                     ctx.extensionFile("ansible/requirements.txt"),
                 );

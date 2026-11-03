@@ -62,3 +62,8 @@
     mode: "0640"
     validate: caddy validate --config %s --adapter caddyfile
   notify: Reload exporter Caddy
+
+- name: Apply exporter PHP pools
+  ansible.builtin.include_tasks: exporter-pool.yml
+  loop: "{{ exporter.service.pools }}"
+  loop_control: { loop_var: pool, label: "{{ pool.php_runtime.user }}" }

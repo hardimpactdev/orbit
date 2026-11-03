@@ -1,10 +1,16 @@
 """Role-owned resources work through the real Gateway and native workflow."""
 import json
 import os
+import re
 import subprocess
 import sys
+from pathlib import Path
 
-operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from common import doctor, gateway
+
+operation = json.loads(Path(os.environ['PROOF_OPERATION_FILE']).read_text())
 target, role = sys.argv[1:3]
 
 
@@ -73,24 +79,19 @@ elif role == 'ci-runner':
 print('parity: node.role_add ' + role)
 
 if 'no-drift' in sys.argv[3:]:
-    import re
-    outputs = json.load(open(os.environ['PROOF_OUTPUTS']))
+    outputs = json.loads(Path(os.environ['PROOF_OUTPUTS']).read_text())
     recaps = re.findall(r'changed=(\d+)', json.dumps(outputs))
     check(bool(recaps), 'Ansible phase recaps were retained')
     check(all(value == '0' for value in recaps), 'the second run changed no Node state: ' + ','.join(recaps))
     print('parity: all Ansible phases changed=0')
 
-# Doctor uses real observer facts after fixture preparation installed the observer.
-from pathlib import Path
-nodes = json.loads(os.environ['PROOF_NODES'])
-doctor = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', 'tools/swamp-proof-guest/gateway.php', 'request'],
-                        input=json.dumps({'method': 'POST', 'path': 'doctor', 'body': {
-                            'node_id': nodes[target], 'families': ['role']},
-                            'caller': '10.231.0.2', 'key': 'role-doctor-' + os.environ['PROOF_RUN'], 'operation': False}),
-                        capture_output=True, text=True, check=False)
-check(doctor.returncode == 0, 'Doctor request succeeded: ' + doctor.stderr)
-report = json.loads(doctor.stdout.strip().splitlines()[-1])['response']['data']
-check(report['summary']['drift'] == 0 and report['summary']['unverifiable'] == 0,
-      'Doctor reports zero role drift: ' + json.dumps(report['summary']))
-check(not any(Path('/tmp').glob('orbit-ansible-*')), 'the private Ansible run folder was removed')
-print('parity: Doctor role drift=0, unverifiable=0; private inputs removed')
+# Doctor reads the observer facts installed by fixture preparation.
+
+doctor(json.loads(os.environ['PROOF_NODES'])[target])
+check(not Path('/tmp/orbit-ansible-' + operation['swamp_run_id']).exists(), 'the private Ansible run folder was removed')
+# --idempotency-key replays the original admission without another run or Node change.
+body = {'role': role, **({'converge_existing': True} if operation['kind'] == 'node.role_converge' else {})}
+replayed = gateway('POST', 'nodes/' + str(intent['node_id']) + '/roles', body, 'proof-' + os.environ['PROOF_RUN'] + '-request')
+record = replayed['response']['data']
+check((record.get('operation') or record).get('id') == operation['id'], 'the idempotency key returns the same Operation')
+print('parity: private inputs removed; original admission replayed')

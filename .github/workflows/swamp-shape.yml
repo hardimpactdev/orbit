@@ -70,6 +70,7 @@ jobs:
           ansible-galaxy collection install -r ansible/requirements.yml -p "$ANSIBLE_COLLECTIONS_PATH"
           ansible-lint ansible/operation-node-role-add.yml
           python3 -I tests/ansible_inputs_test.py
+          ruff check ansible/build_vars.py tests/ansible_inputs_test.py
       - name: Check shape regression fixtures
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |

@@ -1,0 +1,167 @@
+{
+  "kind": "node.role_add.metrics.instance",
+  "workflow": "operation-node-role-add",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "apt-get",
+      "update"
+    ],
+    [
+      "apt-get",
+      "install",
+      "--yes",
+      "python3-venv"
+    ],
+    [
+      "python3",
+      "-m",
+      "venv",
+      "/opt/orbit/ansible/venv"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/pip",
+      "install",
+      "--disable-pip-version-check",
+      "-r",
+      "swamp/ansible/requirements.txt"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/ansible-galaxy",
+      "collection",
+      "install",
+      "-r",
+      "swamp/ansible/requirements.yml",
+      "-p",
+      "/opt/orbit/ansible/collections"
+    ],
+    [
+      "python3",
+      "-c",
+      "from pathlib import Path; public=' '.join(Path('/home/orbit/.orbit/ssh/proof_worker_ed25519.pub').read_text().split()[:2]); target=Path('/home/orbit/.ssh/authorized_keys'); lines=target.read_text().splitlines(); target.write_text('\\n'.join([*lines, public])+'\\n') if not any(' '.join(line.split()[:2]) == public for line in lines) else None"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.metrics}",
+      "metrics"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {
+      "role": "metrics"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Apply role prerequisites",
+      "job": "prerequisites",
+      "step": "Apply role prerequisites",
+      "budget_seconds": 900
+    },
+    {
+      "name": "Apply the role on the Node",
+      "job": "node",
+      "step": "Apply the role on the Node",
+      "budget_seconds": 900
+    },
+    {
+      "name": "Publish role sites",
+      "job": "publication",
+      "step": "Publish role sites",
+      "budget_seconds": 180
+    },
+    {
+      "name": "Open the firewall",
+      "job": "firewall",
+      "step": "Open the firewall",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Check the role",
+      "job": "role",
+      "step": "Check the role",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "metrics",
+    "metrics",
+    "instance"
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.metrics}/converge",
+      "body": {}
+    },
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-role-${proof.run}",
+        "name": "Role phase web proof",
+        "type": "laravel-app",
+        "root": "public",
+        "repository_url": "https://github.com/laravel/laravel.git",
+        "default_branch": "13.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/setup-steps",
+      "operation": false,
+      "body": {
+        "name": "prepare-laravel",
+        "command": "composer install --no-interaction --prefer-dist --no-progress && touch database/database.sqlite && php artisan migrate --force",
+        "timeout_seconds": 300
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "instance",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "default",
+        "domain": "role-${proof.run}.proof.test"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "database-connections",
+      "operation": false,
+      "bind": "database",
+      "body": {
+        "slug": "proof-role-${proof.run}",
+        "node_id": "${node.target}",
+        "driver": "sqlite",
+        "path": "/home/orbit/apps/proof-role-${proof.run}/default/database/database.sqlite"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "instances/${instance.id}/database-connections/proof-role-${proof.run}",
+      "operation": false,
+      "body": {
+        "prefix": "DB"
+      }
+    }
+  ]
+}

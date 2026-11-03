@@ -42,6 +42,7 @@ Until then, follow this skill and add the missing part in the same PR.
 
 ## Pitfalls from the trial
 
+- A file bind-mounted into a container keeps its old inode when `copy` replaces the host file atomically. Recreate the container on change, or validate the new public config, compare its checksum, write it in place through stdin and reload. `unsafe_writes` permits a fallback; it does not force an in-place write.
 - Ansible treats a string with `{{` as a Jinja template, for example in Grafana dashboards. Tag such strings `!unsafe`, and only those: `!unsafe "on"` loads as `True`.
 - A `when` condition must be a real boolean. Write `x is not none`, not `x`.
 - `include_tasks` in a loop runs the hosts one at a time. To give each host its own item, set the item as a play variable and use `import_tasks`.

@@ -22,6 +22,10 @@ Deno.test("the full intent reaches a private file beyond the environment size li
         assertEquals((await Deno.stat(folder)).mode! & 0o777, 0o700);
         assertEquals((await Deno.stat(result.path)).mode! & 0o777, 0o600);
         assertEquals(result.requirements, "ansible-core==2.20.11\n");
+        assertEquals(
+            result.assets,
+            new URL("../../../../ansible", import.meta.url).pathname,
+        );
         assertEquals(rows, [result]);
     } finally {
         await Deno.remove(folder, { recursive: true });

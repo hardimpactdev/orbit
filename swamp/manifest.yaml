@@ -10,11 +10,12 @@ additionalFiles:
   - ansible/operation-node-role-add.yml
   - ansible/tasks/php.yml
   - ansible/tasks/exporter.yml
+  - ansible/tasks/exporter-pool.yml
+  - ansible/tasks/metrics.yml
   - ansible/tasks/websocket.yml
   - ansible/tasks/check-files.yml
+  - ansible/tasks/check-runtime.yml
   - ansible/tasks/ci.yml
-  - ansible/tasks/php-publication.yml
-  - ansible/tasks/dns-publication.yml
   - ansible/requirements.txt
   - ansible/requirements.yml
   - ansible/build_vars.py

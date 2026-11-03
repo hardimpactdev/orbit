@@ -60,7 +60,7 @@ def build(folder, kind):
         'prometheus_node': [f'n{intent["prometheus"]["node_id"]}'] if intent['prometheus'] else [],
     }
     inventory = {'all': {'hosts': hosts, 'children': {
-        name: {'hosts': dict.fromkeys(members, {})} for name, members in groups.items()
+        name: {'hosts': {key: {} for key in members}} for name, members in groups.items()
     }}}
     secrets = {}
     for path in folder.glob('secret-*'):
@@ -69,7 +69,27 @@ def build(folder, kind):
     (folder / 'inventory.yml').write_text(json.dumps(inventory))
     (folder / 'known_hosts').write_text(''.join(line + '\n' for line in sorted(known)))
     plans = json.loads((folder / 'plans.json').read_text())
-    (folder / 'vars.yml').write_text(unsafe({'intent': intent, 'kind': kind, 'secrets': secrets, 'plans': plans}) + '\n')
+    containers = []
+    for service in (intent['runtime'].get('metrics') or {}).get('plan', {}).get('services', []):
+        argv = service['argv']
+        def values(flag, argv=argv):
+            return [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == flag]
+        def mapping(flag, values=values):
+            return dict(value.split('=', 1) for value in values(flag))
+        separator = argv.index('--')
+        containers.append({
+            **service, 'labels': mapping('--label'), 'env': mapping('--env'),
+            'log_options': mapping('--log-opt'), 'log_driver': values('--log-driver')[0],
+            'network': values('--network')[0], 'command': argv[separator + 2:],
+            'healthcheck': {'test': ['CMD-SHELL', values('--health-cmd')[0]],
+                            'start_period': values('--health-start-period')[0],
+                            'interval': values('--health-interval')[0], 'retries': int(values('--health-retries')[0])},
+            'volume': {'name': service['volume_args'][-1],
+                       'labels': dict(service['volume_args'][index + 1].split('=', 1)
+                                      for index, value in enumerate(service['volume_args'][:-1]) if value == '--label')},
+        })
+    (folder / 'vars.yml').write_text(unsafe({'intent': intent, 'kind': kind, 'secrets': secrets,
+                                         'plans': plans, 'containers': containers}) + '\n')
 
 
 if __name__ == '__main__':

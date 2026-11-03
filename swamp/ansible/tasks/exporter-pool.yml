@@ -1,0 +1,30 @@
+---
+- name: Read the dedicated FPM master
+  ansible.builtin.stat: { path: "/etc/orbit/php-fpm/{{ pool.php_runtime.user }}/generated/php-fpm.conf" }
+  register: exporter_master
+
+- name: Enable the existing FPM master's status pool
+  when: exporter_master.stat.exists
+  vars: { runtime: "{{ pool.php_runtime }}", generated: "/etc/orbit/php-fpm/{{ runtime.user }}/generated" }
+  block:
+    - name: Read the current application
+      ansible.builtin.stat: { path: "{{ runtime.home }}/current" }
+      register: exporter_application
+    - name: Publish the status pool
+      ansible.builtin.copy:
+        dest: "{{ generated }}/pool.conf"
+        content: >-
+          {{ runtime.configuration.pool if exporter_application.stat.exists else runtime.configuration.initial_pool }}
+        owner: root
+        group: root
+        mode: "0644"
+      register: exporter_pool
+    - name: Validate the FPM master
+      ansible.builtin.command:
+        argv: ["/usr/sbin/php-fpm{{ runtime.version }}", -t, --fpm-config, "{{ generated }}/php-fpm.conf"]
+      environment: { PHP_INI_SCAN_DIR: "/etc/php/{{ runtime.version }}/fpm/conf.d:{{ generated }}" }
+      changed_when: false
+    # Each include validates and reloads its own master before proceeding to the next pool.
+    - name: Reload the changed FPM master # noqa no-handler
+      when: exporter_pool is changed
+      ansible.builtin.systemd: { name: "orbit-{{ runtime.user }}-php{{ runtime.version }}-fpm.service", state: reloaded }
