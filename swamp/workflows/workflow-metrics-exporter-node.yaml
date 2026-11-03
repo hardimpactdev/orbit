@@ -30,7 +30,9 @@ jobs:
           become: true
         packages: [prometheus-node-exporter]
         ensure: present
+  # After package, not beside it: one member asks for one worker slot at a time.
   - name: downloads
+    dependsOn: [{step: package, condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     <<: *effect
     forEach: {item: download, in: '${{ inputs.intent.service.downloads }}'}
     task:
@@ -46,7 +48,7 @@ jobs:
         group: ${{ self.download.group }}
         mode: ${{ self.download.mode }}
   - name: stopped
-    dependsOn: [{step: package, condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: downloads, condition: {type: always}}]
     <<: *effect
     forEach: {item: unit, in: '${{ inputs.intent.service.units.filter(u, !u.enabled) }}'}
     task:
