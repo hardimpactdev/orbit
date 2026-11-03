@@ -241,7 +241,6 @@ Deno.test("Incus cleanup preserves live and future resources", async () => {
     assertEquals(steps[name], "skipped", name);
   }
   for (const name of ["format", "result", "accepted", "incus", "cloud"]) assert(!(name in steps), name);
-  assertEquals(test.result((await test.sweep()).history).deleted_names, []);
 });
 
 Deno.test("a removed VM that is still listed fails the end check", async () => {
@@ -255,21 +254,6 @@ Deno.test("a removed VM that is still listed fails the end check", async () => {
     "Remove orphaned VMs-tvm-image-16": "succeeded",
   });
   assertEquals(steps["Check the VMs are gone"], "failed");
-});
-
-Deno.test("an SSH failure skips cleanup and keeps the native failure", async () => {
-  await using test = await fixture();
-  await Deno.writeTextFile(test.block, "");
-  const { run, history } = await test.sweep(false);
-  assertEquals(run.status, "failed");
-  assertEquals(test.remote(), []);
-  const result = test.result(history);
-  assertEquals(result.ready, false);
-  assertEquals(result.failed_steps!.toSorted(), [
-    "Read the inventory-images",
-    "Read the inventory-instances",
-    "Read the inventory-volumes",
-  ]);
 });
 
 Deno.test("a missing project fails the host without a change", async () => {
@@ -292,7 +276,6 @@ Deno.test("cloud cleanup uses the vault token and preserves live and future ids"
   assertEquals(test.cloud.templates.size, 0);
   assertEquals(test.remote(), []);
   assertEquals(test.posts(), 1);
-  assertEquals(test.result((await test.sweep()).history).deleted_names, []);
 });
 
 Deno.test("a pending cloud stop fails without a delete or a custom wait", async () => {

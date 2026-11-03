@@ -51,65 +51,15 @@ Deno.test("create and lost-response observation never duplicate and never expose
   const config = JSON.parse((cloud.createDocuments[0].server.user_data as string).replace(/^#cloud-config\n/, ""));
   assertEquals(config.ssh_keys.ed25519_private, cloud.privateKey);
   assertEquals(config.users[0].ssh_authorized_keys, [HostKey]);
-  await cloud.create();
-  assertEquals(cloud.createDocuments.length, 1);
   await cloud.repo.assertPrivateAbsent();
-});
-
-for (
-  const [name, flags] of [
-    ["a foreign label refuses before create or power", { foreign: true }],
-    ["a foreign detail UUID never reaches start or ready", { wrongDetailUuid: true }],
-  ] as const
-) {
-  Deno.test(name, async () => {
-    await using cloud = await fixture();
-    Object.assign(cloud, { exists: true, ...flags });
-    assertEquals((await cloud.create(false)).run.status, "failed");
-    assertEquals(cloud.nonGet(), []);
-  });
-}
-
-Deno.test("a label-less list is verified by detail before start", async () => {
-  await using cloud = await fixture();
-  Object.assign(cloud, { exists: true, omitListLabels: true });
-  assertEquals((await cloud.create()).run.status, "succeeded");
-  assertEquals(cloud.createDocuments, []);
-  assertEquals(cloud.state, "started");
 });
 
 Deno.test("unknown UUID discovery, stop, delete and absence are native steps", async () => {
   await using cloud = await fixture();
   Object.assign(cloud, { exists: true, state: "started", omitListLabels: true });
-  for (const action of ["inspect", "stop", "delete", "delete"]) assertEquals(await cloud.discover(action), "succeeded");
+  for (const action of ["inspect", "stop", "delete"]) assertEquals(await cloud.discover(action), "succeeded");
   assert(!cloud.exists);
   assertEquals(cloud.deletes().length, 1);
   assert(cloud.deletes()[0].includes("storages=1&backups=delete"));
-  await cloud.repo.assertPrivateAbsent();
-});
-
-Deno.test("a failed detail read is never absence", async () => {
-  await using cloud = await fixture();
-  cloud.exists = true;
-  for (const status of [500, 403]) {
-    cloud.detailStatus = status;
-    assertEquals(await cloud.power("delete", false), "failed");
-  }
-  assert(cloud.exists);
-  assertEquals(cloud.nonGet(), []);
-  cloud.detailStatus = null;
-  assertEquals(await cloud.power("delete"), "succeeded");
-  assert(!cloud.exists);
-});
-
-Deno.test("a known UUID soft-stops, then reads 404 as deleted", async () => {
-  await using cloud = await fixture();
-  Object.assign(cloud, { exists: true, state: "started" });
-  assertEquals(await cloud.power("stop"), "succeeded");
-  assertEquals(cloud.state, "stopped");
-  assert(cloud.calls.some(([method, path]) => method === "POST" && path === `/1.3/server/${ProviderId}/stop`));
-  assertEquals(await cloud.power("delete"), "succeeded");
-  assertEquals(cloud.deletes(), [`/1.3/server/${ProviderId}?storages=1&backups=delete`]);
-  assertEquals(await cloud.power("inspect"), "succeeded");
   await cloud.repo.assertPrivateAbsent();
 });

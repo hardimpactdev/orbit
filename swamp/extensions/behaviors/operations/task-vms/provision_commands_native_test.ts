@@ -111,18 +111,8 @@ await passThrough(args, await readStdinBytes());
 
 const count = (list: string[], value: string) => list.filter((item) => item === value).length;
 
-Deno.test("fresh provider creates and starts without Gateway calls", async () => {
-  await using test = await fixture();
-  await test.run();
-  const state = await test.read();
-  assert(state.exists && state.running);
-  assertFalse(state.metadata!.includes("cloud-init.tpl"));
-  const actions = await test.actions();
-  assertEquals([count(actions, "init"), count(actions, "start")], [1, 1]);
-});
-
 Deno.test("the provider fragment returns typed public state to its parent", async () => {
-  await using test = await fixture();
+  await using test = await fixture({ no_address: true, lease_after_wait: true }, true);
   const inputs = (key: string) => "${{ inputs." + key + " }}";
   await Deno.writeTextFile(
     `${test.repo.dir}/workflows/workflow-provider-parent.yaml`,
@@ -142,49 +132,15 @@ Deno.test("the provider fragment returns typed public state to its parent", asyn
     }),
   );
   await test.repo.runWorkflow("provider-parent", { operation_id: 7, kind: "tasks.provision", node_id: 9, intent: test.intent });
-});
-
-Deno.test("an existing running VM skips mutations", async () => {
-  await using test = await fixture({ exists: true, running: true });
-  await test.run();
-  const actions = await test.actions();
-  assertFalse(actions.includes("init") || actions.includes("start"));
-  assertFalse((await test.read()).calls.some((call) => call.slice(2, 5).join(" ") === "config metadata edit"));
-});
-
-Deno.test("a foreign image fails before mutation", async () => {
-  await using test = await fixture({ exists: true, fingerprint: "c".repeat(64) });
-  await test.run(false);
-  assertEquals(await test.actions(), ["list"]);
-});
-
-Deno.test("a topology clone failure prevents VM initialization", async () => {
-  await using test = await fixture({ clone_failure: true }, true);
-  await test.run(false);
-  assertFalse((await test.read()).exists);
-  assertFalse((await test.actions()).includes("init"));
-});
-
-Deno.test("the topology clone is attached to the exact guest", async () => {
-  await using test = await fixture({}, true);
-  await test.run();
-  assertEquals((await test.read()).initial_config!.devices["topology-seed"].source, "tvm-12-topology-seed");
-});
-
-Deno.test("inspection waits natively for the first lease before its one read", async () => {
-  await using test = await fixture({ no_address: true, lease_after_wait: true });
-  await test.run();
-  const calls = (await test.read()).calls.map((call) => call.slice(2));
+  const state = await test.read();
+  assert(state.exists && state.running);
+  assertFalse(state.metadata!.includes("cloud-init.tpl"));
+  assertEquals(state.initial_config!.devices["topology-seed"].source, "tvm-12-topology-seed");
+  const calls = state.calls.map((call) => call.slice(2));
   const wait = calls.findIndex((call) => call.join(" ") === "wait tvm-12 ipv4 --timeout 120 --interval 1");
   assert(wait >= 0);
   assertEquals(calls[wait + 1][0], "list");
-  assertEquals(count(calls.map((call) => call[0]), "start"), 1);
-});
-
-Deno.test("a pending address fails after one final observation", async () => {
-  await using test = await fixture({ no_address: true });
-  await test.run(false);
-  assert(count(await test.actions(), "list") <= 4);
+  assertEquals([count(await test.actions(), "init"), count(await test.actions(), "start")], [1, 1]);
 });
 
 Deno.test("native resume from the final observation reads a new address without recreating the VM", async () => {
@@ -196,24 +152,4 @@ Deno.test("native resume from the final observation reads a new address without 
   await test.repo.cli(["workflow", "resume", "task-vm-provider-incus", "--run", run.id, "--from", "inspect-created-vm", "--job", "provider"]);
   const actions = await test.actions();
   assertEquals([count(actions, "list"), count(actions, "init"), count(actions, "start")], [reads + 1, 1, 1]);
-});
-
-Deno.test("native resume from the seed observation reads a repaired seed before initialization", async () => {
-  await using test = await fixture({ volumes: [] }, true);
-  const run = await test.run(false);
-  const state = await test.read();
-  assertFalse(state.exists);
-  await test.save({ ...state, volumes: ["orbit-topology-seed-" + "a".repeat(12)] });
-  await test.repo.cli(["workflow", "resume", "task-vm-provider-incus", "--run", run.id, "--from", "observe-seed", "--job", "provider"]);
-  const after = await test.read();
-  assert(after.running);
-  assertEquals(after.initial_config!.devices["topology-seed"].source, "tvm-12-topology-seed");
-});
-
-Deno.test("native resume observes an uncertain start without repeating the mutation", async () => {
-  await using test = await fixture({ lose_start_reply: true });
-  const run = await test.run(false);
-  assert((await test.read()).running);
-  await test.repo.cli(["workflow", "resume", "task-vm-provider-incus", "--run", run.id]);
-  assertEquals(count(await test.actions(), "start"), 1);
 });

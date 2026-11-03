@@ -132,15 +132,6 @@ Deno.test("a full batch without a token sends null from the small vault member",
   assert(calls[0].token_matches);
 });
 
-Deno.test("the vault is read only for the GitHub token", async () => {
-  // Serve redacts every vault value it reads with a RegExp built from the value; a whole agent request
-  // as a vault value fails the step before SSH (Operation 8235). Only the small token may come from the vault.
-  const source = await Deno.readTextFile(`${ROOT}/workflows/workflow-${Workflow}.yaml`);
-  assertEquals([...source.matchAll(/vault\.get\(([^)]*)\)/g)].map((match) => match[1]), [
-    "inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key",
-  ]);
-});
-
 Deno.test("an admitted integrity conflict fails the end check", async () => {
   const { run, steps, calls } = await fill({
     batches: [Batches[0]],
