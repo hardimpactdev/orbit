@@ -29,10 +29,10 @@ sequenceDiagram
     %%> Result:
     %%> - the Gateway always has a recent picture of what is installed on each Node
   end
-  CLI->>GW: tool:adopt ripgrep<br/>--node=12 --manager=apt --yes
+  CLI->>GW: tool:adopt ripgrep<br/>--node=12 --manager=apt
   %%> Command:
   %%> - `orbit tool:adopt ripgrep --node=12 --manager=apt --yes`
-  %%> - syntax: `<package> --node=ID --manager=MANAGER [--constraint=RANGE] [--repository=JSON] --yes`
+  %%> - syntax: `<package> --node=ID --manager=MANAGER [--constraint=RANGE] [--repository=JSON] [--yes]`
   %%> What adopting means:
   %%> - Orbit takes over a package that is already installed, so it manages later updates and removal
   %%> - it installs, updates, removes and repins nothing
