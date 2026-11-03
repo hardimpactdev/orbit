@@ -9,12 +9,15 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Arr;
 use Symfony\Component\Process\Process;
 
 require 'vendor/autoload.php';
 $app = require 'bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
-[$target, $peer, $router] = array_map(intval(...), array_slice($argv, 1));
+$target = (int) Arr::string($_SERVER, 'argv.1');
+$peer = (int) Arr::string($_SERVER, 'argv.2');
+$router = (int) Arr::string($_SERVER, 'argv.3');
 $cluster = Cluster::query()->create(['name' => 'proof-target-production', 'state' => 'active', 'tld' => 'proof.test']);
 foreach ([$target, $peer, $router] as $id) {
     $node = Node::query()->findOrFail($id);
