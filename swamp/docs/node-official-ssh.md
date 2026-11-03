@@ -80,7 +80,7 @@ Both live effect-and-cleanup runs succeeded with all six steps exiting0: VPN1 `6
 
 ## Retirement prerequisite for roles, removal and Metrics
 
-**Keep `orbit-node-proxy-worker-1.service` and `orbit-node-proxy-worker-18.service` running until accepted family callers stop selecting them.** An empty queue, an idle worker or a successful SSH canary does not clear this dependency.
+**Done 2026-11-03:** no family selects `orbit-node-proxy-worker-1.service` or `orbit-node-proxy-worker-18.service`; both are disabled and not loaded on Node 209, and the proxy transport code is deleted. The two unit files remain on Node 209 until the swamp role removes them. The table below records what each family replaced. An empty queue, an idle worker or a successful SSH canary does not clear this dependency.
 
 | Owner | Required accepted replacement before unit retirement |
 | --- | --- |

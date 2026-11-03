@@ -1,6 +1,4 @@
 import { z } from "npm:zod@4.4.3";
-import { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";
-import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";
 import {
   type DevelopmentContext,
   type Emit,
@@ -551,20 +549,6 @@ export function gatewayHttp(
   timeoutMs = 60_000,
 ): Http {
   return async (method, path, body, key) => {
-    const proxy = await runtimeNodeProxy();
-    if (proxy) {
-      return await proxyGatewayRequest(
-        proxy,
-        url,
-        caFile,
-        method,
-        path,
-        body,
-        key,
-        signal,
-        timeoutMs,
-      );
-    }
     const client = Deno.createHttpClient({
       caCerts: [await Deno.readTextFile(caFile)],
     });
