@@ -10,6 +10,17 @@
       "-u",
       "orbit",
       "--",
+      "install",
+      "-m",
+      "0644",
+      "/dev/null",
+      "/home/orbit/.ssh/known_hosts"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
       "php",
       "swamp/proof/node.worker_known_hosts/prepare.php"
     ]
