@@ -106,6 +106,7 @@ if a and (os.path.basename(a[0]) in ('systemctl','docker','setfacl') or '/usr/bi
     sys.exit(1 if os.path.exists(FAIL) and open(FAIL).read() in a else 0)
 sys.exit(subprocess.call(a))
 """.replace('CALLS', repr(str(self.calls_file))).replace('FAIL', repr(str(self.repo / 'fail'))),
+            'systemctl': "import json,sys\nif sys.argv[1]=='show': print('LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled')\nelse:\n    with open(" + repr(str(self.calls_file)) + ",'a') as f:f.write(json.dumps(['systemctl',*sys.argv[1:]])+'\\n')\n",
             'chown': 'pass\n',
             'chgrp': 'pass\n',
         }
