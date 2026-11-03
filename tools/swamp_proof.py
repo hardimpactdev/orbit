@@ -142,11 +142,13 @@ def provision(gateway, state):
         operation = gateway.wait(operation, 'tasks.provision', vm['group_id'])
         admitted = operation['input']
         host_node_id = admitted.get('host_node_id')
-        if host_node_id not in (9, 13) or admitted.get('create', {}).get('topology') is not True:
-            raise ProofError('Provision did not place a topology-seeded VM on Beast or Shark.')
+        seed = admitted.get('image_fingerprint')
+        if host_node_id not in (9, 13) or admitted.get('provider') != 'incus' or not isinstance(seed, str) or not seed \
+                or operation['result'].get('image', {}).get('fingerprint') != seed:
+            raise ProofError('Provision did not use its recorded Incus image on Beast or Shark.')
         node = gateway.request('GET', f'nodes/{operation["result"]["node_id"]}')
         vm.update(task_vm_id=operation['result']['task_vm_id'], node_id=node['id'], name=node['name'], host_node_id=host_node_id,
-                  seed=admitted.get('image_fingerprint'), provisioned_at=utc())
+                  seed=seed, provisioned_at=utc())
         save(SESSION, state)
     host = gateway.request('GET', f'nodes/{vm["host_node_id"]}')
     state['guest_host'] = f'{host["user"]}@{host["wireguard_ip"]}'

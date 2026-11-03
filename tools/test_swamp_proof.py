@@ -122,6 +122,43 @@ class Reuse(unittest.TestCase):
         self.assertEqual(ups[0][-1], '--fresh')
 
 
+class Provision(unittest.TestCase):
+    def run_provision(self, admitted=None, image='seed'):
+        operation = {'id': 12, 'input': admitted or {'host_node_id': 9, 'provider': 'incus', 'image_fingerprint': 'seed'},
+                     'result': {'task_vm_id': 3, 'node_id': 10, 'image': {'fingerprint': image}}}
+
+        class Gateway:
+            def request(self, method, path, body=None, key=None):
+                if method == 'POST':
+                    return operation
+                return {'id': 10, 'name': 'tvm-3'} if path == 'nodes/10' else {'user': 'orbit', 'wireguard_ip': '10.44.0.9'}
+
+            def wait(self, admitted_operation, kind, group):
+                return admitted_operation
+
+        state = {'nonce': 'n', 'vm': {'group_id': 7, 'provision_operation_id': 12}}
+        with patch.object(swamp_proof, 'save'), patch.object(swamp_proof, 'Guest') as guest:
+            swamp_proof.provision(Gateway(), state)
+        return state, guest
+
+    def test_compact_provision_replies_keep_the_existing_vm(self):
+        state, guest = self.run_provision()
+        self.assertEqual(state['vm']['task_vm_id'], 3)
+        self.assertEqual(state['vm']['node_id'], 10)
+        self.assertEqual(state['vm']['seed'], 'seed')
+        guest.assert_called_once_with('orbit@10.44.0.9', 'tvm-3')
+
+    def test_provision_refuses_a_foreign_host_provider_or_image(self):
+        for admitted, image in (
+            ({'host_node_id': 17, 'provider': 'incus', 'image_fingerprint': 'seed'}, 'seed'),
+            ({'host_node_id': 9, 'provider': 'upcloud', 'image_fingerprint': 'seed'}, 'seed'),
+            ({'host_node_id': 9, 'provider': 'incus'}, None),
+            ({'host_node_id': 9, 'provider': 'incus', 'image_fingerprint': 'seed'}, 'other'),
+        ):
+            with self.subTest(admitted=admitted, image=image), self.assertRaises(swamp_proof.ProofError):
+                self.run_provision(admitted, image)
+
+
 class Lifecycle(unittest.TestCase):
     """The proof-reaper schedule needs each group's lane in its title and a fresh guest heartbeat."""
 
