@@ -73,7 +73,10 @@ Deno.exit(result.code);
   );
   await ts(
     "systemctl",
-    `const path = ${JSON.stringify(statePath)};
+    `// systemd serializes host requests; parallel child runs share this state, so serialize too.
+const lock = Deno.openSync(${JSON.stringify(`${host}/systemd.lock`)}, { create: true, write: true });
+lock.lockSync(true);
+const path = ${JSON.stringify(statePath)};
 const state = JSON.parse(Deno.readTextFileSync(path));
 const [action, unit = ""] = Deno.args;
 state.calls.push(Deno.args);
