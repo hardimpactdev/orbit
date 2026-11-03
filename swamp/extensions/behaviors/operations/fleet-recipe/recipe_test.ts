@@ -28,9 +28,8 @@ Deno.test("all node targets use 209 with their saved host keys", async () => {
             const hosts = step.task?.globalArgs?.hosts;
             if (hosts?.length) {
                 assert(
-                    hosts[0].transport.hostKeys.includes(
-                        "inputs.intent.ssh.target.host_keys",
-                    ),
+                    ["inputs.intent.ssh.target.host_keys", "inputs.intent.footprint.network.apply.hub.ssh.target.host_keys"]
+                        .some((pin) => hosts[0].transport.hostKeys.includes(pin)),
                 );
             }
         }

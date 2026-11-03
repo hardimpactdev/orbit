@@ -46,11 +46,11 @@ function steps() {
         type: "behavior",
         behaviorType: "@nckrtl/network-command",
         // Named with its type: fixed names such as `result` recur across behavior types.
-        behaviorName: expr(JSON.stringify(name.toLowerCase().replaceAll(" ", "-") + "-network-command")),
+        behaviorName: expr(JSON.stringify(name.toLowerCase().replaceAll(" ", "-") + "-net-") + " + string(inputs.node_id)"),
         methodName: method,
         inputs,
     }, guard);
-    // The hub keeps the name node:wireguard-hub:converge gives it; the peer is named after its SSH address.
+    // The hub keeps the name the hub publication child gives it; the peer is named after its SSH address.
     const target = (connection: string) =>
         expr(dotless(connection === "inputs.intent.hub.ssh"
             ? '"wireguard-hub-" + string(inputs.intent.hub_id)'
@@ -173,7 +173,7 @@ function peerDnsActions(s: ReturnType<typeof steps>) {
     // The Gateway names the private probe; example.com is reserved and always public (RFC 2606).
     s.read("Check resolution", expr('["timeout","20","sh","-c",' + JSON.stringify(RESOLVE) + ',"sh",inputs.intent.probe,"example.com"]'));
 }
-/** node.network_converge: read, decide, then persist and set only when the policy changed. */
+/** Peer network child: read, decide, then persist and set only when the policy changed. */
 function dnsActions(s: ReturnType<typeof steps>) {
     const server = "inputs.intent.peer.dns_server", domains = "inputs.intent.peer.domains";
     s.read("Read the DNS policy", ["sh", "-c", INSPECT]);
@@ -266,12 +266,12 @@ export function workflow(network: boolean) {
             ? "3c0eb942-9c7f-438d-8d4c-7c739642c155"
             : "f05d2ee0-5aa7-4271-9924-fda8b65a786d",
         name: network
-            ? "operation-node-network-converge"
+            ? "node-network-peer"
             : "operation-fleet-peer-dns",
         description:
             "Pinned official SSH from209; full public input and typed terminal output.",
         vaults: [],
-        ...(network ? {} : { queueTimeout: 60 }),
+        queueTimeout: network ? 30 : 60,
         labels: { role: "swamp" },
         inputs: {
             type: "object",
@@ -280,7 +280,7 @@ export function workflow(network: boolean) {
                 node_id: { type: "integer", minimum: 1 },
                 kind: {
                     type: "string",
-                    const: network ? "node.network_converge" : "fleet.peer_dns",
+                    ...(network ? {} : { const: "fleet.peer_dns" }),
                 },
                 intent: { type: "object" },
                 execution_secrets: {

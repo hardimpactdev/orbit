@@ -416,7 +416,7 @@ To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit
 
 ## Converge the Orbit footprint
 
-The held native conversion of `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. Fleet release rollout updates the observer and CLI separately; it does not run footprint convergence.
+The native workflow for `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. Fleet release rollout updates the observer and CLI separately; it does not run footprint convergence.
 
 Footprint convergence never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances. Unsupported extension artifacts refuse before any Node effect, including when their recorded digest matches; a matching digest does not supply a missing native action.
 
@@ -425,7 +425,7 @@ Footprint convergence never changes an Instance, a Process unit, or a role, and 
 | `agent` | Every managed Linux Node | The [agent converge](/reference/node-agent#install-and-upgrade). It restarts the agent only when a file changed |
 | `caddy-package` | A Node with a Caddy role or Caddy sites | The [Caddy package step](#package-sources). It installs Caddy only when it is missing or below the floor, so a running Caddy is not restarted |
 | `caddy` | A Node with a Caddy role or Caddy sites | The [Caddy build](/reference/caddy-configuration). Caddy validates a candidate first; a refused Caddyfile fails the part and the published one stays. It reloads Caddy gracefully, only when the Caddyfile changed |
-| `peer-dns` | Active managed Linux peers with roles, excluding the VPN holder and the Gateway | The [split private DNS policy](/reference/private-dns#resolver-selection), without a tunnel restart, ending with a private and a public lookup. Its digest includes the routing domains and selected DNS server |
+| `network` | Managed Linux Nodes with an active VPN hub | [WireGuard and split DNS](/reference/wireguard-endpoints#native-peer-convergence), applied last and guarded by its digest plus live public state |
 | `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts dnsmasq and the listener, then asserts that the listener loaded the new catalog |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
 | `php-runtime` | Every Linux Node with an active `app-dev` or `app-prod` role | The [managed PHP-FPM module](/reference/php-runtime#request-and-upload-limits) for the profile and active Instances. A change gracefully reloads valid active masters; `local.conf` stays unchanged |
@@ -434,7 +434,7 @@ Footprint convergence never changes an Instance, a Process unit, or a role, and 
 
 Each role part runs in its own converge step, beside the others, so one part's failure never stops another. `Install Caddy`, `Publish Caddy sites`, `Install private DNS`, `Configure PHP-FPM` (once per PHP version) and `Clear Route residue` each call one child workflow of official `@swamp/cfgmgmt` steps. `Write the tmpfiles rule` is one `@swamp/cfgmgmt/file` step. The Gateway reads each part's outcome from its step in Swamp's run data. A failed residue cleanup is reported as `skipped` and never fails the task. No part rolls back.
 
-The native DAG installs the pinned agent, applies role-dependent footprint data, reconciles the admitted peer-DNS policy and refreshes the selected worker through the agent configuration action. Each mutating step targets the admitted `orbit-node-<id>` worker and the same Node label; there is no foreign fallback. Desired role assignments are unchanged. Full WireGuard enrollment and hub changes belong to their own Node operations.
+The native DAG runs on the workers on Node 209 and reaches each admitted target through pinned SSH. Role assignments stay unchanged. The network part starts only after the other required parts succeed. Admission reserves the Node and hub, and a failed network part keeps its previous recorded digest for a later fix forward.
 
 The table lists the footprint artifacts in contract order. The native DAG installs the pinned agent first and refreshes its observer and persistent worker after the other footprint stages. The artifacts that [extensions contribute](/reference/extensions#plug-in-points), such as `ai-router`, come after core's. Each artifact has its own name.
 

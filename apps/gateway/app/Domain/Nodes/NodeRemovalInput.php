@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Actions\Nodes\AdmitNodeWireGuardHubOperationAction;
 use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRoutePublicationInput;
@@ -95,7 +94,7 @@ final readonly class NodeRemovalInput
         $hub = [];
         if ($node->wireguard_public_key !== null) {
             $owner = Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Vpn))->sole();
-            $hub[] = app(AdmitNodeWireGuardHubOperationAction::class)->intent($owner);
+            $hub[] = app(NodeWireGuardHubInput::class)->intent($owner);
         }
         $routerRules = [];
         foreach ($routerBefore as $id => $prior) {

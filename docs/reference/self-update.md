@@ -16,6 +16,8 @@ covers:
 
 `orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. It never touches `orbit-agent`. A Node gets the Gateway's pinned agent through [install on mismatch](/reference/node-agent#install-on-mismatch) with every agent command, so the agent is current before the fleet rollout runs `cli.self-update`. The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs this command on each managed Node, and an operator runs it on a Mac.
 
+Node footprint convergence includes a separate network digest and live WireGuard check. CLI self-update and the software recipe retain their existing delivery paths.
+
 ## Desired fleet state
 
 Fleet rollout and `fleet.cli_converge` do not call `orbit self-update` or an agent command. Swamp publishes the release from Node 209 over SSH with the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child: `@swamp/cfgmgmt` fetches the binary with its checksum, checks its version, and switches the same link that `orbit self-update` keeps. A Node that runs a newer release or a commit build keeps it. A rollout run that fails before it reaches any Node settles as failed and leaves every Node pending, so the next admission tries them again.

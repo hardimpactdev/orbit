@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Actions\Nodes\AdmitNodeWireGuardHubOperationAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Fleet\CliConvergePlan;
@@ -168,7 +167,7 @@ final readonly class NativeNodeEnrollmentInput
     private function network(Node $node, bool $roleless): array
     {
         if ($node->roles()->where('role', RoleName::Vpn)->exists()) {
-            $hub = AdmitNodeWireGuardHubOperationAction::intent($node);
+            $hub = NodeWireGuardHubInput::intent($node);
             $peers = implode("\n", array_map(static fn (array $peer): string => ValidatedData::string($peer['content']), RouteExecutionProof::objects($hub['peers'])));
             $trust = app(NodeFirewallRuleCatalog::class)->forNode($node)[1];
 
@@ -183,7 +182,7 @@ final readonly class NativeNodeEnrollmentInput
         $network = app(NodeNetworkConvergeInput::class)->capture($node, $roleless);
         $hub = Node::query()->findOrFail(ValidatedData::integer($network['hub_id']));
         $joining = ValidatedData::object($network['hub']);
-        $hubPlan = AdmitNodeWireGuardHubOperationAction::intent($hub);
+        $hubPlan = NodeWireGuardHubInput::intent($hub);
         $sections = [];
         foreach (RouteExecutionProof::objects($hubPlan['peers']) as $peer) {
             $peer = ValidatedData::object($peer);

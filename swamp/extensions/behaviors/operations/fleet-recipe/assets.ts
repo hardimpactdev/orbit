@@ -85,7 +85,7 @@ export function assembleFootprint(
         agent: ["Restart the Node agent", "Check the footprint"],
         "caddy-package": ["Install Caddy"],
         caddy: ["Publish Caddy sites"],
-        "peer-dns": ["peer_dns-0"],
+        network: ["Decide the network change", "Check the handshake"],
         "private-dns": ["Install private DNS"],
         "route-residue": ["Clear Route residue"],
         "php-runtime": versions.map((version) => "Configure PHP-FPM-" + version),
@@ -107,12 +107,14 @@ export function assembleFootprint(
         }
 
         const required = names[artifact.name] ?? [];
-        const proven = required.length > 0 &&
-            required.every((name) => steps[name]?.status === "succeeded");
+        const networkUnchanged = artifact.name === "network" && steps["Decide the network change"]?.status === "succeeded"
+            && steps["Apply recorded network"]?.status === "skipped";
+        const proven = networkUnchanged || (required.length > 0 &&
+            required.every((name) => steps[name]?.status === "succeeded"));
         if (!artifact.required || proven) {
             artifacts.push({
                 name: artifact.name,
-                status: artifact.required ? "applied" : "unchanged",
+                status: artifact.required && !networkUnchanged ? "applied" : "unchanged",
             });
         } else if (artifact.name === "route-residue") {
             artifacts.push({

@@ -1,3 +1,4 @@
+import { matchesWireguard, Observation as WireGuardObservation } from "./state.ts";
 import { z } from "npm:zod@4.4.3";
 import { Inspection, matchesPolicy, PeerDnsInput } from "../fleet/contract.ts";
 
@@ -118,6 +119,7 @@ export const behavior = {
     type: "@nckrtl/network-command",
     version: "2026.11.03.1",
     resources: {
+        drift: { schema: z.object({ changed: z.boolean() }).strict(), lifetime: "1d", garbageCollection: 10 },
         key: {
             schema: z.object({ public_key: PublicKey }).strict(),
             lifetime: "1d",
@@ -137,6 +139,29 @@ export const behavior = {
         },
     },
     methods: {
+        compare: {
+            description: "Compare the recorded digest and public live WireGuard/DNS state",
+            arguments: z.object({
+                required: z.boolean(), observations: z.array(WireGuardObservation).min(1).max(2),
+                stdout: z.string(), hub_stdout: z.string(), addresses: z.string(),
+                dns_stdout: z.string(), policy: Policy.nullable(),
+            }).strict(),
+            execute: async (args: {
+                required: boolean; observations: z.infer<typeof WireGuardObservation>[];
+                stdout: string; hub_stdout: string; addresses: string;
+                dns_stdout: string; policy: z.infer<typeof Policy> | null;
+            }, ctx: Context) => {
+                // Evaluate every observation even when the digest changed: a foreign key must still refuse.
+                const states = [args.stdout, args.hub_stdout];
+                const wireguardMatches = args.observations.map((expected, index) =>
+                    matchesWireguard(expected, states[index], args.addresses)).every(Boolean);
+                let dnsMatches = args.policy === null;
+                if (args.policy !== null && args.dns_stdout) {
+                    dnsMatches = matchesPolicy(args.policy, inspection(args.dns_stdout, args.policy.server));
+                }
+                return await save(ctx, "drift", { changed: args.required || !wireguardMatches || !dnsMatches });
+            },
+        },
         key: {
             description:
                 "Validate the public prepared key before hub publication",

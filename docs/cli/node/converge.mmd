@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% status: reviewed
+  %% status: migrated
   %% command: node:converge
   %% kind: node.converge
   autonumber
@@ -33,12 +33,24 @@ sequenceDiagram
   end
   SW->>N: Check the footprint
   SW->>N: Read WireGuard state<br/>SSH argv · wg show
+  opt peer Node
+    SW->>N: Read hub WireGuard state
+    SW->>N: Resolve WireGuard endpoint
+    SW->>N: Read network DNS policy
+  end
+  Note over SW: Decide the network change
   alt network matches the record
     Note over N: Leave WireGuard alone
   else network drift
     SW->>N: Apply recorded network<br/>network-command child
     %%> Holds the Node and hub locks; the VPN Node publishes all recorded peers.
-    SW->>N: Check the handshake<br/>bounded check
+    opt peer public key not recorded
+      SW->>N: Read the tunnel key
+    end
+    SW->>N: Probe the tunnel<br/>bounded check
+    %%> Skipped when the hub has no peers.
+    SW->>N: Read the handshake
+    Note over SW: Check the handshake
   end
   alt every required part passes
     SW-->>GW: Run succeeded

@@ -10,8 +10,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentFiles;
 use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
-use App\Domain\WireGuard\Ipv4Subnet;
-use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
@@ -26,7 +24,6 @@ use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
-use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
@@ -199,19 +196,6 @@ final readonly class NodeConvergeInput
             'ingress_commands' => $residue['ingress_commands'] ?? null];
     }
 
-    /**
-     * The peer DNS policy node.converge hands the native peer-DNS workflow, with the wg-quick hook it writes.
-     *
-     * @return array{dns_server:string,public_key:?string,domains:list<string>,dns_hook:string,probe:string}
-     */
-    public function peerDns(Node $node, string $server): array
-    {
-        $domains = app(PeerDnsPolicy::class)->domains($node);
-
-        return ['dns_server' => $server, 'public_key' => $node->wireguard_public_key, 'domains' => $domains,
-            'dns_hook' => NodeNetworkConvergeInput::dnsHook($server, $domains), 'probe' => PeerDnsPolicy::PRIVATE_PROBE];
-    }
-
     /** @return array<string,mixed> */
     public function capture(Node $node, bool $force, bool $firstVisit): array
     {
@@ -239,14 +223,14 @@ final readonly class NodeConvergeInput
             }
             $digest = $expected[$name];
             $repair = ($recorded[$name] ?? null) === $digest;
-            $required = $force || ! $repair || in_array($name, ['agent', 'caddy', 'peer-dns'], true);
+            $required = $force || ! $repair || in_array($name, ['agent', 'caddy', 'network'], true);
             $plan[] = compact('name', 'digest', 'required', 'repair');
             if (str_starts_with($digest, 'unavailable:')) {
                 $refusal = 'node.footprint_failed';
 
                 continue;
             }
-            if (! in_array($name, ['agent', 'ai-router', 'caddy-package', 'caddy', 'peer-dns', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
+            if (! in_array($name, ['agent', 'ai-router', 'caddy-package', 'caddy', 'network', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
                 $refusal = 'operation.kind_unavailable';
 
                 continue;
@@ -259,16 +243,8 @@ final readonly class NodeConvergeInput
             if ($name === 'ai-router') {
                 continue;
             }
-            if ($name === 'peer-dns') {
-                $policy = app(PeerDnsPolicy::class);
-                $server = $policy->server($node);
-                if (! Ipv4Subnet::from(app(VpnSettings::class)->subnet())->containsUsableAddress($server)) {
-                    $refusal = 'vpn.configuration_invalid';
-
-                    continue;
-                }
-                $network = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
-                    'peer_dns' => $this->peerDns($node, $server)];
+            if ($name === 'network') {
+                $network = [...app(NodeNetworkConvergeInput::class)->converge($node), 'required' => $force || ! $repair, 'handshake_after' => now()->getTimestamp() - 180];
 
                 continue;
             }
