@@ -691,3 +691,13 @@ The cleanup deletes the unused Node, certificate and route executor chain.
 The newly ported lifecycle suite still looked for the deleted destroy printer. It now reads `Check the removal`, as creation and enable read their own native checks. Cascade service stop uses one bounded SSH argv: official systemd `ensure: stopped` compares only the `active` state and leaves an activating oneshot alone. The explicit stop preserves the previous cascade behavior without a shell. End checks remain official file and systemd checks plus the native assertion.
 
 Fresh standalone and cascade receipts on `ff8ad3169f` pass: `schedule.destroy.timer/20261103T073252Z-minimal.json` and `schedule.destroy.timer.cascade/20261103T073618Z-minimal.json`. Three destroy lifecycle cases pass in 60 seconds; the activating-service regression passes in 13 seconds. No case is dropped.
+
+## Node role executor cleanup
+
+The native Node parents own enrollment, convergence and relocation. Their shared certificate and publication steps leave the former relocate-direct workflow and its executor graph unused. This batch deletes that workflow, the Node dispatch and footprint helpers, the Caddy and certificate removal programs, and the retained-role Python policy. The fleet manifest drops its unused Node role entry. Sixteen matching shape-baseline entries are removed. Live grant-rendering and shipped-file release tests remain.
+
+Scripts deleted: three programs, comprising one Python source file and two embedded Python programs. No script gap remains for this cut. The tests of the deleted executor and policy are removed because their code has no caller. The remaining Node, certificate and route Deno suites pass 160 cases; both live grant and release tests also pass after rebase. All 202 remaining workflows validate, and the shape and frozen-base gates pass.
+
+The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/node-role-executor-removal.json) records a fresh `node.role_relocate` proof at `18100d06e9` on minimal@16 and Shark. It passes in 162.30 seconds. Real Metrics parity checks both target containers and readiness, then checks that both source containers and the source Prometheus configuration are absent. This is one sample, with observed p95 162.30 seconds, budget 1800 seconds and queue timeout 30 seconds. The 12 GiB, six-CPU proof VM was destroyed after the run. It exercises no production data, billed hosts or production scale.
+
+Before its receipt and retro, the cleanup removes 8319 net Orbit lines. It deletes 46 files and changes five more. The Node enrollment push adds 1268 lines including its evidence; together the two batches reduce Orbit by 7051 lines before this cleanup evidence.

@@ -1,0 +1,51 @@
+{
+  "kind": "node.role_relocate",
+  "source_commit": "18100d06e928020495e71f0aff4f201364514dc0",
+  "topology": "minimal",
+  "topology_version": 16,
+  "scripts_deleted": 3,
+  "deleted_programs": [
+    {
+      "path": "swamp/extensions/behaviors/operations/certificates/retained_role_policy.py",
+      "kind": "Python source"
+    },
+    {
+      "path": "swamp/extensions/behaviors/operations/certificates/role-publication.ts",
+      "kind": "embedded Python program"
+    },
+    {
+      "path": "swamp/extensions/behaviors/operations/routes/caddy-program.ts",
+      "kind": "embedded Python program"
+    }
+  ],
+  "retained_script_gaps": [],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "samples": 1,
+  "p95_seconds": 162.3,
+  "cases": [
+    {
+      "kind": "node.role_relocate",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_relocate/20261103T074150Z-minimal.json",
+      "fixture_seconds": 162.3,
+      "run_id": "4d4dcabf-e685-4327-abe4-0940f3c75e39",
+      "parity": "parity: node.role_relocate metrics 212 -> 213"
+    }
+  ],
+  "outer_vm": {
+    "group_id": 3018,
+    "provision_operation_id": 9178,
+    "task_vm_id": 478,
+    "node_id": 506,
+    "name": "tvm-478",
+    "host_node_id": 13,
+    "seed": "6ddde33590a9160df3dd75a2a79376af329a757297a702cd348eec699782c55a",
+    "provisioned_at": "2026-11-03T07:30:13Z",
+    "cancel_operation_id": 9190,
+    "destroyed": true,
+    "destroyed_at": "2026-11-03T07:45:31Z",
+    "memory": "12GiB",
+    "cpus": 6,
+    "teardown": "succeeded"
+  }
+}
