@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
+use App\Actions\Routes\CreateRouteAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DefaultInstanceName;
@@ -23,6 +24,7 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -82,8 +84,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                 ? null : $this->databases->plan($project, $name);
             app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($project, $node, $data->databaseServer !== null || $clone !== null);
             $sourceRoot = $this->nodeSettings->fromStored($node->settings)?->appsPath();
-            if (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null || $data->domain !== null) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires an explicit apps.path and no Route.', 503);
+            if (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires an explicit apps.path.', 503);
+            }
+            if ($data->domain !== null && ! $project->type->isWebServing()) {
+                throw new ResourceOperationException('instance.route_unserved', 'A Project that serves no web pages takes no domain.', 422);
             }
             if ($instance instanceof Instance && $instance->status === InstanceState::Active
                 && ($instance->failed_step === 'setup' || $instance->first_setup_pending)
@@ -124,6 +129,13 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'php_version' => $project->php_version, 'laravel' => $project->is_laravel === true,
             ];
             $input['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode($node);
+            // A web-serving Project gets its Route, the derived <name>.<project-slug>.<tld> or --domain. It is reserved
+            // before the environment and the Processes are captured, because its domain changes both.
+            if ($instance->requiresRoute()) {
+                $route = app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
+                $input = [...$input, 'route_id' => $route->id, 'route_domain' => $route->domain,
+                    ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id)];
+            }
             $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
             // An already active Instance runs no phase, so admission records no environment or Process for it.
             $input['environment_keys'] = $input['members'] = [];
@@ -135,9 +147,10 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members'];
             }
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
-            // and 30 s for the Process phase.
+            // 30 s for the Process phase, and 120 s for the Route child: CSR, signing, install, publication and its TLS probe.
             $input['run_budget_seconds'] = 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, array_sum(array_map(
-                static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30;
+                static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30
+                + (isset($input['route_create']) ? 120 : 0);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
         });

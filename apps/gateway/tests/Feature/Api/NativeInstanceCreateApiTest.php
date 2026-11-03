@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -95,12 +96,45 @@ it('refuses immutable placement changes on retry', function (): void {
     expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
 });
 
-it('refuses unavailable publication before reserving source or admitting work', function (): void {
+it('reserves the derived Route of a web-serving Project and creates it in the same run', function (string $status): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
+    $this->node->update(['tld' => 'test']);
     $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $this->postJson('/api/v1/instances', $this->payload)->assertStatus(503)
-        ->assertJsonPath('error.code', 'operation.kind_unavailable');
-    expect(Instance::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0)
-        ->and($this->socket->sent)->toBe([]);
+    $this->withHeader('Idempotency-Key', 'native-create-web-'.$status);
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $operation = Operation::query()->sole();
+    $route = Route::query()->sole();
+    $start = collect($this->socket->sent)->firstWhere('payload.workflowIdOrName', 'operation-instance-create');
+    $intent = $start['payload']['inputs']['intent'];
+    expect($route->domain)->toBe('proof.native-create.test')
+        ->and($operation->input['route_id'])->toBe($route->id)
+        ->and($operation->input['run_budget_seconds'])->toBe(210)
+        ->and($intent['route'])->toBe($operation->input['route_create'])
+        ->and($intent['route_secrets'])->toBe($operation->input['execution_secrets']);
+
+    $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        'status' => $status, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => $status === 'failed' ? 'instance.create_route_failed' : null,
+        'result' => ['instance_id' => $operation->target_id, 'ready' => $status === 'succeeded', 'commit' => str_repeat('a', 40),
+            ...($status === 'failed' ? ['failed_step' => 'route', 'error_code' => 'instance.create_route_failed'] : [])]]);
+    $route->refresh();
+    expect($route->status->value)->toBe($status === 'succeeded' ? 'active' : $route->getOriginal('status')->value)
+        ->and($route->sites_published)->toBe($status === 'succeeded')
+        ->and($route->error_code)->toBe($status === 'succeeded' ? null : 'instance.create_route_failed');
+})->with(['succeeded', 'failed']);
+
+it('refuses a web-serving Project before reservation when its Node has no TLD for the derived Route', function (): void {
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $this->postJson('/api/v1/instances', $this->payload)->assertConflict()->assertJsonPath('error.code', 'route.tld_required');
+    expect(Instance::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+});
+
+it('refuses a domain for a Project that serves no web pages', function (): void {
+    $this->postJson('/api/v1/instances', [...$this->payload, 'domain' => 'proof.example.test'])->assertUnprocessable()
+        ->assertJsonPath('error.code', 'instance.route_unserved');
+    expect(Instance::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 });
 
 it('requires owning Node access before creating an Instance', function (): void {

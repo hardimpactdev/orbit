@@ -10,6 +10,7 @@ type Phases = {
     environment: string;
     setup: string[];
     processes: string[];
+    route: string;
 };
 
 /**
@@ -43,6 +44,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
             "processes",
             phases.processes.every((status) => status === "succeeded"),
         ],
+        // A Project that serves no web pages has no Route; its route step is skipped.
+        ["route", intent.route == null || phases.route === "succeeded"],
     ];
     const failed = outcomes.find(([, ready]) => !ready);
     const result = {

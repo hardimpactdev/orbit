@@ -22,6 +22,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
+use App\Models\TaskVm;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -68,12 +69,21 @@ it('retains resolved source identity for an explicit retry after native setup fa
         ->and($plan['already_active'])->toBeFalse();
 });
 
-it('refuses unavailable native publication and database combinations before reservation', function (bool $database, string $type): void {
+it('refuses a database before reservation and admits every Project type', function (bool $database, string $type): void {
     $this->project->update(['type' => $type]);
+    $assert = fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project->refresh(), $this->node, $database);
 
-    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project->refresh(), $this->node, $database))
-        ->toThrow(ResourceOperationException::class, 'native publication');
-})->with([[true, 'node-package'], [false, 'laravel-app'], [false, 'symfony-app']]);
+    $database ? expect($assert)->toThrow(ResourceOperationException::class, 'native publication')
+        : expect($assert)->not->toThrow(ResourceOperationException::class);
+})->with([[true, 'node-package'], [false, 'node-package'], [false, 'laravel-app'], [false, 'symfony-app']]);
+
+it('refuses a task VM Node, whose workspace comes from tasks:provision', function (): void {
+    TaskVm::query()->create(['name' => 'create-task-vm', 'provider' => 'incus', 'state' => 'provisioning',
+        'node_id' => $this->node->id, 'host_node_id' => $this->node->id, 'wireguard_ip' => '10.44.9.9']);
+
+    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project, $this->node, false))
+        ->toThrow(ResourceOperationException::class, 'tasks:provision');
+});
 
 it('does not accept a caller-selected account in development source admission', function (): void {
     expect(fn () => app(NativeInstanceProvisioningIntent::class)->create($this->instance, [...$this->input, 'user' => 'root']))

@@ -1,8 +1,9 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, single Swamp Node, DECISIONS 1 (token minted at admission, vault.get), Gateway renders .env from the Project env template (orbit-gateway-renders-create-env; Nick 2026-11-01), budget rule swamp-operation-time-budgets (<10 s, 60 s).
-  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (rule 22: cfgmgmt file/systemd, 0600 credential file for the private fetch).
+  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (rule 22: cfgmgmt file/systemd, 0600 credential file for the private fetch); 2026-11-03, rule 25 (minimal chart).
   %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, rendered by the Gateway and written by the same file step.
-  %% status: reviewed
+  %% Decided: Nick 2026-11-03, a web-serving Project gets its derived Route on the main path (requiresRoute); --domain overrides the domain; the Route reuses the route:create child.
+  %% status: draft
   %% command: instance:create
   %% kind: instance.create
   autonumber
@@ -15,156 +16,43 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
   CLI->>GW: instance:create 7 12 blog
-  %%> Command:
-  %%> - `orbit instance:create 7 12 blog`
-  %%> - syntax: `<project> <node> <name> [--branch=BRANCH] [--domain=HOST] [--root=PATH] [--database-server=SLUG]`
-  %%> Input:
-  %%> - Project, app-dev Node and Instance name
-  %%> - optional: branch, domain, Database server for the Instance's database
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
-  opt --branch
-    Note over GW: Override source branch
-    %%> What it changes:
-    %%> - selects the supplied branch instead of deriving it from the Instance name and Project default
-  end
-  opt --root
-    Note over GW: Override application root
-    %%> What it changes:
-    %%> - validates and records the relative root instead of using the Project root
-  end
-  opt --domain
-    GW--xCLI: Route create unavailable<br/>operation.kind_unavailable
-    %%> Result:
-    %%> - native create refuses an explicit domain before starting a run
-  end
   opt --database-server
-    GW--xCLI: Database unavailable<br/>operation.kind_unavailable
-    %%> Result:
-    %%> - native create currently refuses database provisioning before starting a run
-    %%> - the owned-database path would render and write `.env.testing` for MySQL or PostgreSQL; it is unavailable here
-    %%> - no `.env.testing` is rendered or written on the main path
+    Note over GW: Plan the owned database
   end
-  Note over GW: Validate, render .env<br/>Instance 42 reserved, task #5121
-  %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - the Node has the `app-dev` role
-  %%> - native create currently accepts only a non-web Project without Route or database provisioning
-  %%> - the Instance name and path are free
-  %%> Renders .env:
-  %%> - from the Project's stored env template, with its placeholders
-  %%> - filled with Instance values: `APP_URL`, a new `APP_KEY`, database keys
-  %%> Result:
-  %%> - Instance 42 recorded as reserved, with its rendered environment
-  %%> - task #5121 recorded with the full intent
-  %%> - nothing has happened on the Node yet
+  Note over GW: Validate, render .env<br/>reserve Instance, Route · #5121
+  %%> Why the Route first:
+  %%> - the Route changes the Process units, so the Gateway reserves it before it captures the Processes
   GW->>SW: Push token and .env<br/>vault: github-token, env-5121
   %%> Why:
-  %%> - the repository is private, so the clone needs a GitHub token
-  %%> - only the Gateway holds the GitHub App key
-  %%> - `.env` can hold secrets, which travel only through the vault
-  %%> What it does:
-  %%> - mints a read token for this one repository, valid 1 hour
-  %%> - pushes the token and the rendered `.env` into Swamp's vault
-  %%> Result:
-  %%> - the run reads both from the vault; no step calls the Gateway back (decision 1)
+  %%> - secrets reach the run only through the vault; no step calls the Gateway back (decision 1)
   GW->>SW: Start run, full intent<br/>operation-instance-create · 60 s
-  %%> What it does:
-  %%> - starts one run of `operation-instance-create` on Swamp serve (Node 209)
-  %%> Inputs:
-  %%> - everything the run needs: Node address, paths, branch, setup steps
-  %%> - secrets only as vault key names
-  %%> Budget:
-  %%> - 60 s for the whole run, target under 10 s
   GW-->>CLI: 202 Accepted<br/>operation #5121
-  %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the work continues in Swamp; the CLI follows it with `operation:show`
   SW->>N: Clone, check out branch<br/>file 0600 cred · git clone
-  %%> How:
-  %%> - Swamp reaches the Node over `@swamp/ssh` from 209
-  %%> - `@swamp/cfgmgmt/file` writes the vault token as a 0600 credential file; git reads it, so the token never enters argv
-  %%> What it does:
-  %%> - clones the repository into the Instance path and checks out the branch
-  %%> - removes the credential file at the end of the step
-  %%> Returns:
-  %%> - the checked-out commit, as this step's output
-  %%> Retry:
-  %%> - a guard skips the clone when the checkout already exists
-  %%> Runs as:
-  %%> - the Node's own user, not root
+  %%> Why the file:
+  %%> - git reads the token from it, so the token never enters argv
   SW->>N: Write .env<br/>cfgmgmt/file · 0640 orbit-env
-  %%> What it does:
-  %%> - creates the `orbit-env` group when the Node lacks it, with `@swamp/cfgmgmt/group`
-  %%> - writes the rendered `.env` from `vault.get env-5121` into the checkout as root, owned by the Node user with group `orbit-env`, mode 0640, so the Node agent can report its key names
-  %%> - selects the Node's Vite+ store for this Project (`VP_HOME`), so `vp` works in the setup steps
-  %%> Not included:
-  %%> - renders nothing; the Gateway already rendered `.env`
-  %%> - installs no dependencies; `composer install` and `vp install` are setup steps
-  %%> - starts no Process; that happens after the setup steps
+  opt --database-server
+    SW->>N: Create owner and databases<br/>child operation-database-create
+  end
   SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
-  %%> What it does:
-  %%> - runs the Project's setup steps in order, as the Node's managed user, from the repository root
-  %%> Typical steps:
-  %%> - `composer install`
-  %%> - `vp install`
-  %%> - `php artisan migrate`
-  %%> How:
-  %%> - one `@swamp/ssh exec` per step; the first failure stops the run with that step's exit code
-  %%> Limits:
-  %%> - each step has its own timeout
-  %%> - the whole run stays inside the 60 s budget
-  SW->>N: Create, start Processes<br/>@swamp/cfgmgmt/systemd · forEach
-  %%> What it does:
-  %%> - creates the Instance's Processes from the Project's Process definitions for `development`
-  %%> - starts them, for example the Vite dev server (`vp-dev`) or a queue worker
-  %%> How:
-  %%> - one `forEach` item per Process, all at once: the unit file and `ensure: running` in `@swamp/cfgmgmt/systemd`
-  %%> - the behavior's `check` is the end check: each Process is running
-  %%> Why here:
-  %%> - after the setup steps, because Processes need the installed dependencies
-  %%> Today:
-  %%> - Project definitions only accept `production`; `development` must be added
+  SW->>N: Create, start Processes<br/>child operation-process-create
+  %%> Why after setup:
+  %%> - Processes need the installed dependencies
+  SW->>N: Create the Route<br/>child operation-route-create
+  %%> When:
+  %%> - only for a web-serving Project
   alt all steps pass in budget
-    N-->>SW: Processes running<br/>systemd check passed
-    %%> Returns:
-    %%> - the systemd check passed for every Process
-    %%> - the checked-out commit is already an output of the clone step
-    %%> Not returned:
-    %%> - nothing about `.env`; the Gateway rendered and stored it before the run
+    N-->>SW: Site answers<br/>Processes running
     SW-->>GW: Run succeeded<br/>terminal event · finish-result
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event and reads the run's outputs
-    %%> - Swamp never calls the Gateway; the Gateway reads
     Note over GW: Record result<br/>commit · Instance 42 → active
-    %%> Result:
-    %%> - the commit is recorded
-    %%> - Instance 42 becomes active
-    %%> - task #5121 succeeds
   else a step fails or 60 s ends
     N--xSW: exit ≠ 0 or timeout
-    %%> When:
-    %%> - a step exits with an error, or the 60 s budget runs out
-    %%> Effect:
-    %%> - the run stops at that step
     SW--xGW: Run failed<br/>failed_step, error_code
-    %%> The Gateway reads:
-    %%> - which step failed
-    %%> - its error code
     Note over GW: Keep Instance, mark failed<br/>task → failed · retry is new task
-    %%> Result:
-    %%> - Instance 42 stays, marked failed, so you can see what happened
-    %%> - task #5121 fails
-    %%> Retry:
-    %%> - a retry is a new task; the Gateway never re-runs work by itself
+    %%> On failure:
+    %%> - the Instance stays so you can see what happened; the Gateway never re-runs work by itself
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5121
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status
-    %%> - the result, once the task has ended
   end
