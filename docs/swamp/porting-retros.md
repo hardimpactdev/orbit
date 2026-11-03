@@ -105,7 +105,7 @@ The porting reference's earlier changelog rows, newest first; lane 17 wrote v0 i
 
 ## Proof receipts
 
-Lane 26 adds one row for each receipt from the topology loop ([F13](/swamp/porting#port-inside-the-topology-f13)). The fault column says whether the proof failed because of the kind or the topology. A topology fault fixes the topology and bumps its version in the same PR.
+Lane 26 adds one row for each receipt from the topology loop ([F13](/swamp/porting#build-inside-the-topology-f13)). The fault column says whether the proof failed because of the kind or the topology. A topology fault fixes the topology and bumps its version in the same PR.
 
 | Receipt | Kinds | Topology and version | Result | What the proof caught | Fault | Lesson |
 | --- | --- | --- | --- | --- | --- | --- |
