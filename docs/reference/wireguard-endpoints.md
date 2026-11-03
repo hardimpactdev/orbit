@@ -5,7 +5,6 @@ covers:
   - apps/gateway/app/Domain/WireGuard/WireGuardEndpoint.php
   - apps/gateway/app/Infrastructure/WireGuard/VpnConfigurationRepository.php
   - apps/gateway/app/Console/Commands/BootstrapGatewayCommand.php
-  - apps/gateway/app/Actions/Gateway/GatewayBootstrapIdentityValidator.php
   - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
 ---

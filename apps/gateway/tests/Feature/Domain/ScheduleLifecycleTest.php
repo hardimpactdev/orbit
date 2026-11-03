@@ -2,11 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Actions\Schedules\CompleteScheduleAction;
-use App\Actions\Schedules\DestroyScheduleAction;
 use App\Domain\Schedules\ScheduleRunStatus;
-use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -56,18 +53,4 @@ it('does not update or recreate state for removing and deleted completion callba
     $schedule->delete();
     expect($complete->execute($id, ScheduleRunStatus::Success, $this->node))->toBeNull()
         ->and(Schedule::query()->whereKey($id)->exists())->toBeFalse();
-});
-
-it('cascades only the selected Instance schedules and blocks Node removal while hosted', function (): void {
-    $owned = lifecycle_schedule_record($this->instance, $this->node);
-    $nodeSchedule = lifecycle_schedule_record($this->node, $this->node);
-
-    expect(fn () => new ScheduleTargetUseGuard()->assertNodeRemovable($this->node))
-        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_in_use');
-
-    new CascadeInstanceSchedulesAction(new DestroyScheduleAction($this->runtime))->execute($this->instance->id);
-
-    expect(Schedule::query()->whereKey($owned->id)->exists())->toBeFalse()
-        ->and(Schedule::query()->whereKey($nodeSchedule->id)->exists())->toBeTrue()
-        ->and($this->runtime->removed)->toContain(['id' => $owned->id, 'cascade' => true]);
 });

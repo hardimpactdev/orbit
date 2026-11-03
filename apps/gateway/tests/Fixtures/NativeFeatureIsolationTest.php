@@ -10,7 +10,6 @@ use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Ssh\HostKeyScanner;
@@ -26,7 +25,6 @@ use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\GuardsSudo;
 use Tests\Support\NoSudo;
@@ -48,7 +46,6 @@ final class NativeFeatureIsolationTest extends FeatureTestCase
             HostKeyScanner::class => FakeHostKeyScanner::class,
             NativeProcessRunner::class => SshGuardedProcessRunner::class,
             NodeCaddyBuilds::class => FakeNodeCaddyBuilds::class,
-            TaskVmPackageCacheMount::class => FakeTaskVmPackageCacheMount::class,
             VitePortRuntime::class => FakeVitePortRuntime::class,
             NodeAgentRuntime::class => FakeNodeAgentRuntime::class,
             RouterLanIngressReconciler::class => FakeRouterLanIngressReconciler::class,

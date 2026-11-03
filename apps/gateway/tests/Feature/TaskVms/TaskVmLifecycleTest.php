@@ -47,7 +47,6 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
-use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -363,14 +362,6 @@ describe('allocation', function (): void {
 });
 
 describe('claim', function (): void {
-    it('waits without a task VM while task VMs are off', function (): void {
-        tvm_life_settings(enabled: false);
-
-        expect(fn () => app(TaskVmWorkspace::class)->node(tvm_life_group()))
-            ->toThrow(TaskVmException::class, 'Task VMs are not enabled on this Gateway.')
-            ->and(TaskVm::query()->count())->toBe(0);
-    });
-
     it('makes a subtask whose topology needs a larger VM wait with its cause', function (): void {
         $group = tvm_life_group(TaskGroupStatus::Running);
         $group->update(['taskable_type' => (new Instance)->getMorphClass(), 'taskable_id' => Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/home/orbit/apps/orbit/workspace'])->id]);
@@ -387,24 +378,6 @@ describe('claim', function (): void {
         expect(fn () => $admission->prepare($group->refresh(), $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::TooSmall);
     });
 
-    it('waits for a captured task VM and returns its Node only after native readiness', function (): void {
-        Queue::fake();
-        $group = tvm_life_group();
-
-        app(AllocateTaskVmAction::class)->capture($group);
-
-        expect(fn () => app(TaskVmWorkspace::class)->node($group))
-            ->toThrow(fn (TaskCapacityException $wait) => expect($wait->wait)->toBe(TaskWait::TaskVm)->and($wait->getMessage())->toBe('Task VM: provisioning.'));
-
-        $vm = TaskVm::query()->sole();
-        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.bootstrap_failed', 'error_message' => 'Cloud-init failed.']);
-        expect(fn () => app(TaskVmWorkspace::class)->node($group))
-            ->toThrow(TaskVmFailedException::class, "Task VM failed: {$vm->name}: task_vm.bootstrap_failed: Cloud-init failed. Cancel the group to destroy the VM.");
-
-        $node = tvm_life_node('tvm-'.$vm->id, '10.44.0.129', role: RoleName::AppDev);
-        $vm->update(['state' => TaskVmState::Ready, 'node_id' => $node->id]);
-        expect(app(TaskVmWorkspace::class)->node($group)->id)->toBe($node->id);
-    });
 });
 
 describe('retained task VM workspace removal', function (): void {

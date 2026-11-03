@@ -5,7 +5,6 @@ covers:
   - apps/web/**
   - bin/web-deploy
   - apps/gateway/app/Infrastructure/Gateway/GatewayCaddyConfigRenderer.php
-  - apps/gateway/app/Infrastructure/Gateway/GatewayWebDirectoryConverger.php
   - apps/gateway/app/Actions/Gateway/ConvergeGatewayWebAction.php
   - apps/gateway/app/Console/Commands/ConvergeGatewayWebCommand.php
 ---
