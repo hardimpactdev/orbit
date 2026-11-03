@@ -2,6 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4 + round 2 (target_set single path, R2), Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Create and change targets, Change a production target set).
   %% Tightened: flow-tighten 2026-11-02, rules 2, 3, 22 (instance:create owns web-root access; DNS only outside the TLD; cfgmgmt file/firewall).
   %% Corrected 2026-11-02: a development target is not record-only. Its site root is the target Instance's checkout, so a published site moves in route:create's one publish step.
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: draft
   %% command: route:target:set
   %% kind: route.target_set
@@ -16,15 +17,18 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:target:set 9 12<br/>--targets=15 --remove=19
+  CLI->>GW: route:target:set 9 12
   %%> Command:
-  %%> - `orbit route:target:set 9 12 --targets=15 --reassign=18:4 --remove=19`
+  %%> - `orbit route:target:set 9 12`
   %%> - syntax: `<route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]...`
   %%> Input:
-  %%> - Route 9 and Instance 12
-  %%> - without options: one target
-  %%> - with options: the complete ordered production target set, here Instances 12 and 15
-  %%> - each detached Instance needs a disposition: `--reassign=18:4` moves Instance 18 to Route 4, `--remove=19` allows removing Instance 19
+  %%> - Route 9 and Instance 12: the one target of Route 9
+  %%> Optional:
+  %%> - `--targets=15`: the complete ordered production target set, here Instances 12 and 15; it adds the set steps in `opt --targets`
+  %%> - `--reassign=18:4`: a detached Instance 18 moves to Route 4
+  %%> - `--remove=19`: allows removing a detached Instance 19
+  %%> - each detached Instance needs one of these dispositions; `--reassign` and `--remove` also send the request as a target set
+  %%> - `--idempotency-key` and `--json` change no step
   Note over GW: Guard, lock, record intent<br/>targets unchanged · task #5140
   %%> Requirements:
   %%> - your Node has an access grant to every target's Node
@@ -49,10 +53,12 @@ sequenceDiagram
     GW-->>CLI: Target set<br/>task #5140 succeeded
     %%> What you get:
     %%> - the final result at once; there is nothing to follow
-  else published target or production set
+  else published Route
     GW->>SW: Start run, full intent<br/>operation-route-target-set
     %%> What it does:
     %%> - starts one Swamp run on serve (Node 209)
+    %%> When:
+    %%> - Route 9's sites are published; a target set always starts a run
     %%> Inputs:
     %%> - each step's whole files, rendered by the Gateway: Caddyfiles, PHP pools, `APP_URL` lines, certificate leaves, LAN rules and probes, per Node
     %%> - production `.env` material only as vault key names in `orbit-control-inputs` (R3)
@@ -77,17 +83,19 @@ sequenceDiagram
     GW-->>SW: Signed certificates<br/>Orbit CA key stays in Gateway
     %%> Returns:
     %%> - one public certificate bundle per leaf
-    alt one development target
-      SW->>N: Install cert, publish site<br/>route:create's publish step
-      %%> When:
-      %%> - Route 9's sites are published, so its site moves from the previous target's checkout to Instance 12's
-      %%> What it does:
-      %%> - runs the same child as `route:create`: installs the certificate, writes each Node's whole Caddyfile, validates it and reloads Caddy
-      %%> - the previous target's Node loses the site; Instance 12's Node gains it
-      %%> Not included:
-      %%> - web-root access: `instance:create` already gave Caddy read access to Instance 12's checkout (rule 2)
-    else production target set
+    SW->>N: Install cert, publish site<br/>route:create's publish step
+    %%> When:
+    %%> - Route 9's sites are published, so its site moves from the previous target's checkout to Instance 12's
+    %%> - with `--targets`, this step has no Node and the set steps below run instead
+    %%> What it does:
+    %%> - runs the same child as `route:create`: installs the certificate, writes each Node's whole Caddyfile, validates it and reloads Caddy
+    %%> - the previous target's Node loses the site; Instance 12's Node gains it
+    %%> Not included:
+    %%> - web-root access: `instance:create` already gave Caddy read access to Instance 12's checkout (rule 2)
+    opt --targets
       SW->>N: Stage the new targets<br/>@swamp/cfgmgmt/file · firewall
+      %%> When:
+      %%> - only for a target set: `--targets`, `--reassign` or `--remove`
       %%> What it does:
       %%> - per new Node: allows the Router on LAN port 443 with `@swamp/cfgmgmt/firewall`, installs the certificates, and writes the PHP pool, the staged Caddyfile and the production `.env`
       %%> - the staged Caddyfile adds the new workload site beside the old ones and uses the temporary leaf
