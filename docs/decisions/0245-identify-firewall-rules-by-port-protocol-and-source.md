@@ -12,7 +12,7 @@ A firewall rule on a Node is identified by what UFW enforces: its port, protocol
 
 In progress.
 
-Supersedes [0241](/decisions/0241-firewall-source-allowlists). Decided by Nick on 2026-11-01.
+Supersedes ADR 0241. Decided by Nick on 2026-11-01.
 
 Principle: [One way, one name](/mission#principles) and [Security fits the real threat model](/mission#principles).
 
@@ -51,6 +51,6 @@ Rules are found by what they do, and one rule kind covers restriction. Lines tha
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
-- ADRs: supersedes [0241](/decisions/0241-firewall-source-allowlists).
+- ADRs: supersedes 0241.
 - Detail: [Firewall](/cli/firewall#rule-identity).
 - Verify: the fake-UFW script tests and the minimal-topology receipts for allow, deny, remove, an ambiguous remove, a deny against a WireGuard peer, and a refused deny on port 22.

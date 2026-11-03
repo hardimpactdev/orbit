@@ -382,7 +382,7 @@ A rollback or manual deployment can also end between the tick's read of the hist
 
 ## Swamp policy contracts
 
-The [ADR 0238 trial](/decisions/0238-trial-two-swamp-slices-before-a-wider-move) exposes policy evidence through the Gateway. Swamp never reads GitHub, the database, or a notifier directly. These contracts require Gateway Node access. Policy starts stay on API/MCP; receipt resolution also has an operator CLI command.
+The Gateway exposes policy evidence to Swamp. Swamp never reads GitHub, the database, or a notifier directly. These contracts require Gateway Node access. Policy starts stay on API/MCP; receipt resolution also has an operator CLI command.
 
 | Request | Evidence or effect |
 | --- | --- |
