@@ -790,6 +790,8 @@ A single target binding grants development source access when the Route is not a
 
 A target pool stages workload sites under temporary certificate scopes before the Router selects them; [Native Route targets](/reference/native-route-targets) describes the steps. A new version of a certificate scope that a site still names installs only after the cutover, so the old site keeps a matching certificate until it leaves.
 
+Target-set TLS probes use pinned SSH argv commands from 209. A failed workload probe stops the Router switch. After the switch, every staged workload gets its final Caddyfile before temporary certificates are deleted, including retained workloads whose final file did not change.
+
 Cluster Router set starts one native `operation-cluster-router` run, and unset starts one `operation-cluster-router-unset` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent.
 
 Native certificate children own issuance, inspection, trust installation and activation. The retained Node residue cleanup path only removes an admitted certificate scope after Caddy withdrawal. It resolves the admitted user locally and refuses a supplied home that does not match that account. It cannot request, publish, trust or reload certificates.
