@@ -33,7 +33,7 @@ Deno.test("main Swamp runs do not share the pending slot", () => {
 Deno.test("account-gated native shards cover each tracked module once", async () => {
   const job = jobs["native-tests"], command = step(job, "Run the native workflow tests");
   strict(job);
-  assertEquals(command.env.NATIVE_SHARD, "${{ matrix.shard }}");
+  assertEquals(command.env.NATIVE_FILES, "${{ toJSON(matrix.files) }}");
   await temporary(async root => {
     await git(root, "init", "--quiet");
     await write(root + "/tests/_support/native_harness.ts", 'console.log("unused-fixture-runtime");\n');
@@ -45,9 +45,10 @@ Deno.test("account-gated native shards cover each tracked module once", async ()
     for (const name of ["untracked_native_test.ts", "ordinary_test.ts"]) {
       await write(modules + "/" + name, 'Deno.test("excluded", () => { throw new Error("ran"); });\n');
     }
-    const shards = job.strategy.matrix.shard;
-    assertEquals(shards, ["1/4", "2/4", "3/4", "4/4"]);
-    const execute = (shard: string) => shell(root, command.run, {NATIVE_SHARD: shard});
+    // File selection and balancing are exercised by tools/test_ci_native.py.
+    const files = (await git(root, "ls-files", "--", "extensions/*native_test.ts")).split("\n");
+    const shards = Array.from({length: 4}, (_, index) => files.filter((_, file) => file % 4 === index));
+    const execute = (shard: string[]) => shell(root, command.run, {NATIVE_FILES: JSON.stringify(shard), RUNNER_TEMP: root});
     const covered: number[] = [];
     for (const shard of shards) {
       const result = await execute(shard);
@@ -101,15 +102,15 @@ Deno.test("Operations shards cover every module once and preserve failure", asyn
 Deno.test("aggregate requires success from the entire matrix", async () => {
   const aggregate = jobs.tests;
   assertEquals(aggregate.name, "Swamp Deno tests");
-  assertEquals(aggregate.needs, ["test-shards", "native-tests"]);
-  assertEquals(aggregate.if, "always()");
+  assertEquals(aggregate.needs, ["test-shards", "native-tests", "native-plan"]);
+  assertEquals(aggregate.if, "always() && (github.event_name != 'merge_group' || github.workflow == 'CI')");
   assert(!("continue-on-error" in aggregate));
   const command = aggregate.steps[0];
   assertEquals(command.env.SHARDS_RESULT, "${{ needs.test-shards.result }}");
   assertEquals(command.env.NATIVE_RESULT, "${{ needs.native-tests.result }}");
   for (const shards of ["success", "failure", "cancelled", "skipped", "", "unknown"]) {
     for (const native of ["success", "failure", "skipped", ""]) {
-      const result = await shell(".", command.run, {SHARDS_RESULT: shards, NATIVE_RESULT: native});
+      const result = await shell(".", command.run, {SHARDS_RESULT: shards, NATIVE_RESULT: native, PLAN_RESULT: "success", NATIVE_SELECTED: "true"});
       assertEquals(result.code === 0, shards === "success" && native === "success", JSON.stringify([shards, native]));
     }
   }

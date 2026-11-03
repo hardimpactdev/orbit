@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main, 'task-*-handoff']
   workflow_dispatch:
@@ -48,7 +50,7 @@ jobs:
       - name: Check changed PHP syntax
         if: steps.scope.outputs.selected == 'true'
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
@@ -126,7 +128,7 @@ jobs:
       - name: Check flow charts
         if: steps.scope.outputs.selected == 'true'
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
         run: node bin/check-flows
 
   project-check:
@@ -168,7 +170,7 @@ jobs:
       - name: Run the Project check
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || '' }}
         run: |
           git update-ref refs/remotes/origin/main "$(git rev-parse origin/main 2>/dev/null || git rev-parse HEAD)"
           if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
@@ -294,7 +296,7 @@ jobs:
       - name: Select changed build inputs
         id: plan
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
@@ -304,15 +306,19 @@ jobs:
 
   swamp:
     name: Swamp
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     uses: ./.github/workflows/swamp-shape.yml
     with:
       working-directory: swamp
-      changed-only: true
+      changed-only: false
     secrets:
-      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
-      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
-      SWAMP_NATIVE_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_NATIVE_API_KEY || '' }}
-      SWAMP_NATIVE_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_NATIVE_SIGNIN_TOKEN || '' }}
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+      SWAMP_NATIVE_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_NATIVE_API_KEY || '' }}
+      SWAMP_NATIVE_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_NATIVE_SIGNIN_TOKEN || '' }}
   gateway-release:
     name: Gateway release inputs
     needs: changes

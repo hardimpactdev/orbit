@@ -20,6 +20,10 @@ on:
         required: true
       SWAMP_NATIVE_SIGNIN_TOKEN:
         required: true
+  merge_group:
+    types: [checks_requested]
+  schedule:
+    - cron: '17 3 * * *'
 permissions:
   contents: read
 concurrency:
@@ -28,13 +32,15 @@ concurrency:
 
 jobs:
   shape:
+    # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
+    if: github.event_name != 'merge_group' || github.workflow == 'CI'
     name: Swamp shape gate
     runs-on: [self-hosted, hardimpact]
     # The gate takes a few minutes; a hung step fails here instead of holding main for hours.
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ inputs.working-directory || 'swamp' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -75,7 +81,7 @@ jobs:
       - name: Reject new violations with current and base rules
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
+          SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           base="$SHAPE_BASE"
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
@@ -92,12 +98,14 @@ jobs:
           path: ${{ runner.temp }}/shape.json
 
   validate:
+    # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
+    if: github.event_name != 'merge_group' || github.workflow == 'CI'
     name: Swamp workflow validate
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ inputs.working-directory || 'swamp' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -119,8 +127,8 @@ jobs:
       - name: Native workflow validation with dedicated registry-read credentials
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
@@ -130,8 +138,8 @@ jobs:
       - name: Validate release grants with pinned serve check-config
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: |
           python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
       - name: Check placement on every step
@@ -145,70 +153,250 @@ jobs:
             ${{ runner.temp }}/workflow-validation.json
             ${{ runner.temp }}/grant-validation.json
 
-  native-tests:
-    # The pinned runtime refuses every command without an account, so native workflow
-    # tests use a separate event-scoped token that also permits sandbox serve.
-    name: Swamp native tests ${{ matrix.shard }}
-    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1/4, 2/4, 3/4, 4/4]
+  native-plan:
+    # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
+    if: github.event_name != 'merge_group' || github.workflow == 'CI'
+    name: Select and balance native tests
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      selected: ${{ steps.plan.outputs.selected }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ inputs.working-directory || 'swamp' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-scope
-        if: inputs.changed-only
-        id: scope
+          fetch-depth: 2
+      - name: Select files from the immutable event tree
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Sum of native case times per file, main CI 41623850432 (2026-11-03).
+          # Removed files drop out; new files use 60s until the JUnit artifacts are measured.
+          NATIVE_SECONDS: >-
+            {"automatic-deploy/fire":11.0, "dependency_workflow":56.0, "native_host_method":34.0,
+            "official_ssh_canary":21.0, "operations/analytics-runtime/runtime":118.0, "operations/analytics/disable":12.0,
+            "operations/analytics/enable":161.0, "operations/conn-pairing/create":81.0, "operations/conn-revocation/revocation_commands":186.0,
+            "operations/dependency-merge/merge":85.0, "operations/dependency-upgrade/inputs":11.0, "operations/documents/cleanup":15.0,
+            "operations/failure":12.0, "operations/firewall/firewall":55.0, "operations/fleet-recipe/recipe":310.0,
+            "operations/fleet/recipe-pr/recipe_pr":141.0, "operations/fleet/release":287.0, "operations/horizon/handoff":119.0,
+            "operations/instance-deploy/development":521.0, "operations/instance-deploy/production":755.0, "operations/instance-dev-command/create":403.0,
+            "operations/instance-dev-command/destroy":302.0, "operations/instance-dev-command/run_steps":75.0, "operations/instance-env-import/env_import":24.0,
+            "operations/instance-lifecycle/environment":116.0, "operations/instance-lifecycle/rollback":70.0, "operations/instance-lifecycle/runtime":17.0,
+            "operations/instance-lifecycle/transfer":101.0, "operations/instance-route-workload/workload":57.0, "operations/instance-source-command/source":48.0,
+            "operations/instance-vp-command/vp":43.0, "operations/integrations/metrics_credentials":57.0, "operations/integrations/metrics_exporter":201.0,
+            "operations/integrations/metrics_role":231.0, "operations/node-bootstrap/bootstrap_probe_209":6.0, "operations/node-bootstrap/bootstrap_script":29.0,
+            "operations/node-bootstrap/macos_inspect_209":17.0, "operations/node-enrollment-plan/enrollment":129.0, "operations/node-role-command/command":9.0,
+            "operations/node-worker-assets/credential_monitor":5.0, "operations/node/cli_install":135.0, "operations/node/removal_command":412.0,
+            "operations/node/role_add":313.0, "operations/node/role_relocate":103.0, "operations/node/serve_reload":21.0,
+            "operations/node/worker_known_hosts":10.0, "operations/php/monitor-command/monitor":85.0, "operations/process-commands/process":277.0,
+            "operations/processes-schedules/process_instance_install":122.0, "operations/project-maintenance/inputs":165.0, "operations/proof-reaper/reaper":13.0,
+            "operations/routes/caddy_command":95.0, "operations/routes/cluster_router":56.0, "operations/routes/create":54.0,
+            "operations/routes/dns_command":34.0, "operations/routes/ingress":80.0, "operations/routes/lan_command":150.0,
+            "operations/routes/publication_delta":190.0, "operations/routes/remove":27.0, "operations/routes/target_set":51.0,
+            "operations/routes/update":77.0, "operations/schedule-run/create":27.0, "operations/schedule-run/destroy":56.0,
+            "operations/schedule-run/enable":16.0, "operations/schedule-run/instance":6.0, "operations/schedule-run/lifecycle":408.0,
+            "operations/schedule-run/run":86.0, "operations/task-maintenance/ending":176.0, "operations/task-maintenance/maintenance":212.0,
+            "operations/task-repository/check":165.0, "operations/task-repository/check_ci":107.0, "operations/task-repository/provision":282.0,
+            "operations/task-repository/publication":223.0, "operations/task-repository/script_analysis":115.0, "operations/task-turn/turn":189.0,
+            "operations/task-vm-lifecycle/destroy":58.0, "operations/task-vm-lifecycle/lifecycle":145.0, "operations/task-vm-lifecycle/provision_composition":143.0,
+            "operations/task-vm-lifecycle/resume":78.0, "operations/task-vm-lifecycle/runtime":77.0, "operations/task-vm-lifecycle/upcloud_composition":446.0,
+            "operations/task-vm-lifecycle/upcloud_provider":263.0, "operations/task-vm-sweep/sweep":131.0, "operations/task-vm-workspace/workspace":65.0,
+            "operations/task-vms/cache_fill":87.0, "operations/task-vms/hub_209":142.0, "operations/task-vms/image_build":297.0,
+            "operations/task-vms/image_reaper":28.0, "operations/task-vms/provision_commands":244.0, "operations/task-vms/upcloud_image":322.0,
+            "operations/tools/native_test.ts":0.1, "operations/tools/tool":246.0, "operations/tools/tool_manager_setup":195.0,
+            "operations/vault-sync/setup":252.0, "operations/vault-sync/sync_bw_integration":0.0, "operations/vault-sync/sync_commands":277.0,
+            "operations/vault-sync/teardown":124.0, "operations/workflow_grant_patterns":16.0, "operations/workflow_group":7.0,
+            "operations/workflow_heavy_placement":54.0, "private_material":48.0, "retention":31.0}
+        run: |
+          python3 - <<'PYTHON'
+          import io, json, os, subprocess, zipfile
+          from pathlib import Path
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          def api(path):
+              return subprocess.check_output(["timeout", "30", "gh", "api", path])
+
+          def tested_tree(run, tree, base=None):
+              repo = os.environ["GITHUB_REPOSITORY"]
+              artifacts = json.loads(api(f"repos/{repo}/actions/runs/{run['id']}/artifacts"))
+              for artifact in artifacts["artifacts"]:
+                  if artifact["name"] != "swamp-native-tested-tree" or artifact["expired"]:
+                      continue
+                  with zipfile.ZipFile(io.BytesIO(api(f"repos/{repo}/actions/artifacts/{artifact['id']}/zip"))) as archive:
+                      tested = json.loads(archive.read("native-tested-tree.json"))
+                  if tested["tree"] == tree and (base is None or tested["base"] == base):
+                      return True
+              return False
+
+          def reused_tree(tree, base):
+              repo, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
+              # Queue batches may contain several PRs; equality of the complete tree is decisive.
+              runs = json.loads(api(f"repos/{repo}/actions/workflows/ci.yml/runs?event=merge_group&status=success&per_page=20"))
+              for run in runs["workflow_runs"]:
+                  if run["head_branch"].startswith("gh-readonly-queue/main/") and tested_tree(run, tree):
+                      print(f"Reuse successful merge queue run {run['id']}: exact tested tree")
+                      return True
+              for pr in json.loads(api(f"repos/{repo}/commits/{sha}/pulls")):
+                  if not pr["merged_at"] or pr["merge_commit_sha"] != sha or pr["head"]["repo"] is None:
+                      continue
+                  if pr["head"]["repo"]["full_name"] != repo or pr["base"]["repo"]["full_name"] != repo:
+                      continue
+                  runs = json.loads(api(f"repos/{repo}/actions/workflows/ci.yml/runs?event=pull_request&head_sha={pr['head']['sha']}&status=success&per_page=5"))
+                  for run in runs["workflow_runs"]:
+                      if tested_tree(run, tree, base):
+                          print(f"Reuse successful PR #{pr['number']} run {run['id']}: exact tested tree and base")
+                          return True
+              return False
+
+          files = git("ls-files", "--", "extensions/*native_test.ts").splitlines()
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          parents = git("rev-list", "--parents", "-n", "1", "HEAD").split()[1:]
+          tree, mode = git("rev-parse", "HEAD^{tree}"), "full"
+          base = parents[0] if parents else ""
+          if os.environ["GITHUB_EVENT_NAME"] in ("pull_request", "merge_group"):
+              base = event["merge_group"]["base_sha"] if os.environ["GITHUB_EVENT_NAME"] == "merge_group" else event["pull_request"]["base"]["sha"]
+              if subprocess.run(["git", "cat-file", "-e", base], capture_output=True).returncode:
+                  subprocess.run(["git", "fetch", "--no-tags", "--depth=1", "origin", base], check=True)
+              changed = git("diff", "--name-only", "--no-renames", base, "HEAD", "--").splitlines()
+              # git diff inside swamp/ still returns repository-relative paths.
+              families = set()
+              domains = {
+                  "route": ["routes", "instance-route-workload"], "vault": ["vault-sync"],
+                  "process": ["process-commands", "processes-schedules"], "schedule": ["schedule-run"],
+                  "project": ["project-maintenance"], "conn": ["conn-pairing", "conn-revocation"],
+              }
+              for path in changed:
+                  if path.startswith(("docs/", ".agents/")) or path.endswith((".md", ".mdx")):
+                      continue
+                  parts = path.split("/")
+                  if path.startswith("swamp/extensions/behaviors/operations/") and len(parts) > 5 and not parts[4].startswith("_"):
+                      families.add(parts[4])
+                  elif path.startswith("swamp/extensions/behaviors/") and len(parts) > 4 and parts[3] != "operations" and not parts[3].startswith("_"):
+                      family = parts[3]
+                      if any(f.startswith("extensions/behaviors/" + family + "/") for f in files):
+                          families.add("@" + family)
+                      else:
+                          break
+                  elif path.startswith(("swamp/workflows/workflow-operation-", "swamp/proof/")):
+                      name = (parts[2] if path.startswith("swamp/proof/") else parts[-1]).removeprefix("workflow-operation-").split(".")[0]
+                      domain = name.split("-")[0]
+                      matches = domains.get(domain, [f.split("/")[3] for f in files if f.startswith("extensions/behaviors/operations/" + domain)])
+                      if not matches:
+                          break
+                      families.update(matches)
+                  else:
+                      break
+              else:
+                  mode = "family"
+                  files = [f for f in files if (f.split("/")[3] in families if f.startswith("extensions/behaviors/operations/") and len(f.split("/")) > 4 else "@" + f.split("/")[2] in families)]
+              Path(os.environ["RUNNER_TEMP"], "native-tested-tree.json").write_text(json.dumps({"tree": tree, "base": base}))
+          elif os.environ["GITHUB_EVENT_NAME"] == "push" and os.environ["GITHUB_REF"] == "refs/heads/main":
+              try:
+                  if reused_tree(tree, base):
+                      files, mode = [], "reused"
+              except (subprocess.SubprocessError, KeyError, ValueError, zipfile.BadZipFile):
+                  print("No usable successful PR or queue tree record; run the full native suite")
+
+          weights = json.loads(os.environ["NATIVE_SECONDS"])
+          bins, loads = [[] for _ in range(4)], [0.0] * 4
+          for path in sorted(files, key=lambda f: (-weights.get(f.removeprefix("extensions/behaviors/").removesuffix("_native_test.ts"), 60), f)):
+              index = min(range(4), key=lambda i: (loads[i], i))
+              bins[index].append(path)
+              loads[index] += weights.get(path.removeprefix("extensions/behaviors/").removesuffix("_native_test.ts"), 60)
+          matrix = {"include": [{"shard": f"{i+1}/4", "files": paths} for i, paths in enumerate(bins) if paths]}
+          print(f"Native plan: {mode}, {len(files)} files, measured shard work seconds {loads}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("selected=" + str(bool(files)).lower() + "\n")
+              output.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
+          PYTHON
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
-          job: swamp
+          name: swamp-native-tested-tree
+          path: ${{ runner.temp }}/native-tested-tree.json
+          retention-days: 14
+
+  native-tests:
+    # The pinned runtime refuses every command without an account, so native workflow
+    # tests use a separate event-scoped token that also permits sandbox serve.
+    name: Swamp native tests ${{ matrix.shard }}
+    needs: native-plan
+    if: needs.native-plan.outputs.selected == 'true'
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.native-plan.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || 'swamp' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
-        if: ${{ runner.environment != 'self-hosted' && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
+        if: runner.environment != 'self-hosted'
         with:
           deno-version: v2.9.8
           cache: true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
       - uses: ./.github/actions/php
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           coverage: none
       - name: Run the native workflow tests
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_NATIVE_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_NATIVE_SIGNIN_TOKEN || '' }}
-          NATIVE_SHARD: ${{ matrix.shard }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_NATIVE_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_NATIVE_SIGNIN_TOKEN || '' }}
+          NATIVE_FILES: ${{ toJSON(matrix.files) }}
         run: |
           SWAMP_BIN=$(deno run -A tests/_support/native_harness.ts | tail -n 1)
           export SWAMP_BIN
-          mapfile -t files < <(git ls-files -- 'extensions/*native_test.ts')
-          DENO_JOBS=4 deno test --parallel -A --shard="$NATIVE_SHARD" "${files[@]}"
+          mapfile -t files < <(jq -r '.[]' <<< "$NATIVE_FILES")
+          ((${#files[@]}))
+          DENO_JOBS=4 deno test --parallel -A --junit-path="$RUNNER_TEMP/native-results.xml" "${files[@]}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: swamp-native-results-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/native-results.xml
 
   tests:
     name: Swamp Deno tests
-    needs: [test-shards, native-tests]
-    if: always()
+    needs: [test-shards, native-tests, native-plan]
+    if: always() && (github.event_name != 'merge_group' || github.workflow == 'CI')
     runs-on: ubuntu-26.04
     steps:
       - name: Require every Operations shard and the native tests
         env:
           SHARDS_RESULT: ${{ needs.test-shards.result }}
           NATIVE_RESULT: ${{ needs.native-tests.result }}
+          PLAN_RESULT: ${{ needs.native-plan.result }}
+          NATIVE_SELECTED: ${{ needs.native-plan.outputs.selected }}
         run: |
-          if [[ "$SHARDS_RESULT" != success || "$NATIVE_RESULT" != success ]]; then
-            echo "::error::Operations shards ($SHARDS_RESULT) or native tests ($NATIVE_RESULT) did not succeed"
+          case "$NATIVE_SELECTED:$NATIVE_RESULT" in
+            true:success|false:skipped) native_ok=true ;;
+            *) native_ok=false ;;
+          esac
+          if [[ "$SHARDS_RESULT" != success || "$PLAN_RESULT" != success || "$native_ok" != true ]]; then
+            echo "::error::Unit shards ($SHARDS_RESULT), native plan ($PLAN_RESULT), native tests ($NATIVE_SELECTED:$NATIVE_RESULT)"
             exit 1
           fi
 
   test-shards:
+    # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
+    if: github.event_name != 'merge_group' || github.workflow == 'CI'
     name: Swamp Deno shard ${{ matrix.name }}
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
@@ -236,7 +424,7 @@ jobs:
             shard: 1/1
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ inputs.working-directory || 'swamp' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
