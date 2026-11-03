@@ -72,3 +72,4 @@ analytics.enable
 analytics.disable
 tasks.turn
 instance.clone
+instance.deploy

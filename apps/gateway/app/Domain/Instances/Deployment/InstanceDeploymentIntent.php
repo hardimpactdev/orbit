@@ -66,7 +66,7 @@ final readonly class InstanceDeploymentIntent
             || $instance->production_home !== '/home/orbit-app-'.$instance->project_id) {
             throw new ResourceOperationException('deployment_config.unavailable', 'The production account does not match this Project.', 409);
         }
-        [$runtime, $refresh] = $this->runtimeIntent($instance);
+        [$runtime, $refresh] = $this->runtimeIntent($instance, provisioning: ! $rollback);
 
         return [
             'runtime_synchronous' => false,
@@ -93,12 +93,14 @@ final readonly class InstanceDeploymentIntent
     }
 
     /** @return array{array<string,mixed>|null,array<string,mixed>|null} */
-    public function runtimeIntent(Instance $instance, ?Route $activating = null): array
+    public function runtimeIntent(Instance $instance, ?Route $activating = null, bool $provisioning = false): array
     {
         if (! is_string($instance->selected_php_version)) {
             return [null, null];
         }
-        $identity = ProductionPhpRuntimeIdentity::from($instance);
+        $identity = $provisioning
+            ? ProductionPhpRuntimeIdentity::forProvisioning($instance, $instance->selected_php_version)
+            : ProductionPhpRuntimeIdentity::from($instance);
         $applications = RouteWebRoot::servedApplications($instance, $activating);
         $webRoot = $activating?->web_root;
         if (is_string($webRoot) && RouteWebRoot::poolSuffix($instance, $webRoot) !== null) {

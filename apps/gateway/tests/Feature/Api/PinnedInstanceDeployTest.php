@@ -9,12 +9,14 @@ use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Orb220DeploymentApiFixture;
 
 beforeEach(function (): void {
     enable_operation_queue();
     $this->fixture = Orb220DeploymentApiFixture::create();
+    $this->fixture->nativeStart();
     $this->fixture->instance->update(['auto_deploy' => true, 'deployment_branch' => 'release']);
     $this->sha = str_repeat('b', 40);
     $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip]);
@@ -138,6 +140,8 @@ it('keeps the current caller name on automatic admission, replay, receipt and ca
         ->assertJsonPath('data.caller_node_name', 'renamed-policy-peer');
     $this->getJson('/api/v1/instances/'.$this->fixture->instance->id.'/deploy/automatic/receipt?request_key=deploy.17.b&commit='.$this->sha)
         ->assertOk()->assertJsonPath('data.operation.caller_node_name', 'renamed-policy-peer');
+    config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/fixture-ca.pem']);
+    Http::fake(['https://swamp.orbit/api/v1/cancel/workflow-run/*' => Http::response([], 200)]);
     $this->call('POST', '/api/v1/operations/'.$id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()
         ->assertJsonPath('data.status', 'cancelled')->assertJsonPath('data.caller_node_name', 'renamed-policy-peer');
 });
@@ -190,7 +194,7 @@ it('reads operation caller names within the existing query budget', function (bo
 
     expect(count($queries))->toBe($withoutCallers);
     $operationReads = array_filter($queries, static fn (array $query): bool => str_contains($query['query'], 'from "operations"') || str_contains($query['query'], 'from "operation_steps"'));
-    expect(count($operationReads))->toBe($list ? 1 : 2);
+    expect(count($operationReads))->toBe(1);
 })->with(['list' => true, 'show' => false]);
 
 it('does not look up caller names for automatic history on the instance list', function (): void {

@@ -11,9 +11,9 @@ use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
+use App\Domain\Instances\Deployment\ProductionDeployInput;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
-use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -72,8 +72,8 @@ final readonly class StartInstanceDeployAction
             } else {
                 $input['runtime_definitions'] = $members;
                 $input['direct_environment'] = app(NativeInstanceEnvironmentSync::class)->plan(
-                    app(InstanceEnvironmentContextResolver::class)->resolve($instance, requireActiveNode: true, lockRoute: true));
-                $input['php_input'] = $deployment['php'] === true ? ['service' => ProductionPhpRuntimeIdentity::from($instance)->service] : null;
+                    app(InstanceEnvironmentContextResolver::class)->resolve($instance, requireActiveNode: true, lockRoute: true), includeRuntime: false);
+                $input['php_input'] = app(ProductionDeployInput::class)->phpInput($instance, $deployment);
                 $input['vp_setup'] = $deployment['needs_vp'] === true ? app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp) : null;
             }
             if ($callerNodeId !== null) {

@@ -11,6 +11,7 @@ type Context = {
 const Observation = z.object({ stdout: z.string() }).passthrough();
 const Link = z.object({ link: z.string(), directory: z.string().startsWith("/") }).strict();
 const Captured = z.object({
+    production: z.boolean().optional(),
     package: z.string(),
     pnpm_lock: z.string(),
     npm_lock: z.string(),
@@ -78,7 +79,7 @@ export function material(raw: z.infer<typeof Captured>) {
 }
 export const behavior = {
     type: "@nckrtl/instance-vp-requirements",
-    version: "2026.11.02.1",
+    version: "2026.11.03.1",
     resources: {
         links: {
             schema: z.object({ links: z.array(Link) }),
@@ -110,9 +111,12 @@ export const behavior = {
             arguments: Captured,
             execute: async (args: z.infer<typeof Captured>, ctx: Context) => {
                 const raw = material(Captured.parse(args));
+                const selected = vpRequirements(raw, raw.store);
                 const result = {
                     ready: true as const,
-                    runtime: vpRequirements(raw, raw.store),
+                    runtime: args.production && selected !== null
+                        ? { ...selected, binary: "/opt/orbit/vite-plus/bin/vp", store: args.home.trim() + "/.local/share/vite-plus" }
+                        : selected,
                     manager_required: raw.manager_required,
                 };
                 await ctx.writeResource("result", "result", result);

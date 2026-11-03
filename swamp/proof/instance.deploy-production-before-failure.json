@@ -1,0 +1,93 @@
+{
+  "kind": "instance.deploy",
+  "workflow": "operation-instance-deploy-direct",
+  "topology": "minimal",
+  "clean": false,
+  "budget_seconds": 960,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "python3",
+      "-I",
+      "swamp/proof/instance.deploy-production/production_fixture.py",
+      "setup",
+      "${node.peer}",
+      "${proof.run}",
+      "before-failure"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "PUT",
+      "path": "instances/9002/environment/APP_ENV",
+      "operation": false,
+      "body": {
+        "value": "production"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "instances/9002/environment/APP_KEY",
+      "operation": false,
+      "body": {
+        "value": "${secret.key}"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances/9002/deploy-steps",
+      "operation": false,
+      "body": {
+        "name": "marker-before",
+        "phase": "before_activation",
+        "command": "printf \"%s\" \"$APP_KEY\" | sha256sum > \"$HOME/env-digest\"; id -un > \"$HOME/before-ran\"; git rev-parse HEAD >> \"$HOME/before-ran\"; pwd >> \"$HOME/before-ran\"; printf 'proof-private-%s-output' deploy; exit 17",
+        "timeout_seconds": 30
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances/9002/deploy-steps",
+      "operation": false,
+      "body": {
+        "name": "marker-after",
+        "phase": "after_activation",
+        "command": "readlink \"$HOME/current\" > \"$HOME/after-ran\"; true",
+        "timeout_seconds": 30
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances/9002/deploy",
+    "body": {
+      "commit": "${secret.commit}"
+    }
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "Prepare the release",
+      "job": "production-release",
+      "step": "Prepare the release-0",
+      "budget_seconds": 300
+    },
+    {
+      "name": "Write .env",
+      "job": "production-release",
+      "step": "Write .env-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Run before steps",
+      "job": "deploy",
+      "step": "Run before steps-0",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": [
+    "swamp/proof/instance.deploy-production/production_fixture.py",
+    "parity"
+  ]
+}

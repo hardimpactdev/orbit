@@ -64,7 +64,8 @@ return [
         // Development ends with the checkout's end check, production with the deployment's; the Vite+ runtime the steps
         // ran under comes as one capture. Every step runs on Node 209 over official SSH.
         'terminal_result' => ['job' => 'deploy', 'step' => 'Check the checkout', 'alternatives' => ['Check the deployment'], 'native' => true,
-            'captures' => ['vp_runtime' => ['job' => 'dev-vp-workspaces', 'step' => 'dev-vp-requirements', 'field' => 'runtime']]],
+            'captures' => ['vp_runtime' => ['job' => 'dev-vp-workspaces', 'step' => 'dev-vp-requirements', 'field' => 'runtime'],
+                'php_runtime' => ['job' => 'deploy', 'step' => 'Check PHP runtime', 'field' => 'status']]],
         'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],

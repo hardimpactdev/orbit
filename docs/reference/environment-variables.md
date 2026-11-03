@@ -267,6 +267,8 @@ Development synchronization must work before dependencies are installed and befo
 
 Swamp runs each PHP and Process action as one SSH command. The Gateway records the final outcome; it does not execute or revalidate runtime work. Environment contents and application output never enter public results.
 
+Production deploy commands receive the rendered environment through private SSH stdin. The Gateway resolves stored placeholders before it creates that execution copy. Swamp writes the durable `.env` separately; no deploy command or environment value travels in an argument list.
+
 ### The Node role decides isolation
 
 An operator may set `APP_ENV` to `local` or `staging` on a production Instance. If `APP_ENV` decided the layout or the Unix user, that edit would turn off release layout or user isolation. So the Node role decides them, and `APP_ENV` stays an application setting.

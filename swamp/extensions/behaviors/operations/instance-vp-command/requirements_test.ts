@@ -126,3 +126,18 @@ Deno.test("the store probe prunes every directory off the candidate paths", () =
         assertEquals(argv.includes(path), true);
     }
 });
+
+Deno.test("production keeps its environment cache private while using the Node CLI", async () => {
+    for (const store of ["/opt/orbit/vite-plus/bin/vp\n", ""]) {
+        const result = await behavior.methods.capture.execute({
+            production: true,
+            package: JSON.stringify({devDependencies: {"vite-plus": "0.2.1"}, packageManager: "pnpm@10.0.0"}),
+            pnpm_lock: "lockfileVersion: '9.0'\nimporters:\n  .:\n    devDependencies:\n      vite-plus:\n        version: 0.2.1\n",
+            npm_lock: "", node_version: "24.2.0", nvmrc: "", home: "/home/orbit-app-7\n",
+            store, links: [], workspaces: [],
+        }, ctx);
+        assertEquals(result.runtime?.store, "/home/orbit-app-7/.local/share/vite-plus");
+        assertEquals(result.runtime?.binary, "/opt/orbit/vite-plus/bin/vp");
+        assertEquals(result.manager_required, store === "");
+    }
+});

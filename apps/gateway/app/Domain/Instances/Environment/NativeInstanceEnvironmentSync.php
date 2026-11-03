@@ -30,7 +30,7 @@ final readonly class NativeInstanceEnvironmentSync
     /** Placement, key names and the sha256 of each rendered file; no values.
      * @return array<string,mixed>
      */
-    public function plan(InstanceEnvironmentContext $context): array
+    public function plan(InstanceEnvironmentContext $context, bool $includeRuntime = true): array
     {
         $instance = Instance::query()->findOrFail($context->instanceId);
         $files = $this->render($context);
@@ -41,7 +41,7 @@ final readonly class NativeInstanceEnvironmentSync
             'sha256' => hash('sha256', $files['content']),
             'testing' => $files['testing'] === null ? null : ['sha256' => hash('sha256', $files['testing']['content']),
                 'test_database' => $files['testing']['test_database']],
-            'runtime' => $context->environment === 'production' ? $this->runtime($instance) : null];
+            'runtime' => $context->environment === 'production' && $includeRuntime ? $this->runtime($instance) : null];
     }
 
     /** @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>} */

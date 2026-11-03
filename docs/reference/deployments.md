@@ -16,7 +16,7 @@ covers:
 
 Development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
 
-Production deployment uses the same native root on 209 with a release layout and the admitted Project account ([chart](/cli/instance/deploy)). Every Node action is one official `@swamp/ssh` argv or an official `@swamp/cfgmgmt` file or link; no step calls the Gateway, and no polled executor remains. Rollback stays production-only, and development rollback refuses `deployment_config.unavailable` because checkouts have no retained releases.
+Production deployment uses the same native root on 209 with a release layout and the admitted Project account ([chart](/cli/instance/deploy)). Every Node action is one official `@swamp/ssh` argv or an official `@swamp/cfgmgmt` behavior; no step calls the Gateway, and no polled executor remains. Rollback stays production-only, and development rollback refuses `deployment_config.unavailable` because checkouts have no retained releases.
 
 Swamp runs production commands as the admitted `orbit-app-<ProjectID>` account. It never asks the agent to act.
 
@@ -34,7 +34,7 @@ Each production Instance has a home, `/home/<production-user>`, with these paths
 
 A clone leaves the home prepared, with no `current` link. When a clone seeds SQLite, Orbit registers an owned SQLite connection, attaches it under `DB`, and syncs `DB_DATABASE=<home>/database.sqlite` into the production `.env`. Later releases use the same database. [Cloning](/reference/instance-cloning) describes how to seed the file.
 
-The Gateway lists retained releases as the production user from a directory that user can access. A private SSH home does not prevent reading the first clone's empty selection. Failed scans and invalid release receipts still stop the operation.
+The Gateway records retained releases from terminal deployment results. Cleanup considers only those recorded releases and retains a release when a running process uses it or the process scan fails.
 
 The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. A nested root such as `apps/site/public` serves `<home>/current/apps/site/public`; its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). Root `public` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
@@ -123,7 +123,7 @@ A new step appends unless `before` or `after` names another step in this Project
 
 Swamp fetches the branch and checks out the commit over pinned official SSH as the admitted Node account. The Project commands run in list order as that account, one SSH command each. Checkout refuses tracked changes and a local branch with commits that the target lacks. The public result reports only the refusal code. The checkout, the cleanup and each command take system `flock` on the checkout directory. A command refuses with `instance.lifecycle_busy` while a setup or teardown command holds that directory.
 
-Development commands are captured as named vault execution copies and delivered on SSH stdin. A command runs with a clean environment: `HOME`, `USER`, `PATH`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, plus `VP_HOME` under a Vite+ runtime. It does not load the checkout's `.env`; the application reads it. Production deploy steps still load it through the shared app step runtime.
+Development commands are captured as named vault execution copies and delivered on SSH stdin. A command runs with a clean environment: `HOME`, `USER`, `PATH`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, plus `VP_HOME` under a Vite+ runtime. It does not load the checkout's `.env`; the application reads it. Production commands receive the same rendered values as private, quoted exports on SSH stdin. Bash reads the private program with `-s`, suppresses output before parsing its private body and runs the command with empty stdin. No command file is copied to the Node.
 
 At run start the Gateway mints a repository-scoped Contents read token with the GitHub App and writes it into a 0600 credential file for the fetch. The next step removes the file. A public origin, or one without an App installation, fetches anonymously. GitHub CLI source access is refused for this native path. Command output is discarded so application secrets cannot enter native history.
 
@@ -140,7 +140,7 @@ Production steps belong to an Instance and run before or after activation.
 | `command` | Non-empty UTF-8 of at most 16 KiB, without a NUL byte. |
 | `timeout_seconds` | 1 through 900. The default is 300. |
 
-A production step runs over official SSH from 209 through sudo as the admitted Instance owner, at the release's repository root, with a cleared environment and Bash in `-eu` mode. Swamp writes the step from the vault as a 0600 file of that account and removes it after the deploy. The step's output stays on the Node: run history, logs and the result keep none, and a failed step names the step instead of an output tail.
+A production step runs over official SSH from 209 through sudo as the admitted Instance owner, at the release's repository root, with a cleared environment and Bash in `-eu` mode. The Gateway renders the admitted environment and passes the private command from the vault on SSH stdin. The command receives empty stdin, and no step file is copied to the Node. The step's output stays on the Node: run history, logs and the result keep none, and a failed step names the step instead of an output tail.
 
 A new step goes to the end of its phase. `before` or `after` places it next to another step of the same phase. The two fields are exclusive. An Instance has at most 32 steps, and their timeouts add up to at most 3,600 seconds. The Gateway refuses a change that breaks a rule and stores nothing.
 
@@ -157,9 +157,11 @@ Deploy-step and branch changes need an access grant to the Instance's Node. The 
 
 ### Vite store prerequisite
 
-Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the deploy prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. It runs the shared Vite+ steps that a development deploy and `instance:clone` also run. Swamp reads the new release's requirements through sudo and validates them. Swamp installs the pinned runtime as the store owner before the application command. It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
+Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the deploy prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. It runs the shared Vite+ steps that a development deploy and `instance:clone` also run. Swamp reads the new release's requirements through sudo and validates them. Swamp installs the pinned runtime in the production account’s private Vite+ cache before the application command. The shared Node manager supplies the CLI; application commands use the private cache.
 
-The default JavaScript deploy runs `vp install --frozen-lockfile` followed by `vp run build`, through `vp env exec` with recorded exact Node and package-manager versions as the Instance user. That execution reads the shared store but never writes it. A data migration replaces stored legacy default steps containing hard-coded Node and npm paths; runtime execution does not rewrite commands. Customized commands keep their flags, shell operators, and additional build scripts, including SSR builds.
+It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
+
+The default JavaScript deploy runs `vp install --frozen-lockfile` followed by `vp run build`, through `vp env exec` with recorded exact Node and package-manager versions as the Instance user. That execution uses the app-owned private cache. A data migration replaces stored legacy default steps containing hard-coded Node and npm paths; runtime execution does not rewrite commands. Customized commands keep their flags, shell operators, and additional build scripts, including SSR builds.
 
 A missing runtime or package manager that cannot be installed fails with `deployment.vp_store_failed`, before the build command runs. Invalid or incompatible Project requirements fail with `deployment.vp_requirements_invalid`. The current production release stays selected. Fix connectivity, store ownership, or Project requirements and retry the deploy; no manual runtime installation is required.
 
@@ -579,12 +581,12 @@ A list admitted before the writer switch can be cancelled through the Operation 
 
 When setup, teardown or deploy runs on a development Instance, it uses the configured Node account that owns the checkout. Development Instances have no `orbit-app-<ProjectID>` account.
 
-The Gateway records the placement environment and derives the account and directory from the Instance and Node, rather than caller input. Production deploy steps run as `orbit-app-<ProjectID>` in the admitted release. Setup, teardown and production deploy use direct sudo from the Node-user worker. Development deploy uses pinned official SSH from 209. All check directories and command digests, clear the environment, enforce timeouts and clean up child processes. Development deploy suppresses command output; the other paths return bounded redacted output. Setup's `@orbit/ci-caches` command is a fixed workflow-owned action. Teardown refuses that setup-only action. The package sandbox stays separate and has no sudo.
+The Gateway records the placement environment and derives the account and directory from the Instance and Node, rather than caller input. Production deploy steps run as `orbit-app-<ProjectID>` in the admitted release. Setup, teardown and production deploy use direct sudo from the Node-user worker. Development deploy uses pinned official SSH from 209. All check directories and command digests, clear the environment, enforce timeouts and clean up child processes. Development and production deploy suppress command output; setup and teardown return bounded redacted output. Setup's `@orbit/ci-caches` command is a fixed workflow-owned action. Teardown refuses that setup-only action. The package sandbox stays separate and has no sudo.
 
 The kind uses the direct writer by default. The per-kind setting cannot select the deleted polled path. The same cutover includes writer selection and old execution/test deletion. After worker readiness is verified, merge first when released code is needed for the canary. Prove the complete Gateway-to-worker path on a real dev or disposable target within minutes of auto-release. Revert the cutover immediately on failure. This setup and teardown path still requires the worker on its admitted Node. Development deploy instead uses the 209 SSH path described below.
 ## Native development deployment
 
-Default development checkouts use `operation-instance-deploy-direct`. Every Node action of this kind is one official `@swamp/ssh` command from 209, as the admitted Node account with the stored host keys. The shared Vite+ manager setup is the one exception: it still runs its own setup script.
+Default development checkouts use `operation-instance-deploy-direct`. Every Node action of this kind is one official `@swamp/ssh` command from 209, as the admitted Node account with the stored host keys. The shared Vite+ manager setup uses official cfgmgmt resources and bounded command arguments.
 
 The Gateway freezes the Node placement, repository, branch, ordered Project command digests and timeouts. It copies the exact commands and the fetch credential to Operation-scoped vault keys before it starts one native run. Command bytes, target dotenv values, registry settings and GitHub tokens stay out of workflow inputs and history. Development rollback refuses `deployment_config.unavailable` because development checkouts have no retained releases.
 
@@ -616,7 +618,9 @@ Swamp settles pending default publication through the normal Route update admiss
 
 ## Native production deployment
 
-Production admission captures canonical Project Process definitions in the same transaction as the parent Operation. A refused parent leaves no copied definitions. Public input fixes the Project-owned `orbit-app-<ProjectID>` account, its home, the branch and an optional pinned commit. It also fixes the ordered command digests and timeouts, the shared paths and the served web roots. The `.env` plan holds the key names and the sha256 of the rendered file; the dedicated PHP-FPM service and the Vite+ setup complete the intent. The release name follows from the Operation's creation time and id.
+Production admission captures canonical Project Process definitions in the same transaction as the parent Operation. A refused parent leaves no copied definitions. Public input fixes the Project-owned `orbit-app-<ProjectID>` account, its home, the branch and an optional pinned commit. It also fixes the ordered command digests and timeouts, the shared paths and the served web roots. The `.env` plan holds the key names and the sha256 of the rendered file; the dedicated PHP-FPM configuration and the Vite+ setup complete the intent.
+
+A first deploy writes and validates its dedicated PHP-FPM configuration and starts its unit; later deployments reload it gracefully. Existing local PHP tuning remains intact. The Gateway records the runtime identity only after a compliant native service check. The release name follows from the Operation's creation time and id.
 
 When the run starts, the Gateway copies each deploy step, a repository-scoped read token and the rendered `.env` to Operation-scoped vault keys, and passes every Node action as a public argv list or link. It refuses to start when a step's stored command differs from its admitted digest. The Gateway does not execute a command, look up an account remotely or admit a child Operation.
 

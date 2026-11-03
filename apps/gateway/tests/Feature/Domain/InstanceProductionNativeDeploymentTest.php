@@ -55,7 +55,7 @@ function project_production_terminal(Operation $operation, string $status, array
 {
     $runId = $operation->state['swamp_run_id'];
     $jobs = [['name' => 'deploy', 'steps' => array_map(static fn (string $name, string|array $step): array => ['name' => $name,
-        'status' => is_array($step) ? $step[0] : $step, 'outputs' => is_array($step) ? ['stdout' => $step[1]] : []],
+        'status' => is_array($step) ? $step[0] : $step, 'outputs' => is_array($step) ? [($name === 'Check PHP runtime' ? 'status' : 'stdout') => $step[1]] : []],
         array_keys($steps), $steps)]];
     $history = ['id' => $runId, 'workflowName' => 'operation-instance-deploy-direct', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
@@ -109,7 +109,7 @@ it('admits one production deploy that holds the Instance, records its running ro
         ->and($intent['production']['cleanup'])->toBe([])
         ->and($intent['process_members'])->toHaveCount(1)
         ->and($submitted['inputs']['execution_secrets'])->toHaveKeys(['credential', 'step_0', 'step_1', 'environment'])
-        ->and($copies['instance-deploy-operation-'.$operation->id.'-step-0'])->toBe("exec </dev/null >/dev/null 2>&1\nphp artisan migrate --force # private-step-command")
+        ->and($copies['instance-deploy-operation-'.$operation->id.'-step-0'])->toContain("exec >/dev/null 2>&1\n{\n", "export API_TOKEN='private-deploy-environment'", 'php artisan migrate --force # private-step-command')
         ->and($copies['instance-environment-'.$operation->id])->toContain('private-deploy-environment')
         ->and(json_encode($submitted))->not->toContain('private-step-command')
         ->and(json_encode($submitted))->not->toContain('private-deploy-environment')
@@ -123,7 +123,7 @@ it('freezes the dedicated PHP-FPM service and refuses a second start while the d
     $instance->update(['selected_php_version' => '8.5', ...$identity->attributes()]);
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
 
-    expect($operation->input['php_input'])->toBe(['service' => ProductionPhpRuntimeIdentity::from($instance->fresh())->service])
+    expect($operation->input['php_input']['service'])->toBe(ProductionPhpRuntimeIdentity::from($instance->fresh())->service)
         ->and(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
     expect(Operation::query()->count())->toBe(1)->and(InstanceDeployment::query()->count())->toBe(1);
@@ -163,7 +163,7 @@ it('records a succeeded deploy with its release, commit, selection, owned keys a
     $release = InstanceDeploymentIntent::releaseName($operation);
     $result = project_production_terminal($operation, 'succeeded', [
         'Read the release commit' => ['succeeded', str_repeat('c', 40)."\n"], 'Write .env-0' => 'succeeded',
-        'Activate release' => 'succeeded', 'Swap current' => 'succeeded', 'Install Process definitions-0' => 'succeeded',
+        'Activate release' => 'succeeded', 'Swap current' => 'succeeded', 'Install Processes-0' => 'succeeded',
         'Find releases in use-0' => 'failed', 'Clean up releases-0' => 'skipped', 'Check the deployment' => 'succeeded']);
 
     expect($result->status)->toBe(OperationStatus::Succeeded)->and($result->lock_key)->toBeNull()
@@ -195,11 +195,11 @@ it('keeps the new selection when a Process restart fails after activation', func
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null)->fresh();
     $release = InstanceDeploymentIntent::releaseName($operation);
     $result = project_production_terminal($operation, 'failed', [
-        'Activate release' => 'succeeded', 'Swap current' => 'succeeded', 'Install Process definitions-0' => 'failed',
+        'Activate release' => 'succeeded', 'Swap current' => 'succeeded', 'Install Processes-0' => 'failed',
         'Run after steps-0' => 'skipped', 'Check the deployment' => 'skipped']);
 
     expect($result->error_code)->toBe('process.install_failed')
-        ->and($result->result)->toMatchArray(['failed_step' => 'Install Process definitions', 'selected_release' => $release])
+        ->and($result->result)->toMatchArray(['failed_step' => 'Install Processes', 'selected_release' => $release])
         ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/'.$release)
         ->and(Process::query()->sole()->only(['status', 'error_code']))->toBe(['status' => LifecycleStatus::Failed, 'error_code' => 'process.install_failed']);
 });
@@ -214,4 +214,37 @@ it('removes only the releases a successful deploy no longer keeps', function ():
 
     expect(RecordedReleases::of($instance))->toHaveKeys(['r1', 'r2', 'r3'])
         ->and(RecordedReleases::afterDeploy($instance, 'r4'))->toBe(['previous' => 'r3', 'remove' => ['r1']]);
+});
+
+it('admits the first production PHP deploy without recording an unconfirmed runtime identity', function (): void {
+    $instance = production_native_deploy_target();
+    $instance->update(['selected_php_version' => '8.5', 'source_is_laravel' => true]);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+    $php = $operation->input['php_input'];
+    expect($php['configure'])->toBeTrue()->and($php['service'])->toBe('orbit-orbit-app-'.$instance->project_id.'-php8.5-fpm.service')
+        ->and($php['unit'])->toContain('ExecStart=/usr/sbin/php-fpm8.5')->and($php['files'])->toHaveCount(4)
+        ->and($instance->fresh()->production_php_service)->toBeNull();
+});
+
+it('records the first PHP identity only after the native service check is compliant', function (): void {
+    $instance = production_native_deploy_target();
+    $instance->update(['selected_php_version' => '8.5', 'source_is_laravel' => true]);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+    project_production_terminal($operation, 'succeeded', [
+        'Activate release-0' => 'succeeded', 'Swap current' => 'succeeded',
+        'Check PHP runtime' => ['succeeded', 'compliant'], 'Check the deployment' => 'succeeded',
+    ]);
+    expect($instance->fresh()->production_php_service)->toBe($operation->input['php_input']['service'])
+        ->and($instance->fresh()->production_php_pool)->toBe($operation->input['php_input']['identity']['production_php_pool'])
+        ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/'.InstanceDeploymentIntent::releaseName($operation));
+});
+
+it('does not record a PHP identity from a noncompliant native service check', function (): void {
+    $instance = production_native_deploy_target();
+    $instance->update(['selected_php_version' => '8.5', 'source_is_laravel' => true]);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+    project_production_terminal($operation, 'failed', [
+        'Swap current' => 'succeeded', 'Check PHP runtime' => ['succeeded', 'non_compliant'], 'Check the deployment' => 'failed',
+    ]);
+    expect($instance->fresh()->production_php_service)->toBeNull();
 });

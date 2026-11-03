@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS 1 (token minted at admission, vault.get), 3 (automatic deploy = Gateway-published native schedule, no POST back), 4 / R1-R4 (process.stop shape); .env through the vault as in instance.create; rule 7 (reload over restart, restart_on_deploy only). docs/reference/deployments.md.
   %% Tightened: flow-tighten 2026-11-02, rules 21, 22 (automatic deploys only in instance.auto_deploy; cfgmgmt file/link/systemd, 0600 credential file for the fetch).
-  %% status: draft
+  %% status: migrated
   %% command: instance:deploy
   %% kind: instance.deploy
   autonumber
@@ -12,7 +12,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as app-prod Node<br/>Node 12 over ssh
+  participant N as Instance Node<br/>Node 12 over ssh
   CLI->>GW: instance:deploy 42<br/>--commit=SHA
   %%> Command:
   %%> - `orbit instance:deploy 42`
@@ -26,7 +26,7 @@ sequenceDiagram
   Note over GW: Validate, freeze intent<br/>Instance 42 locked · task #5150
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
-  %%> - Instance 42 is an active production Instance of Project 7 on Node 12
+  %%> - Instance 42 is an active Instance of Project 7 on an app-prod or app-dev Node
   %%> - no other operation holds Instance 42; else `operation.target_busy`
   %%> Freezes:
   %%> - the branch and commit, the deploy steps, the shared paths and the release name
@@ -36,7 +36,7 @@ sequenceDiagram
   %%> - from the stored environment of Instance 42
   %%> Result:
   %%> - deployment 88 recorded as running; task #5150 recorded with the full intent
-  %%> - a manual deploy pauses automatic deployment of Instance 42
+  %%> - a manual production deploy pauses automatic deployment of Instance 42
   %%> - nothing has happened on the Node yet
   GW->>SW: Push token and .env<br/>vault: github-token, env-5150
   %%> Why:
@@ -60,80 +60,100 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task until it ends
-  SW->>N: Prepare the release<br/>file 0600 cred · git clone
-  %%> How:
-  %%> - Swamp reaches Node 12 over `@swamp/ssh` from 209; nothing is copied to the Node
-  %%> - `@swamp/cfgmgmt/file` writes the vault token as a 0600 credential file; git reads it, so the token never enters argv; the file goes after the clone
-  %%> - each other action is one argv; shared paths and `.env` links with `@swamp/cfgmgmt/link`
-  %%> What it does:
-  %%> - clones the repository into a new folder under `releases/` and checks out exactly the frozen commit, or the branch head
-  %%> - refuses a commit that is not on the branch's first-parent chain (`deployment.commit_not_on_branch`)
-  %%> - seeds and links the shared paths, the public storage link and each `.env` link
-  %%> Runs as:
-  %%> - `orbit-app-7`, through sudo
-  SW->>N: Write .env<br/>@swamp/cfgmgmt/file · 0600
-  %%> What it does:
-  %%> - reads the key names of `/home/orbit-app-7/.env` and refuses keys Orbit does not manage (`env.sync_would_drop_keys`)
-  %%> - writes the rendered `.env` from the vault into `/home/orbit-app-7/.env`, atomically
-  %%> Not included:
-  %%> - restarts nothing; the running release keeps serving
-  opt a deploy step needs Vite+
-    SW->>N: Prepare Vite+<br/>store · vp env install
-    %%> What it does:
-    %%> - reads the new release's `package.json`, lock files and Node pins, as `orbit-app-7`
-    %%> - installs the pinned Node and package manager into the Vite+ store, then verifies them
-    %%> Shared with:
-    %%> - the same steps a development deploy and `instance:clone` run
-    %%> Fails with:
-    %%> - `deployment.vp_requirements_invalid` or `deployment.vp_store_failed`; the old release stays selected
+  opt Development checkout
+    SW->>N: Write the fetch credential<br/>ssh exec argv
+    SW->>N: Fetch the branch<br/>ssh exec argv
+    SW->>N: Remove fetch credential<br/>ssh exec argv
+    SW->>N: Check tracked changes<br/>ssh exec argv
+    SW->>N: Resolve the commit<br/>ssh exec argv
+    SW->>N: Count commits after it<br/>ssh exec argv
+    SW->>N: Read the branch ancestor<br/>ssh exec argv
+    Note over SW: Check it is on the branch<br/>native assert
+    SW->>N: Read the local branch<br/>ssh exec argv
+    SW->>N: Check the local branch<br/>ssh exec argv
+    SW->>N: List untracked entries<br/>ssh exec argv
+    SW->>N: List target directories<br/>ssh exec argv
+    Note over SW: Plan the cleanup<br/>typed data
+    SW->>N: Check the checkout lock<br/>ssh exec argv
+    SW->>N: Clean stale directories<br/>ssh exec argv
+    SW->>N: Check out the commit<br/>ssh exec argv
   end
-  SW->>N: Run before steps<br/>@swamp/ssh exec · in order
-  %%> What it does:
-  %%> - writes each deploy step from the vault as a 0600 file of `orbit-app-7`
-  %%> - runs each `before_activation` deploy step in order, from the new release, as `orbit-app-7`, under `vp env exec` when it needs Vite+
-  %%> - for example `composer install`, `php artisan migrate --force`
-  %%> Limits:
-  %%> - each step has its own timeout; a required step that fails stops the run
-  %%> - the run history keeps no step output
-  SW->>N: Activate release<br/>@swamp/cfgmgmt/link · current.next
-  %%> What it does:
-  %%> - grants Caddy access to each served web root in the new release
-  %%> - writes `current.next`, owned by `orbit-app-7`, pointing at the new release
-  SW->>N: Swap current<br/>ssh exec · mv -fT
-  %%> What it does:
-  %%> - renames `current.next` over `current` with one atomic rename, so `current` always exists
-  %%> Why:
-  %%> - Caddy resolves `current` per request, so new requests use the new release at once
-  opt Instance serves PHP
-    SW->>N: Refresh PHP cache<br/>ssh exec · systemctl reload
+  opt Production release
+    SW->>N: Write release credential<br/>cfgmgmt/file apply
+    SW->>N: Prepare the release<br/>ssh exec argv
+    SW->>N: Remove release credential<br/>cfgmgmt/file apply
+    SW->>N: Read the release commit<br/>ssh exec argv
+    SW->>N: Read first-parent chain<br/>ssh exec argv
+    Note over SW: Check the branch commit<br/>native assert
+    SW->>N: Prepare shared paths<br/>ssh exec argv
     %%> What it does:
-    %%> - reloads the dedicated PHP-FPM service of Instance 42 gracefully, so running requests finish
-    %%> - the new workers resolve `current` again and start with an empty OPcache
+    %%> - seeds only empty persistent directories and links the admitted shared paths after the branch check
+    SW->>N: Link the release<br/>cfgmgmt/link apply
+    SW->>N: Read the key names<br/>ssh exec argv
+    Note over SW: Check for foreign keys<br/>native assert
+    SW->>N: Write .env<br/>cfgmgmt/file apply
   end
-  SW->>N: Restart Processes<br/>@swamp/ssh exec · forEach
-  %%> What it does:
-  %%> - installs the frozen Process definitions and the `laravel-scheduler` timer, in the `process.create` shape; other Schedules are native Swamp schedules and install nothing here
-  %%> - for each running Process with `restart_on_deploy`: reload when the Process allows it, else restart
-  %%> - for example Horizon: `php artisan horizon:terminate`, so jobs finish first
-  %%> Not included:
-  %%> - Processes without `restart_on_deploy`, and stopped Processes, stay as they are
-  SW->>N: After steps<br/>@swamp/ssh exec · in order
-  %%> What it does:
-  %%> - runs each `after_activation` deploy step in order, as `orbit-app-7`
-  %%> - then removes the deploy step files
-  SW->>N: Clean up releases<br/>@swamp/ssh exec · keep 3
-  %%> What it does:
-  %%> - removes the releases the home no longer keeps; the home keeps at most 3
-  %%> Cleanup:
-  %%> - best effort; a failed cleanup is a warning, not a failed deploy
-  %%> - a release that a running process still uses stays
-  SW->>N: Read current back<br/>ssh exec · readlink
-  %%> What it does:
-  %%> - reads the live `current` link on Node 12
-  Note over SW: Check the deployment<br/>native assert
-  %%> What it does:
-  %%> - checks the link read back selects the new release
-  %%> - each restarted Process was checked by its own restart
+  opt Deploy steps need Vite+
+    SW->>N: dev-vp-read-package<br/>ssh exec argv
+    SW->>N: dev-vp-read-pnpm_lock<br/>ssh exec argv
+    SW->>N: dev-vp-read-npm_lock<br/>ssh exec argv
+    SW->>N: dev-vp-read-node_version<br/>ssh exec argv
+    SW->>N: dev-vp-read-nvmrc<br/>ssh exec argv
+    SW->>N: dev-vp-home<br/>ssh exec argv
+    SW->>N: dev-vp-store<br/>ssh exec argv
+    Note over SW: dev-vp-links<br/>typed data
+    SW->>N: dev-vp-read-workspace<br/>ssh exec argv
+    Note over SW: dev-vp-requirements<br/>typed data
+    SW->>N: dev-vp-manager<br/> run
+    Note over SW: dev-vp-manager-ready<br/>native assert
+    SW->>N: Prepare Vite cache<br/>cfgmgmt/directory apply
+    %%> What it does:
+    %%> - gives the production account its own cache; the Node manager still supplies the shared CLI
+    SW->>N: dev-vp-cli<br/>ssh exec argv
+    Note over SW: dev-vp-cli-ready<br/>typed data
+    SW->>N: dev-vp-install<br/>ssh exec argv
+    SW->>N: dev-vp-inventory<br/>ssh exec argv
+    Note over SW: dev-vp-verify<br/>typed data
+    Note over SW: dev-vp-result<br/>typed data
+  end
+  opt Development deploy steps
+    SW->>N: Run the deploy steps<br/>ssh exec argv
+    SW->>N: Read the checkout branch<br/>ssh exec argv
+    SW->>N: Read the checkout commit<br/>ssh exec argv
+    Note over SW: Check the checkout<br/>native assert
+  end
+  opt Production activation
+    SW->>N: Run before steps<br/>ssh exec argv
+    %%> What it does:
+    %%> - runs each frozen private command as the Project account in the new release; later required commands stop after a failure
+    SW->>N: Grant Caddy access<br/>ssh exec argv
+    SW->>N: Activate release<br/>cfgmgmt/link apply
+    SW->>N: Swap current<br/>ssh exec argv
+    %%> What it does:
+    %%> - atomically renames current.next over current; failure before this point keeps the earlier selection
+    SW->>N: Prepare PHP directories<br/>cfgmgmt/directory apply
+    SW->>N: Read local PHP tuning<br/>cfgmgmt/file check
+    SW->>N: Write PHP configuration<br/>cfgmgmt/file apply
+    SW->>N: Write default PHP tuning<br/>cfgmgmt/file apply
+    %%> When:
+    %%> - the dedicated runtime has no local tuning file; existing operator settings stay intact
+    SW->>N: Test PHP configuration<br/>ssh exec argv
+    SW->>N: Start PHP runtime<br/>cfgmgmt/systemd apply
+    SW->>N: Refresh PHP cache<br/>ssh exec argv
+    SW->>N: Check PHP runtime<br/>cfgmgmt/systemd check
+    SW->>N: Install Processes<br/> run
+    SW->>N: Restart Processes<br/>ssh exec argv
+    SW->>N: Run after steps<br/>ssh exec argv
+    SW->>N: Find releases in use<br/>ssh exec argv
+    SW->>N: Clean up releases<br/>ssh exec argv
+    %%> What it does:
+    %%> - removes only releases outside the retained three, after checking no process uses them; cleanup failure is a warning
+    SW->>N: Read current back<br/>ssh exec argv
+    SW->>N: Check Process state<br/>cfgmgmt/systemd check
+    SW->>N: Read container state<br/>ssh exec argv
+    SW->>N: Read deployed commit<br/>ssh exec argv
+    Note over SW: Check the deployment<br/>native assert
+  end
   alt all required steps pass
     N-->>SW: release, commit
     %%> Returns:
@@ -151,7 +171,7 @@ sequenceDiagram
     %%> - a required step exits with an error, SSH fails, or the budget runs out
     SW--xGW: Run failed<br/>failed_step, selected release
     %%> The Gateway reads:
-    %%> - which step failed, its error code and output tail
+    %%> - which step failed and its safe error code; private command output is suppressed
     %%> - which release `current` selects now
     Note over GW: Record failed deployment<br/>selection kept · task failed
     %%> Result:

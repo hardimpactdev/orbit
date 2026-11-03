@@ -84,8 +84,25 @@ while a and a[0].startswith('-') and a[0]!='--':
     a=a[2:] if a[0] in ('-u','--user','-g') else a[1:]
 if a and a[0]=='--':a=a[1:]
 if a and os.path.basename(a[0])=='timeout':a=a[2:]
+if a and os.path.basename(a[0])=='find' and a[1]=='/proc':
+    if os.path.exists(FAIL) and open(FAIL).read()=='find':sys.exit(1)
+    from pathlib import Path
+    wanted=a[a.index('-lname')+1]
+    for proc in Path('/proc').glob('[0-9]*'):
+        try:
+            if proc.stat().st_uid!=os.getuid():continue
+            for name in ('cwd','root','exe'):
+                try:value=os.readlink(proc/name)
+                except (FileNotFoundError,PermissionError):continue
+                if value==wanted or value.startswith(wanted+'/'):
+                    print(proc/name);sys.exit(0)
+        except FileNotFoundError:continue
+    sys.exit(0)
 if a and (os.path.basename(a[0]) in ('systemctl','docker','setfacl') or '/usr/bin/setfacl' in a):
     with open(CALLS,'a') as f:f.write(json.dumps([os.path.basename(a[0]),*a[1:]])+'\\n')
+    if os.path.basename(a[0])=='systemctl' and a[1]=='show':print('LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled')
+    if os.path.basename(a[0])=='systemctl' and a[1]=='is-active':print('active')
+    if os.path.basename(a[0])=='systemctl' and a[1]=='is-enabled':print('enabled')
     sys.exit(1 if os.path.exists(FAIL) and open(FAIL).read() in a else 0)
 sys.exit(subprocess.call(a))
 """.replace('CALLS', repr(str(self.calls_file))).replace('FAIL', repr(str(self.repo / 'fail'))),
@@ -126,7 +143,7 @@ sys.exit(subprocess.call(a))
                            'repository': str(self.origin), 'home': str(self.home)},
             'environment': {'instance_id': 42, 'environment': 'production', 'base': str(self.home), 'user': self.user, 'keys': ['APP_KEY'],
                             'owned_keys': [], 'sha256': '', 'testing': None},
-            'process_members': [], 'php_input': {'service': 'orbit-orbit-app-7-php8.5-fpm.service'},
+            'process_members': [], 'php_input': None,
             'runtime_definitions': {'restart': [{'process_id': 3, 'runtime': 'systemd', 'name': 'orbit-process-3-horizon.service'}]},
             'production': {'instance_id': 42, 'user': self.user, 'home': str(self.home), 'release': self.release, 'release_path': self.directory,
                            'commit': None, 'branch': 'main', 'credential': str(self.node / 'credential'), 'step_file': str(self.node / 'step-'),
@@ -135,7 +152,9 @@ sys.exit(subprocess.call(a))
                                          '-c', 'protocol.file.allow=always', 'clone', '--quiet', '--no-checkout', '--origin', 'origin', '--', str(self.origin), self.directory], 'ok': [0]},
                                {'argv': [*git, '-C', self.directory, 'checkout', '--quiet', '--detach', 'refs/remotes/origin/main'], 'ok': [0]},
                                {'argv': ['/usr/bin/mkdir', '-p', '--', f'{self.home}/storage'], 'ok': [0]},
-                               {'argv': ['/usr/bin/cp', '-a', '--update=none', '-T', '--', f'{self.directory}/storage', f'{self.home}/storage'], 'ok': [0, 1]},
+                               {'argv': ['/usr/bin/find', f'{self.home}/storage', '-mindepth', '1', '-maxdepth', '1', '-print', '-quit'], 'ok': [0]},
+                               {'argv': ['/usr/bin/test', '-d', f'{self.directory}/storage'], 'ok': [0, 1]},
+                               {'argv': ['/usr/bin/cp', '-a', '-T', '--', f'{self.directory}/storage', f'{self.home}/storage'], 'ok': [0], 'empty': 3, 'source': 4},
                                {'argv': ['/usr/bin/rm', '-rf', '--', f'{self.directory}/storage'], 'ok': [0]},
                                {'argv': ['/usr/bin/mkdir', '-p', '--', self.directory], 'ok': [0]},
                                {'argv': ['/usr/bin/mkdir', '-p', '--', f'{self.home}/storage/app/public'], 'ok': [0]}],
@@ -147,6 +166,10 @@ sys.exit(subprocess.call(a))
                            'steps': self.steps, 'before': [], 'after': [],
                            'cleanup': [{'name': 'old', 'path': f'{self.home}/releases/old'}]}}}
 
+        preparation = self.inputs['intent']['production']['prepare']
+        self.inputs['intent']['production']['shared'] = [dict(action, empty=action['empty']-2, source=action['source']-2) if 'empty' in action else action for action in preparation[2:]]
+        self.inputs['intent']['production']['prepare'] = preparation[:2]
+
     def command(self, command, phase='before_activation'):
         index = len(self.steps)
         key = f'instance-deploy-operation-17-step-{index}'
@@ -154,7 +177,7 @@ sys.exit(subprocess.call(a))
         self.steps.append(step)
         self.inputs['intent']['production']['before' if phase == 'before_activation' else 'after'].append(step)
         # The Gateway's quiet first line (ProductionDeployInput::QuietStep) keeps the step's output on the Node.
-        self.cli('vault', 'put', 'orbit-control-inputs', key, 'exec </dev/null >/dev/null 2>&1\n' + command)
+        self.cli('vault', 'put', 'orbit-control-inputs', key, 'exec >/dev/null 2>&1\n{\n' + command + '\n} </dev/null\n')
         self.inputs['execution_secrets'][f'step_{index}'] = {'vault': 'orbit-control-inputs', 'key': key}
 
     def deploy(self, success=True):
@@ -168,10 +191,10 @@ sys.exit(subprocess.call(a))
         return history['status']
 
     def calls(self):
-        return [json.loads(line) for line in self.calls_file.read_text().splitlines()] if self.calls_file.exists() else []
+        return [row for line in self.calls_file.read_text().splitlines() if (row := json.loads(line))[1] not in ('show','is-active','is-enabled')] if self.calls_file.exists() else []
 
     def test_prepares_activates_restarts_and_cleans_up_without_private_output(self):
-        self.command(f'printf %s {self.sentinel}; printf "$PWD" > {self.node}/before-ran')
+        self.command(f'test -z "$(cat)"; printf %s {self.sentinel}; printf "$PWD" > {self.node}/before-ran')
         self.command(f'printf %s {self.sentinel}; readlink {self.home}/current > {self.node}/after-saw', 'after_activation')
         before = os.lstat(self.home / 'current').st_ino
 
@@ -185,9 +208,9 @@ sys.exit(subprocess.call(a))
         self.assertEqual(os.readlink(release / '.env'), '../../.env')
         self.assertEqual(os.readlink(release / 'storage'), f'{self.home}/storage')
         self.assertEqual(os.readlink(release / 'public/storage'), '../storage/app/public')
-        # The persistent copy keeps its files and gains the release's new ones.
+        # A populated persistent directory keeps its contents.
         self.assertEqual((self.home / 'storage/app/kept.txt').read_text(), 'kept\n')
-        self.assertEqual((self.home / 'storage/app/new.txt').read_text(), 'new\n')
+        self.assertFalse((self.home / 'storage/app/new.txt').exists(), 'an existing persistent directory is not seeded again')
         self.assertEqual((self.home / '.env').read_text(), f'APP_KEY="{self.sentinel}"\n')
         self.assertEqual(oct((self.home / '.env').stat().st_mode & 0o777), '0o600')
         # Before steps run in the new release before the switch; after steps see the new selection.
@@ -196,9 +219,8 @@ sys.exit(subprocess.call(a))
         self.assertEqual(self.calls(), [
             ['setfacl', '-m', 'u:caddy:--x', '--', self.directory],
             ['setfacl', '-P', '-R', '-m', 'u:caddy:r-X', '--', f'{self.directory}/public'],
-            ['systemctl', 'reload', 'orbit-orbit-app-7-php8.5-fpm.service'],
             ['systemctl', 'reload-or-restart', 'orbit-process-3-horizon.service']])
-        # The read token and each deploy step file are gone; the release no longer kept is removed.
+        # The read token is gone; no command file was copied; the expired release is removed.
         self.assertFalse((self.node / 'credential').exists())
         self.assertEqual(sorted(path.name for path in self.node.glob('step-*')), [])
         self.assertFalse((self.home / 'releases/old').exists())
@@ -210,7 +232,7 @@ sys.exit(subprocess.call(a))
         self.inputs['intent']['production']['commit'] = self.side
         self.inputs['intent']['production']['prepare'][1]['argv'][-1] = self.side
         self.assertEqual(self.deploy(success=False), 'failed')
-        self.assertEqual(self.status['Check the commit is on the branch'], 'failed')
+        self.assertEqual(self.status['Check the branch commit'], 'failed')
         self.assertEqual(os.readlink(self.home / 'current'), 'releases/initial')
         self.assertEqual((self.home / '.env').read_text(), 'APP_KEY=old\n')
         self.assertEqual(self.calls(), [])
@@ -220,7 +242,7 @@ sys.exit(subprocess.call(a))
         self.inputs['intent']['production']['prepare'][1]['argv'][-1] = self.first
         self.assertEqual(self.deploy(), 'succeeded', json.dumps(self.status)[:3000])
         self.assertEqual(self.git(Path(self.directory), 'rev-parse', 'HEAD'), self.first)
-        self.assertEqual(self.status['Check the commit is on the branch'], 'succeeded')
+        self.assertEqual(self.status['Check the branch commit'], 'succeeded')
 
     def test_a_foreign_env_key_refuses_before_the_write(self):
         (self.home / '.env').write_text('APP_KEY=old\nHAND_MADE=1\n')
@@ -234,11 +256,17 @@ sys.exit(subprocess.call(a))
         self.command(f'touch {self.node}/second-ran')
         self.assertEqual(self.deploy(success=False), 'failed')
         self.assertEqual((self.status['Run before steps-0'], self.status['Run before steps-1']), ('failed', 'skipped'))
-        self.assertEqual(self.status['Activate release'], 'skipped')
+        self.assertEqual(self.status['Swap current'], 'skipped')
         self.assertEqual(os.readlink(self.home / 'current'), 'releases/initial')
         self.assertFalse((self.node / 'second-ran').exists())
         self.assertTrue((self.home / 'releases/old').exists(), 'a failed deploy removes nothing')
         self.assertEqual(sorted(path.name for path in self.node.glob('step-*')), [], 'the step files go also after a failure')
+
+    def test_a_private_syntax_error_fails_without_echoing_the_command(self):
+        self.command('private_' + self.sentinel + ' {')
+        self.assertEqual(self.deploy(success=False), 'failed')
+        self.assertEqual(self.status['Run before steps-0'], 'failed')
+        self.assertEqual(os.readlink(self.home / 'current'), 'releases/initial')
 
     def test_a_failed_restart_keeps_the_new_release_and_stops_the_after_steps(self):
         (self.repo / 'fail').write_text('reload-or-restart')
@@ -258,3 +286,21 @@ sys.exit(subprocess.call(a))
         self.assertTrue((self.home / 'releases/old').exists())
         self.assertEqual(self.status['Clean up releases-0'], 'skipped')
         self.assertEqual(self.status['Check the deployment'], 'succeeded')
+
+
+    def test_an_unreadable_process_scan_keeps_the_release_as_a_cleanup_warning(self):
+        (self.repo / 'fail').write_text('find')
+        self.assertEqual(self.deploy(), 'succeeded', json.dumps(self.status)[:3000])
+        self.assertTrue((self.home / 'releases/old').exists())
+        self.assertEqual(self.status['Find releases in use-0'], 'failed')
+        self.assertEqual(self.status['Clean up releases-0'], 'skipped')
+
+    def test_an_empty_persistent_directory_is_seeded_once(self):
+        shutil.rmtree(self.home / 'storage')
+        self.assertEqual(self.deploy(), 'succeeded', json.dumps(self.status)[:3000])
+        self.assertEqual((self.home / 'storage/app/kept.txt').read_text(), 'from the release\n')
+        self.assertEqual((self.home / 'storage/app/new.txt').read_text(), 'new\n')
+
+if __name__ == "__main__":
+    import unittest
+    unittest.main()

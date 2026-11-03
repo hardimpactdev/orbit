@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Instances\InstanceGitHubReadTokens;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Dotenv\Dotenv;
 
 /**
  * The full production deploy intent for the native run (docs/cli/instance/deploy.mmd). Every Node action is a public
@@ -20,10 +25,36 @@ use App\Support\ValidatedData;
  */
 final readonly class ProductionDeployInput
 {
-    /** The first line of each written deploy step: no input, and its output goes nowhere. */
-    public const string QuietStep = "exec </dev/null >/dev/null 2>&1\n";
+    /** Suppress output before parsing private commands; the compound command receives empty stdin. */
+    public const string QuietStep = "exec >/dev/null 2>&1\n{\n";
 
     public function __construct(private InstanceDeployStepStore $steps, private SwampCommandStep $copies) {}
+
+    /** The first deploy creates the dedicated master; later deployments reload the recorded master.
+     * @param  array<string,mixed>  $deployment
+     * @return array<string,mixed>|null
+     */
+    public function phpInput(Instance $instance, array $deployment): ?array
+    {
+        if ($deployment['php'] !== true) {
+            return null;
+        }
+        $configure = $instance->production_php_service === null && $instance->production_php_pool === null && $instance->production_php_socket === null;
+        $identity = $configure ? ProductionPhpRuntimeIdentity::forProvisioning($instance, ValidatedData::string($deployment['php_version'])) : ProductionPhpRuntimeIdentity::from($instance);
+        $runtime = ValidatedData::object($deployment['php_runtime']);
+        $configuration = ValidatedData::object($runtime['configuration']);
+
+        return ['service' => $identity->service, 'configure' => $configure, 'identity' => $identity->attributes(), 'version' => $identity->version,
+            'directories' => [$identity->runtimeDirectory, $identity->generatedDirectory],
+            'main' => $identity->generatedDirectory.'/php-fpm.conf', 'local_path' => $identity->localTuningPath,
+            'local_defaults' => ValidatedData::string($configuration['local_defaults']), 'unit' => ValidatedData::string($configuration['unit']),
+            'files' => [
+                ['path' => $identity->generatedDirectory.'/php-fpm.conf', 'content' => ValidatedData::string($configuration['main']), 'mode' => '0644'],
+                ['path' => $identity->generatedDirectory.'/pool.conf', 'content' => ValidatedData::string($configuration['pool']), 'mode' => '0644'],
+                ['path' => $identity->generatedDirectory.'/99-orbit-runtime.ini', 'content' => ValidatedData::string($configuration['master_ini']), 'mode' => '0644'],
+                ['path' => $identity->markerPath, 'content' => $identity->marker(), 'mode' => '0600'],
+            ]];
+    }
 
     /**
      * The production keys a development run carries empty: Swamp resolves an expression that reads only inputs when
@@ -34,7 +65,7 @@ final readonly class ProductionDeployInput
     public static function placeholder(): array
     {
         return ['production' => ['instance_id' => 0, 'user' => '', 'home' => '', 'release' => '', 'release_path' => '', 'commit' => null,
-            'branch' => '', 'credential' => '', 'step_file' => '', 'prepare' => [], 'links' => [], 'grants' => [], 'steps' => [],
+            'branch' => '', 'credential' => '', 'prepare' => [], 'shared' => [], 'links' => [], 'grants' => [], 'steps' => [],
             'before' => [], 'after' => [], 'cleanup' => []],
             'environment' => ['instance_id' => 0, 'environment' => 'production', 'base' => '', 'user' => '', 'keys' => [], 'owned_keys' => [], 'sha256' => '', 'testing' => null],
             'process_members' => [], 'runtime_definitions' => ['restart' => []], 'php_input' => null];
@@ -65,7 +96,7 @@ final readonly class ProductionDeployInput
         [$prepare, $links, $storage] = $this->prepare($raw, $directory, $application, $credential, InstanceDeploymentIntent::commit($operation));
 
         return ['intent' => [...$admitted, 'deployment' => $raw,
-            'application' => $application, 'account_home' => $instance->node->user === 'root' ? '/root' : '/home/'.$instance->node->user,
+            'application' => $application, 'account_home' => $home,
             'vp_setup' => $operation->input['vp_setup'] ?? null,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'environment' => $environment['intent']['environment'],
@@ -74,8 +105,8 @@ final readonly class ProductionDeployInput
             'php_input' => $operation->input['php_input'] ?? null,
             'production' => ['instance_id' => $instance->id, 'user' => $user, 'home' => $home, 'release' => $release,
                 'release_path' => $directory, 'commit' => InstanceDeploymentIntent::commit($operation), 'branch' => $deployment['branch'],
-                'credential' => $credential, 'step_file' => "/tmp/orbit-deploy-operation-{$operation->id}-step-",
-                'prepare' => $prepare, 'links' => $links, 'grants' => $this->grants($raw, $directory, $home, $storage),
+                'credential' => $credential,
+                'prepare' => array_slice($prepare, 0, 2), 'shared' => array_map(static fn (array $action): array => isset($action['empty'], $action['source']) ? [...$action, 'empty' => $action['empty'] - 2, 'source' => $action['source'] - 2] : $action, array_slice($prepare, 2)), 'links' => $links, 'grants' => $this->grants($raw, $directory, $home, $storage),
                 'steps' => $steps, 'before' => array_values(array_filter($steps, static fn (array $step): bool => $step['phase'] === 'before_activation')),
                 'after' => array_values(array_filter($steps, static fn (array $step): bool => $step['phase'] === 'after_activation')),
                 'cleanup' => array_map(static fn (string $name): array => ['name' => $name, 'path' => "{$home}/releases/{$name}"],
@@ -94,6 +125,15 @@ final readonly class ProductionDeployInput
     private function commands(Operation $operation, Instance $instance, array $admitted, array &$secrets): array
     {
         $commands = $this->steps->ordered($instance);
+        $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance, true);
+        $rendered = app(InstanceEnvironmentRenderer::class)->render($context, app(InstanceEnvironmentStore::class)->values($instance));
+        $prefix = self::QuietStep;
+        foreach (Dotenv::parse($rendered) as $key => $value) {
+            if (in_array($key, ['HOME', 'USER', 'LOGNAME', 'PATH', 'VP_HOME'], true)) {
+                continue;
+            }
+            $prefix .= 'export '.$key."='".str_replace("'", "'\"'\"'", $value ?? '')."'\n";
+        }
         if (count($commands) !== count($admitted)) {
             throw $this->forbidden();
         }
@@ -106,7 +146,7 @@ final readonly class ProductionDeployInput
             }
             // The step's output stays on the Node: run history, logs and the worker's journal never hold it.
             $secrets['step_'.$index] = $this->copies->executionCopy('orbit-control-inputs', "instance-deploy-operation-{$operation->id}-step-{$index}",
-                self::QuietStep.$command->command);
+                $prefix.$command->command."\n} </dev/null\n");
             $steps[] = ['index' => $index, 'name' => $command->name, 'phase' => $command->phase->value, 'timeout_seconds' => $command->timeoutSeconds];
         }
 
@@ -117,7 +157,7 @@ final readonly class ProductionDeployInput
      * The release preparation as the production account: clone, check out, seed the shared paths; then each link.
      *
      * @param  array<string,mixed>  $deployment
-     * @return array{0:list<array{argv:list<string>,ok:list<int>}>,1:list<array{path:string,target:string}>,2:?string}
+     * @return array{0:list<array{argv:list<string>,ok:list<int>,empty?:int,source?:int}>,1:list<array{path:string,target:string}>,2:?string}
      */
     private function prepare(array $deployment, string $directory, string $application, string $credential, ?string $commit): array
     {
@@ -134,9 +174,13 @@ final readonly class ProductionDeployInput
         $links = [['path' => "{$application}/.env", 'target' => str_repeat('../', 2 + substr_count($suffix, '/')).'.env']];
         $shared = ValidatedData::stringList($deployment['shared_paths']);
         foreach ($shared as $path) {
-            // The persistent copy keeps its files; a first deploy seeds it from the release, and a missing release copy seeds nothing.
+            // Only an empty persistent directory is seeded; a missing release directory seeds nothing.
             $prepare[] = ['argv' => ['/usr/bin/mkdir', '-p', '--', "{$home}/{$path}"], 'ok' => [0]];
-            $prepare[] = ['argv' => ['/usr/bin/cp', '-a', '--update=none', '-T', '--', "{$directory}/{$path}", "{$home}/{$path}"], 'ok' => [0, 1]];
+            $empty = count($prepare);
+            $prepare[] = ['argv' => ['/usr/bin/find', "{$home}/{$path}", '-mindepth', '1', '-maxdepth', '1', '-print', '-quit'], 'ok' => [0]];
+            $source = count($prepare);
+            $prepare[] = ['argv' => ['/usr/bin/test', '-d', "{$directory}/{$path}"], 'ok' => [0, 1]];
+            $prepare[] = ['argv' => ['/usr/bin/cp', '-a', '-T', '--', "{$directory}/{$path}", "{$home}/{$path}"], 'ok' => [0], 'empty' => $empty, 'source' => $source];
             $prepare[] = ['argv' => ['/usr/bin/rm', '-rf', '--', "{$directory}/{$path}"], 'ok' => [0]];
             $prepare[] = ['argv' => ['/usr/bin/mkdir', '-p', '--', dirname("{$directory}/{$path}")], 'ok' => [0]];
             $links[] = ['path' => "{$directory}/{$path}", 'target' => "{$home}/{$path}"];

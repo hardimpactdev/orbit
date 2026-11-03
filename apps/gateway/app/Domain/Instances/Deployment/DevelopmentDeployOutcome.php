@@ -61,7 +61,7 @@ final readonly class DevelopmentDeployOutcome
         return match (true) {
             $step === 'Check the checkout lock' => 'instance.lifecycle_busy',
             $step === 'Check tracked changes' => 'deployment.checkout_dirty',
-            in_array($step, ['Count commits after it', 'Read the branch at that depth', 'Check it is on the branch'], true) => 'deployment.commit_not_on_branch',
+            in_array($step, ['Count commits after it', 'Read the branch ancestor', 'Check it is on the branch'], true) => 'deployment.commit_not_on_branch',
             $step === 'Check the local branch' => 'deployment.branch_diverged',
             in_array($step, ['Write the fetch credential', 'Fetch the branch', 'Resolve the commit', 'Check out the commit'], true)
                 || str_starts_with($step, 'Clean stale directories') => 'deployment.source_failed',

@@ -18,29 +18,39 @@ final readonly class ProductionDeployOutcome
 {
     /** Each chart step, by name prefix, and the error code its failure records. */
     private const array Codes = [
-        'Write the release credential' => 'deployment.source_failed',
+        'Write release credential' => 'deployment.source_failed',
         'Prepare the release' => 'deployment.source_failed',
-        'Remove the release credential' => 'deployment.source_failed',
+        'Remove release credential' => 'deployment.source_failed',
+        'Prepare shared paths' => 'deployment.source_failed',
         'Link the release' => 'deployment.source_failed',
         'Read the release commit' => 'deployment.source_failed',
-        'Read the first-parent chain' => 'deployment.commit_not_on_branch',
-        'Check the commit is on the branch' => 'deployment.commit_not_on_branch',
+        'Read first-parent chain' => 'deployment.commit_not_on_branch',
+        'Check the branch commit' => 'deployment.commit_not_on_branch',
         'Read the key names' => 'env.sync_unconfirmed',
         'Check for foreign keys' => 'env.sync_would_drop_keys',
         'Write .env' => 'env.sync_unconfirmed',
         'dev-vp-requirements' => 'deployment.vp_requirements_invalid',
+        'Prepare Vite cache' => 'deployment.vp_store_failed',
         'dev-vp-' => 'deployment.vp_store_failed',
-        'Write the deploy steps' => 'deployment.step_failed',
         'Run before steps' => 'deployment.step_failed',
         'Grant Caddy access' => 'deployment.selection_invalid',
         'Activate release' => 'deployment.selection_invalid',
         'Swap current' => 'deployment.selection_invalid',
+        'Prepare PHP directories' => 'deployment.php_runtime_unconfirmed',
+        'Read local PHP tuning' => 'deployment.php_runtime_unconfirmed',
+        'Write PHP configuration' => 'deployment.php_runtime_unconfirmed',
+        'Write default PHP tuning' => 'deployment.php_runtime_unconfirmed',
+        'Test PHP configuration' => 'deployment.php_runtime_unconfirmed',
+        'Start PHP runtime' => 'deployment.php_runtime_unconfirmed',
+        'Check PHP runtime' => 'deployment.php_runtime_unconfirmed',
         'Refresh PHP cache' => 'deployment.php_runtime_unconfirmed',
-        'Install Process definitions' => 'process.install_failed',
+        'Install Processes' => 'process.install_failed',
         'Restart Processes' => 'process.restart_failed',
         'Run after steps' => 'deployment.step_failed',
-        'Remove the deploy steps' => 'deployment.step_failed',
         'Read current back' => 'deployment.selection_invalid',
+        'Read deployed commit' => 'deployment.selection_invalid',
+        'Check Process state' => 'process.restart_failed',
+        'Read container state' => 'process.restart_failed',
         'Check the deployment' => 'deployment.selection_invalid',
     ];
 
@@ -55,7 +65,7 @@ final readonly class ProductionDeployOutcome
         $status = static fn (string $name): ?string => NativeRunResult::stepStatus($result, $name);
         $release = InstanceDeploymentIntent::releaseName($operation);
         $instance = Instance::query()->findOrFail($operation->target_id);
-        $activated = $status('Activate release') === 'succeeded' && $status('Swap current') === 'succeeded';
+        $activated = $status('Swap current') === 'succeeded';
         $read = trim(ValidatedData::nullableString(ValidatedData::object($steps['Read the release commit'] ?? [])['stdout'] ?? null) ?? '');
         $payload = ['release' => ['name' => $release], 'commit' => $read !== '' ? $read : InstanceDeploymentIntent::commit($operation),
             'selected_release' => ['name' => $activated ? $release : RecordedReleases::afterDeploy($instance, $release)['previous']],
@@ -69,6 +79,9 @@ final readonly class ProductionDeployOutcome
         }
         if ($status('Write .env-0') === 'succeeded') {
             $payload['environment'] = ['keys' => ValidatedData::stringList(ValidatedData::object($operation->input['direct_environment'])['keys'])];
+        }
+        if ($status('Check PHP runtime') === 'succeeded' && ($result['php_runtime'] ?? null) === 'compliant') {
+            $payload['php_identity'] = ValidatedData::object(ValidatedData::object($operation->input['php_input'])['identity']);
         }
         $payload['runtime_definitions'] = self::members($operation, $result);
         $vp = DevelopmentDeployOutcome::vpEnvironment($result);
@@ -116,7 +129,7 @@ final readonly class ProductionDeployOutcome
     {
         $captured = ValidatedData::object($operation->input['runtime_definitions']);
         $outcomes = ['processes' => [], 'schedules' => [], 'restart' => []];
-        foreach (['processes' => ['Install Process definitions', 'process_id', 'process.install_failed'],
+        foreach (['processes' => ['Install Processes', 'process_id', 'process.install_failed'],
             'restart' => ['Restart Processes', 'process_id', 'process.restart_failed']] as $family => [$label, $key, $code]) {
             $entries = $captured[$family];
             if (! is_array($entries) || ! array_is_list($entries)) {

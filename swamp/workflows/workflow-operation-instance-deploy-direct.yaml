@@ -13,10 +13,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - instance.deploy
+    kind: {type: string, enum: [instance.deploy]}
     intent:
       type: object
     execution_secrets:
@@ -55,10 +52,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: &id001
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -91,10 +88,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -134,7 +131,7 @@ jobs:
         - ${{ inputs.intent.deployment.repository }}
         - ${{ "+refs/heads/" + inputs.intent.deployment.branch + ":refs/remotes/origin/" + inputs.intent.deployment.branch }}
         timeoutSec: 310
-  - name: Remove the fetch credential
+  - name: Remove fetch credential
     labels:
       role: swamp
     writes: true
@@ -146,10 +143,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -171,10 +168,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -207,10 +204,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -243,10 +240,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -268,7 +265,7 @@ jobs:
         - --count
         - ${{ steps["Resolve the commit"].outputs.stdout.trim() + "..refs/remotes/origin/" + inputs.intent.deployment.branch }}
         timeoutSec: 60
-  - name: Read the branch at that depth
+  - name: Read the branch ancestor
     labels:
       role: swamp
     dependsOn:
@@ -279,10 +276,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -306,7 +303,7 @@ jobs:
         timeoutSec: 60
   - name: Check it is on the branch
     dependsOn:
-    - step: Read the branch at that depth
+    - step: Read the branch ancestor
       condition:
         type: succeeded
     guard: ${{ inputs.intent.deployment.variant != "development" }}
@@ -314,7 +311,7 @@ jobs:
       type: assert
       severity: high
       message: The commit is not on the branch.
-      expr: steps["Read the branch at that depth"].outputs.stdout.trim() == steps["Resolve the commit"].outputs.stdout.trim()
+      expr: steps["Read the branch ancestor"].outputs.stdout.trim() == steps["Resolve the commit"].outputs.stdout.trim()
   - name: Read the local branch
     labels:
       role: swamp
@@ -326,10 +323,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -361,10 +358,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -403,10 +400,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -428,7 +425,7 @@ jobs:
         - --others
         - --directory
         timeoutSec: 60
-  - name: List the target directories
+  - name: List target directories
     labels:
       role: swamp
     dependsOn:
@@ -439,10 +436,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -470,7 +467,7 @@ jobs:
     labels:
       role: swamp
     dependsOn:
-    - step: List the target directories
+    - step: List target directories
       condition:
         type: succeeded
     guard: ${{ inputs.intent.deployment.variant != "development" }}
@@ -482,7 +479,7 @@ jobs:
       inputs:
         home: ${{ inputs.intent.deployment.home }}
         untracked: ${{ steps["List untracked entries"].outputs.stdout }}
-        directories: ${{ steps["List the target directories"].outputs.stdout }}
+        directories: ${{ steps["List target directories"].outputs.stdout }}
 - name: development-checkout
   labels:
     role: swamp
@@ -498,10 +495,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -526,10 +523,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -555,10 +552,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -591,7 +588,7 @@ jobs:
   labels:
     role: swamp
   steps:
-  - name: Write the release credential
+  - name: Write release credential
     labels:
       role: swamp
     writes: true
@@ -599,7 +596,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "instance-deploy-credential-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-write-release-credential-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -617,7 +614,7 @@ jobs:
     labels:
       role: swamp
     dependsOn:
-    - step: Write the release credential
+    - step: Write release credential
       condition:
         type: always
     writes: true
@@ -629,10 +626,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-prepare-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-prepare-the-release-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-prepare-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-prepare-the-release-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -648,11 +645,11 @@ jobs:
         argv: ${{ ["/usr/bin/timeout", "900", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + self.action.argv }}
         okExitCodes: ${{ self.action.ok }}
         timeoutSec: 910
-  - name: Remove the release credential
+  - name: Remove release credential
     labels:
       role: swamp
     dependsOn:
-    - step: Write the release credential
+    - step: Write release credential
       condition:
         type: always
     - step: Prepare the release
@@ -663,7 +660,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "instance-deploy-credential-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-remove-release-credential-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -675,11 +672,47 @@ jobs:
         path: ${{ inputs.intent.production.credential }}
         ensure: absent
       inputs: {}
+  - name: Prepare shared paths
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Check the branch commit
+      condition:
+        type: always
+    writes: true
+    forEach:
+      item: action
+      in: ${{ inputs.intent.production.shared }}
+    concurrency: 1
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || ("empty" in self.action && steps["Prepare shared paths-" + string(self.action.empty)].outputs.stdout.trim()
+      != "") || ("source" in self.action && steps["Prepare shared paths-" + string(self.action.source)].outputs.exitCode != 0) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-deploy-prepare-shared-paths-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("instance-deploy-prepare-shared-paths-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/timeout", "900", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + self.action.argv }}
+        okExitCodes: ${{ self.action.ok }}
+        timeoutSec: 910
   - name: Link the release
     labels:
       role: swamp
     dependsOn:
-    - step: Remove the release credential
+    - step: Prepare shared paths
       condition:
         type: always
     writes: true
@@ -691,7 +724,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: ${{ "instance-deploy-link-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-link-the-release-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -709,20 +742,17 @@ jobs:
     labels:
       role: swamp
     dependsOn:
-    - step: Remove the release credential
-      condition:
-        type: always
-    - step: Link the release
+    - step: Remove release credential
       condition:
         type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-read-commit-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-read-the-release-commit-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-read-commit-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-read-the-release-commit-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -735,10 +765,10 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: ${{ ["/usr/bin/timeout", "30", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "/usr/bin/git",
-          "-c", "core.hooksPath=/dev/null", "-C", inputs.intent.production.release_path] + ["rev-parse", "--verify", "HEAD"] }}
+        argv: ${{ ["/usr/bin/timeout", "30", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "/usr/bin/git", "-c", "core.hooksPath=/dev/null",
+          "-C", inputs.intent.production.release_path] + ["rev-parse", "--verify", "HEAD"] }}
         timeoutSec: 40
-  - name: Read the first-parent chain
+  - name: Read first-parent chain
     labels:
       role: swamp
     dependsOn:
@@ -749,10 +779,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-read-chain-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-read-first-parent-chain-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-read-chain-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-read-first-parent-chain-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -765,15 +795,15 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ ["/usr/bin/timeout", "60", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "/usr/bin/git",
-          "-c", "core.hooksPath=/dev/null", "-C", inputs.intent.production.release_path] + ["rev-list", "--first-parent", "refs/remotes/origin/" + inputs.intent.production.branch, "--not", (inputs.intent.production.commit
-          == null ? "" : inputs.intent.production.commit) + "^@"] }}'
+        argv: '${{ ["/usr/bin/timeout", "60", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "/usr/bin/git", "-c", "core.hooksPath=/dev/null",
+          "-C", inputs.intent.production.release_path] + ["rev-list", "--first-parent", "refs/remotes/origin/" + inputs.intent.production.branch, "--not", (inputs.intent.production.commit == null ? "" : inputs.intent.production.commit)
+          + "^@"] }}'
         timeoutSec: 70
-  - name: Check the commit is on the branch
+  - name: Check the branch commit
     labels:
       role: swamp
     dependsOn:
-    - step: Read the first-parent chain
+    - step: Read first-parent chain
       condition:
         type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.production.commit == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
@@ -781,23 +811,23 @@ jobs:
       type: assert
       severity: high
       message: The commit is not on the branch's first-parent chain.
-      expr: steps["Read the first-parent chain"].outputs.stdout.trim().split("\n")[size(steps["Read the first-parent chain"].outputs.stdout.trim().split("\n")) - 1] == inputs.intent.production.commit &&
-        steps["Read the release commit"].outputs.stdout.trim() == inputs.intent.production.commit
+      expr: steps["Read first-parent chain"].outputs.stdout.trim().split("\n")[size(steps["Read first-parent chain"].outputs.stdout.trim().split("\n")) - 1] == inputs.intent.production.commit && steps["Read the release
+        commit"].outputs.stdout.trim() == inputs.intent.production.commit
   - name: Read the key names
     labels:
       role: swamp
     dependsOn:
-    - step: Check the commit is on the branch
+    - step: Link the release
       condition:
         type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-env-keys-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-read-the-key-names-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-env-keys-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-read-the-key-names-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -844,14 +874,14 @@ jobs:
     writes: true
     forEach:
       item: file
-      in: '${{ inputs.intent.deployment.variant != "production" ? [] : [{"name": ".env", "secret": inputs.execution_secrets.environment}] + ("testing" in inputs.execution_secrets ? [{"name": ".env.testing",
-        "secret": inputs.execution_secrets.testing}] : []) }}'
+      in: '${{ inputs.intent.deployment.variant != "production" ? [] : [{"name": ".env", "secret": inputs.execution_secrets.environment}] + ("testing" in inputs.execution_secrets ? [{"name": ".env.testing", "secret":
+        inputs.execution_secrets.testing}] : []) }}'
     concurrency: 1
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "instance-deploy-env-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-write-env-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -1047,7 +1077,7 @@ jobs:
         - realpath
         - -s
         - --
-        - .
+        - '${{ inputs.intent.deployment.variant == "production" ? inputs.intent.production.home : "." }}'
     guard: ${{ !inputs.intent.deployment.needs_vp }}
   - name: dev-vp-store
     labels:
@@ -1210,6 +1240,7 @@ jobs:
         store: ${{ steps["dev-vp-store"].outputs.stdout }}
         links: ${{ steps["dev-vp-links"].outputs.links }}
         workspaces: ${{ steps.filter(k, k.startsWith("dev-vp-read-workspace-")).map(k, steps[k].outputs.stdout) }}
+        production: ${{ inputs.intent.deployment.variant == "production" }}
     guard: ${{ !inputs.intent.deployment.needs_vp }}
 - name: dev-vp-install
   labels:
@@ -1253,6 +1284,37 @@ jobs:
       severity: high
       message: The admitted VP manager was not prepared.
     guard: ${{ !inputs.intent.deployment.needs_vp }}
+  - name: Prepare Vite cache
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ inputs.intent.deployment.variant != "production" || !inputs.intent.deployment.needs_vp }}
+    dependsOn:
+    - step: dev-vp-manager-ready
+      condition:
+        type: succeeded
+    forEach:
+      item: directory
+      in: '${{ inputs.intent.deployment.variant != "production" || !inputs.intent.deployment.needs_vp ? [] : (steps["dev-vp-requirements"].outputs.runtime == null ? [] : [inputs.intent.production.home + "/.local", inputs.intent.production.home
+        + "/.local/share", steps["dev-vp-requirements"].outputs.runtime.store]) }}'
+    concurrency: 1
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ ("instance-deploy-vp-cache-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: ${{ self.directory }}
+        owner: ${{ inputs.intent.production.user }}
+        group: ${{ inputs.intent.production.user }}
+        mode: '0700'
+        ensure: present
+      inputs: {}
   - name: dev-vp-cli
     labels:
       role: swamp
@@ -1260,6 +1322,9 @@ jobs:
     - step: dev-vp-manager-ready
       condition:
         type: succeeded
+    - step: Prepare Vite cache
+      condition:
+        type: always
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1279,11 +1344,10 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv:
-        - ${{ self.runtime.store+"/bin/vp" }}
-        - --version
-        env:
-          VP_HOME: ${{ self.runtime.store }}
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "60", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["timeout", "900", "env", "VP_HOME=" + self.runtime.store])
+          + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "--version"] }}'
+        sudo: ${{ inputs.intent.deployment.variant == "production" }}
+        timeoutSec: 70
     forEach:
       item: runtime
       in: '${{ !inputs.intent.deployment.needs_vp ? [] : (steps["dev-vp-requirements"].outputs.runtime == null ? [] : [steps["dev-vp-requirements"].outputs.runtime]) }}'
@@ -1333,20 +1397,17 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv:
-        - ${{ self.runtime.store+"/bin/vp" }}
-        - -C
-        - '${{ inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application }}'
-        - env
-        - install
-        - ${{ "node@"+self.runtime.node_version }}
-        - ${{ self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash) }}
-        env:
-          VP_HOME: ${{ self.runtime.store }}
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" +
+          self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application,
+          "env", "install", "node@"+self.runtime.node_version, self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)]
+          }}'
+        sudo: ${{ inputs.intent.deployment.variant == "production" }}
+        timeoutSec: 910
     forEach:
       item: runtime
       in: '${{ !inputs.intent.deployment.needs_vp ? [] : (steps["dev-vp-requirements"].outputs.runtime == null ? [] : [steps["dev-vp-requirements"].outputs.runtime]) }}'
     guard: ${{ !inputs.intent.deployment.needs_vp }}
+    writes: true
   - name: dev-vp-inventory
     labels:
       role: swamp
@@ -1373,15 +1434,11 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv:
-        - ${{ self.runtime.store+"/bin/vp" }}
-        - -C
-        - '${{ inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application }}'
-        - env
-        - list
-        - --json
-        env:
-          VP_HOME: ${{ self.runtime.store }}
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" +
+          self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application,
+          "env", "list", "--json"] }}'
+        sudo: ${{ inputs.intent.deployment.variant == "production" }}
+        timeoutSec: 70
     forEach:
       item: runtime
       in: '${{ !inputs.intent.deployment.needs_vp ? [] : (steps["dev-vp-requirements"].outputs.runtime == null ? [] : [steps["dev-vp-requirements"].outputs.runtime]) }}'
@@ -1455,28 +1512,27 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
         hosts: name:target
         argv: '${{ ["/usr/bin/flock", "--nonblock", "--conflict-exit-code", "73", "-o", inputs.intent.deployment.home] + ["/usr/bin/env", "-i", "-C", inputs.intent.deployment.home, "HOME=" + inputs.intent.account_home,
           "USER=" + inputs.intent.deployment.node_user, "LOGNAME=" + inputs.intent.deployment.node_user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null)
-          == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store, "ORBIT_SEED_PATH="
-          + inputs.intent.deployment.home, "ORBIT_SEED_COMMIT=" + steps["Resolve the commit"].outputs.stdout.trim()] + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded"
-          ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).store + "/bin/vp", "env", "exec", "--node", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).node_version,
-          "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements"
-          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded"
-          ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash), "--"]) + ["/bin/sh", "-c", self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu
-          -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)]
-          }}'
+          : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store
+          + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "VP_HOME=" : "VP_HOME="
+          + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store, "ORBIT_SEED_PATH=" + inputs.intent.deployment.home, "ORBIT_SEED_COMMIT="
+          + steps["Resolve the commit"].outputs.stdout.trim()] + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ?
+          [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin/vp", "env", "exec", "--node", ("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
+          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ?
+          "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash), "--"]) + ["/bin/sh", "-c", self.step.required
+          ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null
+          2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
         stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}
     forEach:
@@ -1494,10 +1550,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -1530,10 +1586,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-dev-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-dev-" + string(inputs.node_id)).split(".").join("-") }}
         transport: *id001
         hosts: *id002
       inputs:
@@ -1565,39 +1621,9 @@ jobs:
       severity: high
       message: The checkout moved during the deployment.
       expr: steps["Read the checkout branch"].outputs.stdout.trim() == inputs.intent.deployment.branch && steps["Read the checkout commit"].outputs.stdout.trim() == steps["Resolve the commit"].outputs.stdout.trim()
-  - name: Write the deploy steps
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: step
-      in: ${{ inputs.intent.production.steps }}
-    concurrency: 1
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "instance-deploy-step-file-" + string(inputs.node_id) + "-" + string(self._index) }}
-      methodName: apply
-      globalArgs:
-        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        become: true
-        becomeUser: ${{ inputs.intent.production.user }}
-        path: ${{ inputs.intent.production.step_file + string(self.step.index) }}
-        ensure: present
-        mode: '0600'
-        content: ${{ vault.get(inputs.execution_secrets["step_" + string(self.step.index)].vault, inputs.execution_secrets["step_" + string(self.step.index)].key) }}
-      inputs: {}
   - name: Run before steps
     labels:
       role: swamp
-    dependsOn:
-    - step: Write the deploy steps
-      condition:
-        type: always
     writes: true
     forEach:
       item: step
@@ -1607,10 +1633,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-step-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-run-before-steps-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-step-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-run-before-steps-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1623,26 +1649,23 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path,
-          "HOME=" + inputs.intent.production.home, "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded"
-          ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).store] + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements"
-          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin/vp", "env", "exec", "--node", ("dev-vp-requirements" in steps
-          && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash
-          == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash), "--"])
-          + ["/bin/bash", "--noprofile", "--norc", "-eu", inputs.intent.production.step_file + string(self.step.index)] }}'
+        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path, "HOME="
+          + inputs.intent.production.home, "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ?
+          steps["dev-vp-requirements"].outputs.runtime : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=/opt/orbit/vite-plus/bin:" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
+          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store] + (("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status ==
+          "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).binary, "env", "exec", "--node", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@"
+          + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
+          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).package_manager_hash), "--"]) + ["/bin/bash", "--noprofile", "--norc", "-eu", "-s"] }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
+        stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self.step.index)].vault, inputs.execution_secrets["step_" + string(self.step.index)].key) }}
   - name: Grant Caddy access
     labels:
       role: swamp
     dependsOn:
-    - step: Write the deploy steps
-      condition:
-        type: always
     - step: Run before steps
       condition:
         type: always
@@ -1655,10 +1678,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-grant-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-grant-caddy-access-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-grant-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-grant-caddy-access-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1678,9 +1701,6 @@ jobs:
     labels:
       role: swamp
     dependsOn:
-    - step: Write the deploy steps
-      condition:
-        type: always
     - step: Run before steps
       condition:
         type: always
@@ -1692,7 +1712,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: ${{ "instance-deploy-current-next-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-activate-release-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -1718,10 +1738,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("instance-current-swap-" + string(inputs.intent.production.instance_id)).split(".").join("-") }}
+      behaviorName: ${{ ("instance-deploy-swap-current-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("instance-current-swap-" + string(inputs.intent.production.instance_id)).split(".").join("-") }}
+        name: ${{ ("instance-deploy-swap-current-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1743,11 +1763,178 @@ jobs:
         - ${{ inputs.intent.production.home + "/current" }}
         sudo: true
         timeoutSec: 40
-  - name: Refresh PHP cache
+  - name: Prepare PHP directories
     labels:
       role: swamp
     dependsOn:
     - step: Swap current
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ ("instance-deploy-prepare-php-directories-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: ${{ self.directory }}
+        ensure: present
+        owner: root
+        group: root
+        mode: '0755'
+      inputs: {}
+    writes: true
+    forEach:
+      item: directory
+      in: '${{ inputs.intent.php_input == null || !inputs.intent.php_input.configure ? [] : inputs.intent.php_input.directories }}'
+    concurrency: 1
+  - name: Read local PHP tuning
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Prepare PHP directories
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-deploy-read-local-php-tuning-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: check
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: '${{ inputs.intent.php_input == null ? "" : inputs.intent.php_input.local_path }}'
+        ensure: present
+      inputs: {}
+  - name: Write PHP configuration
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Read local PHP tuning
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-deploy-write-php-configuration-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: ${{ self.file.path }}
+        content: ${{ self.file.content }}
+        ensure: present
+        owner: root
+        group: root
+        mode: ${{ self.file.mode }}
+      inputs: {}
+    writes: true
+    forEach:
+      item: file
+      in: '${{ inputs.intent.php_input == null || !inputs.intent.php_input.configure ? [] : inputs.intent.php_input.files }}'
+    concurrency: 1
+  - name: Write default PHP tuning
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Write PHP configuration
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure || steps["Read local
+      PHP tuning"].outputs.current.exists }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-deploy-write-default-php-tuning-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: '${{ inputs.intent.php_input == null ? "" : inputs.intent.php_input.local_path }}'
+        content: '${{ inputs.intent.php_input == null ? "" : inputs.intent.php_input.local_defaults }}'
+        ensure: present
+        owner: root
+        group: root
+        mode: '0644'
+      inputs: {}
+    writes: true
+  - name: Test PHP configuration
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Write default PHP tuning
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-deploy-test-php-configuration-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("instance-deploy-test-php-configuration-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: '${{ ["timeout", "60", "/usr/sbin/php-fpm" + (inputs.intent.php_input == null ? "" : inputs.intent.php_input.version), "--test", "--fpm-config", inputs.intent.php_input == null ? "" : inputs.intent.php_input.main]
+          }}'
+        sudo: true
+        timeoutSec: 70
+  - name: Start PHP runtime
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Test PHP configuration
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ ("instance-deploy-start-php-runtime-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        service: '${{ inputs.intent.php_input == null ? "" : inputs.intent.php_input.service }}'
+        ensure: running
+        enabled: true
+        unitFile: '${{ inputs.intent.php_input == null ? "" : inputs.intent.php_input.unit }}'
+      inputs: {}
+    writes: true
+  - name: Refresh PHP cache
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Start PHP runtime
       condition:
         type: always
     writes: true
@@ -1755,10 +1942,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-php-reload-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-refresh-php-cache-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-php-reload-" + string(inputs.node_id) }}
+        name: ${{ ("instance-deploy-refresh-php-cache-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1779,11 +1966,37 @@ jobs:
         - '${{ inputs.intent.php_input == null ? "unused" : inputs.intent.php_input.service }}'
         sudo: true
         timeoutSec: 70
-  - name: Install Process definitions
+  - name: Check PHP runtime
     labels:
       role: swamp
     dependsOn:
     - step: Refresh PHP cache
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ ("instance-deploy-check-php-runtime-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: check
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        service: '${{ inputs.intent.php_input == null ? "" : inputs.intent.php_input.service }}'
+        ensure: running
+        enabled: true
+      inputs: {}
+  - name: Install Processes
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Refresh PHP cache
+      condition:
+        type: always
+    - step: Check PHP runtime
       condition:
         type: always
     forEach:
@@ -1807,7 +2020,7 @@ jobs:
     - step: Refresh PHP cache
       condition:
         type: always
-    - step: Install Process definitions
+    - step: Install Processes
       condition:
         type: always
     writes: true
@@ -1819,10 +2032,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-process-restart-" + string(inputs.node_id) + "-" + string(self.process.process_id) }}
+      behaviorName: ${{ ("instance-deploy-restart-processes-" + string(inputs.intent.production.instance_id) + "-" + string(self.process.process_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-process-restart-" + string(inputs.node_id) + "-" + string(self.process.process_id) }}
+        name: ${{ ("instance-deploy-restart-processes-" + string(inputs.intent.production.instance_id) + "-" + string(self.process.process_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1835,8 +2048,8 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ self.process.runtime == "docker" ? ["/usr/bin/timeout", "120", "/usr/bin/docker", "restart", self.process.name] : ["/usr/bin/timeout", "120", "/usr/bin/systemctl", "reload-or-restart",
-          self.process.name] }}'
+        argv: '${{ self.process.runtime == "docker" ? ["/usr/bin/timeout", "120", "/usr/bin/docker", "restart", self.process.name] : ["/usr/bin/timeout", "120", "/usr/bin/systemctl", "reload-or-restart", self.process.name]
+          }}'
         sudo: true
         timeoutSec: 130
   - name: Run after steps
@@ -1846,7 +2059,7 @@ jobs:
     - step: Refresh PHP cache
       condition:
         type: always
-    - step: Install Process definitions
+    - step: Install Processes
       condition:
         type: always
     - step: Restart Processes
@@ -1861,10 +2074,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-step-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-run-after-steps-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-step-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-run-after-steps-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1877,56 +2090,19 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path,
-          "HOME=" + inputs.intent.production.home, "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded"
-          ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).store] + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements"
-          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin/vp", "env", "exec", "--node", ("dev-vp-requirements" in steps
-          && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash
-          == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash), "--"])
-          + ["/bin/bash", "--noprofile", "--norc", "-eu", inputs.intent.production.step_file + string(self.step.index)] }}'
+        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path, "HOME="
+          + inputs.intent.production.home, "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ?
+          steps["dev-vp-requirements"].outputs.runtime : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=/opt/orbit/vite-plus/bin:" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
+          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store] + (("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status ==
+          "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).binary, "env", "exec", "--node", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@"
+          + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
+          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).package_manager_hash), "--"]) + ["/bin/bash", "--noprofile", "--norc", "-eu", "-s"] }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
-  - name: Remove the deploy steps
-    labels:
-      role: swamp
-    dependsOn:
-    - step: Refresh PHP cache
-      condition:
-        type: always
-    - step: Install Process definitions
-      condition:
-        type: always
-    - step: Restart Processes
-      condition:
-        type: always
-    - step: Run after steps
-      condition:
-        type: always
-    writes: true
-    forEach:
-      item: step
-      in: ${{ inputs.intent.production.steps }}
-    concurrency: 1
-    guard: ${{ inputs.intent.deployment.variant != "production" }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "instance-deploy-step-file-" + string(inputs.node_id) + "-" + string(self._index) }}
-      methodName: apply
-      globalArgs:
-        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        become: true
-        becomeUser: ${{ inputs.intent.production.user }}
-        path: ${{ inputs.intent.production.step_file + string(self.step.index) }}
-        ensure: absent
-      inputs: {}
+        stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self.step.index)].vault, inputs.execution_secrets["step_" + string(self.step.index)].key) }}
   - name: Find releases in use
     labels:
       role: swamp
@@ -1934,7 +2110,7 @@ jobs:
     - step: Refresh PHP cache
       condition:
         type: always
-    - step: Install Process definitions
+    - step: Install Processes
       condition:
         type: always
     - step: Restart Processes
@@ -1943,23 +2119,19 @@ jobs:
     - step: Run after steps
       condition:
         type: always
-    - step: Remove the deploy steps
-      condition:
-        type: always
     allowFailure: true
     forEach:
       item: release
       in: ${{ inputs.intent.production.cleanup }}
     concurrency: 1
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases"))
-      }}
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-release-use-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-find-releases-in-use-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-release-use-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-find-releases-in-use-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1972,13 +2144,10 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: ${{ ["/usr/bin/timeout", "60", "/usr/bin/find", "/proc", "-mindepth", "2", "-maxdepth", "2", "(", "-name", "cwd", "-o", "-name", "root", "-o", "-name", "exe", ")", "(", "-lname", self.release.path,
-          "-o", "-lname", self.release.path + "/*", ")", "-print", "-quit"] }}
+        argv: ${{ ["/usr/bin/timeout", "60", "/usr/bin/find", "/proc", "-mindepth", "2", "-maxdepth", "2", "(", "-name", "cwd", "-o", "-name", "root", "-o", "-name", "exe", ")", "(", "-lname", self.release.path, "-o",
+          "-lname", self.release.path + "/*", ")", "-print", "-quit"] }}
         sudo: true
         timeoutSec: 70
-        okExitCodes:
-        - 0
-        - 1
   - name: Clean up releases
     labels:
       role: swamp
@@ -1986,16 +2155,13 @@ jobs:
     - step: Refresh PHP cache
       condition:
         type: always
-    - step: Install Process definitions
+    - step: Install Processes
       condition:
         type: always
     - step: Restart Processes
       condition:
         type: always
     - step: Run after steps
-      condition:
-        type: always
-    - step: Remove the deploy steps
       condition:
         type: always
     - step: Find releases in use
@@ -2007,16 +2173,16 @@ jobs:
       item: release
       in: ${{ inputs.intent.production.cleanup }}
     concurrency: 1
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases"))
-      || !(("Find releases in use-" + string(self._index)) in steps && steps["Find releases in use-" + string(self._index)].status == "succeeded" && steps["Find releases in use-" + string(self._index)].outputs.stdout.trim()
-      == "") }}
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) || !(("Find
+      releases in use-" + string(self._index)) in steps && steps["Find releases in use-" + string(self._index)].status == "succeeded" && steps["Find releases in use-" + string(self._index)].outputs.stdout.trim() == "")
+      }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-deploy-release-remove-" + string(inputs.node_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-deploy-clean-up-releases-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-deploy-release-remove-" + string(inputs.node_id) + "-" + string(self._index) }}
+        name: ${{ ("instance-deploy-clean-up-releases-" + string(inputs.intent.production.instance_id) + "-" + string(self._index) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -2046,7 +2212,7 @@ jobs:
     - step: Refresh PHP cache
       condition:
         type: always
-    - step: Install Process definitions
+    - step: Install Processes
       condition:
         type: always
     - step: Restart Processes
@@ -2055,24 +2221,23 @@ jobs:
     - step: Run after steps
       condition:
         type: always
-    - step: Remove the deploy steps
-      condition:
-        type: always
     - step: Find releases in use
       condition:
         type: always
     - step: Clean up releases
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases"))
-      }}
+    - step: Check PHP runtime
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("instance-current-read-" + string(inputs.intent.production.instance_id)).split(".").join("-") }}
+      behaviorName: ${{ ("instance-deploy-read-current-back-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("instance-current-read-" + string(inputs.intent.production.instance_id)).split(".").join("-") }}
+        name: ${{ ("instance-deploy-read-current-back-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -2093,6 +2258,122 @@ jobs:
         - ${{ inputs.intent.production.home + "/current" }}
         sudo: true
         timeoutSec: 20
+  - name: Check Process state
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Read current back
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ ("instance-deploy-check-process-state-" + string(inputs.intent.production.instance_id) + "-" + string(self.process.process_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: check
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        service: ${{ self.process.name }}
+        ensure: running
+      inputs: {}
+    forEach:
+      item: process
+      in: ${{ inputs.intent.runtime_definitions.restart.filter(p, p.runtime == "systemd") }}
+    concurrency: 1
+  - name: Read container state
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Read current back
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-deploy-read-container-state-" + string(inputs.intent.production.instance_id) + "-" + string(self.process.process_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("instance-deploy-read-container-state-" + string(inputs.intent.production.instance_id) + "-" + string(self.process.process_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - docker
+        - inspect
+        - --format
+        - '{{.State.Running}}'
+        - ${{ self.process.name }}
+        sudo: true
+        timeoutSec: 20
+    forEach:
+      item: process
+      in: ${{ inputs.intent.runtime_definitions.restart.filter(p, p.runtime == "docker") }}
+    concurrency: 1
+  - name: Read deployed commit
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Read current back
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-deploy-read-deployed-commit-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("instance-deploy-read-deployed-commit-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - sudo
+        - -n
+        - -H
+        - -u
+        - ${{ inputs.intent.production.user }}
+        - --
+        - env
+        - GIT_CONFIG_NOSYSTEM=1
+        - GIT_CONFIG_GLOBAL=/dev/null
+        - git
+        - -c
+        - core.hooksPath=/dev/null
+        - -C
+        - ${{ inputs.intent.production.release_path }}
+        - rev-parse
+        - --verify
+        - HEAD
+        sudo: true
+        timeoutSec: 40
   - name: Check the deployment
     labels:
       role: swamp
@@ -2100,10 +2381,20 @@ jobs:
     - step: Read current back
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases"))
-      }}
+    - step: Check Process state
+      condition:
+        type: always
+    - step: Read container state
+      condition:
+        type: always
+    - step: Read deployed commit
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
     task:
       type: assert
       severity: high
-      message: current must select the new release.
-      expr: steps["Read current back"].outputs.stdout in ["releases/" + inputs.intent.production.release, "releases/" + inputs.intent.production.release + "\n"]
+      message: The selected release, commit and running services must match the admitted deployment.
+      expr: ((steps["Read current back"].outputs.stdout in ["releases/" + inputs.intent.production.release, "releases/" + inputs.intent.production.release + "\n"]) && (inputs.intent.php_input == null || steps["Check
+        PHP runtime"].outputs.status == "compliant")) && steps["Read deployed commit"].outputs.stdout.trim() == steps["Read the release commit"].outputs.stdout.trim() && steps.filter(k,k.startsWith("Check Process state-")).all(k,steps[k].outputs.status
+        == "compliant") && steps.filter(k,k.startsWith("Read container state-")).all(k,steps[k].outputs.stdout.trim() == "true")

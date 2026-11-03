@@ -11,6 +11,7 @@ export const VpRuntime = z.object({
     ) &&
     !path.slice(1).split("/").some((part) => ["", ".", ".."].includes(part))
   ),
+  binary: z.string().startsWith("/").max(4096).optional(),
   vp_version: Version,
   node_version: Version,
   package_manager: z.enum(["npm", "pnpm"]),

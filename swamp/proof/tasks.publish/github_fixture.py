@@ -66,7 +66,12 @@ def serve():
                 DATA.write_text(json.dumps(data))
                 if self.headers.get('Host') == 'github.com':
                     expected = 'basic ' + base64.b64encode(('x-access-token:' + data['token']).encode()).decode()
-                    assert self.headers.get('Authorization') == expected
+                    if self.headers.get('Authorization') != expected:
+                        self.send_response(401)
+                        self.send_header('WWW-Authenticate', 'Basic realm=proof')
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                        return
                     env = {**os.environ, 'GIT_PROJECT_ROOT': str(STATE / 'git'), 'GIT_HTTP_EXPORT_ALL': '1',
                            'PATH_INFO': path.path, 'QUERY_STRING': path.query, 'REQUEST_METHOD': self.command,
                            'CONTENT_TYPE': self.headers.get('Content-Type', ''), 'CONTENT_LENGTH': str(len(raw)),
@@ -86,10 +91,10 @@ def serve():
                     assert self.headers.get('Authorization', '').startswith('Bearer ')
                     self.respond({'id': 123})
                 elif path.path == '/app/installations/123/access_tokens':
-                    assert json.loads(raw) == {'repositories': ['orbit'], 'permissions': {'contents': 'write', 'pull_requests': 'write', 'workflows': 'write'}}
+                    assert json.loads(raw) == {'repositories': ['orbit'], 'permissions': data.get('permissions', {'contents': 'write', 'pull_requests': 'write', 'workflows': 'write'})}
                     data['minted'] += 1
                     DATA.write_text(json.dumps(data))
-                    self.respond({'token': data['token']}, 201)
+                    self.respond({'token': data['token'], 'permissions': data.get('permissions', {}), 'expires_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + 3500))}, 201)
                 else:
                     scheme, _, credential = self.headers.get('Authorization', '').partition(' ')
                     assert scheme.lower() in ('token', 'bearer') and credential == data['token']

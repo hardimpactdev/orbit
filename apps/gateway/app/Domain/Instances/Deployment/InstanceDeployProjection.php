@@ -92,6 +92,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             } elseif ($admitted['variant'] !== 'development' && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
                 $instance->update(['checkout_path' => ValidatedData::string($admitted['home']).'/releases/'.$facts['selected_release']]);
             }
+            if (is_array($payload['php_identity'] ?? null)) {
+                $instance->forceFill(ValidatedData::object($payload['php_identity']))->saveOrFail();
+            }
             if (is_array($payload['environment'] ?? null)) {
                 $keys = ValidatedData::stringList($payload['environment']['keys'] ?? []);
                 sort($keys, SORT_STRING);
