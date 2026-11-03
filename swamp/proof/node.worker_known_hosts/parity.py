@@ -2,8 +2,8 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import stat
+from pathlib import Path
 
 with open(os.environ['PROOF_OPERATION_FILE']) as source:
     operation = json.load(source)
