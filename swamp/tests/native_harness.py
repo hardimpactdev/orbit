@@ -1,14 +1,26 @@
 """Shared local native workflow fixture; never uses an inherited serve connection."""
 import os
-from pathlib import Path
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def require_disposable_docker(test):
+    """Start real containers only on a disposable host: a proof VM or a CI runner sets ORBIT_DISPOSABLE_DOCKER=1.
+
+    A SIGTERM, such as from `timeout`, becomes SystemExit, so addCleanup and finally blocks still remove the containers.
+    """
+    if os.environ.get('ORBIT_DISPOSABLE_DOCKER') != '1':
+        test.skipTest('real Docker runs only on a disposable host (ORBIT_DISPOSABLE_DOCKER=1)')
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
 
 
 class NativeTestCase(unittest.TestCase):

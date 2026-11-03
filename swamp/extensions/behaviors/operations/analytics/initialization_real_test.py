@@ -11,11 +11,12 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / 'tests'))
-from native_harness import NativeTestCase
+from native_harness import NativeTestCase, require_disposable_docker
 
 
 class InitializationReal(NativeTestCase):
     def test_actual_plausible_database_initialization_and_repeat(self):
+        require_disposable_docker(self)
         process_id = 910000000 + secrets.randbelow(10000000)
         server = f'orbit-process-{process_id}-plausible'
         containers = []

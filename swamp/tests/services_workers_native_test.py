@@ -1,4 +1,7 @@
 import json,os,pathlib,shutil,socket,subprocess,tempfile,time,urllib.request,uuid,unittest
+
+from native_harness import require_disposable_docker
+
 REPO=pathlib.Path(__file__).resolve().parents[1]
 CLI=os.environ.get('SWAMP_BIN','swamp')
 IMAGE='orbit-swamp-worker:20261028.205235.0-sha.1602a617'
@@ -12,6 +15,7 @@ def reply(s):
  raise RuntimeError('No JSON reply')
 class ContainerWorkerTest(unittest.TestCase):
  def test_workflow_labels_dispatch_to_container_and_write_resource(self):
+  require_disposable_docker(self)
   with tempfile.TemporaryDirectory(prefix='swamp-container-placement-') as tmp:
    root=pathlib.Path(tmp);ext=root/'extensions/behaviors';ext.mkdir(parents=True)
    shutil.copy(REPO/'.swamp.yaml',root/'.swamp.yaml')
