@@ -138,3 +138,24 @@ Deno.test("a create without a Route skips the Route child", async () => {
   const { steps } = await run();
   assertEquals(steps.route.status, "skipped");
 });
+Deno.test("a create copies the default Instance's SQLite database into its checkout before setup", async () => {
+  const { f, application, inputs, setup, run } = await createFixture();
+  await using _ = f;
+  for (const name of ["snapshot", "install", "cleanup"]) await f.workflow(`instance-clone-database-${name}`);
+  const source = `${f.node}/apps/project/default/database/database.sqlite`;
+  await Deno.mkdir(`${f.node}/apps/project/default/database`, { recursive: true });
+  new Deno.Command("python3", { args: ["-I", "-c", "import sqlite3,sys\nc=sqlite3.connect(sys.argv[1])\nc.execute('create table t(v)')\nc.execute(\"insert into t values('default-row')\")\nc.commit()", source] }).outputSync();
+  const target = `${application}/database/database.sqlite`;
+  await Deno.mkdir(`${application}/database`, { recursive: true });
+  inputs.intent.database = {
+    candidate: { ssh_execution: f.connection }, ssh_execution: f.connection, user: f.user,
+    sqlite: { source, user: f.user, snapshot: `${f.node}/create-sqlite-snapshot.sqlite`, target },
+  };
+  await setup([`test -f database/database.sqlite`]);
+  const { steps, result } = await run();
+  assertEquals(["database-snapshot", "database-install", "setup-0"].map((n) => steps[n].status), Array(3).fill("succeeded"));
+  assertEquals(result.ready, true);
+  const rows = new TextDecoder().decode(new Deno.Command("python3", { args: ["-I", "-c", "import sqlite3,sys\nprint(sqlite3.connect(sys.argv[1]).execute('select v from t').fetchone()[0])", target] }).outputSync().stdout).trim();
+  assertEquals(rows, "default-row");
+  assertFalse(exists(`${f.node}/create-sqlite-snapshot.sqlite`));
+});

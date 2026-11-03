@@ -35,7 +35,7 @@ Both database actions refuse a server Node without a stored SSH host key (`swamp
 
 Instance runs compose Database actions as steps of their own workflow. Grouped removal records one aggregate database intent for the admitted Instance set, with one entry per SQL server. Each server Node receives only its own passwords. Successful projections attach a created connection or remove the admitted connection records; they do not re-run SQL or inspect a Node.
 
-Orbit has no native database copy yet. A development create that needs a [database clone](/domains/applications#database-clone), and a production clone or transfer with a SQLite source, return `operation.kind_unavailable` (503) before any change.
+A development create copies a SQLite [database clone](/domains/applications#database-clone) natively. A development create that needs a MySQL copy, and a production clone or transfer with a SQLite source, return `operation.kind_unavailable` (503) before any change.
 
 ## Drivers and fields
 

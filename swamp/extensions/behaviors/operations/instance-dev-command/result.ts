@@ -8,6 +8,7 @@ type Phases = {
     fetch: string;
     source: Phase;
     environment: string;
+    database: string;
     setup: string[];
     processes: string[];
     route: string;
@@ -39,6 +40,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ["prepare", phases.prepare === "succeeded"],
         ["source", phases.fetch !== "failed" && commit !== null],
         ["environment", phases.environment === "succeeded"],
+        // Only a create that copies the default Instance's database runs the database phase.
+        ["database", intent.database == null || phases.database === "succeeded"],
         ["setup", failedSetup < 0],
         [
             "processes",

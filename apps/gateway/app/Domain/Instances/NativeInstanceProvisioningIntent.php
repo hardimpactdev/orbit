@@ -47,7 +47,10 @@ final readonly class NativeInstanceProvisioningIntent
     {
         $instance->loadMissing(['node', 'project']);
         $this->assertCreateSupported($instance->project, $instance->node, false);
-        if ($instance->databaseConnectionTargets()->exists()) {
+        // An already active Instance runs no phase; otherwise only the database copy this create owns may be attached.
+        $alreadyActive = $instance->status === InstanceState::Active && ! $instance->first_setup_pending;
+        if (! $alreadyActive && $instance->databaseConnectionTargets()
+            ->whereHas('databaseConnection', static fn ($query) => $query->where('owner_instance_id', '!=', $instance->id)->orWhereNull('owner_instance_id'))->exists()) {
             $this->unavailable();
         }
         if (($input['user'] ?? null) !== $instance->node->user) {
@@ -65,7 +68,7 @@ final readonly class NativeInstanceProvisioningIntent
             'network' => true, 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https']))],
             'setup' => ['instance_id' => $instance->id, 'list' => 'setup',
                 ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::Setup)],
-            'already_active' => $instance->status === InstanceState::Active && ! $instance->first_setup_pending,
+            'already_active' => $alreadyActive,
             'retained_source' => in_array($instance->status, [InstanceState::Active, InstanceState::SourceResolved], true) && is_string($instance->starting_commit)
                 ? ['commit' => $instance->starting_commit] : null];
     }

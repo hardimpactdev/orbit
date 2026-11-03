@@ -153,7 +153,7 @@ orbit instance:setup <instance>
 
 Explicit `instance:setup` returns after admitting the Operation. Each command runs within its stored timeout, and the whole list within 540 seconds, the most its timeouts may add up to.
 
-Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts, plus 30 seconds for the Process step, plus 180 seconds for a Route; the setup phase stops at 540 seconds. A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
+Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts, plus 30 seconds for the Process step, plus 180 seconds for a Route, plus 180 seconds for a database copy; the setup phase stops at 540 seconds. A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
 
 A step cut short by the list budget, or with no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
 

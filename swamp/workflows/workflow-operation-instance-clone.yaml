@@ -135,7 +135,6 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
         run_id: ${{ run.id }}
     dependsOn:
     - step: Write .env, prepare Vite+
@@ -153,7 +152,6 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
         run_id: ${{ run.id }}
         digest: ${{ steps["Snapshot the database"].outputs.digest.stdout.split(" ")[0] }}
     dependsOn:
@@ -281,7 +279,6 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
         run_id: ${{ run.id }}
     dependsOn:
     - step: Snapshot the database

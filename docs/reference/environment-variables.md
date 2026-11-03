@@ -92,7 +92,7 @@ The foreign-key check refuses a file with keys that neither stored configuration
 
 ## Parent environment steps
 
-Create seeds encrypted values from its bounded source template before the native environment step. The Gateway validates the exact create root, preparation ID, Project, Node and checkout. Clone reads its stored candidate snapshot. These steps run within their parent roots and admit no child Operation. Public synchronization still requires an active Instance.
+Create seeds encrypted values from its bounded source template before the native environment step. When create copies the default Instance's SQLite database, the copy's `DB_*` keys replace the template's database keys in that seed. The Gateway validates the exact create root, preparation ID, Project, Node and checkout. Clone reads its stored candidate snapshot. These steps run within their parent roots and admit no child Operation. Public synchronization still requires an active Instance.
 
 ## Where the file lives
 

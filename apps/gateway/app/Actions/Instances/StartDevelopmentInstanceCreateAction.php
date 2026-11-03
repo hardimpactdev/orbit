@@ -8,6 +8,8 @@ use App\Actions\Operations\StartOperationAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Instances\CreateInstanceData;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlan;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
@@ -31,10 +33,13 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -82,7 +87,8 @@ final readonly class StartDevelopmentInstanceCreateAction
             }
             $clone = $instance instanceof Instance && ! $instance->first_setup_pending
                 ? null : $this->databases->plan($project, $name);
-            app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($project, $node, $data->databaseServer !== null || $clone !== null);
+            // A SQLite copy of the default database runs in this create; a MySQL copy is not native yet.
+            app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($project, $node, $data->databaseServer !== null || $clone?->server !== null);
             $sourceRoot = $this->nodeSettings->fromStored($node->settings)?->appsPath();
             if (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires an explicit apps.path.', 503);
@@ -145,9 +151,13 @@ final readonly class StartDevelopmentInstanceCreateAction
             $provisioning = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
             // An already active Instance runs no phase, so admission records no environment or Process for it.
             $input['environment_keys'] = $input['members'] = [];
+            $database = $copy = null;
             if ($provisioning['already_active'] !== true) {
+                // The copy is attached under DB before .env renders, so .env already names it.
+                $copy = $clone === null ? null : $this->sqliteCopy($instance, $node, $clone);
+                $database = $copy['intent'] ?? null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project);
+                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? null);
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
@@ -157,15 +167,43 @@ final readonly class StartDevelopmentInstanceCreateAction
                     preserveEnvironment: true, preparedWorkloads: true,
                     wakePreparedWorkloads: ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists())];
             }
-            $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null];
+            $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database];
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
-            // 30 s for the Process phase, and 180 s for the Route child: CSR, signing, install, publication and its TLS probe (117 s measured cold).
+            // 30 s for the Process phase, 180 s for the Route child (CSR, signing, install, publication and its TLS probe; 117 s measured cold),
+            // and 180 s for the database copy (its snapshot and install timeouts).
             $input['run_budget_seconds'] = 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, array_sum(array_map(
                 static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30
-                + (isset($input['route_create']) ? 180 : 0);
+                + (isset($input['route_create']) ? 180 : 0) + ($database === null ? 0 : 180);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
         });
+    }
+
+    /**
+     * The default Instance's SQLite file becomes this Instance's own database at the same relative path in its checkout
+     * (ADR 0191), copied with SQLite's backup API by the run before setup.
+     *
+     * @return array{connection:DatabaseConnection,intent:array<string,mixed>}
+     */
+    private function sqliteCopy(Instance $instance, Node $node, InstanceDatabaseClonePlan $clone): array
+    {
+        $relative = ValidatedData::string($clone->relativePath);
+        $target = rtrim($instance->checkout_path, '/').'/'.$relative;
+        $slug = $instance->project->slug.'-'.$instance->name;
+        $slug = strlen($slug) <= 63 ? $slug : rtrim(substr($slug, 0, 54), '-').'-'.substr(sha1($slug), 0, 8);
+        $connection = DatabaseConnection::query()->firstOrCreate(['slug' => $slug],
+            ['driver' => DatabaseDriver::Sqlite->value, 'node_id' => $instance->node_id, 'owner_instance_id' => $instance->id, 'path' => $target]);
+        if ($connection->owner_instance_id !== $instance->id || $connection->path !== $target) {
+            throw new ResourceOperationException('instance.database_slug_taken', 'The database connection slug for this Instance belongs to another owner.', 409);
+        }
+        DatabaseConnectionTarget::query()->updateOrCreate(['instance_id' => $instance->id, 'prefix' => 'DB'],
+            ['database_connection_id' => $connection->id, 'network' => 'wireguard']);
+        $source = $clone->source;
+
+        return ['connection' => $connection, 'intent' => ['candidate' => ['ssh_execution' => app(SwampSshExecutionInput::class)->forNode($source->node)],
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node), 'user' => $node->user,
+            'sqlite' => ['source' => rtrim($source->checkout_path, '/').'/'.$relative, 'user' => $source->node->user,
+                'snapshot' => '/tmp/orbit-create-sqlite-'.$instance->id.'.sqlite', 'target' => $target]]];
     }
 
     private function assertDefaults(Project $project): void

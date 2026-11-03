@@ -14,56 +14,6 @@ inputs:
       minimum: 1
     intent:
       type: object
-    execution_secrets:
-      type: object
-      properties:
-        git_read:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-        environment:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-        git_credential:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-      required:
-      - git_read
-      - environment
-      - git_credential
-      additionalProperties: false
     kind:
       type: string
     run_id:
@@ -72,7 +22,6 @@ inputs:
   - operation_id
   - node_id
   - intent
-  - execution_secrets
   - kind
   - run_id
   additionalProperties: false

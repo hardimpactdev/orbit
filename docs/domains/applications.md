@@ -38,7 +38,7 @@ orbit instance:create <project> <node> default
 orbit instance:create <project> <node> feature-one --branch=release
 ```
 
-The Gateway returns HTTP 202 with one native Operation. The current create root supports development checkouts without a Route, database work or Task VM placement. A web-serving Project, custom domain, database server or automatic database copy returns `operation.kind_unavailable` before reservation. At admission the Gateway renders the Instance's `.env` from the [Project environment template](#project-environment-template) and stores it. Swamp prepares the source, writes that `.env`, runs setup and starts the [development Processes](/reference/processes-and-schedules#project-definitions) as steps of that root, and returns the checked-out commit. It runs local commands as the recorded Node account. The frozen agent performs no action.
+The Gateway returns HTTP 202 with one native Operation. The create root serves web-serving Projects with their Route and copies a SQLite [database clone](#database-clone). A Database server (`--database-server`) or a MySQL database clone returns `operation.kind_unavailable` before reservation, and a task VM Node returns `instance.task_vm_node`. At admission the Gateway renders the Instance's `.env` from the [Project environment template](#project-environment-template) and stores it. Swamp prepares the source, writes that `.env`, runs setup and starts the [development Processes](/reference/processes-and-schedules#project-definitions) as steps of that root, and returns the checked-out commit. It runs local commands as the recorded Node account. The frozen agent performs no action.
 
 Swamp clones the repository to `<apps-root>/<project-slug>/<name>` using the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from recorded Node settings. The branch is a separate choice.
 
@@ -107,9 +107,9 @@ When the Project has an Instance named `default` with a database attached under 
 | MySQL on a [Database server](/reference/database-servers) | A database named `<project>_<instance>` on the same server, owned by the Instance's user and filled with `mysqldump --single-transaction` piped into `mysql` inside the server's container, plus the test database `<project>_<instance>_test`. |
 | SQLite file inside the `default` checkout | A copy at the same relative path in the new checkout, also on another Node. Tests use `:memory:`. |
 
-On the same Node, Orbit holds SQLite's write lock while it takes a reflink of the SQLite database file and its `-wal` file. It first checks that the filesystem can clone the file, so no writer waits when it cannot. Orbit copies a snapshot made with SQLite's backup API instead in three cases: the filesystem has no block cloning, a writer holds the lock for two seconds, or the source is on another Node.
+Orbit copies a snapshot made with SQLite's backup API, on the same Node and from another Node, with the same steps as [`instance:clone`](/cli/instance/clone). A file already at the target path is kept.
 
-Native `instance:create` does not run this copy yet. A create that needs one returns `operation.kind_unavailable` (503) and changes nothing. The [`instance:clone` chart](/cli/instance/clone) makes the copy a step of the Instance run.
+Native `instance:create` runs the SQLite copy as a step of its run, after `.env` and before setup. A create that needs a MySQL copy returns `operation.kind_unavailable` (503) and changes nothing.
 
 Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`. The Gateway records Swamp's result and the attachment.
 

@@ -175,10 +175,55 @@ jobs:
             nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
           inputs: {}
       # Setup: the Project setup list in order, one command per item as the account; the first failure stops it.
+      # Database: the default Instance's SQLite file, copied with the same children as instance:clone (ADR 0191).
+      - name: database-snapshot
+        labels: {role: swamp}
+        dependsOn: [{step: environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.database == null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: instance-clone-database-snapshot
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent.database }}'
+            run_id: '${{ run.id }}'
+      - name: database-install
+        labels: {role: swamp}
+        dependsOn: [{step: database-snapshot, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.database == null }}'
+        task:
+          type: workflow
+          workflowIdOrName: instance-clone-database-install
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent.database }}'
+            run_id: '${{ run.id }}'
+            digest: '${{ steps["database-snapshot"].outputs.digest.stdout.split(" ")[0] }}'
+      - name: database-cleanup
+        labels: {role: swamp}
+        dependsOn:
+          - {step: database-snapshot, condition: {type: always}}
+          - {step: database-install, condition: {type: always}}
+        guard: '${{ inputs.intent.already_active || inputs.intent.database == null }}'
+        task:
+          type: workflow
+          workflowIdOrName: instance-clone-database-cleanup
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent.database }}'
+            run_id: '${{ run.id }}'
       - name: setup
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        dependsOn:
+          - {step: environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
         guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
         forEach: {item: step, in: '${{ inputs.intent.setup_steps }}'}
         concurrency: 1
@@ -249,6 +294,7 @@ jobs:
           - {step: credential-remove, condition: {type: always}}
           - {step: source, condition: {type: always}}
           - {step: environment, condition: {type: always}}
+          - {step: database-cleanup, condition: {type: always}}
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}
@@ -263,6 +309,7 @@ jobs:
             fetch: '${{ "fetch" in steps ? steps.fetch.status : "skipped" }}'
             source: '${{ "source" in steps ? steps.source : null }}'
             environment: '${{ "environment" in steps ? steps.environment.status : "skipped" }}'
+            database: '${{ "database-install" in steps ? steps["database-install"].status : "skipped" }}'
             setup: '${{ inputs.intent.setup_steps.map(p, ("setup-" + string(p.index)) in steps ? steps["setup-" + string(p.index)].status : "skipped") }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
