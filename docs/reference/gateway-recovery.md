@@ -6,7 +6,7 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py,apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/*Recipe*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
+  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/*Recipe*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
@@ -129,7 +129,7 @@ Grant rendering stays in the Gateway; no Node script renders or publishes grants
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
-Serve's reload re-reads each extension manifest's `additionalFiles` ([Lab #4282](https://swamp-club.com/lab/4282), fixed in Swamp `20261103.000636.0-sha.db3f6373`), so a newly shipped file reaches workers without a restart. The load never restarts serve or a worker. `swamp_workers.py` stays in the checkout for one release, because the first release after this change still runs the previous workflow, which calls it, from the previous Gateway release, which still handles its restart.
+Serve's reload re-reads each extension manifest's `additionalFiles` ([Lab #4282](https://swamp-club.com/lab/4282), fixed in Swamp `20261103.000636.0-sha.db3f6373`), so a newly shipped file reaches workers without a restart. The load never restarts serve or a worker.
 
 A new workflow needs no grant. The Gateway principal `user:orbit-gateway` has one `run` and `read` grant on every workflow (`workflow:*`), so serve accepts its start as soon as the load step has loaded the workflow.
 
