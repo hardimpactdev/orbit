@@ -101,5 +101,16 @@ class RouteCreateNative(NativeTestCase):
         self.assertTrue(any(name.startswith("Probe the site over TLS") and step["status"] == "failed" for name, step in self.steps.items()))
 
 
+class RouteBehaviorNames(unittest.TestCase):
+    def test_no_route_child_builds_a_behavior_name_from_a_path_or_domain(self):
+        # Swamp refuses a definition name over 64 characters; a path or domain makes the length unbounded.
+        for name in WORKFLOWS + ("route-environment-write", "route-target-retire", "route-certificate-publish", "route-certificate-remove"):
+            workflow = yaml.safe_load((ROOT / f"workflows/workflow-{name}.yaml").read_text())
+            for job in workflow["jobs"]:
+                for step in job["steps"]:
+                    behavior = str(step["task"].get("behaviorName", ""))
+                    self.assertNotRegex(behavior, r"\.(path|domain)\b", f"{name}: {step['name']}")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -90,7 +90,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("route-link-" + string(inputs.node_id) + "-" + self.link.path.split("/").join("-")).split(".").join("-") }}'
+      behaviorName: '${{ ("route-link-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ self.link.path }}', target: '${{ self.link.target }}', owner: '${{ self.link.owner }}', ensure: present,
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
@@ -109,7 +109,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-php-" + string(inputs.node_id) + "-" + self.pool.path.split("/").join("-")).split(".").join("-") }}'
+      behaviorName: '${{ ("route-php-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ self.pool.path }}', content: '${{ self.pool.content.split("__ORBIT_NODE_GROUP__").join(steps.account.outputs.stdout.split(":")[3]).split("/__ORBIT_NODE_HOME__").join(steps.account.outputs.stdout.split(":")[5]) }}', owner: root, group: root, mode: '0644', ensure: present,
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
@@ -485,7 +485,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/line'
-      behaviorName: '${{ ("route-app-url-" + string(inputs.node_id) + "-" + self.url.path.split("/").join("-")).split(".").join("-") }}'
+      behaviorName: '${{ ("route-app-url-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ self.url.path }}', regexp: '^APP_URL=', line: '${{ self.url.line }}', ensure: present, createFile: false,
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
@@ -517,7 +517,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-env-" + string(inputs.node_id) + "-" + self.env.path.split("/").join("-")).split(".").join("-") }}'
+      behaviorName: '${{ ("route-env-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ self.env.path }}', content: '${{ vault.get(inputs.execution_secrets[self.env.secret_field].vault, inputs.execution_secrets[self.env.secret_field].key) }}', owner: '${{ self.env.owner }}', mode: '0600', ensure: present,
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
