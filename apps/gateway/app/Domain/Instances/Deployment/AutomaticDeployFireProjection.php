@@ -38,6 +38,7 @@ final readonly class AutomaticDeployFireProjection implements ScheduledResultPro
         if ($workflowId !== self::Workflow) {
             throw new LogicException('Unknown automatic deploy schedule.');
         }
+        $result = ValidatedData::object(json_decode(Arr::string($result, 'fire_json', '{}'), true, flags: JSON_THROW_ON_ERROR));
         $runId = Arr::string($run, 'id');
         DB::transaction(function () use ($runId, $result): void {
             $record = Setting::withoutEvents(fn (): Setting => Setting::query()->where('scope_type', SettingScopeType::Gateway)

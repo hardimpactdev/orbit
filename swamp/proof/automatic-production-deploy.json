@@ -1,0 +1,16 @@
+{
+  "kind": "automatic-production-deploy",
+  "workflow": "automatic-production-deploy",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "scheduled_run": {"instances": []},
+  "after_run": [["timeout", "60", "runuser", "-u", "orbit", "--", "env", "-C", "apps/gateway", "php", "../../swamp/proof/automatic-production-deploy/follow.php", "${fixture.native_run}"]],
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "policy", "job": "policy", "step": "tick", "budget_seconds": 60},
+    {"name": "check", "job": "policy", "step": "failures", "budget_seconds": 10}
+  ],
+  "parity": "swamp/proof/automatic-production-deploy/parity.py"
+}

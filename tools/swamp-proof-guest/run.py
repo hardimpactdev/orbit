@@ -100,7 +100,35 @@ def steps(history):
     return rows
 
 
-def parity_check(fixture, up, run_id, outputs, operation):
+def phase_results(fixture, rows):
+    phases = []
+    for phase in fixture['phases']:
+        row = next((item for item in rows if item['job'] == phase['job'] and item['step'] == phase['step']), None)
+        phases.append({**phase, 'seconds': row and row['seconds'], 'status': row and row['status'],
+                       'passed': bool(row) and row['seconds'] is not None and row['seconds'] <= phase['budget_seconds']})
+    return phases
+
+
+def scheduled_proof(fixture, up, run_id, context, receipt):
+    begun = time.monotonic()
+    result = native('workflow', 'run', fixture['workflow'], '--input', json.dumps(bind(fixture['scheduled_run'], context)))
+    native_run = result['id']
+    history = native('workflow', 'history', 'get', native_run)
+    outputs = native('workflow', 'history', 'outputs', native_run)
+    context['fixture.native_run'] = native_run
+    for argv in fixture.get('after_run', []):
+        run([str(arg) for arg in bind(argv, context)], cwd=SOURCE, timeout=fixture['budget_seconds'])
+    receipt.update(total_seconds=round(time.monotonic() - begun, 2), scheduled_run=native_run,
+                   native={'run_id': native_run, 'status': history['status'], 'steps': steps(history)})
+    receipt['phases'] = phase_results(fixture, receipt['native']['steps'])
+    receipt['parity'] = parity_check(fixture, up, run_id, outputs, None, native_run)
+    receipt['proof_pass'] = (history['status'] == fixture['expect']['status'] and receipt['parity']['exit'] == 0
+                             and all(phase['passed'] for phase in receipt['phases'])
+                             and receipt['total_seconds'] <= fixture['budget_seconds'])
+    return receipt
+
+
+def parity_check(fixture, up, run_id, outputs, operation, native_run=None):
     outputs_file = STATE / f'outputs-{run_id}.json'
     outputs_file.write_text(json.dumps(outputs))
     operation_file = STATE / f'operation-{run_id}.json'
@@ -109,7 +137,7 @@ def parity_check(fixture, up, run_id, outputs, operation):
     parity = run(['python3', '-I', str(SOURCE / script), *arguments], check=False, cwd=SOURCE, timeout=120,
                  env={'PATH': '/usr/sbin:/usr/bin:/bin', 'PROOF_OUTPUTS': str(outputs_file), 'PROOF_RESULT': json.dumps(operation and operation.get('result')),
                       'PROOF_TARGET': up['target']['key'], 'PROOF_RUN': run_id, 'PROOF_NODES': json.dumps(up['nodes']),
-                      'PROOF_OPERATION_FILE': str(operation_file)})
+                      'PROOF_OPERATION_FILE': str(operation_file), 'PROOF_NATIVE_RUN': native_run or (operation or {}).get('swamp_run_id', '')})
     return {'exit': parity.returncode, 'output': (parity.stdout + parity.stderr)[-2000:]}
 
 
@@ -176,6 +204,8 @@ def main():
         public_bindings(lines, context)
     for argv in fixture.get('before_target', []):
         on_target(up['target']['key'], bind(argv, context))
+    if 'scheduled_run' in fixture:
+        return scheduled_proof(fixture, up, run_id, context, receipt)
     request = bind(fixture['request'], context)
     reply = gateway({**request, 'caller': caller(request), 'key': f'proof-{run_id}-request'}, fixture['budget_seconds'])
     operation = reply.get('operation') or {}
@@ -217,12 +247,7 @@ def main():
     history = native('workflow', 'history', 'get', operation['swamp_run_id'])
     outputs = native('workflow', 'history', 'outputs', operation['swamp_run_id'])
     receipt['native'] = {'run_id': operation['swamp_run_id'], 'status': history.get('status'), 'steps': steps(history)}
-    phases = []
-    for phase in fixture['phases']:
-        row = next((item for item in receipt['native']['steps'] if item['job'] == phase['job'] and item['step'] == phase['step']), None)
-        phases.append({**phase, 'seconds': row and row['seconds'], 'status': row and row['status'],
-                       'passed': bool(row) and row['seconds'] is not None and row['seconds'] <= phase['budget_seconds']})
-    receipt['phases'] = phases
+    phases = receipt['phases'] = phase_results(fixture, receipt['native']['steps'])
     receipt['parity'] = parity_check(fixture, up, run_id, outputs, operation)
     expected = fixture['expect']['status']
     # A refusal the Gateway reads from a step's output fails the Operation while the run itself succeeds.

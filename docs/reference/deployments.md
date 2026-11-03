@@ -300,7 +300,7 @@ After that reload, a rollback reloads or restarts the same active, opted-in Inst
 
 ## Automatic deployments
 
-Swamp runs automatic-deploy policy every minute at second 30 (`30 * * * * *`). It discovers enabled, active production Instances on Nodes with an active `app-prod` role and active default development checkouts on `app-dev` Nodes. The Gateway retains admission, locks, authorization and history. The PHP automatic-deploy command, alias and schedule are removed.
+Swamp runs automatic-deploy policy every minute at second 30 (`30 * * * * *`). It discovers enabled, active production Instances on Nodes with an active `app-prod` role and active default development checkouts on `app-dev` Nodes. The Gateway retains admission, locks, authorization and history. The PHP automatic-deploy command, alias and schedule are removed. The native end assertion fails when the policy producer records a failure. The Gateway captures the full event receipt from that producer in its existing terminal history read, including events from a failed fire; no reporting step prints it.
 
 Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Both policies use the [Gateway source contracts](#swamp-policy-contracts). Development follows the Project default branch. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. Between token refreshes, each eligible Instance costs one `ls-remote` and no GitHub API call in a quiet minute. A failed read drops the cached installation and tokens.
 

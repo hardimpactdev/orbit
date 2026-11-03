@@ -47,6 +47,8 @@ Parity reads the full Operation from the JSON file named by `PROOF_OPERATION_FIL
 
 A `before_gateway` or `after_prepare` hook may also end with `{"bindings": {"operation": 73}}`. These public scalar values bind only under `${fixture.operation}`; they cannot replace Node or secret bindings. An internal kind such as `project.observe` uses its normal Schedule admission action in a hook and follows the returned Operation through the API. Private values still use the separate `secrets` channel.
 
+A scheduled producer with no Operation uses `scheduled_run` instead of `request`: its object is the public workflow input. The runner starts the registered root workflow on the isolated serve, collects native history and runs `after_run` hooks with `${fixture.native_run}`. A hook can drive the production subscriber and operations queue until the family records that exact run. Parity receives `null` in `PROOF_OPERATION_FILE`. Such a receipt proves the scheduled producer and its projection; it makes no Operation admission claim.
+
 ## Receipts
 
 `run` writes `~/swamp-execution/evidence/proof/<kind>/<UTC>-minimal.json`. A receipt names the topology and version, the commit, the VM, the Operation and native run, per-step and phase timings, parity, `up` to receipt time and time since first provision. `proof_pass` is true only when the Gateway and native status match `expect.status`, parity passes and every budget holds.

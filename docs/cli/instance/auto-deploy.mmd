@@ -45,6 +45,9 @@ sequenceDiagram
   %%> - the Instance with auto-deploy on, at once
   %%> - no task: publishing the schedule is part of the command
   loop every minute, second 30
+    Note over SW: tick
+    %%> Native policy producer:
+    %%> - the retained fleet policy selects work and produces the complete event receipt
     SW->>SW: Find newest green commit<br/>ls-remote · merge_check passed
     %%> What it does:
     %%> - reads the branch head with `git ls-remote`
@@ -76,6 +79,11 @@ sequenceDiagram
       %%> - no history row, no Activity entry
     end
   end
+  Note over SW: failures
+  %%> Native end check:
+  %%> - the policy producer records zero failures on success
+  %%> - the Gateway captures its full fire_json in the same terminal history read, including events from a failed fire
+  %%> - no reporting shell forwards or prints the receipt
   Note over GW,SW: Pause<br/>manual deploy or rollback
   %%> What it does:
   %%> - a manual `instance:deploy` or `instance:rollback` pauses auto-deploy
