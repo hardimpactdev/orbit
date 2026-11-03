@@ -161,10 +161,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-php-reload-" + string(inputs.node_id) + "-" + self.reload.unit.split("/").join("-")).split(".").join("-") }}'
+      behaviorName: '${{ ("route-php-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("route-php-reload-" + string(inputs.node_id) + "-" + self.reload.unit.split("/").join("-")).split(".").join("-") }}'
+        name: '${{ ("route-php-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
