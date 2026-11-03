@@ -2,6 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs). Update shares operation-process-create.
   %% Tightened: flow-tighten 2026-11-02, rules 1-22 (cfgmgmt file/systemd/docker_*, no shipped scripts, no report step).
   %% Decided: Nick 2026-11-02, a Docker Process runs as one plain docker run through @swamp/ssh exec; pull with cfgmgmt docker_image, check with the docker_container check.
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: migrated
   %% command: process:update
   %% kind: process.update
@@ -14,12 +15,16 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: process:update 418<br/>--command=… --restart=always
+  CLI->>GW: process:update 418
   %%> Command:
-  %%> - `orbit process:update 418 --command=/usr/bin/php --command=artisan --command=horizon --restart=always`
+  %%> - `orbit process:update 418`
   %%> - syntax: `process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [options]`
   %%> Input:
-  %%> - the numeric Process ID and only the fields that change
+  %%> - the numeric Process ID; without options it re-applies the recorded definition
+  %%> Optional:
+  %%> - `--runtime`, `--command`, `--image`, `--working-directory`, `--environment`, `--port`, `--volume`, `--restart`, `--keep-alive`, `--no-restart-on-deploy`, `--user` change only the fields they name; omitted fields keep their recorded value
+  %%> - these flags change the rendered definition, not the steps; the branches below follow recorded state, such as a retired runtime after `--runtime`
+  %%> - `--idempotency-key` reuses a task start; `--json` returns JSON
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, record the task<br/>keep old spec · #5130

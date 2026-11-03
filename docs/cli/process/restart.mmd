@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
   %% Tightened: flow-tighten 2026-11-02, rules 1-22 (one cfgmgmt systemd apply, its check as the end check, no shipped scripts; rule 21: only this command's branches).
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: migrated
   %% command: process:restart
   %% kind: process.restart
@@ -13,12 +14,14 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: process:restart 417<br/>--idempotency-key=KEY
+  CLI->>GW: process:restart 417
   %%> Command:
   %%> - `orbit process:restart 417`
   %%> - syntax: `process:restart <process> [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the numeric Process ID from `process:list`
+  %%> Optional:
+  %%> - `--idempotency-key` reuses a task start; `--json` returns JSON; neither adds a step
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, record the task<br/>Process 417: provisioning · #5130
