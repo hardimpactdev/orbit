@@ -68,7 +68,7 @@ final readonly class ProductionDeployInput
             'branch' => '', 'credential' => '', 'prepare' => [], 'shared' => [], 'links' => [], 'grants' => [], 'steps' => [],
             'before' => [], 'after' => [], 'cleanup' => []],
             'environment' => ['instance_id' => 0, 'environment' => 'production', 'base' => '', 'user' => '', 'keys' => [], 'owned_keys' => [], 'sha256' => '', 'testing' => null],
-            'process_members' => [], 'runtime_definitions' => ['restart' => []], 'php_input' => null];
+            'process_members' => [], 'runtime_definitions' => ['restart' => [], 'schedules' => []], 'php_input' => null];
     }
 
     /** @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>} */
@@ -101,7 +101,7 @@ final readonly class ProductionDeployInput
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'environment' => $environment['intent']['environment'],
             'process_members' => $processes['members'],
-            'runtime_definitions' => ['restart' => $this->restart($operation)],
+            'runtime_definitions' => ['restart' => $this->restart($operation), 'schedules' => ValidatedData::object($operation->input['runtime_definitions'])['schedules']],
             'php_input' => $operation->input['php_input'] ?? null,
             'production' => ['instance_id' => $instance->id, 'user' => $user, 'home' => $home, 'release' => $release,
                 'release_path' => $directory, 'commit' => InstanceDeploymentIntent::commit($operation), 'branch' => $deployment['branch'],

@@ -21,6 +21,8 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Route;
+use App\Models\Schedule;
+use App\Models\ScheduleDefinition;
 use Tests\Support\FakeRoutePublicationSocket;
 
 function production_native_deploy_target(): Instance
@@ -247,4 +249,16 @@ it('does not record a PHP identity from a noncompliant native service check', fu
         'Swap current' => 'succeeded', 'Check PHP runtime' => ['succeeded', 'non_compliant'], 'Check the deployment' => 'failed',
     ]);
     expect($instance->fresh()->production_php_service)->toBeNull();
+});
+
+it('passes captured Node timers to the native Schedule child and projects their terminal installation', function (): void {
+    $instance = production_native_deploy_target();
+    ScheduleDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'timer', 'environments' => ['production'],
+        'spec' => ['calendar' => '*-*-* 03:00:00', 'command' => 'printf private-timer-command', 'timeout_seconds' => 30]]);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+    $submitted = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload'];
+    expect($submitted['inputs']['intent']['runtime_definitions']['schedules'])->toHaveCount(1)
+        ->and(json_encode($submitted))->not->toContain('private-timer-command');
+    project_production_terminal($operation, 'succeeded', ['Install Schedules-0' => 'succeeded', 'Swap current' => 'succeeded', 'Check the deployment' => 'succeeded']);
+    expect(Schedule::query()->sole()->status)->toBe(LifecycleStatus::Active);
 });

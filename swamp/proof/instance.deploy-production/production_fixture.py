@@ -167,7 +167,10 @@ def parity():
         processes = json.loads(php("echo App\\Models\\Process::where('owner_id',9002)->get(['id','name','status'])->toJson();"))
         assert len(processes) == 1 and processes[0]['status'] == 'active', processes
         unit = 'orbit-process-' + str(processes[0]['id']) + '-proof-deploy.service'
-        assert peer('systemctl', 'is-active', unit) == 'active'
+        assert peer('systemctl', 'show', unit, '--property=ActiveState', '--value') == ('inactive' if case == 'first' else 'active')
+        schedules = json.loads(php("echo App\\Models\\Schedule::where('target_id',9002)->get(['id','status'])->toJson();"))
+        assert len(schedules) == 1 and schedules[0]['status'] == 'active', schedules
+        assert peer('systemctl', 'show', 'orbit-schedule-' + schedules[0]['id'] + '.timer', '--property=LoadState', '--value') == 'loaded'
     print('Private Git over verified TLS; exact release and selection; preserved clone marker; real PHP-FPM and Process; scoped credential removed; private commands passed only on stdin; terminal projection checked.')
 
 

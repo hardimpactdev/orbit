@@ -9,6 +9,8 @@ use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\ProcessDefinition;
+use App\Models\Process;
+use App\Models\ScheduleDefinition;
 use App\Models\Project;
 use Illuminate\Contracts\Console\Kernel;
 
@@ -49,4 +51,8 @@ if ($input['case'] !== 'first') {
 }
 ProcessDefinition::firstOrCreate(['project_id' => $project->id, 'name' => 'proof-deploy'],
     ['environments' => ['production'], 'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', 'infinity']]]);
+ScheduleDefinition::firstOrCreate(['project_id' => $project->id, 'name' => 'proof-timer'], ['environments' => ['production'], 'spec' => ['calendar' => '*-*-* 03:00:00', 'command' => 'printf scheduled', 'timeout_seconds' => 30]]);
+if ($input['case'] !== 'first') {
+    Process::where('owner_id', 9002)->update(['desired_state' => 'running']);
+}
 echo '{}', PHP_EOL;

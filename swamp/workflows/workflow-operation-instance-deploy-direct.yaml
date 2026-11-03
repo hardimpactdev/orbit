@@ -811,8 +811,8 @@ jobs:
       type: assert
       severity: high
       message: The commit is not on the branch's first-parent chain.
-      expr: steps["Read first-parent chain"].outputs.stdout.trim().split("\n")[size(steps["Read first-parent chain"].outputs.stdout.trim().split("\n")) - 1] == inputs.intent.production.commit && steps["Read the release
-        commit"].outputs.stdout.trim() == inputs.intent.production.commit
+      expr: steps["Read first-parent chain"].outputs.stdout.trim().split("\n")[size(steps["Read first-parent chain"].outputs.stdout.trim().split("\n")) - 1] == inputs.intent.production.commit && steps["Read the release commit"].outputs.stdout.trim()
+        == inputs.intent.production.commit
   - name: Read the key names
     labels:
       role: swamp
@@ -874,8 +874,8 @@ jobs:
     writes: true
     forEach:
       item: file
-      in: '${{ inputs.intent.deployment.variant != "production" ? [] : [{"name": ".env", "secret": inputs.execution_secrets.environment}] + ("testing" in inputs.execution_secrets ? [{"name": ".env.testing", "secret":
-        inputs.execution_secrets.testing}] : []) }}'
+      in: '${{ inputs.intent.deployment.variant != "production" ? [] : [{"name": ".env", "secret": inputs.execution_secrets.environment}] + ("testing" in inputs.execution_secrets ? [{"name": ".env.testing", "secret": inputs.execution_secrets.testing}]
+        : []) }}'
     concurrency: 1
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
     task:
@@ -1268,8 +1268,7 @@ jobs:
           setup: ${{ inputs.intent.vp_setup }}
     forEach:
       item: runtime
-      in: '${{ !inputs.intent.deployment.needs_vp ? [] : (steps["dev-vp-requirements"].outputs.manager_required ? (steps["dev-vp-requirements"].outputs.runtime == null ? [] : [steps["dev-vp-requirements"].outputs.runtime])
-        : []) }}'
+      in: '${{ !inputs.intent.deployment.needs_vp ? [] : (steps["dev-vp-requirements"].outputs.manager_required ? (steps["dev-vp-requirements"].outputs.runtime == null ? [] : [steps["dev-vp-requirements"].outputs.runtime]) : []) }}'
     guard: ${{ !inputs.intent.deployment.needs_vp }}
   - name: dev-vp-manager-ready
     labels:
@@ -1344,8 +1343,8 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "60", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["timeout", "900", "env", "VP_HOME=" + self.runtime.store])
-          + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "--version"] }}'
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "60", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["timeout", "900", "env", "VP_HOME=" +
+          self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "--version"] }}'
         sudo: ${{ inputs.intent.deployment.variant == "production" }}
         timeoutSec: 70
     forEach:
@@ -1397,10 +1396,9 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" +
-          self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application,
-          "env", "install", "node@"+self.runtime.node_version, self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)]
-          }}'
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" + self.runtime.store])
+          + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application, "env", "install", "node@"+self.runtime.node_version,
+          self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)] }}'
         sudo: ${{ inputs.intent.deployment.variant == "production" }}
         timeoutSec: 910
     forEach:
@@ -1434,9 +1432,9 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" +
-          self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application,
-          "env", "list", "--json"] }}'
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" + self.runtime.store])
+          + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application, "env", "list", "--json"]
+          }}'
         sudo: ${{ inputs.intent.deployment.variant == "production" }}
         timeoutSec: 70
     forEach:
@@ -1520,19 +1518,18 @@ jobs:
         hosts: *id002
       inputs:
         hosts: name:target
-        argv: '${{ ["/usr/bin/flock", "--nonblock", "--conflict-exit-code", "73", "-o", inputs.intent.deployment.home] + ["/usr/bin/env", "-i", "-C", inputs.intent.deployment.home, "HOME=" + inputs.intent.account_home,
-          "USER=" + inputs.intent.deployment.node_user, "LOGNAME=" + inputs.intent.deployment.node_user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store
-          + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "VP_HOME=" : "VP_HOME="
-          + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store, "ORBIT_SEED_PATH=" + inputs.intent.deployment.home, "ORBIT_SEED_COMMIT="
-          + steps["Resolve the commit"].outputs.stdout.trim()] + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ?
-          [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin/vp", "env", "exec", "--node", ("dev-vp-requirements"
-          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ?
-          "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash), "--"]) + ["/bin/sh", "-c", self.step.required
-          ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null
-          2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
+        argv: '${{ ["/usr/bin/flock", "--nonblock", "--conflict-exit-code", "73", "-o", inputs.intent.deployment.home] + ["/usr/bin/env", "-i", "-C", inputs.intent.deployment.home, "HOME=" + inputs.intent.account_home, "USER=" + inputs.intent.deployment.node_user,
+          "LOGNAME=" + inputs.intent.deployment.node_user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin"
+          : "PATH=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in
+          steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
+          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store, "ORBIT_SEED_PATH=" + inputs.intent.deployment.home, "ORBIT_SEED_COMMIT=" + steps["Resolve the commit"].outputs.stdout.trim()] + (("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ?
+          steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin/vp", "env", "exec", "--node", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded"
+          ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).package_manager_hash), "--"]) + ["/bin/sh", "-c", self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash
+          --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
         stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}
     forEach:
@@ -1649,17 +1646,16 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path, "HOME="
-          + inputs.intent.production.home, "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ?
-          steps["dev-vp-requirements"].outputs.runtime : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=/opt/orbit/vite-plus/bin:" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store] + (("dev-vp-requirements"
-          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status ==
-          "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).binary, "env", "exec", "--node", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@"
-          + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).package_manager_hash), "--"]) + ["/bin/bash", "--noprofile", "--norc", "-eu", "-s"] }}'
+        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path, "HOME=" + inputs.intent.production.home,
+          "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null)
+          == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=/opt/orbit/vite-plus/bin:" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store
+          + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store] + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).binary, "env", "exec", "--node", ("dev-vp-requirements" in
+          steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status ==
+          "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash), "--"]) + ["/bin/bash", "--noprofile", "--norc", "-eu", "-s"] }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
         stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self.step.index)].vault, inputs.execution_secrets["step_" + string(self.step.index)].key) }}
   - name: Grant Caddy access
@@ -1853,8 +1849,8 @@ jobs:
     - step: Write PHP configuration
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure || steps["Read local
-      PHP tuning"].outputs.current.exists }}
+    guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure || steps["Read local PHP tuning"].outputs.current.exists
+      }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -1901,8 +1897,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ ["timeout", "60", "/usr/sbin/php-fpm" + (inputs.intent.php_input == null ? "" : inputs.intent.php_input.version), "--test", "--fpm-config", inputs.intent.php_input == null ? "" : inputs.intent.php_input.main]
-          }}'
+        argv: '${{ ["timeout", "60", "/usr/sbin/php-fpm" + (inputs.intent.php_input == null ? "" : inputs.intent.php_input.version), "--test", "--fpm-config", inputs.intent.php_input == null ? "" : inputs.intent.php_input.main] }}'
         sudo: true
         timeoutSec: 70
   - name: Start PHP runtime
@@ -2011,8 +2006,81 @@ jobs:
         node_id: ${{ self.member.node_id }}
         kind: process.create
         intent: ${{ self.member.intent }}
-        execution_secrets: '${{ "node_" + string(self.member.node_id) + "_member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["node_" + string(self.member.node_id)
-          + "_member_" + string(self.member.id)]} : {} }}'
+        execution_secrets: '${{ "node_" + string(self.member.node_id) + "_member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["node_" + string(self.member.node_id) + "_member_" +
+          string(self.member.id)]} : {} }}'
+  - name: Read Schedule group
+    dependsOn:
+    - step: Refresh PHP cache
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
+    labels:
+      role: swamp
+    task:
+      behaviorName: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+      behaviorType: '@swamp/ssh'
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        argv:
+        - timeout
+        - '30'
+        - id
+        - -gn
+        - --
+        - ${{ self.schedule.user }}
+        hosts: name:target
+        sudo: true
+        timeoutSec: 40
+      methodName: exec
+      type: behavior
+    forEach: &id003
+      item: schedule
+      in: ${{ inputs.intent.runtime_definitions.schedules }}
+    concurrency: 1
+  - name: Install Schedules
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Read Schedule group
+      condition:
+        type: always
+    forEach: *id003
+    concurrency: 1
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-schedule-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: schedule.create
+        intent:
+          schedule:
+            id: ${{ self.schedule.id }}
+            command_hash: ${{ self.schedule.command_hash }}
+            user: ${{ self.schedule.user }}
+            home: ${{ self.schedule.home }}
+            working_directory: ${{ self.schedule.working_directory }}
+            shell: ${{ self.schedule.shell }}
+            login_shell: ${{ self.schedule.login_shell }}
+            calendar: ${{ self.schedule.calendar }}
+            timeout_seconds: ${{ self.schedule.timeout_seconds }}
+            desired: ${{ self.schedule.desired }}
+            group: ${{ steps["Read Schedule group-" + string(self._index)].outputs.stdout.trim() }}
+          cascade: false
+          ssh_execution: ${{ inputs.intent.ssh_execution }}
+        execution_secrets: {}
   - name: Restart Processes
     labels:
       role: swamp
@@ -2048,8 +2116,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ self.process.runtime == "docker" ? ["/usr/bin/timeout", "120", "/usr/bin/docker", "restart", self.process.name] : ["/usr/bin/timeout", "120", "/usr/bin/systemctl", "reload-or-restart", self.process.name]
-          }}'
+        argv: '${{ self.process.runtime == "docker" ? ["/usr/bin/timeout", "120", "/usr/bin/docker", "restart", self.process.name] : ["/usr/bin/timeout", "120", "/usr/bin/systemctl", "reload-or-restart", self.process.name] }}'
         sudo: true
         timeoutSec: 130
   - name: Run after steps
@@ -2063,6 +2130,9 @@ jobs:
       condition:
         type: always
     - step: Restart Processes
+      condition:
+        type: always
+    - step: Install Schedules
       condition:
         type: always
     writes: true
@@ -2090,17 +2160,16 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path, "HOME="
-          + inputs.intent.production.home, "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ?
-          steps["dev-vp-requirements"].outputs.runtime : null) == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=/opt/orbit/vite-plus/bin:" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store] + (("dev-vp-requirements"
-          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status ==
-          "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).binary, "env", "exec", "--node", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@"
-          + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status
-          == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
-          : null).package_manager_hash), "--"]) + ["/bin/bash", "--noprofile", "--norc", "-eu", "-s"] }}'
+        argv: '${{ ["/usr/bin/timeout", string(self.step.timeout_seconds), "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-i", "-C", inputs.intent.production.release_path, "HOME=" + inputs.intent.production.home,
+          "USER=" + inputs.intent.production.user, "LOGNAME=" + inputs.intent.production.user, ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null)
+          == null ? "PATH=/usr/local/bin:/usr/bin:/bin" : "PATH=/opt/orbit/vite-plus/bin:" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store
+          + "/bin:/usr/local/bin:/usr/bin:/bin", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null) == null ? "VP_HOME=" : "VP_HOME=" + ("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).store] + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null) == null ? [] : [("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).binary, "env", "exec", "--node", ("dev-vp-requirements" in
+          steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).node_version, "--package-manager", ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status ==
+          "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager + "@" + ("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime
+          : null).package_manager_version + (("dev-vp-requirements" in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash == null ? "" : "+" + ("dev-vp-requirements"
+          in steps && steps["dev-vp-requirements"].status == "succeeded" ? steps["dev-vp-requirements"].outputs.runtime : null).package_manager_hash), "--"]) + ["/bin/bash", "--noprofile", "--norc", "-eu", "-s"] }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
         stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self.step.index)].vault, inputs.execution_secrets["step_" + string(self.step.index)].key) }}
   - name: Find releases in use
@@ -2144,8 +2213,8 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: ${{ ["/usr/bin/timeout", "60", "/usr/bin/find", "/proc", "-mindepth", "2", "-maxdepth", "2", "(", "-name", "cwd", "-o", "-name", "root", "-o", "-name", "exe", ")", "(", "-lname", self.release.path, "-o",
-          "-lname", self.release.path + "/*", ")", "-print", "-quit"] }}
+        argv: ${{ ["/usr/bin/timeout", "60", "/usr/bin/find", "/proc", "-mindepth", "2", "-maxdepth", "2", "(", "-name", "cwd", "-o", "-name", "root", "-o", "-name", "exe", ")", "(", "-lname", self.release.path, "-o", "-lname", self.release.path
+          + "/*", ")", "-print", "-quit"] }}
         sudo: true
         timeoutSec: 70
   - name: Clean up releases
@@ -2173,9 +2242,8 @@ jobs:
       item: release
       in: ${{ inputs.intent.production.cleanup }}
     concurrency: 1
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) || !(("Find
-      releases in use-" + string(self._index)) in steps && steps["Find releases in use-" + string(self._index)].status == "succeeded" && steps["Find releases in use-" + string(self._index)].outputs.stdout.trim() == "")
-      }}
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) || !(("Find releases in use-"
+      + string(self._index)) in steps && steps["Find releases in use-" + string(self._index)].status == "succeeded" && steps["Find releases in use-" + string(self._index)].outputs.stdout.trim() == "") }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -2395,6 +2463,6 @@ jobs:
       type: assert
       severity: high
       message: The selected release, commit and running services must match the admitted deployment.
-      expr: ((steps["Read current back"].outputs.stdout in ["releases/" + inputs.intent.production.release, "releases/" + inputs.intent.production.release + "\n"]) && (inputs.intent.php_input == null || steps["Check
-        PHP runtime"].outputs.status == "compliant")) && steps["Read deployed commit"].outputs.stdout.trim() == steps["Read the release commit"].outputs.stdout.trim() && steps.filter(k,k.startsWith("Check Process state-")).all(k,steps[k].outputs.status
-        == "compliant") && steps.filter(k,k.startsWith("Read container state-")).all(k,steps[k].outputs.stdout.trim() == "true")
+      expr: ((steps["Read current back"].outputs.stdout in ["releases/" + inputs.intent.production.release, "releases/" + inputs.intent.production.release + "\n"]) && (inputs.intent.php_input == null || steps["Check PHP runtime"].outputs.status
+        == "compliant")) && steps["Read deployed commit"].outputs.stdout.trim() == steps["Read the release commit"].outputs.stdout.trim() && steps.filter(k,k.startsWith("Check Process state-")).all(k,steps[k].outputs.status == "compliant")
+        && steps.filter(k,k.startsWith("Read container state-")).all(k,steps[k].outputs.stdout.trim() == "true")

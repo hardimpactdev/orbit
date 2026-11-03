@@ -44,6 +44,8 @@ final readonly class ProductionDeployOutcome
         'Start PHP runtime' => 'deployment.php_runtime_unconfirmed',
         'Check PHP runtime' => 'deployment.php_runtime_unconfirmed',
         'Refresh PHP cache' => 'deployment.php_runtime_unconfirmed',
+        'Read Schedule group' => 'schedule.install_failed',
+        'Install Schedules' => 'schedule.install_failed',
         'Install Processes' => 'process.install_failed',
         'Restart Processes' => 'process.restart_failed',
         'Run after steps' => 'deployment.step_failed',
@@ -130,6 +132,7 @@ final readonly class ProductionDeployOutcome
         $captured = ValidatedData::object($operation->input['runtime_definitions']);
         $outcomes = ['processes' => [], 'schedules' => [], 'restart' => []];
         foreach (['processes' => ['Install Processes', 'process_id', 'process.install_failed'],
+            'schedules' => ['Install Schedules', 'id', 'schedule.install_failed'],
             'restart' => ['Restart Processes', 'process_id', 'process.restart_failed']] as $family => [$label, $key, $code]) {
             $entries = $captured[$family];
             if (! is_array($entries) || ! array_is_list($entries)) {

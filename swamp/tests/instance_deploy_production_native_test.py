@@ -15,7 +15,7 @@ import yaml
 from native_harness import ROOT, NativeTestCase
 
 WORKFLOW = 'operation-instance-deploy-direct'
-CHILDREN = ('operation-process-create', 'operation-process-destroy', 'operation-process-vite', 'operation-tool-manager-setup')
+CHILDREN = ('operation-process-create', 'operation-process-destroy', 'operation-process-vite', 'operation-tool-manager-setup', 'operation-schedule-create')
 
 
 class ProductionDeployNative(NativeTestCase):
@@ -106,7 +106,7 @@ if a and (os.path.basename(a[0]) in ('systemctl','docker','setfacl') or '/usr/bi
     sys.exit(1 if os.path.exists(FAIL) and open(FAIL).read() in a else 0)
 sys.exit(subprocess.call(a))
 """.replace('CALLS', repr(str(self.calls_file))).replace('FAIL', repr(str(self.repo / 'fail'))),
-            'systemctl': "import json,sys\nif sys.argv[1]=='show': print('LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled')\nelse:\n    with open(" + repr(str(self.calls_file)) + ",'a') as f:f.write(json.dumps(['systemctl',*sys.argv[1:]])+'\\n')\n",
+            'systemctl': "import json,sys\nif sys.argv[1]=='show': print('LoadState=loaded\\nActiveState=inactive\\nUnitFileState=disabled' if '.timer' in sys.argv[2] else 'LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled')\nelse:\n    with open(" + repr(str(self.calls_file)) + ",'a') as f:f.write(json.dumps(['systemctl',*sys.argv[1:]])+'\\n')\n",
             'chown': 'pass\n',
             'chgrp': 'pass\n',
         }
@@ -120,6 +120,8 @@ sys.exit(subprocess.call(a))
                 job.pop('labels', None)
                 for step in job['steps']:
                     step.pop('labels', None)
+                    if name == 'operation-schedule-create' and 'path' in step['task'].get('globalArgs', {}):
+                        step['task']['globalArgs']['path'] = step['task']['globalArgs']['path'].replace('/etc/', str(self.node / 'etc') + '/')
                     if step['task'].get('behaviorType') == '@swamp/ssh':
                         step['task']['globalArgs'].update(sshBinary=str(tools / 'ssh'), scpBinary=str(tools / 'scp'))
             (self.repo / f'workflows/workflow-{name}.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False, width=1000000))
@@ -145,7 +147,7 @@ sys.exit(subprocess.call(a))
             'environment': {'instance_id': 42, 'environment': 'production', 'base': str(self.home), 'user': self.user, 'keys': ['APP_KEY'],
                             'owned_keys': [], 'sha256': '', 'testing': None},
             'process_members': [], 'php_input': None,
-            'runtime_definitions': {'restart': [{'process_id': 3, 'runtime': 'systemd', 'name': 'orbit-process-3-horizon.service'}]},
+            'runtime_definitions': {'schedules': [], 'restart': [{'process_id': 3, 'runtime': 'systemd', 'name': 'orbit-process-3-horizon.service'}]},
             'production': {'instance_id': 42, 'user': self.user, 'home': str(self.home), 'release': self.release, 'release_path': self.directory,
                            'commit': None, 'branch': 'main', 'credential': str(self.node / 'credential'), 'step_file': str(self.node / 'step-'),
                            'prepare': [
@@ -295,6 +297,23 @@ sys.exit(subprocess.call(a))
         self.assertTrue((self.home / 'releases/old').exists())
         self.assertEqual(self.status['Find releases in use-0'], 'failed')
         self.assertEqual(self.status['Clean up releases-0'], 'skipped')
+
+    def test_a_user_step_that_moves_the_checkout_fails_the_end_check(self):
+        self.command('git checkout --quiet --detach ' + self.first, 'after_activation')
+        self.assertEqual(self.deploy(success=False), 'failed')
+        self.assertEqual(self.status['Check the deployment'], 'failed')
+        self.assertEqual(os.readlink(self.home / 'current'), f'releases/{self.release}')
+
+    def test_installs_a_captured_node_timer_without_copying_its_private_command(self):
+        schedule_id = '9fd64da7-2e68-4b7c-983a-55707946c795'
+        self.inputs['intent']['runtime_definitions']['schedules'] = [{
+            'id': schedule_id, 'user': self.user, 'home': str(self.home),
+            'working_directory': str(self.home / 'current'), 'shell': '/bin/bash', 'login_shell': False,
+            'calendar': '*-*-* 03:00:00', 'command_hash': 'a' * 64, 'timeout_seconds': 30, 'desired': 'disabled'}]
+        self.assertEqual(self.deploy(), 'succeeded')
+        self.assertEqual(self.status['Install Schedules-0'], 'succeeded')
+        timer = self.node / ('etc/systemd/system/orbit-schedule-' + schedule_id + '.timer')
+        self.assertIn('OnCalendar=*-*-* 03:00:00', timer.read_text())
 
     def test_an_empty_persistent_directory_is_seeded_once(self):
         shutil.rmtree(self.home / 'storage')

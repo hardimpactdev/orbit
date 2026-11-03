@@ -14,7 +14,7 @@ DEVELOPMENT_JOBS = ('development-source', 'development-checkout', 'production-re
 PRODUCTION_PLACEHOLDER = {'production': {'instance_id': 0, 'user': '', 'home': '', 'release': '', 'release_path': '', 'commit': None, 'branch': '', 'credential': '',
                                          'shared': [], 'prepare': [], 'links': [], 'grants': [], 'steps': [], 'before': [], 'after': [], 'cleanup': []},
                           'environment': {'instance_id': 0, 'environment': 'production', 'base': '', 'user': '', 'keys': [], 'owned_keys': [], 'sha256': '', 'testing': None},
-                          'process_members': [], 'runtime_definitions': {'restart': []}, 'php_input': None}
+                          'process_members': [], 'runtime_definitions': {'schedules': [], 'restart': []}, 'php_input': None}
 
 
 class DevelopmentDeployNative(NativeTestCase):
