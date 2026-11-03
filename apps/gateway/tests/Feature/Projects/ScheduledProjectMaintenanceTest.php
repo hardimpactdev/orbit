@@ -6,6 +6,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\ScheduledProjectMaintenance;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
@@ -51,7 +52,7 @@ it('leaves a Project without maintenance out of the schedule inputs', function (
     $this->project->update(['maintenance' => false]);
     $inputs = ($this->state)()['inputs'];
     expect($inputs['projects'])->toBe([])
-        ->and(json_encode($this->socket->sent[array_key_last($this->socket->sent)]['payload']['inputs']))->not->toContain('example/project.git');
+        ->and(json_encode(array_last($this->socket->sent)['payload']['inputs']))->not->toContain('example/project.git');
 });
 
 it('publishes the hourly cadence and republishes an unchanged snapshot whose cadence changed', function (): void {
@@ -68,9 +69,9 @@ it('publishes the hourly cadence and republishes an unchanged snapshot whose cad
 });
 
 it('admits the normal native Project Operation only on a terminal selection and makes restart replay a noop', function (): void {
-    $this->schedule->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, $this->result);
+    $this->schedule->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, ['selection_json' => json_encode($this->result, JSON_THROW_ON_ERROR)]);
     app()->forgetInstance(ScheduledProjectMaintenance::class);
-    app(ScheduledProjectMaintenance::class)->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, $this->result);
+    app(ScheduledProjectMaintenance::class)->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, ['selection_json' => json_encode($this->result, JSON_THROW_ON_ERROR)]);
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('project.routine')->and($operation->target_id)->toBe($this->project->id)
         ->and($operation->input['project']['repository'])->toBe($this->project->repository_url)
@@ -91,7 +92,7 @@ it('admits a scheduled inspection that opens its update group', function (): voi
         ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]]
         : $reply($sent);
     $this->result['requests'] = [['project_id' => $this->project->id, 'mode' => 'detect', 'key' => $this->project->id.'-detect-2026-11-03T10:00']];
-    app(ScheduledProjectMaintenance::class)->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, $this->result);
+    app(ScheduledProjectMaintenance::class)->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, ['selection_json' => json_encode($this->result, JSON_THROW_ON_ERROR)]);
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('project.detect')->and($operation->input['open'])->toBeTrue();
 });
@@ -107,7 +108,7 @@ it('rejects stale, altered and failed selections without a downstream admission'
         $this->run['status'] = 'failed';
         $this->result = [];
     }
-    $this->schedule->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, $this->result);
+    $this->schedule->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, ['selection_json' => json_encode($this->result, JSON_THROW_ON_ERROR)]);
     expect(Operation::query()->count())->toBe(0);
 })->with(['changed intent', 'altered input', 'wrong revision', 'native failure']);
 
@@ -115,6 +116,21 @@ it('keeps failed schedule publication unaccepted and never starts a downstream o
     $this->socket->reply = static fn (): array => [];
     $this->project->update(['task_check' => 'unpublished check']);
     expect(($this->state)()['published'])->toBeFalse();
-    $this->schedule->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, $this->result);
+    $this->schedule->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, ['selection_json' => json_encode($this->result, JSON_THROW_ON_ERROR)]);
     expect(Operation::query()->count())->toBe(0);
+});
+
+it('reads native selection once and admits routine from its complete producer capture', function (): void {
+    $history = [...$this->run, 'workflowId' => ScheduledProjectMaintenance::Workflow, 'workflowName' => 'maintenance-projects',
+        'jobs' => [['name' => 'maintenance', 'steps' => [['name' => 'select', 'status' => 'succeeded',
+            'outputs' => ['result_json' => json_encode($this->result, JSON_THROW_ON_ERROR)]]]]]];
+    $reply = $this->socket->reply;
+    $this->socket->reply = static fn (array $sent): array => $sent['type'] === 'workflow.history.get'
+        ? [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]]
+        : $reply($sent);
+    config(['swamp.read_token' => 'selection-reader']);
+    expect(app(SwampCommandStep::class)->projectScheduledTerminal(ScheduledProjectMaintenance::Workflow,
+        ['id' => $history['id'], 'status' => 'succeeded']))->toBeTrue();
+    expect(Operation::query()->sole()->kind)->toBe('project.routine')
+        ->and(count(array_filter($this->socket->sent, static fn (array $sent): bool => $sent['type'] === 'workflow.history.get')))->toBe(1);
 });

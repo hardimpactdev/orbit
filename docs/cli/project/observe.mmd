@@ -20,6 +20,7 @@ sequenceDiagram
   %%> - it picks observe for a Project with a maintenance task group that waits on a pull request or on capacity
   %%> How the Gateway learns it:
   %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+  %%> - the Gateway captures result_json directly from the schedule producer `select`, in the same history read; no reporting step forwards it
   %%> Returns:
   %%> - one request per Project and mode, with a key such as `4-observe-2026-11-02T17:17`
   %%> Not included:

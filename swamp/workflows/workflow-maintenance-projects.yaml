@@ -1,5 +1,6 @@
 id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
 name: maintenance-projects
+queueTimeout: 30
 description: Select Project maintenance from Gateway-published full public intent.
 trigger:
   schedule: '40 17 * * * *'
@@ -34,15 +35,3 @@ jobs:
             groups: '${{ inputs.groups }}'
             operations: '${{ inputs.operations }}'
             admissions: '${{ inputs.admissions }}'
-      - name: result
-        labels: {role: swamp}
-        dependsOn: [{step: select, condition: {type: succeeded}}]
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "maintenance-result" }}'
-          methodName: execute
-          inputs:
-            run: 'printf "%s\n" "$ORBIT_RESULT"'
-            env:
-              ORBIT_RESULT: '${{ steps.select.outputs.result_json }}'

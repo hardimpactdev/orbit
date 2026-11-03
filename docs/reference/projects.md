@@ -240,7 +240,11 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 
 ## Maintenance
 
-Three Swamp workflows on Node 209 keep a Project's dependencies current. [`project:maintenance:inspect`](/cli/project/maintenance-inspect) (kind `project.detect`) reads the manifests and lockfiles of the default branch through the GitHub App without a clone and compares them with the registries, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch. The hourly `maintenance-projects` Schedule selects which of them a Project needs. A due weekly routine comes first, then an observation while a maintenance group waits. Otherwise the Schedule inspects the Project, so an opted-in Project is inspected every hour. The CLI, or the MCP tools `project-maintenance-inspect` and `project-maintenance-routine`, start one directly.
+Three Swamp workflows on Node 209 keep a Project's dependencies current. [`project:maintenance:inspect`](/cli/project/maintenance-inspect) (kind `project.detect`) reads the manifests and lockfiles of the default branch through the GitHub App without a clone and compares them with the registries, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch.
+
+The hourly `maintenance-projects` Schedule selects which of them a Project needs. The Gateway captures the complete selection from its native producer in the shared terminal history read; no result-reporting step forwards it. A due weekly routine comes first, then an observation while a maintenance group waits. Otherwise the Schedule inspects the Project, so an opted-in Project is inspected every hour.
+
+The CLI, or the MCP tools `project-maintenance-inspect` and `project-maintenance-routine`, start one directly.
 
 Each run reads only its admitted intent, stamped with its UTC admission time, and GitHub; the Gateway admits any task group from the run's result. Their steps carry the names in [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md), so task progress shows names such as `Read the manifest SHAs`. A routine run reads no Swamp history: the Gateway admits one maintenance task per Project at a time and reuses the group whose brief carries the week's key, so a retried routine never opens a second group.
 

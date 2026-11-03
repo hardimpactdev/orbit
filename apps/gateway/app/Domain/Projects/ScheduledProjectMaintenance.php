@@ -106,6 +106,7 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
         if ($workflowId !== self::Workflow) {
             throw new \LogicException('Unknown Project maintenance schedule.');
         }
+        $result = ValidatedData::object(json_decode(Arr::string($result, 'selection_json', '{}'), true, flags: JSON_THROW_ON_ERROR));
         DB::transaction(function () use ($run, $result): void {
             $record = $this->state();
             $state = $this->decode($record);

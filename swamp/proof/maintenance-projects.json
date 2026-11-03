@@ -1,0 +1,14 @@
+{
+  "kind": "maintenance-projects",
+  "workflow": "maintenance-projects",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [["runuser", "-u", "orbit", "--", "env", "-C", "apps/gateway", "php", "../../swamp/proof/maintenance-projects/prepare.php"]],
+  "scheduled_run": {"revision": "${fixture.revision}", "snapshot_hash": "${fixture.snapshot_hash}", "projects": [], "groups": [], "operations": [], "admissions": {}},
+  "after_run": [["timeout", "60", "runuser", "-u", "orbit", "--", "env", "-C", "apps/gateway", "php", "../../swamp/proof/maintenance-projects/follow.php", "${fixture.native_run}"]],
+  "expect": {"status": "succeeded"},
+  "phases": [{"name": "select", "job": "maintenance", "step": "select", "budget_seconds": 60}],
+  "parity": "swamp/proof/maintenance-projects/parity.py"
+}
