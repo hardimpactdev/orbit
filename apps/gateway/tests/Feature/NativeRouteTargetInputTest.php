@@ -21,6 +21,10 @@ use App\Models\Route;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
+
     $this->manifest = tempnam(sys_get_temp_dir(), 'target-input-agent-');
     file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
     app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
@@ -72,7 +76,8 @@ it('splits the change into staged, Router and retire Caddyfiles without changing
     $new = $this->nodes['new']->id;
 
     // The staged file keeps the old site beside the new one, under the temporary leaf; the retire file is the lasting state.
-    expect(target_input_caddy($plan['stage'], $new))->toContain('source.target.test', 'pool.target.test', '-hostname-change')
+    expect($plan['probe_ssh']['target'])->toMatchArray(['host' => '10.44.0.209', 'host_keys' => ['ssh-ed25519 control-host-key']])
+        ->and(target_input_caddy($plan['stage'], $new))->toContain('source.target.test', 'pool.target.test', '-hostname-change')
         ->and(target_input_caddy($plan['retire'], $new))->toContain('pool.target.test')->not->toContain('source.target.test', '-hostname-change')
         ->and($plan['router']['site_nodes'])->toBe([$this->nodes['router']->id])
         ->and(target_input_caddy($plan['router'], $this->nodes['router']->id))->toContain('pool.target.test', 'destination.target.test')

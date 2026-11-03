@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -75,6 +76,7 @@ final readonly class NativeRouteTargetPlan
                 $result['probes'][] = ['node_id' => $target['node_id'], 'address' => $address, 'domain' => $target['domain']];
             }
         }
+        $result['probe_ssh'] = $result['probes'] === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209));
         $mutations = ValidatedData::object(ValidatedData::object($lifecycle['route_mutations'])['forward']);
         foreach (RouteExecutionProof::objects($mutations['cleanup']) as $leaf) {
             $result['cleanup'][] = ['node_id' => ValidatedData::integer($leaf['node_id']), 'leaf' => array_intersect_key($leaf, array_flip(['user', 'scope']))];

@@ -1,0 +1,92 @@
+{
+  "kind": "route.target_set",
+  "workflow": "operation-route-target-set",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_node": {
+    "target": [
+      [
+        "sh",
+        "-c",
+        "set -eu; id orbit-app-9009 >/dev/null 2>&1 || useradd -r -m -s /usr/sbin/nologin orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0700 /home/orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases /home/orbit-app-9009/releases/initial /home/orbit-app-9009/releases/initial/public; printf 'production target proof\\n' > /home/orbit-app-9009/releases/initial/public/index.html; chown orbit-app-9009:orbit-app-9009 /home/orbit-app-9009/releases/initial/public/index.html"
+      ]
+    ],
+    "peer": [
+      [
+        "sh",
+        "-c",
+        "set -eu; id orbit-app-9009 >/dev/null 2>&1 || useradd -r -m -s /usr/sbin/nologin orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0700 /home/orbit-app-9009; install -d -o orbit-app-9009 -g orbit-app-9009 -m 0755 /home/orbit-app-9009/releases /home/orbit-app-9009/releases/initial /home/orbit-app-9009/releases/initial/public; printf 'production target proof\\n' > /home/orbit-app-9009/releases/initial/public/index.html; chown orbit-app-9009:orbit-app-9009 /home/orbit-app-9009/releases/initial/public/index.html"
+      ]
+    ],
+    "metrics": [
+      [
+        "sh",
+        "-c",
+        "set -eu; printf '# Managed by Orbit: Node Caddy build\\n{\\n admin off\\n auto_https disable_certs\\n}\\n' > /etc/caddy/Caddyfile; chown root:caddy /etc/caddy/Caddyfile; chmod 0640 /etc/caddy/Caddyfile; systemctl enable --now caddy"
+      ]
+    ]
+  },
+  "before_gateway": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "env",
+      "-C",
+      "apps/gateway",
+      "php",
+      "../../swamp/proof/route.target_set-production/prepare.php",
+      "${node.target}",
+      "${node.peer}",
+      "${node.metrics}"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "routes",
+      "bind": "route",
+      "body": {
+        "instance_id": "${fixture.old}",
+        "domain": "p-${proof.run}.proof.test"
+      }
+    }
+  ],
+  "request": {
+    "method": "PUT",
+    "path": "routes/${route.id}/target",
+    "body": {
+      "targets": [
+        "${fixture.old}",
+        "${fixture.new}"
+      ]
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Probe the existing workload",
+      "job": "update",
+      "step": "Probe each new target-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Probe the joining workload",
+      "job": "update",
+      "step": "Probe each new target-1",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Switch the Router pool",
+      "job": "update",
+      "step": "Switch the Router pool-0",
+      "budget_seconds": 120
+    }
+  ],
+  "parity": "swamp/proof/route.target_set-production/parity.py"
+}

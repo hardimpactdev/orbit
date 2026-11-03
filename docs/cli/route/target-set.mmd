@@ -100,9 +100,9 @@ sequenceDiagram
       %%> - per new Node: allows the Router on LAN port 443 with `@swamp/cfgmgmt/firewall`, installs the certificates, and writes the PHP pool, the staged Caddyfile and the production `.env`
       %%> - the staged Caddyfile adds the new workload site beside the old ones and uses the temporary leaf
       %%> - validates each Caddyfile, then reloads Caddy; never a restart (rule 7)
-      SW->>N: Probe each new target<br/>openssl s_client · SNI domain
+      SW->>N: Probe each new target<br/>@swamp/ssh exec · SNI domain
       %%> What it does:
-      %%> - connects from 209 to each new workload on port 443, with the Route domain as SNI
+      %%> - runs one pinned SSH argv on 209, connecting to each new workload on port 443 with the Route domain as SNI
       %%> Why:
       %%> - the Router only sends traffic to targets that serve
       SW->>N: Switch the Router pool<br/>Router Caddy · reload

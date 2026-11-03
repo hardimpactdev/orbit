@@ -1,9 +1,15 @@
 """route.target_set, development target, on the target: the published site now serves the new Instance's checkout,
 under a leaf the Orbit root verifies, and answers TLS for the domain."""
 
+import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+operation = json.loads(Path(os.environ["PROOF_OPERATION_FILE"]).read_text())
+assert operation["kind"] == "route.target_set" and operation["status"] == "succeeded", operation["status"]
+assert operation["result"]["ready"] is True, operation["result"]
 
 run = os.environ["PROOF_RUN"]
 domain = "t-" + run + ".proof.test"
@@ -11,7 +17,7 @@ ROOT = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
 
 
 def target(*argv):
-    return subprocess.run(["incus", "exec", os.environ["PROOF_TARGET"], "--", *argv], capture_output=True, text=True, check=False)
+    return subprocess.run(["incus", "exec", os.environ["PROOF_TARGET"], "--", *argv], capture_output=True, text=True, check=False, timeout=30)
 
 
 def check(condition, message):

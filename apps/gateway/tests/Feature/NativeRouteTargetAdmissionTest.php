@@ -22,6 +22,9 @@ use App\Models\Route;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
     $this->manifest = tempnam(sys_get_temp_dir(), 'target-admission-agent-');
     file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
     app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
