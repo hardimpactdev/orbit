@@ -164,9 +164,9 @@
             "version": "7.0.2",
             "artifacts": {
                 "amd64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.2-ubuntu26.04-202610211652_amd64.deb",
-                    "sha256": "a516df91469244c6858b2d8dc68c6ad8c5404a6e2b40e3edc487b1b78343e792",
-                    "version": "1:7.0.2-ubuntu26.04-202610211652"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.2-ubuntu26.04-202610301448_amd64.deb",
+                    "sha256": "9380e822371e25d530318ba320a1305995bd51bb13489717a90f3da3ef356040",
+                    "version": "1:7.0.2-ubuntu26.04-202610301448"
                 }
             }
         },
@@ -857,9 +857,9 @@
             "version": "7.0.2",
             "artifacts": {
                 "amd64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.2-ubuntu26.04-202610211652_amd64.deb",
-                    "sha256": "cd6b6eb14a3b00784ee88f831786089449e668de3f9ae0c6b306c4178c8cad74",
-                    "version": "1:7.0.2-ubuntu26.04-202610211652"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.2-ubuntu26.04-202610301448_amd64.deb",
+                    "sha256": "a64fcd5215ae336785dd762b29dbf2e49f0db8ec4023c95d772158c1403a4b2c",
+                    "version": "1:7.0.2-ubuntu26.04-202610301448"
                 }
             }
         },
@@ -868,9 +868,9 @@
             "version": "7.0.2",
             "artifacts": {
                 "amd64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.2-ubuntu26.04-202610211652_amd64.deb",
-                    "sha256": "6e4387f56a2647bfece6a47773406b17ca987ce50c0b304458201ffa5fa9c597",
-                    "version": "1:7.0.2-ubuntu26.04-202610211652"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.2-ubuntu26.04-202610301448_amd64.deb",
+                    "sha256": "4b0c96d519e443b8d782558d5100483f434c85a3712fcf46d2d00c6b5b128128",
+                    "version": "1:7.0.2-ubuntu26.04-202610301448"
                 }
             }
         },
