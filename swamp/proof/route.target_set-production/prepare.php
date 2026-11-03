@@ -35,7 +35,7 @@ foreach (['old' => $target, 'new' => $peer] as $name => $id) {
         'production_home' => '/home/orbit-app-9009', 'checkout_path' => '/home/orbit-app-9009/releases/initial',
         'branch' => '13.x', 'root' => 'public', 'source_is_laravel' => true, 'selected_php_version' => '8.5',
         'provisioning_step' => 'active', 'status' => 'active']);
-    foreach (['APP_KEY' => 'base64:'.base64_encode(random_bytes(32)), 'APP_URL' => 'https://{{instance.domain}}'] as $key => $value) {
+    foreach (['APP_KEY' => 'base64:'.base64_encode(random_bytes(32)), 'APP_URL' => 'https://p-'.Arr::string($_SERVER, 'argv.4').'.proof.test'] as $key => $value) {
         $instances[$name]->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
     }
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instances[$name], '8.5');

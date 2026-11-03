@@ -37,7 +37,8 @@
       "../../swamp/proof/route.target_set-production/prepare.php",
       "${node.target}",
       "${node.peer}",
-      "${node.metrics}"
+      "${node.metrics}",
+      "${proof.run}"
     ]
   ],
   "prepare": [
