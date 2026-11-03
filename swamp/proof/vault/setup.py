@@ -169,8 +169,8 @@ def main():
                     "Disposable Vaultwarden did not become ready"
                 ) from None
             time.sleep(0.2)
-    sys.path.insert(0, str(SOURCE / "swamp/tests"))
-    from fixtures.vaultwarden_account import provision
+    sys.path.insert(0, str(SOURCE / "swamp/proof/vault"))
+    from vaultwarden_account import provision
 
     configuration = provision(url, secrets.token_urlsafe(32), ca)
     if len(sys.argv) > 1 and sys.argv[1] in ("sync", "teardown", "keep"):

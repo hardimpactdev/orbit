@@ -17,7 +17,7 @@
     [
       "python3",
       "-I",
-      "swamp/tests/fixtures/vaultwarden_proof_setup.py",
+      "swamp/proof/vault/setup.py",
       "teardown"
     ]
   ],
