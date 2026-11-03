@@ -1185,8 +1185,11 @@ export function createDemoGateway() {
                         return { status: refusal.status, payload: refusal.body };
                     }
 
+                    const template = nodes[0];
+                    if (template === undefined)
+                        throw new Error("The demo fleet has no Node template.");
                     const created = {
-                        ...nodes[0],
+                        ...template,
                         id: Math.max(...nodes.map((node) => node.id)) + 1,
                         name: String(body.name),
                         roles,

@@ -76,7 +76,7 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 
 Official cfgmgmt resources own file, package, account and service changes. A single command uses SSH argv. No script is copied to a Node. A completed run removes the staged sudo candidate as best effort. A failure retains completed work; reruns use native resource checks and guards.
 
-The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. Certificate signing stays at the existing Gateway signer boundary.
+The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. Before hub peer synchronization, SSH commands compose the existing key and the public peer plan into a protected configuration on that hub. The workflow verifies that the hub public key is unchanged afterward. Certificate signing stays at the existing Gateway signer boundary.
 
 A [task VM](/reference/compute-drivers#task-vms) skips this step. |
 | 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |

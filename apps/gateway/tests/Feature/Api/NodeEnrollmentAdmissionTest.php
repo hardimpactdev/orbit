@@ -147,7 +147,7 @@ it('records the native failure code without inventing observations', function (s
 ]);
 
 it('freezes a roleless Linux baseline without committing its host-key placeholders', function (): void {
-    FleetFixtures::node('vpn', [RoleName::Vpn]);
+    FleetFixtures::node('vpn', [RoleName::Vpn])->update(['wireguard_public_key' => base64_encode(str_repeat('w', 32))]);
     $operation = app(AdmitNodeEnrollmentOperationAction::class)->execute(new ProvisionNodeData(
         name: 'native-linux', publicSshHost: '192.0.2.43', wireguardIp: '10.44.0.43', expectedSshHostFingerprint: $this->fingerprint));
     $node = Node::query()->findOrFail($operation->target_id);
@@ -155,6 +155,9 @@ it('freezes a roleless Linux baseline without committing its host-key placeholde
     expect($input['intent']['packages'])->toContain('wireguard', 'sudo')
         ->and($input['intent']['roles'])->toBe([])
         ->and($input['intent']['network']['hub_files'])->toHaveCount(3)
+        ->and($input['intent']['network']['hubs'][0]['private_key_file'])->toBe('/etc/wireguard/orbit.key')
+        ->and($input['intent']['network']['hubs'][0]['sync_body'])->toContain('[Peer]')
+        ->and($input['intent']['network']['hubs'][0]['public_key'])->not->toBeEmpty()
         ->and($input['intent']['agent']['sha256'])->toBe(str_repeat('b', 64))
         ->and($input['execution_secrets']['agent_secret']['key'])->toBe('agent-secret-node-'.$node->id)
         ->and($node->ssh_host_key)->toBeNull()

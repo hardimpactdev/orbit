@@ -2,8 +2,10 @@
 import base64
 import hashlib
 import json
+import os
 import shutil
 import subprocess
+import sys
 
 import yaml
 from native_harness import ROOT, NativeTestCase
@@ -87,6 +89,69 @@ class NodeEnrollmentNative(NativeTestCase):
         steps = self.run_node(success=False)
         self.assertEqual(steps['Bind the Node identity']['status'], 'failed')
         self.assertNotEqual(steps.get('Install base packages-0', {}).get('status'), 'succeeded')
+
+    def test_hub_sync_keeps_the_file_key_without_returning_it_in_run_data(self):
+        private = base64.b64encode(b'enrollment-private-key-sentinel!!').decode()
+        key = self.repo / 'hub.key'
+        key.write_text(private + '\n')
+        config = self.repo / 'hub.sync'
+        config.write_text('[Interface]\nListenPort = 51820\n')
+        config.chmod(0o600)
+        identity = self.repo / 'control.identity'
+        identity.write_text('fixture-control-key')
+        identity.chmod(0o600)
+        tools = self.repo / 'tools'
+        (tools / 'ssh').write_text('#!' + sys.executable + '\nimport subprocess,sys\n'
+            'if "-N" in sys.argv or "-O" in sys.argv or "-MNf" in sys.argv:sys.exit(0)\n'
+            'sys.exit(subprocess.call(["/bin/sh","-c",sys.argv[-1]]))\n')
+        scripts = {
+            'sudo': 'import subprocess,sys\na=sys.argv[1:];sys.exit(subprocess.call(a[a.index("--")+1:]))\n',
+            'wg': 'import os,sys\nfrom pathlib import Path\np=Path(os.environ["HUB_SYNC_STATE"])\n'
+                'if sys.argv[1]=="syncconf":\n'
+                ' text=Path(sys.argv[3]).read_text();p.write_text("public-hub-key" if "PrivateKey = " in text else "(none)")\n'
+                'else:print(p.read_text())\n',
+        }
+        for name, source in scripts.items():
+            path = tools / name
+            path.write_text('#!' + sys.executable + '\n' + source)
+            path.chmod(0o700)
+        self.native_env.update(PATH=str(tools) + ':' + os.environ['PATH'],
+                               HUB_SYNC_STATE=str(self.repo / 'hub-state'))
+        self.input['intent']['platform'] = 'linux'
+        self.input['intent']['network']['hubs'] = [{'ssh': {'identity_file': str(identity), 'target': {
+            'host': 'hub.example', 'port': 22, 'user': 'orbit', 'host_keys': [self.native_env['FIXTURE_PUBLIC_KEY']]}},
+            'sync_path': str(config), 'private_key_file': str(key), 'public_key': 'public-hub-key',
+            'sync_body': 'ListenPort = 51820\n\n[Peer]\nPublicKey = peer-key\nAllowedIPs = 10.44.0.42/32\n'}]
+        workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-node-add.yaml').read_text())
+        selected = {'Stage the hub private key', 'Finish hub configuration', 'Apply the hub peers',
+                    'Read the hub public key', 'Check the hub key'}
+        jobs = []
+        for job in workflow['jobs']:
+            steps = [s for s in job['steps'] if s['name'] in selected]
+            if not steps:
+                continue
+            job = {'name': job['name'], 'steps': steps}
+            if jobs:
+                job['dependsOn'] = [{'job': jobs[-1]['name'], 'condition': {'type': 'succeeded'}}]
+            for step in steps:
+                step.pop('labels', None)
+                task = step['task']
+                if task.get('behaviorType') == '@swamp/ssh':
+                    task['globalArgs']['sshBinary'] = str(tools / 'ssh')
+                    task['inputs']['stdin'] = task['inputs'].get('stdin', '').replace(
+                        'steps["Read WireGuard public key-0"].outputs.stdout.trim()', '"peer-key"')
+            jobs.append(job)
+        workflow.update(name='enrollment-hub-key-test', id='38bd409a-001d-4907-b56b-f385712a6520', jobs=jobs)
+        (self.repo / 'workflows/workflow-enrollment-hub.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
+        result = json.loads(self.cli('workflow', 'run', workflow['name'], '--input', json.dumps(self.input)).stdout)
+        history = self.cli('workflow', 'history', 'get', result['id']).stdout
+        self.assertIn('PrivateKey = ' + private, config.read_text())
+        self.assertIn('AllowedIPs = 10.44.0.42/32', config.read_text())
+        self.assertNotIn(private, history)
+        for path in (self.repo / '.swamp').rglob('*'):
+            if path.is_file():
+                self.assertNotIn(private.encode(), path.read_bytes(), str(path))
+        self.assertEqual((self.repo / 'hub-state').read_text(), 'public-hub-key')
 
 
 if __name__ == '__main__':

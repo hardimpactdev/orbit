@@ -579,6 +579,81 @@ jobs:
       in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hub_files : [] }}'
   dependsOn:
   - {job: phase_24, condition: {type: succeeded}}
+- name: hub_key
+  labels:
+    role: swamp
+  steps:
+  - name: Stage the hub private key
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-add-hub-key-"+string(inputs.node_id)+"-"+string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "node-add-hub-key-"+string(inputs.node_id)+"-"+string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.hub.ssh.target.user }}
+          port: ${{ self.hub.ssh.target.port }}
+          identityFile: ${{ self.hub.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ self.hub.ssh.target.host }}
+          transport:
+            hostKeys: ${{ self.hub.ssh.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["timeout","60","sed","-n","-e","1s/^/[Interface]\\nPrivateKey = /","-e","w "+self.hub.sync_path,self.hub.private_key_file] }}
+        sudo: true
+        timeoutSec: 65
+    writes: true
+    forEach:
+      item: hub
+      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
+  dependsOn:
+  - job: phase_25
+    condition:
+      type: succeeded
+- name: hub_body
+  labels:
+    role: swamp
+  steps:
+  - name: Finish hub configuration
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-add-hub-body-"+string(inputs.node_id)+"-"+string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "node-add-hub-body-"+string(inputs.node_id)+"-"+string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.hub.ssh.target.user }}
+          port: ${{ self.hub.ssh.target.port }}
+          identityFile: ${{ self.hub.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ self.hub.ssh.target.host }}
+          transport:
+            hostKeys: ${{ self.hub.ssh.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["timeout","60","dd","of="+self.hub.sync_path,"oflag=append","conv=notrunc","status=none"] }}
+        sudo: true
+        timeoutSec: 65
+        stdin: ${{ self.hub.sync_body.split("@KEY@").join(steps["Read WireGuard public key-0"].outputs.stdout.trim()) }}
+    writes: true
+    forEach:
+      item: hub
+      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
+  dependsOn:
+  - job: hub_key
+    condition:
+      type: succeeded
 - name: phase_26
   labels:
     role: swamp
@@ -595,7 +670,62 @@ jobs:
       item: hub
       in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
   dependsOn:
-  - {job: phase_25, condition: {type: succeeded}}
+  - {job: hub_body, condition: {type: succeeded}}
+- name: hub_public_key
+  labels:
+    role: swamp
+  steps:
+  - name: Read the hub public key
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-add-hub-public-key-"+string(inputs.node_id)+"-"+string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "node-add-hub-public-key-"+string(inputs.node_id)+"-"+string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.hub.ssh.target.user }}
+          port: ${{ self.hub.ssh.target.port }}
+          identityFile: ${{ self.hub.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ self.hub.ssh.target.host }}
+          transport:
+            hostKeys: ${{ self.hub.ssh.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["wg","show","orbit","public-key"] }}
+        sudo: true
+        timeoutSec: 65
+    forEach:
+      item: hub
+      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
+  dependsOn:
+  - job: phase_26
+    condition:
+      type: succeeded
+- name: hub_key_check
+  labels:
+    role: swamp
+  dependsOn:
+  - job: hub_public_key
+    condition:
+      type: succeeded
+  steps:
+  - name: Check the hub key
+    labels:
+      role: swamp
+    forEach:
+      item: hub
+      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
+    task:
+      type: assert
+      expr: steps["Read the hub public key-"+string(self._index)].outputs.stdout.trim() == self.hub.public_key
+      severity: high
+      message: Applying peers must preserve the hub public key.
 - name: phase_27
   labels:
     role: swamp
@@ -612,7 +742,7 @@ jobs:
       item: linux
       in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
   dependsOn:
-  - {job: phase_26, condition: {type: succeeded}}
+  - {job: hub_key_check, condition: {type: succeeded}}
 - name: phase_28
   labels:
     role: swamp
@@ -892,7 +1022,11 @@ jobs:
   - {job: phase_23, condition: {type: completed}}
   - {job: phase_24, condition: {type: completed}}
   - {job: phase_25, condition: {type: completed}}
+  - {job: hub_key, condition: {type: completed}}
+  - {job: hub_body, condition: {type: completed}}
   - {job: phase_26, condition: {type: completed}}
+  - {job: hub_public_key, condition: {type: completed}}
+  - {job: hub_key_check, condition: {type: completed}}
   - {job: phase_27, condition: {type: completed}}
   - {job: phase_28, condition: {type: completed}}
   - {job: phase_29, condition: {type: completed}}

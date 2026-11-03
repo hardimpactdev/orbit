@@ -110,7 +110,11 @@ sequenceDiagram
   opt Linux peer joins the VPN hub
   SW->>HUB: Create the hub folders<br/>cfgmgmt directory
   SW->>HUB: Write hub configuration<br/>cfgmgmt file
+  SW->>HUB: Stage the hub private key<br/>SSH argv
+  SW->>HUB: Finish hub configuration<br/>SSH argv
   SW->>HUB: Apply the hub peers<br/>SSH argv
+  SW->>HUB: Read the hub public key<br/>SSH argv
+  SW->>SW: Check the hub key<br/>native assert
   end
   opt Linux Node
   SW->>N: Create observer folders<br/>cfgmgmt directory

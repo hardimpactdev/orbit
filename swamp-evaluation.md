@@ -101,3 +101,7 @@ Production commands also need an explicit working directory when sudo changes fr
 Role convergence uses official apply results to avoid restarting matching Reverb inputs. Docker check exposes public compliance while its observed state remains in the execution vault. Prometheus config needs an in-place copy before SIGHUP because replacing a bind-mounted file leaves the running container on the old inode. Could the file resource offer an in-place mode for such mounts?
 
 WireGuard enrollment keeps private keys in Node files. The official exec and debug_exec resources redirect `wg genkey` output and `wg pubkey` input there, since those commands lack file options and SSH exec accepts only literal stdin. Could a WireGuard key resource, or remote stdin/stdout file options on SSH exec, remove these two shell leaves without bringing private keys into run data?
+
+## Node enrollment hub key composition
+
+The pinned file resource accepts content from the worker; it cannot compose a remote private-key file into that content. Node enrollment writes the public hub configuration and a mode-0600 sync file through `file`, then uses one `sed` argv to write its private header from the existing key file and one `dd` argv to append the public peers on stdin. `wg syncconf` receives the complete configuration in one call. No private key enters Swamp data or logs. A public-key observation and native assertion verify that applying peers preserved the hub identity. Could file support protected remote-file content composition?
