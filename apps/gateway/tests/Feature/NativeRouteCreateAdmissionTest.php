@@ -85,6 +85,7 @@ it('records one unpublished Route intent then starts its exact native create wor
         ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
     // One list per chart step, each item ready for its official behavior or command (rule 22).
     $plan = $operation->input['route_create'];
+    expect($plan['awake'])->toBe([]);
     expect($plan)->toMatchArray(['route_id' => $route->id, 'domain' => 'created.private.test', 'lan' => [], 'ingress_ports' => [],
         'links' => [], 'url_lines' => [], 'env_files' => [], 'ingress' => [], 'dns' => [], 'leaf_indexes' => [0], 'trust' => [$node->id], 'root_certificate' => 'public-root'])
         ->and($plan['probes'])->toBe([['node_id' => $node->id, 'address' => $node->wireguard_ip, 'domain' => 'created.private.test']])

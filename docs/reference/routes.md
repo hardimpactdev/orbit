@@ -141,7 +141,7 @@ A Laravel Instance registered in place can be active without a Route. If registr
 
 [Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Instance child workflows bind certificate signing to the parent Operation and its run. Create and registration may sign only their admitted forward Route leaves, never restoration leaves. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
 
-Registration captures the pending Instance's prospective site, PHP pool and TLS probe without activating its stored record. The ordinary site catalog excludes reserved Instances. The Route must answer over TLS before registration activates the Instance.
+Registration captures the pending Instance's prospective site, PHP pool and TLS probe without activating its stored record. The ordinary site catalog excludes reserved Instances. The Route must answer over TLS before registration activates the Instance. The same site child marks a prepared development Instance awake after publication. Standalone Route creation does not change an Instance's awake state.
 
 [Instance cloning](/reference/instance-cloning#preview-route) runs the same CSR, sign and site children for its pending preview Route inside the clone run. The clone writes the whole `.env` itself, so the preview Route's site step writes no second copy. The clone's success activates the Route.
 

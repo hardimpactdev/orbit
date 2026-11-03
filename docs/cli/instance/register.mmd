@@ -1,6 +1,4 @@
 sequenceDiagram
-  %% Target design: rule 1 (read-only from Node agent reports, like tool.adopt), R1 record-only default, R4 Node-work branch; .env stays the user's file; Processes from Project definitions (instance.create). docs/domains/applications.md#register-an-existing-checkout.
-  %% Revised: Nick 2026-11-03. Default: check and record, no run. --setup and --domain are opt-in Node work. A linked worktree of the Project's repository is accepted. Caller-agnostic.
   %% status: reviewed
   %% command: instance:register
   %% kind: instance.register
@@ -10,83 +8,41 @@ sequenceDiagram
   %% lane A icon=server pill=observer tone=amber
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
-  participant CLI as CLI / MCP<br/>on Node 12
-  participant GW as Gateway<br/>Laravel API
-  participant A as Node agent<br/>orbit-agent
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as app-dev Node<br/>reached over ssh
-  loop continuously, on change
-    A->>GW: Report checkouts<br/>with observed_at
-    %%> What it observes:
-    %%> - each Git checkout under `<apps-root>/<project-slug>/<name>`: owner, layout (checkout or linked worktree), origin, branch, `HEAD` commit, dirty state
-    %%> - whether `.env` exists and who can read it; PHP version and the Laravel flag
-    %%> Runs as:
-    %%> - read-only; the Node agent never changes a Node
+  participant CLI as CLI / MCP
+  participant GW as Gateway
+  participant A as Node agent
+  participant SW as Swamp
+  participant N as Target Node
+  loop on change
+    A->>GW: Report checkout facts
   end
   CLI->>GW: instance:register<br/>--project=7
-  %%> Command:
-  %%> - `cd /fast/apps/acme/feature && orbit instance:register --project=7 --yes`; the name defaults to the directory, `feature`
-  %%> - syntax: `--project=ID [--path=PATH] [--name=NAME] [--root=PATH] [--setup] [--domain=HOST] [--yes] [--json]`
-  %%> What registering means:
-  %%> - Orbit adopts a checkout that already exists, in place; a later `instance:destroy` deletes it
-  %%> Opt-in:
-  %%> - `--setup` runs the Project setup steps and starts its Processes
-  %%> - `--domain` creates a Route
-  %%> Confirmation:
-  %%> - without `--yes`, the CLI asks for consent that names the source; `--json` needs `--yes`
   Note over GW: Check against the facts<br/>path · origin · layout
-  %%> Checks:
-  %%> - Node 12 has `app-dev`, Project 7 may be placed on it, the name is free
-  %%> - the checkout is under `/fast/apps/acme/`, owned by the Node's user, with Project 7's origin
-  %%> - a plain checkout, or a linked worktree whose shared `.git` belongs to that repository
-  %%> - with `--domain`: the domain is in Node 12's TLD and free (`route.domain_conflict`, 422)
-  %%> - the agent's report is fresh enough to trust
   alt facts match
-    Note over GW: Record the Instance<br/>Instance 42 · branch feature
-    %%> Result:
-    %%> - Instance 42 recorded with the observed branch, commit and application facts
-    %%> - Git `HEAD`, the index, dirty files and `.env` stay as they are
-    opt --setup, --domain or a public .env
-      Note over GW: Record intent, start run<br/>task #5131
-      %%> When:
-      %%> - only when the Node needs work; without it the Instance is active now and no run starts (R1)
-      %%> Inputs:
-      %%> - Node 12's address and host keys, the facts, the setup steps, the Process definitions, the Route intent
+    Note over GW: Record the Instance<br/>branch · commit · application
+    alt record-only
+      GW-->>CLI: 201 Instance active
+    else Node work needed
       GW->>SW: Start run, full intent<br/>operation-instance-register
-      SW->>N: Protect the .env<br/>@swamp/ssh exec · 0640 orbit-env
-      %%> When:
-      %%> - only when `.env` exists and others can read it
-      %%> How:
-      %%> - root runs `chgrp -h orbit-env`, which never follows a link, then the account sets mode 0640; never reads or changes the content
+      GW-->>CLI: 202 Task accepted
+      SW->>N: Protect the .env<br/>@swamp/ssh exec
+      %%> Only when an existing .env is publicly readable.
       opt --setup
-        SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
-        %%> What it does:
-        %%> - runs the Project's setup steps in the checkout, in order, for example creating `.env`, `composer install`, `php artisan key:generate`
-        SW->>N: Create, start Processes<br/>@swamp/cfgmgmt/systemd · forEach
-        %%> What it does:
-        %%> - creates and starts the Project's development Processes, as `instance:create` does
+        SW->>N: Run Project setup steps<br/>@swamp/ssh exec
+        SW->>N: Create, start Processes<br/>child process-create
       end
       opt --domain
         SW->>N: Create the Route<br/>child route-create
-        %%> What it does:
-        %%> - the same child workflow as `route:create`: CSR on the Node, the Gateway signs it, install the certificate, publish the Caddy site, probe it over TLS
+        %%> The prepared development Instance becomes awake after its site is published.
       end
       alt every step passes
-        SW-->>GW: Run succeeded<br/>terminal event
-        Note over GW: Record the result<br/>Instance 42 active · URL
+        SW-->>GW: Run succeeded
+        Note over GW: Record the result<br/>Instance active · URL
       else a step fails
-        SW--xGW: Run failed<br/>error_code, failed step
-        Note over GW: Keep Instance, mark failed<br/>rerun after a fix
-        %%> On the Node:
-        %%> - the checkout stays as it is; no rollback
+        SW--xGW: Run failed<br/>failed step · error code
+        Note over GW: Keep the Instance reserved<br/>rerun repairs it
       end
     end
-    GW-->>CLI: Instance 42<br/>or task #5131 to follow
-    %%> What you get:
-    %%> - without Node work: the Instance at once (HTTP 201)
-    %%> - with Node work: the task (HTTP 202); the CLI follows it with `operation:show` every 2 s
-  else mismatch or report too old
-    GW--xCLI: Refused or can't verify<br/>instance.source_invalid
-    %%> Result:
-    %%> - nothing is recorded; fix the source, or try again when the agent reports
+  else facts do not match
+    GW--xCLI: Refuse registration
   end

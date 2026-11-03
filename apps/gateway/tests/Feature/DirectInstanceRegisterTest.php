@@ -254,6 +254,8 @@ it('reserves a Route for a Laravel registration without replacing its user envir
         ->and($operation->input['route_create']['caddy'][0]['content'])->toContain('native.register-proof.test')
         ->and($operation->input['route_create']['php_files'][0]['content'])->toContain('/srv/apps/register-proof/native')
         ->and(array_column($operation->input['route_create']['probes'], 'domain'))->toContain('native.register-proof.test');
+    expect($operation->input['route_create']['awake'])->toBe([['node_id' => $this->node->id, 'instance_id' => $instance->id,
+        'path' => '/dev/shm/orbit/hibernation/app-instance-'.$instance->id.'.awake']]);
 });
 
 it('records setup with no steps or Processes without an empty run', function (): void {

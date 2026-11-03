@@ -1,6 +1,7 @@
 """Reviewed registration: renamed linked source, opt-in setup/Process/Route, plain record-only adoption."""
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ domain = 'r-' + os.environ['PROOF_RUN'] + '.proof-source.test'
 
 
 def target(*argv):
-    return subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', *argv], capture_output=True, text=True, timeout=30)
+    return subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', *argv], capture_output=True, text=True, timeout=30, check=False)
 
 
 def check(condition, message):
