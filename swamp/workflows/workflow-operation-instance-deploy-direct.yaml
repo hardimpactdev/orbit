@@ -1494,11 +1494,84 @@ jobs:
         name: dev-vp
         steps: ${{ steps }}
     guard: ${{ !inputs.intent.deployment.needs_vp }}
+- name: production-schedule-intent
+  labels:
+    role: swamp
+  steps:
+  - name: Read Schedule group
+    guard: ${{ inputs.intent.deployment.variant != "production" }}
+    labels:
+      role: swamp
+    task:
+      behaviorName: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+      behaviorType: '@swamp/ssh'
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        argv:
+        - timeout
+        - '30'
+        - id
+        - -gn
+        - --
+        - ${{ self.schedule.user }}
+        hosts: name:target
+        sudo: true
+        timeoutSec: 40
+      methodName: exec
+      type: behavior
+    forEach:
+      item: schedule
+      in: ${{ inputs.intent.runtime_definitions.schedules }}
+    concurrency: 1
+  - name: Render Schedules
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Read Schedule group
+      condition:
+        type: always
+    forEach:
+      item: schedule
+      in: ${{ inputs.intent.runtime_definitions.schedules }}
+    concurrency: 1
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k,steps[k].status in ["failed","cancelled"]) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/schedule-run-assets'
+      behaviorName: ${{ "instance-deploy-schedules" }}
+      methodName: lifecycle
+      inputs:
+        schedule:
+          id: ${{ self.schedule.id }}
+          command_hash: ${{ self.schedule.command_hash }}
+          user: ${{ self.schedule.user }}
+          home: ${{ self.schedule.home }}
+          working_directory: ${{ self.schedule.working_directory }}
+          shell: ${{ self.schedule.shell }}
+          login_shell: ${{ self.schedule.login_shell }}
+          calendar: ${{ self.schedule.calendar }}
+          timeout_seconds: ${{ self.schedule.timeout_seconds }}
+          desired: ${{ self.schedule.desired }}
+          group: ${{ steps["Read Schedule group-" + string(self._index)].outputs.stdout.trim() }}
 - name: deploy
   labels:
     role: swamp
   dependsOn:
   - job: dev-vp-install
+    condition:
+      type: succeeded
+  - job: production-schedule-intent
     condition:
       type: succeeded
   steps:
@@ -2008,79 +2081,109 @@ jobs:
         intent: ${{ self.member.intent }}
         execution_secrets: '${{ "node_" + string(self.member.node_id) + "_member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["node_" + string(self.member.node_id) + "_member_" +
           string(self.member.id)]} : {} }}'
-  - name: Read Schedule group
+  - name: Write Schedule services
+    labels:
+      role: swamp
+    forEach:
+      item: schedule
+      in: ${{ inputs.intent.runtime_definitions.schedules }}
+    concurrency: 1
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k,steps[k].status in ["failed","cancelled"]) }}
+    writes: true
     dependsOn:
     - step: Refresh PHP cache
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("ids-svc-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: ${{ "/etc/systemd/system/orbit-schedule-" + self.schedule.id + ".service" }}
+        content: ${{ steps["Render Schedules-" + string(self._index)].outputs.service }}
+        ensure: present
+        mode: '0644'
+      inputs: {}
+  - name: Install Schedule timers
     labels:
       role: swamp
-    task:
-      behaviorName: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
-      behaviorType: '@swamp/ssh'
-      globalArgs:
-        hosts:
-        - address: ${{ inputs.intent.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-        name: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
-        transport:
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-      inputs:
-        argv:
-        - timeout
-        - '30'
-        - id
-        - -gn
-        - --
-        - ${{ self.schedule.user }}
-        hosts: name:target
-        sudo: true
-        timeoutSec: 40
-      methodName: exec
-      type: behavior
-    forEach: &id003
+    forEach:
       item: schedule
       in: ${{ inputs.intent.runtime_definitions.schedules }}
     concurrency: 1
-  - name: Install Schedules
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k,steps[k].status in ["failed","cancelled"]) }}
+    writes: true
     dependsOn:
-    - step: Read Schedule group
+    - step: Write Schedule services
       condition:
         type: always
-    forEach: *id003
-    concurrency: 1
-    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
     task:
-      type: workflow
-      workflowIdOrName: operation-schedule-create
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: schedule.create
-        intent:
-          schedule:
-            id: ${{ self.schedule.id }}
-            command_hash: ${{ self.schedule.command_hash }}
-            user: ${{ self.schedule.user }}
-            home: ${{ self.schedule.home }}
-            working_directory: ${{ self.schedule.working_directory }}
-            shell: ${{ self.schedule.shell }}
-            login_shell: ${{ self.schedule.login_shell }}
-            calendar: ${{ self.schedule.calendar }}
-            timeout_seconds: ${{ self.schedule.timeout_seconds }}
-            desired: ${{ self.schedule.desired }}
-            group: ${{ steps["Read Schedule group-" + string(self._index)].outputs.stdout.trim() }}
-          cascade: false
-          ssh_execution: ${{ inputs.intent.ssh_execution }}
-        execution_secrets: {}
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ ("ids-timer-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        service: ${{ "orbit-schedule-" + self.schedule.id + ".timer" }}
+        unitFile: ${{ steps["Render Schedules-" + string(self._index)].outputs.timer }}
+        enabled: ${{ self.schedule.desired == "enabled" }}
+        ensure: '${{ self.schedule.desired == "enabled" ? "running" : "stopped" }}'
+      inputs: {}
+  - name: Read Schedule timers
+    labels:
+      role: swamp
+    forEach:
+      item: schedule
+      in: ${{ inputs.intent.runtime_definitions.schedules }}
+    concurrency: 1
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k,steps[k].status in ["failed","cancelled"]) }}
+    dependsOn:
+    - step: Install Schedule timers
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ ("ids-timer-check-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+      methodName: check
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        service: ${{ "orbit-schedule-" + self.schedule.id + ".timer" }}
+        unitFile: ${{ steps["Render Schedules-" + string(self._index)].outputs.timer }}
+        enabled: ${{ self.schedule.desired == "enabled" }}
+        ensure: '${{ self.schedule.desired == "enabled" ? "running" : "stopped" }}'
+      inputs: {}
+  - name: Check Schedule timers
+    labels:
+      role: swamp
+    forEach:
+      item: schedule
+      in: ${{ inputs.intent.runtime_definitions.schedules }}
+    concurrency: 1
+    guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k,steps[k].status in ["failed","cancelled"]) }}
+    dependsOn:
+    - step: Read Schedule timers
+      condition:
+        type: always
+    task:
+      type: assert
+      severity: high
+      expr: steps["Read Schedule timers-" + string(self._index)].outputs.status == "compliant"
+      message: The captured Node timer must match its admitted unit and desired state.
   - name: Restart Processes
     labels:
       role: swamp
@@ -2132,7 +2235,7 @@ jobs:
     - step: Restart Processes
       condition:
         type: always
-    - step: Install Schedules
+    - step: Check Schedule timers
       condition:
         type: always
     writes: true

@@ -34,7 +34,6 @@ jobs:
           methodName: lifecycle
           inputs: {schedule: '${{ inputs.intent.schedule }}'}
       - name: files
-        writes: true
         labels: {role: swamp}
         dependsOn: [{step: units, condition: {type: succeeded}}]
         forEach: {item: unit, in: '${{ ["service", "timer"] }}'}
@@ -57,7 +56,6 @@ jobs:
             mode: "0644"
           inputs: {}
       - name: reload
-        writes: true
         labels: {role: swamp}
         dependsOn: [{step: files, condition: {type: succeeded}}]
         task:
@@ -74,7 +72,6 @@ jobs:
             command: systemctl daemon-reload
           inputs: {}
       - name: timer
-        writes: true
         labels: {role: swamp}
         dependsOn: [{step: reload, condition: {type: succeeded}}]
         task:
@@ -93,7 +90,6 @@ jobs:
             ensure: '${{ inputs.intent.schedule.desired == "enabled" ? "running" : "stopped" }}'
           inputs: {}
       - name: remove_obsolete
-        writes: true
         labels: {role: swamp}
         dependsOn: [{step: timer, condition: {type: succeeded}}]
         forEach: {item: suffix, in: '${{ [".sh", ".complete"] }}'}

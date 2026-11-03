@@ -143,9 +143,11 @@ sequenceDiagram
     SW->>N: Check PHP runtime<br/>cfgmgmt/systemd check
     SW->>N: Install Processes<br/> run
     SW->>N: Read Schedule group<br/>ssh exec argv
-    SW->>N: Install Schedules<br/> run
-    %%> What it does:
-    %%> - installs captured Node timer definitions; cron Schedules need no Node work while disabled
+    Note over SW: Render Schedules<br/>typed data
+    SW->>N: Write Schedule services<br/>cfgmgmt/file apply
+    SW->>N: Install Schedule timers<br/>cfgmgmt/systemd apply
+    SW->>N: Read Schedule timers<br/>cfgmgmt/systemd check
+    Note over SW: Check Schedule timers<br/>native assert
     SW->>N: Restart Processes<br/>ssh exec argv
     SW->>N: Run after steps<br/>ssh exec argv
     SW->>N: Find releases in use<br/>ssh exec argv

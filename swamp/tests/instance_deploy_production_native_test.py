@@ -15,7 +15,7 @@ import yaml
 from native_harness import ROOT, NativeTestCase
 
 WORKFLOW = 'operation-instance-deploy-direct'
-CHILDREN = ('operation-process-create', 'operation-process-destroy', 'operation-process-vite', 'operation-tool-manager-setup', 'operation-schedule-create')
+CHILDREN = ('operation-process-create', 'operation-process-destroy', 'operation-process-vite', 'operation-tool-manager-setup')
 
 
 class ProductionDeployNative(NativeTestCase):
@@ -33,6 +33,7 @@ class ProductionDeployNative(NativeTestCase):
         # The Node's home lives outside the native repository, whose files must hold no private bytes.
         self.node = Path(tempfile.mkdtemp(prefix='orbit-deploy-node-'))
         self.addCleanup(shutil.rmtree, self.node, True)
+        (self.node / 'etc/systemd/system').mkdir(parents=True)
         self.home = self.node / 'home'
         (self.home / 'releases/initial/public').mkdir(parents=True)
         (self.home / 'releases/old').mkdir()
@@ -72,8 +73,8 @@ class ProductionDeployNative(NativeTestCase):
             # Runs the remote command locally; sudo, absolute or not, goes to the fixture below.
             'ssh': """import re,subprocess,sys
 if '-M' in sys.argv or '-O' in sys.argv: sys.exit(0)
-sys.exit(subprocess.call(['/bin/sh','-c',re.sub(r"(?<![\\w/])'?(/usr/bin/)?sudo'?(?= )",SUDO,sys.argv[-1])]))
-""".replace('SUDO', repr(str(tools / 'sudo'))),
+sys.exit(subprocess.call(['/bin/sh','-c',re.sub(r"(?<![\\w/])'?(/usr/bin/)?sudo'?(?= )",SUDO,sys.argv[-1].replace('/etc/systemd/system/',SYSTEMD))]))
+""".replace('SUDO', repr(str(tools / 'sudo'))).replace('SYSTEMD', repr(str(self.node / 'etc/systemd/system') + '/')),
             'scp': """import shutil,sys
 shutil.copyfile(sys.argv[-2],sys.argv[-1].split(':',1)[1])
 """,
@@ -120,8 +121,6 @@ sys.exit(subprocess.call(a))
                 job.pop('labels', None)
                 for step in job['steps']:
                     step.pop('labels', None)
-                    if name == 'operation-schedule-create' and 'path' in step['task'].get('globalArgs', {}):
-                        step['task']['globalArgs']['path'] = step['task']['globalArgs']['path'].replace('/etc/', str(self.node / 'etc') + '/')
                     if step['task'].get('behaviorType') == '@swamp/ssh':
                         step['task']['globalArgs'].update(sshBinary=str(tools / 'ssh'), scpBinary=str(tools / 'scp'))
             (self.repo / f'workflows/workflow-{name}.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False, width=1000000))
@@ -311,7 +310,7 @@ sys.exit(subprocess.call(a))
             'working_directory': str(self.home / 'current'), 'shell': '/bin/bash', 'login_shell': False,
             'calendar': '*-*-* 03:00:00', 'command_hash': 'a' * 64, 'timeout_seconds': 30, 'desired': 'disabled'}]
         self.assertEqual(self.deploy(), 'succeeded')
-        self.assertEqual(self.status['Install Schedules-0'], 'succeeded')
+        self.assertEqual(self.status['Check Schedule timers-0'], 'succeeded')
         timer = self.node / ('etc/systemd/system/orbit-schedule-' + schedule_id + '.timer')
         self.assertIn('OnCalendar=*-*-* 03:00:00', timer.read_text())
 
