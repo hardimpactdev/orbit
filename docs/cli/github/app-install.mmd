@@ -7,15 +7,16 @@ sequenceDiagram
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane GH icon=server pill=target tone=purple
-  participant CLI as CLI / browser<br/>orbit · browser
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant GH as GitHub<br/>App registration
-  CLI->>GW: github:app:install<br/>--name=orbit-acme --owner=acme
+  CLI->>GW: github:app:install
   %%> Command:
-  %%> - `orbit github:app:install --name=orbit-acme --owner=acme`
+  %%> - `orbit github:app:install`
   %%> - syntax: `[--name=NAME] [--owner=ORGANIZATION] [--json]`
   %%> Input:
-  %%> - the proposed App name, and optionally the organization that owns the App
+  %%> - no required input; the CLI prompts for an App name or defaults to `orbit`
+  %%> - without an owner, registration belongs to your personal account
   %%> Requirements:
   %%> - the browser reaches the Gateway's private HTTPS address, because GitHub redirects back to it
   Note over GW: No App yet: start one<br/>registration · state · 1 h

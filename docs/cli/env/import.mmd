@@ -14,9 +14,9 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Instance Node<br/>reached over ssh
-  CLI->>GW: env:import --instance=42<br/>--replace
+  CLI->>GW: env:import --instance=42
   %%> Command:
-  %%> - `orbit env:import --instance=42 --replace`
+  %%> - `orbit env:import --instance=42`
   %%> - syntax: `env:import --instance=SELECTOR [--replace] [--json]`
   %%> Input:
   %%> - the Instance: a numeric Instance ID or the exact domain of its Route

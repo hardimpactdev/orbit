@@ -15,7 +15,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Instance Node<br/>reached over ssh
-  CLI->>GW: env:sync --instance=42<br/>--json
+  CLI->>GW: env:sync --instance=42
   %%> Command:
   %%> - `orbit env:sync --instance=42`
   %%> - syntax: `env:sync --instance=SELECTOR [--force] [--json]`
