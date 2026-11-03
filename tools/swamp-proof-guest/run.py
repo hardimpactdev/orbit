@@ -137,7 +137,7 @@ def parity_check(fixture, up, run_id, outputs, operation, native_run=None):
     parity = run(['python3', '-I', str(SOURCE / script), *arguments], check=False, cwd=SOURCE, timeout=120,
                  env={'PATH': '/usr/sbin:/usr/bin:/bin', 'PROOF_OUTPUTS': str(outputs_file), 'PROOF_RESULT': json.dumps(operation and operation.get('result')),
                       'PROOF_TARGET': up['target']['key'], 'PROOF_RUN': run_id, 'PROOF_NODES': json.dumps(up['nodes']),
-                      'PROOF_OPERATION_FILE': str(operation_file), 'PROOF_NATIVE_RUN': native_run or (operation or {}).get('swamp_run_id', '')})
+                      'PROOF_OPERATION_FILE': str(operation_file), 'PROOF_NATIVE_RUN': native_run or (operation or {}).get('swamp_run_id') or ''})
     return {'exit': parity.returncode, 'output': (parity.stdout + parity.stderr)[-2000:]}
 
 
