@@ -800,6 +800,14 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/nodes\/(\d+)\/firewall-rules$/, ([node = ""]) => ok(rules(node))],
             [
                 "GET",
+                /^\/api\/v1\/nodes\/(\d+)$/,
+                ([id = ""]) => {
+                    const node = nodes.find((candidate) => String(candidate.id) === id);
+                    return node === undefined ? notFound("Node") : ok(node);
+                },
+            ],
+            [
+                "GET",
                 /^\/api\/v1\/nodes\/(\d+)\/managed-firewall-rules$/,
                 ([node = ""]) => ok(managedRules(node)),
             ],
@@ -1178,15 +1186,16 @@ export function createDemoGateway() {
                     }
 
                     const created = {
-                        ...(recordedFixture("created").body.data as Node),
+                        ...nodes[0],
                         id: Math.max(...nodes.map((node) => node.id)) + 1,
                         name: String(body.name),
                         roles,
                         tld: typeof body.tld === "string" ? body.tld : null,
+                        status: "provisioning",
                     };
                     nodes.push(created);
 
-                    return ok(created, 201);
+                    return startDemoOperation("node.add", created.id, body, "node");
                 },
             ],
         ];
@@ -1269,6 +1278,10 @@ export function createDemoGateway() {
             trackedInstances[operation.kind === "analytics.enable" ? "add" : "delete"](
                 String(operation.target_id),
             );
+        }
+        if (operation.kind === "node.add") {
+            const node = nodes.find((candidate) => candidate.id === operation.target_id);
+            if (node !== undefined) node.status = "active";
         }
         Object.assign(operation, {
             status: "succeeded",

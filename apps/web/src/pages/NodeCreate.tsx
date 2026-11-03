@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, GatewayError } from "../api/client";
+import { awaitOperation, type Operation } from "../api/operations";
 import { queryClient } from "../api/queryClient";
 import type { Node } from "../api/types";
 import { applyRow } from "../realtime/apply";
@@ -22,6 +23,7 @@ type Values = {
     host: string;
     port: string;
     user: string;
+    fingerprint: string;
     tld: string;
     roles: string[];
 };
@@ -46,6 +48,10 @@ function validate(values: Values): Partial<Record<keyof Values, string>> {
 
     if (values.user === "") {
         errors.user = "Required.";
+    }
+
+    if (!/^SHA256:[A-Za-z0-9+/]{43}$/.test(values.fingerprint)) {
+        errors.fingerprint = "Enter the approved SHA256 SSH host key fingerprint.";
     }
 
     if (values.roles.length === 0) {
@@ -83,7 +89,7 @@ function Field({
     );
 }
 
-/** `node:add` as a page. The request provisions synchronously, so the button says it is in flight until the Gateway answers. */
+/** `node:add` as a page. Follow enrollment before opening the completed Node. */
 export function NodeCreate() {
     const go = useGo();
     const [values, setValues] = useState<Values>({
@@ -91,6 +97,7 @@ export function NodeCreate() {
         host: "",
         port: "22",
         user: "root",
+        fingerprint: "",
         tld: "",
         roles: ["app-dev"],
     });
@@ -113,14 +120,24 @@ export function NodeCreate() {
         setCreating(true);
 
         try {
-            const node = await api<Node>("POST", "/api/v1/nodes", {
+            const started = await api<Operation>("POST", "/api/v1/nodes", {
                 name: values.name,
                 roles: values.roles,
                 public_ssh_port: Number(values.port),
                 user: values.user,
+                host_key_fingerprint: values.fingerprint,
                 ...(values.host === "" ? {} : { public_ssh_host: values.host }),
                 ...(values.tld === "" ? {} : { tld: values.tld }),
             });
+            const operation = await awaitOperation(started);
+
+            if (operation.status !== "succeeded") {
+                throw new Error(
+                    `Node enrollment ${operation.status}: ${operation.error_code ?? "no result"}.`,
+                );
+            }
+
+            const node = await api<Node>("GET", `/api/v1/nodes/${operation.target_id}`);
             applyRow(queryClient, "nodes", "created", node);
             ui.set({ message: `Node [${node.name}] is ${node.status}.` });
             go.record("nodes", node);
@@ -178,6 +195,15 @@ export function NodeCreate() {
                             data-testid="node-user"
                             value={values.user}
                             onChange={set("user")}
+                        />
+                    </Field>
+                    <Field label="Host key fingerprint" error={errors.fingerprint}>
+                        <input
+                            type="text"
+                            data-testid="node-fingerprint"
+                            placeholder="SHA256:…"
+                            value={values.fingerprint}
+                            onChange={set("fingerprint")}
                         />
                     </Field>
                     <Field
@@ -241,8 +267,7 @@ export function NodeCreate() {
                         </button>
                         {creating && (
                             <span className="ml-[2ch] text-dim">
-                                node:add provisions synchronously; this waits until the Gateway
-                                finishes or fails.
+                                Waiting for Node enrollment to finish.
                             </span>
                         )}
                     </div>

@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressOutcome;
+use App\Support\Console\ProgressState;
 use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
-use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class AddNodeCommand extends NodeCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'node:add
         {name : Node name}
@@ -137,7 +142,7 @@ final class AddNodeCommand extends NodeCommand
             return self::FAILURE;
         }
 
-        $node = $this->sendWithProgress(
+        $operation = $this->sendWithProgress(
             $connector,
             new AddNodeRequest(
                 name: $name,
@@ -158,25 +163,20 @@ final class AddNodeCommand extends NodeCommand
                 settingsProvided: $settings['provided'],
                 settings: $settings['provided'] ? NodeSettingOptions::settings($settings['body']) : null,
             ),
-            NodeResponse::class,
-            ['Add Node', 'Adding Node', 'Added Node'],
-            NodeOutput::mutationState(...),
+            OperationResponse::class,
+            ['Add Node', 'Adding Node', 'Node enrollment recorded'],
+            static fn (OperationResponse $response): ProgressOutcome => new ProgressOutcome(ProgressState::Success,
+                'Node enrollment Operation recorded'),
         );
 
-        if (! $node instanceof NodeResponse) {
+        if (! $operation instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($node->toArray());
+        $profile = $this->activeGatewayProfile($repository);
 
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("Node [{$node->name}] is {$node->status}.");
-        $this->writeHumanMessage("Request ID: {$node->requestId}");
-
-        return self::SUCCESS;
+        return $profile === null ? self::FAILURE
+            : $this->followOperation($connector, $profile, $operation, 'Add Node', 'Node enrollment');
     }
 
     private function validHostKeyFingerprint(?string $fingerprint): bool

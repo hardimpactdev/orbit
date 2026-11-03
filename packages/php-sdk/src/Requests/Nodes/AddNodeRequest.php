@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Nodes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -45,12 +45,12 @@ final class AddNodeRequest extends GatewayRequest implements HasBody
         return '/api/v1/nodes';
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodeResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
         $data = $this->unwrapData($response);
         $requestId = $this->successRequestId($response);
 
-        return NodeResponse::fromGatewayData($data, $requestId);
+        return OperationResponse::fromGatewayData($data, $requestId);
     }
 
     /** @return array<string, mixed> */

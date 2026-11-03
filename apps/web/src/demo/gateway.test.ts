@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { Activity } from "../api/activities";
 import { api, GatewayError, get, setTransport } from "../api/client";
-import type { Process, Tool, ToolInventory } from "../api/types";
+import { awaitOperation, type Operation } from "../api/operations";
+import type { Node, Process, Tool, ToolInventory } from "../api/types";
 import { createDemoGateway } from "./gateway";
 
 let gateway: ReturnType<typeof createDemoGateway>;
@@ -30,6 +31,23 @@ describe("the demo Gateway", () => {
 
         expect(refusal).toBeInstanceOf(GatewayError);
         expect((refusal as GatewayError).code).toBe("node.tld_required");
+    });
+
+    it("admits Node enrollment and activates the Node only after its Operation succeeds", async () => {
+        const started = await api<Operation>("POST", "/api/v1/nodes", {
+            name: "spare",
+            roles: ["app-dev"],
+            tld: "spare.test",
+        });
+        expect(started).toMatchObject({ kind: "node.add", status: "queued", target_type: "node" });
+        expect(await get<Node>(`/api/v1/nodes/${started.target_id}`)).toMatchObject({
+            status: "provisioning",
+        });
+        expect((await awaitOperation(started)).status).toBe("succeeded");
+        expect(await get<Node>(`/api/v1/nodes/${started.target_id}`)).toMatchObject({
+            name: "spare",
+            status: "active",
+        });
     });
 
     it("pages and filters activity, and shows one row with its properties", async () => {

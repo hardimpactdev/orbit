@@ -8,6 +8,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -15,6 +16,9 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
 beforeEach(function (): void {
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
+    $this->enrollment = ['data' => ['id' => 7, 'kind' => 'node.add', 'target_type' => 'node', 'target_id' => 1,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'steps' => [], 'result' => ['enrolled' => true]],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']];
 });
 
 afterEach(function (): void {
@@ -29,55 +33,10 @@ it('sends node provisioning to the active gateway', function (): void {
         caPath: '/home/orbit/.orbit/ca/root.pem',
     ));
     $mockClient = MockClient::global([
-        '*/api/v1/nodes' => MockResponse::make([
-            'data' => [
-                'id' => 1,
-                'cluster_id' => 3,
-                'name' => 'app-dev',
-                'status' => 'active',
-                'platform' => 'linux',
-                'architecture' => 'x86_64',
-                'tld' => 'app-dev.orbit',
-                'public_ssh_host' => '94.237.40.75',
-                'public_ssh_port' => 22,
-                'user' => 'orbit',
-                'wireguard_ip' => '10.44.0.2',
-                'lan_ip' => '10.0.0.2',
-                'wireguard_public_key' => 'app-dev-public-key',
-                'wireguard_endpoint_override' => '10.0.0.2:51820',
-                'dns_server_override' => '10.0.0.2',
-                'ssh_host_fingerprint' => 'SHA256:app-dev',
-                'failed_step' => null,
-                'error_code' => null,
-                'roles' => ['app-dev'],
-            ],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ], 201),
+        '*/api/v1/nodes' => MockResponse::make($this->enrollment, 202),
+        ShowOperationRequest::class => MockResponse::make($this->enrollment),
+        '*/api/v1/realtime' => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
     ]);
-    $expected = json_encode([
-        'id' => 1,
-        'cluster_id' => 3,
-        'name' => 'app-dev',
-        'status' => 'active',
-        'platform' => 'linux',
-        'architecture' => 'x86_64',
-        'tld' => 'app-dev.orbit',
-        'public_ssh_host' => '94.237.40.75',
-        'public_ssh_port' => 22,
-        'user' => 'orbit',
-        'wireguard_ip' => '10.44.0.2',
-        'lan_ip' => '10.0.0.2',
-        'wireguard_public_key' => 'app-dev-public-key',
-        'wireguard_endpoint_override' => '10.0.0.2:51820',
-        'dns_server_override' => '10.0.0.2',
-        'ssh_host_fingerprint' => 'SHA256:app-dev',
-        'failed_step' => null,
-        'error_code' => null,
-        'roles' => ['app-dev'],
-        'settings' => null,
-        'updating' => null,
-        'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
     $this
         ->artisan('node:add', [
@@ -95,10 +54,10 @@ it('sends node provisioning to the active gateway', function (): void {
             '--host-key-fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
             '--json' => true,
         ])
-        ->expectsOutput($expected)
+        ->expectsOutputToContain('node.add')
         ->assertExitCode(0);
 
-    $request = $mockClient->getLastRequest();
+    $request = $mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest();
 
     expect($request)
         ->toBeInstanceOf(AddNodeRequest::class)
@@ -146,19 +105,9 @@ it('omits the bootstrap user when --user is not given', function (): void {
         url: 'https://10.44.0.1',
     ));
     $mockClient = MockClient::global([
-        '*/api/v1/nodes' => MockResponse::make([
-            'data' => [
-                'id' => 1,
-                'name' => 'app-prod',
-                'status' => 'active',
-                'public_ssh_host' => '94.237.40.75',
-                'public_ssh_port' => 22,
-                'user' => 'orbit',
-                'tld' => 'prod',
-                'roles' => ['app-prod'],
-            ],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ], 201),
+        '*/api/v1/nodes' => MockResponse::make($this->enrollment, 202),
+        ShowOperationRequest::class => MockResponse::make($this->enrollment),
+        '*/api/v1/realtime' => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
     ]);
 
     $this->artisan('node:add', [
@@ -166,7 +115,7 @@ it('omits the bootstrap user when --user is not given', function (): void {
         '--tld' => 'prod',
     ])->assertExitCode(0);
 
-    expect($mockClient->getLastRequest()?->body()->all())
+    expect($mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest()?->body()->all())
         ->toBe([
             'name' => 'app-prod',
             'platform' => 'linux',
@@ -183,18 +132,9 @@ it('passes bootstrap and managed users to the SDK', function (): void {
         url: 'https://10.44.0.1',
     ));
     $mockClient = MockClient::global([
-        '*/api/v1/nodes' => MockResponse::make([
-            'data' => [
-                'id' => 1,
-                'name' => 'app-dev',
-                'status' => 'active',
-                'public_ssh_host' => '94.237.40.75',
-                'public_ssh_port' => 22,
-                'user' => 'nckrtl',
-                'roles' => [],
-            ],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ], 201),
+        '*/api/v1/nodes' => MockResponse::make($this->enrollment, 202),
+        ShowOperationRequest::class => MockResponse::make($this->enrollment),
+        '*/api/v1/realtime' => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
     ]);
 
     $this->artisan('node:add', [
@@ -203,7 +143,7 @@ it('passes bootstrap and managed users to the SDK', function (): void {
         '--orbit-user' => 'nckrtl',
     ])->assertExitCode(0);
 
-    expect($mockClient->getLastRequest()?->body()->all())
+    expect($mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest()?->body()->all())
         ->toHaveKey('user', 'deployer')
         ->toHaveKey('orbit_user', 'nckrtl');
 });
@@ -214,18 +154,9 @@ it('sends repeatable provision settings and rejects invalid setting input locall
         url: 'https://10.44.0.1',
     ));
     $mockClient = MockClient::global([
-        '*/api/v1/nodes' => MockResponse::make([
-            'data' => [
-                'id' => 1,
-                'name' => 'app-dev',
-                'status' => 'active',
-                'public_ssh_host' => '94.237.40.75',
-                'public_ssh_port' => 22,
-                'user' => 'orbit',
-                'roles' => ['app-dev'],
-            ],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ], 201),
+        '*/api/v1/nodes' => MockResponse::make($this->enrollment, 202),
+        ShowOperationRequest::class => MockResponse::make($this->enrollment),
+        '*/api/v1/realtime' => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
     ]);
 
     $this->artisan('node:add', [
@@ -236,7 +167,7 @@ it('sends repeatable provision settings and rejects invalid setting input locall
         ],
     ])->assertExitCode(0);
 
-    expect($mockClient->getLastRequest()?->body()->all()['settings'] ?? null)
+    expect($mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest()?->body()->all()['settings'] ?? null)
         ->toBe([
             'apps' => ['path' => '/srv/orbit:data/apps'],
             'task_vms' => null,

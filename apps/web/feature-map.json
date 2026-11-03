@@ -199,6 +199,10 @@
                 "purpose": "The SSH user field."
             },
             {
+                "testid": "node-fingerprint",
+                "purpose": "The approved SSH host key fingerprint."
+            },
+            {
                 "testid": "node-role-app-dev",
                 "purpose": "Toggles the app-dev role."
             },

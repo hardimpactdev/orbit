@@ -24,6 +24,7 @@ it("applies the node:add rules to each field", async () => {
     await openApp("/nodes/create");
     await userEvent.fill(field("Node name"), "Not Valid");
     await userEvent.fill(field("SSH port"), "70000");
+    await userEvent.fill(field("Host key fingerprint"), "not-approved");
     await page.getByRole("button", { name: /Create node/ }).click();
 
     await expect
@@ -32,11 +33,15 @@ it("applies the node:add rules to each field", async () => {
     await expect
         .element(pane("New node"))
         .toMatchTextContent("A port is a number from 1 to 65535.");
+    await expect
+        .element(pane("New node"))
+        .toMatchTextContent("Enter the approved SHA256 SSH host key fingerprint.");
 });
 
 it("shows the Gateway's refusal, then creates the node and opens it", async () => {
     const app = await openApp("/nodes/create");
     await userEvent.fill(field("Node name"), "spare");
+    await userEvent.fill(field("Host key fingerprint"), `SHA256:${"A".repeat(43)}`);
     await page.getByRole("button", { name: /Create node/ }).click();
     await expect.element(pane("New node")).toMatchTextContent("An app-dev TLD is required");
 
@@ -50,6 +55,7 @@ it("shows the Gateway's refusal, then creates the node and opens it", async () =
         roles: ["app-dev"],
         public_ssh_port: 22,
         user: "root",
+        host_key_fingerprint: `SHA256:${"A".repeat(43)}`,
         tld: "spare.test",
     });
 });
