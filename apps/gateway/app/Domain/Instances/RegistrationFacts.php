@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
@@ -13,23 +14,26 @@ use App\Support\ValidatedData;
 
 /**
  * The checks and the activation of a registered checkout, shared by the record-only path, which reads the Node
- * agent's `checkout` fact, and the native run's projection, which reads the run's output.
+ * agent's `checkout` fact, and the native run's projection, which verifies the requested effects.
  *
  * @phpstan-type Facts array{registered:true,branch:?string,commit:string,detached:bool,digest:?string,common:string,default_branch:?string,inferred_slug:string,php_version:?string,laravel:bool}
  */
 final readonly class RegistrationFacts
 {
     /**
-     * The facts of one plain checkout of the Project's repository, from the agent's `checkout` fact.
+     * The facts of one checkout of the Project's repository, from the agent's `checkout` fact.
      *
      * @param  array<string, mixed>  $fact
      * @return Facts
      */
     public static function fromAgent(array $fact, string $checkout, ?string $identity, ProjectType $type, string $user): array
     {
-        if (($fact['top_level'] ?? null) !== $checkout || ($fact['common_dir'] ?? null) !== $checkout.'/.git'
-            || ($fact['linked'] ?? null) !== false || ($fact['worktrees'] ?? null) !== [$checkout]) {
-            throw new ResourceOperationException('instance.registration_conflict', 'The path is not one plain checkout.', 409);
+        $common = ValidatedData::nullableString($fact['common_dir'] ?? null);
+        $trees = $fact['worktrees'] ?? null;
+        if (($fact['top_level'] ?? null) !== $checkout || $common === null || StoragePath::tryParse($common) === null
+            || basename($common) !== '.git' || ($fact['linked'] ?? null) !== ($common !== $checkout.'/.git')
+            || ! is_array($trees) || ! in_array($checkout, $trees, true)) {
+            throw new ResourceOperationException('instance.registration_conflict', 'The path is not a checkout of its reported shared repository.', 409);
         }
         $origin = ValidatedData::nullableString($fact['origin'] ?? null) ?? '';
         if (self::identity($origin) !== $identity) {
@@ -51,9 +55,29 @@ final readonly class RegistrationFacts
         };
 
         return ['registered' => true, 'branch' => $branch, 'commit' => $commit, 'detached' => $branch === null, 'digest' => null,
-            'common' => $checkout.'/.git', 'default_branch' => ValidatedData::nullableString($fact['default_branch'] ?? null),
+            'common' => $common, 'default_branch' => ValidatedData::nullableString($fact['default_branch'] ?? null),
             'inferred_slug' => self::slug($origin),
             ...self::profile($artisan, ValidatedData::nullableString($fact['composer'] ?? null), $type)];
+    }
+
+    /**
+     * Restore the typed facts frozen at admission, without reading source again.
+     *
+     * @param  array<string,mixed>  $facts
+     * @return Facts
+     */
+    public static function recorded(array $facts): array
+    {
+        if (($facts['registered'] ?? null) !== true || ! is_bool($facts['detached'] ?? null) || ! is_bool($facts['laravel'] ?? null)) {
+            throw new ResourceOperationException('operation.result_invalid', 'The recorded checkout facts are invalid.', 422);
+        }
+
+        return ['registered' => true, 'branch' => ValidatedData::nullableString($facts['branch']),
+            'commit' => ValidatedData::string($facts['commit']), 'detached' => $facts['detached'],
+            'digest' => ValidatedData::nullableString($facts['digest']), 'common' => ValidatedData::string($facts['common']),
+            'default_branch' => ValidatedData::nullableString($facts['default_branch']),
+            'inferred_slug' => ValidatedData::string($facts['inferred_slug']),
+            'php_version' => ValidatedData::nullableString($facts['php_version']), 'laravel' => $facts['laravel']];
     }
 
     /** The repository identity of an origin; a masked or unparseable origin has none. */
@@ -103,8 +127,16 @@ final readonly class RegistrationFacts
      */
     public static function activate(Instance $instance, array $facts, string $repository, ?string $identity): void
     {
+        self::record($instance, $facts, $repository, $identity);
+        $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active',
+            'registration_completed_at' => now(), 'failed_step' => null, 'error_code' => null]);
+    }
+
+    /** @param Facts $facts */
+    public static function record(Instance $instance, array $facts, string $repository, ?string $identity): void
+    {
         $instance->update([
-            'status' => InstanceState::Active, 'provisioning_step' => 'active',
+            'source_layout' => $facts['common'] === $instance->checkout_path.'/.git' ? 'checkout' : 'worktree',
             'branch' => $facts['branch'], 'branch_override' => $facts['branch'],
             'starting_commit' => $facts['commit'],
             'selected_php_version' => $facts['php_version'],
@@ -115,7 +147,7 @@ final readonly class RegistrationFacts
             'registration_default_branch' => $facts['default_branch'],
             'registration_inferred_slug' => $facts['inferred_slug'],
             'registration_common_repository_path' => $facts['common'], 'registration_worktree_paths' => [$instance->checkout_path],
-            'registration_relocation_state' => 'relocated', 'registration_completed_at' => now(), 'failed_step' => null, 'error_code' => null,
+            'registration_relocation_state' => 'relocated',
         ]);
     }
 }

@@ -12,7 +12,7 @@ orbit gateway:release:deploy [<commit>] [--json]
 | --- | --- |
 | `commit` | A hex SHA of 7 to 40 characters. In a terminal, an omitted value is asked for. |
 
-The Gateway queues the release and runs it in its own unit. The CLI reads the record every 2 seconds and shows each step as the Gateway records it: queue, prepare, migrate, switch, hand off, verify, move the scheduler, publish the web app, and smoke. The tree ends with the outcome, and the record id and request ID follow it. JSON prints the final record. The command exits 0 only when the outcome is `verified`.
+The Gateway queues the release and runs it in its own unit. The CLI reads the record every 2 seconds and shows each step as the Gateway records it: queue, prepare, migrate, switch, hand off, verify, move the scheduler, and publish the web app. The tree ends with the outcome, and the record id and request ID follow it. JSON prints the final record. The command exits 0 only when the outcome is `verified`.
 
 Interrupting the CLI stops following, not the release. Read the outcome later with `gateway:release:show <id>`. The CLI keeps reading while the Gateway reloads. It gives up with `gateway.release_follow_failed` after 30 failed reads in a row, or once 65 minutes have passed, whatever the reads return.
 

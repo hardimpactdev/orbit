@@ -1,5 +1,5 @@
-/** instance.register source readers on the native harness, through official SSH run locally. */
-import { assertEquals, assertFalse, assertMatch, assertStringIncludes } from "jsr:@std/assert@1.0.19";
+/** Guarded registration effects on the native harness, through official SSH run locally. */
+import { assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
 import { type NativeRepo, nativeRepo } from "../../../../tests/_support/native_harness.ts";
 
 const tool = new URL("../../../../tests/_support/fake_tool.ts", import.meta.url).href;
@@ -11,14 +11,6 @@ import { shellSplit } from ${JSON.stringify(tool)};
 const [program, ...args] = shellSplit(Deno.args.at(-1)!).map((part) => part.replaceAll("/usr/bin/sudo", ${JSON.stringify(sudo)}));
 const child = new Deno.Command(program, { args, stdin: "inherit", stdout: "inherit", stderr: "inherit" }).spawn();
 Deno.exit((await child.status).code);
-`;
-
-/** The official group behavior's own SSH, from PATH: runs its shell command locally, with sudo going to the fake. */
-const PATH_SSH = (sudo: string) => `
-import { passThrough, readStdinBytes } from ${JSON.stringify(tool)};
-if (Deno.args.some((a) => ["-M", "-O", "-N", "-MNf"].includes(a))) Deno.exit(0);
-const command = Deno.args.at(-1)!.replace(/(?<![\\w/])'?(?:[/]usr[/]bin[/])?sudo'?(?= )/g, ${JSON.stringify(sudo)});
-await passThrough(["/bin/sh", "-c", command], await readStdinBytes());
 `;
 
 /** Drops sudo's options; records chgrp, which needs root, and runs anything else as is. */
@@ -45,14 +37,10 @@ async function fixture() {
   repo.timeoutMs = 120_000;
   await repo.pull("@swamp/ssh");
   await repo.pull("@swamp/cfgmgmt");
-  await repo.copyBehaviors("operations/instance-source-command", "operations/instance-lifecycle", "operations/tools");
+  await repo.copyBehaviors("operations/certificates");
   const calls = `${repo.dir}/calls.jsonl`;
   await Deno.mkdir(`${repo.dir}/tools`);
   const sudo = await repo.fakeBinary("tools/sudo", SUDO(calls));
-  // The official group behavior creates orbit-env through sudo sh -c on a Node that lacks it.
-  await repo.fakeBinary("tools/groupadd", "Deno.exit(0);");
-  await repo.fakeBinary("tools/ssh", PATH_SSH(sudo));
-  repo.env.PATH = `${repo.dir}/tools:${Deno.env.get("PATH")}`;
   const ssh = await repo.fakeBinary("ssh", SSH(sudo));
   const checkout = `${repo.dir}/checkout`;
   await Deno.mkdir(checkout);
@@ -66,86 +54,114 @@ async function fixture() {
   git(checkout, "branch", "-M", "main");
   await Deno.writeTextFile(`${checkout}/.env`, "PRIVATE_SENTINEL=must-not-leave\n", { mode: 0o644 });
   await Deno.chmod(`${checkout}/.env`, 0o644);
-  await repo.workflow("operation-instance-register", (workflow) => {
-    for (const step of workflow.jobs.flatMap((job) => job.steps)) {
-      const task = step.task as { behaviorType?: string; globalArgs?: Record<string, unknown> };
-      if (task.behaviorType === "@swamp/ssh") task.globalArgs!.sshBinary = ssh;
+  const copied = new Set<string>();
+  async function workflow(name: string) {
+    if (copied.has(name)) return;
+    copied.add(name);
+    const { parse } = await import("jsr:@std/yaml@1.0.12");
+    const root = new URL("../../../../workflows/", import.meta.url);
+    const flow = parse(await Deno.readTextFile(new URL(`workflow-${name}.yaml`, root))) as {
+      jobs: { steps: { task?: { type?: string; workflowIdOrName?: string } }[] }[];
+    };
+    for (const step of flow.jobs.flatMap((job) => job.steps)) {
+      if (step.task?.type === "workflow" && step.task.workflowIdOrName && !step.task.workflowIdOrName.includes("${{")) {
+        await workflow(step.task.workflowIdOrName);
+      }
     }
-  });
-  const intent = {
-    instance_id: 7,
-    project_id: 8,
-    checkout,
-    application: checkout,
-    repository_identity: "github.com/example/proof",
-    project_type: "monorepo",
-    php_versions: ["8.5"],
-    branch: "main",
-    kind: "instance.register",
-    ssh_execution: {
-      identity_file: "/fixture/identity",
-      target: { host: "192.0.2.9", user: "orbit", port: 22, host_keys: [KEY] },
-    },
-  };
+    await repo.workflow(name, (definition) => {
+      for (const step of definition.jobs.flatMap((job) => job.steps)) {
+        const task = step.task as { behaviorType?: string; globalArgs?: Record<string, unknown> };
+        if (task.behaviorType === "@swamp/ssh") Object.assign(task.globalArgs!, { sshBinary: ssh, scpBinary: ssh });
+      }
+    });
+  }
+  await workflow("operation-process-create");
+  await workflow("operation-process-start");
+  await workflow("operation-instance-register");
+  const intent = { checkout, application: checkout, user: "orbit", protect_environment: true, run_setup: false,
+    setup_steps: [] as Record<string, unknown>[], processes: [], route: null, route_secrets: {},
+    ssh_execution: { identity_file: "/fixture/identity", target: { host: "192.0.2.9", user: "orbit", port: 22, host_keys: [KEY] } } };
   return { repo, checkout, intent, calls };
 }
-
 async function register(repo: NativeRepo, intent: Record<string, unknown>, success = true) {
   const inputs = { operation_id: 7002, node_id: 9, kind: "instance.register", intent, execution_secrets: {} };
   const { run, history } = await repo.runWorkflow("operation-instance-register", inputs, { success });
   return { run, history: history as unknown as History };
 }
-
-const stdout = (history: History, name: string) =>
-  history.jobs[0].steps.find((step) => step.name === name)!.outputs!.stdout!;
 const mode = async (path: string) => (await Deno.stat(path)).mode! & 0o777;
-
-Deno.test("register reads public facts and protects the environment file", async () => {
+Deno.test("registration protects the user environment without reading source or making a group", async () => {
   const { repo, checkout, intent, calls } = await fixture();
   await using _ = repo;
-  const { run, history } = await register(repo, intent);
-  assertEquals(run.status, "succeeded");
-  assertEquals(stdout(history, "Read the commit").trim(), git(checkout, "rev-parse", "HEAD"));
-  assertEquals(stdout(history, "Read the Git top level").trim(), checkout);
-  assertEquals(stdout(history, "Read the branch").trim(), "main");
-  assertFalse(JSON.stringify(history).includes("PRIVATE_SENTINEL"));
-  // Only the group change runs as root, and -h never follows a link; the account sets the mode.
-  assertEquals(await mode(`${checkout}/.env`), 0o640);
-  const chgrp = Deno.readTextFileSync(calls).split("\n").filter(Boolean).map((line) => JSON.parse(line))
-    .filter((call) => call[0] === "chgrp");
-  assertEquals(chgrp, [["chgrp", "-h", "orbit-env", "--", `${checkout}/.env`]]);
+  const commit = git(checkout, "rev-parse", "HEAD"), branch = git(checkout, "branch", "--show-current");
+  const { history } = await register(repo, intent);
+  assertEquals(await mode(checkout + "/.env"), 0o640);
+  assertEquals(await Deno.readTextFile(checkout + "/.env"), "PRIVATE_SENTINEL=must-not-leave\n");
+  assertEquals(git(checkout, "rev-parse", "HEAD"), commit);
+  assertEquals(git(checkout, "branch", "--show-current"), branch);
+  assertFalse(JSON.stringify(history).includes("must-not-leave"));
+  const recorded = (await Deno.readTextFile(calls)).trim().split("\n").map((line) => JSON.parse(line));
+  assertEquals(recorded, [["chgrp", "-h", "orbit-env", "--", checkout + "/.env"]]);
+  assertEquals(history.jobs[0].steps.map((step) => step.name), ["Protect the .env", "Create the Route"]);
 });
-
-Deno.test("an authenticated origin is masked before it enters history", async () => {
+Deno.test("registration setup runs in order without changing a renamed worktree branch", async () => {
   const { repo, checkout, intent } = await fixture();
   await using _ = repo;
-  git(checkout, "remote", "set-url", "origin", "https://PRIVATE_ORIGIN_SENTINEL@github.com/example/proof.git");
-  const { run, history } = await register(repo, intent);
-  assertEquals(run.status, "succeeded");
-  assertFalse(JSON.stringify(history).includes("PRIVATE_ORIGIN_SENTINEL"));
-  assertStringIncludes(stdout(history, "Read the origin"), "REDACTED@github.com");
+  const worktree = repo.dir + "/linked";
+  git(checkout, "worktree", "add", "-q", "-b", "temporary", worktree);
+  git(worktree, "branch", "-m", "renamed-feature");
+  intent.checkout = intent.application = worktree;
+  intent.protect_environment = false;
+  intent.run_setup = true;
+  intent.setup_steps = ["printf 'first\\n' > order; cp file .env", "printf 'second\\n' >> order"].map((command) => ({ command, directory: worktree, timeout_seconds: 20, instance_id: 42, instance_name: "linked", seed_path: "", seed_commit: "" }));
+  const head = git(worktree, "rev-parse", "HEAD");
+  await register(repo, intent);
+  assertEquals(await Deno.readTextFile(worktree + "/order"), "first\nsecond\n");
+  assertEquals(await mode(worktree + "/.env"), 0o600);
+  assertEquals(git(worktree, "branch", "--show-current"), "renamed-feature");
+  assertEquals(git(worktree, "rev-parse", "HEAD"), head);
 });
-
-Deno.test("a missing checkout fails before the environment step", async () => {
+Deno.test("failed registration setup skips later setup and publication", async () => {
   const { repo, checkout, intent } = await fixture();
   await using _ = repo;
-  const { run, history } = await register(repo, { ...intent, checkout: `${repo.dir}/missing` }, false);
-  assertEquals(run.status, "failed");
-  assertEquals(history.jobs[0].steps.at(-1)!.status, "skipped");
-  assertEquals(await mode(`${checkout}/.env`), 0o644);
+  intent.protect_environment = false;
+  intent.run_setup = true;
+  intent.setup_steps = ["exit 7", "touch should-not-run"].map((command) => ({ command, directory: checkout, timeout_seconds: 20, instance_id: 42, instance_name: "fixture", seed_path: "", seed_commit: "" }));
+  const { history } = await register(repo, intent, false);
+  const statuses = Object.fromEntries(history.jobs[0].steps.map((step) => [step.name, step.status]));
+  assertEquals(statuses["Run Project setup steps-0"], "failed");
+  assertEquals(statuses["Run Project setup steps-1"], "skipped");
+  assertEquals(statuses["Create the Route"], "skipped");
+  await Deno.stat(checkout + "/should-not-run").then(() => { throw new Error("Later setup ran"); }, (error) => { if (!(error instanceof Deno.errors.NotFound)) throw error; });
+});
+Deno.test("registration guards every Node effect when none was requested", async () => {
+  const { repo, checkout, intent, calls } = await fixture();
+  await using _ = repo;
+  intent.protect_environment = false;
+  const { history } = await register(repo, intent);
+  assertEquals(await mode(checkout + "/.env"), 0o644);
+  assertEquals(history.jobs[0].steps.map((step) => step.status), ["skipped", "skipped"]);
+  assertFalse(await Deno.stat(calls).then(() => true, () => false));
 });
 
-Deno.test("register reads the entry point and composer.json", async () => {
-  const { repo, checkout, intent } = await fixture();
+Deno.test("registration dispatches new Processes to create and existing containers to start", async () => {
+  const { repo, intent } = await fixture();
   await using _ = repo;
-  const composer = JSON.stringify({ require: { php: "^8.4", "laravel/framework": "^12.0" } });
-  await Deno.writeTextFile(`${checkout}/composer.json`, composer);
-  await Deno.writeTextFile(`${checkout}/artisan`, "#!/usr/bin/env php\n");
-  git(checkout, "add", "composer.json", "artisan");
-  git(checkout, "commit", "-qm", "laravel");
-  const { run, history } = await register(repo, { ...intent, project_type: "laravel-app" });
-  assertEquals(run.status, "succeeded");
-  const [digest, entryPoint, ...rest] = stdout(history, "Read the checkout files").split("\n");
-  assertMatch(digest, /^[a-f0-9]{64}$/);
-  assertEquals([entryPoint, rest.join("\n").trim()], ["regular", composer]);
+  for (const [kind, processId] of [["create", 41], ["start", 42]] as const) {
+    await repo.workflow(`operation-process-${kind}`, (definition) => {
+      definition.inputs = { type: "object", additionalProperties: true };
+      definition.jobs = definition.jobs.slice(0, 1);
+      definition.jobs[0].steps = [{
+        name: "Check member dispatch",
+        task: { type: "assert", expr: `inputs.kind == "process.${kind}" && inputs.intent.control.process_id == ${processId}`,
+          message: "Process was sent to the wrong lifecycle child" },
+      }];
+    });
+  }
+  const { history } = await register(repo, { ...intent, protect_environment: false, run_setup: true,
+    processes: [
+      { id: 41, kind: "process.create", intent: { control: { process_id: 41 } } },
+      { id: 42, kind: "process.start", intent: { control: { process_id: 42 } } },
+    ] });
+  assertEquals(history.jobs[0].steps.filter((step) => step.name.startsWith("Create, start Processes-")).map((step) => step.status),
+    ["succeeded", "succeeded"]);
 });

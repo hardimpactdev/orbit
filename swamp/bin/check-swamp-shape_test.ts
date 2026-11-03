@@ -2220,6 +2220,37 @@ Deno.test("static native child workflows are scanned through their local source 
   assertEquals(workflowCoverage(unresolvedBehavior).unknown, 2);
 });
 
+Deno.test("literal child choices scan both alternatives and reject unresolved targets", () => {
+  const reference = '${{ self.member.kind == "process.start" ? "start" : "create" }}';
+  const parent = (value: string) => `name: parent\njobs:\n- steps:\n  - task:\n      type: workflow\n      workflowIdOrName: ${JSON.stringify(value)}\n`;
+  const child = (name: string, run = "true") =>
+    workflow("        run: " + JSON.stringify(run) + "\n").replace("name: example", `name: ${name}`);
+  const sources = new Map([
+    ["workflows/parent.yaml", parent(reference)],
+    ["workflows/create.yaml", child("create")],
+    ["workflows/start.yaml", child("start")],
+  ]);
+  assertEquals(workflowCoverage(analyze(sources, inventory)).clean, 3);
+  for (const name of ["create", "start"]) {
+    const unsafe = new Map(sources);
+    unsafe.set(`workflows/${name}.yaml`, child(name, "orbit-agent command cli.install"));
+    assertEquals(workflowCoverage(analyze(unsafe, inventory)).baseline_accepted, 2);
+    const missing = new Map(sources);
+    missing.delete(`workflows/${name}.yaml`);
+    assert(analyze(missing, inventory).get("workflows/parent.yaml")!.unknown);
+  }
+  for (const value of [
+    '${{ self.member.kind == "process.start" ? inputs.start : "create" }}',
+    '${{ self.member.kind == "process.start" ? "start" : inputs.create }}',
+    '${{ inputs.child }}',
+    '${{ self.member.kind == "process.start" ? "start" : "create" + inputs.suffix }}',
+  ]) {
+    const dynamic = new Map(sources);
+    dynamic.set("workflows/parent.yaml", parent(value));
+    assert(analyze(dynamic, inventory).get("workflows/parent.yaml")!.unknown);
+  }
+});
+
 Deno.test("named native models resolve by name or id and retain their source findings", () => {
   const id = "2175a31b-0f01-4715-bada-683a46696388";
   const model = (run = "true") =>

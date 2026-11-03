@@ -37,7 +37,7 @@ final readonly class NativeDevelopmentInstanceInput
         $processes = $copies = [];
         foreach (ProcessInstanceOperation::members($operation) as $index => $member) {
             $native = app(ProcessLifecycleInput::class)->forInstanceMember($operation, $member);
-            $processes[] = ['index' => $index, 'id' => $member['id'], 'intent' => $native['intent']];
+            $processes[] = ['index' => $index, 'id' => $member['id'], 'kind' => $native['kind'], 'intent' => $native['intent']];
             if (isset($native['execution_secrets']['environment'])) {
                 $copies['member_'.$member['id']] = $native['execution_secrets']['environment'];
             }
@@ -48,7 +48,9 @@ final readonly class NativeDevelopmentInstanceInput
 
         return ['intent' => [...$plan, 'ssh_execution' => $input['ssh_execution'],
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
-            'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance)],
+            'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
+            // The Route child's own vault references; null when the Project serves no web pages.
+            'route_secrets' => ($input['route_create'] ?? null) === null ? null : ValidatedData::object($input['execution_secrets'] ?? [])],
             'execution_secrets' => [...$copies,
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),

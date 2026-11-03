@@ -12,6 +12,7 @@ const phases = {
     environment: "succeeded",
     setup: ["succeeded", "succeeded"],
     processes: ["succeeded"],
+    route: "skipped",
 };
 Deno.test("create returns only the commit when every step finished", () => {
     assertEquals(JSON.parse(createResult(intent, phases).stdout), {
@@ -38,6 +39,13 @@ Deno.test("create names the first unfinished phase and the failed setup command"
         "migrate",
     ]);
     assertEquals(failed({ processes: ["failed"] }).failed_step, "processes");
+});
+Deno.test("a web-serving create needs its Route; a Project without one skips it", () => {
+    const routed = { ...intent, route: { route_id: 9 } };
+    assertEquals(JSON.parse(createResult(routed, { ...phases, route: "succeeded" }).stdout).ready, true);
+    const failed = JSON.parse(createResult(routed, { ...phases, route: "failed" }).stdout);
+    assertEquals([failed.ready, failed.failed_step, failed.error_code], [false, "route", "instance.create_route_failed"]);
+    assertEquals(JSON.parse(createResult(intent, phases).stdout).ready, true);
 });
 Deno.test("an already active create reports ready without step evidence", () => {
     const result = createResult({ instance_id: 7, already_active: true }, {

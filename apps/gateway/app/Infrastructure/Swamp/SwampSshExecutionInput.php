@@ -20,19 +20,22 @@ final readonly class SwampSshExecutionInput
         ];
     }
 
-    /** @return array{control_node_id:209,identity_file:string,public_key:string,target:array{name:string,host:string,user:string,port:int,host_keys:list<string>}} */
+    /** A Node in {@see PendingSshHostKey} gets `host_keys: null`, which its run binds before use.
+     * @return array{control_node_id:209,identity_file:string,public_key:string,target:array{name:string,host:string,user:string,port:int,host_keys:?list<string>}}
+     */
     public function forNode(Node $node): array
     {
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === ''
-            || $node->user === '' || ! is_string($node->ssh_host_key_type) || $node->ssh_host_key_type === ''
-            || ! is_string($node->ssh_host_key) || $node->ssh_host_key === '') {
+        $pending = app(PendingSshHostKey::class)->covers($node->id);
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '' || $node->user === '' || (! $pending
+            && (! is_string($node->ssh_host_key_type) || $node->ssh_host_key_type === ''
+            || ! is_string($node->ssh_host_key) || $node->ssh_host_key === ''))) {
             throw new ResourceOperationException('swamp.ssh_target_unavailable', 'Official SSH requires the stored target address, user and host key.', 503);
         }
         $identity = $this->identity();
 
         return [...$identity,
             'target' => ['name' => 'target', 'host' => $node->wireguard_ip, 'user' => $node->user, 'port' => 22,
-                'host_keys' => [$node->ssh_host_key_type.' '.$node->ssh_host_key]],
+                'host_keys' => $pending ? null : [$node->ssh_host_key_type.' '.$node->ssh_host_key]],
         ];
     }
 }

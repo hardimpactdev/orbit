@@ -54,3 +54,26 @@ Deno.test("private intent mismatch refuses before publishing CLI credentials", a
     }, { ...context, modelId: "00000000-0000-4000-8000-000000000001" }), Error, "vault.intent_changed");
     assertEquals(getWrittenResources(), []);
 });
+
+Deno.test("setup publishes only the verified public account metadata", async () => {
+    const intent = { url: "https://vault.test", organization: "Orbit", collection: "Disposable" };
+    const { context, getWrittenResources } = createModelTestContext();
+    await cliDataMethods.setup.execute({
+        intent,
+        env: { ORBIT_VAULT_CONFIGURATION: JSON.stringify({
+            ...intent, client_secret: env.ORBIT_CLIENT_SECRET, master_password: env.ORBIT_MASTER_PASSWORD,
+        }) },
+        email: "setup@example.test",
+        organization: { id: "org", name: "Orbit" },
+        collection: { id: "collection", name: "Disposable" },
+    }, { ...context, modelId: "00000000-0000-4000-8000-000000000001" });
+    assertEquals(getWrittenResources().map(({ specName, name, data }) => ({ specName, name, data })), [{
+        specName: "setup", name: "setup", data: { stdout: JSON.stringify({
+            outcome: "succeeded", data: {
+                backend: "configured", email: "setup@example.test",
+                organization_id: "org", organization_name: "Orbit",
+                collection_id: "collection", collection_name: "Disposable",
+            },
+        }) },
+    }]);
+});

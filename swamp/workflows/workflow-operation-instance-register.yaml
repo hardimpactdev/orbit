@@ -1,293 +1,109 @@
 id: c0791777-2696-430c-a78e-97b9289a655f
 name: operation-instance-register
-description: Read the admitted development checkout over official SSH from 209 and protect its .env; the Gateway checks the facts.
-vaults: []
+description: Adopt agent-verified source; run only the requested setup, Processes, Route and environment protection.
+vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
     kind: {type: string, const: instance.register}
-    intent:
-      type: object
+    intent: {type: object}
     execution_secrets:
       type: object
-      additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: source
-  labels:
-    role: swamp
+- name: register
+  labels: {role: swamp}
   steps:
-  - name: 'Read the checkout files'
-    labels:
-      role: swamp
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: &id001
-        name: ${{ ("reg-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/timeout
-        - '60'
-        - /bin/sh
-        - -c
-        - cd -- "$1" || exit 1; { find . -path ./.git -prune -o -printf "%P %m %y %l\n" | LC_ALL=C sort; find . -path ./.git -prune -o -type f
-          -print0 | LC_ALL=C sort -z | xargs -0r sha256sum; } | sha256sum | cut -c1-64; [ "$3" = monorepo ] && exit 0; if [ -L "$2/artisan" ];
-          then echo unsafe; elif [ -f "$2/artisan" ]; then echo regular; else echo absent; fi; [ ! -f "$2/composer.json" ] || head -c 1048577
-          -- "$2/composer.json"
-        - sh
-        - ${{ inputs.intent.checkout }}
-        - ${{ inputs.intent.application }}
-        - ${{ inputs.intent.project_type }}
-  - name: 'Read the Git top level'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Read the checkout files'
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-top-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.checkout }}
-        - rev-parse
-        - --show-toplevel
-  - name: 'Read the Git common dir'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Read the Git top level'
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-common-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.checkout }}
-        - rev-parse
-        - --path-format=absolute
-        - --git-common-dir
-  - name: 'List the worktrees'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Read the Git common dir'
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-worktrees-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.checkout }}
-        - worktree
-        - list
-        - --porcelain
-  - name: 'Read the origin'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'List the worktrees'
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-origin-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/timeout
-        - '60'
-        - /bin/sh
-        - -c
-        - /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" config --get remote.origin.url | sed -E "s#^([a-z+]+://)[^/@]*:[^/@]*@#\1REDACTED@#;
-          s#^(https?://)[^/@]+@#\1REDACTED@#"
-        - sh
-        - ${{ inputs.intent.checkout }}
-  - name: 'Read the branch'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Read the origin'
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-branch-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.checkout }}
-        - branch
-        - --show-current
-  - name: 'Read the commit'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Read the branch'
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-commit-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.checkout }}
-        - rev-parse
-        - --verify
-        - HEAD^{commit}
-  - name: 'Read the default branch'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Read the commit'
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-default-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.checkout }}
-        - for-each-ref
-        - --format=%(symref)
-        - refs/remotes/origin/HEAD
-    # A .env becomes 0640 with group orbit-env, so the Node agent can report its key names and no other user reads it.
-  - name: 'Create the orbit-env group'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Read the default branch'
-      condition:
-        type: succeeded
+  - name: Protect the .env
+    labels: {role: swamp}
     writes: true
+    guard: '${{ !inputs.intent.protect_environment }}'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/group'
-      behaviorName: ${{ ("reg-env-group-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: apply
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "reg-env-" + string(inputs.node_id) }}'
+      methodName: exec
       globalArgs:
-        groupname: orbit-env
-        ensure: present
-        system: true
-        become: true
-        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-      inputs: {}
-  - name: 'Protect the .env file'
-    labels:
-      role: swamp
-    dependsOn:
-    - step: 'Create the orbit-env group'
-      condition:
-        type: succeeded
+        name: '${{ "reg-env-" + string(inputs.node_id) }}'
+        transport: &transport
+          kind: ssh
+          user: '${{ inputs.intent.ssh_execution.target.user }}'
+          port: '${{ inputs.intent.ssh_execution.target.port }}'
+          identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+        hosts: &hosts
+        - name: target
+          address: '${{ inputs.intent.ssh_execution.target.host }}'
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        timeoutSec: 65
+        argv: [/usr/bin/timeout, '60', /bin/sh, -c, '/usr/bin/sudo -n -- /usr/bin/chgrp -h orbit-env -- "$1" && /usr/bin/chmod 0640 -- "$1"', sh, '${{ inputs.intent.application + "/.env" }}']
+  - name: Run Project setup steps
+    labels: {role: swamp}
     writes: true
+    dependsOn: [{step: Protect the .env, condition: {type: always}}]
+    guard: '${{ !inputs.intent.run_setup || steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: step, in: '${{ inputs.intent.setup_steps }}'}
+    concurrency: 1
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("reg-protect-environment-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: '${{ "reg-setup-" + string(inputs.node_id) + "-" + string(self._index) }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: '${{ "reg-setup-" + string(inputs.node_id) + "-" + string(self._index) }}'
+        transport: *transport
+        hosts: *hosts
       inputs:
         hosts: name:target
-        # Only the group change runs as root, and -h never follows a link; the account sets its own file's mode.
-        argv:
-        - /usr/bin/timeout
-        - '60'
-        - /bin/sh
-        - -c
-        - '[ ! -f "$1/.env" ] || [ -L "$1/.env" ] || { /usr/bin/sudo -n -- /usr/bin/chgrp -h orbit-env -- "$1/.env" && chmod 0640 -- "$1/.env"; }'
-        - sh
-        - ${{ inputs.intent.application }}
+        timeoutSec: '${{ self.step.timeout_seconds + 5 }}'
+        argv: [/usr/bin/timeout, '${{ string(self.step.timeout_seconds) }}', /usr/bin/env, -C, '${{ self.step.directory }}',
+          '${{ "ORBIT_INSTANCE_ID=" + string(self.step.instance_id) }}', '${{ "ORBIT_INSTANCE_NAME=" + self.step.instance_name }}',
+          '${{ "ORBIT_SEED_PATH=" + self.step.seed_path }}', '${{ "ORBIT_SEED_COMMIT=" + self.step.seed_commit }}',
+          /bin/sh, -c, 'umask 077; exec /bin/bash -eu -c "$1" >/dev/null', sh, '${{ self.step.command }}']
+  - name: Create, start Processes
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Protect the .env, condition: {type: always}}
+    - {step: Run Project setup steps, condition: {type: always}}
+    guard: '${{ !inputs.intent.run_setup || steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: member, in: '${{ inputs.intent.processes }}'}
+    task:
+      type: workflow
+      workflowIdOrName: '${{ self.member.kind == "process.start" ? "operation-process-start" : "operation-process-create" }}'
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ self.member.kind }}'
+        intent: '${{ self.member.intent }}'
+        execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
+  - name: Create the Route
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Protect the .env, condition: {type: always}}
+    - {step: Run Project setup steps, condition: {type: always}}
+    - {step: 'Create, start Processes', condition: {type: always}}
+    guard: '${{ inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-create
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        parent_run_id: '${{ run.id }}'
+        kind: route.create
+        intent: '${{ inputs.intent.route }}'
+        execution_secrets: '${{ inputs.intent.route_secrets }}'

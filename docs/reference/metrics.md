@@ -61,6 +61,8 @@ The role workflow recreates its two containers from one canonical public Docker 
 
 ### Transport boundary
 
+Every Metrics Node effect is a workflow step with official `@swamp/ssh` or `@swamp/cfgmgmt` behaviors; Swamp code only plans. No local Metrics executor or Node-agent transport remains.
+
 Official cfgmgmt currently exposes no admitted host-key field. Those effects use its default transport and the control worker's managed known-hosts state. Official SSH actions consume the admitted pins directly. This is a separate transport limitation; the role conversion does not claim to close it.
 
 ## Relocate

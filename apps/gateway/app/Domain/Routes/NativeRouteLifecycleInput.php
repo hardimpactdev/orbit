@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
+use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Routes\PublicProcessRouteFirewall;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Support\ValidatedData;
 use Closure;
 
@@ -21,11 +25,11 @@ final readonly class NativeRouteLifecycleInput
     /** @param array<string,mixed> $input
      * @return array{intent:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
-    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null, bool $restorable = true): array
+    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null, bool $restorable = true, bool $preserveEnvironment = false, bool $preparedWorkloads = false, bool $wakePreparedWorkloads = false): array
     {
         $route->loadMissing(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
         $metadata = ['route_id' => $route->id, 'result_route_id' => $route->id, 'effectful' => $removing || ($input['mode'] ?? null) !== 'state_only',
-            'workloads' => [], 'offline' => ($input['offline'] ?? false) === true, 'removal' => $removing,
+            'workloads' => [], 'awake' => [], 'offline' => ($input['offline'] ?? false) === true, 'removal' => $removing,
             'public_activated' => ! $removing && new PublicRouteEligibility()->canStartActivation($route)];
         if (! $metadata['effectful']) {
             return ['intent' => $metadata, 'certificates' => [], 'participant_node_ids' => [209], 'execution_secrets' => []];
@@ -47,14 +51,25 @@ final readonly class NativeRouteLifecycleInput
                 continue;
             }
             foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($route, $target->instance->node_id,
-                ['workloads' => [['instance_id' => $target->instance_id, 'node_id' => $target->instance->node_id, 'production' => $target->instance->placedOnAppProd()]]], false, urlsOnly: $removing) as $write) {
+                ['workloads' => [['instance_id' => $target->instance_id, 'node_id' => $target->instance->node_id, 'production' => $target->instance->placedOnAppProd()]]], false, urlsOnly: $removing || $preserveEnvironment) as $write) {
                 $prior['url_writes'][] = ['node_id' => $target->instance->node_id, ...$write];
             }
         }
         $candidate = clone $route;
         $candidate->forceFill(['status' => $removing ? RouteStatus::Retiring : RouteStatus::Active, 'sites_published' => ! $removing,
             'replacement_step' => $metadata['public_activated'] ? RouteReplacementStep::Cleanup : null]);
-        $desired = $removing ? [] : [$this->mutations->route($candidate, [$route->id => $candidate])];
+        if ($preparedWorkloads && ! $removing) {
+            $candidate->setRelation('targets', $route->targets->map(static function (RouteTarget $target): RouteTarget {
+                $copy = clone $target;
+                $instance = clone $target->instance;
+                if (in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true)) {
+                    $instance->status = InstanceState::SourceResolved;
+                }
+
+                return $copy->setRelation('instance', $instance);
+            }));
+        }
+        $desired = $removing ? [] : [$this->mutations->route($candidate, [$route->id => $candidate], urlsOnly: $preserveEnvironment)];
         if ($removing) {
             // The empty desired Route still carries URL selection from the remaining stored Routes.
             $row = $prior;
@@ -95,6 +110,10 @@ final readonly class NativeRouteLifecycleInput
             }
             $instances[$target->instance_id] = $target->instance;
             $metadata['workloads'][] = app(NativeRouteWorkloadPreparation::class)->capture($target->instance, $route, $candidate, $removing);
+            if ($preparedWorkloads && $wakePreparedWorkloads && ! $removing && new DevelopmentHibernationPolicy()->appliesToInstance($target->instance)) {
+                $metadata['awake'][] = ['node_id' => $target->instance->node_id, 'instance_id' => $target->instance_id,
+                    'path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($target->instance_id))];
+            }
         }
         if (! $removing) {
             $prepared = app(NativeRoutePreparationInput::class)->capture($capture, $desired, $desired, $beforeSites, $instances);

@@ -32,7 +32,7 @@ async function fixture() {
   return { f, home, inputs, rollback: (success = true) => f.run(NAME, inputs, success) };
 }
 Deno.test("rollback atomically selects a release, reloads PHP, restarts Processes and repeats safely", async () => {
-  const { f, home, rollback } = await fixture();
+  const { f, home, inputs, rollback } = await fixture();
   await using _ = f;
   const before = (await Deno.lstat(`${home}/current`)).ino;
   const { steps } = await rollback();
@@ -46,19 +46,13 @@ Deno.test("rollback atomically selects a release, reloads PHP, restarts Processe
   assertEquals(readCalls(f.calls), [["systemctl", "reload", "orbit-orbit-app-7-php8.5-fpm.service"], [
     "systemctl", "reload-or-restart", "orbit-process-3-horizon.service",
   ], ["docker", "restart", "orbit-process-4-cache"]]);
-  await rollback();
-  assertEquals(await Deno.readLink(`${home}/current`), "releases/r1");
-});
-Deno.test("rollback with no PHP or Processes only moves current", async () => {
-  const { f, home, inputs, rollback } = await fixture();
-  await using _ = f;
   inputs.intent.php_input = null;
   inputs.intent.runtime_definitions.restart = [];
-  const { steps } = await rollback();
+  const again = await rollback();
+  assertEquals(again.steps["Refresh PHP cache"].status, "skipped");
+  assertEquals(again.steps["Check the selection"].status, "succeeded");
+  assertEquals(readCalls(f.calls).length, 3);
   assertEquals(await Deno.readLink(`${home}/current`), "releases/r1");
-  assertEquals(readCalls(f.calls), []);
-  assertEquals(steps["Refresh PHP cache"].status, "skipped");
-  assertEquals(steps["Check the selection"].status, "succeeded");
 });
 Deno.test("a failed restart keeps the rollback release selected", async () => {
   const { f, home, rollback } = await fixture();

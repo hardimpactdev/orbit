@@ -172,26 +172,25 @@ A request containing `domain` returns `operation.kind_unavailable`. Native Route
 
 ## Register an existing checkout
 
-Run registration on the `app-dev` Node that holds the source. The Node that sends the request receives the Instance. Native registration requires an explicit Project ID, one checkout already at `<apps-root>/<project-slug>/<name>`, and a Project without a Route.
+Run registration on the `app-dev` Node that holds the source. Supply an existing Project ID and a checkout at `<apps-root>/<project-slug>/<name>`. A plain checkout or a linked worktree of the Project repository is accepted.
 
 ```bash
 cd /fast/apps/acme/feature
 orbit instance:register --project=12 --name=feature --yes
+orbit instance:register --project=12 --setup --domain=feature.acme.test --yes
 ```
 
-The Gateway checks the [Node agent's report](/reference/node-agent#checkouts) of the checkout against the admitted path and the Project repository: one plain checkout owned by the Node account, with the origin's credentials masked.
+The Gateway checks the [Node agent's fresh report](/reference/node-agent#checkouts) of the checkout's owner, path, shared Git directory, origin, branch and application metadata. It never uses the CLI's inspection as proof. A renamed worktree branch is recorded from that report. Registering preserves Git HEAD, the index, dirty files and the user's environment file.
 
-With `.env` absent or private, the Gateway adopts the checkout in place at once and answers with the Instance; no task runs. When others can read `.env`, or an agent before 0.8.0 did not report it, it reserves the Instance and returns an `instance.register` Operation. A Swamp run then reads the checkout over SSH and removes group and public access from `.env` before the Instance becomes active. Either way it preserves Git HEAD, the index, dirty files and private environment contents. The [`instance:register` chart](/cli/instance/register) shows each step.
+With no opt-in work and a private or absent `.env`, the Gateway records an active Instance at once and returns HTTP 201. No Operation or Swamp run starts. The observed PHP version and Laravel marker make the Instance usable by later commands.
 
-The Gateway also classifies the application metadata and records its PHP version and Laravel marker, including an explicit false marker for non-PHP source. These facts make the registered Instance usable by environment synchronization and cloning. Matching facts activate the Instance. A mismatched report refuses with `instance.registration_conflict`, `instance.source_identity_invalid` or `instance.source_owner_invalid`, and a silent agent with `instance.source_invalid`; nothing is reserved. In a run, the same mismatches fail the Operation and leave the Instance reserved for a later request.
+`--setup` runs the Project setup steps and starts its development Processes. `--domain` creates a Route in the Node TLD through the `route:create` child workflow. A public `.env` is protected as `0640 orbit-env` without reading its contents. These optional changes share one `instance.register` Operation; HTTP 202 returns its id to follow. The [`instance:register` chart](/cli/instance/register) names its guarded steps. Setup follows the Project commands; Route creation may update `APP_URL`, while the rest of the user's `.env` stays in place.
+
+A missing or stale report refuses with `instance.source_invalid`. Mismatched Git layout, repository or owner refuses with its specific source error before reservation. A Node step failure keeps the checkout and marks the Instance failed. Fix the cause and repeat the request; completed work stays in place.
 
 Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
 
-The CLI refuses a directory outside Git and an unsafe origin before sending a request. The Gateway independently checks the source's path, Git layout, origin, branch and content digest from the run's reads. It never uses the CLI's inspection as proof. Registration creates no Project. Use [`project:create`](/cli/project/create) first, then supply its ID.
-
-The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override.
-
-Project inference, source relocation, linked worktrees, `--setup`, and domain requests return `operation.kind_unavailable` before reservation. Projects that serve web traffic also return that refusal. No legacy executor runs those combinations. [instance:register](/cli/instance/register) lists the options.
+The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override. Registration creates no Project: use [`project:create`](/cli/project/create) first. Project inference, relocation and adopting every worktree remain unavailable.
 
 ## Provision the application endpoint
 

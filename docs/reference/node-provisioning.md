@@ -2,7 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local,release_native_fixture}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
+  - swamp/{extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
@@ -570,7 +570,7 @@ A new Swamp release reaches serve and its workers through the role, with one res
 1. Merge the pin change in the recipe and the other pins. The release handoff rebuilds the task VM images.
 2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
 3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then both workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b`. The workers retry until serve listens.
-4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`), and run the release smoke.
+4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`).
 
 Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollback points the link at one and restarts the same way. Remove an old release or `replaced-*` directory by hand once no process runs from it: no `/proc/*/exe` names it.
 

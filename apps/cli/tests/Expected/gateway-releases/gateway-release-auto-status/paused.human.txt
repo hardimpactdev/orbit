@@ -11,7 +11,7 @@ Loading automatic releases...
 │
 ├  Enabled           yes
 │
-├  Paused            yes, migration failure, release fedcba987654, gateway.release_smoke_failed, snapshot
+├  Paused            yes, migration failure, release fedcba987654, gateway.release_migrate_failed, snapshot
 │                    /home/orbit/.orbit/backups/pre-fedcba987654.sqlite
 │
 ├  Current release   0123456789ab

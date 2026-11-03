@@ -2,6 +2,7 @@ import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import { teardownArgv } from "./assets.ts";
 import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
 import {
+  bindHostKeys,
   connection,
   Intent,
   observe,
@@ -404,4 +405,16 @@ Deno.test("the checkout reads become the identity, analysis pin and source profi
     ).profile.kind,
     "none",
   );
+});
+
+Deno.test("bind pins only the unpinned guest targets to the key the VM step observed", () => {
+  const value: Record<string, unknown> = {
+    route: { nodes: { "20": { host_keys: null }, "11": { host_keys: ["ssh-ed25519 ROUTER"] } }, list: [{ host_keys: null }] },
+    processes: [{ id: 70, intent: { ssh_execution: { target: { host: "10.44.0.20", host_keys: null } } } }],
+  };
+  assertEquals(bindHostKeys(value, vm, 20), {
+    route: { nodes: { "20": { host_keys: ["ssh-ed25519 PUBLIC"] }, "11": { host_keys: ["ssh-ed25519 ROUTER"] } }, list: [{ host_keys: ["ssh-ed25519 PUBLIC"] }] },
+    processes: [{ id: 70, intent: { ssh_execution: { target: { host: "10.44.0.20", host_keys: ["ssh-ed25519 PUBLIC"] } } } }],
+  });
+  assertThrows(() => bindHostKeys(value, vm, 21), Error, "tasks.provision_refused");
 });

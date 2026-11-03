@@ -153,48 +153,10 @@ jobs:
             ${{ runner.temp }}/grant-validation.json
 
   tests:
-    name: Swamp Deno tests
-    needs: test-shards
-    if: always() && (github.event_name != 'merge_group' || github.workflow == 'CI')
-    runs-on: ubuntu-26.04
-    steps:
-      - name: Require every Operations unit shard
-        env:
-          SHARDS_RESULT: ${{ needs.test-shards.result }}
-        run: |
-          if [[ "$SHARDS_RESULT" != success ]]; then
-            echo "::error::Operations unit shards did not succeed: $SHARDS_RESULT"
-            exit 1
-          fi
-
-  test-shards:
     # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
     if: github.event_name != 'merge_group' || github.workflow == 'CI'
-    name: Swamp Deno shard ${{ matrix.name }}
+    name: Swamp Deno tests
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: general 1/4
-            path: extensions/behaviors/operations
-            shard: 1/4
-            ignore: &separate-tests extensions/behaviors/operations/process-commands
-          - name: general 2/4
-            path: extensions/behaviors/operations
-            shard: 2/4
-            ignore: *separate-tests
-          - name: general 3/4
-            path: extensions/behaviors/operations
-            shard: 3/4
-            ignore: *separate-tests
-          - name: general 4/4
-            path: extensions/behaviors/operations
-            shard: 4/4
-            ignore: *separate-tests
-          - name: process commands
-            path: extensions/behaviors/operations/process-commands
-            shard: 1/1
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}
@@ -221,16 +183,8 @@ jobs:
         run: |
           # shellcheck disable=SC2016
           php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
-      - name: Run Operations test shard
+      - name: Run Operations unit tests
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
           DENO_JOBS: "4"
-          DENO_SHARD: ${{ matrix.shard }}
-          DENO_TEST_PATH: ${{ matrix.path }}
-          DENO_IGNORE: ${{ matrix.ignore }}
-        run: |
-          # Native workflow tests (*native_test.ts) need the account-gated runtime; run them locally.
-          ignore='**/*native_test.ts'
-          if [[ -n "$DENO_IGNORE" ]]; then ignore="$ignore,$DENO_IGNORE"; fi
-          args=(--parallel -A --shard="$DENO_SHARD" --ignore="$ignore")
-          deno test "${args[@]}" "$DENO_TEST_PATH"
+        run: deno test --parallel -A --ignore='**/*native_test.ts' extensions/behaviors/operations

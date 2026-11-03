@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Operations\StartOperationAction;
+use App\Actions\Routes\CreateRouteAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstancePhpVersionCatalog;
@@ -16,13 +18,16 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
+use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
@@ -59,9 +64,6 @@ final readonly class TaskProvisionIntent
             }
             $this->assertProvisionable($group);
             $project = $group->project;
-            if ($project->task_workspace_routed || $project->processDefinitions()->exists() || $project->scheduleDefinitions()->exists()) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace publication and runtime definitions need their native parent steps.', 503);
-            }
             $proof = $project->id === 62 && $project->slug === 'swamp-proof';
             $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
             if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
@@ -85,9 +87,19 @@ final readonly class TaskProvisionIntent
                 'project_id' => $project->id, 'node_id' => $node->id, 'name' => TaskWorkspaceName::for($group),
                 'source_layout' => InstanceSourceLayout::Checkout, 'source_prepare_id' => (string) Str::uuid(),
                 'checkout_path' => $checkout->value, 'root' => null, 'branch_override' => TaskWorkspaceName::for($group),
-                'task_workspace_routed' => false, 'task_workspace_owner_id' => $group->id,
+                'task_workspace_routed' => $routed = $project->type->isWebServing() && $project->task_workspace_routed, 'task_workspace_owner_id' => $group->id,
                 'status' => InstanceState::Reserved, 'first_setup_pending' => true,
             ]);
+            // The guest's host key is pinned only by this run's VM step; its SSH targets carry `host_keys: null`
+            // until the workflow binds them. The Route comes first: it changes how Process units render.
+            [$route, $routeInput, $members] = app(PendingSshHostKey::class)->during($node->id, function () use ($instance, $routed, $node): array {
+                $route = $routed ? app(CreateRouteAction::class)->ensureForInstance($instance, null) : null;
+                app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
+                app(InstantiateProjectRuntimeDefinitionsAction::class)->captureSchedulesForDevelopment($instance);
+
+                return [$route, $route === null ? null : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id),
+                    app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members']];
+            });
             $values = app(LogRedactor::class)->valuesFor($instance);
             $setup = array_map(function ($step) use ($values): array {
                 if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
@@ -112,7 +124,8 @@ final readonly class TaskProvisionIntent
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
                     'setup' => $setup],
-                'ssh_identity' => app(SwampSshExecutionInput::class)->identity()];
+                'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
+                'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
             $group->taskable()->associate($instance);
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 

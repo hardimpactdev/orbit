@@ -38,7 +38,7 @@ Placement uses the configured Node identities; renaming a Process cannot bypass 
 
 The SDK exposes the mutation's Process or Operation result through `ProcessMutationResponse.result`. The CLI prints the completed Process for synchronous responses and follows the Operation for HTTP 202.
 
-Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessData, ProcessTarget)` inside its existing intent transaction, before immutable capture. The target comes from `ProcessTargetResolver` for the stored owner. This action creates or reuses the owned definition with the normal name/specification refusals. It preserves an existing desired state and records a new definition as provisioning. It creates no Operation and runs no runtime or agent call. The parent owns execution and final status projection. Capture itself only reads the admitted record.
+Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessData, ProcessTarget)` inside its existing intent transaction, before immutable capture. The target comes from `ProcessTargetResolver` for the stored owner. This action creates or reuses the owned definition with the normal name/specification refusals. It preserves an existing desired state and records a new definition as provisioning. It creates no Operation and runs no runtime or agent call. The parent owns execution and final status projection. Capture itself only reads the admitted record. [`tasks.provision`](/reference/tasks#provision-an-external-group) captures a task workspace's development definitions the same way; its Schedule copies start disabled through `captureSchedulesForDevelopment()`, and a provisioning task VM guest is a valid Process target.
 
 ### Instance Process definition installation
 
@@ -281,6 +281,10 @@ Some shared paths still have other callers:
 The unused Pi bootstrap, synchronous Instance cascade, Swamp agent launcher and agent Docker container convergence command are removed. Docker create/destroy use the Node209 lifecycle workflows; their public definitions and environment delivery do not pass through a Gateway executor. Retained shared callers keep their existing contracts until their owning kind is converted.
 
 ## Project definitions
+
+A rerun of [`instance:create`](/cli/instance/create) after a failed create checks the Processes its first run started.
+
+[Registering an existing checkout](/cli/instance/register) with `--setup` creates and starts its development Process definitions after setup succeeds. Plain registration creates no Processes. A later Route failure keeps completed Processes recorded and running.
 
 A Project holds Process definitions and Schedule definitions. A definition has a UUID, a name that is unique within the Project and kind, an `environments` list, and a `spec`.
 

@@ -74,7 +74,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
 
 Existing violations are on a grandfather list that may only shrink.
 
-The gate follows static model references by name or UUID into their model definitions and type dependencies. Missing, ambiguous or dynamic references, and models without a supported static type, remain unknown.
+The gate follows static model references by name or UUID into their model definitions and type dependencies. A child workflow choice with two literal names is checked through both source graphs. Arbitrary dynamic references, missing or ambiguous targets, and models without a supported static type remain unknown.
 
 ## Before and after
 

@@ -53,3 +53,37 @@ Deno.test("select maps malformed inventory to conn.revocation_failed without pub
         assertEquals(getWrittenResources(), []);
     } finally { await Deno.remove(directory, { recursive: true }); }
 });
+
+Deno.test("selection gives sessions and links ordered request slots without private inventory fields", async () => {
+    const directory = await Deno.makeTempDir({ prefix: "orbit-conn-revoke.", dir: "/tmp" });
+    try {
+        await Deno.writeTextFile(`${directory}/inventory.json`, JSON.stringify([
+            { sessionId: "owned", client: { label: "phone" }, private: "discarded" },
+            { sessionId: "self", current: true, client: { label: "phone" } },
+            { sessionId: "foreign", client: { label: "other" } },
+            { sessionId: "owned-two", client: { label: "phone" } },
+        ]));
+        const { context, getWrittenResources } = createModelTestContext();
+        const result = await behavior.methods.select.execute({
+            intent: { url: "https://t3.test", labels: ["phone"], links: ["first", "second", "third"] }, directory,
+        }, context);
+        assertEquals(result, {
+            sessions: [
+                { index: 0, body: '{"sessionId":"owned"}' },
+                { index: 1, body: '{"sessionId":"owned-two"}' },
+            ],
+            links: [
+                { index: 0, body: '{"id":"first"}' },
+                { index: 1, body: '{"id":"second"}' },
+                { index: 2, body: '{"id":"third"}' },
+            ],
+        });
+        assertEquals(getWrittenResources().map(({ specName, name, data }) => ({ specName, name, data })), [
+            { specName: "selection", name: "selection", data: result },
+        ]);
+        await Deno.remove(`${directory}/inventory.json`);
+        assertEquals(await behavior.methods.select.execute({
+            intent: { url: "https://t3.test", labels: [], links: [] }, directory,
+        }, context), { sessions: [], links: [] });
+    } finally { await Deno.remove(directory, { recursive: true }); }
+});

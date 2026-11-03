@@ -74,6 +74,23 @@ type Context = {
   extensionFile(name: string): string;
   writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+/**
+ * Fills each `host_keys: null` in the workspace's Route and Process intents with the key the VM step pinned. The
+ * Gateway leaves only the guest's targets unpinned (PendingSshHostKey), so no other Node's key is touched.
+ */
+export function bindHostKeys<T>(value: T, receipt: unknown, guestNodeId: number): T {
+  const vm = Vm.parse(receipt);
+  if (vm.guest_node_id !== guestNodeId) throw new Error("tasks.provision_refused");
+  const pinned = [vm.enrollment.node.ssh_host_key_type + " " + vm.enrollment.node.ssh_host_key];
+  const walk = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(walk);
+    if (item === null || typeof item !== "object") return item;
+    return Object.fromEntries(
+      Object.entries(item).map(([key, field]) => [key, key === "host_keys" && field === null ? pinned : walk(field)]),
+    );
+  };
+  return walk(value) as T;
+}
 export function connection(raw: unknown, receipt: unknown) {
   const intent = Intent.parse(raw), vm = Vm.parse(receipt);
   if (
@@ -312,7 +329,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.02.6",
+  version: "2026.11.03.1",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -350,6 +367,20 @@ export const behavior = {
         args: { intent: unknown; vm: unknown },
         ctx: Context,
       ) => data(ctx, { workspace: connection(args.intent, args.vm) }),
+    },
+    bind: {
+      description:
+        "Pin the workspace Route and Process intents to the guest host key the VM step observed",
+      arguments: z.object({
+        vm: z.unknown(),
+        guest_node_id: z.number().int().positive(),
+        route: z.unknown(),
+        processes: z.array(z.unknown()),
+      }),
+      execute: async (
+        args: { vm: unknown; guest_node_id: number; route: unknown; processes: unknown[] },
+        ctx: Context,
+      ) => data(ctx, bindHostKeys({ route: args.route, processes: args.processes }, args.vm, args.guest_node_id)),
     },
     profile: {
       description:

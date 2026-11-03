@@ -50,7 +50,9 @@ Deno.test("Fixture workflows and their children declare queueTimeout", async () 
             for (const { task } of job.steps) {
                 if (task.type !== "workflow") continue;
                 assert(task.workflowIdOrName, `${name} must name its child`);
-                pending.push(task.workflowIdOrName);
+                // A two-way choice between literal child names checks both children.
+                const choice = /^\$\{\{.*\?\s*"([\w.-]+)"\s*:\s*"([\w.-]+)"\s*\}\}$/.exec(task.workflowIdOrName);
+                pending.push(...(choice ? [choice[1], choice[2]] : [task.workflowIdOrName]));
             }
         }
     }

@@ -5,11 +5,9 @@ declare(strict_types=1);
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
@@ -124,18 +122,7 @@ it('refuses missing or invalid original recovery before any consumer starts', fu
 });
 
 it('retains the hold if protected recovery changes after runtime handoff', function (): void {
-    $smoke = new readonly class($this->pipeline->recoveryAgents) implements GatewayReleaseSmoke
-    {
-        public function __construct(private FakeAgentCommandRunner $agents) {}
-
-        public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
-        {
-            $this->agents->refuse('gateway.verify-release-recovery', 'gateway.release_recovery_invalid');
-
-            return ['outcome' => 'passed', 'report' => null];
-        }
-    };
-    app()->instance(GatewayReleaseSmoke::class, $smoke);
+    $this->pipeline->onVerify = fn () => $this->pipeline->recoveryAgents->refuse('gateway.verify-release-recovery', 'gateway.release_recovery_invalid');
     expect(Artisan::call('gateway:release:finalize', ['commit' => $this->target, 'record' => (string) $this->staged->id]))->toBe(1)
         ->and(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_recovery_invalid')
         ->and($this->pipeline->steps)->toContain('handoff:'.substr($this->target, 0, 12))

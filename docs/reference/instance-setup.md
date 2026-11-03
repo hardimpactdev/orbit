@@ -16,6 +16,10 @@ covers:
 
 A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list before it activates a new development Instance, and the teardown list before it removes an active development Instance. Setup does not require a Route: an unrouted monorepo `default` becomes `active` and runs the same list. Its setup commands can install dependencies in each subproject without application metadata inspection at the repository root.
 
+[Registration](/cli/instance/register) runs this list only with `--setup`, followed by its development Processes. It uses the same frozen list digest and command checks. Setup runs with a private umask, so a command that creates `.env` does not expose it to other accounts. On retry, setup checks and starts existing Project-defined Processes too; it retains their records. An empty list with no Processes or other Node work starts no run.
+
+With `--domain`, registration publishes the prepared checkout's Route after setup and Process creation. The Instance stays reserved until the Route answers over TLS.
+
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
 Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each command runs as one `@swamp/ssh exec` step, `bash -eu -c <command>` in the checkout as the account, and keeps its exit code and stderr for failure diagnosis. Command stdout is discarded on the Node.
@@ -108,7 +112,7 @@ Environment writes the `.env` the Gateway rendered at admission from the Project
 
 Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
 
-The root runs its setup list after source and environment preparation, before recording the Instance as active. It currently refuses Route and database combinations before reservation. 
+The root runs its setup list after source and environment preparation, before recording the Instance as active. For a web-serving Project it creates the Route last, after the Processes, with the same child as `route:create`. It refuses `--database-server` before reservation. 
 
 Setup steps receive two variables:
 
@@ -149,7 +153,7 @@ orbit instance:setup <instance>
 
 Explicit `instance:setup` returns after admitting the Operation. Each command runs within its stored timeout, and the whole list within 540 seconds, the most its timeouts may add up to.
 
-Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts, plus 30 seconds for the Process step; the setup phase stops at 540 seconds. A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
+Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts, plus 30 seconds for the Process step, plus 180 seconds for a Route; the setup phase stops at 540 seconds. A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
 
 A step cut short by the list budget, or with no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
 

@@ -22,6 +22,9 @@ use App\Models\Route;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
     $this->manifest = tempnam(sys_get_temp_dir(), 'create-admission-agent-');
     file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
     app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
@@ -85,8 +88,10 @@ it('records one unpublished Route intent then starts its exact native create wor
         ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
     // One list per chart step, each item ready for its official behavior or command (rule 22).
     $plan = $operation->input['route_create'];
+    expect($plan['awake'])->toBe([]);
     expect($plan)->toMatchArray(['route_id' => $route->id, 'domain' => 'created.private.test', 'lan' => [], 'ingress_ports' => [],
         'links' => [], 'url_lines' => [], 'env_files' => [], 'ingress' => [], 'dns' => [], 'leaf_indexes' => [0], 'trust' => [$node->id], 'root_certificate' => 'public-root'])
+        ->and($plan['probe_ssh']['target'])->toMatchArray(['host' => '10.44.0.209', 'user' => 'orbit', 'host_keys' => ['ssh-ed25519 control-host-key']])
         ->and($plan['probes'])->toBe([['node_id' => $node->id, 'address' => $node->wireguard_ip, 'domain' => 'created.private.test']])
         ->and($plan['nodes'][$node->id])->toMatchArray(['host' => $node->wireguard_ip, 'user' => 'orbit', 'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity'])
         ->and($plan['leaves'][0])->toMatchArray(['node_id' => $node->id, 'scope' => 'app-instance-'.$instance->id, 'domain' => 'created.private.test',
@@ -100,6 +105,17 @@ it('records one unpublished Route intent then starts its exact native create wor
         ->and($plan['acl'][1]['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/env', '-C', '/', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:---', '--', '/srv/create'])
         ->and(array_column(array_slice($plan['acl'], 2, 2), 'argv'))->toBe([['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', '/srv/create'], ['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', '/srv']])
         ->and(end($plan['acl'])['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/env', '-C', '/', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', '/srv/create/public']);
+});
+
+it('refuses a TLS probe without the stored control host key before dispatch', function (): void {
+    [$instance, $node] = native_create_admission_fixture();
+    Node::query()->whereKey(209)->update(['ssh_host_key' => null]);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+
+    $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'unpinned.private.test'])
+        ->assertStatus(503)->assertJsonPath('error.code', 'swamp.ssh_target_unavailable');
+
+    expect($this->socket->sent)->toBe([])->and(Operation::query()->count())->toBe(0);
 });
 
 it('refuses executor callbacks without publishing or deleting admitted Route intent', function (string $status): void {

@@ -122,3 +122,33 @@ Deno.test("closed window prevents installation and leaves the rollout running", 
         await Deno.remove(directory, { recursive: true });
     }
 });
+
+Deno.test("a failed or missing earlier Node keeps later fleet participants pending", async () => {
+    const directory = await Deno.makeTempDir();
+    const file = `${directory}/state.json`;
+    const node = { node_id: 2, user: "node", release: null, profile: "{}", skip_reason: null, plan_error: null, daytime: true, agent: null, ssh: {
+        control_node_id: 209, identity_file: "/identity", target: { host: "node.invalid", user: "orbit", port: 22, host_keys: ["public-key"] },
+    } };
+    try {
+        await Deno.writeTextFile(file, JSON.stringify({ bound: true, calls: [], operation: {
+            id: 7, kind: "fleet.rollout", node_id: 1, status: "running", cancel_requested: false,
+            input: { nodes: [node, { ...node, node_id: 3 }, { ...node, node_id: 4 }] },
+        } }));
+        const release = fleetRelease(() => directHttp(file));
+        const test = createModelTestContext({ globalArgs: { gatewayUrl: "https://gateway.invalid", caFile: "/unused" } });
+        const context = Object.assign(test.context, { extensionFile: (path: string) => new URL(path, import.meta.url).pathname }) as unknown as Parameters<typeof release.methods.gate.execute>[1];
+        const args = { operation_id: 7, kind: "fleet.rollout" as const, node_id: 1, run_id: crypto.randomUUID(), target_node_id: 4 };
+        const first = { ...record, node_id: 2, step: "verify", outcome: "converged" };
+        const second = { ...record, node_id: 3, step: "cli", outcome: "failed", error_code: "cli.install_failed", ok: false };
+        for (const previous of [{}, { "node-0": { outputs: { record: first, observer: first } }, "node-1": { outputs: { record: second } } }]) {
+            const gate = await release.methods.gate.execute({ ...args, previous }, context);
+            assertEquals([gate.install, gate.result.outcome, gate.result.ok], [false, "pending", false]);
+        }
+        const completed = { ...second, ok: true, step: "verify", outcome: "converged", error_code: null };
+        const gate = await release.methods.gate.execute({ ...args, previous: {
+            "node-0": { outputs: { record: first, observer: first } },
+            "node-1": { outputs: { record: completed, observer: completed } },
+        } }, context);
+        assertEquals([gate.install, gate.result.outcome], [true, "unchanged"]);
+    } finally { await Deno.remove(directory, { recursive: true }); }
+});

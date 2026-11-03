@@ -91,17 +91,17 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
-| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
+| Gateway release inputs | Pass on every main commit and its merge queue run, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
-The five Swamp Deno shards use `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
+The Swamp Deno test job uses `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
 
 Runner containers are unprivileged. Install or repair their toolchain with `tools/ci-runners/setup.sh container NAME` while idle; jobs verify the managed PHP build and use fake privileged boundaries. Ordinary Deno tests need no sudo or Docker daemon; real Docker proofs run only on disposable proof VMs.
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
 
-Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp).
+Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The merge queue run for `main` selects builds the same way, because `Required checks` passes there first.
 
 The Swamp shape job runs its gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. Tests live beside the checked scripts in `swamp/bin/` and run one file at a time. Python helpers run as subprocesses with assertions in Deno. These regression tests use disposable fixtures and do not run the Swamp CLI.
 
@@ -109,11 +109,11 @@ Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.ya
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants. Run the native tests for grant patterns locally.
 
-Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests use four general shards and one process shard, with four workers each. They exclude `*native_test.ts`. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
+Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool. They exclude `*native_test.ts`. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
 
 Required checks target five minutes. Project checks and native workflow tests are removed from CI for now; Nick decides which checks return. Their local commands and test files remain available. Native tests use the pinned runtime and disposable repos through `swamp/tests/_support/native_harness.ts`. No new nightly workflow replaces these jobs.
 
-Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. The systemd sandbox test, `swamp-liveness_native_test.ts`, needs a systemd host and passwordless sudo, so it runs on a host. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
+Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 
@@ -125,7 +125,7 @@ Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective toke
 
 CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
-Build jobs, including Swamp validation, shape and test shards, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. CI builds no Rust agent; the [release workflow](#agent-delivery) does. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. CI builds no Rust agent; the [release workflow](#agent-delivery) does. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
@@ -137,7 +137,7 @@ The required check name stays exactly `Required checks`. The branch ruleset and 
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
-On `main`, when Gateway release inputs are selected, Web uploads `web-dist-<full commit SHA>` for 14 days. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
+In the merge queue run for `main` and on `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. The merge queue run tests the exact commit the queue then puts on `main`, so the commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
 
 ### Action pins and token permissions
 
@@ -165,13 +165,11 @@ Public repositories use GitHub-hosted runners, with self-hosted runners availabl
 
 The operator registers runners. The Orbit GitHub App keeps `administration: read`; runner registration adds no App permission or Gateway-held registration credential. Linux runner jobs run without host sudo inside their containers. Increase capacity when measured queueing requires it.
 
-### Self-hosted Gateway runner
-
-The fast CI gate uses hosted runners. It needs no Gateway test system packages, privileged test setup or local Swamp credentials.
-
 ### Self-hosted shard runners
 
-Existing runner provisioning remains available to other workflows. This CI workflow schedules no test shards or publishes quality-cache refs.
+The managed setup preloads every pinned action from the repository’s workflows and local composite actions into `/opt/actionarchivecache`. It uses Git fetch and Git archive, so provisioning and jobs avoid codeload downloads for those pins. The runner uses GitHub’s standard `ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE`, as in the [hosted image installer](https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/install-actions-cache.sh); no checkout replacement is needed.
+
+Run `tools/ci-runners/setup.sh actions NAME` after action pins change, then restart that container’s runner service once it is idle. The command is idempotent, preserves other runner environment settings, and does not restart or register a runner. `container NAME` also preloads the cache. The cache is readable by the runner and owned by root; each archive uses its pinned commit as the key.
 
 ### Agent delivery
 
@@ -212,10 +210,6 @@ Gateway feature tests use Laravel's `LazilyRefreshDatabase`: the first query or 
 The Gateway schema baseline includes database private-endpoint ownership, target networks and connection locale. It records the squashed migration names and batches without choosing their row IDs, including the October 21 and 22 database migrations. Earlier vendor migrations can occupy IDs first. The migration that seeds reference rows preserves existing configuration; its rollback leaves those rows in place. Documentation `covers` names the baseline file, not the whole migrations directory. New migrations belong to the pages that own their behaviour.
 
 The E2E checks for unusable caches and inherited databases run the Gateway's real renderer for strict guidance. They do not repeat its unrelated guidance tests. The inherited-database check also runs the real feature database test: its first query triggers migrations, and the caller's sentinel database must remain unchanged.
-
-Gateway smoke cases use a fake Gateway and real subprocess and HTTP deadlines. Each Python unittest case runs separately in Pest. Polling tests set a 0.25-second interval in the test process; the production poll interval and 20-second command limit stay unchanged. The run's total budget also caps each command. Timeout cases still expire real deadlines, including the total run limit. The no-tick and total-timeout tests keep their four- and three-second total limits so concurrent scheduler, agent-view, and CLI checks have time to finish under load.
-
-The slow-Orbit case runs the real smoke result aggregation and tick check with a one-second total budget and real CLI subprocesses. Unrelated read checks use immediate successful doubles, each asserted to run once; their real behavior has separate coverage. The first tick read returns a stale tick immediately, and the second stalls past the total limit. The test keeps the JSON, exit-status, read-count, and last-seen-tick assertions without requiring unrelated subprocesses to finish within that second. A shorter poll interval does not reserve time for the next read.
 
 The worker-budget test keeps a locked count of active shares, including overlap between waves. It lets the first lane acquire its share before later lanes register, so later allocations must respect shares already held. Signals report when each active lane has either acquired a share or entered the allocator's real condition wait. Workers stay on sockets until all granted workers in that wave have connected; no observation sleep determines completion.
 

@@ -13,8 +13,8 @@ def job(workflow, name):
 
 
 class RunnerPolicyTest(unittest.TestCase):
-    def test_heavy_matrices_keep_the_pool_switch_and_same_repository_guard(self):
-        for workflow, name in [('swamp-shape.yml', 'test-shards')]:
+    def test_unit_job_keeps_the_pool_switch_and_same_repository_guard(self):
+        for workflow, name in [('swamp-shape.yml', 'tests')]:
             with self.subTest(job=name):
                 block = job(workflow, name)
                 self.assertEqual(re.search(r'^    runs-on: (.+)$', block, re.M).group(1), POOL)
@@ -24,7 +24,7 @@ class RunnerPolicyTest(unittest.TestCase):
 
     def test_light_jobs_and_validation_stay_hosted(self):
         for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference']),
-                                ('swamp-shape.yml', ['validate', 'tests'])]:
+                                ('swamp-shape.yml', ['validate'])]:
             for name in names:
                 with self.subTest(job=name):
                     self.assertIn('runs-on: ubuntu-26.04', job(workflow, name))

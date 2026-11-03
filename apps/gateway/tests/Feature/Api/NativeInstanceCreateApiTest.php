@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -20,6 +21,10 @@ use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    // The Route's TLS probe runs from Node 209 (route.create).
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
     config(['swamp.run_token' => 'fixture-shared-token']);
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = static fn (array $sent): array => $sent['type'] === 'vault.put'
@@ -95,12 +100,108 @@ it('refuses immutable placement changes on retry', function (): void {
     expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
 });
 
-it('refuses unavailable publication before reserving source or admitting work', function (): void {
+it('reserves the derived Route of a web-serving Project and creates it in the same run', function (string $status): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
+    $this->node->update(['tld' => 'test']);
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public', 'php_version' => '8.4', 'is_laravel' => true, 'source_facts_captured_at' => now()]);
+    $this->withHeader('Idempotency-Key', 'native-create-web-'.$status);
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $operation = Operation::query()->sole();
+    $route = Route::query()->sole();
+    $start = collect($this->socket->sent)->firstWhere('payload.workflowIdOrName', 'operation-instance-create');
+    $intent = $start['payload']['inputs']['intent'];
+    expect($route->domain)->toBe('proof.native-create.test')
+        ->and($operation->input['route_id'])->toBe($route->id)
+        ->and($operation->input['run_budget_seconds'])->toBe(270)
+        ->and(json_encode($intent['route']['caddy']))->toContain('proof.native-create.test')
+        ->and(json_encode($intent['route']['php_files'], JSON_UNESCAPED_SLASHES))->toContain('chdir = /srv/apps/native-create/proof')
+        ->and(json_encode($intent['route']['probes']))->toContain('proof.native-create.test')
+        ->and($intent['route']['awake'])->toBe([['node_id' => $this->node->id, 'instance_id' => $operation->target_id,
+            'path' => '/dev/shm/orbit/hibernation/app-instance-'.$operation->target_id.'.awake']])
+        ->and($intent['route'])->toBe($operation->input['route_create'])
+        ->and($intent['route_secrets'])->toBe($operation->input['execution_secrets']);
+
+    $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        'status' => $status, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => $status === 'failed' ? 'instance.create_route_failed' : null,
+        'result' => ['instance_id' => $operation->target_id, 'ready' => $status === 'succeeded', 'commit' => str_repeat('a', 40),
+            ...($status === 'failed' ? ['failed_step' => 'route', 'error_code' => 'instance.create_route_failed'] : [])]]);
+    $route->refresh();
+    expect(Instance::query()->sole()->environment_owned_keys)->toBe($operation->input['environment_keys']);
+    expect($route->status->value)->toBe($status === 'succeeded' ? 'active' : $route->getOriginal('status')->value)
+        ->and($route->sites_published)->toBe($status === 'succeeded')
+        ->and($route->error_code)->toBe($status === 'succeeded' ? null : 'instance.create_route_failed');
+})->with(['succeeded', 'failed']);
+
+it('marks a web Instance awake only when the run starts every one of its Processes', function (bool $covered): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
+    $this->node->update(['tld' => 'test']);
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public', 'php_version' => '8.4', 'is_laravel' => true, 'source_facts_captured_at' => now()]);
+    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    $this->withHeader('Idempotency-Key', 'native-create-wake-first');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    $instance = Instance::query()->sole();
+    expect(Operation::query()->sole()->input['route_create']['awake'])->toHaveCount(1);
+
+    // The first run failed after starting its Process; the rerun checks that active Process again.
+    Process::query()->update(['status' => 'active']);
+    if (! $covered) {
+        $instance->processes()->create(['name' => 'hand-made',
+            'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '300']], 'restart_policy' => 'never',
+            'desired_state' => 'running', 'status' => 'active']);
+    }
+    $instance->update(['failed_step' => 'route', 'error_code' => 'instance.create_route_failed']);
+    Operation::query()->update(['status' => 'failed']);
+    $this->withHeader('Idempotency-Key', 'native-create-wake-rerun');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $rerun = Operation::query()->latest('id')->first();
+    expect(array_column($rerun->input['members'], 'id'))->toContain(Process::query()->where('name', 'dev-server')->sole()->id)
+        ->and($rerun->input['route_create']['awake'])->toHaveCount($covered ? 1 : 0);
+})->with(['every Process is covered' => true, 'a Process is not covered' => false]);
+
+it('starts an active container again on a rerun instead of creating it', function (): void {
+    $this->project->processDefinitions()->create(['name' => 'cache', 'environments' => ['development'],
+        'spec' => ['runtime' => 'docker', 'image' => 'redis:7', 'command' => ['redis-server'], 'restart_policy' => 'unless-stopped']]);
+    $this->withHeader('Idempotency-Key', 'native-create-docker-first');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    Process::query()->update(['status' => 'active']);
+    Instance::query()->update(['failed_step' => 'processes', 'error_code' => 'instance.create_processes_failed']);
+    Operation::query()->update(['status' => 'failed']);
+    $this->withHeader('Idempotency-Key', 'native-create-docker-rerun');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $start = collect($this->socket->sent)->where('payload.workflowIdOrName', 'operation-instance-create')->last();
+    expect(array_column($start['payload']['inputs']['intent']['processes'], 'kind'))->toBe(['process.start']);
+});
+
+it('reserves no Route for an already active web-serving Instance, which runs no phase', function (): void {
+    $this->node->update(['tld' => 'test']);
     $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $this->postJson('/api/v1/instances', $this->payload)->assertStatus(503)
-        ->assertJsonPath('error.code', 'operation.kind_unavailable');
-    expect(Instance::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0)
-        ->and($this->socket->sent)->toBe([]);
+    Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'proof',
+        'checkout_path' => '/srv/apps/native-create/proof', 'status' => InstanceState::Active, 'branch' => 'proof',
+        'first_setup_pending' => false, 'starting_commit' => str_repeat('a', 40)]);
+    $this->withHeader('Idempotency-Key', 'native-create-web-active');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $operation = Operation::query()->sole();
+    expect(Route::query()->count())->toBe(0)->and($operation->input)->not->toHaveKey('route_create')
+        ->and($operation->input['direct_provisioning']['route'])->toBeNull();
+});
+
+it('refuses a web-serving Project before reservation when its Node has no TLD for the derived Route', function (): void {
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $this->postJson('/api/v1/instances', $this->payload)->assertConflict()->assertJsonPath('error.code', 'route.tld_required');
+    expect(Instance::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+});
+
+it('refuses a domain for a Project that serves no web pages', function (): void {
+    $this->postJson('/api/v1/instances', [...$this->payload, 'domain' => 'proof.example.test'])->assertUnprocessable()
+        ->assertJsonPath('error.code', 'instance.route_unserved');
+    expect(Instance::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 });
 
 it('requires owning Node access before creating an Instance', function (): void {
@@ -133,7 +234,7 @@ it('creates the development Processes after setup and records them from the term
     $inputs = $start['payload']['inputs'];
     expect($process->name)->toBe('dev-server')->and($process->desired_state->value)->toBe('running')
         ->and($operation->input['members'])->toHaveCount(1)
-        ->and($inputs['intent']['processes'][0])->toMatchArray(['index' => 0, 'id' => $process->id])
+        ->and($inputs['intent']['processes'][0])->toMatchArray(['index' => 0, 'id' => $process->id, 'kind' => 'process.create'])
         ->and($inputs['intent']['processes'][0]['intent']['control']['name'])->toBe('orbit-process-'.$process->id.'-dev-server.service')
         ->and($inputs['intent']['processes'][0]['intent']['installation']['unit'])->toContain('http.server');
 

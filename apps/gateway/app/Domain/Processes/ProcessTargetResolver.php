@@ -75,10 +75,10 @@ final readonly class ProcessTargetResolver
         $instance->loadMissing('node');
         $this->ensureLinux($instance->node);
 
-        if (
-            $instance->node->status !== LifecycleStatus::Active
-            || $instance->status === InstanceState::Removing
-        ) {
+        // A task workspace's guest Node is still provisioning at admission; its own run brings it up first.
+        $ready = $instance->node->status === LifecycleStatus::Active
+            || ($instance->task_workspace_owner_id !== null && $instance->node->status === LifecycleStatus::Provisioning);
+        if (! $ready || $instance->status === InstanceState::Removing) {
             throw new ResourceOperationException(
                 errorCode: 'process.target_inactive',
                 message: "Instance [{$instance->name}] or its Node is not available for preparation.",
