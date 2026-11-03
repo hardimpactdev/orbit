@@ -648,6 +648,16 @@ If a database restore is needed, keep access and automation paused and follow [R
 
 Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning. A deploy always fails without its web build.
 
+##### Roll back without Swamp
+
+When Swamp or the Gateway cannot run `gateway:release:rollback`, run the rollback script on the Gateway Node:
+
+```bash
+sudo /home/orbit/orbit/bin/gateway-rollback <id>
+```
+
+It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise. Then it restarts each `orbit-process-*` unit that runs from the application, such as Horizon and the scheduler. It changes no schema and restores no snapshot; [Roll back](#roll-back) applies to the database as well.
+
 ### Apply an env change
 
 Before editing `/home/orbit/shared/gateway.env`, make a private backup with mode `0600`. Keep both the backup and any temporary replacement out of terminal output, logs, and Git. Every release caches its configuration, so an edit changes nothing until you cache it again. As `orbit`, after the edit:
