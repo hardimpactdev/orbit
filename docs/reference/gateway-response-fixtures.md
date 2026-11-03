@@ -38,6 +38,8 @@ Task fixtures include a GitHub feedback fixup with `fixup_problem: review:{revie
 
 Task response fixtures include a `topology` array on each subtask. Default cases record `[]`; the declared case records `app-dev`. Re-record all responses that contain subtasks when this field changes, regenerate OpenAPI and the web API types, and update the matching CLI expectations. Human subtask details show `Topology` only for a nonempty declaration; JSON keeps the array in both cases. [Compute drivers](/reference/compute-drivers) defines the accepted workload roles and readiness gate.
 
+Task group fixtures include the `current_recipe` boolean. Default cases record `false`. When this field changes, re-record every response that contains a task group, regenerate OpenAPI and the web API types, and update the matching CLI JSON expectations. [Image fallback](/reference/compute-drivers#image-fallback) owns its meaning.
+
 Process response fixtures include `restart_on_deploy`, which defaults to true and preserves an explicit false. They also include `user`, which is null when the Process uses its derived account. When an explicit account is selected, the response includes that name both in `user` and in `runtime_config.user`; see [Node accounts](/reference/processes-and-schedules#node-account).
 
 Instance list and show fixtures include `routes`, every Route of the Instance, and each Route includes `web_root`.

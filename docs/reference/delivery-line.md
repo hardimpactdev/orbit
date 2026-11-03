@@ -80,7 +80,7 @@ When the command exits nonzero, stdout includes `main_sha`, `command`, `exit_cod
 
 ## bin/task-group-check
 
-Validate a task-group payload's shape against [`CreateTaskGroupRequest`](/reference/tasks#deliverables) without creating a group. This local check does not read the Project repository. The Gateway checks deliverable paths against the selected base when the group or subtask is created or updated. Then apply Orbit's repository policy from the [Orbit Tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
+Validate a task-group payload's shape against [`CreateTaskGroupRequest`](/reference/tasks#deliverables) without creating a group. The payload may set `current_recipe` when the group's VM must wait for the current recipe image. This local check does not read the Project repository. The Gateway checks deliverable paths against the selected base when the group or subtask is created or updated. Then apply Orbit's repository policy from the [Orbit Tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
 
 ```bash
 bin/task-group-check --payload FILE [--kind auto|bug|feature]
