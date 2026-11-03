@@ -168,7 +168,7 @@ def parity():
         if case == 'success' and result.get('warnings', 0) == 0:
             assert not peer('find', HOME + '/releases', '-maxdepth', '1', '-name', 'r1')
     if case == 'vp':
-        assert peer('cat', HOME + '/vp-version') in ['1.4.0', 'vp 1.4.0']
+        assert peer('cat', HOME + '/vp-version').splitlines()[0] == 'vp v1.4.0'
         assert peer('cat', HOME + '/node-version') == 'v24.22.1'
         assert peer('cat', HOME + '/pnpm-version') == '12.11.2'
         assert peer('stat', '-c', '%U', HOME + '/.local/share/vite-plus') == 'orbit-app-9002'
