@@ -113,10 +113,10 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 ### Load Swamp
 
-Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The Gateway renders both grants files from the prepared release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and Node 209's SSH target in the load intent. This uses the target release, not the running Gateway's older manifests. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs one `command/shell` step on 209:
+Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The Gateway renders both grants files from the prepared release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and Node 209's SSH target in the load intent. This uses the target release, not the running Gateway's older manifests. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
 
 1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
-2. it renders serve's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` into `swamp/grants/`;
+2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
 3. for a new shipped file, it schedules a serve restart as described below, and ends;
 4. otherwise it asks serve to reload, as hot reload would, and waits for the acknowledgement;
 5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
@@ -126,7 +126,7 @@ A load-input change must release before a workflow requires its new fields. Reti
 
 Required checks invoke the Gateway renderer without deployment credentials and validate both grant files with the pinned serve startup parser before the commit can release.
 
-The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
+The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
 Serve's extension reload keeps each manifest's `additionalFiles` list from serve's start ([Lab #4282](https://swamp-club.com/lab/4282)), so a new shipped script reaches workers only after a restart. Only the release load moves the checkout, so its HEAD reflog at serve's start time names the commit serve started from. The step compares the lists of that commit with the release commit's. When the release commit lists a new file, it schedules a serve restart 5 seconds later and reports the commit serve started from and the manifests with new files.
 

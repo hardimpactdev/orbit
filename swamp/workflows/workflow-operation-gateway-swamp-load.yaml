@@ -1,6 +1,6 @@
 id: 04961808-4346-47a8-aa0e-6e44f1d0cf5a
 name: operation-gateway-swamp-load
-description: Check out one Gateway release commit in the serve checkout on Node209 and confirm serve loaded it.
+description: Check out a release, write Gateway-rendered grants with official file resources, and confirm serve loaded it.
 queueTimeout: 120
 vaults: []
 inputs:
@@ -13,9 +13,15 @@ inputs:
       type: object
       properties:
         sha: {type: string, pattern: '^[a-f0-9]{40}$'}
-        grants: {type: object, additionalProperties: {type: string}}
+        grants:
+          type: object
+          properties:
+            grants/orbit-gateway.yaml: {type: string}
+            grants/orbit-serve.yaml: {type: string}
+          required: [grants/orbit-gateway.yaml, grants/orbit-serve.yaml]
+          additionalProperties: false
         ssh: {type: object}
-      required: [sha]
+      required: [sha, grants, ssh]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -23,8 +29,52 @@ inputs:
 jobs:
   - name: load
     steps:
+      - name: checkout
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "gateway-swamp-checkout" }}'
+          methodName: execute
+          inputs:
+            env: {RELEASE_SHA: '${{ inputs.intent.sha }}'}
+            run: |
+              set -eu
+              cd /home/orbit/apps/orbit-monorepo-staging/checkout
+              previous=$(git rev-parse HEAD)
+              timeout 120 git fetch --quiet origin "$RELEASE_SHA"
+              git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
+              git checkout --quiet --detach "$RELEASE_SHA"
+              test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+              printf '%s\n' "$previous"
+      - name: grants
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: checkout, condition: {type: succeeded}}]
+        forEach: {item: grant, in: '${{ ["gateway", "serve"] }}'}
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: '${{ ("release-" + self.grant + "-grants-209").split(".").join("-") }}'
+          methodName: apply
+          globalArgs:
+            nodeHost: '${{ inputs.intent.ssh.target.host }}'
+            nodeUser: '${{ inputs.intent.ssh.target.user }}'
+            nodePort: '${{ inputs.intent.ssh.target.port }}'
+            nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+            become: true
+            path: '${{ "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/grants/orbit-" + self.grant + ".yaml" }}'
+            ensure: present
+            content: '${{ inputs.intent.grants["grants/orbit-" + self.grant + ".yaml"] }}'
+            owner: orbit
+            group: orbit
+            mode: '0640'
+          inputs: {}
       - name: load
         labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: grants, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
@@ -33,21 +83,16 @@ jobs:
           inputs:
             env:
               RELEASE_SHA: '${{ inputs.intent.sha }}'
-            # Fast-forward the serve checkout and render serve's grants. A manifest additionalFiles entry that serve
-            # did not start with restarts serve, which drains first (https://swamp-club.com/lab/4282); the release then loads
-            # again. Otherwise serve reloads both, and the served workflows are compared with the commit.
+              PREVIOUS_SHA: '${{ steps.checkout.outputs.stdout.trim() }}'
+            # https://swamp-club.com/lab/4282 alone needs the checkout script: serve drains and restarts for newly shipped files.
+            # Otherwise reload workflows and grants, then compare served workflows with the target commit.
             run: |
               set -eu
               export HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp
               export SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1
               cd /home/orbit/apps/orbit-monorepo-staging/checkout
-              previous=$(git rev-parse HEAD)
-              timeout 120 git fetch --quiet origin "$RELEASE_SHA"
-              git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
-              git checkout --quiet --detach "$RELEASE_SHA"
-              test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+              previous=$PREVIOUS_SHA
               role=swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py
-              python3 -I "$role" grants swamp
               restart=$(python3 -I "$role" release-restart "$RELEASE_SHA")
               if [ "$restart" != '{}' ]; then
                 jq -cn --arg sha "$RELEASE_SHA" --arg previous "$previous" --argjson restart "$restart" \
