@@ -37,9 +37,13 @@ final class LongWriteTransactionLog
                 $this->began = $this->now();
                 $this->level = $event->connection->transactionLevel();
                 $this->origin = self::origin();
-                // Register before application callbacks: Laravel's committed event follows their network I/O.
-                $event->connection->afterCommit(fn () => $this->ended('committed'));
             }
+            // Nested records run their callbacks before the outer record. Each needs this first callback.
+            $event->connection->afterCommit(function () use ($event): void {
+                if ($event->connection->transactionLevel() < $this->level) {
+                    $this->ended('committed');
+                }
+            });
         });
         Event::listen(TransactionRolledBack::class, function (TransactionRolledBack $event): void {
             if ($this->began === null || $event->connection->transactionLevel() >= $this->level) {

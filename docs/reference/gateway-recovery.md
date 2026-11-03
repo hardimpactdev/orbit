@@ -24,7 +24,7 @@ The Gateway logs an exception at `ERROR` when its response status is 500 or high
 
 Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.
 
-A transaction holds the SQLite write lock from its start, because Gateway transactions begin `IMMEDIATE`. Another writer waits up to the 5-second busy timeout, then fails with `database is locked`. That error names only the writer that waited. The holder is logged as `Long SQLite write transaction` once it ends, with `held_ms` and the `origin` file and line that opened it, when it held the lock 2 seconds or longer. Measurement ends at the first post-commit callback, before broadcasts and native dispatch, so their network time is excluded.
+A transaction holds the SQLite write lock from its start, because Gateway transactions begin `IMMEDIATE`. Another writer waits up to the 5-second busy timeout, then fails with `database is locked`. That error names only the writer that waited. The holder is logged as `Long SQLite write transaction` once it ends, with `held_ms` and the `origin` file and line that opened it, when it held the lock 2 seconds or longer. Measurement ends before post-commit callbacks from both nested and outer transactions, so broadcast and native-dispatch network time is excluded. Nested commits only release savepoints; timing continues until the outer commit releases the write lock.
 
 Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the count.
 
