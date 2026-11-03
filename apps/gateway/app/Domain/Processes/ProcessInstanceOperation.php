@@ -97,7 +97,7 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
     public static function member(Operation $parent, array $member, ?int $nodeId = null): Operation
     {
         $view = new Operation;
-        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => ($member['input']['start_existing'] ?? false) === true ? 'process.start' : 'process.create',
+        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => (ValidatedData::object($member['input'])['start_existing'] ?? false) === true ? 'process.start' : 'process.create',
             'target_type' => 'process', 'target_id' => $member['id'], 'node_id' => $nodeId ?? $parent->node_id, 'input' => $member['input']]);
 
         return $view;
