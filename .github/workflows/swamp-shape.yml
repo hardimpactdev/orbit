@@ -16,6 +16,10 @@ on:
         required: true
       SWAMP_SIGNIN_TOKEN:
         required: true
+      SWAMP_NATIVE_API_KEY:
+        required: true
+      SWAMP_NATIVE_SIGNIN_TOKEN:
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -141,7 +145,7 @@ jobs:
 
   native-tests:
     # The pinned runtime refuses every command without an account, so native workflow
-    # tests run here with the same event-scoped read token as validation.
+    # tests use a separate event-scoped token that also permits sandbox serve.
     name: Swamp native tests ${{ matrix.shard }}
     runs-on: ubuntu-26.04
     strategy:
@@ -178,8 +182,8 @@ jobs:
       - name: Run the native workflow tests
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_NATIVE_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_NATIVE_SIGNIN_TOKEN || '' }}
           NATIVE_SHARD: ${{ matrix.shard }}
         run: |
           SWAMP_BIN=$(deno run -A tests/_support/native_harness.ts | tail -n 1)

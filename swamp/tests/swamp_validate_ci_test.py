@@ -7,6 +7,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ValidateCI(unittest.TestCase):
+    def test_sandbox_serve_uses_a_separate_token_without_widening_validation(self):
+        source = (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text()
+        validate = source.split('  validate:', 1)[1].split('  native-tests:', 1)[0]
+        native = source.split('  native-tests:', 1)[1].split('  tests:', 1)[0]
+        caller = (ROOT.parent / '.github/workflows/ci.yml').read_text().split('  swamp:', 1)[1].split('  gateway-release:', 1)[0]
+        for key in ('API_KEY', 'SIGNIN_TOKEN'):
+            self.assertIn('secrets.SWAMP_' + key, validate)
+            self.assertNotIn('secrets.SWAMP_NATIVE_' + key, validate)
+            self.assertIn('secrets.SWAMP_NATIVE_' + key, native)
+            self.assertNotIn('secrets.SWAMP_' + key, native)
+            self.assertIn('secrets.SWAMP_NATIVE_' + key, caller)
+        self.assertIn("github.event_name == 'pull_request'", native)
+        self.assertIn("github.ref == 'refs/heads/main'", native)
+        self.assertNotIn('continue-on-error', native)
+
     def test_required_validation_only_receives_event_scoped_credentials(self):
         source = (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text()
         shape = source.split('  shape:', 1)[1].split('  validate:', 1)[0]
