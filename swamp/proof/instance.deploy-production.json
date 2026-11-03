@@ -1,0 +1,106 @@
+{
+  "kind": "instance.deploy",
+  "workflow": "operation-instance-deploy-direct",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 600,
+  "queue_timeout_seconds": 30,
+  "before_node": {
+    "peer": [
+      [
+        "sh",
+        "-c",
+        "set -e; command -v setfacl >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q acl >/dev/null; id caddy >/dev/null 2>&1 || useradd -r -M -s /usr/sbin/nologin caddy; id orbit-app-9002 >/dev/null 2>&1 || useradd -m -s /bin/bash orbit-app-9002; H=/home/orbit-app-9002; for r in initial r1 r2 r3; do mkdir -p $H/releases/$r/public; echo $r > $H/releases/$r/public/index.html; done; ln -sfn releases/r3 $H/current; printf 'APP_ENV=production\\n' > $H/.env; chmod 600 $H/.env; chown -R orbit-app-9002:orbit-app-9002 $H; rm -f /run/orbit-proof-fpm-reloaded /tmp/orbit-deploy-operation-*; printf '[Unit]\\nDescription=Proof dedicated PHP-FPM\\n[Service]\\nExecStart=/usr/bin/sleep infinity\\nExecReload=/usr/bin/touch /run/orbit-proof-fpm-reloaded\\n[Install]\\nWantedBy=multi-user.target\\n' > /etc/systemd/system/orbit-orbit-app-9002-php8.5-fpm.service; systemctl daemon-reload; systemctl enable --now orbit-orbit-app-9002-php8.5-fpm.service"
+      ]
+    ]
+  },
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"replace_roles\": {\"${node.peer}\": [\"app-prod\"]}, \"projects\": [{\"id\": 9002, \"name\": \"Proof production deploy\", \"slug\": \"proof-production-deploy\", \"type\": \"laravel-app\", \"repository_url\": \"https://github.com/laravel/laravel.git\", \"default_branch\": \"12.x\", \"root\": \"public\"}], \"instances\": [{\"id\": 9002, \"project_id\": 9002, \"node_id\": ${node.peer}, \"name\": \"production\", \"environment\": \"production\", \"source_layout\": \"release\", \"checkout_path\": \"/home/orbit-app-9002/releases/r3\", \"production_user\": \"orbit-app-9002\", \"production_home\": \"/home/orbit-app-9002\", \"root\": \"public\", \"branch\": \"12.x\", \"selected_php_version\": \"8.5\", \"production_php_service\": \"orbit-orbit-app-9002-php8.5-fpm.service\", \"production_php_pool\": \"orbit-orbit-app-9002\", \"production_php_socket\": \"/run/php/orbit-app-9002.sock\", \"source_is_laravel\": true, \"provisioning_step\": \"active\", \"status\": \"active\"}], \"deployments\": [{\"instance_id\": 9002, \"kind\": \"deploy\", \"branch\": \"12.x\", \"release\": \"r1\", \"selected_release\": \"r1\", \"commit\": \"1111111111111111111111111111111111111111\", \"status\": \"succeeded\", \"started_at\": \"2026-10-30 10:00:00\", \"finished_at\": \"2026-10-30 10:01:00\", \"triggered_by\": \"operator\"}, {\"instance_id\": 9002, \"kind\": \"deploy\", \"branch\": \"12.x\", \"release\": \"r2\", \"selected_release\": \"r2\", \"commit\": \"2222222222222222222222222222222222222222\", \"status\": \"succeeded\", \"started_at\": \"2026-10-31 10:00:00\", \"finished_at\": \"2026-10-31 10:01:00\", \"triggered_by\": \"operator\"}, {\"instance_id\": 9002, \"kind\": \"deploy\", \"branch\": \"12.x\", \"release\": \"r3\", \"selected_release\": \"r3\", \"commit\": \"3333333333333333333333333333333333333333\", \"status\": \"succeeded\", \"started_at\": \"2026-11-01 10:00:00\", \"finished_at\": \"2026-11-01 10:01:00\", \"triggered_by\": \"operator\"}]}"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "PUT",
+      "path": "instances/9002/environment/APP_ENV",
+      "operation": false,
+      "body": {
+        "value": "production"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "instances/9002/environment/APP_KEY",
+      "operation": false,
+      "body": {
+        "value": "base64:cHJvb2YtcHJpdmF0ZS1hcHAta2V5LXNlbnRpbmVsLTAwMDA="
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances/9002/deploy-steps",
+      "operation": false,
+      "body": {
+        "name": "marker-before",
+        "phase": "before_activation",
+        "command": "id -un > \"$HOME/before-ran\"; git rev-parse HEAD >> \"$HOME/before-ran\"; pwd >> \"$HOME/before-ran\"; printf 'proof-private-%s-output' deploy",
+        "timeout_seconds": 30
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances/9002/deploy-steps",
+      "operation": false,
+      "body": {
+        "name": "marker-after",
+        "phase": "after_activation",
+        "command": "readlink \"$HOME/current\" > \"$HOME/after-ran\"",
+        "timeout_seconds": 30
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances/9002/deploy"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Prepare the release",
+      "job": "production-release",
+      "step": "Prepare the release-0",
+      "budget_seconds": 300
+    },
+    {
+      "name": "Write .env",
+      "job": "production-release",
+      "step": "Write .env-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Run before steps",
+      "job": "deploy",
+      "step": "Run before steps-0",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Swap current",
+      "job": "deploy",
+      "step": "Swap current",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check the deployment",
+      "job": "deploy",
+      "step": "Check the deployment",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/instance.deploy-production/parity.py"
+}
