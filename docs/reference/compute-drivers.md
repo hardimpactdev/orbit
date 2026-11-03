@@ -18,6 +18,8 @@ Every task group runs in its own [task VM](#task-vms), which is a normal `app-de
 
 Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start.
 
+Task VM enrollment and Node convergence share the public hub peer renderer. Enrollment writes only its guest peer; converging the VPN hub publishes the complete recorded list.
+
 ## Machine software recipe
 
 The Node.js artifact pin is `24.22.1`, including the [October 21, 2026 security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). Nodes and task images install it through the shared recipe installer. Vite+ project pins and retained releases select their own runtimes and must be updated separately.

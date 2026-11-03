@@ -1,9 +1,10 @@
 # deno-fmt-ignore-file
 # Generated from network-command/workflows.ts
 id: 3c0eb942-9c7f-438d-8d4c-7c739642c155
-name: operation-node-network-converge
+name: node-network-peer
 description: Pinned official SSH from209; full public input and typed terminal output.
 vaults: []
+queueTimeout: 30
 labels:
   role: swamp
 inputs:
@@ -15,7 +16,8 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind: {type: string, const: node.network_converge}
+    kind:
+      type: string
     intent:
       type: object
     execution_secrets:
@@ -38,7 +40,7 @@ jobs:
       - name: Check the key
         labels: {role: swamp}
         dependsOn: [{step: Prepare the key, condition: &ref_0 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "check-the-key-network-command" }}', methodName: key, inputs: {stdout: '${{ steps["Prepare the key"].outputs.stdout }}', existing_key: '${{ inputs.intent.existing_key }}', other_public_keys: '${{ inputs.intent.other_public_keys+[inputs.intent.peer.server_public_key] }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "check-the-key-net-" + string(inputs.node_id) }}', methodName: key, inputs: {stdout: '${{ steps["Prepare the key"].outputs.stdout }}', existing_key: '${{ inputs.intent.existing_key }}', other_public_keys: '${{ inputs.intent.other_public_keys+[inputs.intent.peer.server_public_key] }}'}}
       - name: Write the hub peer file
         labels: {role: swamp}
         dependsOn: [{step: Prepare the key, condition: *ref_0}, {step: Check the key, condition: *ref_0}]
@@ -87,7 +89,7 @@ jobs:
       - name: Decide the DNS change
         labels: {role: swamp}
         dependsOn: [{step: Prepare the key, condition: *ref_0}, {step: Check the key, condition: *ref_0}, {step: Write the hub peer file, condition: *ref_0}, {step: Load the hub peer, condition: *ref_0}, {step: Drop the old key, condition: *ref_0}, {step: Write the peer config, condition: *ref_0}, {step: Write the peer list, condition: *ref_0}, {step: Start the tunnel, condition: *ref_0}, {step: Load the peer, condition: *ref_0}, {step: Trust WireGuard peers, condition: *ref_0}, {step: Read the DNS policy, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decide-the-dns-change-network-command" }}', methodName: decideDns, inputs: {stdout: '${{ steps["Read the DNS policy"].outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps["Check the key"].outputs.public_key} }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decide-the-dns-change-net-" + string(inputs.node_id) }}', methodName: decideDns, inputs: {stdout: '${{ steps["Read the DNS policy"].outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps["Check the key"].outputs.public_key} }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
       - name: Keep the DNS hook
         labels: {role: swamp}
         dependsOn: [{step: Prepare the key, condition: *ref_0}, {step: Check the key, condition: *ref_0}, {step: Write the hub peer file, condition: *ref_0}, {step: Load the hub peer, condition: *ref_0}, {step: Drop the old key, condition: *ref_0}, {step: Write the peer config, condition: *ref_0}, {step: Write the peer list, condition: *ref_0}, {step: Start the tunnel, condition: *ref_0}, {step: Load the peer, condition: *ref_0}, {step: Trust WireGuard peers, condition: *ref_0}, {step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}]
@@ -119,4 +121,4 @@ jobs:
       - name: Check the network
         labels: {role: swamp}
         dependsOn: [{step: Prepare the key, condition: *ref_0}, {step: Check the key, condition: *ref_0}, {step: Write the hub peer file, condition: *ref_0}, {step: Load the hub peer, condition: *ref_0}, {step: Drop the old key, condition: *ref_0}, {step: Write the peer config, condition: *ref_0}, {step: Write the peer list, condition: *ref_0}, {step: Start the tunnel, condition: *ref_0}, {step: Load the peer, condition: *ref_0}, {step: Trust WireGuard peers, condition: *ref_0}, {step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}, {step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}, {step: Set the DNS policy, condition: *ref_0}, {step: Clear the old link, condition: *ref_0}, {step: Read the DNS policy again, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "check-the-network-network-command" }}', methodName: networkResult, inputs: {stdout: '${{ steps["Read the DNS policy again"].outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps["Check the key"].outputs.public_key} }}', retained: '${{ inputs.intent.peer.retain }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "check-the-network-net-" + string(inputs.node_id) }}', methodName: networkResult, inputs: {stdout: '${{ steps["Read the DNS policy again"].outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps["Check the key"].outputs.public_key} }}', retained: '${{ inputs.intent.peer.retain }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}

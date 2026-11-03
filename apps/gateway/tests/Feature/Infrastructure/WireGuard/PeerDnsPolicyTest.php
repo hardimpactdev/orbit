@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteKind;
@@ -12,7 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
-use App\Infrastructure\Fleet\Footprint\PeerDnsFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\NetworkFootprintArtifact;
 use App\Infrastructure\WireGuard\PeerDnsInspector;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Cluster;
@@ -75,22 +74,12 @@ it('refuses a global underlay DNS server before inspecting a peer', function ():
     expect(fn () => app(PeerDnsPolicy::class)->server($node))->toThrow(NodeProvisioningException::class, 'The private DNS server must be a usable address in the WireGuard subnet.');
 });
 
-it('changes the peer footprint digest when the private namespace changes and registers it in production', function (): void {
-    [$node] = peer_dns_inspection_fixture();
-    $artifact = app(PeerDnsFootprintArtifact::class);
-    $before = $artifact->digest($node);
-    Cluster::query()->create(['name' => 'dev', 'tld' => 'test']);
-
-    expect($artifact->applies($node))->toBeTrue()->and($artifact->digest($node))->not->toBe($before)
-        ->and(array_map(static fn ($entry): string => $entry->name(), [...app()->tagged(NodeFootprintArtifact::class)]))->toContain('peer-dns');
-});
-
 /** @return array{Node, object{fault: string, domains: list<string>, agents: FakeAgentCommandRunner}} */
 function peer_dns_inspection_fixture(): array
 {
     $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => LifecycleStatus::Active]);
-    $gateway->roles()->create(['role' => RoleName::Gateway]);
-    $gateway->roles()->create(['role' => RoleName::Vpn]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $gateway->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     $node = Node::query()->create(['name' => 'app-prod', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3', 'wireguard_public_key' => str_repeat('A', 43).'=', 'ssh_host_fingerprint' => 'SHA256:managed', 'status' => LifecycleStatus::Active]);
     $node->roles()->create(['role' => RoleName::AppProd]);
     $peer = new class
@@ -138,7 +127,7 @@ it('excludes the Gateway after VPN moves to another Node', function (): void {
     $node->refresh()->load('roles');
 
     expect(app(PeerDnsPolicy::class)->manages($node))->toBeFalse()
-        ->and(app(PeerDnsFootprintArtifact::class)->applies($node))->toBeFalse();
+        ->and(app(NetworkFootprintArtifact::class)->applies($node))->toBeTrue();
 });
 
 it('refuses invalid names and overflow at each namespace write boundary without saving', function (string $kind): void {

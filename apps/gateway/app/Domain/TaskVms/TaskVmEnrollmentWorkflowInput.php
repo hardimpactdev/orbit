@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Actions\Nodes\AdmitNodeWireGuardHubOperationAction;
 use App\Domain\Nodes\NodeNetworkConvergeInput;
 use App\Domain\Nodes\NodeNetworkInput;
+use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -52,7 +52,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
             'ssh_identity' => $identity, 'host_ssh_execution' => $vm->hostNode instanceof Node ? $this->ssh->forNode($vm->hostNode) : null,
             'hub_ssh_execution' => $this->ssh->forNode($hub), 'network_input' => $network,
             // The guest's peer file on the hub, with a mark for the key the guest prepares, and the guest's own files.
-            'hub' => AdmitNodeWireGuardHubOperationAction::joining($hub, $guest->id, $guest->name, ValidatedData::string($vm->wireguard_ip)),
+            'hub' => NodeWireGuardHubInput::joining($hub, $guest->id, $guest->name, ValidatedData::string($vm->wireguard_ip)),
             'peer_files' => NodeNetworkConvergeInput::peerFiles(ValidatedData::object($network['peer'])),
             'observer_digest' => $guest->agent_secret_hash,
             'bootstrap' => [...ValidatedData::object($public['bootstrap']), 'public_key' => $identity['public_key']],

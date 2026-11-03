@@ -30,6 +30,8 @@ The observer listens on no port. Nothing reaches command mode over the network: 
 
 `swamp.start-worker` and `swamp.stop-worker` remain in the pinned agent contract, but no Gateway operation calls them; task group work starts no worker on the VM. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell.
 
+The agent observes the Node. Swamp applies the network part after the agent footprint checks, and verifies a repaired tunnel with a handshake check.
+
 ## Package-tool account boundary
 
 `package.prepare-account` creates the fixed Linux system account `orbit-swamp-package`. It creates `/var/lib/orbit-swamp-package/jobs` under root ownership with mode 0700. Its typed input names a worker account that must already exist and must not be root. Package and worker UIDs must differ. The package account has its own primary group, no supplementary groups, `/nonexistent` as home and `/usr/sbin/nologin` as shell. UID and GID come from the Node's system-account allocator; they are returned by the command, never fixed fleet-wide.
