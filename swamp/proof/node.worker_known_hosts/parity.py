@@ -10,7 +10,7 @@ with open(os.environ['PROOF_OPERATION_FILE']) as source:
 intent = operation['input']['intent']
 assert operation['kind'] == 'node.worker_known_hosts'
 assert operation['status'] == 'succeeded'
-assert operation['node_id'] == intent['control_node_id'] == 209
+assert operation['target_id'] == intent['control_node_id'] == 209
 assert operation['result'] == {'known_hosts_ready': True, 'digest': intent['digest']}
 path = Path('/home/orbit/.ssh/known_hosts')
 content = path.read_bytes()
