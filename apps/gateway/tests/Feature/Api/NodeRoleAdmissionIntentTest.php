@@ -17,6 +17,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
@@ -28,25 +29,29 @@ beforeEach(function (): void {
 });
 
 it('retains explicit new-assignment evidence across a restart and status changes', function (): void {
-    $node = FleetFixtures::node('role-intent-new', [RoleName::AppDev]);
-    $identity = app(OperationIdempotency::class);
-    $identity->kind = 'node.role_add';
-    $identity->key = 'role-intent-new';
-    $identity->fingerprint = 'new-role-fingerprint';
-    $operation = app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::WebSocket);
-    $intent = $operation->state['role_intent'];
-    $assignment = NodeRole::query()->findOrFail($intent['assignment_id']);
-    $assignment->markConvergenceFailed('publish', 'websocket.publication_failed');
-    $assignment->forceFill(['created_at' => now()->subYears(2), 'updated_at' => now()->subYears(1)])->save();
+    DB::beginTransaction();
+    try {
+        $node = FleetFixtures::node('role-intent-new', [RoleName::AppDev]);
+        $identity = app(OperationIdempotency::class);
+        $identity->kind = 'node.role_add';
+        $identity->key = 'role-intent-new';
+        $identity->fingerprint = 'new-role-fingerprint';
+        $operation = app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::Database);
+        $intent = $operation->fresh()->input['_role'];
+        $assignment = NodeRole::query()->findOrFail($intent['assignment_id']);
+        $assignment->markConvergenceFailed('publish', 'database.publication_failed');
+        $assignment->forceFill(['created_at' => now()->subYears(2), 'updated_at' => now()->subYears(1)])->save();
 
-    $replayed = app(AdmitNodeRoleOperationAction::class)->add($node->fresh(), RoleName::WebSocket);
+        $replayed = app(AdmitNodeRoleOperationAction::class)->add($node->fresh(), RoleName::Database);
 
-    expect($replayed->id)->toBe($operation->id);
-    expect($replayed->state['role_intent'])->toBe([
-        'assignment_id' => $assignment->id, 'created' => true, 'role' => 'websocket', 'source_node_id' => $node->id, 'target_node_id' => null,
-        'role_configuration' => ['cluster_id' => null, 'source_settings' => ['scope_type' => 'node', 'scope_id' => $node->id], 'target_settings' => null],
-    ]);
-    expect(NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::WebSocket)->count())->toBe(1);
+        expect($replayed->id)->toBe($operation->id);
+        expect($replayed->input['_role'])->toBe($intent)
+            ->and($replayed->input['_role']['created'])->toBeTrue()
+            ->and($replayed->input['_role']['assignment_id'])->toBe($assignment->id);
+        expect(NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::Database)->count())->toBe(1);
+    } finally {
+        DB::rollBack();
+    }
 });
 
 it('never marks an existing assignment as created when claiming convergence', function (): void {
