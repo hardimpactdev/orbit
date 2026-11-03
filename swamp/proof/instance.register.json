@@ -122,8 +122,22 @@
   "parity": "swamp/proof/instance.register/parity.py",
   "before_gateway": [
     [
-      "sleep",
-      "5"
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "env",
+      "-C",
+      "/home/orbit/swamp-proof/src/apps/gateway",
+      "HOME=/tmp",
+      "XDG_CONFIG_HOME=/tmp",
+      "timeout",
+      "120",
+      "php",
+      "artisan",
+      "tinker",
+      "--execute",
+      "$paths=['/home/orbit/apps/proof-source/plain-${proof.run}','/home/orbit/apps/proof-source/r-${proof.run}']; $deadline=microtime(true)+110; while(App\\Models\\NodeFact::where('node_id',${node.target})->where('kind','checkout')->whereIn('subject',$paths)->count()!==2){ if(microtime(true)>$deadline){throw new RuntimeException('agent checkout report timed out');} sleep(1); } echo 'agent reported both checkouts';"
     ]
   ]
 }
