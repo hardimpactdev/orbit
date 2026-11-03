@@ -30,6 +30,12 @@ enum NodeFactKind: string
     /** Whether UFW is installed and enabled, and its rules, read from its configuration and rules files. */
     case Ufw = 'ufw';
 
+    /**
+     * The key names of one Instance `.env`, named by its path in `subject`; never a value. `keys` is null when the agent
+     * may not read the file: Orbit writes a managed `.env` as 0640 with group `orbit-env`, which the agent's unit holds.
+     */
+    case EnvKeys = 'env_keys';
+
     /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
     public const int FreeStepBytes = 268_435_456;
 
@@ -107,6 +113,12 @@ enum NodeFactKind: string
                 'casks.*.name' => ['required', 'string', 'max:255'],
                 'casks.*.versions' => ['present', 'array', 'list', 'max:64'],
             ],
+            self::EnvKeys => [
+                'kind' => ['required', 'string', 'in:absent,regular,symlink,other'],
+                'keys' => ['present', 'nullable', 'array', 'list', 'max:2000'],
+                'keys.*' => ['required', 'string', 'max:255', 'regex:/\\A[A-Za-z_][A-Za-z0-9_.]*\\z/'],
+                'testing_tracked' => ['required', 'boolean'],
+            ],
             self::Ufw => [
                 'installed' => ['required', 'boolean'],
                 'enabled' => ['required', 'boolean'],
@@ -138,7 +150,7 @@ enum NodeFactKind: string
     }
 
     /**
-     * The rules of `subject`: a checkout's path, a Tool Manager's name, or none.
+     * The rules of `subject`: a checkout's or `.env` path, a Tool Manager's name, or none.
      *
      * @return list<string>
      */
@@ -147,12 +159,13 @@ enum NodeFactKind: string
         return match ($this) {
             self::Checkout => ['required', 'string', 'starts_with:/', 'max:1024'],
             self::Packages => ['required', 'string', 'regex:/\\A[a-z][a-z0-9-]{0,31}\\z/'],
+            self::EnvKeys => ['required', 'string', 'starts_with:/', 'ends_with:/.env', 'max:1024'],
             default => ['prohibited'],
         };
     }
 
     /**
-     * The data as the Gateway stores it. A host's free space moves with every log line, so it is rounded down to
+     * The data as the Gateway stores it. A `.env` fact keeps only its named fields. A host's free space moves with every log line, so it is rounded down to
      * {@see self::FreeStepBytes}; the digest of the rounded data then changes only when the space really changes.
      *
      * @param  array<string, mixed>  $data  validated by {@see self::rules()}
@@ -160,6 +173,10 @@ enum NodeFactKind: string
      */
     public function stored(array $data): array
     {
+        // A `.env` fact keeps its named fields only, so no other field of that file can ever be stored.
+        if ($this === self::EnvKeys) {
+            return array_intersect_key($data, array_flip(['kind', 'keys', 'testing_tracked']));
+        }
         if ($this !== self::Host || ! is_array($data['filesystems'] ?? null)) {
             return $data;
         }

@@ -724,6 +724,20 @@ async fn report_facts(
                         }
                     }
                 }
+                // Instance .env key names ride the host tick too; each is sent only when it changed or at the resync.
+                let environments = listed.borrow().environments.clone();
+                let read = tokio::task::spawn_blocking(move || {
+                    environments.into_iter().map(|path| { let data = orbit_agent::environment::observe(std::path::Path::new(&path)); (path, data) }).collect::<Vec<_>>()
+                }).await.unwrap_or_default();
+                for (path, data) in read {
+                    let now = std::time::Instant::now();
+                    if let Some(body) = sender.body("env_keys", Some(&path), &data, &facts::observed_at(), now) {
+                        match facts::post(&client, &url, &body).await {
+                            Ok(()) => sender.sent("env_keys", Some(&path), &data, now),
+                            Err(error) => eprintln!("orbit-agent: {path} env_keys fact report failed: {error}"),
+                        }
+                    }
+                }
                 // UFW rides the host tick too: the agent reads its files and starts no program.
                 let ufw = tokio::task::spawn_blocking(|| {
                     let read = |path: &str| std::fs::read_to_string(path).ok();

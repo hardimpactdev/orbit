@@ -7,12 +7,18 @@ use std::os::unix::fs::{symlink, MetadataExt};
 struct Fake {
     calls: Vec<String>,
     fail: Option<&'static str>,
+    groups: Vec<String>,
 }
 
 impl Host for Fake {
     fn systemctl(&mut self, arguments: &[&str]) -> bool {
         self.calls.push(arguments.join(" "));
         self.fail != Some(arguments[0])
+    }
+
+    fn ensure_group(&mut self, name: &str) -> bool {
+        self.groups.push(name.into());
+        self.fail != Some("groupadd")
     }
 }
 
@@ -167,6 +173,7 @@ fn a_fresh_node_gets_a_private_secret_its_files_and_a_restart() {
         assert_eq!(sandbox.mode(path), 0o644, "{path}");
     }
     assert_eq!(sandbox.host.calls, ["daemon-reload", ENABLE, RESTART]);
+    assert_eq!(sandbox.host.groups, [ENV_GROUP]);
     assert_eq!(
         fs::read_dir(sandbox.path(LOCK_PATH))
             .unwrap()
@@ -345,6 +352,7 @@ fn a_failed_unit_step_or_restart_fails_the_converge() {
         ("daemon-reload", "agent-unit"),
         ("enable", "agent-unit"),
         ("restart", "agent-restart"),
+        ("groupadd", "agent-group"),
     ] {
         let mut sandbox = Sandbox::new();
         sandbox.host.fail = Some(action);

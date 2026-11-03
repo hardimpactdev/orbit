@@ -161,6 +161,24 @@ describe('agent facts and liveness', function (): void {
         expect(NodeFact::query()->where('subject', '/fast/apps/acme/default')->sole()->data['env']['mode'])->toBe('0600');
     });
 
+    it('stores the key names of one .env per path, never a value, and keys null when the agent may not read it', function (): void {
+        $fact = ['kind' => 'env_keys', 'subject' => '/fast/apps/acme/default/.env', 'observed_at' => '2026-11-03T00:00:00Z',
+            'data' => ['kind' => 'regular', 'keys' => ['APP_ENV', 'APP_KEY', 'mail.from'], 'testing_tracked' => false]];
+
+        $this->postJson('/api/v1/agent/facts', $fact)->assertNoContent();
+        $this->postJson('/api/v1/agent/facts', [...$fact, 'subject' => '/home/orbit-app-16/.env', 'data' => ['kind' => 'regular', 'keys' => null, 'testing_tracked' => false]])->assertNoContent();
+        foreach ([['subject' => '/fast/apps/acme/default/.ssh/id_ed25519'], ['data' => [...$fact['data'], 'keys' => ['APP_KEY=secret']]]] as $change) {
+            $this->postJson('/api/v1/agent/facts', [...$fact, ...$change])->assertUnprocessable();
+        }
+        // Any other field is dropped, never stored.
+        $this->postJson('/api/v1/agent/facts', [...$fact, 'data' => [...$fact['data'], 'values' => ['APP_KEY' => 'secret']]])->assertNoContent();
+
+        expect(NodeFact::query()->where('kind', 'env_keys')->orderBy('subject')->pluck('data', 'subject')->all())->toEqual([
+            '/fast/apps/acme/default/.env' => ['kind' => 'regular', 'keys' => ['APP_ENV', 'APP_KEY', 'mail.from'], 'testing_tracked' => false],
+            '/home/orbit-app-16/.env' => ['kind' => 'regular', 'keys' => null, 'testing_tracked' => false],
+        ]);
+    });
+
     it('stores one packages fact per Tool Manager and names every Linux manager in the watch list, recorded or not', function (): void {
         $tools = $this->getJson('/api/v1/agent/watch')->assertOk()->json('data.tools');
         expect(array_column($tools, 'manager'))->toBe(['apt', 'brew', 'composer', 'vp'])

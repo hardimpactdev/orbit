@@ -93,6 +93,7 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `checkouts` | `paths`: the path of every checkout the agent found under the apps root | on change |
 | `packages` | One Tool Manager's packages, named by the manager in `subject`. See [Packages](#packages). | every 60 seconds |
 | `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
+| `env_keys` | One Instance `.env`, named by its path in `subject`: its `kind`, its key names in `keys`, and `testing_tracked`. See [Environment key names](#environment-key-names). | every 60 seconds |
 
 `ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
 
@@ -116,6 +117,18 @@ The [watch list](#watch-list) names each active Tool Manager with the candidate 
 Each fact also names its `scope`, the path it read. On beast the apt fact is about 270 KB.
 
 [`tool:scan`](/reference/tools#discover-installed-packages) lists these facts, and [`tool:adopt`](/reference/tools#adopt-a-tool) records a Tool from them. Neither reads the Node. A manager without a fact is "not observed yet".
+
+### Environment key names
+
+The watch list's `environments` names the `.env` of each Instance on the Node. For each, the agent sends an `env_keys` fact:
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `absent`, `regular`, `symlink` or `other`. The agent follows no link. |
+| `keys` | The names of the `NAME=value` and `export NAME=value` lines, sorted, at most 2,000. Null when the agent may not read the file, or the file is a link or larger than 1 MiB. |
+| `testing_tracked` | Whether the Git work tree that holds the file tracks `.env.testing` beside it. |
+
+The agent never sends a value, and the Gateway stores no other field. Orbit writes a managed `.env` as mode 0640 with group `orbit-env`. The agent's unit holds that group, so it can read those files and no others. A hand-made 0600 `.env` reports `keys` as null: Orbit has not observed its keys. `agent.configure` creates the `orbit-env` system group before it writes the unit, because a unit that names a missing group does not start. Agents before 0.11.0 send no `env_keys` facts.
 
 ### Checkouts
 
@@ -168,7 +181,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 
 `services` are the services of the Node's roles and the units of its systemd Processes, which the agent reports as [facts](#facts). A named unit is read even when systemd has unloaded it. `awake_markers` are the awake markers of its hibernating Processes, all below `/dev/shm/orbit/hibernation/`.
 
-`apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists each active Tool Manager with the candidate paths of its [package](#packages) state. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+`apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists every Tool Manager a Linux Node can run, recorded or not, with the candidate paths of its [package](#packages) state. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 

@@ -131,6 +131,8 @@ pub struct WatchFacts {
     pub tools: Vec<(String, Vec<String>)>,
     /// The awake markers of hibernating Processes; the agent reports which exist.
     pub awake_markers: Vec<String>,
+    /// The `.env` of each Instance on the Node; the agent reports their key names, never values.
+    pub environments: Vec<String>,
 }
 
 /// Parses the `awake_markers` of `GET /api/v1/agent/watch`: plain names below the hibernation directory only.
@@ -145,6 +147,20 @@ pub fn parse_watch_awake_markers(body: &Value) -> Vec<String> {
         .map(str::to_owned)
         .collect();
     markers.into_iter().collect()
+}
+
+/// Parses the `environments` of `GET /api/v1/agent/watch`: normalized absolute paths of files named `.env`.
+pub fn parse_watch_environments(body: &Value) -> Vec<String> {
+    let paths: BTreeSet<String> = body
+        .pointer("/data/environments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|path| valid_checkout_path(path) && path.ends_with("/.env"))
+        .map(str::to_owned)
+        .collect();
+    paths.into_iter().take(1_000).collect()
 }
 
 /// Parses the `tools` of `GET /api/v1/agent/watch`: plain manager names with normalized absolute candidate paths.
@@ -489,6 +505,7 @@ async fn fetch_watch_list(
         applications,
         tools: parse_watch_tools(&body),
         awake_markers: parse_watch_awake_markers(&body),
+        environments: parse_watch_environments(&body),
     };
     Ok((parse_watch_list(&body)?, facts))
 }
@@ -876,6 +893,23 @@ mod tests {
             vec!["caddy.service".to_owned(), "docker.service".to_owned()]
         );
         assert!(parse_watch_services(&json!({"data": {}})).is_err());
+    }
+
+    #[test]
+    fn watch_environments_keep_normalized_env_paths_once() {
+        let body = json!({"data": {"environments": [
+            "/home/orbit-app-16/.env", "/fast/apps/acme/default/.env", "/home/orbit-app-16/.env",
+            "/home/x/../etc/.env", "relative/.env", "/home/orbit/.ssh/id_ed25519", 7
+        ]}});
+
+        assert_eq!(
+            parse_watch_environments(&body),
+            vec![
+                "/fast/apps/acme/default/.env".to_owned(),
+                "/home/orbit-app-16/.env".to_owned()
+            ]
+        );
+        assert!(parse_watch_environments(&json!({"data": {}})).is_empty());
     }
 
     #[test]

@@ -38,22 +38,36 @@ fn failed(step: &str) -> FootprintError {
     FootprintError::Failed { step: step.into() }
 }
 
-/// The host boundary: systemd. Paths stay in [`Files`].
+/// The group whose members may read the `.env` files Orbit writes (mode 0640); the unit names it in
+/// `SupplementaryGroups`, so it exists before the unit starts.
+pub const ENV_GROUP: &str = "orbit-env";
+
+/// The host boundary: systemd and the system group database. Paths stay in [`Files`].
 trait Host {
     fn systemctl(&mut self, arguments: &[&str]) -> bool;
+    /// Creates the system group unless it exists.
+    fn ensure_group(&mut self, name: &str) -> bool;
 }
 
 struct Native;
 
+fn succeeds(program: &str, arguments: &[&str]) -> bool {
+    Process::new(program)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 impl Host for Native {
     fn systemctl(&mut self, arguments: &[&str]) -> bool {
-        Process::new("systemctl")
-            .args(arguments)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+        succeeds("systemctl", arguments)
+    }
+
+    fn ensure_group(&mut self, name: &str) -> bool {
+        succeeds("getent", &["group", name]) || succeeds("groupadd", &["--system", name])
     }
 }
 
@@ -188,6 +202,9 @@ fn configure(
     let mut changed = !keep || input.binary_changed;
     changed |= publish(&files.path(CONFIG_PATH), &input.configuration, 0o644)?;
     changed |= publish(&files.path(CA_PATH), &input.certificate, 0o644)?;
+    if !host.ensure_group(ENV_GROUP) {
+        return Err(failed("agent-group"));
+    }
     changed |= publish(&files.path(UNIT_PATH), &input.unit, 0o644)?;
     let unclosed = close_environments(files, &input.checkouts);
     if !host.systemctl(&["daemon-reload"]) || !host.systemctl(&["enable", "--now", OBSERVER_UNIT]) {

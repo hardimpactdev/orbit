@@ -11,6 +11,7 @@ use std::{
 pub mod checkouts;
 pub mod command;
 pub mod commands;
+pub mod environment;
 pub mod facts;
 pub mod logs;
 pub mod packages;
