@@ -66,5 +66,19 @@
   "expect": {
     "status": "succeeded"
   },
+  "phases": [
+    {
+      "name": "withdraw",
+      "job": "analytics",
+      "step": "Withdraw sites, certs-0",
+      "budget_seconds": 300
+    },
+    {
+      "name": "check",
+      "job": "analytics",
+      "step": "Check the hosts are gone-0",
+      "budget_seconds": 120
+    }
+  ],
   "parity": "swamp/proof/analytics.disable/parity.py"
 }
