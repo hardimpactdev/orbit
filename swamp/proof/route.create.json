@@ -31,6 +31,15 @@
       }
     },
     {
+      "method": "POST",
+      "path": "routes",
+      "bind": "bootstrap",
+      "body": {
+        "instance_id": "${instance.id}",
+        "domain": "b-${proof.run}.proof.test"
+      }
+    },
+    {
       "method": "PATCH",
       "path": "projects/${project.id}",
       "operation": false,
@@ -44,7 +53,8 @@
     "path": "routes",
     "body": {
       "instance_id": "${instance.id}",
-      "domain": "r-${proof.run}.proof.test"
+      "domain": "r-${proof.run}.proof.test",
+      "web_root": "public"
     }
   },
   "expect": {
