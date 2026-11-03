@@ -22,7 +22,7 @@
         "slug": "proof-rdsrv-${proof.run}",
         "node_id": "${node.target}",
         "driver": "mysql",
-        "port": 33196
+        "port": 33197
       },
       "bind": "server"
     },

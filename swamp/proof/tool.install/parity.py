@@ -22,6 +22,13 @@ query = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'dpkg
 installed = query.returncode == 0 and query.stdout.startswith('install ok installed')
 version = query.stdout.split('\t')[1] if installed else None
 check('Setting up' not in json.dumps(result) and 'Unpacking' not in json.dumps(result), 'apt output reached the API result')
+if sys.argv[1:] == ['wrong-fingerprint']:
+    check(status == 'failed' and operation.get('error_code') == 'tool.repository_key_mismatch', 'the key mismatch stops the install')
+    check(not installed, 'a mismatched key installs no package')
+    for path in ['/etc/apt/keyrings/orbit-rex.gpg', '/etc/apt/sources.list.d/orbit-rex.sources', '/etc/apt/preferences.d/orbit-rex.pref']:
+        check(subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'test', '!', '-e', path]).returncode == 0, 'no repository file was published: ' + path)
+    print('parity: mismatched fingerprint refused before repository publication')
+    sys.exit(0)
 if status == 'failed':
     check(operation.get('error_code') == 'tool.version_constraint_blocked', 'the constraint blocked the install')
     check(not installed, 'a blocked install writes nothing')
@@ -45,4 +52,8 @@ else:
         check([row.split(':')[9] for row in fingerprint.splitlines() if row.startswith('fpr:')][0] == repository['signing_key']['fingerprint'], 'the published binary key has the admitted fingerprint')
         source = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'cat', '/etc/apt/sources.list.d/orbit-' + repository['name'] + '.sources'], capture_output=True, text=True, check=True).stdout
         check('Signed-By: ' + key in source and all(uri in source for uri in repository['uris']), 'deb822 uses the verified key and admitted source')
+        preference = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'cat', '/etc/apt/preferences.d/orbit-' + repository['name'] + '.pref'], capture_output=True, text=True, check=True).stdout
+        packages = ' '.join(operation['input']['repository_packages'])
+        expected = '\n'.join(f'Package: {packages}\nPin: origin "{uri.split("/")[2]}"\nPin-Priority: 990\n\nPackage: *\nPin: origin "{uri.split("/")[2]}"\nPin-Priority: 1\n' for uri in repository['uris'])
+        check(preference == expected, 'only the admitted packages have vendor priority 990; other packages have priority 1')
 print(f'parity: {kind} {status} {package}={version}')

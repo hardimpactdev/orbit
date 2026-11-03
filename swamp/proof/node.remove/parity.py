@@ -19,6 +19,12 @@ def check(ok, message):
         sys.exit('parity: ' + message)
 
 
+if mode == 'guest-refused':
+    check(operation is None and os.environ['PROOF_NATIVE_RUN'] == '', 'guest removal refusal starts no Operation or run')
+    check(run('cat', '/srv/proof-retained/user-data').stdout.strip() == 'keep', 'refusal preserves user data')
+    check(run('test', '-f', '/usr/local/bin/orbit-agent').returncode == 0, 'refusal leaves the observer untouched')
+    print('parity: TaskVM guest removal requires its owning native workflow and starts no run')
+    sys.exit(0)
 check(operation['status'] == 'succeeded', 'the native removal succeeded')
 check(run('cat', '/srv/proof-retained/user-data').stdout.strip() == 'keep', 'user data remains')
 if mode == 'role':
