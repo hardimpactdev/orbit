@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { behavior } from "./assets.ts";
+import { assembleFootprint, behavior, publicResult } from "./assets.ts";
 
 Deno.test("all node targets use 209 with their saved host keys", async () => {
     const text = await Deno.readTextFile(
@@ -86,4 +86,72 @@ Deno.test("refusal before first host effect writes no ready resource", async () 
         "node.footprint_failed",
     );
     assertEquals(getWrittenResources(), []);
+});
+
+Deno.test("Caddy render refusal retains a skipped artifact without failing the footprint", () => {
+    assertEquals(assembleFootprint({
+        ...intent.footprint,
+        artifacts: [{ name: "caddy", required: true }],
+        payloads: { caddy: { error_code: "caddy.render_failed", stage: "render" } },
+    }, {}), {
+        artifacts: [{ name: "caddy", status: "skipped", reason: "caddy_render_refused" }],
+        footprint_proven: true,
+    });
+});
+
+Deno.test("runtime footprint requires every admitted PHP version and tolerates residue refusal", () => {
+    const footprint = {
+        ...intent.footprint,
+        roles: { php: { "8.4": {}, "8.5": {} } },
+        artifacts: ["php-runtime", "private-dns", "route-residue"].map((name) => ({ name, required: true })),
+    };
+    const steps = {
+        "Configure PHP-FPM-8.4": { status: "succeeded" },
+        "Configure PHP-FPM-8.5": { status: "succeeded" },
+        "Install private DNS": { status: "succeeded" },
+        "Clear Route residue": { status: "failed" },
+    };
+    assertEquals(assembleFootprint(footprint, steps), {
+        artifacts: [
+            { name: "php-runtime", status: "applied" },
+            { name: "private-dns", status: "applied" },
+            { name: "route-residue", status: "skipped", reason: "route_residue_cleanup_failed" },
+        ],
+        footprint_proven: true,
+    });
+    assertEquals(assembleFootprint(footprint, {
+        ...steps, "Configure PHP-FPM-8.5": { status: "failed" },
+    }), {
+        artifacts: [
+            { name: "private-dns", status: "applied" },
+            { name: "route-residue", status: "skipped", reason: "route_residue_cleanup_failed" },
+        ],
+        footprint_proven: false,
+        failed_artifact: "php-runtime",
+        error_code: "node.footprint_failed",
+    });
+});
+
+Deno.test("recipe result keeps delivery identity and tolerates a failed residue child", () => {
+    const result = publicResult({
+        intent: {
+            ...intent,
+            footprint: {
+                ...intent.footprint,
+                artifacts: [{ name: "route-residue", required: true }],
+            },
+        },
+        steps: {
+            "Clear Route residue": { status: "failed" },
+            delivery: { status: "succeeded", outputs: { stdout: JSON.stringify({ identity: intent.identity }) } },
+        },
+    });
+    const expected = {
+        identity: intent.identity,
+        footprint: {
+            artifacts: [{ name: "route-residue", status: "skipped", reason: "route_residue_cleanup_failed" }],
+            footprint_proven: true,
+        },
+    };
+    assertEquals(result, { ...expected, stdout: JSON.stringify(expected) });
 });

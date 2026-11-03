@@ -10,7 +10,7 @@ The package transaction keeps sources, indexes, exact installation, provider ret
 
 The Gateway captures the agent key's public verifier digest and the desired public files at admission. A bounded `sha256sum --check --strict` command checks the installed binary, recorded key and files. No observer secret is copied into the execution vault. No worker enrollment, credential rotation or worker retirement is part of a recipe visit.
 
-Source checks use the frozen official runtime in an isolated local repository. SSH fixtures never contact Nodes. Live publication, grants and any 12-Node rollout remain separate owner actions.
+Run `deno test --allow-read swamp/extensions/behaviors/operations/fleet-recipe/recipe_test.ts` from the repository root to check validation and public result mapping directly. Live publication, grants and any 12-Node rollout remain separate owner actions.
 
 Private DNS uses the shared node-private-dns workflow. It writes files through official cfgmgmt, validates the configuration before activation, and checks the loaded catalog. A failure stops delivery without a rollback chain. PHP runtime and Route residue use their existing native workflows; tmpfiles is one official file resource. The replaced PHP and DNS scripts, adapters and mirrored tests are deleted.
 
