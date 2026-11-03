@@ -1499,11 +1499,11 @@ jobs:
     role: swamp
   steps:
   - name: Read Schedule group
-    guard: ${{ inputs.intent.deployment.variant != "production" }}
+    guard: ${{ inputs.intent.deployment.variant != "production" || size(inputs.intent.runtime_definitions.schedules) == 0 }}
     labels:
       role: swamp
     task:
-      behaviorName: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+      behaviorName: ${{ "id-sgroup-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id) }}
       behaviorType: '@swamp/ssh'
       globalArgs:
         hosts:
@@ -1511,7 +1511,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-        name: ${{ ("id-schedule-group-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
+        name: ${{ "id-sgroup-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id) }}
         transport:
           identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
           kind: ssh
@@ -1524,16 +1524,12 @@ jobs:
         - id
         - -gn
         - --
-        - ${{ self.schedule.user }}
+        - ${{ inputs.intent.production.user }}
         hosts: name:target
         sudo: true
         timeoutSec: 40
       methodName: exec
       type: behavior
-    forEach:
-      item: schedule
-      in: ${{ inputs.intent.runtime_definitions.schedules }}
-    concurrency: 1
   - name: Render Schedules
     labels:
       role: swamp
@@ -1563,7 +1559,7 @@ jobs:
           calendar: ${{ self.schedule.calendar }}
           timeout_seconds: ${{ self.schedule.timeout_seconds }}
           desired: ${{ self.schedule.desired }}
-          group: ${{ steps["Read Schedule group-" + string(self._index)].outputs.stdout.trim() }}
+          group: ${{ steps["Read Schedule group"].outputs.stdout.trim() }}
 - name: deploy
   labels:
     role: swamp
