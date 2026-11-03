@@ -37,7 +37,7 @@ Always finish with `down`. Proof VMs do not outlive the proof. The scheduled rea
   - `peer` has no role. It is a second plain Node, such as a WireGuard peer beside a hub on `target`.
 - An `operator` Node record (no VM) is the caller. It has access to the Gateway and every Node.
 
-`up` stages `git bundle HEAD`, so commit first. Each `up` starts fresh Swamp credentials and a fresh Gateway database. Run `up` again on a held VM to restage it at a new commit. `run` moves the held VM forward by itself only when fixtures or the harness driver changed; the receipt lists those refreshes.
+`up` stages `git bundle HEAD`, so commit first. Each `up` starts fresh Swamp credentials and a fresh Gateway database. Run `up` again on a held VM to restage it at a new commit; it keeps the nested Nodes and starts any that stopped. When a nested Node stops while it boots, or its agent or cloud-init fails, `up` fails with the Node's Incus status and console tail. `run` moves the held VM forward by itself only when fixtures or the harness driver changed; the receipt lists those refreshes.
 
 ## Fixtures
 
