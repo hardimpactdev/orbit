@@ -98,17 +98,18 @@ final readonly class DocsImpact
             if ($path === self::MACHINE_RECIPE && $base !== null && $this->recipePinsOnly($base)) {
                 continue;
             }
+            // Test inputs need no docs owner: test folders, test files beside their source, and swamp/proof's
+            // topology proof fixtures and parity checks. A test only references the codes its source owns,
+            // and a page's covers: glob over its source folder does not claim the tests beside it.
+            if (preg_match('#(?:^|/)(?:tests?|node_modules)/|^swamp/proof/|(?:^|/)test_[^/]*\.py$|_test\.(?:ts|py)$#', $path) === 1) {
+                continue;
+            }
             foreach ($pages as $page => $patterns) {
                 foreach ($patterns as $pattern) {
                     if ($this->matches($path, $pattern)) {
                         $this->addSurface($surfaces, $impacts, $path, 'covered_path', $page, "covers: {$pattern} matches {$path}");
                     }
                 }
-            }
-            // Test inputs need no docs owner: test folders, test files beside their source, and swamp/proof's
-            // topology proof fixtures and parity checks. A test only references the codes its source owns.
-            if (preg_match('#(?:^|/)(?:tests?|node_modules)/|^swamp/proof/|(?:^|/)test_[^/]*\.py$|_test\.(?:ts|py)$#', $path) === 1) {
-                continue;
             }
 
             $source = is_file($this->root.'/'.$path) ? $this->read($path) : null;

@@ -277,7 +277,9 @@ The planning owner asserts the complete cumulative inventory before feature runt
 | `complete` | Must be `true`; a partial plan is refused |
 | `paths` | Nonempty list of `{change: add\|modify\|delete, path}` or `{change: rename, from, path}`; rename contributes both endpoints to analysis |
 
-Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist, but each needs a docs owner: a `covers:` glob that also matches a tracked file. Paths under `tests/` and `swamp/proof/`, and test files such as `*_test.ts` or `test_*.py`, are test inputs and need none. Delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
+Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist, but each needs a docs owner: a `covers:` glob that also matches a tracked file. Paths under `tests/` and `swamp/proof/`, and test files such as `*_test.ts` or `test_*.py`, are test inputs and need none, even when a `covers:` glob matches them.
+
+Delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
 
 Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. The manifest has at most 256 entries and at most 32 KiB of RFC 8785 canonical JSON. `plan_sha256` hashes that entire canonical manifest; all SHA-256 values use lowercase hex. Shared JSON/hash fixtures fix encoding across native consumers. Overflow refuses the whole inventory; no path is dropped.
 

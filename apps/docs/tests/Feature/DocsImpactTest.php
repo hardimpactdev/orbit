@@ -496,6 +496,18 @@ it('docs impact needs no owner for a test file beside its source', function (): 
         ->and(collect($report['surfaces'])->where('owner', 'unowned')->all())->toBe([]);
 });
 
+it('docs impact does not let a covers: glob over a source folder claim the tests beside it', function (): void {
+    $root = docsImpactFixture();
+    $path = 'swamp/extensions/behaviors/operations/widget/widget_native_test.ts';
+    @mkdir(dirname($root.'/'.$path), 0777, true);
+    file_put_contents($root.'/docs/reference/widget-ops.md', "---\ntitle: Widget ops\ncovers:\n  - \"swamp/extensions/behaviors/operations/widget/**\"\n---\nWidgets\n");
+    file_put_contents($root.'/'.$path, "Deno.test('widget', () => {});\n");
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['impacted_pages'])->toBe([])
+        ->and($report['surfaces'])->toBe([]);
+});
+
 it('docs impact needs no prose for a recipe change that only bumps pinned values', function (string $after, bool $documented): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/resources/machine-software/recipe.json';
