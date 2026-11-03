@@ -157,7 +157,7 @@ def parity():
     if success:
         assert result['selected_release'] == release and result['commit'] == data['head'], result
         assert peer('git', '-c', 'safe.directory=*', '-C', HOME + '/' + selected, 'rev-parse', 'HEAD') == data['head']
-        assert peer('stat', '-c', '%a %U', HOME + '/.env') == '600 orbit-app-9002'
+        assert peer('stat', '-c', '%a %U %G', HOME + '/.env') == '640 orbit-app-9002 orbit-env'
         assert peer('readlink', HOME + '/' + selected + '/.env') == '../../.env'
         assert peer('readlink', HOME + '/' + selected + '/storage') == HOME + '/storage'
         assert peer('cat', HOME + '/before-ran').splitlines()[:3] == ['orbit-app-9002', data['head'], HOME + '/' + selected]

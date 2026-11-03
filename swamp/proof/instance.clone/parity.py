@@ -38,8 +38,8 @@ check(
     "the stored value reached the clone .env",
 )
 check(
-    target("stat", "-c", "%U %a", home + "/.env") == user + " 600",
-    "the clone .env is the account's private file",
+    target("stat", "-c", "%U %G %a", home + "/.env") == user + " orbit-env 640",
+    "the clone .env belongs to the account and is readable by orbit-env",
 )
 mode = target("stat", "-c", "%U %a", home)
 check(
