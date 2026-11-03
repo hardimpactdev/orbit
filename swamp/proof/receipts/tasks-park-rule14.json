@@ -1,0 +1,17 @@
+{
+  "kind": "tasks.park",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 14,
+  "source_commit": "fef9c0aed0b31b8d2a5b1e5f2eba6837f115da30",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.park/20261103T043508Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 10.77,
+  "run_seconds": 35.4,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "1e33402d-1985-4efe-a81b-77f7e2c78807",
+  "reporting_steps_removed": 1,
+  "scripts_deleted": 0,
+  "limits": "One real nested Incus VM on Beast. The workspace Node is a stand-in record; the disposable VM is blank. Parity checks the real stopped state and admitted IDs. The first fixture failed before logind was ready and recorded no false confirmation. Local tests cover failure, interruption, cancellation and replay. No production repository, real PR, GitHub request or UpCloud API is exercised."
+}
