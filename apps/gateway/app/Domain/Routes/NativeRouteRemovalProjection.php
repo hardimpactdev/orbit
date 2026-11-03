@@ -12,7 +12,6 @@ use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
-use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -86,9 +85,6 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
                 $operation->kind === 'route.destroy',
                 array_map(static fn (array $member): array => ['node_id' => ValidatedData::integer($member['node_id']), 'steps' => ValidatedData::stringList($member['steps'])], RouteExecutionProof::objects($result['retained_on_nodes'] ?? [])),
             );
-            if ($operation->kind === 'route.withdraw') {
-                Route::query()->whereKey($operation->target_id)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
-            }
             if ($operation->kind === 'route.destroy') {
                 foreach ($rows as $row) {
                     DB::afterCommit(static fn () => app(RecordEventBroadcaster::class)->broadcast(RecordEventType::RouteDeleted, $row['route_id'], ['id' => $row['route_id'], 'domain' => $row['domain']]));

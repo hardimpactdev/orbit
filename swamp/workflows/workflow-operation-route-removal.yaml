@@ -8,7 +8,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [route.destroy, route.withdraw]}
+    kind: {type: string, enum: [route.destroy]}
     intent: {type: object}
     execution_secrets:
       type: object

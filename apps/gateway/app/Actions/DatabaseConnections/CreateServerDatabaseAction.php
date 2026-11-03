@@ -12,6 +12,7 @@ use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
+use App\Domain\Instances\OwnedDatabaseSlug;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
@@ -121,19 +122,49 @@ final readonly class CreateServerDatabaseAction
                     'created_by' => $createdBy,
                 ]);
             }
-            $safe = ['repair' => $repair, 'driver' => $server->driver->value, 'username' => $connection->username,
-                'databases' => $redis ? [] : [$database, ...($test === null ? [] : ($processes === null ? [$test] : $this->postgresTests->names($test, $processes)))],
-                'test_prefix' => $server->driver === DatabaseDriver::Mysql ? $test : null, 'locale' => $data->locale,
-                'host' => $server->node->wireguard_ip, 'port' => $server->port,
-                'container' => app(DockerProcessRenderer::class)->containerName($server->process ?? throw new ResourceOperationException('database.server_command_failed', 'The server has no Process.', 502)),
-                'index' => $redis ? $data->database : null, 'patterns' => $redis ? $data->patterns : [], 'allow' => $redis ? $data->allow : []];
 
-            return $this->retries->record($this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
-                ['connection_id' => $connection->id, 'server_id' => $server->id, 'driver' => $server->driver->value],
-                ['database-apply' => ['name' => 'database.create', 'input' => [...$safe,
-                    'payload' => ['password' => $connection->password, 'salt' => base64_encode(random_bytes(16))]], 'protected' => ['payload'], 'redactions' => [$connection->password]]],
-                ['created_connection' => $connection->id, 'attach_instance' => $instance?->id]), $data);
+            return $this->retries->record($this->record($server, $connection, $repair, $instance, $redis ? $data : null), $data);
         });
+    }
+
+    /**
+     * The owner, database and test databases of an Instance that `instance:create --database-server` makes, recorded
+     * exactly as `database:create --instance` records them, but for a run step of the create instead of an Operation.
+     * An identical create retry records the same names again; the statements converge.
+     */
+    public function prepareForInstance(string $serverSlug, Instance $instance): PreparedDatabaseOperation
+    {
+        $slug = OwnedDatabaseSlug::for($instance);
+        $connection = DatabaseConnection::query()->where('slug', $slug)->first();
+        if ($connection === null) {
+            return $this->prepare(new CreateServerDatabaseData($slug, $serverSlug, $instance->id), null);
+        }
+        $server = $this->server($serverSlug);
+        if ($connection->owner_instance_id !== $instance->id || $connection->database_server_id !== $server->id) {
+            throw $this->slugConflict($slug);
+        }
+        $this->assertActive($server);
+
+        return $this->record($server, $connection, true, $instance, null);
+    }
+
+    /** The database.create intent for a recorded connection; `$redis` carries the Valkey index and ACL rules. */
+    private function record(DatabaseServer $server, DatabaseConnection $connection, bool $repair, ?Instance $instance, ?CreateServerDatabaseData $redis): PreparedDatabaseOperation
+    {
+        $test = $connection->test_database;
+        $processes = $connection->test_processes;
+        $safe = ['repair' => $repair, 'driver' => $server->driver->value, 'username' => $connection->username,
+            'databases' => $redis !== null ? [] : [$connection->database, ...($test === null ? [] : ($processes === null ? [$test] : $this->postgresTests->names($test, $processes)))],
+            'test_prefix' => $server->driver === DatabaseDriver::Mysql ? $test : null, 'locale' => $connection->locale,
+            'host' => $server->node->wireguard_ip, 'port' => $server->port,
+            'container' => app(DockerProcessRenderer::class)->containerName($server->process ?? throw new ResourceOperationException('database.server_command_failed', 'The server has no Process.', 502)),
+            'index' => $redis?->database, 'patterns' => $redis->patterns ?? [], 'allow' => $redis->allow ?? []];
+
+        return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
+            ['connection_id' => $connection->id, 'server_id' => $server->id, 'driver' => $server->driver->value],
+            ['database-apply' => ['name' => 'database.create', 'input' => [...$safe,
+                'payload' => ['password' => $connection->password, 'salt' => base64_encode(random_bytes(16))]], 'protected' => ['payload'], 'redactions' => [$connection->password]]],
+            ['created_connection' => $connection->id, 'attach_instance' => $instance?->id]);
     }
 
     private function server(string $slug): DatabaseServer

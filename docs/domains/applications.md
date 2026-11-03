@@ -38,7 +38,7 @@ orbit instance:create <project> <node> default
 orbit instance:create <project> <node> feature-one --branch=release
 ```
 
-The Gateway returns HTTP 202 with one native Operation. The create root serves web-serving Projects with their Route and copies a SQLite [database clone](#database-clone). A Database server (`--database-server`) or a MySQL database clone returns `operation.kind_unavailable` before reservation, and a task VM Node returns `instance.task_vm_node`. At admission the Gateway renders the Instance's `.env` from the [Project environment template](#project-environment-template) and stores it. Swamp prepares the source, writes that `.env`, runs setup and starts the [development Processes](/reference/processes-and-schedules#project-definitions) as steps of that root, and returns the checked-out commit. It runs local commands as the recorded Node account. The frozen agent performs no action.
+The Gateway returns HTTP 202 with one native Operation. The create root serves web-serving Projects with their Route, creates its own database on a `--database-server`, and copies the default Instance's [database clone](#database-clone). A task VM Node returns `instance.task_vm_node`. At admission the Gateway renders the Instance's `.env` from the [Project environment template](#project-environment-template) and stores it. Swamp prepares the source, writes that `.env`, runs setup and starts the [development Processes](/reference/processes-and-schedules#project-definitions) as steps of that root, and returns the checked-out commit. It runs local commands as the recorded Node account. The frozen agent performs no action.
 
 Swamp clones the repository to `<apps-root>/<project-slug>/<name>` using the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from recorded Node settings. The branch is a separate choice.
 
@@ -109,7 +109,7 @@ When the Project has an Instance named `default` with a database attached under 
 
 Orbit copies a snapshot made with SQLite's backup API, on the same Node and from another Node, with the same steps as [`instance:clone`](/cli/instance/clone). A file already at the target path is kept.
 
-Native `instance:create` runs the SQLite copy as a step of its run, after `.env` and before setup. A create that needs a MySQL copy returns `operation.kind_unavailable` (503) and changes nothing.
+Native `instance:create` runs the copy as steps of its run, after `.env` and before setup. A MySQL copy first creates the owner and databases with the `database:create` child, then pipes the dump inside the server's container.
 
 Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`. The Gateway records Swamp's result and the attachment.
 
@@ -136,7 +136,7 @@ An Instance that gets no copy, such as the `default` Instance itself, can get an
 orbit instance:create 12 3 default --database-server=beast-mysql
 ```
 
-After the source is ready and before the setup steps, Orbit does what [`database:create --server --instance`](/reference/database-servers#create-a-database-on-a-server) does. It creates the database `<project>_<instance>`, its test database, and the Instance's user on the server, with the connection slug `<project>-<instance>`. It records the Instance as the owner and attaches the database under prefix `DB`. Then it imports and synchronizes `.env` and `.env.testing` as the clone does. A setup step such as a migration finds the database on the first create.
+After the source is ready and before the setup steps, Orbit does what [`database:create --server --instance`](/reference/database-servers#create-a-database-on-a-server) does. It creates the database `<project>_<instance>`, its test database, and the Instance's user on the server, with the connection slug `<project>-<instance>`. It records the Instance as the owner and attaches the database under prefix `DB`. The `.env` and `.env.testing` that the Gateway renders name it. A setup step such as a migration finds the database on the first create.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |

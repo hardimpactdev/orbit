@@ -33,6 +33,11 @@ it('sends each phase to the prepared release and keeps its control-plane report'
     ], ['serve', 'schedule']));
 });
 
+it('accepts an empty report from a release that reports nothing for the phase', function (): void {
+    $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => []]);
+    expect($this->runtime->handoff('0123456789ab'))->toBe([]);
+});
+
 it('keeps cleanup paused unless the phase explicitly resumes it', function (mixed $value, bool $paused): void {
     $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => ['scheduler' => 'restarted', 'cleanup_paused' => $value]]);
     expect($this->runtime->schedule('0123456789ab')['cleanup_paused'])->toBe($paused);
@@ -59,7 +64,6 @@ it('refuses malformed or incomplete phase results', function (array $result): vo
     [['succeeded' => 'true', 'report' => ['caddy' => 'unchanged']]],
     [['succeeded' => true, 'report' => 'invalid']],
     [['succeeded' => true, 'report' => ['caddy']]],
-    [['succeeded' => true, 'report' => []]],
     [['succeeded' => false, 'report' => ['caddy' => 'unchanged']]],
 ]);
 
