@@ -9,7 +9,6 @@ import sys
 import yaml
 from native_harness import ROOT, NativeTestCase
 
-DEVELOPMENT_JOBS = ('development-source', 'development-checkout', 'production-release', 'dev-vp-capture', 'dev-vp-workspaces', 'dev-vp-install', 'deploy')
 # The empty production keys the Gateway adds to a development run (ProductionDeployInput::placeholder).
 PRODUCTION_PLACEHOLDER = {'production': {'instance_id': 0, 'user': '', 'home': '', 'release': '', 'release_path': '', 'commit': None, 'branch': '', 'credential': '',
                                          'shared': [], 'prepare': [], 'links': [], 'grants': [], 'steps': [], 'before': [], 'after': [], 'cleanup': []},
@@ -69,7 +68,6 @@ os.execv(argv[0],argv)
             'deployment': {'variant': 'development', 'needs_vp': False, 'steps': [], 'node_user': user, 'branch': 'main',
                            'repository': str(origin), 'home': str(self.checkout)}}}
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-deploy-direct.yaml').read_text())
-        workflow['jobs'] = [job for job in workflow['jobs'] if job['name'] in DEVELOPMENT_JOBS]
         for job in workflow['jobs']:
             job.pop('labels')
             for step in job['steps']:
