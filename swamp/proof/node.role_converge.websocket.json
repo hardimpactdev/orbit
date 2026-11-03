@@ -54,6 +54,15 @@
       "443",
       "comment",
       "proof-reverb-gateway"
+    ],
+    [
+      "incus",
+      "exec",
+      "metrics",
+      "--",
+      "sh",
+      "-c",
+      "sed -i '/gateway\\.orbit/d' /etc/hosts; printf '10.231.0.1 gateway.orbit\\n' >> /etc/hosts; update-ca-certificates"
     ]
   ],
   "request": {
@@ -80,15 +89,6 @@
     "metrics",
     "websocket"
   ],
-  "before_node": {
-    "metrics": [
-      [
-        "sh",
-        "-c",
-        "sed -i '/gateway\\.orbit/d' /etc/hosts; printf '10.231.0.1 gateway.orbit\\n' >> /etc/hosts; update-ca-certificates"
-      ]
-    ]
-  },
   "prepare": [
     {
       "method": "POST",
