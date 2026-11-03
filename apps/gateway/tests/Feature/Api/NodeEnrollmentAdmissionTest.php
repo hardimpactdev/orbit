@@ -112,15 +112,20 @@ it('records a proved Mac identity without installing an observer or changing its
         ->and($node->wireguard_public_key)->toBeNull();
 });
 
-it('keeps a failed candidate failed and records no invented observations', function (): void {
+it('records the native failure code without inventing observations', function (string $step, string $errorCode): void {
     $operation = nativeMacEnrollment($this);
-    app(NativeNodeEnrollmentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'started_at' => '2026-11-02T20:00:00Z', 'finished_at' => '2026-11-02T20:00:01Z', 'status' => 'failed', 'error_code' => 'node.ssh_host_key_mismatch',
-        'result' => ['steps' => ['Require approved host key' => ['status' => 'failed']], 'failed_step' => 'Require approved host key']]);
+    app(NativeNodeEnrollmentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'started_at' => '2026-11-02T20:00:00Z', 'finished_at' => '2026-11-02T20:00:01Z', 'status' => 'failed', 'error_code' => 'operation.native_failed',
+        'result' => ['steps' => [$step => ['status' => 'failed']], 'failed_step' => $step]]);
     $node = Node::query()->findOrFail($operation->target_id);
     expect($node->status->value)->toBe('failed')
         ->and($node->ssh_host_key)->toBeNull()
-        ->and($node->architecture)->toBeNull();
-});
+        ->and($node->architecture)->toBeNull()
+        ->and($operation->fresh()->error_code)->toBe($errorCode);
+})->with([
+    ['Require approved host key', 'node.ssh_host_key_mismatch'],
+    ['Read the bootstrap account-0', 'node.bootstrap_account_unavailable'],
+    ['Verify managed SSH-0', 'node.orbit_ssh_failed'],
+]);
 
 it('freezes a roleless Linux baseline without committing its host-key placeholders', function (): void {
     FleetFixtures::node('vpn', [RoleName::Vpn]);

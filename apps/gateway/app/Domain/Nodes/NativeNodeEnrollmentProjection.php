@@ -51,7 +51,7 @@ final readonly class NativeNodeEnrollmentProjection implements DirectOperationPr
             $summary = ValidatedData::object($raw['summary'] ?? []);
             $failed = ValidatedData::string($raw['failed_step'] ?? (is_array($summary['failed_steps'] ?? null) ? ($summary['failed_steps'][0] ?? 'enrollment') : 'enrollment'));
             $failedEntry = ValidatedData::object(ValidatedData::object($raw['steps'] ?? [])[$failed] ?? []);
-            $error = $failedEntry['error_code'] ?? match ($failed) {
+            $error = $failedEntry['error_code'] ?? match (preg_replace('/-\d+$/', '', $failed)) {
                 'Read the host key' => 'node.ssh_host_key_scan_failed',
                 'Require approved host key' => 'node.ssh_host_key_mismatch',
                 'Read the bootstrap account' => 'node.bootstrap_account_unavailable',
