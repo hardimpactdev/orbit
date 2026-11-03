@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { behavior, material, workspaceLinks } from "./requirements.ts";
 import { vpPreparationJobs } from "./steps.ts";
 const runtime = {
@@ -147,5 +148,38 @@ Deno.test("production keeps its environment cache private while using the Node C
         assertEquals(result.runtime?.store, "/home/orbit-app-7/.local/share/vite-plus");
         assertEquals(result.runtime?.binary, "/opt/orbit/vite-plus/bin/vp");
         assertEquals(result.manager_required, store === "");
+    }
+});
+
+Deno.test("no VP dependency publishes a ready no-op without installation evidence", async () => {
+    const { context, getWrittenResources } = createModelTestContext();
+    const selected = await behavior.methods.capture.execute({
+        package: "{}", pnpm_lock: "", npm_lock: "", node_version: "", nvmrc: "",
+        home: "/home/app\n", store: "/opt/orbit/vite-plus/bin/vp\n", links: [], workspaces: [],
+    }, context);
+    assertEquals(selected.runtime, null);
+    const steps = vpPreparationJobs("vp", "inputs.intent", "before")[2].steps as Record<string, any>[];
+    for (const name of ["cli", "cli-ready", "install", "inventory", "verify"]) {
+        assertEquals(steps.find((step) => step.name === "vp-" + name)!.forEach.in,
+            '${{ steps["vp-requirements"].outputs.runtime == null ? [] : [steps["vp-requirements"].outputs.runtime] }}');
+    }
+    const result = await behavior.methods.result.execute({
+        name: "vp",
+        steps: { "vp-requirements": { status: "succeeded", outputs: selected } },
+    }, context);
+    assertEquals(result, { ready: true, runtime: null });
+    assertEquals(getWrittenResources().map((row) => row.data), [selected, result]);
+});
+
+Deno.test("VP result refuses failed selection and missing installation proof", async () => {
+    const cases: Parameters<typeof behavior.methods.result.execute>[0]["steps"][] = [
+        {},
+        { "vp-requirements": { status: "failed", outputs: { ready: true, runtime: null } } },
+        { "vp-requirements": { status: "succeeded", outputs: { ready: true, runtime } } },
+    ];
+    for (const steps of cases) {
+        const { context, getWrittenResources } = createModelTestContext();
+        await assertRejects(() => behavior.methods.result.execute({ name: "vp", steps }, context));
+        assertEquals(getWrittenResources(), []);
     }
 });

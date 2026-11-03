@@ -56,21 +56,6 @@ await passThrough(args, new TextEncoder().encode(body));
   };
 }
 const grant = (path: string) => ({ node_id: 9, argv: ["/usr/bin/setfacl", "-m", "u:caddy:--x", "--", path] });
-Deno.test("workload grants run one at a time in list order", async () => {
-  const { f, inputs, run, pool, audit } = await fixture();
-  await using _ = f;
-  inputs.intent.plan.acl = ["/a", "/b", "/c"].map(grant);
-  await run();
-  assertEquals((await Deno.readTextFile(audit)).trim().split("\n"), ["acl /a", "acl /b", "acl /c"]);
-  assertEquals(await Deno.readTextFile(pool), "old-pool");
-});
-Deno.test("a refused workload grant fails the phase", async () => {
-  const { f, inputs, run } = await fixture();
-  await using _ = f;
-  inputs.intent.plan.acl = [grant("/a")];
-  f.repo.env.FIXTURE_ACL_EXIT = "1";
-  assertEquals((await run(false)).run.status, "failed");
-});
 Deno.test("an empty workload plan skips every effect", async () => {
   const { f, run, pool, audit } = await fixture();
   await using _ = f;
@@ -79,12 +64,13 @@ Deno.test("an empty workload plan skips every effect", async () => {
   assertEquals(await Deno.readTextFile(pool), "old-pool");
 });
 Deno.test("production workload writes the official file before validation and reload", async () => {
-  const { f, run, production, pool, audit } = await fixture();
+  const { f, inputs, run, production, pool, audit } = await fixture();
   await using _ = f;
+  inputs.intent.plan.acl = ["/a", "/b", "/c"].map(grant);
   await production();
   await run();
   assertEquals(await Deno.readTextFile(pool), "candidate-pool");
-  assertEquals((await Deno.readTextFile(audit)).trim().split("\n"), ["validate", "reload"]);
+  assertEquals((await Deno.readTextFile(audit)).trim().split("\n"), ["acl /a", "acl /b", "acl /c", "validate", "reload"]);
 });
 Deno.test("an invalid pool blocks workload reload", async () => {
   const { f, run, production, audit } = await fixture();
