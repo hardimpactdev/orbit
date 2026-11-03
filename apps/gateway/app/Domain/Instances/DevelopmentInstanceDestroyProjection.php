@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
 use App\Domain\DatabaseServers\DatabaseOwnedRemoval;
+use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Models\Instance;
@@ -33,6 +34,15 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         [$database['servers'], $serverCopies] = DatabaseOwnedRemoval::servers(ValidatedData::integer($database['intent_id']),
             $database['servers'] ?? [], ! $operation->status->terminal());
         $detail['database'] = $database;
+        // Each member's hibernation files, so a removed Instance leaves no awake or cold marker or access log behind.
+        // Rendered at run start, so a removal recorded earlier gets them too.
+        $detail['hibernation'] = [];
+        foreach (InstanceLifecycleInput::members($input) as $member) {
+            $key = RuntimeHibernation::key(ValidatedData::integer($member['instance_id']));
+            foreach ([RuntimeHibernation::awakePath($key), RuntimeHibernation::coldPath($key), RuntimeHibernation::accessLogPath($key)] as $path) {
+                $detail['hibernation'][] = ['instance_id' => ValidatedData::integer($member['instance_id']), 'path' => $path];
+            }
+        }
         $public = [...Arr::only($input, ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members']), 'direct_destroy' => $detail];
         $programs = ValidatedData::object(app(InstanceDestroyTeardownSecret::class)->resolve($operation, $operation->target_id, '', 'teardown')->value);
         $teardown = [];

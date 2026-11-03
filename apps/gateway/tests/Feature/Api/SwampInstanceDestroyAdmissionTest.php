@@ -67,6 +67,11 @@ it('admits stored source intent and one native root without Gateway source or ac
         ->and($operation->input['source_pending'])->toBeTrue()
         ->and($operation->input['members'][0]['origin'])->toBeNull()
         ->and($operation->input['members'][0]['worktree_inventory'])->toBeNull()
+        ->and(data_get(collect($this->socket->sent)->last(), 'payload.inputs.intent.direct_destroy.hibernation'))->toBe([
+            ['instance_id' => $this->instance->id, 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$this->instance->id.'.awake'],
+            ['instance_id' => $this->instance->id, 'path' => '/data/caddy/orbit/hibernation/app-instance-'.$this->instance->id.'.cold'],
+            ['instance_id' => $this->instance->id, 'path' => '/data/caddy/orbit/hibernation/app-instance-'.$this->instance->id.'.log'],
+        ])
         // A normal removal mints the read token for its pushed check, as a credential line; a forced destroy fetches nothing.
         ->and(array_column($this->socket->sent, 'type'))->toBe($force ? ['workflow.run'] : ['vault.put', 'vault.put', 'workflow.run'])
         ->and(collect($this->socket->sent)->last()['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
