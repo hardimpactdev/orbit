@@ -425,6 +425,72 @@ Before publication, `image.clean` stops identity-writing services and removes th
 
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
 
+### Task VM slots
+
+This section describes the target design. It is not built yet: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
+
+A task VM host has a fixed number of slots. Each slot is a task VM identity that Orbit enrols once. A task takes a free slot. It does not enrol a new Node.
+
+Each host has 5 slots. They are named `<node-slug>-tvm-<n>`, for example `shark-tvm-1` and `beast-tvm-5`. The host setting `max_vms` is the number of slots. At most 5 task VMs run on one host at the same time.
+
+#### What a slot holds
+
+A slot is one long-lived `task_vms` row. The row keeps these for its whole life:
+
+- its name and its Node, which has the `app-dev` role and the `pi-server` Process;
+- its WireGuard address, WireGuard key and SSH host keys;
+- its static bridge address and fixed MAC;
+- its observer secret, Pi token and model key.
+
+The machine and the task data are not part of the slot. They exist only while a task holds the slot.
+
+A slot is in one of these states:
+
+| State | Meaning |
+| --- | --- |
+| `provisioning` | Orbit is enrolling the slot, or a task has claimed it and its VM is starting |
+| `free` | The slot is enrolled and no VM exists. Another task can claim it |
+| `ready` | A task holds the slot, and Pi runs |
+| `parked` | A task holds the slot, and its VM is stopped. See [Park and resume](#park-and-resume) |
+| `destroying` | The task ended and Orbit is deleting the VM |
+| `failed` | A step failed. No claim can take the slot, and an alert fires |
+
+A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, but no VM runs, so its observer shows offline. Doctor skips a `free` slot, as it skips a `parked` one. Fleet rollout and Metrics skip every task VM Node already.
+
+#### The identity volume
+
+Each slot has one small Incus custom volume, `<node-slug>-tvm-<n>-identity`. The VM mounts it read-only at `/opt/orbit-slot`. The volume holds the keys, the WireGuard config, the Pi token, `models.json` and a `REVISION` file. The host enforces the read-only flag. Root in the guest cannot write to the volume, so a task cannot change the identity of the slot for the next task.
+
+The task image holds `orbit-slot-identity.service`. It runs at boot, after the Incus agent has mounted the volume and before ssh, WireGuard, the observer and Pi start. It copies the files to the root disk with the right owner and mode. The image holds no key and no secret. A VM with no volume stays quiet: it starts no WireGuard and no observer.
+
+The Gateway computes `identity_revision` from the fleet-wide inputs, such as the model list and the CA. The volume keeps the same value in `REVISION`. A claim compares them. If they differ, the claim rewrites the volume before it clones the VM.
+
+#### Enrol once
+
+The `task_vm.slot_enroll` kind creates the slot. It makes the identity volume and the keys on the host. The private keys never leave the host. It adds the hub peer, issues the model key, and boots a proof VM that must reach the observer and Pi. The slot becomes `free` only after the proof passes. A rerun keeps the keys that exist.
+
+#### Claim
+
+The `task_vm.slot_claim` kind takes the lowest-numbered free slot on the host with the most free slots, in one Gateway transaction. It clones the topology seed, creates the VM from the task image with the identity volume, starts it, and checks it. It makes no Node, no WireGuard key, no token and no model key. The target for the whole claim is 20 seconds. Most of that time is the VM boot, about 16 seconds. The claims still use the current task image and its fallback rule.
+
+When all slots of all hosts are taken, the task waits with `Task VM: no capacity.` as before.
+
+#### Release
+
+The `task_vm.slot_release` kind deletes the VM and its seed clone. It keeps the identity volume. The Gateway then deletes the slot's observer facts, removes the workspace records, checks that the Node holds nothing but `pi-server`, and sets the slot to `free`.
+
+The release rotates nothing. The Pi token, the model key and the observer secret stay the same from task to task. Orbit revokes the model key when an operator removes the slot, not when a task ends.
+
+#### Network and firewall
+
+The hub filter, the nftables table and the UFW rules match the reserved range as a CIDR. They need no change. Hub peers are permanent. A claim or a release writes nothing to the hub.
+
+#### Slot limits
+
+- UpCloud overflow is off. A slot needs a host volume, so UpCloud has no slot yet.
+- Lowering `max_vms` removes free slots only. It never removes a slot that a task holds.
+- The first claim after a new task image reaches a host is slower, because Incus unpacks the image once.
+
 ### From claim to workspace
 
 A claim records placement and one native provision intent. The [native root](/reference/task-vm-native-provision) owns provider creation, enrollment and runtime preparation.

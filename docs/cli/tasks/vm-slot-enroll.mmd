@@ -1,0 +1,115 @@
+sequenceDiagram
+  %% Target design: B6 slot design (migration-dashboard/drafts/task-vm-slots.md, M1), docs/reference/compute-drivers.md (Task VM slots), docs/reference/node-provisioning.md, DECISIONS R1-R4.
+  %% Tightened: flow-tighten rules 1, 3, 6, 9, 18, 20, 22 (the host work is one Ansible phase; the hub peer and the model key reuse the existing steps, the model key issued once by the workflow; one end check).
+  %% status: reviewed
+  %% command: none · enrol one task VM slot
+  %% kind: task_vm.slot_enroll
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane HUB icon=server pill=target tone=purple
+  %% lane VM icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant H as Task VM host<br/>over ssh
+  participant HUB as VPN hub<br/>over ssh
+  participant VM as Slot VM<br/>task image
+  Note over GW: Validate, record the slot
+  %%> Started by:
+  %%> - `node:update` when it raises the slot count of a task VM host, and the host-add flow
+  %%> - there is no CLI command of its own
+  %%> Requirements:
+  %%> - the host is an active task VM host
+  %%> - the reserved WireGuard range has a free address
+  %%> - no other task holds the slot
+  %%> Result:
+  %%> - a slot row named `HOST-tvm-N`, state `provisioning`, with its WireGuard address, static bridge address and fixed MAC
+  %%> - a Node with the `app-dev` role, the `pi-server` Process and a Pi token
+  %%> - a task is recorded with the full intent
+  GW->>SW: Push the Pi token<br/>vault: Pi token
+  %%> Why:
+  %%> - secrets go Gateway → vault → step; the run inputs hold only vault key names
+  %%> Not included:
+  %%> - the model key: the workflow step issues it (below), so the Gateway never makes, holds or pushes it
+  GW->>SW: Start run, full intent<br/>operation-task-vm-slot-enroll
+  %%> Inputs:
+  %%> - the slot name, host, project, pool and addresses
+  %%> - the hub peer and the files of the identity tree, as text without secrets
+  %%> - the identity revision, and the pinned observer and Pi digests
+  SW->>SW: Issue the model key<br/>workflow · task-vm-model-issue
+  %%> What it does:
+  %%> - makes the slot's model key and registers it with the model router
+  %%> - the key stays in the run and goes only into the identity volume, as part of `models.json`
+  %%> Why first:
+  %%> - the identity step below writes the key; the Gateway pushes no model key to the vault
+  %%> Revoke:
+  %%> - the key is revoked when the slot is retired, not when a task ends
+  SW->>H: Create the identity<br/>ansible phase · identity
+  %%> What it does:
+  %%> - creates the volume `HOST-tvm-N-identity`
+  %%> - makes the WireGuard key pair, the SSH host keys and the observer secret in a private temporary folder, and moves them into the volume
+  %%> - writes the identity tree and `REVISION` from the vault Pi token and the model key of the step above
+  %%> - prints only the WireGuard public key, the host key fingerprints and the sha256 of the observer secret
+  %%> Why one phase:
+  %%> - volume, keys and files are idempotent state with lists (rule 22)
+  %%> Retry:
+  %%> - a key or secret that exists is never made again, so a rerun keeps the slot identity
+  %%> Fixed:
+  %%> - the identity is written once and never rotated; the claim only checks `REVISION`
+  %%> Not included:
+  %%> - a private key never reaches Swamp, the Gateway or the vault
+  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
+  %%> What it does:
+  %%> - writes the slot's peer file from the public key of the identity step and reloads the hub
+  %%> - the peer stays: a claim or a release never touches the hub
+  %%> When:
+  %%> - a `guard` skips it when the peer file already matches
+  SW->>H: Start a proof VM<br/>workflow · task-vm-slot-boot
+  %%> What it does:
+  %%> - runs the same boot steps as a claim: clone the seed, create the VM with the identity volume, start it
+  %%> Why:
+  %%> - the slot counts as enrolled only when a VM with this identity comes up
+  SW->>VM: Check the slot VM<br/>ssh exec · pinned host key
+  %%> What it does:
+  %%> - waits until `orbit-slot-identity.service` has finished (`systemctl is-active`), then runs one command
+  %%> - the observer and Pi binaries match their pinned digests
+  %%> - the observer answers, and Pi answers its capabilities probe
+  %%> - the SSH host key equals the one the identity step printed
+  %%> Why:
+  %%> - the Incus agent answers about 4 s before the unit finishes, so it is not the signal
+  SW->>H: Delete the proof VM<br/>ssh exec · incus delete
+  %%> What it does:
+  %%> - deletes the VM and its seed clone
+  %%> - keeps the identity volume
+  Note over SW: Check the slot<br/>assert
+  %%> End check:
+  %%> - a native `assert` over the step results
+  %%> - the volume holds the expected `REVISION`
+  %%> - the hub lists the peer
+  %%> - the proof VM passed, and the VM and seed clone are gone
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result
+    %%> Result:
+    %%> - records the WireGuard public key, the SSH host key, the observer digest and the identity revision
+    %%> - the Node becomes `Active`
+    %%> - the slot becomes `free`
+    %%> - the task succeeds
+  else a step fails
+    H--xSW: exit ≠ 0
+    %%> When:
+    %%> - a host command, the hub reload, the model issue, the proof VM or the end check fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Mark the slot failed
+    %%> Result:
+    %%> - the slot is `failed`, so no claim can take it, and an alert fires
+    %%> - the task fails
+    %%> On the host:
+    %%> - the volume, the hub peer and the keys stay; there is no rollback
+    %%> - a proof VM that is left is a stray, and the host sweep removes it
+    %%> Retry:
+    %%> - run the enrolment again after fixing the cause; it keeps the keys and skips finished steps
+  end

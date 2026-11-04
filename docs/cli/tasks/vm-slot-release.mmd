@@ -1,0 +1,78 @@
+sequenceDiagram
+  %% Target design: B6 slot design (migration-dashboard/drafts/task-vm-slots.md, M1), docs/reference/compute-drivers.md (Task VM slots), docs/reference/task-vm-native-provision.md, DECISIONS R1-R4.
+  %% Tightened: flow-tighten rules 1, 4, 5, 9, 14, 16, 17, 19 (no Node removal, no key revoke and no hub write: the slot keeps its Node, peer, volume and secrets; the Gateway scrubs its own records after the terminal result; the forced deletes need no read first; one end check).
+  %% status: reviewed
+  %% command: none · release the slot of a task
+  %% kind: task_vm.slot_release
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant H as Task VM host<br/>over ssh
+  Note over GW: Validate, record release
+  %%> Started by:
+  %%> - the end of the task: it completed, was cancelled or failed, or its workspace was removed
+  %%> - the task VM host sweep, for a slot that is `destroying` or `failed`
+  %%> - there is no CLI command of its own
+  %%> Requirements:
+  %%> - no other task holds the slot; a repeated admission returns the same open task
+  %%> - the workspace teardown has run in the guest, and approved work is published
+  %%> - the slot is `ready`, `parked`, `provisioning`, `failed` or `destroying`
+  %%> Result:
+  %%> - the slot is `destroying`
+  %%> - a task is recorded with the VM name and the seed clone name
+  GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
+  %%> Inputs:
+  %%> - the slot name, host, project and pool, and the two names to delete
+  %%> Secrets:
+  %%> - none; the release rotates no token, key or secret
+  SW->>H: Delete the VM<br/>ssh exec · incus delete --force
+  %%> How:
+  %%> - one argv, for a running or a stopped VM
+  %%> - an absent VM counts as done
+  %%> Cancel:
+  %%> - after this step succeeds, the task can no longer be cancelled
+  SW->>H: Delete the seed clone<br/>ssh exec · incus volume delete
+  %%> How:
+  %%> - one argv, after the VM released the volume; an absent volume counts as done
+  %%> Not included:
+  %%> - the identity volume stays: the next claim uses it
+  SW->>H: Read the host again<br/>ssh exec · forEach of 2
+  %%> How:
+  %%> - two parallel reads: the instances and the custom volumes of the project
+  Note over SW: Check the slot is clean<br/>assert
+  %%> End check:
+  %%> - a native `assert` over the two reads
+  %%> - neither the VM nor the seed clone is listed
+  %%> - the identity volume is listed
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Scrub, reset the slot
+    %%> What it does:
+    %%> - deletes the slot Node's agent facts of every kind: `host`, `units`, `checkout`, `checkouts`, `packages`, `ufw`
+    %%> - removes the workspace records offline: Instance, Route, Schedule, Process except `pi-server`
+    %%> - asserts the Node holds no Instance, Route, Schedule or Process except `pi-server`, no database connection, no firewall rule and no Tool
+    %%> - clears the task, `claimed_at`, the image and the publish, topology and error fields
+    %%> Result:
+    %%> - the slot becomes `free`; the task succeeds
+    %%> - the Node, the hub peer, the identity volume, the Pi token and the model key stay as they were
+    %%> If the assert finds a leftover:
+    %%> - the slot becomes `failed` and an alert fires; the task fails
+    %%> Why scrub the facts:
+    %%> - the next task uses the same workspace path, and an old checkout fact would still read as current
+  else a step fails
+    H--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - a delete, a read or the end check fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Keep the slot destroying
+    %%> Result:
+    %%> - the slot stays `destroying` with the error; no claim can take it
+    %%> - the task fails
+    %%> Retry:
+    %%> - the host sweep admits the slot again; the forced deletes make the rerun safe
+  end
