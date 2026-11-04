@@ -56,11 +56,13 @@ The Analytics footprint requires these resources. Role convergence is unavailabl
 | Step | Result |
 | --- | --- |
 | Configure ClickHouse | Plausible's ClickHouse files on the ClickHouse Process's Node. The Process must already mount them read-only. See [ClickHouse configuration](#clickhouse-configuration). |
-| Admit local storage | The rule `orbit:analytics-postgres-local` or `orbit:analytics-clickhouse-local` for each storage Process on the role's own Node. Storage on another Node needs no rule. The firewall phase replaces a previous local storage port only when the rest of its owned rule matches. |
+| Admit local storage | The rule `orbit:analytics-postgres-local` or `orbit:analytics-clickhouse-local` for each storage Process on the role's own Node. Storage on another Node needs no rule. |
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
-Swamp waits for Plausible with the canonical Process readiness check: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
+After initial Analytics startup, its Ansible readiness phase waits up to 60 seconds for `/api/health` before publication. Convergence checks the existing Process without running initialization again.
+
+The firewall phase replaces a previous local storage port only when the rest of its owned rule matches.
 
 Swamp runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` commands in order before replacing the server container. A failed initialization stops the update while the old server remains in place. The server container runs only `/entrypoint.sh run` as the image's normal account. It has no agent binary mount, initialization wrapper or agent service.
 

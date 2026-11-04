@@ -1,10 +1,7 @@
 {
   "kind": "node.role_add.ingress",
-  "workflow": "operation-node-role-add",
-  "topology": "minimal",
+  "defaults": "node-role-add-defaults.json",
   "clean": true,
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": 30,
   "before_gateway": [
     ["apt-get", "update"],
     ["apt-get", "install", "--yes", "python3-venv"],
@@ -21,14 +18,6 @@
     ]
   ],
   "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "ingress"}},
-  "expect": {"status": "succeeded"},
-  "phases": [
-    {"name": "Apply role prerequisites", "job": "prerequisites", "step": "Apply role prerequisites", "budget_seconds": 900},
-    {"name": "Apply the role on the Node", "job": "node", "step": "Apply the role on the Node", "budget_seconds": 900},
-    {"name": "Publish role sites", "job": "publication", "step": "Publish role sites", "budget_seconds": 180},
-    {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
-    {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 120}
-  ],
   "parity": ["swamp/proof/node.role_add/parity.py", "peer", "ingress"],
   "prepare": [{"method": "POST", "path": "nodes/${node.peer}/converge", "body": {}}]
 }

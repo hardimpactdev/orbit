@@ -143,7 +143,9 @@ def parity_check(fixture, up, run_id, outputs, operation, native_run=None):
 
 
 def main():
-    fixture = json.loads((SOURCE / 'swamp/proof' / (KIND + '.json')).read_text())
+    sys.path.insert(0, str(SOURCE / 'tools'))
+    from swamp_proof import load_fixture
+    fixture = load_fixture(KIND)
     up = json.loads((STATE / 'up.json').read_text())
     run_id = str(uuid.uuid4())
     context = {'node.' + key: value for key, value in up['nodes'].items()} | {'proof.run': run_id}

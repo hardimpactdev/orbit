@@ -443,6 +443,21 @@ jobs:
   dependsOn:
   - job: analytics_migrate
     condition: {type: succeeded}
+- name: readiness
+  labels: {role: swamp}
+  dependsOn: [{job: phase_48, condition: {type: succeeded}}]
+  steps:
+  - name: Wait for Analytics
+    labels: {role: swamp}
+    guard: ${{ inputs.kind == "node.role_converge" || inputs.intent.runtime.analytics == null }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-ready-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags readiness "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: swamp_runtime_job
   dependsOn:
   - {job: phase_48, condition: {type: succeeded}}
@@ -855,7 +870,7 @@ jobs:
       behaviorName: ${{ "ansible-role-role-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags check "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags check "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
   dependsOn:
   - job: prometheus
@@ -863,162 +878,32 @@ jobs:
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
-  - job: intent
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: private-metrics_password
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: private-websocket_environment
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: private-analytics_environment
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: input
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_0
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_1
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: ansible
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: prerequisites
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_13
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: node
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_46
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_47
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_48
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: swamp_runtime_job
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: swamp_workers_job
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: swamp_check_job
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: Check Swamp runtime_job
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_51
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_52
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: publication
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: firewall
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: phase_56
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: exporters
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: prometheus
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
-  - job: role
-    condition:
-      type: or
-      conditions:
-      - {type: completed}
-      - {type: skipped}
+  - {job: "intent", condition: &settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  - {job: "private-metrics_password", condition: *settled}
+  - {job: "private-websocket_environment", condition: *settled}
+  - {job: "private-analytics_environment", condition: *settled}
+  - {job: "input", condition: *settled}
+  - {job: "phase_0", condition: *settled}
+  - {job: "phase_1", condition: *settled}
+  - {job: "ansible", condition: *settled}
+  - {job: "prerequisites", condition: *settled}
+  - {job: "phase_13", condition: *settled}
+  - {job: "node", condition: *settled}
+  - {job: "phase_46", condition: *settled}
+  - {job: "phase_47", condition: *settled}
+  - {job: "phase_48", condition: *settled}
+  - {job: "swamp_runtime_job", condition: *settled}
+  - {job: "swamp_workers_job", condition: *settled}
+  - {job: "swamp_check_job", condition: *settled}
+  - {job: "Check Swamp runtime_job", condition: *settled}
+  - {job: "phase_51", condition: *settled}
+  - {job: "phase_52", condition: *settled}
+  - {job: "publication", condition: *settled}
+  - {job: "firewall", condition: *settled}
+  - {job: "phase_56", condition: *settled}
+  - {job: "exporters", condition: *settled}
+  - {job: "prometheus", condition: *settled}
+  - {job: "role", condition: *settled}
   steps:
   - name: Remove the playbook input
     labels: {role: swamp}

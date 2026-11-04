@@ -29,9 +29,7 @@ final readonly class NodeRoleFirewallInput
     public function convergeCommands(Node $node, RoleName $role): array
     {
         [$desired, $remove] = $this->convergenceRules($node, $role);
-        $arguments = static function (UfwManagedRule $rule, bool $delete): array {
-            return $delete ? $rule->removalArguments() : ['ufw', ...array_slice($rule->arguments, 2)];
-        };
+        $arguments = static fn (UfwManagedRule $rule, bool $delete): array => $delete ? $rule->removalArguments() : ['ufw', ...array_slice($rule->arguments, 2)];
 
         return ['desired' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, false), $desired),
             'remove' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, true), $remove)];

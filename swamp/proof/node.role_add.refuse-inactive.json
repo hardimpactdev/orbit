@@ -1,10 +1,8 @@
 {
   "kind": "node.role_add.refuse-inactive",
-  "workflow": "operation-node-role-add",
-  "topology": "minimal",
+  "defaults": "node-role-add-defaults.json",
   "clean": true,
   "budget_seconds": 30,
-  "queue_timeout_seconds": 30,
   "before_gateway": [
     ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.target}", "precondition", "{\"status\": \"failed\"}"],
     ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "0", "snapshot"]

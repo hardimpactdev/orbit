@@ -241,6 +241,18 @@
         group: root
         mode: "0644"
       loop: "{{ plans.clickhouse | dict2items }}"
+- name: Analytics readiness
+  hosts: role_node
+  tags: [readiness]
+  vars: { analytics: "{{ intent.runtime.analytics }}" }
+  tasks:
+    - name: Wait for initial Analytics startup
+      when: analytics is not none and analytics.initialize | length > 0
+      ansible.builtin.uri: { url: "{{ analytics.health_url }}" }
+      register: analytics_ready
+      until: analytics_ready is succeeded
+      retries: 60
+      delay: 1
 - name: Role publications
   hosts: publication_nodes
   tags:
@@ -381,11 +393,6 @@
     - name: Check runtime endpoints
       ansible.builtin.uri: { url: "{{ item.url }}", status_code: "{{ [200] if item.require_success else range(100, 600) | list }}" }
       loop: "{{ rt.probes }}"
-      register: runtime_endpoint
-      until: runtime_endpoint is succeeded
-      # Only initial Analytics admission starts its Process after the Node phase.
-      retries: "{{ 60 if rt.analytics is not none and rt.analytics.initialize | length > 0 else 0 }}"
-      delay: 1
     - name: Check Metrics containers and volumes
       when: rt.metrics is not none
       ansible.builtin.import_tasks: tasks/metrics.yml

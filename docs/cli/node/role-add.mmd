@@ -101,6 +101,7 @@ sequenceDiagram
     SW->>N: Create Analytics database<br/>native SSH argv
     SW->>N: Migrate Analytics database<br/>native SSH argv
     SW->>N: Apply Analytics runtime<br/>native child workflow
+    SW->>N: Wait for Analytics<br/>Ansible phase: readiness
   end
   opt role plan needs this action
   SW->>N: Install Swamp<br/>cfgmgmt fetch
@@ -169,7 +170,6 @@ sequenceDiagram
     SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
   end
   SW->>N: Check the role<br/>Ansible phase: check
-  %%> - after initial Analytics startup, wait up to 60 seconds for its health endpoint
   %%> Role boundary:
   %%> - node:converge owns the Node observer and Orbit CLI
   %%> - each phase is idempotent; a second run reports zero changes

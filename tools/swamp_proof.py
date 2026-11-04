@@ -118,6 +118,14 @@ def last_json(text):
     return json.loads(text.strip().splitlines()[-1])
 
 
+def load_fixture(kind):
+    """Apply one shared default map; explicit case fields win."""
+    directory = ROOT / 'swamp/proof'
+    case = json.loads((directory / f'{kind}.json').read_text())
+    defaults = case.pop('defaults', None)
+    return {**json.loads((directory / defaults).read_text()), **case} if defaults else case
+
+
 def topology(name):
     return json.loads((ROOT / 'swamp/proof/topologies' / name / 'topology.json').read_text())
 
@@ -243,7 +251,7 @@ def refresh(guest, state):
 def run(state, kind):
     if not state.get('ready') or state['vm'].get('destroyed'):
         raise ProofError('Use up first.')
-    fixture = json.loads((ROOT / 'swamp/proof' / f'{kind}.json').read_text())
+    fixture = load_fixture(kind)
     if fixture.get('topology', 'minimal') != state['topology']:
         raise ProofError(f'{kind} needs topology {fixture.get("topology", "minimal")}; this session holds {state["topology"]}.')
     guest = Guest(state['guest_host'], state['vm']['name'])

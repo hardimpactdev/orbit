@@ -22,4 +22,8 @@ def doctor(node, families=None):
     report = gateway('POST', 'doctor', {'node_id': node, 'families': families})['response']['data']
     summary = report['summary']
     print(f'Doctor Node {node}: {'/'.join(families)} drift={summary["drift"]}, unverifiable={summary["unverifiable"]}')
+    for record in report['nodes']:
+        for family in record['families']:
+            for issue in family['issues']:
+                print(f'Doctor {family["family"]}: {issue.get("code")}')
     return summary['drift'] == 0 and summary['unverifiable'] == 0
