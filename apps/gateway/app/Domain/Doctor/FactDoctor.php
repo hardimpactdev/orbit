@@ -59,8 +59,12 @@ final readonly class FactDoctor
             ->whereIn('kind', [NodeFactKind::Host, NodeFactKind::Units, NodeFactKind::Ufw])->get()
             ->mapWithKeys(static fn (NodeFact $fact): array => [$fact->kind->value => $fact->data])->all();
         $managed = $this->eligibility->isManagedForObservation($node);
-        $parked = TaskVm::query()->where('node_id', $node->id)->where('state', TaskVmState::Parked)->exists();
-        $inspect = static fn (DoctorFamily $family): DoctorFamilyInspection => new DoctorFamilyInspection($family, $node, $agent, $facts, $managed, $parked);
+        $vmState = TaskVm::query()->where('node_id', $node->id)->value('state');
+        // A free slot is dormant: its Node exists and no machine runs, so its observer shows offline. It raises no
+        // finding, not even the notice of a parked VM.
+        $free = $vmState === TaskVmState::Free;
+        $parked = $free || $vmState === TaskVmState::Parked;
+        $inspect = static fn (DoctorFamily $family): DoctorFamilyInspection => new DoctorFamilyInspection($family, $node, $agent, $facts, $managed, $parked, $free);
 
         return DoctorNodeReportData::fromFamilies($node->id, $node->name, array_map(fn (DoctorFamily $family): DoctorFamilyReportData => match ($family) {
             DoctorFamily::Node => $this->nodeFamily($inspect($family)),
@@ -74,7 +78,7 @@ final readonly class FactDoctor
     private function nodeFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
         $node = $check->node;
-        if ($check->parked) {
+        if ($check->parked && ! $check->free) {
             $check->issue('node.task_vm_parked', $node->id, $node->name, 'The task VM is parked.', null, 'parked', DoctorIssueKind::Informational);
         }
         if (! $check->managed || $check->parked) {

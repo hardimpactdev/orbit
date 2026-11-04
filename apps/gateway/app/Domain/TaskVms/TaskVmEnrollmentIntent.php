@@ -61,11 +61,8 @@ final readonly class TaskVmEnrollmentIntent
                 throw new TaskVmException('task_vm.invalid_config', 'Enrollment requires the pinned Pi artifact, models and group credentials.');
             }
             $this->keys->assertReady();
-            $node = $this->reserveNode($vm);
+            [$node, $installation] = $this->reserve($vm);
             $pin = $this->delivery->pin($node);
-            $process = $this->recordPiProcess($node);
-            $installation = Arr::only($this->admissions->inputFor($process, 'create', target: $this->processTarget($node)),
-                ['process_id', 'name', 'runtime', 'content_hash', 'desired', 'on_demand', 'activation_pending']);
             if ($vm->model_key === null) {
                 $vm->update(['model_key' => bin2hex(random_bytes(32)), 'ai_router_origin' => $origin]);
             }
@@ -87,6 +84,22 @@ final readonly class TaskVmEnrollmentIntent
                     'process' => [...$installation, 'agent_sha256' => $pin, 'retired' => null]],
             ];
         });
+    }
+
+    /**
+     * The Node, `app-dev` role and `pi-server` Process of a VM, recorded once. No host effects. A task VM and a slot
+     * both reserve them this way.
+     *
+     * @return array{Node, array<string,mixed>} the Node and the Process installation input
+     */
+    public function reserve(TaskVm $vm): array
+    {
+        $node = $this->reserveNode($vm);
+        $process = $this->recordPiProcess($node);
+        $installation = Arr::only($this->admissions->inputFor($process, 'create', target: $this->processTarget($node)),
+            ['process_id', 'name', 'runtime', 'content_hash', 'desired', 'on_demand', 'activation_pending']);
+
+        return [$node, $installation];
     }
 
     private function reserveNode(TaskVm $vm): Node

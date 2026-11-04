@@ -67,6 +67,10 @@ final class OperationRunBudgets
         // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
         'task_vm.fill_package_cache' => 2100,
         'task_vm.image_build' => 2400,
+        // No successful run yet. Basis: the identity phase (volume, keys, files), the model key issue (7 router calls), a hub
+        // reload, the proof VM's boot (about 17 s after `incus start`, M0) and its cleanup, x 3 for the first fresh-host runs,
+        // rounded up to five minutes. Replace with the 14-day p95 after the first successes.
+        'task_vm.slot_enroll' => 900,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,

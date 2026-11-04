@@ -1,0 +1,103 @@
+id: e749e20e-cbba-49da-963b-c01796a2a049
+name: task-vm-slot-boot
+description: Boot the VM of a task VM slot from the task image. Clone the topology seed, create the VM with the read-only identity volume, and start it. A slot enrolment and a claim boot the same way.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: boot
+  steps:
+  - name: Clone the seed
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-slot-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &host
+        name: '${{ ("task-vm-slot-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}
+        hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]
+      # An existing clone is kept: a rerun after a failed boot starts from the same seed.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '600'
+        - sh
+        - -c
+        - |
+          set -eu
+          if incus --project "$1" storage volume show "$2" "$4" >/dev/null 2>&1; then exit 0; fi
+          incus --project "$1" storage volume copy "$2/$3" "$2/$4"
+        - sh
+        - '${{ inputs.intent.vm.project }}'
+        - '${{ inputs.intent.vm.pool }}'
+        - '${{ inputs.intent.vm.seed_source }}'
+        - '${{ inputs.intent.vm.seed_clone }}'
+        timeoutSec: 620
+  - name: Create the VM
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Clone the seed, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-slot-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # One action: the instance config on stdin holds the limits, the account, the static address and MAC, the seed clone and the read-only identity disk.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '120'
+        - sh
+        - -c
+        - |
+          set -eu
+          if incus --project "$1" info "$2" >/dev/null 2>&1; then exit 0; fi
+          incus --project "$1" init --vm -- "$3" "$2"
+        - sh
+        - '${{ inputs.intent.vm.project }}'
+        - '${{ inputs.intent.vm.name }}'
+        - '${{ inputs.intent.vm.fingerprint }}'
+        stdin: '${{ inputs.intent.vm.config_json }}'
+        timeoutSec: 130
+  - name: Start the VM
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-slot-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '120'
+        - sh
+        - -c
+        - |
+          set -eu
+          if incus --project "$1" list --format csv --columns ns | grep -qx "$2,RUNNING"; then exit 0; fi
+          incus --project "$1" start -- "$2"
+        - sh
+        - '${{ inputs.intent.vm.project }}'
+        - '${{ inputs.intent.vm.name }}'
+        timeoutSec: 130
