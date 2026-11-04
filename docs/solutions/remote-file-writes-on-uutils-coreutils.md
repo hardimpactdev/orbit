@@ -28,16 +28,12 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Node commands publish files through Rust filesystem APIs. They create a fresh candidate, write it with the required mode and ownership, then rename it onto the live path. This avoids the uutils standard-input overwrite problem and makes each file replacement atomic. Metrics configuration and exporter commands use this sequence. The agent's `process.stage-unit` writes each Process unit to `/etc/orbit/systemd-candidates` and verifies it with `systemd-analyze`; `process.activate-unit` then renames it into place.
-
-Before staging a systemd candidate, `process.stage-unit` reads the existing unit and checks its Process ownership marker. If its content matches a recorded successful activation, or belongs to a legacy Process with no pending activation, and its active or inactive state matches the desired state, convergence returns without writing a candidate, reloading systemd, or restarting the Process. Changed unit content still follows the candidate-and-verify sequence; an unchanged specification does not justify skipping recovery of an incomplete update.
+Node commands publish files through Rust filesystem APIs. They create a fresh candidate, write it with the required mode and ownership, then rename it onto the live path. This avoids the standard-input overwrite problem and makes each replacement atomic. Metrics configuration and exporter commands use this sequence, and so does `process.stage-unit` for Process units.
 
 ## Limits
 
-The uutils problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. Rust publication sets numeric ownership directly, so Grafana's UID and GID `472` need no host account. The exporter and container commands are Linux-only; their platform declarations refuse macOS before mutation.
+The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. Rust publication sets numeric ownership directly, so Grafana's UID and GID `472` need no host account.
 
 ## Verification
 
-The agent unit that converge writes binds the Instance root, each Tool Manager's state and each production home under `/home` read-only, so the agent can read [package state](/reference/node-agent#packages) and [`.env` key names](/reference/node-agent#environment-key-names) without write access. It names the `orbit-env` group, which `agent.configure` creates before it writes the unit.
-
-Converge the same role twice over existing configuration, which is the case that failed. The Rust Metrics runtime and exporter tests use temporary filesystems and cover repeated publication, ownership refusals, modes, and rollback. The `processes` tests check candidate verification and atomic unit publication. Gateway tests fake the agent runner and check intent rather than file-write arguments.
+Converge the same role twice over existing configuration, which is the case that failed. The Rust Metrics runtime and exporter tests use temporary filesystems and cover repeated publication, ownership refusals, modes, and rollback.
