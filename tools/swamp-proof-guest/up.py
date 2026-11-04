@@ -230,10 +230,11 @@ def swamp():
     # The role's two workers, orbit-swamp-worker@a and @b, read these before the swamp role starts them (version 17).
     for worker in ('a', 'b'):
         name = f'orbit-swamp-worker-{worker}'
-        native('access', 'token', 'mint', name, '--principal', f'worker:{name}', '--duration', '24h')
+        # The access token and the enrollment token are separate definitions, so they need separate names.
+        native('access', 'token', 'mint', f'{name}-server', '--principal', f'worker:{name}', '--duration', '24h')
         folder = ROLE_CREDENTIALS / worker
         run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', str(folder)])
-        private(folder / 'server.token', native('access', 'token', 'reveal', name, '--yes')['token'])
+        private(folder / 'server.token', native('access', 'token', 'reveal', f'{name}-server', '--yes')['token'])
         private(folder / 'enrollment.token', native('worker', 'token', 'create', name, '--duration', '24h')['token'])
     # A local CA the vault fixtures sign their own sites with; serve itself has no TLS (version 17).
     tls = STATE / 'tls'
