@@ -124,6 +124,38 @@ jobs:
           - step: gateway-db
             condition:
               type: succeeded
+      - name: transport-readiness
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-transport-readiness
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" transport-readiness'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: gateway-runtime
+            condition:
+              type: succeeded
+      - name: observer-facts
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-observer-facts
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" observer-facts'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: transport-readiness
+            condition:
+              type: succeeded
       - name: readiness
         task:
           type: behavior
@@ -137,7 +169,7 @@ jobs:
               PROOF_REQUEST: "${{ inputs.request }}"
               PROOF_CANDIDATE: "${{ inputs.candidate }}"
         dependsOn:
-          - step: gateway-runtime
+          - step: observer-facts
             condition:
               type: succeeded
   - name: publish

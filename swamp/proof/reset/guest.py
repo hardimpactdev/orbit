@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Thin adapter to the one fixture bootstrap, inside the owned nested Gateway."""
-import hashlib
+import importlib
 import json
-import subprocess
-from pathlib import Path
 import shutil
 import sys
+from pathlib import Path
 
 SOURCE = Path('/home/orbit/orbit')
 sys.path.insert(0, str(SOURCE / 'tools/swamp-proof-guest'))
-import fixture
+fixture = importlib.import_module('fixture')
 
 
 def context(facts):

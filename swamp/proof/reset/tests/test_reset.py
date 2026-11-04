@@ -1,13 +1,11 @@
 """Fast mechanics regressions. Live resets are separate acceptance evidence."""
 import hashlib
 import json
-import multiprocessing
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from unittest.mock import patch
 
@@ -108,7 +106,7 @@ class OwnershipTests(unittest.TestCase):
             self.assertTrue((Path(temporary) / 'failure-inventory.json').exists())
 
     def test_unmanaged_null_configuration_has_no_ownership(self):
-        with patch.object(phases, 'run', side_effect=[b'[{"name":"unrelated","status":"Stopped","config":null}]', b'[{"name":"enp5s0","config":null}]']):
+        with patch.object(phases, 'incus', side_effect=[b'[{"name":"unrelated","status":"Stopped","config":null}]', b'[{"name":"enp5s0","config":null}]']):
             observed = phases.inventory()
         self.assertEqual({}, observed['guests'][0]['metadata'])
         self.assertEqual({}, observed['networks'][0]['metadata'])
@@ -128,7 +126,7 @@ class OwnershipTests(unittest.TestCase):
             request = {'root': temporary, 'generation': 'b' * 32, 'evidence': temporary}
             launcher.write_json(root / 'active.json', {'generation': request['generation']})
             launcher.write_json(root / 'prepare.json', {'construction': {'nodes': {'gateway': {'instance': 'owned'}}}})
-            with patch.object(phases, 'inventory', return_value={}), patch.object(phases, 'run', side_effect=subprocess.TimeoutExpired('incus', 30)), patch.object(phases, 'release', return_value={'released': True}) as release:
+            with patch.object(phases, 'inventory', return_value={}), patch.object(phases, 'incus', side_effect=subprocess.TimeoutExpired('incus', 30)), patch.object(phases, 'release', return_value={'released': True}) as release:
                 value = phases.execute(request, 'failure-cleanup')
             release.assert_called_once_with(request, request['generation'], 'cleanup-failed')
             self.assertEqual({'released': True}, value)
@@ -137,13 +135,13 @@ class OwnershipTests(unittest.TestCase):
     def test_gateway_memory_change_requires_complete_generation_ownership(self):
         prepared = {'construction': {'issue': 'TASK-3187', 'attempt_id': 'attempt', 'nodes': {'gateway': {'instance': 'owned'}}}, 'source': {'operation_id': 'operation'}}
         config = {'user.orbit.e2e.' + key: value for key, value in {'owner': 'orbit-e2e', 'issue': 'TASK-3187', 'attempt': 'attempt', 'operation': 'operation'}.items()}
-        with patch.object(phases, 'run', return_value=json.dumps({'config': config}).encode()) as run, patch.object(phases, 'harness') as harness:
+        with patch.object(phases, 'incus', return_value=json.dumps({'config': config}).encode()) as run, patch.object(phases, 'harness') as harness:
             value = phases.gateway_resources({}, prepared, 'source')
             self.assertEqual('2560MiB', value['memory'])
-            self.assertEqual([['incus', 'stop', 'owned'], ['incus', 'config', 'set', 'owned', 'limits.memory=2560MiB'], ['incus', 'start', 'owned']], [c.args[0] for c in run.call_args_list[1:]])
+            self.assertEqual([['stop', 'owned'], ['config', 'set', 'owned', 'limits.memory=2560MiB'], ['start', 'owned']], [c.args[0] for c in run.call_args_list[1:]])
             harness.assert_called_once_with({}, 'wait-agent', 'source', guest='owned')
         for key in config:
-            with patch.object(phases, 'run', return_value=json.dumps({'config': {**config, key: 'foreign'}}).encode()) as run:
+            with patch.object(phases, 'incus', return_value=json.dumps({'config': {**config, key: 'foreign'}}).encode()) as run:
                 with self.assertRaisesRegex(RuntimeError, 'foreign Gateway'):
                     phases.gateway_resources({}, prepared, 'source')
                 self.assertEqual(1, run.call_count)
@@ -170,50 +168,121 @@ class OwnershipTests(unittest.TestCase):
 
 
 class LauncherTests(unittest.TestCase):
-    def test_reset_and_verification_hold_same_lock_and_failure_is_not_green(self):
+    def test_all_actions_use_one_native_owner_and_preserve_inner_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             key = home / '.config/swamp/club-api-key'
             key.parent.mkdir(parents=True)
             key.write_text('unit-test-not-a-real-key')
             key.chmod(0o600)
-            events = home / 'events'
-            def child(action):
-                def fake_run(argv, **kwargs):
-                    if argv[0] == '/usr/local/bin/swamp':
-                        if argv[1] == 'init':
-                            controller = Path(argv[2])
-                            controller.mkdir(parents=True)
-                            (controller / '.swamp.yaml').write_text('test')
-                        if argv[1:3] == ['workflow', 'run']:
-                            with events.open('a') as log:
-                                log.write(action + ' start\n')
-                            time.sleep(.2)
-                            with events.open('a') as log:
-                                log.write(action + ' end\n')
-                            return subprocess.CompletedProcess(argv, 17 if action == 'verify' else 0)
-                    return subprocess.CompletedProcess(argv, 0)
+            calls, owners = [], []
+
+            def native(request, args, name, cwd=None):
+                calls.append(args)
+                if args[0] == 'init':
+                    controller = Path(args[1])
+                    controller.mkdir(parents=True)
+                    (controller / '.swamp.yaml').write_text('fixture')
+                if args[:2] == ['behavior', 'run']:
+                    owners.append((args[2:5], request['root']))
+                    # This adapter tests routing and receipts, not Swamp's mutex.
+                    return launcher.run_locked(request)
+                if args[:2] == ['workflow', 'run']:
+                    return 17 if request['action'] == 'verify' else 0
+                return 0
+
+            for action in ('reset', 'verify', 'release'):
                 args = ['bin/proof-fleet', action, '999999'] + (['bin/proof-fleet'] if action == 'verify' else [])
-                with patch.object(Path, 'home', return_value=home), patch.object(sys, 'argv', args), patch.object(subprocess, 'run', side_effect=fake_run):
+                with patch.object(Path, 'home', return_value=home), patch.object(sys, 'argv', args), patch.object(launcher, 'swamp', side_effect=native) as invoked:
                     code = launcher.main()
-                    assert code == (17 if action == 'verify' else 0)
-            candidate = Path(launcher.__file__).resolve().parents[3]
-            existing = set((candidate / '.orbit-artifacts/999999/reset').glob('*/status.json'))
-            context = multiprocessing.get_context('fork')
-            first, second = context.Process(target=child, args=('reset',)), context.Process(target=child, args=('verify',))
-            first.start()
-            deadline = time.monotonic() + 5
-            while not events.exists() and time.monotonic() < deadline:
-                time.sleep(.01)
-            self.assertTrue(events.exists(), 'first launcher did not reach its native run')
-            second.start()
-            first.join(5)
-            second.join(5)
-            self.assertEqual((0, 0), (first.exitcode, second.exitcode))
-            self.assertEqual(['reset start', 'reset end', 'verify start', 'verify end'], events.read_text().splitlines())
-            statuses = [json.loads(p.read_text()) for p in set((candidate / '.orbit-artifacts/999999/reset').glob('*/status.json')) - existing]
-            self.assertEqual(2, len(statuses))
-            self.assertTrue(any(s['status'] == 'failed' and s['exit'] == 17 and not s['cases_ran'] for s in statuses))
+                    request = invoked.call_args.args[0]
+                self.assertEqual(17 if action == 'verify' else 0, code)
+                status = json.loads((Path(request['evidence']) / 'status.json').read_text())
+                self.assertEqual(code, status['exit'])
+                self.assertFalse(status['cases_ran'])
+                self.assertEqual('failed' if code else 'succeeded', status['status'])
+            self.assertEqual(3, len(owners))
+            self.assertTrue(all(owner == owners[0] for owner in owners))
+            self.assertEqual(['@command/shell', 'execute', 'proof-owner'], owners[0][0])
+            self.assertTrue(any(c[:2] == ['report', 'get'] for c in calls))
+
+    def test_native_lock_timeout_does_not_enter_transaction_or_lose_active_lease(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            root = home / '.local/state/orbit-proof-999999'
+            controller = root / 'controller'
+            controller.mkdir(parents=True)
+            (controller / '.swamp.yaml').write_text('fixture')
+            launcher.write_json(root / 'active.json', {'generation': 'a' * 32})
+            key = home / '.config/swamp/club-api-key'
+            key.parent.mkdir(parents=True)
+            key.write_text('unit-test-not-a-real-key')
+            key.chmod(0o600)
+            with patch.object(Path, 'home', return_value=home), patch.object(sys, 'argv', ['bin/proof-fleet', 'reset', '999999']), patch.object(launcher, 'swamp', return_value=75) as native, patch.object(launcher, 'run_locked') as transaction:
+                self.assertEqual(75, launcher.main())
+                transaction.assert_not_called()
+                native.assert_called_once()
+                request = native.call_args.args[0]
+            self.assertEqual({'generation': 'a' * 32}, json.loads((root / 'active.json').read_text()))
+            self.assertEqual({'status': 'admission_failed', 'exit': 75, 'cases_ran': False},
+                             json.loads((Path(request['evidence']) / 'status.json').read_text()))
+
+
+class NativeObservationTests(unittest.TestCase):
+    def test_transport_rejects_foreign_operation_before_contacting_guest(self):
+        lease = {'construction': {'attempt_id': 'attempt', 'nodes': {'gateway': {'instance': 'owned'}}},
+                 'source': {'operation_id': 'operation'}}
+        metadata = {'user.orbit.e2e.' + key: value for key, value in {
+            'owner': 'orbit-e2e', 'issue': 'TASK-3187', 'attempt': 'attempt', 'operation': 'foreign'}.items()}
+        with patch.object(phases, 'prepared', return_value=lease), patch.object(phases, 'inventory', return_value={
+            'guests': [{'name': 'owned', 'status': 'Running', 'metadata': metadata}]}), patch.object(phases, 'incus') as contact:
+            with self.assertRaisesRegex(RuntimeError, 'ownership mismatch'):
+                phases.transport_readiness({'issue': 'TASK-3187'})
+            contact.assert_not_called()
+
+    def test_missing_stale_or_disabled_facts_fail_after_exactly_one_observation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = Path(temporary)
+            request = {'evidence': temporary}
+            launcher.write_json(evidence / 'gateway-db.json', {'nodes': {'gateway': 209, 'app': 210, 'operator': 212}})
+            launcher.write_json(evidence / 'prepare.json', {})
+            facts = [{'node_id': node, 'kind': kind, 'enabled': True, 'received_at': '2099-01-01T00:00:00+00:00'}
+                     for node in (209, 210) for kind in ('host', 'ufw', 'units')]
+            states = [{'facts': facts[:-1]}, {'facts': [{**fact, 'received_at': '2000-01-01T00:00:00+00:00'} for fact in facts]},
+                      {'facts': [{**fact, 'enabled': False} if fact['kind'] == 'ufw' else fact for fact in facts]}]
+            for state in states:
+                with patch.object(phases, 'gateway_state', return_value=state) as observe:
+                    with self.assertRaisesRegex(RuntimeError, 'Fresh host/ufw/units'):
+                        phases.execute(request, 'observer-facts')
+                    observe.assert_called_once_with(request)
+                self.assertEqual(state, json.loads((evidence / 'facts-not-ready.json').read_text()))
+            with patch.object(phases, 'gateway_state', return_value={'facts': facts}) as observe:
+                self.assertEqual({'facts': facts}, phases.execute(request, 'observer-facts'))
+                observe.assert_called_once_with(request)
+
+    def test_original_timeout_and_failed_cleanup_have_separate_receipts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = {'candidate': '/candidate', 'group': '3187', 'generation': 'a' * 32,
+                       'root': temporary, 'evidence': temporary}
+            launcher.write_json(root / 'owner.json', {'candidate': '/candidate', 'group': '3187'})
+            launcher.write_json(root / 'request.json', request)
+            launcher.write_json(root / 'active.json', {'generation': request['generation']})
+            with patch.dict(os.environ, {'PROOF_REQUEST': str(root / 'request.json')}):
+                with patch.object(sys, 'argv', ['phases.py', 'observer-facts']), patch.object(phases, 'gateway_state', side_effect=subprocess.TimeoutExpired('incus', 120)):
+                    launcher.write_json(root / 'gateway-db.json', {'nodes': {'gateway': 209}})
+                    launcher.write_json(root / 'prepare.json', {})
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        phases.main()
+                original = (root / 'observer-facts-failure.json').read_bytes()
+                launcher.write_json(root / 'prepare.json', {'construction': {'nodes': {}}})
+                with patch.object(sys, 'argv', ['phases.py', 'failure-cleanup']), patch.object(phases, 'inventory', return_value={}), patch.object(phases, 'release', side_effect=RuntimeError('foreign ownership: cleanup refused')):
+                    with self.assertRaisesRegex(RuntimeError, 'cleanup refused'):
+                        phases.main()
+            self.assertIn('timed out', original.decode())
+            self.assertEqual(original, (root / 'observer-facts-failure.json').read_bytes())
+            self.assertIn('cleanup refused', (root / 'failure-cleanup-failure.json').read_text())
+            self.assertEqual(request['generation'], phases.active_generation(request))
 
 
 if __name__ == '__main__':
