@@ -8,7 +8,7 @@
   "before_gateway": [],
   "request": {
     "method": "POST",
-    "path": "nodes/${node.metrics}/roles",
+    "path": "nodes/${node.peer}/roles",
     "body": {"role": "analytics", "postgres_process_id": "${postgres.id}", "clickhouse_process_id": "${clickhouse.id}", "converge_existing": true}
   },
   "expect": {"status": "succeeded"},
@@ -19,7 +19,7 @@
     {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
     {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 120}
   ],
-  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "analytics", "no-drift"],
+  "parity": ["swamp/proof/node.role_add/parity.py", "peer", "analytics", "no-drift"],
   "prepare": [
     {"method": "GET", "path": "processes", "operation": false, "bind": "postgres", "match": {"name": "proof-analytics-postgres"}, "body": {}},
     {"method": "GET", "path": "processes", "operation": false, "bind": "clickhouse", "match": {"name": "proof-analytics-clickhouse"}, "body": {}}

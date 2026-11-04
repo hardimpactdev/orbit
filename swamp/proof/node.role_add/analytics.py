@@ -12,7 +12,8 @@ SNAPSHOT = Path('/home/orbit/.orbit/swamp-proof/analytics-runtime.json')
 
 
 def on(*argv, **kwargs):
-    return subprocess.run(['incus', 'exec', 'metrics', '--', *argv], check=True,
+    target = 'metrics' if sys.argv[1] == 'prepare' else sys.argv[3]
+    return subprocess.run(['incus', 'exec', target, '--', *argv], check=True,
                           capture_output=True, text=True, **kwargs).stdout
 
 

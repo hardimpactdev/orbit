@@ -12,11 +12,12 @@
     ["/opt/orbit/ansible/venv/bin/pip", "install", "--disable-pip-version-check", "-r", "swamp/ansible/requirements.txt"],
     ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
     ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.metrics}"],
+    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}"],
     ["python3", "swamp/proof/node.role_add/analytics.py", "prepare"]
   ],
   "request": {
     "method": "POST",
-    "path": "nodes/${node.metrics}/roles",
+    "path": "nodes/${node.peer}/roles",
     "body": {"role": "analytics", "postgres_process_id": "${postgres.id}", "clickhouse_process_id": "${clickhouse.id}"}
   },
   "expect": {"status": "succeeded"},
@@ -27,9 +28,10 @@
     {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
     {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 120}
   ],
-  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "analytics"],
+  "parity": ["swamp/proof/node.role_add/parity.py", "peer", "analytics"],
   "prepare": [
     {"method": "POST", "path": "nodes/${node.metrics}/converge", "body": {}},
+    {"method": "POST", "path": "nodes/${node.peer}/converge", "body": {}},
     {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "database"}},
     {
       "method": "POST",
