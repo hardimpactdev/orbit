@@ -193,6 +193,6 @@ The orchestrator decided the open questions on 2026-11-01:
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/web, packages/php-sdk
-- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations), 0238
+- ADRs: [0218](/decisions/0218-take-long-commands-off-the-request-path), [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations), 0238
 - Detail: [Operations](/reference/operations) becomes the task reference; [Schedules](/reference/schedules); [Tasks](/reference/tasks)
 - Verify: Swamp workflows under `swamp/` change in the same PRs. Gateway task admission, projection, cancel and budget expiry tests per driver; a Schedule-fire projection test; the Swamp workflow grants check; a proof receipt for the `command` and `pi` drivers

@@ -1030,6 +1030,10 @@
       "destination": "/reference/gateway-recovery#laravel-owns-migrations"
     },
     {
+      "source": "/decisions/0209-run-long-operations-as-durable-queued-operations",
+      "destination": "/reference/operations#how-an-operation-runs"
+    },
+    {
       "source": "/decisions/0216-run-one-exact-php-build-everywhere",
       "destination": "/reference/compute-drivers#php-build"
     },

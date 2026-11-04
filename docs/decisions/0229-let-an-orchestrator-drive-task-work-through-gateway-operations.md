@@ -12,7 +12,7 @@ An external orchestrator owns the lifecycle of task work: its stages, gates, bud
 
 In progress.
 
-The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. The shared waiting status, delayed step reads, and stop hooks are built; [Operations](/reference/operations#a-waiting-step) owns their contract and reasons. The first task operation, `tasks.provision`, uses them to wait for VM capacity and readiness. `tasks.check` is also built: [Check an external group](/reference/tasks#check-an-external-group) owns its contract and reasons. The turn operation, `tasks.turn`, records one Pi turn without choosing the next step. `tasks.publish` is built: [Publish an external group](/reference/tasks#publish-an-external-group) owns its contract and cancellation rule.
+The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. The first task operation, `tasks.provision`, uses them to wait for VM capacity and readiness. `tasks.check` is also built: [Check an external group](/reference/tasks#check-an-external-group) owns its contract and reasons. The turn operation, `tasks.turn`, records one Pi turn without choosing the next step. `tasks.publish` is built: [Publish an external group](/reference/tasks#publish-an-external-group) owns its contract and cancellation rule.
 
 Nick decided this on 2026-10-22. On the same day he decided that every step of a task runs in the group's task VM, and that Pi stays inside the VM on the Pi Durable harness. He then decided that an external group bypasses the tick.
 
@@ -44,7 +44,7 @@ An evaluation of the Pi Durable harness (`@earendil-works/pi-durable`) ran besid
 
 ### Decisions this builds on
 
-[ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) makes long commands durable operations. Today only `instance.deploy` and `instance.rollback` are operations. One job runs a whole operation and holds its target, an operation runs at most 1,600 seconds, and the `operations` queue has one worker ([Operations](/reference/operations#how-an-operation-runs)). [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) names a kind after its CLI command and keeps only the newest 50 finished operations of each target.
+Long commands are durable operations that Swamp runs ([Operations](/reference/operations#how-an-operation-runs)). [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) names a kind after its CLI command and keeps only the newest 50 finished operations of each target.
 
 [Node commands](/reference/node-agent#commands) states that detached supervision of checks and topologies is not a generic command runner.
 
@@ -233,24 +233,6 @@ Every other Tasks path that sends a turn, starts a check, or changes a claim ski
 
 A test lists every entry point that sends a turn, starts a check, or changes a claim, except the four operations, `tasks:cancel`, and `tasks:complete`. It proves that each one skips or refuses an external group.
 
-#### A waiting step
-
-This amends [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations). A claim that waits for a VM, a VM resume, an analysis, a check, a turn, and a push can each outlast the 1,600-second deadline. None of them may hold the single `operations` worker.
-
-An operation gains the non-terminal status `waiting`, and its current step the same status. A waiting operation has no running job and keeps its target. A delayed job calls the workspace lease's reconcile for the group, as the tick does for a tick group. Reconcile releases a turn's lease when the turn ends, records the check's reading, and updates the thread state and metrics that the board shows. The delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls reconcile. The API, the list filter, and the MCP enums gain the status.
-
-- The wait has no limit of its own, because a Project check and a turn have none. The orchestrator owns time budgets, and it cancels an operation that runs too long.
-- A read that finds the work still going counts no attempt.
-- The sweep's free-lease rule for `running` operations skips a `waiting` operation. Only one rule applies to it: the sweep queues it again when its next read is more than twice its delay overdue, so a lost delayed job cannot strand it.
-- A delayed read does not count as a waiting job in the sweep's check for stale `queued` operations.
-
-This also amends the cancel rule of [Operations](/reference/operations#cancel-an-operation), which finishes the running step. A direct cancel of a waiting operation stops its step at once, and the operation ends `cancelled`:
-
-- A check stops as `tasks:check:cancel` stops it. When the VM does not answer, the cancel answers `502 tasks.check_unreachable`.
-- A turn stops as `tasks:subtask:cancel` interrupts it. When the stop fails, the cancel answers `502 tasks.subtask_interrupt_failed`.
-
-Orbit records the cancel request before it answers `502`. The operation stays `waiting`, and the next read tries the stop again.
-
 ### Step 2: Pi on Durable in the task VM
 
 Built in [#1464](https://github.com/hardimpactdev/orbit/pull/1464). New task VMs need a binary built from the Durable revision, pinned with both `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; existing groups keep their binary. See [Roll out a new binary](/reference/pi-server#roll-out-a-new-binary).
@@ -293,6 +275,6 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web, apps/docs
-- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), which gains the waiting step and its cancel rule; [0218](/decisions/0218-take-long-commands-off-the-request-path), whose retention spares keyed operations.
+- ADRs: [0218](/decisions/0218-take-long-commands-off-the-request-path), whose retention spares keyed operations.
 - Detail: [Operations](/reference/operations) for the idempotency key and the waiting status; [Tasks](/reference/tasks) for `orchestration`, the five operations, the commit at handoff, assistance on external groups, and the removals of steps 2 and 3; [Pi server](/reference/pi-server) and `apps/pi-server` for step 2
 - Verify: Gateway feature tests for each operation, its idempotency conflict, and each refusal; an Incus E2E that runs an external group from provision to a pull request, kills the Gateway worker during a waiting check, and reads the same result after recovery
