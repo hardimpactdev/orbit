@@ -56,7 +56,7 @@ The Analytics footprint requires these resources. Role convergence is unavailabl
 | Step | Result |
 | --- | --- |
 | Configure ClickHouse | Plausible's ClickHouse files on the ClickHouse Process's Node. The Process must already mount them read-only. See [ClickHouse configuration](#clickhouse-configuration). |
-| Admit local storage | The rule `orbit:analytics-postgres-local` or `orbit:analytics-clickhouse-local` for each storage Process on the role's own Node. Storage on another Node needs no rule. |
+| Admit local storage | The rule `orbit:analytics-postgres-local` or `orbit:analytics-clickhouse-local` for each storage Process on the role's own Node. Storage on another Node needs no rule. The firewall phase replaces a previous local storage port only when the rest of its owned rule matches. |
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 

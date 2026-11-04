@@ -154,7 +154,7 @@ def provision(gateway, state):
     return Guest(state['guest_host'], vm['name'])
 
 
-def up(gateway, name='minimal', agent_delivery=None):
+def up(gateway, name='minimal', agent_delivery=None, fresh=False):
     if subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True, check=True).stdout.strip():
         raise ProofError('Commit the worktree first; the topology serves one exact commit.')
     commit = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
@@ -181,7 +181,7 @@ def up(gateway, name='minimal', agent_delivery=None):
             raise ProofError(f'{binary} is missing; pass a build-delivery directory.')
         guest.call(['sh', '-c', 'install -d -o orbit -g orbit /home/orbit/swamp-proof/agent-delivery && cat > /home/orbit/swamp-proof/agent-delivery/orbit-agent-linux-x86_64'],
                    input=binary.read_bytes(), timeout=300)
-    bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
+    bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}], fresh=fresh)
     return state
 
 
@@ -319,6 +319,7 @@ def main(argv=None):
     upper = sub.add_parser('up')
     upper.add_argument('--topology', default='minimal', help='Topology under swamp/proof/topologies (default minimal).')
     upper.add_argument('--agent-delivery', help='A build-delivery directory; its orbit-agent replaces the pinned agent on agent Nodes.')
+    upper.add_argument('--fresh', action='store_true', help='Replace the nested Nodes while restaging the held VM.')
     runner = sub.add_parser('run')
     runner.add_argument('kind', nargs='+')
     sub.add_parser('receipt')
@@ -339,7 +340,7 @@ def main(argv=None):
             return 2
         try:
             if args.action == 'up':
-                state = up(Gateway(), args.topology, args.agent_delivery)
+                state = up(Gateway(), args.topology, args.agent_delivery, args.fresh)
                 print(json.dumps({key: state[key] for key in ('topology', 'topology_version', 'commit', 'vm', 'timings')}))
                 return 0
             state = json.loads(SESSION.read_text())

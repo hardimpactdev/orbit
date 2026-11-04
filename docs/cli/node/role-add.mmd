@@ -98,7 +98,8 @@ sequenceDiagram
   SW->>N: Apply the role on the Node<br/>Ansible phase: node
   opt Analytics needs initialization
     SW->>N: Pull the Analytics image<br/>cfgmgmt docker_image
-    SW->>N: Prepare Analytics storage<br/>native SSH argv
+    SW->>N: Create Analytics database<br/>native SSH argv
+    SW->>N: Migrate Analytics database<br/>native SSH argv
     SW->>N: Apply Analytics runtime<br/>native child workflow
   end
   opt role plan needs this action
@@ -159,6 +160,7 @@ sequenceDiagram
   end
   SW->>N: Publish role sites<br/>Ansible phase: publication
   SW->>N: Open the firewall<br/>Ansible phase: firewall
+  %%> - for local Analytics storage, retire its previous owned port before applying the admitted port
   opt role changes DNS
     SW->>N: Publish private DNS<br/>native delta publication
   end

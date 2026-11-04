@@ -370,11 +370,11 @@ jobs:
 - name: phase_47
   labels: {role: swamp}
   steps:
-  - name: Prepare Analytics storage
+  - name: Create Analytics database
     guard: ${{ inputs.kind == "node.role_converge" }}
     labels: {role: swamp}
     writes: true
-    forEach: {item: initialization, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize
+    forEach: {item: initialization, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics.initialize[0]]
         }}'}
     concurrency: 1
     task:
@@ -394,6 +394,33 @@ jobs:
   dependsOn:
   - job: phase_46
     condition: {type: succeeded}
+- name: analytics_migrate
+  labels: {role: swamp}
+  steps:
+  - name: Migrate Analytics database
+    guard: ${{ inputs.kind == "node.role_converge" }}
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: initialization, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics.initialize[1]]
+        }}'}
+    concurrency: 1
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-add-analytics-migrate-"+string(inputs.node_id)+"-"+string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-add-analytics-migrate-"+string(inputs.node_id)+"-"+string(self._index) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
+            inputs.intent.ssh.identity_file }}'}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.initialization.argv }}', timeoutSec: 905}
+  dependsOn:
+  - job: phase_47
+    condition: {type: succeeded}
 - name: phase_48
   labels: {role: swamp}
   steps:
@@ -411,10 +438,10 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: process.create
         intent: ${{ self.analytics.intent }}
-        execution_secrets: {environment: '${{ inputs.intent.runtime.analytics == null ? {} : inputs.execution_secrets["analytics_environment"]
+        execution_secrets: {environment: '${{ "analytics_environment" in inputs.execution_secrets ? inputs.execution_secrets["analytics_environment"] : {}
             }}'}
   dependsOn:
-  - job: phase_47
+  - job: analytics_migrate
     condition: {type: succeeded}
 - name: swamp_runtime_job
   dependsOn:

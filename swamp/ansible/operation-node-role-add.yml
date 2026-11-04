@@ -266,7 +266,18 @@
   tags:
     - firewall
   become: true
+  vars:
+    local_storage_rules: "{{ intent.firewall.desired | select('contains', 'docker0') | list if intent.role == 'analytics' else [] }}"
   tasks:
+    - name: Read Analytics local storage rules
+      when: local_storage_rules | length > 0
+      ansible.builtin.command: ufw show added
+      register: local_firewall
+      changed_when: false
+    - name: Replace Analytics local storage ports
+      ansible.builtin.include_tasks: tasks/firewall-port.yml
+      loop: "{{ local_storage_rules }}"
+      loop_control: { loop_var: rule, label: "{{ rule[-1] }}" }
     - name: Open role ports and close retired ones
       ansible.builtin.command: { argv: "{{ item }}" }
       loop: "{{ intent.firewall.desired + intent.firewall.remove }}"

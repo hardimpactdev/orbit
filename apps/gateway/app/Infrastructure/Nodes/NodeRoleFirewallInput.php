@@ -23,17 +23,13 @@ final readonly class NodeRoleFirewallInput
         return $this->rules($desired, $remove);
     }
 
-    /** Canonical UFW arguments for visible native actions; no status parser or embedded program.
+    /** Canonical UFW arguments; the role firewall phase owns local storage port replacement; no status parser or embedded program.
      * @return array{desired:list<list<string>>,remove:list<list<string>>}
      */
     public function convergeCommands(Node $node, RoleName $role): array
     {
         [$desired, $remove] = $this->convergenceRules($node, $role);
         $arguments = static function (UfwManagedRule $rule, bool $delete): array {
-            if ($rule->replacePort) {
-                throw new \LogicException('Native rule replacement requires its owning transition.');
-            }
-
             return $delete ? $rule->removalArguments() : ['ufw', ...array_slice($rule->arguments, 2)];
         };
 

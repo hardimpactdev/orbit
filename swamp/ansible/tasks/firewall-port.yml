@@ -1,0 +1,13 @@
+---
+# UFW's public `show added` format gives one canonical command per rule.
+# Match the owned shape exactly, allowing only its numeric port to differ.
+- name: Retire the previous Analytics local port
+  vars:
+    rule_pattern: >-
+      {{ '^ufw allow in on docker0 to ' ~ (rule[rule.index('to') + 1] | regex_escape) ~
+         ' port ([0-9]+) proto tcp comment ' ~ ("'" ~ rule[-1] ~ "'") ~ '$' }}
+  ansible.builtin.command:
+    argv: "{{ ['ufw', '--force', 'delete'] + rule[1 : rule.index('port') + 1] + [item] + rule[rule.index('port') + 2 :] }}"
+  loop: "{{ local_firewall.stdout_lines | map('regex_findall', rule_pattern) | flatten }}"
+  when: item != rule[rule.index('port') + 1]
+  changed_when: true
