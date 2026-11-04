@@ -1,7 +1,11 @@
 """The root-only candidate gained the exact admitted worker key in both accounts."""
 import json
 import os
+import runpy
 import subprocess
+from pathlib import Path
+
+runpy.run_path(str(Path(__file__).with_name('parity.py')))
 
 with open(os.environ['PROOF_OPERATION_FILE']) as stream:
     operation = json.load(stream)

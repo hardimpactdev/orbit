@@ -47,7 +47,6 @@
     }
   ],
   "parity": [
-    "swamp/proof/node.add/parity.py",
     "swamp/proof/node.add/fresh_parity.py"
   ]
 }
