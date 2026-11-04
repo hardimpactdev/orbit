@@ -1,9 +1,8 @@
 sequenceDiagram
-  %% Rule 22: official cfgmgmt resources and SSH argv; Gateway captures intent and projects native completion.
+  %% Target design: ADR 0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md.
   %% status: reviewed
   %% command: node:role:remove
   %% kind: node.role_remove
-  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,93 +11,89 @@ sequenceDiagram
   %% lane P icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
   participant P as Fleet Nodes<br/>hub · DNS
-  CLI->>GW: node:role:remove 12<br/>app-dev
+  CLI->>GW: node:role:remove<br/>NODE ROLE
   %%> Command:
-  %%> - `orbit node:role:remove 12 app-dev`
-  %%> - syntax: `<node> <role> [--force] [--purge-data] [--offline] [--idempotency-key=KEY] [--json]`
+  %%> - `orbit node:role:remove NODE ROLE`
+  %%> - syntax: `<node> <role> [--force] [--purge-data] [--offline] [--json]`
   %%> Input:
-  %%> - the Node, by id or name, and the role
-  %%> Optional flags:
-  %%> - `--purge-data` asks for role-owned data removal; it feeds `opt role data to remove`
-  %%> - `--force` confirms the removal; it is required without a terminal and with `--json`
-  %%> - `--offline` removes the role from a Node Orbit cannot reach; the run skips the steps on that Node
-  %%> - `--idempotency-key=KEY` reuses a key to retry the start
-  Note over GW: Admit removal intent<br/>mark the record removing
-  %%> Requirements: no attached resources or active role operation; the Gateway, VPN and Swamp guards apply.
-  %%> Builds: pinned SSH targets, complete publication changes and exact managed resource paths.
-  GW->>SW: Start the removal run<br/>full public intent
-  GW-->>CLI: 202 Accepted<br/>operation id
+  %%> - the Node and the role to remove
+  %%> - `--force` is consent; without a terminal, `--purge-data` and `--offline` need it
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, mark removing
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the target Node
+  %%> - the target is an active, managed Linux Node, and the role is not `vpn`, `router` or `swamp`
+  %%> - the role is `active` or `failed`; a `provisioning` or `removing` role is refused until its claim is stale
+  %%> - `app-dev` and `app-prod` have no Route targets, `ingress` no public Routes, and `analytics` no tracking hosts
+  %%> - one add, converge or remove Operation per Node (`operation.target_busy`); a second removal after the first finished finds no such role (`http.404`)
+  %%> Result:
+  %%> - the assignment is recorded as `removing`, and a task is recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-node-role-remove
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> What you get:
+  %%> - the task ID, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Reach the Node<br/>SSH argv
+  %%> What it does:
+  %%> - probes the Node with its approved identity
+  %%> - an unreachable Node without `--offline` fails the run here (`node.removal_incomplete`); a reachable Node gets ordinary cleanup even with `--offline`
   opt CI role is being removed
-    SW->>N: Read CI guests
-    SW->>SW: Require drained CI
+    SW->>N: Require drained CI<br/>SSH argv · native assert
+    %%> Why:
+    %%> - the run fails here, `node.removal_incomplete`, while CI guests still run on the Node, and the rerun after they are drained succeeds
   end
   opt the last role leaves
-    SW->>N: Keep public SSH access
+    SW->>N: Keep public SSH access<br/>SSH argv
+    %%> Why first:
+    %%> - removing the last role restores public recovery SSH before anything else is torn down, so the Node stays reachable
   end
-  opt admitted resources exist
-    SW->>P: Withdraw PHP publication
+  SW->>P: Withdraw from the fleet<br/>PHP · sites · DNS · Metrics
+  %%> What it does:
+  %%> - withdraws the role's PHP pools, Caddy sites, private DNS records, Metrics exporter entries and role certificates on the other Nodes
+  %%> - an `--offline` removal of an unreachable Node does only the work on other Nodes
+  opt Node reachable
+    SW->>N: Remove the role<br/>Ansible phase: remove
+    %%> What it does:
+    %%> - stops the role's services and removes its files, configuration, containers, firewall rules and certificates
+    %%> Retained:
+    %%> - role data, CI resources, release data and container volumes, unless `--purge-data`
+    opt --purge-data
+      SW->>N: Remove role data<br/>Ansible phase: purge
+      %%> What it does:
+      %%> - for `metrics`, the Prometheus and Grafana volumes and the stored credentials; for `websocket`, the Reverb checkout; for `ci-runner`, the Incus project, network and ACL
+    end
+    SW->>N: Check the removal<br/>Ansible phase: check
+    %%> Why:
+    %%> - the one end check: the removed files, directories and containers are gone
   end
-  opt admitted resources exist
-    SW->>P: Withdraw the Caddy sites
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Delete the role
+    %%> Result:
+    %%> - the assignment is deleted
+  else a step fails
+    N--xSW: exit ≠ 0 or mismatch
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Mark the role failed
+    %%> Result:
+    %%> - the assignment stays, `failed` at `remove:STEP`, with the step's own error code
+    %%> - a failed public SSH restore leaves the Node reachable, and the rerun restores it
+    %%> On the Node:
+    %%> - finished steps stay; there is no rollback
+    %%> Retry:
+    %%> - run the same command again: each removal step is safe to repeat over what a failed convergence left
   end
-  opt admitted resources exist
-    SW->>P: Withdraw the role DNS
+  opt run completed or failed
+    SW->>SW: Remove the run folder<br/>private run files
   end
-  opt admitted resources exist
-    SW->>N: Disable the services
-    %%> Uses: `@swamp/cfgmgmt/systemd apply`. Each admitted resource has its own stable behavior name.
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
   end
-  opt admitted resources exist
-    SW->>N: Stop activating services
-    %%> Uses: `@swamp/cfgmgmt/exec apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Remove managed files
-    %%> Uses: `@swamp/cfgmgmt/file apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Remove service config
-    %%> Uses: `@swamp/cfgmgmt/directory apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Remove the containers
-    %%> Uses: `@swamp/cfgmgmt/docker_container apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Reload unit catalogue
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Withdraw firewall rules
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Remove role certificates
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
-  end
-  opt role data to remove
-    SW->>N: Remove role data
-    %%> When: the Gateway plans data commands for `--purge-data`, or for a Gateway DNS cleanup when the `gateway` role leaves.
-    %%> Uses: guarded official exec; Incus refuses a nonempty project. Delete project, network and ACL in order.
-  end
-  opt admitted resources exist
-    SW->>N: Check removed files
-    %%> Uses: `@swamp/cfgmgmt/file check`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Check removed directories
-    %%> Uses: `@swamp/cfgmgmt/directory check`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Check removed containers
-    %%> Uses: `@swamp/cfgmgmt/docker_container check`. Each admitted resource has its own stable behavior name.
-  end
-    SW->>SW: Confirm role removal
-  SW-->>GW: Native terminal state
-  Note over GW: Record completed removal
-  %%> Result: remove records only after the native end check succeeds. A failed run keeps failed intent for a rerun; completed effects stay applied.
-  %%> On the Node: preserve packages, users, user data and unrelated keys. Retain runtime data unless role removal explicitly requests purge.
-  GW-->>CLI: Removal result<br/>or failed step

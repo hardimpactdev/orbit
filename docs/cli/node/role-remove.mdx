@@ -8,23 +8,45 @@ description: "Remove one role from a Node."
 orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--json]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--force` | Confirm the removal and its dependent cleanup. |
-| `--purge-data` | Also delete role data. For `metrics`, the Prometheus and Grafana volumes and the stored credentials. For `websocket`, the Reverb checkout. |
-| `--offline` | Remove the role from a Node the Gateway cannot reach. |
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Numeric Node ID. |
+| `role` | yes | The role to remove. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--force` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
+| `--purge-data` | off | Also delete role data. For `metrics`, the Prometheus and Grafana volumes and the stored credentials. For `websocket`, the Reverb checkout. For `ci-runner`, the Incus project, network and ACL. |
+| `--offline` | off | Remove the role from a Node Orbit cannot reach: only the work on other Nodes runs. A reachable Node still gets ordinary cleanup. |
+| `--json` | off | Print the final Operation as JSON. |
 
 ```bash
-orbit node:role:remove beast database --force
+orbit node:role:remove 7 database --force
 ```
 
-`app-dev` cannot be removed while the Node owns Instances, and no role can be removed while a Route depends on it. Removing the last role restores public SSH first, as [Public SSH](/reference/node-provisioning#public-ssh) describes.
+In a terminal, an omitted Node is chosen from an interactive list and an omitted role from the Node's roles. Without `--force`, the CLI first shows the removal and its dependent cleanup, then asks to confirm with the Node's name and the role, with No selected; this is the consent for `--purge-data` and `--offline` too. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. A noninteractive or `--json` call without `--force` is refused with `validation.failed` (`field: force`, `reason: destructive_consent_required`); without the Node it is refused with `node.id_invalid`, and without the role with `node_role.role_required`. A declined or refused call starts no Operation.
 
-The command removes a role that is `active` or `failed`. Each removal step is safe to repeat over what a failed convergence left. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` and returns the step's own code in `details.error_code`. Run the same command again.
+`vpn`, `router` and `swamp` cannot be removed with this command. `app-dev` cannot be removed while the Node owns Instances, nor `app-dev` and `app-prod` while a Route targets them, nor `ingress` while public Routes use it, nor `analytics` while tracking hosts exist (`analytics.tracking_hosts_exist`). Removing the last role restores public SSH first, as [Public SSH](/reference/node-provisioning#public-ssh) describes. A CI role is not removed while CI guests still run on the Node: the run fails with `node.removal_incomplete`, and the rerun after they are drained succeeds. An unreachable Node is refused with `node.removal_incomplete` unless you pass `--offline --force`. Removal keeps role data, CI resources, release data and container volumes unless you pass `--purge-data`.
 
-When two removals of one role run together, the second waits for the role lock. If the first finished meanwhile, the second fails with `node_role.already_removed` (HTTP 409). A role the Node never had returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
+The command removes a role that is `active` or `failed`. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` with the step's own error code. Finished steps stay and nothing is rolled back; run the same command again, because each removal step is safe to repeat. A failed public SSH restore leaves the Node reachable.
 
-Use `--idempotency-key=KEY` to retry the same native role admission.
+Only one add, converge or remove runs on a Node at a time; a second call is refused with `operation.target_busy`. A role the Node does not hold, including one a finished removal already took, returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
+
+The CLI follows the Operation and prints the final result with the request ID.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
+| `node_role.role_required` | The role is missing and the CLI cannot prompt. |
+| `validation.failed` | Consent is missing, the role is protected (`vpn`, `router`, `swamp`), the role is in progress, `app-dev` has Instances, or a Route depends on the role. Nothing changes. |
+| `analytics.tracking_hosts_exist` | Tracking hosts still use the `analytics` role (409). |
+| `operation.kind_unavailable` | The Node is not active, or not managed over SSH. |
+| `operation.target_busy` | Another add, converge or remove holds the Node. |
+| `node.removal_incomplete` | The Node is unreachable and `--offline` was not given, or CI guests still run. The role is `failed` at that step. |
+| `http.404` | The Node has no such role (except `ingress`), or the Node is unknown. |
+| `node.access_denied` | The caller has no access grant to the Node. |
 
 ## How it works
 
