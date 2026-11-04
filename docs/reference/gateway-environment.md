@@ -155,7 +155,7 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 `ORBIT_AGENT_DELIVERY` selects the agent delivery manifest, and `ORBIT_AGENT_CONTRACT` selects its exported command contract. The [Node agent](/reference/node-agent#commands) page describes their release and development use. Keep the manifest, contract, and binary from the same build.
 
-[Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the installed host rules and Gateway record cleanup. Releases leave host retention files unchanged. The release run has fixed disk, snapshot and verification limits, as [Environment variables](/reference/environment-variables) describes. Record retention uses `ORBIT_FAILED_JOBS_HOURS`, `ORBIT_JOB_BATCH_HOURS`, and `ORBIT_ACTIVITY_LOG_DAYS`; their defaults are in `config/retention.php`.
+[Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the installed host rules and Gateway record cleanup. The [gateway role convergence](/cli/node/role-add) installs the host retention files; releases leave them unchanged. The release run has fixed disk, snapshot and verification limits, as [Environment variables](/reference/environment-variables) describes. Record retention uses `ORBIT_FAILED_JOBS_HOURS`, `ORBIT_JOB_BATCH_HOURS`, and `ORBIT_ACTIVITY_LOG_DAYS`; their defaults are in `config/retention.php`.
 
 `ORBIT_TASK_VMS_SWAMP_HOST` names the one private HTTPS site task VM workers may reach, such as `swamp.orbit`. Set it for the managed Swamp Route on the `swamp` Node. After applying the environment change, rebuild Caddy on that Node; Doctor reports `role.caddy_build_drift` until then. See [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy).
 

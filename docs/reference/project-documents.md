@@ -197,7 +197,7 @@ Keep the generation, permit, and stable execution lock under `/run/orbit/project
 
 Gateway scheduler startup invalidates the cleanup permit under the same lock. It creates a fresh generation before scheduled cleanup can run. A release waits for that new generation, then reconciles and resumes cleanup.
 
-Gateway releases do not install or run a PHP-FPM startup hook for Documents. They leave installed static runtime files unchanged. A follow-up moves those files to Node convergence. The [release cleanup step](/reference/gateway-recovery#release-as-a-swamp-run) uses the retained scheduler gate below.
+Gateway releases do not install or run a PHP-FPM startup hook for Documents. The [gateway role convergence](/cli/node/role-add) removes the start hook that older Gateways installed, `php8.5-fpm.service.d/orbit-document-cleanup.conf` and its manifest `/etc/orbit/php-fpm-start-hooks`. The [release cleanup step](/reference/gateway-recovery#release-as-a-swamp-run) uses the retained scheduler gate below.
 
 Artisan invalidates authorization when `schedule:work`, `queue:work`, or `queue:listen` starts. A standalone `schedule:run` also invalidates authorization. Start the Gateway scheduler with `schedule:work`, then reconcile and resume in that startup generation. Laravel launches a fresh `schedule:run` child every minute; these recurring children preserve the generation and permit, rather than treating every tick as a restart. [Laravel Horizon](/reference/gateway-queue) starts with `horizon`, `horizon:supervisor`, and `horizon:work`, not `queue:work`, so its start keeps the generation and permit. It works only the Gateway queue, which holds no document job.
 

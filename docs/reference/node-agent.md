@@ -531,13 +531,13 @@ The Gateway keeps the latest state that each agent reports, so it can skip repea
 
 ### Subscriber
 
-The subscriber runs next to PHP-FPM on the Gateway machine. Gateway releases leave its installed unit unchanged. A follow-up moves this static file to Node convergence. The service runs Gateway PHP as the Gateway account from the stable application path.
+The subscriber runs next to PHP-FPM on the Gateway machine. The [gateway role convergence](/cli/node/role-add) installs and enables its unit, and restarts it when the unit changes; releases leave it unchanged. The service runs Gateway PHP as the Gateway account from the stable application path.
 
 | Item | Value |
 | --- | --- |
 | Command | `/usr/bin/php8.5 artisan orbit:agent-view`, as the `orbit` user in the Gateway checkout |
 | Unit | `/etc/systemd/system/orbit-agent-view.service`, with `Restart=always` and `RestartSec=2` |
-| Installed by | Gateway host setup; release runs do not converge this unit |
+| Installed by | The [gateway role convergence](/cli/node/role-add) |
 | Connection | One WebSocket to Reverb for all Nodes, verifying `reverb.orbit` against the Orbit root CA |
 | Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every managed Linux Node |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed with the Reverb app secret |
@@ -548,7 +548,7 @@ Every 5 seconds, the subscriber checks the Reverb connection, and every 30 secon
 
 When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node.
 
-Every 60 seconds, the subscriber compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code. The unit and that check use the stable `ORBIT_GATEWAY_CHECKOUT` path, so in the [release layout](/reference/gateway-recovery#release-layout) they follow a release switch. The release switch also restarts the running subscriber. A follow-up moves its static unit to Node convergence.
+Every 60 seconds, the subscriber compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code. The unit and that check use the stable `ORBIT_GATEWAY_CHECKOUT` path, so in the [release layout](/reference/gateway-recovery#release-layout) they follow a release switch. The release switch also restarts the running subscriber.
 
 ### Stored state
 

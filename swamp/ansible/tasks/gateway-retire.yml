@@ -1,0 +1,9 @@
+---
+# The scheduler runs the automatic release tick; the release unit's timer stops before its files go.
+- name: Read the release unit files
+  ansible.builtin.stat: { path: "/etc/systemd/system/{{ item }}" }
+  loop: "{{ rt.gateway.release_units }}"
+  register: release_units
+- name: Stop and disable the release timer
+  when: release_units.results[0].stat.exists
+  ansible.builtin.systemd: { name: "{{ rt.gateway.release_units[0] }}", state: stopped, enabled: false }

@@ -34,7 +34,7 @@ The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the
 
 Metrics firewall rules use the admitted interface, source, destination and ownership comment. Convergence repairs changed owned rules and puts each specific allow before its isolation deny and the broader peer trust rule. It preserves unrelated rules.
 
-Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](/cli/node/role-relocate) to move `gateway`, `websocket`, or `metrics`.
+Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Adding or converging `gateway` installs the Gateway's static runtime: its PHP-FPM pool, the agent-view and hibernator units, and the host log-retention files. It also stops and removes the old release unit timer and services, and the Documents PHP-FPM start hook. Converge the gateway role only while the current release runs the automatic tick from the scheduler. Prefer [`node:role:relocate`](/cli/node/role-relocate) to move `gateway`, `websocket`, or `metrics`.
 
 Use `--idempotency-key=KEY` to retry the same native role admission.
 
