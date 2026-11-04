@@ -34,7 +34,6 @@ node.agent_rekey
 node.role_add
 node.role_converge
 node.role_relocate
-node.role_remove
 node.ssh_access_converge
 node.update
 process.create
