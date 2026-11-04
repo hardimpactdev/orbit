@@ -8,6 +8,7 @@ if (is_array($directWriters)) {
 }
 
 return [
+    'ssh_public_key' => env('ORBIT_SWAMP_SSH_PUBLIC_KEY', ''),
     'address' => env('ORBIT_SWAMP_ADDRESS', 'swamp.orbit'),
     'proof_club_api_key' => env('ORBIT_SWAMP_PROOF_CLUB_API_KEY', ''),
     'read_token' => env('ORBIT_SWAMP_READ_TOKEN', ''),

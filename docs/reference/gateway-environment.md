@@ -33,6 +33,7 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | Variable | Meaning |
 | --- | --- |
 | `ORBIT_SWAMP_READ_TOKEN` | Dedicated Swamp token with workflow and output-data read grants only. Store it in the Gateway environment; never expose it to the browser. |
+| `ORBIT_SWAMP_SSH_PUBLIC_KEY` | Required OpenSSH public key for the swamp role worker identity. Set it from `ssh-keygen -y -f /etc/orbit/node-proxy/id_ed25519` on the swamp Node, the source the role installs as `/etc/orbit/swamp-role-worker/ssh-identity`. Update it when rotating that identity. |
 | `ORBIT_SWAMP_ADDRESS` | Swamp server address, default `swamp.orbit`, on port 443. Set its WireGuard address when Gateway DNS cannot resolve that name. TLS always verifies `swamp.orbit`. |
 | `ORBIT_SWAMP_READ_TOKEN_NAME` | Installed token name, written by `gateway:swamp-reader:install`. |
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
