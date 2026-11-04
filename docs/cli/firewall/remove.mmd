@@ -11,59 +11,68 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: firewall:remove 5432<br/>--node=7
+  CLI->>GW: firewall:remove PORT<br/>--node=NODE
   %%> Command:
-  %%> - `orbit firewall:remove 5432 --node=7`
+  %%> - `orbit firewall:remove PORT --node=NODE`
   %%> - syntax: `<port> --node=ID [--from=SOURCE] [--protocol=tcp|udp]`
   %%> Input:
-  %%> - the port as the argument, and the Node
-  %%> - `--from` and `--protocol` only when several rules share the port
+  %%> - the destination port or port range of the rule, and the Node
+  %%> - optionally the source and the protocol, to pick one rule when several share the port
   %%> Confirmation:
   %%> - the CLI asks before removal; `--yes` confirms without a prompt
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, mark removing<br/>rule: removing · task #5131
+  Note over GW: Validate, mark removing
   %%> Requirements:
-  %%> - your Node has an access grant to Node 7
-  %%> - exactly one rule on Node 7 matches the port, source and protocol
-  %%> - no other firewall change runs on Node 7; the Gateway holds one lock per Node
+  %%> - the calling Node has an access grant to the target Node
+  %%> - the target is an active Linux Node
+  %%> - exactly one rule on the target matches the port, source and protocol: none is `firewall.rule_not_found`, several is `firewall.rule_ambiguous` and lists each match
+  %%> - no other firewall change runs on the target; the Gateway holds one lock per Node
   %%> Works out what to keep:
   %%> - a ufw line that another rule, or a rule Orbit itself needs, also uses stays on the Node
   %%> - only lines that belong to this rule alone are removed
   %%> Result:
-  %%> - the rule for port 5432 recorded as removing
-  %%> - task #5131 recorded with the full intent
+  %%> - the rule is recorded as removing
+  %%> - a task is recorded with the full intent
   %%> - nothing has happened on the Node yet
   GW->>SW: Start run, full intent<br/>operation-firewall-direct
   %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
+  %%> - starts one Swamp run
   %%> Inputs:
   %%> - the ufw lines to remove, and the lines that must stay
-  %%> - Node 7's address and SSH host keys; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task #5131
+  %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
-  %%> - the task number, at once
+  %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
   %%> How:
-  %%> - Swamp reaches Node 7 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> - a Swamp worker reaches the target over SSH with the official `@swamp/ssh` behavior
   %%> - refuses an inactive firewall (`firewall.backend_inactive`) before any change
-  Note over SW: Plan the changes<br/>typed step on 209
+  Note over SW: Plan the changes
   %%> What it does:
-  %%> - turns ufw's numbered rows into the ufw commands this rule needs, in order
-  %%> - an insert position counts the rows as they will be after the earlier commands
+  %%> - turns the rule into one ufw delete command per protocol and address family
+  %%> - skips a line that is already gone and a line that must stay
+  %%> - plans no changes when no line is left to delete
   %%> Why typed, not cfgmgmt:
-  %%> - `@swamp/cfgmgmt/firewall` cannot insert at a position (Lab #4334) or name a port range
-  SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
-  %%> What it does:
-  %%> - deletes each line that belongs to this rule alone; a line that is already gone is skipped
-  %%> - a line that a role also needs (`retain`) stays
-  %%> - runs the planned commands one at a time; nothing is copied to the Node
+  %%> - `@swamp/cfgmgmt/firewall` cannot name a port range
+  alt changes needed
+    SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
+    %%> What it does:
+    %%> - deletes each line that belongs to this rule alone; a line that is already gone is skipped
+    %%> - a line that a role also needs (`retain`) stays
+    %%> - runs the planned commands one at a time; nothing is copied to the Node
+  else already removed
+    Note over SW: Skipped — already removed<br/>firewall.rule_absent
+    %%> Result:
+    %%> - the plan contains no changes
+    %%> - the final read and check still run before the task can succeed
+  end
   SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
-  Note over SW: Check the rules<br/>typed step on 209
+  Note over SW: Check the rules
   %%> What it does:
   %%> - checks every removed line is gone, and retained lines are still there
   %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
@@ -76,10 +85,12 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Delete the rule<br/>record gone · task succeeded
+    Note over GW: Delete the rule
     %%> Result:
-    %%> - the rule for port 5432 is deleted from the Gateway
-    %%> - task #5131 succeeds
+    %%> - the rule record is deleted from the Gateway
+    %%> - the task succeeds
+    %%> - if no changes were needed, reports `Skipped — already removed (firewall.rule_absent)`
+    %%> - the skip reason is part of the successful result in human and machine output, not an error
   else removing or checking fails
     N--xSW: exit ≠ 0
     %%> When:
@@ -87,16 +98,18 @@ sequenceDiagram
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
-    Note over GW: Mark the rule failed<br/>task failed · rerun after a fix
+    Note over GW: Mark the rule failed
     %%> Result:
-    %%> - the rule for port 5432 stays, marked failed, so you can see it
-    %%> - task #5131 fails
+    %%> - the rule stays, marked failed, so you can see it
+    %%> - the task fails
     %%> On the Node:
     %%> - lines removed before the failure stay removed; there is no rollback
-    %%> - that is safe: a rerun skips lines that are already gone
+    %%> - that is safe: the rule stays marked failed, and a rerun skips lines that are already gone
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5131
+    CLI->>GW: operation:show TASK
     %%> What it does:
     %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result

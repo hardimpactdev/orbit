@@ -25,7 +25,7 @@ orbit firewall:deny 5432 --node=7 --protocol=tcp
 ```
 
 <Warning>
-A deny can never cut a Node off. The Gateway refuses a deny, with any `--from`, whose port or range includes SSH port 22, the recovery SSH port, the WireGuard port, or a port that one of the Node's roles needs. The error is `firewall.protected_port`. A source range can cover the Gateway or other Nodes, so no source is safe to deny.
+A deny can never cut a Node off. Orbit refuses a deny, with any `--from`, whose port or range includes SSH port 22, the recovery SSH port, the WireGuard port, or a port that one of the Node's roles needs. The error is `firewall.protected_port`. A source range can cover the Gateway or other Nodes, so no source is safe to deny.
 </Warning>
 
 Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`. To change an active rule, remove it and create it again. The CLI follows progress and reports the result with the Operation and request IDs.

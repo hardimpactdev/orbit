@@ -59,13 +59,23 @@ Cover the call with required arguments only, each optional flag, each error on t
 
 Derive every expectation from the chart and the page, never from the current code. Then read the code for each new or changed expectation and mark the ones it fails. Where the code is known to differ, keep the case and mark it "fails today". Do not weaken a case to fit the code.
 
-## 5. Review with Nick
+## 5. Check your own draft first
 
-Show Nick the review page, the chart and the cases. The docs dev server renders the review checkout, for example `http://192.168.6.20:3001/cli/firewall/allow`. Apply each correction, then show the result again. Nick approves each of the three items separately.
+Do this before you show Nick anything. He should only have to say "proceed". Fix every item you can settle yourself, and decide the rest with the rules and Recall decisions, stating the choice in one line so he can overrule it. Ask only about a choice that no rule or decision settles.
+
+1. Read the code each claim relies on (planner, controller, CLI) and correct any claim it contradicts. Mark "fails today" from the code, never "unverified".
+2. Run the rules once more: no implementation names on the page (Swamp, workflow, planner), placeholders only (no Node ids, task ids, hosts), minimal chart (rule 25), failure and retry (rule 28), the visible skip with its reason code, no names or dates.
+3. Walk the cases against the page: every error code, flag, repeat and refusal has a case, and every example on the page passes its own refusals.
+4. Compare with the approved sibling and apply any difference to both commands and the family page.
+5. Open the preview yourself, run `bin/check-flows`, `composer docs-build` and `composer docs-lint`, and confirm the cases file is linked in your message.
+
+## 6. Review with Nick
+
+Show Nick the review page, the chart and the cases. The docs dev server renders the review checkout, for example `http://192.168.6.20:3001/cli/firewall/allow`. Start it detached with `setsid`, because a background task is killed at its time limit, and open the page before you share the link. Apply each correction, then show the result again. Nick approves each of the three items separately.
 
 When a correction is a rule for every command, add it to the skill that owns it in the same change: flow-tighten for charts, writing-documentation for text, verifying-commands for cases.
 
-## 6. Land and record
+## 7. Land and record
 
 1. Mark the chart `%% status: reviewed`.
 2. Open one docs-only PR for the command: chart, page and cases. Docs-only changes run fast CI and no VM job. Merge through the queue with `gh pr merge <n> -R hardimpactdev/orbit --auto`.

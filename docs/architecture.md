@@ -5,7 +5,7 @@ description: "Orbit's components, the boundaries between them, and the four path
 
 # Architecture
 
-Orbit has one Gateway that owns all fleet state. Clients ask the Gateway for changes, and the Gateway applies them to Nodes. Nodes run applications and report what they observe.
+Orbit has one Gateway that owns all fleet state. Clients ask the Gateway for changes. The Gateway records them, and Swamp applies them to Nodes. Nodes run applications and report what they observe.
 
 ## Components
 
@@ -13,7 +13,8 @@ Orbit consists of these components. Each one lives in its own project in the rep
 
 | Component | Code | Role |
 | --- | --- | --- |
-| Gateway | `apps/gateway` | The only authority. It stores fleet state, authorizes requests, and applies changes to Nodes over SSH. It also serves the API, MCP, and the web app. |
+| Gateway | `apps/gateway` | The only authority. It stores fleet state, authorizes requests, and starts the work that applies changes to Nodes. It also serves the API, MCP, and the web app. |
+| Swamp | `swamp/` | Applies state to Nodes. It runs the workflows the Gateway starts, reaches Nodes over SSH, and returns the result of each run to the Gateway. |
 | CLI | `apps/cli`, `packages/php-sdk` | A thin client for humans and agents. It calls the Gateway API and never connects to a Node. |
 | Web app | `apps/web`, `apps/desktop` | A static single-page app that reads the API and shows record changes live. The desktop app is a native shell around it. |
 | Node agent | `apps/agent` | A program on every Node that reports presence and Process state. It never changes a Node. |
