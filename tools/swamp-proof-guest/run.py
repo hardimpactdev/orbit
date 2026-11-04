@@ -251,6 +251,10 @@ def main():
     outputs = native('workflow', 'history', 'outputs', operation['swamp_run_id'])
     receipt['native'] = {'run_id': operation['swamp_run_id'], 'status': history.get('status'), 'steps': steps(history)}
     phases = receipt['phases'] = phase_results(fixture, receipt['native']['steps'])
+    # Doctor consumes facts collected every 60 s. Keep observation time outside the command timing.
+    if operation.get('status') == 'succeeded' and fixture.get('observer_wait_seconds', 0):
+        receipt['observer_wait_seconds'] = fixture['observer_wait_seconds']
+        run(['sleep', str(fixture['observer_wait_seconds'])], timeout=fixture['observer_wait_seconds'] + 5)
     receipt['parity'] = parity_check(fixture, up, run_id, outputs, operation)
     expected = fixture['expect']['status']
     # A refusal the Gateway reads from a step's output fails the Operation while the run itself succeeds.

@@ -4,5 +4,6 @@
   "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "websocket", "converge_existing": true}},
   "parity": ["swamp/proof/node.role_converge/parity.py", "metrics", "websocket", "no-drift"],
   "prepare": [],
-  "after_prepare": [["python3", "swamp/proof/node.role_converge/capture.py", "metrics", "websocket", "stable"]]
+  "after_prepare": [["python3", "swamp/proof/node.role_converge/capture.py", "metrics", "websocket", "stable"]],
+  "observer_wait_seconds": 0
 }

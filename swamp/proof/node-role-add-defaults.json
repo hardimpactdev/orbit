@@ -39,5 +39,6 @@
     }
   ],
   "before_gateway": [],
-  "clean": false
+  "clean": false,
+  "observer_wait_seconds": 65
 }

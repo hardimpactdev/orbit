@@ -161,10 +161,5 @@ if intent['runtime']['analytics']:
     participants.add(intent['runtime']['analytics']['clickhouse_node_id'])
 families = ['role', 'firewall', *(['process'] if role == 'analytics' else []),
             *(['instance', 'route', 'database_connection'] if 'instance' in sys.argv[3:] else [])]
-# UFW and role facts arrive every 60 s; allow one interval and delivery before the single Doctor assertion.
-# This proof-only observation window is outside the Operation's terminal_seconds.
-if 'no-drift' not in sys.argv[3:]:
-    print('Observer facts: allow 60 s collection plus 5 s delivery', flush=True)
-    subprocess.run(['sleep', '65'], check=True, timeout=70)
 reports = [doctor(node, families) for node in sorted(participants)]
 check(all(reports), 'Doctor requires zero drift and no unverifiable records')

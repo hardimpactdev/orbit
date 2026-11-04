@@ -18,5 +18,6 @@
     {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
     {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 60},
     {"name": "Open Analytics storage", "job": "analytics_storage", "step": "Open Analytics storage", "budget_seconds": 120}
-  ]
+  ],
+  "observer_wait_seconds": 0
 }

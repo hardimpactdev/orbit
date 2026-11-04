@@ -3,5 +3,6 @@
   "defaults": "node-role-add-defaults.json",
   "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "app-prod", "converge_existing": true}},
   "parity": ["swamp/proof/node.role_add/parity.py", "peer", "app-prod", "no-drift"],
-  "prepare": []
+  "prepare": [],
+  "observer_wait_seconds": 0
 }
