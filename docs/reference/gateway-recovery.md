@@ -130,7 +130,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
-The activate child retires the old release timer and service files as a best-effort step. It drains Horizon before the switch. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon.
+The activate child drains Horizon before the switch. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon.
 
 It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/caddy/orbit-cert-current/root-ca.pem`. The status must be `ok` and name the full commit or its 12-digit ID. It then resumes the release cleanups and prunes old releases. When the check fails, the same script from the new release switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
 
@@ -326,6 +326,8 @@ orbit gateway:release:auto:enable
 orbit gateway:release:auto:status
 orbit gateway:release:auto:disable
 ```
+
+A Gateway that ran the release unit still has `orbit-gateway-release.timer`. It runs the same tick every minute; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. A later release removes the timer and its units once the previous release also runs the tick from the scheduler, so a switch-back never lands on a release without a tick.
 
 
 ### What a tick does

@@ -93,9 +93,10 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             ListGatewayReleasesCommand::class,
             ShowGatewayReleaseCommand::class,
         ]);
-        // The tick only admits a run, so it returns at once; a release that switches restarts the scheduler.
+        // The tick only admits a run. Its bound covers admission's network reads, such as the 120-second agent
+        // download; a release that switches restarts the scheduler.
         $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
-            GatewaySchedule::command($schedule, 'gateway:release:auto', uniqueFor: 120, overlapMinutes: 2)->everyMinute();
+            GatewaySchedule::command($schedule, 'gateway:release:auto', uniqueFor: 300, overlapMinutes: 5)->everyMinute();
         });
     }
 }

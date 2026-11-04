@@ -2122,8 +2122,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['202'] = envelope(ref('OperationData'), 'Accepted. The operation is queued; follow it with `operation:show`.')
             responses['503'] = error_response('The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.')
         elif route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):
-            responses['202'] = envelope(data, 'Accepted. The release record is queued and its unit started.')
-            responses['503'] = error_response('systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed.')
+            responses['202'] = envelope(data, 'Accepted. The release record runs as the `gateway.release` Swamp run, which ends it.')
+            responses['503'] = error_response('Swamp did not start the run. The record ends as failed and retryable, or stays running when Swamp did not confirm the start (`swamp.start_uncertain`).')
         elif controllers.get(action, {}).get('created'):
             responses['201'] = envelope(data, 'Created.')
             # Development deploy step creation refuses duplicate names, including exact retries.

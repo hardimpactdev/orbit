@@ -74,33 +74,6 @@ jobs:
           fi
         - sh
         - ${{ inputs.intent.horizon_unit }}
-    # The Gateway scheduler runs the automatic tick, so the release timer and units of the release unit go. Best effort:
-    # a later release removes what this one could not.
-  - name: Retire the release units
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "gateway-release-units-" + string(inputs.node_id) }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        timeoutSec: 90
-        argv:
-        - /usr/bin/timeout
-        - '60'
-        - /bin/sh
-        - -c
-        - |
-          set -eu
-          systemctl disable --now orbit-gateway-release.timer 2>/dev/null || true
-          rm -f /etc/systemd/system/orbit-gateway-release.timer /etc/systemd/system/orbit-gateway-release.service /etc/systemd/system/orbit-gateway-release-run@.service
-          systemctl daemon-reload
-        - sh
     # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
     # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
     # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.

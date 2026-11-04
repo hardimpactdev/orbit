@@ -45,7 +45,6 @@ sequenceDiagram
   Note over SW: Hand over the release<br/>gateway-release-activate
   %%> Why:
   %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
-  AC->>GN: Retire the release units<br/>best effort
   AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
   AC->>GN: Switch the release<br/>gateway-rollback · Horizon
   %%> Why:
