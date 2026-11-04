@@ -76,7 +76,7 @@ The current lifecycle identifies Plausible by its Node and the name `plausible`,
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-Role add writes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. Each file is one `@swamp/cfgmgmt/file` apply in its own folder, so an unchanged file stays untouched.
+Role add writes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. Its [Node Ansible phase](/reference/node-provisioning#role-ansible-phases) creates the folders and applies the canonical file map. An unchanged file stays untouched. Database initialization remains a native Swamp step.
 
 | Host file | Container path |
 | --- | --- |

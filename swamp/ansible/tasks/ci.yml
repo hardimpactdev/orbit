@@ -67,10 +67,8 @@
   ansible.builtin.command:
     argv:
       - incus
-      - --project
-      - "{{ plans.ci.project }}"
       - query
-      - /1.0/profiles/default
+      - /1.0/profiles/default?project={{ plans.ci.project }}
   register: ci_profile
   changed_when: false
 - name: Apply the CI profile
