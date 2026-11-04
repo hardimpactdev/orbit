@@ -71,4 +71,4 @@ Use the official workflow references to check guard, dependency and output seman
 
 ## Improve this skill
 
-After a landed behavior change, record the retro and proof receipt in `docs/swamp/porting-retros.md`, including kind versus topology faults. Replace the affected rule the same hour; use canonical finding IDs instead of duplicate rows. Keep Swamp mechanics in the official swamp skill, shared flow rules in flow-tighten and playbook rules in ansible-phase.
+After a landed behavior change, replace the affected rule in `docs/swamp/porting.md` the same hour. Keep Swamp mechanics in the official swamp skill, shared flow rules in flow-tighten and playbook rules in ansible-phase.
