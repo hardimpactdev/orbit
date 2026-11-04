@@ -40,5 +40,11 @@
   "limits": [
     "This proves public input capture and compatibility with existing native workflows. It does not claim canonical host firewall convergence; that consumer ships in a later release.",
     "The VM was reused; Gateway and Swamp were restaged at the named source commit. No production Nodes or data were used."
-  ]
+  ],
+  "cleanup": {
+    "destroyed_at": "2026-11-04T11:02:26Z",
+    "operation_id": 10061,
+    "independent_host_check": "incus info --project orbit-tasks tvm-534 returned Instance not found",
+    "evidence": "/home/nckrtl/swamp-execution/evidence/ansible-phases-tvm-534-removed-20261104.txt"
+  }
 }
