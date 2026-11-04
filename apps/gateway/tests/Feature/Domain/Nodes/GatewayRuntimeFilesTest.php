@@ -31,6 +31,7 @@ it('converges the Gateway runtime with the gateway role and retires the release 
             '/etc/systemd/system/orbit-gateway-release.timer', '/etc/systemd/system/orbit-gateway-release.service',
             '/etc/systemd/system/orbit-gateway-release-run@.service', '/etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf',
             '/etc/orbit/php-fpm-start-hooks'])
+        ->and(array_column($runtime['directories'], 'path'))->toBe(['/etc/systemd/journald.conf.d', '/etc/systemd/system/logrotate.timer.d'])
         ->and(array_column($runtime['units'], 'name'))->toBe(['orbit-agent-view.service', 'orbit-runtime-hibernator.timer'])
         ->and($runtime['units'][1]['unit'])->toContain("OnUnitActiveSec=600s\n");
 });

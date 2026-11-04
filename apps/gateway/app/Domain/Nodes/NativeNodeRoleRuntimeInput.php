@@ -36,6 +36,7 @@ final readonly class NativeNodeRoleRuntimeInput
         if ($assignment->role === RoleName::Gateway) {
             $gateway = app(GatewayRuntimeFiles::class)->render();
             $runtime['gateway'] = ['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits];
+            $runtime['directories'] = [...$runtime['directories'], ...$gateway['directories']];
             $runtime['files'] = [...$runtime['files'], ...$gateway['files']];
             $runtime['units'] = [...$runtime['units'], ...$gateway['units']];
         }

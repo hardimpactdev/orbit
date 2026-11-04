@@ -18,7 +18,7 @@ final readonly class GatewayRuntimeFiles
     /** The release unit's files; its timer is stopped before they go. */
     public const array ReleaseUnits = ['orbit-gateway-release.timer', 'orbit-gateway-release.service', 'orbit-gateway-release-run@.service'];
 
-    /** @return array{files: list<array<string, string>>, units: list<array{name: string, unit: string}>} */
+    /** @return array{directories: list<array<string, string>>, files: list<array<string, string>>, units: list<array{name: string, unit: string}>} */
     public function render(): array
     {
         $application = Config::string('orbit.gateway_checkout');
@@ -30,7 +30,10 @@ final readonly class GatewayRuntimeFiles
             ."Environment=ORBIT_HOME={$home}\nExecStart=\"/usr/bin/php8.5\" \"{$application}/artisan\" \"{$command}\"\n{$extra}";
         $log = $application.'/storage/logs/laravel.log';
 
+        $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
+
         return [
+            'directories' => [$directory('/etc/systemd/journald.conf.d'), $directory('/etc/systemd/system/logrotate.timer.d')],
             'files' => [
                 $file(self::Pool, $this->pool($application, $home)),
                 $file('/etc/systemd/system/orbit-runtime-hibernator.service', $service('Orbit runtime hibernator', 'oneshot', 'orbit:runtime-hibernator')),
