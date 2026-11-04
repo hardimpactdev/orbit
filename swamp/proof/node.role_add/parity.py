@@ -137,6 +137,8 @@ if 'instance' in sys.argv[3:]:
         node = next(name for name, identifier in json.loads(os.environ['PROOF_NODES']).items() if identifier == host)
         def on(*argv, node=node):
             return subprocess.run(['incus', 'exec', node, '--', *argv], capture_output=True, text=True, check=False)
+        metadata = on('stat', '-c', '%U:%G:%a', '/etc/orbit/php-fpm/' + runtime['user'] + '/generated/pool.conf')
+        check(metadata.returncode == 0 and metadata.stdout.strip() == 'root:root:644', 'the dedicated pool is root-owned with mode 0644')
         current = on('test', '-e', runtime['home'] + '/current').returncode == 0
         expected = runtime['configuration']['pool' if current else 'initial_pool']
         check(on('cat', '/etc/orbit/php-fpm/' + runtime['user'] + '/generated/pool.conf').stdout == expected,

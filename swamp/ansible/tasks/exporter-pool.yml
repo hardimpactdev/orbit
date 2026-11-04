@@ -13,6 +13,9 @@
     - name: Read the published status pool
       ansible.builtin.stat: { path: "{{ generated }}/pool.conf", checksum_algorithm: sha256 }
       register: current_pool
+    - name: Keep status pool ownership and permissions
+      ansible.builtin.file: { path: "{{ generated }}/pool.conf", owner: root, group: root, mode: "0644" }
+      when: current_pool.stat.exists
     - name: Validate and publish a changed status pool
       when: current_pool.stat.checksum | default('') != desired_pool | hash('sha256')
       vars:
