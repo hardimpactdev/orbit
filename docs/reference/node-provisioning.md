@@ -74,6 +74,8 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort and private DNS after role checks. Exporters require explicit enablement. |
 | End check | Verify managed SSH and sudo, check the observer resources and prove the tunnel. The native `Check the Node` assertion determines completion. |
 
+The Gateway captures ordered candidates for role PHP, Tool Manager setup and every native Caddy caller, including Node convergence and Cluster Routers, retaining `url` for the current consumers. Activation must follow this producer release; see the [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror).
+
 Role PHP packages, Composer prerequisites and Caddy use the [recipe artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) for each pinned Debian file. Native fetch verifies the checksum and stops on any download or integrity failure.
 
 Native Node roots freeze certificate scopes and publication plans at admission. Their explicit resource steps publish the target and withdraw the source after target readiness. Official cfgmgmt resources own file, package, account and service changes. A single command uses SSH argv. No script is copied to a Node. A completed run removes the staged sudo candidate as best effort. A failure retains completed work; reruns use native resource checks and guards.

@@ -19,7 +19,6 @@ use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
@@ -161,7 +160,7 @@ final readonly class NativeNodeRoleAddInput
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
             'releases' => ValidatedData::object($snapshot['prerequisites'])['releases'],
             'packages' => array_values(array_diff($packages, ['caddy'])),
-            'caddy_package' => $caddy ? AgentCaddyPackage::nativeInput() : null,
+            'caddy_package' => $caddy ? NativeCaddyPackageInput::make() : null,
             'directories' => $directories, 'files' => $files, 'php_packages' => $phpPackages, 'php' => $php,
             'managers' => $managers, 'bun' => $bun, 'certificates' => $snapshot['certificates'], 'publications' => $publications, 'runtime' => $runtime['intent'],
             'exporters' => $exporters, 'prometheus' => $prometheus, 'artifact_digests' => $artifactDigests,
@@ -180,7 +179,8 @@ final readonly class NativeNodeRoleAddInput
         foreach (ValidatedData::object($build['versions']) as $version) {
             foreach (RouteExecutionProof::objects(ValidatedData::object($version)['packages']) as $package) {
                 $artifact = new ArtifactPin(ValidatedData::string($package['url']), 'sha256', ValidatedData::string($package['sha256']));
-                $packages[] = [...$package, 'url' => $artifact->candidateUrls(ValidatedData::string($package['name']), ValidatedData::string($build['mirror']))[0], 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
+                $urls = $artifact->candidateUrls(ValidatedData::string($package['name']), ValidatedData::string($build['mirror']));
+                $packages[] = [...$package, 'url' => $urls[0], 'urls' => $urls, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
             }
         }
 

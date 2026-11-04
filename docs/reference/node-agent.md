@@ -804,3 +804,5 @@ The WireGuard address alone does not tell the agent apart from other users on th
 ### The hash is stored last
 
 Storing a new hash before the agent restarts would refuse the running agent if the restart fails, while the file would match the record. A file-only verification could then miss the mismatch. Storing it last keeps the running agent accepted and leaves a mismatch that Doctor reports.
+
+Native convergence captures Caddy recipe candidates through a native-only Gateway producer. This does not change the frozen agent Caddy command or its accepted fields. See the [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror).

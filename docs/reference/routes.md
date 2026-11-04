@@ -817,3 +817,5 @@ Route Operations retain their admitted Instance environment owners until complet
 These kinds use the shared `swamp.direct_writers` configuration and retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.
 
 Complete Node Caddy builds use official cfgmgmt file application and an end check, with pinned SSH argv for validation and reload. Their native end assertion replaces the reporting shell. The Gateway records the public content version captured from the input validation in the same native history response.
+
+Native Cluster Router admission captures Caddy recipe candidates through the same native-only producer as Node convergence. Its [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror) accepts the schema before producing candidates, then activates consumers after that Gateway release is live.

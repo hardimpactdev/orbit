@@ -18,7 +18,6 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
-use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
@@ -109,7 +108,7 @@ final readonly class NodeConvergeInput
         }
 
         return ['user' => $node->user, 'home' => $home,
-            'caddy_package' => isset($payloads['caddy-package']) ? AgentCaddyPackage::nativeInput() : null,
+            'caddy_package' => isset($payloads['caddy-package']) ? NativeCaddyPackageInput::make() : null,
             'caddy' => $caddy === null || isset($caddy['error_code']) ? null : $caddy,
             'dns' => $dns === null || isset($dns['error_code']) ? null : $this->privateDns($node, $dns),
             'php' => (object) $php, 'php_versions' => array_keys($php),
@@ -253,7 +252,7 @@ final readonly class NodeConvergeInput
                     'user' => $node->user, 'apps_root' => ValidatedData::object($node->settings['apps'] ?? [])['path'] ?? null,
                     'checkouts' => $node->instances()->with('project')->orderBy('id')->get()->map(static fn ($instance): string => $instance->applicationDirectory())->all(),
                     'url' => $this->delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
-                'caddy-package' => AgentCaddyPackage::nativeInput(),
+                'caddy-package' => NativeCaddyPackageInput::make(),
                 'caddy' => $this->caddy($node),
                 'private-dns' => PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()
                     ? ['listener' => app(NodePrivateDnsListenerFootprint::class)->input($node), 'publication' => $this->dns()]
