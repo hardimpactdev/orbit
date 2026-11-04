@@ -18,6 +18,8 @@
         owner: root
         group: root
         mode: "0644"
+        validate: /usr/sbin/php-fpm{{ runtime.version }} -t --fpm-config %s
+      environment: { PHP_INI_SCAN_DIR: "/etc/php/{{ runtime.version }}/fpm/conf.d:{{ generated }}" }
       register: exporter_pool
     - name: Validate the FPM master
       ansible.builtin.command:
