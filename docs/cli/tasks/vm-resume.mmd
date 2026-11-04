@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: swamp/workflows/workflow-operation-task-vm-resume.yaml (+ task-vm-provider-power for UpCloud), docs/reference/compute-drivers.md, docs/reference/task-vm-native-resume.md, docs/reference/tasks.md, DECISIONS R1-R4.
+  %% Target design: swamp/workflows/workflow-operation-task-vm-resume.yaml (+ task-vm-provider-power for UpCloud), docs/reference/compute-drivers.md, docs/reference/tasks.md, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02 (second pass), rules 22 (start and the agent wait are two commands, so two pinned exec steps; no provider-power child for Incus), 16 (no read before the start: a VM that already runs counts as started, and the agent wait proves it), 9 (one read of the agent and the Pi, one native `assert`), 14 (no `result` print; the Gateway reads the step statuses, and the recorded host key pin stays), 15 (no `eligible` assert: the Gateway refuses an ineligible VM at dispatch), 2 (resume no longer runs the SSH preparation child; package and host keys stay with provision).
   %% status: draft
   %% command: none · a workspace operation wakes the VM

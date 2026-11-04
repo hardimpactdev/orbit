@@ -5,7 +5,7 @@ description: "Steps, template, native mapping and anti-patterns for building the
 
 # Build a Swamp flow
 
-Start every flow PR from this page. Review every flow PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, the workflow and the deletion of what it replaces together. Agents load it through the [swamp-flow skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-flow/SKILL.md); the Ansible part of a flow follows the [ansible-phase skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/ansible-phase/SKILL.md). Add a lesson after every merged flow change; the per-PR detail is in [Swamp port retros](/swamp/porting-retros). Every flow is proved inside a dev topology, and its PR carries the receipt ([the loop](#build-inside-the-topology-f13)).
+Start every flow PR from this page. Review every flow PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, the workflow and the deletion of what it replaces together. Agents load it through the [swamp-flow skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-flow/SKILL.md); the Ansible part of a flow follows the [ansible-phase skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/ansible-phase/SKILL.md). Add a lesson after every merged flow change. Every flow is proved inside a dev topology, and its PR carries the receipt ([the loop](#build-inside-the-topology-f13)).
 
 ## Build inside the topology (F13)
 
@@ -222,7 +222,7 @@ For external state, use a bounded poll in the phase script, [as above](#set-the-
 
 ## Anti-patterns
 
-Each of these is a review BLOCK. Most come from the [conformance ledger](/swamp/porting-retros#lesson-history).
+Each of these is a review BLOCK. Most come from past flow reviews.
 
 | Anti-pattern | Why it fails | Do this instead |
 | --- | --- | --- |
@@ -260,4 +260,4 @@ Check the completed flow and report what the evidence proves.
 
 ## Changelog
 
-Each lesson replaces the rule it changes above. The per-PR history and the earlier changelog rows are in [Swamp port retros](/swamp/porting-retros#lesson-history).
+Each lesson replaces the rule it changes above.
