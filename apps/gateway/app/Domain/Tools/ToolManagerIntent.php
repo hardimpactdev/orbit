@@ -26,7 +26,8 @@ final readonly class ToolManagerIntent
             foreach (['node', 'vp-cli', 'vp', 'pnpm'] as $name) {
                 $pin = $recipe->tools[$name]->forArchitecture('amd64');
                 $artifact = $pin->artifacts['amd64'];
-                $tools[$name] = ['version' => $pin->version, 'url' => $artifact->candidateUrls($name, $recipe->artifactMirror)[0],
+                $urls = $artifact->candidateUrls($name, $recipe->artifactMirror);
+                $tools[$name] = ['version' => $pin->version, 'url' => $urls[0], 'urls' => $urls,
                     'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest,
                     ...($pin->lockSha256 === null ? [] : ['lock_sha256' => $pin->lockSha256])];
             }
@@ -39,8 +40,13 @@ final readonly class ToolManagerIntent
             foreach (['composer', ...$recipe->gitPackages, 'unzip'] as $name) {
                 $pin = $recipe->tools[$name]->forArchitecture('amd64');
                 $artifact = $pin->artifacts['amd64'] ?? null;
+                $artifactInput = null;
+                if ($artifact !== null) {
+                    $urls = $artifact->candidateUrls($name, $recipe->artifactMirror);
+                    $artifactInput = ['url' => $urls[0], 'urls' => $urls, 'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest];
+                }
                 $packages[] = ['name' => $name, 'version' => $pin->version,
-                    'artifact' => $artifact === null ? null : ['url' => $artifact->candidateUrls($name, $recipe->artifactMirror)[0], 'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest]];
+                    'artifact' => $artifactInput];
             }
 
             return ['manager' => 'composer', 'packages' => [], 'input' => ['user' => $node->user, 'version' => $recipe->tools['composer']->version],
