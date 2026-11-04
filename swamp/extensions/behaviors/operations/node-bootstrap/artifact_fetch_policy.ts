@@ -1,9 +1,12 @@
 import { z } from "npm:zod@4.4.3";
+import transportExitCodes from "../../../../ansible/transport-exit-codes.json" with {
+    type: "json",
+};
 
 const Result = z.object({ exitCode: z.number().int().nullable() });
 const Input = z.object({ result: Result.nullable() });
 // curl: proxy/DNS, connect, partial transfer, HTTP, timeout, TLS, empty reply, send/receive.
-const TransportFailures = new Set([5, 6, 7, 18, 22, 28, 35, 52, 55, 56]);
+const TransportFailures = new Set(transportExitCodes);
 /** Official SSH supplies the process exit code; local I/O and size errors never permit fallback. */
 export function classifyFetchFailure(result: z.infer<typeof Result> | null) {
     return {

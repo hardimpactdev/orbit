@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Domain\Nodes\NativeCaddyPackageInput;
 use Illuminate\Contracts\Console\Kernel;
 
 $root = dirname(__DIR__, 3).'/apps/gateway';
@@ -57,7 +58,21 @@ if (($argv[3] ?? null) === 'missing-mirror') {
 if (($argv[3] ?? null) === 'corrupt-mirror') {
     $path = $root.'/resources/machine-software/recipe.json';
     $recipe = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-    // A pinned public README responds 200 with wrong bytes, regardless of the appended artifact filename.
-    $recipe['artifact_mirror'] = 'https://raw.githubusercontent.com/hardimpactdev/orbit/a2bfa79fff5348324a3b57934392054832d7b577/README.md?corrupt-artifact=';
+    // The topology Gateway already serves this public static path over its IP certificate.
+    $directory = $root.'/public/vendor/horizon-new-dawn/proof-corrupt-mirror';
+    $recipe['artifact_mirror'] = 'https://'.Node::findOrFail(209)->wireguard_ip.'/vendor/horizon-new-dawn/proof-corrupt-mirror';
     file_put_contents($path, json_encode($recipe, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+    if (! is_dir($directory)) {
+        mkdir($directory, 0755, recursive: true);
+    }
+    $url = NativeCaddyPackageInput::make()['urls'][0];
+    $filename = basename(parse_url($url, PHP_URL_PATH));
+    file_put_contents($directory.'/'.$filename, "corrupt artifact bytes\n");
 }
+
+$caddy = NativeCaddyPackageInput::make();
+$bindings = ['caddy_path' => $caddy['path']];
+if (isset($url)) {
+    $bindings['corrupt_url'] = $url;
+}
+echo json_encode(['bindings' => $bindings], JSON_THROW_ON_ERROR)."\n";

@@ -1,0 +1,7 @@
+---
+- name: Fetch and verify pinned artifact
+  orbit_artifact:
+    urls: "{{ artifact.urls }}"
+    dest: "{{ artifact.path }}"
+    sha256: "{{ artifact.sha256 }}"
+    transport_exit_codes: "{{ lookup('ansible.builtin.file', playbook_dir + '/transport-exit-codes.json') | from_json }}"

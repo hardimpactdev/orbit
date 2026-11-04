@@ -1,22 +1,14 @@
 {
   "kind": "node.role_add",
-  "workflow": "operation-node-role-add",
-  "topology": "minimal",
-  "clean": false,
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": 30,
+  "defaults": "node-role-add-defaults.json",
+  "clean": true,
   "before_gateway": [
-    [
-      "runuser",
-      "-u",
-      "orbit",
-      "--",
-      "php",
-      "swamp/proof/node.role_add/prepare.php",
-      "${node.peer}",
-      "app-dev",
-      "missing-mirror"
-    ]
+    ["apt-get", "update"],
+    ["apt-get", "install", "--yes", "python3-venv"],
+    ["python3", "-m", "venv", "/opt/orbit/ansible/venv"],
+    ["/opt/orbit/ansible/venv/bin/pip", "install", "--disable-pip-version-check", "-r", "swamp/ansible/requirements.txt"],
+    ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
+    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}", "app-dev"]
   ],
   "request": {
     "method": "POST",
@@ -25,30 +17,21 @@
       "role": "app-dev"
     }
   },
-  "expect": {
-    "status": "succeeded"
-  },
-  "phases": [
+  "parity": ["swamp/proof/node.role_add/parity.py", "peer", "app-dev", "missing-mirror"],
+  "prepare": [
     {
-      "name": "Check the role",
-      "job": "role",
-      "step": "Check the role",
-      "budget_seconds": 20
+      "method": "POST",
+      "path": "nodes/${node.peer}/converge",
+      "body": {}
     }
-  ],
-  "parity": [
-    "swamp/proof/node.role_add/parity.py",
-    "peer",
-    "app-dev",
-    "missing-mirror"
   ],
   "before_node": {
     "peer": [
-      [
-        "rm",
-        "-f",
-        "/var/cache/apt/archives/caddy_2.11.7_linux_amd64.deb"
-      ]
+      ["rm", "-f", "/var/cache/apt/archives/caddy_2.11.7_linux_amd64.deb"]
     ]
-  }
+  },
+  "after_prepare": [
+    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}", "app-dev", "missing-mirror"],
+    ["incus", "exec", "peer", "--", "rm", "-f", "${fixture.caddy_path}"]
+  ]
 }
