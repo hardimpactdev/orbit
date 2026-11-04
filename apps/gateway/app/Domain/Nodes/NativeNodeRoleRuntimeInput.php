@@ -29,10 +29,16 @@ final readonly class NativeNodeRoleRuntimeInput
     public function capture(Node $node, NodeRole $assignment, array $snapshot, Operation $operation, bool $converge = false): array
     {
         $runtime = ['directories' => [], 'files' => [], 'secret_files' => [], 'units' => [], 'probes' => [], 'groups' => [], 'users' => [],
-            'websocket' => null, 'metrics' => null, 'analytics' => null, 'gateway_dns' => null,
+            'websocket' => null, 'metrics' => null, 'analytics' => null, 'gateway_dns' => null, 'gateway' => null,
             'swamp' => $assignment->role === RoleName::Swamp ? $snapshot['runtime'] : null,
             'ci_host' => $assignment->role === RoleName::CiRunner];
         $copies = [];
+        if ($assignment->role === RoleName::Gateway) {
+            $gateway = app(GatewayRuntimeFiles::class)->render();
+            $runtime['gateway'] = ['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits];
+            $runtime['files'] = [...$runtime['files'], ...$gateway['files']];
+            $runtime['units'] = [...$runtime['units'], ...$gateway['units']];
+        }
         if ($assignment->role === RoleName::Gateway && $snapshot['gateway_dns'] !== null) {
             $dns = ValidatedData::object($snapshot['gateway_dns']);
             $domain = ValidatedData::string($dns['domain']);

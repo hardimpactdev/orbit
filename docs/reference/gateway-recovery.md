@@ -36,7 +36,7 @@ Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the co
 
 ### Disk retention
 
-Gateway releases do not install host log-retention files. Existing journald and logrotate rules stay in place. A follow-up moves these static files to Node convergence. Laravel's daily logs keep their own rotation policy.
+The [gateway role convergence](/cli/node/role-add) installs the host log-retention files: `journald.conf.d/orbit-retention.conf`, `logrotate.d/orbit-gateway` and the hourly `logrotate.timer` drop-in. Releases leave them unchanged. Laravel's daily logs keep their own rotation policy.
 
 The Gateway scheduler runs Laravel's `queue:prune-failed` daily. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours. The daily `queue:prune-batches` uses `ORBIT_JOB_BATCH_HOURS`, which defaults to 24 hours, for finished, unfinished, and cancelled batches. The daily `activitylog:clean` deletes [Activity](/cli/activity) records older than `ORBIT_ACTIVITY_LOG_DAYS`, which defaults to 30 days. Task insights keep their own fields, so they do not depend on old Activity. None of these commands vacuums SQLite: SQLite reuses the freed pages, and only a manual `VACUUM` shrinks the file. [Scheduled work](/reference/gateway-queue#scheduled-work) lists all three.
 
@@ -136,7 +136,7 @@ It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/c
 
 The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
 
-Releases do not converge the PHP-FPM pool, hibernator and agent-view units, or Caddy sites. A follow-up moves these static files to Node convergence. Releases also leave the Gateway Node's agent binary unchanged.
+Releases do not converge static runtime files. The [gateway role convergence](/cli/node/role-add) owns the PHP-FPM pool, the hibernator and agent-view units and the host retention files, and [node converge](/cli/node/converge) publishes Caddy sites and installs the Node agent.
 
 The Gateway records the run's terminal result. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and the old release stays live.
 
@@ -327,7 +327,7 @@ orbit gateway:release:auto:status
 orbit gateway:release:auto:disable
 ```
 
-A Gateway that ran the release unit still has `orbit-gateway-release.timer`. It runs the same tick every minute; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. A later release removes the timer and its units once the previous release also runs the tick from the scheduler, so a switch-back never lands on a release without a tick.
+A Gateway that ran the release unit still has `orbit-gateway-release.timer` until its [gateway role convergence](/cli/node/role-add) runs. Until then the timer runs the same tick every minute; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. The convergence stops and disables the timer, then removes it and the release services. Converge only while the current release runs the tick from the scheduler: a rollback to an older release then has no tick until a newer release goes live.
 
 
 ### What a tick does
@@ -651,7 +651,7 @@ A release needs an existing [release layout](#release-layout), the verified agen
 
 Migrations must use expand and contract. A failed health check switches back; another failure from Migrate on pauses automation for an operator. Snapshots stay on the Gateway host. The run needs the database size plus 1 GiB free and keeps the newest three snapshots plus the snapshot a pause names.
 
-The parent workflow runs the definition loaded when it started. The activate child runs the target commit's definition after Load Swamp. Releases reload PHP-FPM and restart running application services. They do not converge static Gateway runtime files or update the Gateway Node's agent.
+The parent workflow runs the definition loaded when it started. The activate child runs the target commit's definition after Load Swamp. Releases reload PHP-FPM and restart running application services. The [gateway role convergence](/cli/node/role-add) owns the static Gateway runtime files, and node converge the Gateway Node's agent.
 
 ### Rollout limits
 

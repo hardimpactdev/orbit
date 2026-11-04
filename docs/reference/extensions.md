@@ -131,7 +131,7 @@ The digest of the `private-dns` [footprint artifact](/reference/node-provisionin
 
 The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. AI router reserves `collector.ai-router.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
 
-Gateway releases leave PHP-FPM startup hooks unchanged. A follow-up moves the Gateway runtime files to Node convergence. Documents keeps its [scheduler startup gate](/reference/project-documents#local-state-and-startup-ordering).
+The [gateway role convergence](/cli/node/role-add) removes the Documents PHP-FPM start hook that older Gateways installed. Documents keeps its [scheduler startup gate](/reference/project-documents#local-state-and-startup-ordering).
 
 `ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Contribute a matcher only for a route that bounds its body itself after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON. The Gateway asks the matchers once per request.
 

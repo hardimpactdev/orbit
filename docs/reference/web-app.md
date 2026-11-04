@@ -264,7 +264,7 @@ The Swamp release run uses `/home/orbit/web` and installs each build under its `
 
 Manual `orbit:bootstrap` and `orbit:gateway-web` refuse before any host change while their native Swamp parent workflows are unavailable. `orbit:gateway-web` returns `gateway.web_unavailable`; it does not publish a site or certificate, prepare directories, reload PHP-FPM, or start services.
 
-Normal [Gateway releases](/reference/gateway-recovery#web-build) install their own web build in `releases/` and switch `current` with the code before verification. Releases do not converge the static Caddy sites or PHP-FPM pool. A follow-up moves that work to Node convergence.
+Normal [Gateway releases](/reference/gateway-recovery#web-build) install their own web build in `releases/` and switch `current` with the code before verification. Releases do not converge the Caddy sites or the PHP-FPM pool: node converge publishes the sites, and the [gateway role convergence](/cli/node/role-add) owns the pool.
 
 ## Release a build
 

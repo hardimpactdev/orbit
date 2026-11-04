@@ -1,0 +1,9 @@
+---
+# A reload replaces the workers after their requests end; it runs only when the pool or a PHP-FPM drop-in changed.
+- name: Test PHP-FPM
+  ansible.builtin.command: /usr/sbin/php-fpm8.5 -t
+  changed_when: false
+- name: Reload PHP-FPM # noqa no-handler
+  when: >-
+    rt.gateway.pool in (runtime_files.results | selectattr('changed') | map(attribute='item.path'))
+  ansible.builtin.systemd: { name: php8.5-fpm.service, state: reloaded, daemon_reload: true }

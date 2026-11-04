@@ -161,6 +161,12 @@ elif role == 'metrics':
             check('proof-kept-exporter-port' in added, 'an unrelated rule on the exporter port survives')
             check('ufw allow from 10.231.0.11 to any port 9100 proto tcp\n' not in added,
                   'only the exact replaced broad exporter tuple is retired')
+elif role == 'gateway':
+    check(run('systemctl', 'is-active', '--quiet', 'php8.5-fpm.service').returncode == 0, 'the Gateway PHP-FPM serves its pool')
+    for unit in intent['runtime']['units']:
+        check(run('systemctl', 'is-enabled', '--quiet', unit['name']).returncode == 0, unit['name'] + ' is enabled')
+    check(run('systemctl', 'is-active', '--quiet', 'orbit-gateway-release.timer').returncode != 0, 'the release unit timer is retired')
+    print('parity: Gateway pool, agent-view and hibernator units; release timer retired')
 elif role == 'analytics':
     analytics = intent['runtime']['analytics']
     processes = gateway('GET', 'processes')['response']['data']

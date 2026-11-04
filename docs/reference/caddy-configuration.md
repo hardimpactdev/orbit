@@ -17,7 +17,7 @@ Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy.
 
 ## Native publication
 
-The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; a follow-up moves the static Gateway sites to Node convergence. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
+The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
 
 This workflow creates no version directory or backup and does not restore the previous file on failure. If validation or reload fails, the new bytes remain at `/etc/caddy/Caddyfile`; the Operation records the failure. Correct the owning stored intent and submit another publication. A successful command exit means the Operation was submitted, not that publication has completed.
 
