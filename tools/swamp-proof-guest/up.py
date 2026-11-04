@@ -2,7 +2,8 @@
 """Bring up the minimal proof topology inside one owned task VM, as root.
 
 This VM runs the Gateway from the staged commit and pinned Swamp serve with one
-worker named orbit-node-209. One nested copy of the seed's node-template plays
+worker named orbit-node-209, laid out as the swamp role leaves Node 209: serve on loopback
+behind the swamp.orbit Route, the node-proxy key and both role workers' tokens (version 17). One nested copy of the seed's node-template plays
 the target Node. Prints one JSON line with public facts and step timings.
 """
 import hashlib
@@ -27,8 +28,11 @@ STATE = HOME / '.orbit/swamp-proof'
 REPO = SOURCE / 'swamp'
 GATEWAY = SOURCE / 'apps/gateway'
 BINARY = '/usr/local/bin/swamp'
-PORT = 443
-URL = f'wss://swamp.orbit:{PORT}'
+# Serve listens where the swamp role's units put it: loopback port 9418, with Caddy serving swamp.orbit (version 17).
+PORT = 9418
+URL = f'ws://127.0.0.1:{PORT}'
+ROLE_CREDENTIALS = Path('/etc/orbit/swamp-role-worker')
+AGENT = STATE / 'agent'
 IDENTITY = HOME / '.orbit/ssh/proof_worker_ed25519'
 BOOTSTRAP = HOME / '.orbit/ssh/id_ed25519'
 timings = []
@@ -93,8 +97,10 @@ def target():
         IDENTITY.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-worker', '-f', str(IDENTITY)])
         run(['chown', '-R', 'orbit:orbit', str(IDENTITY.parent)])
-    # The swamp role's worker key path, which every migrated step's SSH uses (ADR 0243).
-    run(['install', '-D', '-o', 'orbit', '-g', 'orbit', '-m', '0400', str(IDENTITY), '/etc/orbit/swamp-role-worker/ssh-identity'])
+    # The node-proxy key an operator places before the first swamp role, and the role's identity it installs from it,
+    # with the owner and mode the role's own step gives it (ADR 0243, version 17).
+    run(['install', '-D', '-o', 'root', '-g', 'root', '-m', '0600', str(IDENTITY), '/etc/orbit/node-proxy/id_ed25519'])
+    run(['install', '-D', '-o', 'root', '-g', 'orbit', '-m', '0440', str(IDENTITY), str(ROLE_CREDENTIALS / 'ssh-identity')])
     # The Gateway's bootstrap key, which an enrolled Node accepts beside the worker key (version 6).
     if not BOOTSTRAP.exists():
         BOOTSTRAP.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -221,39 +227,44 @@ def swamp():
         native('access', 'token', 'mint', name, '--principal', principal, '--duration', '24h')
         private(STATE / 'credentials' / name, native('access', 'token', 'reveal', name, '--yes')['token'])
     private(STATE / 'credentials/enrollment', native('worker', 'token', 'create', 'orbit-node-209', '--duration', '24h')['token'])
-    # Serve refuses a self-signed CA:TRUE server certificate: a local CA signs a CA:FALSE leaf.
+    # The role's two workers, orbit-swamp-worker@a and @b, read these before the swamp role starts them (version 17).
+    for worker in ('a', 'b'):
+        name = f'orbit-swamp-worker-{worker}'
+        # The access token and the enrollment token are separate definitions, so they need separate names.
+        native('access', 'token', 'mint', f'{name}-server', '--principal', f'worker:{name}', '--duration', '24h')
+        folder = ROLE_CREDENTIALS / worker
+        run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', str(folder)])
+        private(folder / 'server.token', native('access', 'token', 'reveal', f'{name}-server', '--yes')['token'])
+        private(folder / 'enrollment.token', native('worker', 'token', 'create', name, '--duration', '24h')['token'])
+        run(['chown', 'root:root', str(folder / 'server.token'), str(folder / 'enrollment.token')])
+    # A local CA the vault fixtures sign their own sites with; serve itself has no TLS (version 17).
     tls = STATE / 'tls'
     tls.mkdir(exist_ok=True, mode=0o700)
     run(['openssl', 'req', '-x509', '-newkey', 'ed25519', '-nodes', '-days', '2', '-subj', '/CN=swamp-proof CA',
          '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign',
          '-keyout', str(tls / 'ca-key.pem'), '-out', str(tls / 'ca.pem')])
-    run(['openssl', 'req', '-new', '-newkey', 'ed25519', '-nodes', '-subj', '/CN=swamp.orbit',
-         '-keyout', str(tls / 'key.pem'), '-out', str(tls / 'leaf.csr')])
-    (tls / 'leaf.ext').write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n'
-                                  'extendedKeyUsage=serverAuth\nsubjectAltName=DNS:swamp.orbit,IP:127.0.0.1\n')
-    run(['openssl', 'x509', '-req', '-in', str(tls / 'leaf.csr'), '-CA', str(tls / 'ca.pem'), '-CAkey', str(tls / 'ca-key.pem'),
-         '-CAcreateserial', '-days', '2', '-extfile', str(tls / 'leaf.ext'), '-out', str(tls / 'cert.pem')])
     run(['chown', '-R', 'orbit:orbit', str(STATE)])
+    # swamp.orbit resolves to this VM's topology address, where Caddy serves the Route (version 17).
     hosts = Path('/etc/hosts')
-    if 'swamp.orbit' not in hosts.read_text():
-        hosts.write_text(hosts.read_text() + '127.0.0.1 swamp.orbit\n')
+    lines = [line for line in hosts.read_text().splitlines() if 'swamp.orbit' not in line.split()[1:]]
+    hosts.write_text('\n'.join([*lines, f'{TOPOLOGY["network"]["gateway"]} swamp.orbit']) + '\n')
     common = (f'User=orbit\nEnvironment=HOME=/home/orbit SWAMP_HOME={STATE}/home SWAMP_CONFIG_DIR={STATE}/config\n'
               'Environment=SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\nUMask=0077\nRestart=on-failure\n')
     units = {
-        # 209's serve flags, with TLS terminated by serve itself instead of the swamp role's Caddy.
+        # 209's serve flags: loopback 9418 behind the swamp.orbit Route, which Caddy terminates (version 17).
         'orbit-swamp-serve': ('[Unit]\nDescription=Proof Swamp serve\n[Service]\n' + common
-                              + f'WorkingDirectory={REPO}\nAmbientCapabilities=CAP_NET_BIND_SERVICE\n'
+                              + f'WorkingDirectory={REPO}\n'
                               + f'ExecStart={BINARY} serve --repo-dir {REPO} --port {PORT} --host 127.0.0.1 --auth-mode token '
-                              + f'--admins user:proof-operator --club-api-key-file {club} --trusted-hosts swamp.orbit,swamp.orbit:{PORT} '
+                              + f'--admins user:proof-operator --club-api-key-file {club} --trusted-hosts swamp.orbit --trust-proxy '
                               + '--dispatch-env-allow=, --remote-only --hot-reload '
-                              + f'--cert-file {tls}/cert.pem --key-file {tls}/key.pem --grants-file {STATE}/grants.yaml\n'),
+                              + f'--grants-file {STATE}/grants.yaml\n'),
         # 209's worker unit: the Node SSH key arrives as the proxy-ssh-identity credential. Production runs two workers of
         # 8 dispatch slots each; one proof worker gets all 16, so nested child runs never queue behind their parent (version 14).
         'orbit-node-worker': ('[Unit]\nDescription=Proof Swamp worker orbit-node-209\nAfter=orbit-swamp-serve.service\n[Service]\n' + common
                               + f'WorkingDirectory={STATE}\nLoadCredential=enrollment:{STATE}/credentials/enrollment\n'
                               + f'LoadCredential=server:{STATE}/credentials/worker\nLoadCredential=proxy-ssh-identity:{IDENTITY}\n'
                               + f'ExecStart={BINARY} worker connect {URL} --token-file=%d/enrollment --server-token-file=%d/server '
-                              + f'--ca-cert={tls}/ca.pem --cache-dir={STATE}/worker-cache --concurrency 16 --label role=swamp --label node=209\n'),
+                              + f'--cache-dir={STATE}/worker-cache --concurrency 16 --label role=swamp --label node=209\n'),
     }
     for name, contents in units.items():
         Path(f'/etc/systemd/system/{name}.service').write_text(contents)
@@ -266,8 +277,7 @@ def swamp():
     deadline = time.monotonic() + 180
     while True:
         try:
-            workers = native('worker', 'list', '--server', URL, '--token-file', str(STATE / 'credentials/operator'),
-                             '--ca-cert', str(tls / 'ca.pem'), timeout=15)['workers']
+            workers = native('worker', 'list', '--server', URL, '--token-file', str(STATE / 'credentials/operator'), timeout=15)['workers']
             if any(row.get('tokenName') == 'orbit-node-209' and row.get('status') in ('idle', 'busy') for row in workers):
                 break
         except (RuntimeError, KeyError, subprocess.TimeoutExpired):
@@ -306,7 +316,7 @@ def gateway(nodes):
         'DB_CONNECTION': 'sqlite', 'DB_DATABASE': str(database), 'QUEUE_CONNECTION': 'sync', 'CACHE_STORE': 'file',
         'ORBIT_GATEWAY_QUEUE_DRIVER': 'database',
         'SESSION_DRIVER': 'file', 'BROADCAST_CONNECTION': 'log', 'LOG_CHANNEL': 'single',
-        'ORBIT_SWAMP_ADDRESS': '127.0.0.1', 'ORBIT_SWAMP_CA_PATH': str(STATE / 'tls/ca.pem'),
+        # swamp.orbit through Caddy with the Orbit root, as production's defaults name it (version 17).
         'ORBIT_SWAMP_RUN_TOKEN': (STATE / 'credentials/gateway').read_text().strip(),
         'ORBIT_SWAMP_READ_TOKEN': (STATE / 'credentials/reader').read_text().strip(),
         'ORBIT_HOME': str(HOME / '.orbit'),
@@ -323,7 +333,14 @@ def gateway(nodes):
     run(['chown', 'orbit:orbit', str(database)])
     run(['php', 'artisan', 'migrate', '--force'], user=ACCOUNT, cwd=GATEWAY, timeout=600)
     network = TOPOLOGY['network']
+    # Node 209's own agent key; the Gateway records only its verifier, as for every enrolled Node (version 17).
+    AGENT.mkdir(parents=True, exist_ok=True, mode=0o700)
+    run(['chown', 'root:root', str(AGENT)])
+    if not (AGENT / 'secret').exists():
+        private(AGENT / 'secret', secrets.token_hex(32))
+        run(['chown', 'root:root', str(AGENT / 'secret')])
     facts = {'gateway': network['gateway'], 'gateway_host_key': Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[1],
+             'gateway_agent_secret_hash': hashlib.sha256((AGENT / 'secret').read_text().encode()).hexdigest(),
              'operator': TOPOLOGY['operator']['address'], 'targets': nodes,
              'subnet': str(ipaddress.ip_network(f'{network["gateway"]}/{network["prefix"]}', strict=False))}
     seeded = json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'seed'], input=json.dumps(facts), user=ACCOUNT, cwd=GATEWAY))
@@ -331,7 +348,10 @@ def gateway(nodes):
     public = ' '.join(IDENTITY.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-worker'
     run(['sh', '-c', 'install -d -m 0700 -o orbit -g orbit /home/orbit/.ssh; f=/home/orbit/.ssh/authorized_keys; touch "$f"; '
          'chown orbit:orbit "$f"; chmod 0600 "$f"; grep -qxF "$1" "$f" || printf "%s\\n" "$1" >> "$f"', 'sh', public])
-    serve_gateway(seeded['nodes']['gateway'])
+    serve_gateway(seeded['nodes']['gateway'], seeded['swamp_route'])
+    # The known-hosts publication starts a Swamp run, which reaches serve through swamp.orbit (version 17).
+    run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'known-hosts'], input='{}', user=ACCOUNT, cwd=GATEWAY)
+    observe(seeded['nodes']['gateway'])
     return seeded
 
 
@@ -352,7 +372,58 @@ def leaf(directory, name, hosts):
     run(['chmod', '0640', str(directory / f'{name}.key'), str(directory / f'{name}.pem')])
 
 
-def serve_gateway(node_id):
+def observe(node_id):
+    """Node 209's own agent, beside the task VM's observer (version 17).
+
+    The task VM's orbit-agent reports this VM to the fleet. Root's user manager runs a second orbit-agent.service with
+    the files node:converge renders for Node 209, bound over /etc/orbit/agent in its own mount namespace, so Doctor
+    reads 209's role and firewall facts from the proof Gateway and the outer observer keeps its own configuration.
+    """
+    rendered = json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'agent'], user=ACCOUNT, cwd=GATEWAY,
+                              input=json.dumps({'node': node_id})).strip().splitlines()[-1])
+    (AGENT / 'config.toml').write_text(rendered['configuration'])
+    (AGENT / 'ca.pem').write_text(rendered['certificate'])
+    run(['chown', '-R', 'root:root', str(AGENT)])
+    run(['chmod', '0600', str(AGENT / 'secret')])
+    delivery = SOURCE.parent / 'agent-delivery/orbit-agent-linux-x86_64'
+    binary = '/usr/local/bin/orbit-proof-agent'
+    run(['install', '-m', '0755', str(delivery if delivery.is_file() else Path('/usr/local/bin/orbit-agent')), binary])
+    # The agent starts only in a cgroup named orbit-agent.service, and the task VM's observer holds that system unit.
+    # Root's own user manager is a separate systemd, so the same unit runs there under its own name; a user unit
+    # takes no User= or Group= and starts with the default target.
+    unit = '\n'.join(line for line in rendered['unit'].splitlines() if not line.startswith(('User=', 'Group=')))
+    unit = unit.replace('Description=Orbit Node agent', 'Description=Orbit proof agent for Node 209')
+    unit = unit.replace('ExecStart=/usr/local/bin/orbit-agent', f'ExecStart={binary}\nBindPaths={AGENT}:/etc/orbit/agent')
+    unit = unit.replace('WantedBy=multi-user.target', 'WantedBy=default.target') + '\n'
+    Path('/etc/systemd/user').mkdir(parents=True, exist_ok=True)
+    Path('/etc/systemd/user/orbit-agent.service').write_text(unit)
+    run(['loginctl', 'enable-linger', 'root'])
+    manager = ['systemctl', '--user', '-M', 'root@']
+    deadline = time.monotonic() + 60
+    while subprocess.run([*manager, 'is-system-running'], capture_output=True, check=False).returncode not in (0, 1):
+        if time.monotonic() > deadline:
+            raise RuntimeError("root's user manager did not start")
+        time.sleep(1)
+    run([*manager, 'daemon-reload'])
+    run([*manager, 'enable', 'orbit-agent'])
+    run([*manager, 'restart', 'orbit-agent'])
+    run(['systemctl', 'is-active', '--quiet', 'orbit-agent'])
+    deadline = time.monotonic() + 120
+    while subprocess.run([*manager, 'is-active', '--quiet', 'orbit-agent'], check=False).returncode:
+        if time.monotonic() > deadline:
+            raise RuntimeError('the Node 209 proof agent did not start')
+        time.sleep(2)
+
+
+def route_leaf(route_id, hosts):
+    """A Route's certificate at the path its Caddy site loads: cert.pem and key.pem under its scope (version 17)."""
+    directory = Path(f'/etc/caddy/orbit-certificates/route-{route_id}/current')
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    leaf(directory, 'cert', hosts)
+    (directory / 'cert.key').rename(directory / 'key.pem')
+
+
+def serve_gateway(node_id, swamp_route):
     """The Gateway on Node 209 as production runs it (version 12).
 
     The gateway and websocket role certificates sit where their certificate steps write them, PHP-FPM serves the
@@ -366,6 +437,7 @@ def serve_gateway(node_id):
     address = TOPOLOGY['network']['gateway']
     leaf(Path('/etc/caddy/orbit-cert-current'), 'gateway', ['gateway.orbit', address])
     leaf(Path('/etc/caddy/orbit-websocket-cert-current'), 'reverb', ['reverb.orbit'])
+    route_leaf(swamp_route, ['swamp.orbit'])
     # Without this line gateway.orbit resolves through fleet private DNS to the production Gateway; a signing
     # step would then call production. up fails unless the name resolves to this VM.
     hosts = Path('/etc/hosts')

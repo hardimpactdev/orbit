@@ -15,7 +15,8 @@ from pathlib import Path
 SOURCE = Path(sys.argv[1]).resolve()
 KIND = sys.argv[2]
 STATE = Path('/home/orbit/.orbit/swamp-proof')
-TLS = STATE / 'tls/ca.pem'
+# swamp.orbit is the swamp role's Route; Caddy serves it with a certificate from the Orbit root (version 17).
+TLS = Path('/home/orbit/.orbit/ca/root.pem')
 
 
 def run(argv, *, input=None, timeout=300, user=None, cwd=None, env=None, check=True):
