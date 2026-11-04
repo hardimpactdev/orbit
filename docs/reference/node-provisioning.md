@@ -113,11 +113,11 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 
 ### Bootstrap identity
 
-Bootstrap SSH needs the Gateway bootstrap key. The observer unit's environment group must already exist on the candidate in this release. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. A true Swamp guard skips an action: enrollment appends the control key when `grep` exits 1 and skips it when `grep` exits 0.
+A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. A true Swamp guard skips an action: enrollment appends the control key when `grep` exits 1 and skips it when `grep` exits 0.
 
 The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key for the bootstrap and managed accounts. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
 
-The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. Its workflow consumer ships in a later release, after this Gateway producer is live. Loading a workflow that reads a new intent key before the producer is live would reject enrollment admitted during the release window. The first release keeps the existing observer-group prerequisite; the later consumer creates that group for stock machines.
+The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. The Gateway release that produces this key must be live before the workflow consumer is released. Swamp loads before the Gateway switches, so a consumer in the producer release would reject enrollment admitted during that window.
 
 The Gateway picks the bootstrap user from the Node record, unless the request names one.
 
