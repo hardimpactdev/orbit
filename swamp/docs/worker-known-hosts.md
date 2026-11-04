@@ -12,4 +12,4 @@ The Gateway principal `user:orbit-gateway` runs and reads this workflow through 
 
 ## Proof
 
-The [receipt index](../proof/receipts/node-worker-known-hosts.json) records minimal@16, Operation 4 and native run `51113625-08d0-4a59-8fb2-1a6e61a0de5f`. The fixture empties the worker file at mode 0644 before admission; parity checks the exact captured public pins, their digest, owner `orbit`, mode 0600 and Gateway terminal result. The write took 0.946 seconds and the Operation 2.5 seconds. This proves the isolated topology, not production uptake or ordering between overlapping publications.
+The proof records minimal@16, Operation 4 and native run `51113625-08d0-4a59-8fb2-1a6e61a0de5f`. The fixture empties the worker file at mode 0644 before admission; parity checks the exact captured public pins, their digest, owner `orbit`, mode 0600 and Gateway terminal result. The write took 0.946 seconds and the Operation 2.5 seconds. This proves the isolated topology, not production uptake or ordering between overlapping publications.
