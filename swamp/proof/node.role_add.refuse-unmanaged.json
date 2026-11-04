@@ -1,7 +1,6 @@
 {
   "kind": "node.role_add.refuse-unmanaged",
   "defaults": "node-role-add-defaults.json",
-  "clean": true,
   "budget_seconds": 30,
   "before_gateway": [
     ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.target}", "precondition", "{\"ssh_host_fingerprint\": null}"],
