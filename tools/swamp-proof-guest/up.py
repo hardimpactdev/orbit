@@ -398,12 +398,10 @@ def observe(node_id):
     Path('/etc/systemd/user').mkdir(parents=True, exist_ok=True)
     Path('/etc/systemd/user/orbit-agent.service').write_text(unit)
     run(['loginctl', 'enable-linger', 'root'])
+    # Starting root's user manager blocks until it answers; is-system-running exits 1 both for a degraded manager
+    # and for one not reachable yet, so it cannot be the wait.
+    run(['systemctl', 'start', 'user@0.service'])
     manager = ['systemctl', '--user', '-M', 'root@']
-    deadline = time.monotonic() + 60
-    while subprocess.run([*manager, 'is-system-running'], capture_output=True, check=False).returncode not in (0, 1):
-        if time.monotonic() > deadline:
-            raise RuntimeError("root's user manager did not start")
-        time.sleep(1)
     run([*manager, 'daemon-reload'])
     run([*manager, 'enable', 'orbit-agent'])
     run([*manager, 'restart', 'orbit-agent'])
