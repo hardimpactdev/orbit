@@ -28,6 +28,6 @@ enum GatewayQueue: string
     /** Optional UpCloud image builds, after waiting required build jobs. */
     case OptionalBuilds = 'builds-optional';
 
-    /** Operations, such as an Instance deploy: one job runs one operation (docs/reference/operations.md). */
+    /** Jobs that record a Swamp run in its Operation, one at a time (docs/reference/operations.md). */
     case Operations = 'operations';
 }

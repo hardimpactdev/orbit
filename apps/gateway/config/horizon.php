@@ -85,9 +85,8 @@ return [
             'timeout' => 1700,
             'nice' => 0,
         ],
-        // Operations, such as an Instance deploy (docs/reference/operations.md). One worker: an operation holds its target
-        // anyway, a single operator rarely deploys two targets at once, and the Gateway's memory is better spent on PHP-FPM.
-        // A second operation waits in the queue until the first ends. The timeout stays above the deadline of 1600 seconds.
+        // Jobs that record a Swamp run in its Operation (docs/reference/operations.md). One worker: the Gateway's memory is
+        // better spent on PHP-FPM, and a second job waits in the queue until the first ends.
         'operations' => [
             'connection' => 'gateway',
             'queue' => ['operations'],
