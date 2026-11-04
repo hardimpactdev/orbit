@@ -32,7 +32,6 @@ metrics.exporter_disable
 metrics.exporter_enable
 node.add
 node.agent_rekey
-node.remove
 node.role_add
 node.role_converge
 node.role_relocate
