@@ -19,5 +19,6 @@ def gateway(method, path, body=None, key=None):
 
 def doctor(node):
     report = gateway('POST', 'doctor', {'node_id': node, 'families': ['role', 'firewall']})['response']['data']
-    assert report['summary']['drift'] == 0 and report['summary']['unverifiable'] == 0, report['summary']
-    print(f'Doctor Node {node} role/firewall drift=0, unverifiable=0')
+    summary = report['summary']
+    print(f'Doctor Node {node}: role/firewall drift={summary["drift"]}, unverifiable={summary["unverifiable"]}')
+    return summary['drift'] == 0 and summary['unverifiable'] == 0

@@ -123,12 +123,6 @@ if 'no-drift' in sys.argv[3:]:
     check(all(value == '0' for value in recaps), 'the second run changed no Node state: ' + ','.join(recaps))
     print('parity: all Ansible phases changed=0')
 
-# Doctor reads the observer facts installed by fixture preparation.
-
-participants = {intent['node_id'], *(item['node_id'] for item in intent['publications']),
-                *(item['exporter_node_id'] for item in intent['exporters'])}
-for node in sorted(participants):
-    doctor(node)
 check(not Path('/tmp/orbit-ansible-' + operation['swamp_run_id']).exists(), 'the private Ansible run folder was removed')
 # --idempotency-key replays the original admission without another run or Node change.
 body = {'role': role, **({'converge_existing': True} if operation['kind'] == 'node.role_converge' else {})}
@@ -136,3 +130,7 @@ replayed = gateway('POST', 'nodes/' + str(intent['node_id']) + '/roles', body, '
 record = replayed['response']['data']
 check((record.get('operation') or record).get('id') == operation['id'], 'the idempotency key returns the same Operation')
 print('parity: private inputs removed; original admission replayed')
+# Evaluate every participant before failing, so a missing observer cannot hide another Node's drift.
+participants = {intent['node_id'], *(item['node_id'] for item in intent['publications']),
+                *(item['exporter_node_id'] for item in intent['exporters'])}
+check(all([doctor(node) for node in sorted(participants)]), 'Doctor requires zero drift and no unverifiable records')
