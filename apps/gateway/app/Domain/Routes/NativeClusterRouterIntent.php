@@ -6,12 +6,12 @@ namespace App\Domain\Routes;
 
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\NativeCaddyPackageInput;
 use App\Domain\Nodes\NodeConvergeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -66,7 +66,7 @@ final readonly class NativeClusterRouterIntent
             }
         }
         $candidateInput = $candidate === null ? null : [...$this->identity($candidate->node), 'assignment_id' => $candidate->id,
-            'active' => $candidate->status === LifecycleStatus::Active, 'caddy_package' => AgentCaddyPackage::nativeInput(),
+            'active' => $candidate->status === LifecycleStatus::Active, 'caddy_package' => NativeCaddyPackageInput::make(),
             'prerequisites' => $this->prerequisiteInput($candidate->node),
             'probes' => $probes];
 

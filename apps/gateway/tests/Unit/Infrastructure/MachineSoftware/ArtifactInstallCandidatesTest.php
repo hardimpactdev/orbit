@@ -2,16 +2,27 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\CaddyRelease;
 use App\Domain\Nodes\NativeCaddyPackageInput;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
+use App\Domain\Nodes\NodeConvergeInput;
+use App\Domain\Routes\NativeClusterRouterIntent;
+use App\Domain\Routes\NativeRouteCertificateInput;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
+use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Models\Node;
+use App\Models\Operation;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 it('admits mirror then upstream candidates for Composer Debian prerequisites', function (): void {
     $recipe = new RecipeLoader()->load();
@@ -54,6 +65,56 @@ it('projects mirror then upstream candidates for every role PHP package', functi
         ])->and($package['sha256'])->toBe($artifact->digest)
             ->and($package['url'])->toBe($package['urls'][0]);
     }
+});
+
+it('captures native Caddy candidates in the convergence footprint and role projection', function (): void {
+    Schema::create('node_footprints', function (Blueprint $table): void {
+        $table->integer('node_id');
+    });
+    $delivery = app(AgentDelivery::class);
+    $artifact = Mockery::mock(NodeFootprintArtifact::class);
+    $artifact->shouldReceive('name')->andReturn('caddy-package');
+    $artifact->shouldReceive('applies')->andReturn(true);
+    $artifact->shouldReceive('digest')->andReturn('caddy');
+    $footprint = new NodeFootprint($delivery, [$artifact]);
+    $producer = new NodeConvergeInput($footprint, $delivery, [$artifact]);
+    $node = (new Node(['user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64']))->forceFill(['id' => 12]);
+    $snapshot = $producer->capture($node, false, false);
+    $roles = $producer->roles($node, $snapshot['payloads']);
+
+    expect($snapshot['payloads']['caddy-package'])->toBe(NativeCaddyPackageInput::make())
+        ->and($roles['caddy_package'])->toBe(NativeCaddyPackageInput::make());
+});
+
+it('captures native Caddy candidates when admitting a Cluster Router', function (): void {
+    Schema::create('nodes', function (Blueprint $table): void {
+        $table->integer('id')->primary();
+        foreach (['user', 'platform', 'architecture', 'status', 'wireguard_ip', 'ssh_host_key_type', 'ssh_host_key'] as $column) {
+            $table->string($column);
+        }
+    });
+    Schema::create('node_roles', function (Blueprint $table): void {
+        foreach (['id', 'node_id', 'cluster_id'] as $column) {
+            $table->integer($column);
+        }
+        $table->string('role');
+        $table->string('status');
+    });
+    Schema::create('routes', function (Blueprint $table): void {
+        $table->integer('id');
+        $table->integer('cluster_id');
+    });
+    DB::table('nodes')->insert(['id' => 12, 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'status' => 'active', 'wireguard_ip' => '10.44.0.12', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'test-key']);
+    DB::table('node_roles')->insert(['id' => 7, 'node_id' => 12, 'cluster_id' => 3,
+        'role' => 'router', 'status' => 'provisioning']);
+    $delivery = app(AgentDelivery::class);
+    $producer = new NativeClusterRouterIntent($delivery,
+        app(RolePrerequisites::class), app(NativeRouteCertificateInput::class));
+    $operation = (new Operation)->forceFill(['kind' => 'cluster.router_set', 'node_id' => 12,
+        'input' => ['cluster_id' => 3, 'candidate_role_id' => 7]]);
+
+    expect($producer->forOperation($operation)['candidate']['caddy_package'])->toBe(NativeCaddyPackageInput::make());
 });
 
 it('admits native Caddy candidates without changing the frozen agent input', function (): void {

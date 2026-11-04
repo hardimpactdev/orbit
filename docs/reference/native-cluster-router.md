@@ -40,3 +40,5 @@ When no Node holds Router state, admission ends the unset at once with no run (R
 | `cluster.router_failed` | A failure outside these steps |
 
 The Gateway reads the outcome from Swamp's run data, never from step output. It changes only the admitted Router assignment IDs and leaves unrelated roles intact.
+
+Native Router admission captures both Caddy `url` and candidate `urls` during the [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror). The consumer changes only after the Gateway producer release is live.
