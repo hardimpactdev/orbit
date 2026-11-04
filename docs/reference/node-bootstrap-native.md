@@ -63,3 +63,5 @@ Official cfgmgmt version `2026.10.27.1` has no host-key connection input or loca
 ### Topology proof
 
 The topology proof showed the writer repairs an empty mode-0644 file to the exact admitted public pins at mode 0600, owned by the worker account. The Gateway records the matching digest and successful native step. It makes no production uptake or concurrent-publication claim.
+
+Tool Setup accepts optional artifact candidate lists before the Gateway emits them. Its consumer still uses `url` until the producer release is live. Follow the [native candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror); never activate a required intent field in its producer release.

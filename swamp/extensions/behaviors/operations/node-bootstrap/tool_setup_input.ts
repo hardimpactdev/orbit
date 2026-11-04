@@ -5,6 +5,10 @@ const User = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).refine((v) =>
 const Pin = z.object({
     version: z.string(),
     url: z.url().refine((v) => new URL(v).protocol === "https:"),
+    // Accepted before the Gateway starts emitting candidates; consumers still use url.
+    urls: z.array(z.url().refine((v) => new URL(v).protocol === "https:")).min(
+        1,
+    ).max(2).optional(),
     algorithm: z.enum(["sha256", "sha512"]),
     digest: z.string().regex(/^[a-f0-9]{64}(?:[a-f0-9]{64})?$/),
     lock_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),

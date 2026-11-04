@@ -9,7 +9,7 @@ type Context = {
 /** Pure public bindings. No source files or Node execution are carried in a resource. */
 export const behavior = {
     type: "@nckrtl/node-tool-setup-assets",
-    version: "2026.11.02.1",
+    version: "2026.11.04.3",
     resources: {
         plan: { schema: Plan, lifetime: "1d", garbageCollection: 10 },
     },

@@ -279,6 +279,16 @@ The `Recipe artifact mirror` workflow, `.github/workflows/php-build-mirror.yml`,
 
 Gateway native intents select the first URL from `ArtifactPin::candidateUrls`. For Debian files this is the mirror URL, with the package name and pinned digest in the filename. Tool Manager setup (including Git), role PHP packages and Caddy therefore keep working after upstream removes a build. Native cfgmgmt fetch still accepts one URL and checks its pinned checksum; a download or integrity failure stops the run. Recipe validation retains its existing mirror-then-upstream candidates, with fallback only after a transport failure. Other artifact formats, including the agent and CLI release binaries, retain their existing URLs.
 
+The native candidate contract rolls out in three releases because Swamp loads before the Gateway switches:
+
+1. Expand the Tool Setup pin schema to accept optional `urls`, retaining required `url`. Consumers still read `url`.
+2. After that schema release is live, the Gateway emits both `url` and the ordered `urls` from `ArtifactPin::candidateUrls()`. Consumers still read `url`.
+3. After that producer release is live, native consumers require `urls` and the Gateway stops emitting `url` for these artifacts.
+
+The final Tool Setup schema accepts an unused optional `url` during the Gateway switch. No consumer chooses a contract or reconstructs candidates. Re-admit work captured before the producer release; do not resume an older frozen intent against the new consumer.
+
+Each dependent PR stays draft until its predecessor's release is verified live. Merge order alone does not satisfy this gate. The retained agent Caddy contract is outside this rollout.
+
 Sury, Launchpad, and Zabbly can delete superseded builds. The mirror keeps rollbacks, new Nodes, images, and CI on the exact build after that.
 
 #### Bump Vite+
