@@ -3,31 +3,40 @@ title: "Feature flow"
 description: "The target flow for an Orbit change, from idea to deployed, and what is built today."
 ---
 
-This is the target flow for an Orbit change, agreed with Nick on 2026-11-04. The [command-pristine skill](../../.agents/skills/command-pristine/SKILL.md) applies it to one command at a time. The last section shows what is built today.
+This is the target flow for an Orbit change, agreed with Nick on 2026-11-04. The `command-pristine` skill (`.agents/skills/command-pristine/SKILL.md`) applies it to one command at a time. The last section shows what is built today.
 
 ## Words used here
 
-- **Templates:** VM snapshots of the base topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. Dev VMs, CI and the task VM image all start from them.
-- **Task VM hosts:** the machines that run task VMs and their nested topologies (beast, shark and host 14).
-- **Orbit footprint:** what Orbit owns on a Node: the agent, the CLI, the Gateway code, and the files and units Orbit renders for itself.
-- **Workload state:** what users run on Nodes: Instances, Processes and containers, Caddy sites, firewall rules, `.env` files and role config.
+These terms distinguish the shared templates, their hosts and the state on each Node.
+
+| Term | Meaning |
+| --- | --- |
+| Templates | VM snapshots of a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. Dev VMs, CI and the task VM image all start from them. |
+| Task VM hosts | Machines that run task VMs and their nested topologies: beast, shark and host 14. |
+| Orbit footprint | What Orbit owns on a Node: the agent, CLI, Gateway code, and the files and units Orbit renders for itself. |
+| Workload state | What users run on Nodes: Instances, Processes, containers, Caddy sites, firewall rules, `.env` files and role config. |
 
 ## 1. Idea
 
 Before an agent writes any code, three things are in place and agreed. The agent then codes against them.
 
-1. **Brief and acceptance criteria:** a Task group, or a Task in a group, with a short brief and the acceptance criteria the change must meet.
+1. **Brief and acceptance criteria:** a Task group or a Task in a group.
+
+   Include a short brief and the acceptance criteria the change must meet.
+
 2. **The flow chart:** `docs/cli/<family>/<command>.mmd`, updated to the ideal flow, following the flow-tighten rules.
    - The main path uses only the required parameters.
    - Each optional flag gets its own `opt` block.
    - The chart is minimal and shows real steps only.
-3. **The docs of the ideal state:** `docs/cli/<family>/<command>.mdx`, updated to how the feature should work when it is done: description, usage, how it works, and errors.
+3. **The docs of the ideal state:** update `docs/cli/<family>/<command>.mdx` with the finished feature's description, usage, behavior and errors.
 
 For a bug, fix the chart and the docs first, then the code.
 
 The agent that takes the Task gets the updated chart, the updated docs, the brief and the acceptance criteria. The test cases in step 2.3 come from the chart, and the acceptance criteria decide when the Task is done.
 
 ## 2. Develop
+
+Build and check the change in a dev topology before pushing it.
 
 1. Start a dev VM from the templates, with its nested topology. It matches what CI and the fleet run.
 2. Build the change.
@@ -36,6 +45,10 @@ The agent that takes the Task gets the updated chart, the updated docs, the brie
      - an Ansible phase for idempotent Node state with lists, such as packages, Caddy sites, PHP-FPM pools and config files;
      - native steps for Gateway calls, single commands, work that must not repeat, and commands with a budget under about 10 seconds.
    - Each Ansible phase is one Swamp step and must be safe to rerun from the start.
+### Test the chart
+
+Use the chart to cover the command's paths.
+
 3. Add test cases from the chart:
    - one for the main path;
    - one for each optional flag;
@@ -45,6 +58,8 @@ The agent that takes the Task gets the updated chart, the updated docs, the brie
 4. Converge the branch onto the dev topology and run the cases there. The change works there before it is pushed.
 
 ## 3. Pull request
+
+The author prepares the PR for the merge queue.
 
 1. Push the branch and open the PR.
 2. The author turns on auto-merge as `nckrtl` with `gh pr merge <n> --auto`, so the PR joins the merge queue once CI passes.
@@ -67,7 +82,9 @@ CI is the only gate: if CI passes, the PR merges. So CI must be strict about wha
    3. It runs only the test cases of the affected commands, in parallel, each on its own copy.
 
    This adds about 5 to 8 minutes, and only to PRs that change commands.
-3. The merge queue uses the same rule: it runs the VM job only when a batch contains a PR that changes command code.
+3. The merge queue applies the same selection rule.
+
+   A batch needs the VM job only for PRs that change command code.
 
 ## 5. Merge
 
@@ -75,17 +92,30 @@ The merge queue lands the PR on main.
 
 ## 6. Release
 
-1. A Swamp release run starts for the newest commit on main. When several merges land during a release, the next run takes only the newest one.
+The release run builds and loads the code, then checks the Gateway.
+
+1. A Swamp release run starts for the newest commit on main.
+
+   Several merges can land during a release. The next run then takes only the newest commit.
+
 2. It builds the release: Composer, the web build, the CLI.
 3. It snapshots the database and runs the migrations. Migrations are expand and contract, so old code still works during the switch.
 4. It switches the Gateway to the new code and loads the new workflows into Swamp. Swamp reloads; it does not restart.
-5. It checks that the Gateway is healthy. If the check fails, `bin/gateway-rollback` switches back, without needing Swamp.
+5. It checks that the Gateway is healthy.
+
+   A failed check runs `bin/gateway-rollback` to switch back without Swamp.
+
 6. The Gateway records the release.
 
 ## 7. Templates
 
+Refresh the shared templates after the release.
+
 1. Converge the new release onto the templates and snapshot them.
-2. Export the templates as image files, copy them to the other task VM hosts with `scp`, and import them there. `scp` was much faster than `incus copy` in earlier image work.
+2. Export the templates as image files. Copy them to the other task VM hosts with `scp` and import them there.
+
+   Earlier image work found `scp` much faster than `incus copy`.
+
 3. From then on, dev VMs, CI and new task VMs start from the new templates.
 
 The images stay on our own machines. Nothing goes to GitHub or UpCloud.
@@ -109,6 +139,8 @@ A release never touches workload state:
 
 ## 9. Drift
 
+Doctor reports drift so you can choose a fix.
+
 1. Doctor reads recorded state and agent reports, and lists each difference as a finding.
 2. Each finding offers its fix:
    - if the Node is missing something the Gateway recorded: run `node:converge`, or the command that owns that record;
@@ -116,6 +148,8 @@ A release never touches workload state:
 3. You choose the fix. Nothing repairs workload drift on its own.
 
 ## 10. Version updates
+
+Version changes follow the same flow as other changes.
 
 1. Self-hosted Renovate, running on our runners, proposes version changes as PRs to `recipe.json`, with checksums.
 2. The PR goes through the same CI: the VM job converges the new versions onto a template copy and runs the tests of the roles it changes.
@@ -125,6 +159,8 @@ A release never touches workload state:
 Tools that a user installs on one Node with `tool:install` stay separate. They update within their own version range, outside this flow.
 
 ## 11. Nightly
+
+The nightly build checks that templates match a fresh installation.
 
 1. A schedule creates a Task in a task VM.
 2. It builds the topology from stock Ubuntu up to the running release, and runs the full test suite.
@@ -136,6 +172,8 @@ Tools that a user installs on one Node with `tool:install` stay separate. They u
    - an infrastructure problem: Pi reruns once, then reports.
 
 ## What is built today
+
+This table separates the parts already built from the work still planned.
 
 | Step | State |
 | --- | --- |
@@ -155,9 +193,11 @@ Tools that a user installs on one Node with `tool:install` stay separate. They u
 
 ## Open points
 
+These choices remain open.
+
 - Parallel rollout: dev Nodes first, or all Nodes at once.
 - The `node:converge` flag names for the release scope (footprint, changed roles).
 - The exact path rules that select CI jobs, and how a changed file maps to the affected commands.
-- How Pi's PRs merge: auto-merge with an App token through the queue, to be checked when task-VM development restarts.
+- How Pi's PRs merge: check App-token auto-merge through the queue after task-VM development restarts.
 - Speed of nested VMs inside a task VM, for the nightly build.
-- The agent strip: the agent becomes an observer only once the templates replace the image build, R3 lands, and the remaining Gateway calls to agent commands are gone.
+- The agent becomes an observer only after templates replace the image build, R3 lands and the remaining Gateway calls to agent commands are gone.
