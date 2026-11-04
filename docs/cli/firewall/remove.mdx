@@ -1,36 +1,38 @@
 ---
 title: "orbit firewall:remove"
 sidebarTitle: "firewall:remove"
-description: "Remove the one rule that matches a port from UFW and delete its record. `--from` and `--protocol` narrow the match; when you omit one, it matches any value. `--from=any` matches only a rule for any source. The CLI asks `Remove firewall rule [443/tcp from any] from Node #ID?` with No selected. Supply `--yes` for automation, including JSON; JSON never implies consent."
+description: "Remove the one operator rule that matches a port from UFW and delete its record."
 ---
 
 ```bash
-orbit firewall:remove <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--yes] [--json]
+orbit firewall:remove <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--yes]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `port` | yes | Port or ordered range of the rule. |
+| `port` | yes | Destination port or ordered range of the rule. |
 
-| Option | Meaning |
-| --- | --- |
-| `--node=ID` | Numeric target Node ID. |
-| `--from=SOURCE` | Match only a rule with this source. |
-| `--protocol=PROTO` | Match only a rule with this protocol. |
-| `--yes` | Confirm rule removal without prompting. |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--node=ID` | required | Numeric target Node ID. |
+| `--from=SOURCE` | any source | Match only the rule with this source. `--from=any` matches only a rule for any source. |
+| `--protocol=PROTO` | any protocol | Match only the rule with this protocol, `tcp` or `udp`. |
+| `--yes` | prompt | Confirm without prompting. |
 
 ```bash
 orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24
-orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --yes --json
+orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --yes
 ```
 
-The API is `POST /api/v1/nodes/{node}/firewall-rules/remove` with `port` and optional `source` and `protocol`. When no rule matches, the Gateway returns `firewall.rule_not_found`. When more than one rule matches, it returns `firewall.rule_ambiguous` and lists each match in `details.matches`; the CLI prints one line per match. Add `--from` or `--protocol` and repeat the command.
+The port, and `--from` and `--protocol` when given, must match exactly one rule. No match is refused with `firewall.rule_not_found`. Several matches are refused with `firewall.rule_ambiguous`, and the error lists each match; add `--from` or `--protocol` to pick one.
 
-The Gateway marks the rule `removing` and returns its Operation. Swamp deletes the rule's lines on the Node. A line that a role-managed rule with the same tuple also needs stays. Completion removes the Gateway record. A failure leaves the rule `failed` with the step that stopped; repeat the command with a new admission key after fixing the cause.
+The CLI asks `Remove firewall rule [443/tcp from any] from Node #ID?` with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--yes`, a command that cannot prompt exits 1 with `input.confirmation_required`. `--json` never implies consent. A declined removal sends no request.
 
-Declining, Ctrl-C, or end of input before removal exits 1 with `input.cancelled`. Noninteractive removal without `--yes` exits 1 with `input.confirmation_required` and an instruction to supply `--yes`. Refused confirmations send no removal request. Authorization and safety errors retain their codes.
+Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`.
 
-Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
+Orbit deletes the lines on the Node that belong to this rule alone. A line that Orbit also needs for a role or for WireGuard peer trust stays. A line that is already gone is skipped. If every line is already gone, the command still deletes the record and succeeds with `Skipped — already removed (firewall.rule_absent)`. The other rules keep their order. Removing a deny reopens the port to the sources it blocked, and removing an allow closes it to the sources it admitted. To lift a restriction without an exposure window, remove the deny before the allows, as [the change order](/cli/firewall#change-rules-without-an-exposure-window) says.
+
+Completion deletes the rule record. A failure leaves the rule marked `failed` and does not restore lines already removed. Repeating the command finishes the removal.
 
 ## How it works
 
