@@ -1,0 +1,70 @@
+{
+  "kind": "node.role_add.analytics.local-storage.repair-port",
+  "workflow": "operation-node-role-add",
+  "topology": "minimal",
+  "clean": false,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {"role": "analytics", "postgres_process_id": "${postgres.id}", "clickhouse_process_id": "${clickhouse.id}", "converge_existing": true}
+  },
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "Apply role prerequisites", "job": "prerequisites", "step": "Apply role prerequisites", "budget_seconds": 900},
+    {"name": "Apply the role on the Node", "job": "node", "step": "Apply the role on the Node", "budget_seconds": 900},
+    {"name": "Publish role sites", "job": "publication", "step": "Publish role sites", "budget_seconds": 180},
+    {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
+    {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 120}
+  ],
+  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "analytics", "repair-port"],
+  "prepare": [
+    {"method": "GET", "path": "processes", "operation": false, "bind": "postgres", "match": {"name": "proof-analytics-postgres"}, "body": {}},
+    {"method": "GET", "path": "processes", "operation": false, "bind": "clickhouse", "match": {"name": "proof-analytics-clickhouse"}, "body": {}}
+  ],
+  "after_prepare": [
+    [
+      "incus",
+      "exec",
+      "metrics",
+      "--",
+      "ufw",
+      "--force",
+      "delete",
+      "allow",
+      "in",
+      "on",
+      "docker0",
+      "proto",
+      "tcp",
+      "to",
+      "10.231.0.11",
+      "port",
+      "5432",
+      "comment",
+      "orbit:analytics-postgres-local"
+    ],
+    [
+      "incus",
+      "exec",
+      "metrics",
+      "--",
+      "ufw",
+      "allow",
+      "in",
+      "on",
+      "docker0",
+      "proto",
+      "tcp",
+      "to",
+      "10.231.0.11",
+      "port",
+      "55432",
+      "comment",
+      "orbit:analytics-postgres-local"
+    ],
+    ["incus", "exec", "metrics", "--", "ufw", "allow", "55432/tcp", "comment", "proof-kept-other-rule"]
+  ]
+}

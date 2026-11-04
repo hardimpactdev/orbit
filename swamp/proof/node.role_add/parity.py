@@ -86,7 +86,15 @@ elif role == 'analytics':
     check(len(plausible) == 1 and plausible[0]['id'] == analytics['process_id'], 'one managed Plausible Process is recorded')
     check(run('curl', '--max-time', '15', '--fail', '--silent', analytics['health_url']).returncode == 0,
           'Plausible serves its health endpoint')
-    unchanged = 'no-drift' in sys.argv[3:]
+    added = run('ufw', 'show', 'added').stdout.splitlines()
+    for rule in intent['firewall']['desired']:
+        if 'docker0' in rule:
+            matches = [line for line in added if rule[-1] in line]
+            check(len(matches) == 1 and ' port ' + rule[rule.index('port') + 1] + ' ' in matches[0],
+                  'one owned local storage rule uses the admitted port')
+    if 'repair-port' in sys.argv[3:]:
+        check(any('proof-kept-other-rule' in line for line in added), 'the unrelated firewall rule survives port repair')
+    unchanged = operation['kind'] == 'node.role_converge'
     check(len(analytics['initialize']) == (0 if unchanged else 2), 'only initial admission runs createdb and migrate')
     subprocess.run(['python3', str(Path(__file__).with_name('analytics.py')),
                     'verify' if unchanged else 'capture', operation['input']['_role']['runtime']['installation']['name'], target], check=True)
