@@ -450,8 +450,13 @@ def serve_gateway(node_id, swamp_route):
     Path('/etc/php/8.5/fpm/pool.d/orbit-gateway.conf').write_text(
         f'[orbit-gateway]\nuser = {ACCOUNT}\ngroup = {ACCOUNT}\nlisten = /run/php/orbit-gateway.sock\nlisten.owner = caddy\n'
         'listen.group = caddy\npm = ondemand\npm.max_children = 4\nclear_env = no\n')
-    # The fleet's member trust: Nodes reach gateway.orbit and reverb.orbit over the private network (version 11).
-    run(['ufw', 'allow', 'in', 'on', TOPOLOGY['network']['name'], 'to', address, 'port', '443', 'proto', 'tcp', 'comment', 'orbit-proof gateway'])
+    # As on the nested Nodes, proof traffic crosses the isolated bridge, not the fleet's orbit interface (version 19).
+    network = TOPOLOGY['network']
+    run(['ufw', 'allow', 'in', 'on', network['name'], 'from',
+         str(ipaddress.ip_network(f'{address}/{network["prefix"]}', strict=False)),
+         'to', address, 'comment', 'proof-network'])
+    run(['ufw', '--force', 'delete', 'allow', 'in', 'on', network['name'], 'to', address,
+         'port', '443', 'proto', 'tcp', 'comment', 'orbit-proof gateway'])
     # Caddy resolves the Gateway web root itself (resolve_root_symlink), so it needs traverse rights down to it.
     path = HOME
     for part in GATEWAY.relative_to(HOME).parts:
