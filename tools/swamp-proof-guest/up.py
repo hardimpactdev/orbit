@@ -350,6 +350,8 @@ def gateway(nodes):
     public = ' '.join(IDENTITY.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-worker'
     run(['sh', '-c', 'install -d -m 0700 -o orbit -g orbit /home/orbit/.ssh; f=/home/orbit/.ssh/authorized_keys; touch "$f"; '
          'chown orbit:orbit "$f"; chmod 0600 "$f"; grep -qxF "$1" "$f" || printf "%s\\n" "$1" >> "$f"', 'sh', public])
+    for command in seeded['gateway_firewall']:
+        run(command)
     serve_gateway(seeded['nodes']['gateway'], seeded['swamp_route'])
     # The known-hosts publication starts a Swamp run, which reaches serve through swamp.orbit (version 17).
     run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'known-hosts'], input='{}', user=ACCOUNT, cwd=GATEWAY)
