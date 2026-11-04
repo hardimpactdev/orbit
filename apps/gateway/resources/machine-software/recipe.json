@@ -3,7 +3,7 @@
     "agent": null,
     "ubuntu": {
         "release": "26.04",
-        "snapshot": "20261103T000000Z"
+        "snapshot": "20261104T000000Z"
     },
     "architectures": [
         "amd64"
@@ -27,7 +27,7 @@
         "bind9-dnsutils": {
             "source": "ubuntu",
             "package": "bind9-dnsutils",
-            "version": "1:9.20.24-1ubuntu0.4"
+            "version": "1:9.20.24-1ubuntu0.5"
         },
         "btrfs-progs": {
             "source": "ubuntu",
