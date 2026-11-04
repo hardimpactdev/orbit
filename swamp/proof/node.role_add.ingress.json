@@ -13,13 +13,10 @@
     ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
     ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}"],
     [
-      "runuser",
-      "-u",
-      "orbit",
-      "--",
-      "php",
-      "tools/swamp-proof-guest/gateway.php",
-      "fixture",
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- php tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
       "{\"clusters\": [{\"name\": \"role-ingress-proof\", \"node_ids\": [\"${node.peer}\"], \"router_node_id\": \"${node.target}\"}]}"
     ]
   ],

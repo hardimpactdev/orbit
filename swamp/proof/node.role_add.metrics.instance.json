@@ -17,7 +17,14 @@
       "from pathlib import Path; public=' '.join(Path('/home/orbit/.orbit/ssh/proof_worker_ed25519.pub').read_text().split()[:2]); target=Path('/home/orbit/.ssh/authorized_keys'); lines=target.read_text().splitlines(); target.write_text('\\n'.join([*lines, public])+'\\n') if not any(' '.join(line.split()[:2]) == public for line in lines) else None"
     ],
     ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.metrics}", "metrics"],
-    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}"]
+    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}"],
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- php tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"node_updates\": [{\"id\": \"${node.peer}\", \"attributes\": {\"tld\": \"prod.test\"}}]}"
+    ]
   ],
   "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "metrics"}},
   "expect": {"status": "succeeded"},
@@ -65,24 +72,11 @@
     },
     {
       "method": "POST",
-      "path": "database-connections",
-      "operation": false,
-      "bind": "database",
-      "body": {
-        "slug": "proof-role-${proof.run}",
-        "node_id": "${node.target}",
-        "driver": "sqlite",
-        "path": "/home/orbit/apps/proof-role-${proof.run}/default/database/database.sqlite"
-      }
-    },
-    {"method": "PUT", "path": "instances/${instance.id}/database-connections/proof-role-${proof.run}", "operation": false, "body": {"prefix": "DB"}},
-    {
-      "method": "POST",
       "path": "instances/${instance.id}/clone",
       "body": {
         "node_id": "${node.peer}",
         "name": "production",
-        "preview_name": "production-${proof.run}.proof.test",
+        "preview_name": "production-${proof.run}",
         "sqlite_source_path": "/home/orbit/apps/proof-role-${proof.run}/default/database/database.sqlite"
       }
     }
