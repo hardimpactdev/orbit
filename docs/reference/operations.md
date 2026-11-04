@@ -3,7 +3,7 @@ title: "Operations"
 description: "How the Gateway runs a long operation as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
-  - apps/gateway/app/{Jobs/RunOperation.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
+  - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
@@ -15,13 +15,13 @@ covers:
 
 Swamp is the sole executor of task groups. The Gateway stores task state and runs requested keyed primitives. Operation recovery resumes a primitive without choosing the next task phase. Review parking reports stopped power only after provider confirmation; an unconfirmed parked row reports unknown power.
 
-A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Its kind declares its executor: PHP uses the [Gateway queue](/reference/gateway-queue); Swamp claims work through the [Services primitives](#swamp-execution). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
+A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Swamp runs it: the Gateway admits the intent, starts one native workflow, and projects the workflow's result into the record ([How an operation runs](#how-an-operation-runs)). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
 Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).
 
-Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. [External review parking](/reference/tasks#park-an-external-group-for-review) is also a keyed operation. It succeeds only after provider-confirmed stopped power; replay or recovery keeps the same group and VM. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)). Other long commands, such as `node:add` and `instance:transfer`, also still run inside their request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) plans to move them off the request path and to lower the request limit.
+Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. [External review parking](/reference/tasks#park-an-external-group-for-review) is also a keyed operation. It succeeds only after provider-confirmed stopped power; replay or recovery keeps the same group and VM. Every other kind a command starts runs the same way; [Kinds and targets](#kinds-and-targets) lists the task and deploy kinds.
 
-Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
+Production deployments include a `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
 Native terminal projection reads Swamp history and any private result material outside the state transaction. Result writes lock and recheck the admitted run, and each family commits its domain state with its result. Remote cleanup runs after that commit.
 
@@ -249,7 +249,7 @@ An optional analysis reference on `tasks.turn` consumes the full plan/report/pro
 
 ## Start an operation
 
-After the access and idempotency checks, a start request validates the input, creates the record as `queued`, queues its job, and answers `202` with the record:
+After the access and idempotency checks, a start request validates the input, creates the record as `queued`, and answers `202` with the record. After the record commits, the Gateway submits one native workflow for it ([Direct Swamp starts](#direct-swamp-starts)):
 
 ```json
 {
@@ -263,9 +263,8 @@ After the access and idempotency checks, a start request validates the input, cr
 | `operation.idempotency_conflict` | 409 | This kind already has the key with another target or input. Nothing starts |
 | `validation.failed` | 422 | The `Idempotency-Key` header is malformed, or the input is invalid |
 | `operation.target_busy` | 409 | Another operation on the same target has not ended. `details.operation_id` names it |
-| `operation.queue_unavailable` | 503 | `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty. The Gateway records nothing |
 
-When the Gateway cannot push the job, it ends the record as `failed` with `operation.dispatch_failed` and answers `503` with that code. A deploy that a rollback superseded stays cancelled.
+When the Gateway cannot confirm the start, it answers `swamp.start_uncertain` and the operation stays running ([Direct Swamp starts](#direct-swamp-starts)).
 
 ### Retry a start with a key
 
@@ -275,7 +274,7 @@ Automatic deploy starts bind caller and command as well as target and input. The
 
 After checking the caller's access, the Gateway checks the key before further input or domain validation and before creating a target. The same key, target, and input return `202` with the existing operation, even when it has finished or failed to dispatch. A different target or input returns `409 operation.idempotency_conflict` and starts nothing. JSON object member order and whitespace do not change the input; array order and value types do. A malformed key returns `422 validation.failed` in the normal validation envelope, with `Idempotency-Key` in `error.details`.
 
-Concurrent starts with one new key create one operation and queue one job. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
+Concurrent starts with one new key create one operation and start one workflow. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
 
 The CLI commands `instance:deploy`, `instance:rollback`, `tasks:provision`, `tasks:check`, and `tasks:turn` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the `Idempotency-Key` argument (required where the API requires it), generated from the OpenAPI header.
 
@@ -339,72 +338,27 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 ## Cancel an operation
 
-`operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A waiting operation calls its current step’s stop hook at once and becomes `cancelled` only after the hook confirms the stop. Orbit records the cancel request before calling the hook. When the hook cannot confirm the stop, the request answers with that step’s error, such as HTTP 502. The operation and step stay `waiting`, keep the target, and retry the stop on the next delayed read.
-
-A Swamp kind may declare `cancel_guard: GuardClass`, implementing `OperationCancelGuard::assertCancellable(Operation): void`. The Gateway checks the root and every nonterminal descendant under the parent lock in the cancel transaction, before recording a cancel or changing any child. Guards read Gateway-recorded proof only and perform no effects. A typed refusal, such as `operation.cancel_refused` with HTTP 409, leaves the whole tree unchanged. Terminal Operations remain unchanged without invoking a guard. Kind loading rejects an invalid guard class; `OperationKinds::supports("cancel_guard")` reports this capability.
-
-When a waiting `tasks.publish` has started its push, cancellation is deferred without an error. It returns the waiting record and keeps the group held until the job records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
-
-A running operation finishes its running step, starts no further step, and becomes `cancelled`. The steps it did not reach become `cancelled`. A cancel request for a terminal operation changes nothing and returns the record.
+`operation:cancel` asks an operation to stop. The Gateway records the request first. An operation that no workflow has started becomes `cancelled` at once and releases its target. Once a native run is bound, the Gateway asks Swamp to cancel that run. The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record.
 
 A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
-A deploy or rollback ignores a cancel request once its `activation` step succeeded: the selected release is live, so a deploy still refreshes PHP, restarts Processes, runs the `after_activation` steps, and cleans up, and a rollback still refreshes PHP and restarts Processes. It then ends `succeeded`, or `failed` when a later step fails, and `cancel_requested` stays true.
+A parent that waits for children passes the request to every nonterminal child in the same transaction. [Cancel child plans](#cancel-child-plans) and [Resolve cancellation and missing targets](#resolve-cancellation-and-missing-targets) cover what a parent may still do after the request.
+
+When a `tasks.publish` has started its push, cancellation keeps the group held until the push records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
 
 Process lifecycle workflows use official cfgmgmt resources and SSH argv. Native assertions enforce the observed runtime and boot state. Docker creation uses one detached run; update removes the existing container before its replacement. Environment files remain root-owned 0600 until destroy. Horizon handoff publishes through systemd apply, chooses graceful termination or start, and checks the enabled unit is active before recording success.
 
 ## How an operation runs
 
-The job `RunOperation` runs on the `operations` queue, which has one worker. One operation job runs at a time in the fleet: an operation on another target stays `queued` until the running one ends. The job claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host and process ID, for people. While the attempt runs, it holds the operation's attempt lease, an exclusive lock on a file under `ORBIT_HOME/locks/operations`. The lease ends with the attempt's code, also when an error escapes it, and with the worker process.
+Admission records the intent, the idempotency key and the target hold in one transaction. After the commit, the Gateway pushes any execution copies and submits one native workflow for the kind ([Direct Swamp starts](#direct-swamp-starts)). Swamp runs the steps, retries and waits inside that workflow. The Gateway records the observed steps, then projects the workflow's terminal result into the operation and its domain record ([Recover a terminal native result](#recover-a-terminal-native-result)).
 
-An error that escapes the attempt fails the operation with `operation.failed`. When the Gateway cannot even record that, for example while its database is locked, the operation stays `running` with a free lease until the sweep recovers it.
+Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. A lost or stuck run shows up in [Executor health](#executor-health); the Gateway never reruns a step itself.
 
-The operation's kind plans its steps, then runs them in order. The runner skips a step that already succeeded, so a resumed operation continues where it stopped. It checks for a cancel request before each step. While a step runs, the runner writes its output tail at most once a second. A step that throws ends `failed`, and the operation ends `failed` with the kind's error code.
-
-Each active run has a deadline of 1,600 seconds; time between waiting reads does not count toward it, and its last 20 seconds are a cleanup reserve. A step that runs out of forward time stops there, and the recovery after it uses the reserve, such as reading which release an interrupted activation selected. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy or rollback, its error code is `deployment.deadline_exceeded`.
-
-### A waiting step
-
-A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`.
-
-`tasks.provision` waits for VM capacity and readiness. `tasks.check` waits for VM resume, workspace ownership, and its detached check. Under the [handoff policy](/reference/tasks#check-an-external-group), it also waits for its handoff push and hosted CI. `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end. `tasks.publish` waits for VM resume and its queued push. Deploy and rollback keep their current execution.
-
-A delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls the current step’s read hook. It does not start that work again. The read either finishes the step and continues the operation, or asks to wait again. Duplicate delayed jobs cannot read the step together, and an early job cannot read before the next read is due. A read that finds work still running consumes no recovery attempt. A wait has no time limit of its own. The orchestrator owns time budgets and cancels work that takes too long.
-
-The kind supplies the current step’s read and stop hooks. A read returns the step’s result or asks to wait again; a stop returns only when it confirms the work stopped, otherwise it throws the step’s error. Both run under the operation’s attempt lease. The runner stores step results through the same path as a synchronous step and then continues the kind, skipping succeeded steps.
+The WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) are the one exception. The Gateway runs or closes them itself, with no Swamp run.
 
 ### One operation per target
 
-An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost worker and a resume. A rollback is the one exception: it supersedes a deploy of the Instance that no worker has started, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time), as before.
-
-### Recover a lost worker
-
-The [observation API](/reference/gateway-queue#scheduled-work) accepts the configured Services peer. Its native runs only read observations. Explicit Gateway state recovery can queue a job again for:
-
-- each `running` operation whose attempt lease is free, because its worker died or its attempt ended without recording the outcome, and
-- each `queued` operation whose job was queued more than 10 minutes ago and has not started, and
-- each `waiting` operation whose next read is more than twice its delay overdue. This is the only sweep rule for a waiting operation; a free attempt lease does not make it a lost running attempt.
-
-The sweep queues a stale `queued` operation again only while the `operations` queue holds no pending start or delayed start job and the operation's attempt lease is free. It refreshes the operation's status and dispatch time under that lease, then releases the lease before publishing the replacement. An idle worker can then run the replacement as soon as it appears. With one worker, an operation that waits behind a long one still has a waiting job, so the sweep adds no second one.
-
-Delayed waiting reads do not count as waiting jobs for queued recovery. Redis reservations do not count as waiting jobs. A reservation proves that a process popped the job, not that its handler runs. In particular, a Horizon metadata error can discard a popped job while the worker stays alive. Such a reservation must not block recovery until the 1,800-second reservation expiry. The sweep can recover a queued operation after 10 minutes, at the next scheduled sweep, while its old reservation still exists. If the old copy later reaches the handler, the attempt lease and conditional claim prevent a second execution.
-
-The next worker then looks at the step that was running:
-
-| The interrupted step | What happens |
-| --- | --- |
-| Is resumable | It runs again, and the operation continues |
-| Is not resumable | It ends `failed` with `operation.worker_lost`, and the operation fails at that step |
-| Belongs to an operation that started 3 times already | The same as not resumable |
-| Already ended `failed` | It never runs again. The operation fails at that step with `operation.worker_lost` |
-
-The kind finishes its domain record in both failure cases. A lost deploy or rollback ends its history row as `failed` with the boundary of that step.
-
-A lost worker during a waiting read reads the same work again, even when starting that step is not resumable. It never restarts that work. An operation still fails after three lost workers.
-
-A resumed operation plans its steps again. When the plan differs from the first attempt, for example because someone added a deploy step in between, it fails with `operation.plan_changed`.
-
-The attempt lease is local to the Gateway host. All operation workers and the sweeper run on that host; worker process IDs are diagnostic information, not a liveness test.
+An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost run and a resume. A rollback is the one exception: it supersedes a deploy of the Instance that no workflow has started, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time).
 
 ## Errors
 
@@ -415,12 +369,8 @@ These codes belong to every operation.
 | `operation.idempotency_conflict` | The kind already has this key with another target or input; HTTP 409 |
 | `validation.failed` | A malformed key or invalid input; HTTP 422 |
 | `operation.target_busy` | Another operation holds the target |
-| `operation.queue_unavailable` | The Gateway has no queue |
-| `operation.dispatch_failed` | The Gateway could not queue the job |
-| `operation.worker_lost` | A worker stopped during a step that cannot run again |
-| `operation.plan_changed` | A resumed operation planned other steps than its first attempt |
-| `operation.target_missing` | The target was removed before the operation started |
-| `operation.superseded` | A rollback of the Instance cancelled this deploy before a worker started it. The status is `cancelled` |
+| `operation.superseded` | A rollback of the Instance cancelled this deploy before a workflow started it. The status is `cancelled` |
+| `operation.timed_out` | The run budget ended before the workflow finished. The status is `failed` |
 | `operation.failed` | The kind ended without an error code of its own |
 
 A kind adds its own codes. `instance.deploy` and `instance.rollback` use the [deployment codes](/reference/deployments#failures), such as `deployment.step_failed`.
@@ -429,13 +379,13 @@ A kind adds its own codes. `instance.deploy` and `instance.rollback` use the [de
 
 ### Publish waits for its existing job
 
-`tasks.publish` uses the approval push job and reads its stored result while waiting. It holds no operations worker during the VM transfer. A cancel before the job starts invalidates the queued record; a cancel afterward keeps the group held until the job ends, because stopping a push cannot prove that GitHub did not receive it.
+`tasks.publish` uses the approval push job and reads its stored result while waiting. A cancel before the job starts invalidates the queued record; a cancel afterward keeps the group held until the job ends, because stopping a push cannot prove that GitHub did not receive it.
 
 ### A task check returns evidence
 
-`tasks.check` holds the group while its detached check runs, without holding the operations worker. A failed check returns a successful operation with a failed outcome so the orchestrator can decide its next step. An unconfirmed stop retains the target and retries, because a cancel request alone does not prove the workspace is free. Group cancellation can end the operation when the VM is unreachable because the group's existing removal rule retains the workspace and requests assistance.
+`tasks.check` holds the group while its detached check runs. A failed check returns a successful operation with a failed outcome so the orchestrator can decide its next step. An unconfirmed stop retains the target and retries, because a cancel request alone does not prove the workspace is free. Group cancellation can end the operation when the VM is unreachable because the group's existing removal rule retains the workspace and requests assistance.
 
-The [hosted-CI prerequisite](/reference/tasks#check-an-external-group) uses delayed bounded reads for pending, missing and unreadable evidence, with no worker held and no Gateway-owned time budget or next turn. Recovery retains one commit per operation and reconciles the existing VM push record and remote tip. Cancellation can invalidate a queued push, but a started push must reconcile before ownership ends. Once only CI waits, cancel stops observation without cancelling workflows or erasing evidence. The owning operation must succeed with passed CI before either reviewer or publish admission can use its check; cancellation cannot turn a local pass into a completed candidate.
+The [hosted-CI prerequisite](/reference/tasks#check-an-external-group) uses bounded reads for pending, missing and unreadable evidence, with no Gateway-owned time budget or next turn. Recovery retains one commit per operation and reconciles the existing VM push record and remote tip. Cancellation can invalidate a queued push, but a started push must reconcile before ownership ends. Once only CI waits, cancel stops observation without cancelling workflows or erasing evidence. The owning operation must succeed with passed CI before either reviewer or publish admission can use its check; cancellation cannot turn a local pass into a completed candidate.
 
 These reasons explain the design. Check them before you propose a change.
 
@@ -450,36 +400,6 @@ An operation outlives every client and every worker, so its state lives in the d
 ### A key survives the caller and the operation
 
 An orchestrator can lose a response or move to another Node. A key scoped to the kind lets either caller find the same work. The early check lets a replay succeed even when the target's state fails start validation, and prevents a retry from creating another target. A database constraint settles concurrent inserts without a process-local lock. Keeping keyed operations forever prevents a late retry from starting the work again after retention would otherwise remove its key.
-
-### One job, many steps
-
-One job holds the Instance's operation lock for the whole run, so no environment change or Route change slips in between two steps. Each step as its own job would remove the 1,600-second bound but leave the lock free between jobs. Every deploy that ran in a request before, at most 570 seconds, fits in one job.
-
-### Waiting releases the worker, not the target
-
-Work outside the worker can outlast a job’s 1,600-second deadline. Keeping the worker blocked would stall every other operation. Ending the job at a waiting step lets those operations run while the target hold still prevents conflicting work. Making every step a separate job would release a deploy’s Instance lock between steps, so only an explicit wait ends a job. Reads observe existing work and do not consume the worker-loss attempt budget. The orchestrator sets the overall time budget; a second timeout inside Orbit would compete with it.
-
-A delayed job can be lost. Recovering only a read that is more than twice its delay overdue gives normal delivery time to work and prevents a wait from becoming stranded. Counting these delayed reads as queued starts would prevent the sweep from recovering an unrelated lost start. A waiting cancel must confirm the stop before freeing the target, or a new operation could overlap work that still runs. Saving the cancel request first makes an unconfirmed stop retryable.
-
-### Resume only what can run again
-
-Orbit can prepare a release, sync the environment, switch `current`, refresh PHP, and prune again without harm. It cannot know whether a deploy step that migrates a database ran. So the runner repeats only steps that declare themselves resumable and fails the others at a named step. A guess in either direction would hide a broken deploy.
-
-### An attempt lease instead of a heartbeat
-
-A step that waits on a silent remote command writes nothing for minutes. A heartbeat would need a timer inside the worker. The kernel frees a file lock when its holder's code ends or its process dies, so the lease tells the sweeper whether an attempt still runs without a timer. A check of the worker process is not enough: a Horizon worker lives on after its job throws, so the operation would look alive and keep its target locked.
-
-### A cancel after activation finishes the deploy
-
-Once `current` points at the new release, the release serves traffic. Stopping before the PHP refresh, the `after_activation` steps, and cleanup would leave a half-done deploy. So the cancel arrives too late, and the deploy finishes. A rollback follows the same rule after its `activation` step.
-
-### One worker for every operation
-
-The lock per target already keeps two operations off one Instance, and a single operator rarely deploys two Instances at once. Each Horizon worker is a PHP process of about 40 to 50 MB, and the Gateway once ran out of memory with about 18 PHP CLI processes beside its PHP-FPM workers. So the queue has one worker, and a second deploy or a rollback waits in the queue instead of costing memory while idle.
-
-### Operations need the queue
-
-Running an operation without the queue, for example after the response inside PHP-FPM, keeps the 600-second limit and adds a second path that recovery must cover. Task VMs follow the same rule.
 
 ### Filters check the form of a kind
 
@@ -496,13 +416,9 @@ MCP has an experimental Tasks primitive for long tool calls. An operation alread
 
 ## Swamp execution
 
-Author native workflows in `hardimpactdev/orbit-swamp`. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader. The claim-based API below remains for kinds still being converted.
+Author native workflows in `hardimpactdev/orbit-swamp`. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader.
 
 A kind declared with `executor: swamp` is admitted through the same Operation store and idempotency boundary. Admission returns `202`. The Gateway never dispatches a PHP job for it. Swamp owns its steps and retries; the Gateway keeps intent, target exclusion, steps, output and the final receipt.
-
-The configured Services peer (`dependency_detection.services_node_id`) and explicitly listed executor worker peers can use `/api/v1/operation-executor`. Its primitives claim one queued kind with a renewable lease, record named steps and keyed log lines, invoke a named RemoteProgram or agent command on a Node, and complete the Operation. A worker uses one stable claim key per workflow run.
-
-An expired claim can be reclaimed; every later write must present the current lease from the claiming Node. A matching worker string from another peer does not grant ownership. A lost response is retried with the same key and input. Families must use convergent Node commands or reconcile an uncertain effect before advancing.
 
 ### Protected inputs
 
@@ -582,7 +498,7 @@ Operation show and list expose a safe `assistance` value: null, or `{error_code}
 
 The first cancel cascades to nonterminal descendants; queued children that have not started end immediately. A repeated ancestor cancel skips a subtree already marked for cancellation, so newly admitted compensations can finish. A direct cancel of a compensation still cancels that child.
 
-The cascade commits before PHP waiting-step stop hooks run. A started effect without a saved result stays uncertain after cancellation and must be resolved through its target receipt. When explicit cancellation abandons a flagged parent, unprovable descendants end cancelled with `operation.child_unproven` assistance and release their own holds.
+A started effect without a saved result stays uncertain after cancellation and must be resolved through its target receipt. When explicit cancellation abandons a flagged parent, unprovable descendants end cancelled with `operation.child_unproven` assistance and release their own holds.
 
 Admission records the original Node ID, target type and target ID independently of the live Node foreign key. Child admission proof retains these immutable values after Node deletion. Child receipts and terminal executor context keep the original Node identity. Completion replies, lost-reply replays and cached effect receipt reads do not hydrate sources. New transport effects on a deleted Node fail with `operation.target_missing` before hydration or dispatch. Clearing a live Node foreign key while that admitted Node still exists refuses proof.
 

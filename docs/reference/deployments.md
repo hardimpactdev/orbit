@@ -269,7 +269,7 @@ To opt out, set `restart_on_deploy: false` in a Process create or update request
 
 Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no deploy steps, Orbit runs only its runtime operations. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
 
-Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, the [deadline of an operation](/reference/operations#how-an-operation-runs). A rollback has a deadline of 900 seconds. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
+Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, the [run budget of an operation](/reference/operations#native-run-budgets). A rollback has a deadline of 900 seconds. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
 
 ## Failures
 
@@ -378,7 +378,7 @@ A rollback or manual deployment can also end between the tick's read of the hist
 
 **Visibility.** Each automatic deployment has its operation and its [history row](#history) with the [recorded origin](#history). `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head on the first tick after it waited at least 30 minutes, once per commit, and a pause.
 
-**One worker.** Development defaults, production Instances, and manual deployments share the one `operations` worker, as [One worker for every operation](/reference/operations#one-worker-for-every-operation) describes. A tick's deployment waits in the queue while another deployment runs. Instances behind one Route deploy one after another, not together.
+**One deploy per Instance.** Development defaults, production Instances, and manual deployments hold the Instance as [One operation per target](/reference/operations#one-operation-per-target) describes. Instances behind one Route deploy one after another, not together.
 
 ## Swamp policy contracts
 

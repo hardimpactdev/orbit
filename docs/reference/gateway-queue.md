@@ -39,7 +39,7 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 
 Image, cache and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
-A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. Operations have a separate [recovery path](/reference/operations#recover-a-lost-worker). An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
+A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
 Each build worker checks `builds` before `builds-optional`, with Horizon balancing disabled. These jobs admit image and package cache Operations. Swamp orders each image build; the database permits one running build per host. Pruning stays on that host and protects running builds.
 

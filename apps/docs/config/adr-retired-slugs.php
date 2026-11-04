@@ -210,6 +210,7 @@ return [
         '0208-scan-monorepo-dependencies-per-sub-project',
         '0208-deploy-the-gateway-with-laravel-migrations',
     ],
+    '0209' => ['0209-run-long-operations-as-durable-queued-operations'],
     '0211' => ['0211-ship-node-changes-as-remote-programs'],
     '0216' => ['0216-run-one-exact-php-build-everywhere'],
     '0217' => ['0217-deploy-production-instances-automatically-by-polling'],
