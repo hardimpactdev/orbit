@@ -144,7 +144,7 @@ There is no atomic swap of a source set. Change rules in this order:
 
 Each step leaves the port at least as closed as the end state, so no request reaches it between steps.
 
-Every command accepts `--json` and requires `--node` with a numeric Node ID. All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
+Every command accepts `--json` and requires `--node` with a numeric Node ID. In a terminal, a command prompts for an omitted port and Node, and `firewall:remove` asks which rule to remove. A noninteractive or `--json` call that omits one is refused with `firewall.port_invalid` or `firewall.node_id_invalid` and sends no request. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
 
 ## Error codes
 

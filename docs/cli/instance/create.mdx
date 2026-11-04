@@ -1,48 +1,28 @@
 ---
 title: "orbit instance:create"
 sidebarTitle: "instance:create"
+description: "Create a development Instance of a Project on an app-dev Node: checkout, environment, database, setup, Processes and Route."
 ---
 
-Create a development Instance on a Node with the active `app-dev` role. A Node with the active `app-prod` role returns `instance.candidate_required`, including a repeat for an existing production Instance. Create a production Instance with [`instance:clone`](/cli/instance/clone).
-
 ```bash
-orbit instance:create <project> <node> <name> [--idempotency-key=KEY] [options]
+orbit instance:create <project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `project` | yes | Numeric Project ID. |
-| `node` | yes | Numeric Node ID. |
-| `name` | yes | Instance name. `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, creates the `default` Instance. |
+| `node` | yes | Numeric ID of an active Node with the `app-dev` role. |
+| `name` | yes | Instance name. `default` is the Project's default development source. A name that equals the Project `default_branch`, such as `main`, creates the `default` Instance. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--root=PATH` | the Project root | Relative web-root override for this Instance. |
-| `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. A Project that serves no web pages takes no domain and returns `instance.route_unserved`. A domain that another Route owns, or a reserved name such as `gateway.orbit`, returns `route.domain_conflict`. |
-| `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
-| `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before the setup steps run. Only for an Instance that this create makes; an Instance that finished setup returns `instance.database_server_existing`. See [database on a server](/domains/applications#database-on-a-server). Needs access to the Gateway too. |
+| `--domain=HOST` | generated | Route domain. Without it, Orbit generates one from the active Cluster TLD, then the Node TLD. |
+| `--branch=BRANCH` | see [branch selection](#branch-selection) | Source branch. |
+| `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before setup. See [database on a server](/domains/applications#database-on-a-server). |
+| `--json` | off | Print the result as JSON. |
 
-Create runs these steps on the Node, in order:
-
-1. Clone the repository and check out the branch. The Gateway mints a read token for this one repository, valid one hour.
-2. Write `.env`. The Gateway renders it from the Project's env template with `APP_URL`, a new `APP_KEY`, and the database keys. The file has mode 0640 and group `orbit-env`, so the Node agent can report its key names.
-3. When the Project's `default` Instance has a SQLite database under `DB`, and no `--database-server` is given, copy it to the same path in the new checkout. The copy is the Instance's own `<project>-<instance>` connection, and `.env` already names it.
-4. With `--database-server`, or when the `default` Instance's database is MySQL on a Database server, create the Instance's owner, database and test database there, as [`database:create --instance`](/reference/database-servers#create-a-database-on-a-server) does. A MySQL `default` database is then copied in. `.env.testing` names the test database.
-5. Run the Project setup steps, such as `composer install`, `vp install`, and `php artisan migrate`.
-6. Create and start the Processes from the Project's development Process definitions.
-7. For a web-serving Project, create its Route the way [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, including those a failed earlier run started, it also marks the Instance awake, so the first request reaches the application instead of the wake page. A standalone `route:create` does not set the marker.
-
-The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, 180 seconds for the Route, and 180 seconds for a database copy.
-
-A task VM Node returns `instance.task_vm_node`: a task VM gets its workspace from [`tasks:provision`](/reference/tasks#provision-an-external-group).
-
-Development placement and branch selection follow the requested name.
-
-| Creation input | Managed placement | Selected branch |
-| --- | --- | --- |
-| `default` or the default branch name, without `--branch` | `<node-apps-root>/<project-slug>/default` | The Project `default_branch`. |
-| Another name without `--branch` | `<node-apps-root>/<project-slug>/<name>` | The matching origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. |
-| Any name with `--branch` | The placement for the requested name | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. It need not match the Instance name. |
+In a terminal, an omitted project and node are chosen from interactive lists, with the Nodes limited to active `app-dev` Nodes, and an omitted name is asked for with the default `default`. A noninteractive or `--json` call that omits one is refused with `input.invalid`, naming the input, and sends no request.
 
 ```bash
 orbit instance:create 4 7 default
@@ -50,17 +30,59 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
-When the name equals the Project default branch, Orbit creates the `default` Instance, and `--branch` keeps its meaning as the `branch_override`. The final Operation result carries `name_converted_from` with the requested name, or null when no conversion was needed. See [A default-branch name means default](/domains/applications#a-default-branch-name-means-default).
+In a terminal, the CLI shows the steps below as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. Create runs these steps on the Node, in order:
 
-A requested origin branch keeps its existing selection behavior. Orbit does not reset an existing local branch to the default commit. A missing fetched `default_branch` when required returns `instance.branch_resolution_failed`, not a different fallback branch. An invalid Git branch name returns `validation.failed` before source changes.
+1. Clone the repository and check out the branch. Orbit mints a read token for this one repository, valid one hour. The token is never part of a command line and is removed from the Node after the clone.
+2. Write `.env` from the Project's env template, with `APP_URL`, a new `APP_KEY` and the database keys. The file has mode 0640 and group `orbit-env`. An owned MySQL or PostgreSQL database also gets `.env.testing`.
+3. When the Project's `default` Instance has a SQLite database, copy it to the same path in the new checkout. The copy is the Instance's own `<project>-<instance>` connection, and `.env` already names it.
+4. With `--database-server`, or when the `default` Instance's database is MySQL on a Database server, create the Instance's owner, database and test database there, as [`database:create --instance`](/reference/database-servers#create-a-database-on-a-server) does. A MySQL `default` database is then copied in.
+5. Run the Project setup steps, such as `composer install` and `php artisan migrate`, in order, as the Node's configured user.
+6. Create and start the Processes from the Project's development Process definitions.
+7. For a web-serving Project, create its Route as [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, the Instance also becomes awake, so the first request reaches the application and not the wake page.
 
-A create that fails before activation removes its owned resources and Instance row without teardown. The response keeps the original error code. Once cleanup completes, a new create can select a different branch. If an interruption or incomplete cleanup leaves a pre-activation Instance, an identical retry resumes it; a retry that changes the root or `--branch` returns `instance.placement_conflict`. Incomplete cleanup reports `details.cleanup = "incomplete"` and a recovery command. An identical retry finishes a started cleanup first, without `--force`, and then creates the Instance. [`instance:destroy`](/cli/instance/destroy) accepts `reserved`, `checkout_prepared`, and `source_resolved` for [pre-activation removal](/reference/instance-removal#pre-activation-removal).
+The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, 180 seconds for the Route, and 180 seconds for a database copy or a database on a server.
 
-<Note>
+A Project that serves no web pages has no Route and takes no `--domain` (`instance.route_unserved`). A domain that another Route owns, or a reserved name such as `gateway.orbit`, is refused with `route.domain_conflict`.
+
+## Branch selection
+
+| Creation input | Checkout | Selected branch |
+| --- | --- | --- |
+| `default` or the default branch name, without `--branch` | `<node-apps-root>/<project-slug>/default` | The Project `default_branch`. |
+| Another name without `--branch` | `<node-apps-root>/<project-slug>/<name>` | The matching origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. |
+| Any name with `--branch` | The checkout for the requested name | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. It need not match the Instance name. |
+
+An existing local branch is not reset. If the fetched `default_branch` is needed and missing, create fails with `instance.branch_resolution_failed`. An invalid Git branch name is refused with `validation.failed` before anything changes. When the name equals the default branch, the result carries `name_converted_from` with the requested name, and `--branch` keeps its meaning. See [a default-branch name means default](/domains/applications#a-default-branch-name-means-default).
+
+## Repeat and failure
+
 The Instance and its Route become active only after every step succeeds. A successful create means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
-</Note>
 
-A failed setup step removes the new Instance after the teardown steps run. A missing or non-executable setup command returns `instance.setup_step_unavailable` with `outcome: missing`, naming the step, Node, and exit 127 or 126. That classification and diagnostic survive rollback, including an incomplete or unconfirmed cleanup annotation. Other command failures return `instance.setup_step_failed`. See [Instance setup and teardown](/reference/instance-setup#run-setup).
+Repeating the command for an Instance that is already created succeeds with `Skipped — already created (instance.exists)`.
+
+A failed create removes what it made: it withdraws the Route, runs the Project teardown steps, then removes the Processes, the database it created and the checkout. Other Instances, the Database server and the `default` Instance's database stay. The task keeps the failed step and its error code, so nothing on the Node is needed to see what failed. A setup step that is missing or not executable fails with `instance.setup_step_unavailable`, naming the step and the Node. Any other setup failure is `instance.setup_step_failed`.
+
+Once the cleanup finishes, run the command again, with a different `--branch` if you like.
+
+If the cleanup does not finish, the Instance stays marked failed with `details.cleanup = "incomplete"`. Run the same command again to finish the cleanup and create the Instance, or run [`instance:destroy`](/cli/instance/destroy). A changed `--root` or `--branch` is refused with `instance.placement_conflict` until the cleanup is done.
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `instance.candidate_required` | The Node is a production Node. Create a production Instance with [`instance:clone`](/cli/instance/clone). |
+| `instance.node_inactive`, `instance.node_not_app_dev` | The Node is not active, or has no active `app-dev` role. |
+| `instance.task_vm_node` | The Node is a task VM. A task gets its workspace from [`tasks:provision`](/reference/tasks#provision-an-external-group). |
+| `instance.default_path_occupied`, `instance.path_taken` | The checkout path is in use on the Node. |
+| `instance.placement_conflict` | A repeat changed the root or branch while an earlier failed create is still being cleaned up. |
+| `instance.removal_conflict` | The Instance is being removed. |
+| `instance.route_unserved` | `--domain` was given for a Project that serves no web pages. |
+| `route.domain_conflict` | Another Route owns the domain, or the name is reserved. |
+| `instance.database_server_existing` | `--database-server` was given for an Instance that finished its first setup. |
+| `instance.database_slug_taken` | The database connection name belongs to another owner. |
+| `instance.setup_step_failed`, `instance.setup_step_unavailable` | A setup step failed, or its command is missing. |
+| `instance.branch_resolution_failed` | The default branch could not be fetched. |
+| `operation.target_busy` | Another change to the Instance is running. |
 
 ## How it works
 
