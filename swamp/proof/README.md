@@ -43,7 +43,9 @@ Always finish with `down`. Proof VMs do not outlive the proof. The scheduled rea
 
 The `baseline` definition builds Gateway with Swamp, app-dev and app-prod at the committed source revision. Its standalone Gateway has no outer task-VM observer. The guest setup runs inside a local Incus VM with its own cloned topology seed. Nodes with `provision_roles: true` start with no recorded roles; after the control plane and observers start, Orbit applies each declared role through the normal API. A failed role operation fails setup.
 
-Setup alone does not establish a verified template. Check services and Doctor before taking snapshots. Record the source revision and image identities with the snapshot evidence. The baseline shares the minimal harness's network and release-path limitations; it does not yet provide automatic template refresh or distribution.
+The baseline also converges the Gateway role and starts an operation queue worker. Its setup reports ready only after Doctor passes on all three Nodes. Record the source revision and image identities with the snapshot evidence. A whole-topology snapshot must include both the Gateway root disk and its attached topology seed disk, which holds the workload VMs. Verify startup from the snapshot before using it as a template.
+
+The baseline uses the proof Gateway's database queue and local network, rather than production's Redis queue and WireGuard topology. It does not yet provide automatic template refresh or distribution.
 
 ## Fixtures
 

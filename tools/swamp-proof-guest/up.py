@@ -580,6 +580,32 @@ def provision_roles(ids):
         request(f'nodes/{ids["gateway"]}/roles', {'role': role, 'converge_existing': True}, seconds=1800)
 
 
+@step('doctor')
+def verify_baseline(ids):
+    """A standalone baseline is ready only when all three observed Nodes have no drift."""
+    if TOPOLOGY['gateway'] != 'standalone':
+        return {}
+    deadline = time.monotonic() + 120
+    while True:
+        reports = {}
+        for name in ['gateway', *[node['key'] for node in TOPOLOGY['nodes']]]:
+            reply = json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'request'],
+                                  input=json.dumps({'caller': TOPOLOGY['operator']['address'], 'method': 'POST',
+                                                    'path': 'doctor', 'body': {'node_id': ids[name]},
+                                                    'key': f'baseline-doctor-{name}', 'operation': False}),
+                                  user=ACCOUNT, cwd=GATEWAY))
+            if reply.get('http_status') != 200:
+                raise RuntimeError(f'Doctor refused baseline Node {name}')
+            reports[name] = reply['response']['data']
+        if all(report['healthy'] for report in reports.values()):
+            return reports
+        if time.monotonic() >= deadline:
+            issues = {name: [issue['code'] for node in report['nodes'] for family in node['families']
+                             for issue in family['issues']] for name, report in reports.items() if not report['healthy']}
+            raise RuntimeError('Baseline Doctor failed: ' + json.dumps(issues))
+        time.sleep(5)
+
+
 def main():
     if os.geteuid() != 0:
         raise RuntimeError('run as root')
@@ -588,9 +614,11 @@ def main():
     seeded = gateway(nodes)
     realtime(seeded['nodes'])
     provision_roles(seeded['nodes'])
+    verification = verify_baseline(seeded['nodes'])
     facts = {'ready': True, 'commit': run(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], user=ACCOUNT).strip(),
              'topology': TOPOLOGY['name'], 'topology_version': TOPOLOGY['version'], 'nodes': seeded['nodes'],
-             'operator_address': TOPOLOGY['operator']['address'], 'target': nodes[0], 'targets': nodes, 'timings': timings}
+             'operator_address': TOPOLOGY['operator']['address'], 'target': nodes[0], 'targets': nodes, 'timings': timings,
+             'verification': verification}
     (STATE / 'up.json').write_text(json.dumps(facts))
     print(json.dumps(facts))
 
