@@ -45,3 +45,19 @@ if (isset($argv[2])) {
 } else {
     $node->roles()->delete();
 }
+
+// This fixture changes only the disposable Gateway's recipe before admission.
+if (($argv[3] ?? null) === 'missing-mirror') {
+    $path = $root.'/resources/machine-software/recipe.json';
+    $recipe = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+    $recipe['artifact_mirror'] = 'https://github.com/hardimpactdev/orbit/releases/download/proof-missing-deb-mirror';
+    file_put_contents($path, json_encode($recipe, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+}
+
+if (($argv[3] ?? null) === 'corrupt-mirror') {
+    $path = $root.'/resources/machine-software/recipe.json';
+    $recipe = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+    // A pinned public README responds 200 with wrong bytes, regardless of the appended artifact filename.
+    $recipe['artifact_mirror'] = 'https://raw.githubusercontent.com/hardimpactdev/orbit/a2bfa79fff5348324a3b57934392054832d7b577/README.md?corrupt-artifact=';
+    file_put_contents($path, json_encode($recipe, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+}

@@ -1,0 +1,178 @@
+id: 94fadc48-712c-4cea-ace8-f84225653df1
+name: node-artifact-fetch
+description: Download ordered candidates on transport failure, verify their checksum, then publish.
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    name: {type: string, pattern: '^[a-z0-9-]+$'}
+    urls:
+      type: array
+      minItems: 1
+      maxItems: 2
+      items: {type: string, pattern: '^https://[^\s]+$'}
+    path: {type: string}
+    checksum: {type: string, pattern: '^sha256:[a-f0-9]{64}$'}
+    ssh: {type: object}
+  required: [name, urls, path, checksum, ssh]
+  additionalProperties: false
+jobs:
+- name: artifact
+  labels: {role: swamp}
+  steps:
+  - name: Check pinned artifact
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-current").split(".").join("-") }}'
+      methodName: check
+      globalArgs:
+        url: '${{ inputs.urls[0] }}'
+        path: '${{ inputs.path }}'
+        checksum: '${{ inputs.checksum }}'
+        nodeHost: '${{ inputs.ssh.target.host }}'
+        nodeUser: '${{ inputs.ssh.target.user }}'
+        nodePort: '${{ inputs.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.ssh.identity_file }}'
+        become: true
+      inputs: {}
+  - name: Fetch preferred artifact
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Check pinned artifact, condition: {type: succeeded}}]
+    guard: '${{ steps["Check pinned artifact"].outputs.status == "compliant" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-preferred").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &ssh
+        name: '${{ "af-" + inputs.ssh.target.host.split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.ssh.target.user }}'
+          port: '${{ inputs.ssh.target.port }}'
+          identityFile: '${{ inputs.ssh.identity_file }}'
+          hostKeys: '${{ inputs.ssh.target.host_keys }}'
+        hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
+      inputs: &download
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "630", "curl", "--fail", "--silent", "--show-error", "--location", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15", "--max-time", "600", "--max-filesize", "536870912", "--output", inputs.path + ".artifact-" + run.id, "--", inputs.urls[0]] }}'
+        timeoutSec: 645
+        okExitCodes: any
+  - name: Classify fetch failure
+    labels: {role: swamp}
+    dependsOn: [{step: Fetch preferred artifact, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/artifact-fetch-policy'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-policy").split(".").join("-") }}'
+      methodName: classify
+      inputs:
+        result: '${{ steps[?"Fetch preferred artifact"].?outputs.orValue(null) }}'
+  - name: Fetch upstream artifact
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Classify fetch failure, condition: {type: succeeded}}]
+    guard: '${{ !steps["Classify fetch failure"].outputs.fallback || size(inputs.urls) < 2 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-upstream").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        <<: *download
+        argv: '${{ ["timeout", "630", "curl", "--fail", "--silent", "--show-error", "--location", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15", "--max-time", "600", "--max-filesize", "536870912", "--output", inputs.path + ".artifact-" + run.id, "--", inputs.urls[size(inputs.urls)-1]] }}'
+  - name: Require successful download
+    labels: {role: swamp}
+    dependsOn: [{step: Fetch upstream artifact, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}]
+    task:
+      type: assert
+      expr: 'steps["Check pinned artifact"].outputs.status == "compliant" || steps[?"Fetch preferred artifact"].?outputs.orValue({"exitCode": -1}).exitCode == 0 || steps[?"Fetch upstream artifact"].?outputs.orValue({"exitCode": -1}).exitCode == 0'
+      message: Artifact download failed; only a transport failure permits the next source.
+  - name: Verify artifact checksum
+    labels: {role: swamp}
+    dependsOn: [{step: Require successful download, condition: {type: succeeded}}]
+    guard: '${{ steps["Check pinned artifact"].outputs.status == "compliant" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-verify").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', sha256sum, '--check', '--status']
+        stdin: '${{ inputs.checksum.split(":")[1] + "  " + inputs.path + ".artifact-" + run.id + "\n" }}'
+        timeoutSec: 45
+  - name: Set artifact permissions
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Require successful download, condition: {type: succeeded}}
+    - {step: Verify artifact checksum, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-permissions").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        path: '${{ steps["Check pinned artifact"].outputs.status == "compliant" ? inputs.path : inputs.path + ".artifact-" + run.id }}'
+        ensure: present
+        owner: root
+        group: root
+        mode: '0644'
+        nodeHost: '${{ inputs.ssh.target.host }}'
+        nodeUser: '${{ inputs.ssh.target.user }}'
+        nodePort: '${{ inputs.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.ssh.identity_file }}'
+        become: true
+      inputs: {}
+  - name: Publish verified artifact
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Set artifact permissions, condition: {type: succeeded}}]
+    guard: '${{ steps["Check pinned artifact"].outputs.status == "compliant" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-publish").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', mv, '-f', '--', '${{ inputs.path + ".artifact-" + run.id }}', '${{ inputs.path }}']
+        timeoutSec: 45
+  - name: Require published artifact
+    labels: {role: swamp}
+    dependsOn: [{step: Publish verified artifact, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}]
+    task:
+      type: assert
+      expr: 'steps[?"Check pinned artifact"].?outputs.orValue({"status": "unknown"}).status == "compliant" ? steps[?"Set artifact permissions"].?status.orValue("skipped") == "succeeded" : steps[?"Publish verified artifact"].?status.orValue("skipped") == "succeeded"'
+      message: The verified artifact was not published.
+  - name: Remove staged artifact
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn:
+    - {step: Fetch preferred artifact, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: Fetch upstream artifact, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: Set artifact permissions, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: Publish verified artifact, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("artifact-" + inputs.name + "-cleanup").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', rm, '-f', '--', '${{ inputs.path + ".artifact-" + run.id }}']
+        timeoutSec: 45

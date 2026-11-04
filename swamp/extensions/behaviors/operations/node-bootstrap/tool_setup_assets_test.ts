@@ -3,7 +3,7 @@ import { toolSetupPlan } from "./tool_setup_plan.ts";
 import { Setup } from "./tool_setup_input.ts";
 const pin = {
     version: "1.0.0",
-    url: "https://example.invalid/artifact.tar.gz",
+    urls: ["https://example.invalid/artifact.tar.gz"],
     algorithm: "sha256",
     digest: "a".repeat(64),
 };
@@ -79,7 +79,7 @@ Deno.test("JS setup verifies the lock before exposing paths and keeps SHA512 che
         input: {
             user: "orbit",
             tools: {
-                node: { ...pin, url: "https://example.invalid/node.tar.xz" },
+                node: { ...pin, urls: ["https://example.invalid/node.tar.xz"] },
                 "vp-cli": pin,
                 pnpm: { ...pin, algorithm: "sha512", digest: "b".repeat(128) },
                 vp: { ...pin, lock_sha256: digest },
@@ -130,4 +130,28 @@ Deno.test("JS setup verifies the lock before exposing paths and keeps SHA512 che
             .success,
         false,
     );
+});
+
+Deno.test("Composer plan preserves mirror then upstream candidates and their checksum", async () => {
+    const urls = [
+        "https://mirror.invalid/git.deb",
+        "https://upstream.invalid/git.deb",
+    ];
+    const plan = await toolSetupPlan({
+        ...composer,
+        apt: {
+            ...composer.apt,
+            packages: [{
+                name: "git",
+                version: "2.55.0",
+                artifact: {
+                    urls,
+                    algorithm: "sha256",
+                    digest: "a".repeat(64),
+                },
+            }],
+        },
+    }, "/home/orbit");
+    assertEquals(plan.sha256_fetches[0].urls, urls);
+    assertEquals(plan.sha256_fetches[0].checksum, "sha256:" + "a".repeat(64));
 });

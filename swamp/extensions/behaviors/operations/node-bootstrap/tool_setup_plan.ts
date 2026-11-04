@@ -27,14 +27,14 @@ export async function toolSetupPlan(raw: unknown, home: string) {
         links.push({ path, target, owner: user });
     const fetch = (
         name: string,
-        pin: { url: string; algorithm: string; digest: string },
+        pin: { urls: string[]; algorithm: string; digest: string },
         packageIndex: number | null = null,
     ) => {
         const path = cache + "/" + name;
         fetches.push({
             path,
             package_index: packageIndex,
-            url: pin.url,
+            urls: pin.urls,
             owner: "root",
             mode: "0644",
             checksum: pin.algorithm === "sha256"
@@ -133,7 +133,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                 tools["vp-cli"],
             ], ["pnpm", tools.pnpm]] as const
         ) {
-            const format = new URL(pin.url).pathname.endsWith(".xz")
+            const format = new URL(pin.urls[0]).pathname.endsWith(".xz")
                 ? "tar.xz"
                 : "tar.gz";
             const source = fetch(name + "." + format, pin),

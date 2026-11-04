@@ -27,7 +27,7 @@ final readonly class ToolManagerIntent
                 $pin = $recipe->tools[$name]->forArchitecture('amd64');
                 $artifact = $pin->artifacts['amd64'];
                 $urls = $artifact->candidateUrls($name, $recipe->artifactMirror);
-                $tools[$name] = ['version' => $pin->version, 'url' => $urls[0], 'urls' => $urls,
+                $tools[$name] = ['version' => $pin->version, 'urls' => $urls,
                     'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest,
                     ...($pin->lockSha256 === null ? [] : ['lock_sha256' => $pin->lockSha256])];
             }
@@ -43,7 +43,7 @@ final readonly class ToolManagerIntent
                 $artifactInput = null;
                 if ($artifact !== null) {
                     $urls = $artifact->candidateUrls($name, $recipe->artifactMirror);
-                    $artifactInput = ['url' => $urls[0], 'urls' => $urls, 'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest];
+                    $artifactInput = ['urls' => $urls, 'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest];
                 }
                 $packages[] = ['name' => $name, 'version' => $pin->version,
                     'artifact' => $artifactInput];

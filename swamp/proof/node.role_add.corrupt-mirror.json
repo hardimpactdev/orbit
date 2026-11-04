@@ -1,0 +1,63 @@
+{
+  "kind": "node.role_add",
+  "workflow": "operation-node-role-add",
+  "topology": "minimal",
+  "clean": false,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.peer}",
+      "app-dev",
+      "corrupt-mirror"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.peer}/roles",
+    "body": {
+      "role": "app-dev"
+    }
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [],
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "peer",
+    "app-dev",
+    "corrupt-mirror"
+  ],
+  "before_node": {
+    "peer": [
+      [
+        "rm",
+        "-f",
+        "/var/cache/apt/archives/caddy_2.11.7_linux_amd64.deb"
+      ],
+      [
+        "timeout",
+        "35",
+        "curl",
+        "--head",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--max-time",
+        "30",
+        "--output",
+        "/dev/null",
+        "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.deb"
+      ]
+    ]
+  },
+  "note": "Before admission, prove the unchanged upstream is reachable. The corrupt mirror returns HTTP 200 with pinned README bytes; real checksum verification must fail without an upstream download or publication and must remove staging."
+}

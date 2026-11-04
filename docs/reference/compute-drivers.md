@@ -277,7 +277,9 @@ The `Recipe artifact mirror` workflow, `.github/workflows/php-build-mirror.yml`,
 
 `bin/php-build mirror` downloads every external Debian artifact of every architecture and checks its recipe digest. The workflow lists published assets before downloading, skips those files, and uploads each missing file to the `php-build-mirror` release, named `<package>_<digest>.deb`. It retains the existing release URL. That release is a prerelease and never the latest release.
 
-Gateway native intents select the first URL from `ArtifactPin::candidateUrls`. For Debian files this is the mirror URL, with the package name and pinned digest in the filename. Tool Manager setup (including Git), role PHP packages and Caddy therefore keep working after upstream removes a build. Native cfgmgmt fetch still accepts one URL and checks its pinned checksum; a download or integrity failure stops the run. Recipe validation retains its existing mirror-then-upstream candidates, with fallback only after a transport failure. Other artifact formats, including the agent and CLI release binaries, retain their existing URLs.
+Gateway intents capture the ordered `ArtifactPin::candidateUrls` list. Tool Manager setup (including Git), role PHP packages and native Caddy try the mirror before upstream. The shared `node-artifact-fetch` workflow downloads through official SSH and classifies curl's structured exit code. Only transport failures permit the second candidate. Local I/O and size-limit failures stop. Native SHA-256 verification must succeed before the staged file is published. The retained agent Caddy installer still uses its frozen upstream-only contract. The corrupt-mirror proof requires a failed run, no upstream attempt, no published file and no staged file after cleanup.
+
+New pins work through upstream before the mirror workflow publishes their assets after merge. Other artifact formats, including the agent and CLI release binaries, retain their existing URLs.
 
 The native candidate contract rolls out in three releases because Swamp loads before the Gateway switches:
 
@@ -716,7 +718,7 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state. 
+The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state.
 
 One workflow serves both providers. A `guard` on each provider's first step skips the other provider, and its later steps skip with it. The run reads the inventory, plans in TypeScript on Node209, removes the plan with parallel `forEach` steps, reads the inventory again and ends with a native `assert` that no planned name is still listed.
 
@@ -724,7 +726,7 @@ No step ships a script: each Incus command is one official pinned `@swamp/ssh` `
 
 The workflow has no format or result step: the Gateway reads the plan step's names once the provider's end check succeeded.
 
-A provider or SSH failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection. 
+A provider or SSH failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection.
 
 The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds, allowing for the 180-second Incus deletion timeout.
 

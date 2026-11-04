@@ -76,7 +76,7 @@ During convergence, official APT checks compare every package with its pin befor
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.
 
-Manager setup captures the recipe artifact URL at admission. Pinned Debian prerequisites, including Git for Composer, download from the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) at its pinned checksum. A download or integrity failure stops setup.
+Manager setup captures the ordered recipe artifact candidates at admission. Pinned Debian prerequisites, including Git for Composer, download from the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) at its pinned checksum. The structured curl exit code permits upstream fallback only after a transport failure. Local I/O, size-limit and checksum failures stop setup.
 
 Tool Managers do not belong to roles. A Node with no role can use every manager its platform supports. `apt` and `composer` stay Linux-only. `brew` and `vp` run on Linux and macOS. `brew-cask` runs on macOS only.
 
@@ -583,5 +583,3 @@ Removal keeps the repository while another Tool references it. The final removal
 One Node repository record holds shared intent so package removal cannot retire another Tool's source. Keys authorize only their named repository. Global apt-key trust and vendor installer execution are rejected because they bypass this ownership boundary. Candidate lookup and package download are scoped to the declared source, so a higher version from a distribution cannot select unrelated software with the same package name. Apt still resolves dependencies from the Node's normal sources.
 
 The preference gives the repository's Tool packages priority 990 for each repository host, so unattended upgrades keep the vendor package. Every other package from that host gets priority 1: the vendor cannot replace or upgrade an installed or distribution package. A shared repository keeps a removed Tool's package in the preference until the next write for that repository. Gateway admission and terminal projection store intent and outcomes; Swamp owns downloads, key checks, source writes, refresh, and cleanup.
-
-Native Tool Manager admission captures both `url` and ordered candidate `urls` during the [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror). The current Swamp consumer still uses `url`. Activate candidate consumption only after this Gateway producer release is live.
