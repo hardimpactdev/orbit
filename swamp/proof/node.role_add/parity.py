@@ -15,7 +15,8 @@ target, role = sys.argv[1:3]
 
 
 def run(*argv):
-    return subprocess.run(['incus', 'exec', target, '--', *argv], capture_output=True, text=True, check=False)
+    prefix = [] if target == 'gateway' else ['incus', 'exec', target, '--']
+    return subprocess.run([*prefix, *argv], capture_output=True, text=True, check=False)
 
 
 def check(ok, message):
@@ -23,6 +24,11 @@ def check(ok, message):
         sys.exit('parity: ' + message)
 
 
+if role == 'swamp':
+    installed = run('/opt/orbit/ansible/venv/bin/python', '-c', 'import ansible; print(ansible.__version__)')
+    pin = (Path(__file__).resolve().parents[2] / 'ansible/requirements.txt').read_text().strip().split('==')[1]
+    check(installed.returncode == 0 and installed.stdout.strip() == pin, 'the Swamp role installs pinned Ansible from a cold environment')
+    print('parity: Swamp role installed ansible-core ' + pin, flush=True)
 if operation['status'] != 'succeeded' and role == 'websocket':
     state = run('systemctl', 'show', 'orbit-websocket.service', '-p', 'Result', '-p', 'ExecMainStatus')
     sys.stderr.write(state.stdout)
