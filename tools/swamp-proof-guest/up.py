@@ -483,8 +483,22 @@ def serve_gateway(node_id, swamp_route):
     run(['setfacl', '-m', 'u:caddy:x', str(GATEWAY)])
     run(['setfacl', '-m', 'u:caddy:rx', str(GATEWAY / 'public')])
     run(['systemctl', 'enable', 'php8.5-fpm', 'caddy'])
+    baseline_network()
     run(['systemctl', 'restart', 'php8.5-fpm'])
     publish_caddy(node_id)
+
+
+def baseline_network():
+    """The standalone Gateway binds the Incus bridge, which does not exist before Incus starts."""
+    if TOPOLOGY['gateway'] != 'standalone':
+        return
+    directory = Path('/etc/systemd/system/caddy.service.d')
+    directory.mkdir(parents=True, exist_ok=True)
+    # Override the recipe's WireGuard dependency: the proof network has no WireGuard interface.
+    (directory / 'zz-orbit-proof-network.conf').write_text(
+        '[Unit]\nAfter=\nAfter=network-online.target incus.service\n'
+        'Wants=\nRequires=network-online.target incus.service\n')
+    run(['systemctl', 'daemon-reload'])
 
 
 def publish_caddy(node_id):
