@@ -1,12 +1,8 @@
 sequenceDiagram
-  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4, single-swamp-node, agent-observer-swamp-acts, root-of-trust-gateway-only, tool.manager_converge removed (shared Tool Manager setup step). docs/reference/node-provisioning.md#add-a-node.
-  %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (cfgmgmt apt/user/fetch/file/systemd/authorized_key; Q-WGHUB hub config as file + wg syncconf; DNS record kept: a Node name is not covered by a TLD answer).
-  %% The native parent owns enrollment, role children and the terminal check in one run.
-  %% status: migrated
+  %% Target design: ADR 0243/0244 task, one Swamp run, agent-observer-swamp-acts, root-of-trust-gateway-only, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md#add-a-node.
+  %% status: reviewed
   %% command: node:add
   %% kind: node.add
-  %% Rule 23: 2026-11-03 required-only main path.
-  %% Pinned Debian downloads use native SSH curl exit codes for transport-only fallback, then verify the pin before publication.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -15,151 +11,106 @@ sequenceDiagram
   %% lane HUB icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as New Node 12<br/>reached over ssh
-  participant HUB as WireGuard hub<br/>vpn Node 1
-  CLI->>GW: node:add beast 203.0.113.7<br/>--host-key-fingerprint=…
+  participant SW as Swamp<br/>workflow execution
+  participant N as New Node<br/>reached over ssh
+  participant HUB as WireGuard hub<br/>vpn Node
+  CLI->>GW: node:add NAME HOST<br/>--host-key-fingerprint=SHA256
   %%> Command:
-  %%> - `orbit node:add beast 203.0.113.7 --host-key-fingerprint=SHA256:…`
-  %%> - syntax: `<name> [host] [--host-key-fingerprint=SHA256] [--ssh-port=PORT] [--user=USER] [--orbit-user=USER] [--platform=linux|macos] [--architecture=ARCH] [--tld=TLD] [--role=ROLE]… [--cluster=ID] [--wireguard-ip=IP] [--lan-ip=IP] [--wireguard-endpoint=HOST:PORT] [--dns-server=IP] [--setting=PATH:VALUE]`
+  %%> - `orbit node:add NAME HOST --host-key-fingerprint=SHA256`
+  %%> - syntax: `<name> [host] [--host-key-fingerprint=SHA256] [--ssh-port=PORT] [--user=USER] [--orbit-user=USER] [--platform=linux|macos] [--architecture=ARCH] [--tld=TLD] [--role=ROLE]… [--cluster=ID] [--wireguard-ip=IP] [--lan-ip=IP] [--wireguard-endpoint=HOST:PORT] [--dns-server=IP] [--setting=PATH:VALUE] [--json]`
   %%> Input:
-  %%> - the Node name and its public SSH host
-  %%> - the approved SSH host key fingerprint; required for a new Node
-  %%> - the host and the fingerprint are required for a new Node; everything else is optional
-  %%> Optional flags:
-  %%> - `--role=ROLE` (repeatable): adds the role steps in `opt --role`
-  %%> - `--platform=macos`: skips the Linux steps and adds `opt --platform=macos`
-  %%> - `--tld`, `--cluster`, `--ssh-port`, `--user`, `--orbit-user`, `--architecture`, `--wireguard-ip`, `--lan-ip`, `--wireguard-endpoint`, `--dns-server`, `--setting`: recorded in the intent; they add no steps
-  %%> - `--json`: machine-readable output
+  %%> - the Node name, its public SSH host, and the approved SSH host key fingerprint; a new Node, or an existing Node with no pinned host key, needs all three
+  %%> - every other option is recorded in the intent; only `--role` and `--platform=macos` add steps
   %%> What it does:
-  %%> - adds the machine to the fleet as Node 12, named `beast`
+  %%> - adds the machine to the fleet as a Node
   %%> - for a Node that already exists, the same command converges it again with its new TLD, roles or settings
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, record Node 12<br/>provisioning · task #6201
+  Note over GW: Validate, record the Node
   %%> Requirements:
   %%> - the name is free, or names a Node that owns no Instances (`node.has_instances`)
-  %%> - a new Node has a host and a host key fingerprint (`node.ssh_host_fingerprint_required`)
+  %%> - a new Node, or an existing Node with no pinned host key, has a host and a host key fingerprint (`node.ssh_host_fingerprint_required`); for an existing Node the fingerprint equals the recorded one (`node.ssh_host_key_mismatch`)
   %%> - Linux accepts only `x86_64`; `app-dev` needs a TLD, unless its Cluster has one
   %%> - macOS names one existing account in `--user` and `--orbit-user`, an existing WireGuard address, and no role
-  %%> - admission records one immutable resource plan; completed Node work stays on a failed run
-  %%> Builds:
-  %%> - the WireGuard address `10.6.0.42` and the hub peer entry
-  %%> - base packages, managed account, native sudo rule and public SSH rule
-  %%> - the Orbit SSH block, the pinned `orbit-agent` release and the Node agent configuration
-  %%> - the role steps for each requested role
+  %%> - no other lifecycle change runs for the name; the Gateway holds one lock per Node name
   %%> Result:
-  %%> - Node 12 recorded as `provisioning`; an existing Node keeps its record until the result
-  %%> - task #6201 recorded with the full intent
-  %%> - nothing has happened on the machine yet
-  GW->>SW: Push keys to vault<br/>bootstrap-identity-node-12 · agent
-  %%> Why:
-  %%> - the first login uses the bootstrap SSH identity, a private key that only the Gateway holds
-  %%> - the Node agent needs a new secret, and secrets travel only through the vault (R3)
-  %%> What it does:
-  %%> - pushes Node 12's bootstrap identity as vault key `bootstrap-identity-node-12`
-  %%> - pushes Node 12's new Node agent secret as vault key `agent-secret-node-12`
-  %%> Never:
-  %%> - a fixed key name for every Node, or a key value in the run inputs
-  %%> Result:
-  %%> - the run reads both keys from the vault; certificate signing uses the existing Gateway signer
+  %%> - a new Node is recorded as `provisioning`; an existing Node keeps its record until the result
+  %%> - the WireGuard address and the hub peer entry are chosen
+  %%> - a task is recorded with the full intent; nothing has happened on the machine yet
   GW->>SW: Start run, full intent<br/>operation-node-add
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
+  %%> Secrets:
+  %%> - the bootstrap SSH identity and the new Node agent secret travel only through the vault, under one key name per Node; the run inputs hold key names, never values
   %%> Inputs:
   %%> - the host, port, bootstrap user, managed user and approved fingerprint
-  %%> - packages, pins, Node agent configuration and frozen role resources
+  %%> - packages, pins, Node agent configuration and the frozen role resources
   %%> - the hub's address and SSH host keys, and the new peer entry
-  %%> - secrets only as vault key names
-  GW-->>CLI: 202 Accepted<br/>Operation #6201
+  GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
-  %%> - the task number, at once
+  %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  %% Every Swamp lane label is an actual step in operation-node-add.
-  SW->>N: Read the host key<br/>SSH argv
-  %%> - first contact ignores worker known_hosts; no machine change runs before fingerprint approval
-  SW->>SW: Require approved host key<br/>native assert
-  SW->>N: Read the platform<br/>SSH argv
-  %%> Linux by default:
-  %%> - `--platform` defaults to `linux`, so the Linux steps are the main path
-  %%> - the workflow guards each Linux step on the admitted platform (`inputs.intent.platform == "linux"`), not on what this step observes
-  %%> - with `--platform=macos` those steps are skipped and `opt --platform=macos` runs instead
-  SW->>N: Read the bootstrap account<br/>SSH argv
-  SW->>SW: Bind the Node identity<br/>public resource binding
-  SW->>N: Read bootstrap keys<br/>SSH argv
+  SW->>N: Check the host key<br/>SSH argv · native assert
+  %%> Why first:
+  %%> - first contact ignores the worker's known hosts, so nothing on the machine changes until the host key matches the approved fingerprint
   SW->>N: Authorize the control key<br/>SSH argv
-  %%> - append the configured worker public key only when absent; a true guard skips existing keys
-  SW->>SW: Remove an old host pin<br/>control Node SSH argv
-  SW->>SW: Pin the bootstrap host<br/>control Node SSH argv
-  SW->>N: Refresh base packages<br/>cfgmgmt apt
-  SW->>N: Install base packages<br/>cfgmgmt apt
-  SW->>N: Create the managed account<br/>cfgmgmt user
-  SW->>N: Stage the sudo rule<br/>cfgmgmt file
-  SW->>N: Validate the sudo rule<br/>SSH argv
-  SW->>N: Publish the sudo rule<br/>cfgmgmt file
-  SW->>N: Write the Orbit keys<br/>cfgmgmt authorized_key
-  SW->>N: Open public recovery SSH<br/>SSH argv
-  SW->>N: Enable the firewall<br/>SSH argv
-  SW->>N: Install the Node agent<br/>cfgmgmt fetch
-  SW->>N: Create WireGuard folder<br/>cfgmgmt directory
-  SW->>N: Prepare the WireGuard key<br/>cfgmgmt exec
-  SW->>N: Read WireGuard public key<br/>cfgmgmt debug_exec
+  %%> What it does:
+  %%> - appends the Swamp control public key to the bootstrap account when it is absent
+  %%> - pins the machine's host key for the run
+  SW->>N: Set up the machine<br/>Ansible phase: baseline
+  %%> What it does:
+  %%> - base packages, the managed account, a sudo rule that is validated before it replaces the old one, so no staged file stays, and the Orbit SSH keys
+  %%> - the public recovery SSH rule, then the firewall
+  %%> Linux machines:
+  %%> - with `--platform=macos` the Linux steps are skipped and `opt --platform=macos` runs instead
+  SW->>N: Set up the tunnel<br/>Ansible phase: tunnel
+  %%> What it does:
+  %%> - creates the WireGuard key, writes the tunnel files and starts the tunnel
+  %%> - sets the tunnel address and trusts the WireGuard members
+  %%> Secrets:
+  %%> - the private key stays in a key file on the Node; only the public key leaves it
   SW->>SW: Require unique tunnel key<br/>native assert
-  SW->>N: Write the tunnel files<br/>cfgmgmt file
-  SW->>N: Enable hub forwarding<br/>cfgmgmt sysctl
-  SW->>N: Start the tunnel<br/>cfgmgmt systemd
-  SW->>N: Set the tunnel address<br/>SSH argv
-  SW->>N: Remove the retired address<br/>cfgmgmt exec
-  SW->>N: Stage the tunnel key<br/>SSH argv
-  SW->>N: Finish tunnel config<br/>SSH argv
-  SW->>N: Apply the tunnel peers<br/>SSH argv
-  SW->>N: Trust WireGuard members<br/>SSH argv
+  %%> Why:
+  %%> - two Nodes with the same public key cannot both be peers
   opt Linux peer joins the VPN hub
-  SW->>HUB: Create the hub folders<br/>cfgmgmt directory
-  SW->>HUB: Write hub configuration<br/>cfgmgmt file
-  SW->>HUB: Stage the hub private key<br/>SSH argv
-  SW->>HUB: Finish hub configuration<br/>SSH argv
-  SW->>HUB: Apply the hub peers<br/>SSH argv
-  SW->>HUB: Read the hub public key<br/>SSH argv
-  SW->>SW: Check the hub key<br/>native assert
+    SW->>HUB: Add the peer<br/>Ansible phase: hub
+    %%> What it does:
+    %%> - writes the peer entry and applies the hub peers
+    %%> - the hub peer stays after a failure; it is harmless and a rerun reuses it
   end
-  SW->>N: Create observer folders<br/>cfgmgmt directory
-  SW->>N: Write observer config<br/>cfgmgmt file
-  SW->>N: Write the observer secret<br/>cfgmgmt file
-  SW->>N: Create observer group<br/>cfgmgmt group
-  SW->>N: Start the Node agent<br/>cfgmgmt systemd
-  SW->>N: Verify managed SSH<br/>SSH argv
-  SW->>N: Verify passwordless sudo<br/>SSH argv
+  SW->>N: Install the Node agent<br/>Ansible phase: agent
+  %%> What it does:
+  %%> - installs the pinned `orbit-agent` release, its configuration and the observer secret, and starts it
+  SW->>N: Verify managed access<br/>SSH argv
+  %%> What it does:
+  %%> - logs in as the managed user and runs a passwordless sudo command
   opt eligible CLI plan
-  SW->>N: Publish the Orbit CLI<br/>native child workflow
+    SW->>N: Publish the Orbit CLI<br/>native child workflow
+    %%> Best effort:
+    %%> - a failure here does not fail the add
   end
   opt --role
-  SW->>N: Converge each role<br/>native child workflow
+    SW->>N: Converge each role<br/>native child workflow
+    %%> Root boundary:
+    %%> - roles are frozen child-workflow inputs in this run, with no child tasks
+    %%> The first role:
+    %%> - closes public recovery SSH, so the Node is reachable over WireGuard only afterwards
+    %%> - the `vpn` role also enables forwarding on the hub
   end
-  opt new VPN hub needs its DNS listener
-  SW->>N: Configure DNS backend<br/>cfgmgmt file
-  SW->>N: Install DNS listener<br/>native child workflow
-  end
-  opt private DNS records need publication
-  SW->>N: Publish private DNS<br/>native child workflow
+  opt DNS needs publication
+    SW->>N: Publish private DNS<br/>native child workflow
+    %%> When:
+    %%> - a new VPN hub needs its DNS listener first, or private DNS records need publication
   end
   opt --platform=macos
-  SW->>N: Inspect the Mac tunnel<br/>SSH argv
+    SW->>N: Verify managed SSH<br/>SSH argv
+    SW->>N: Inspect the Mac tunnel<br/>SSH argv
+    %%> What it does:
+    %%> - macOS runs the host key check, these two steps and a native check; it has no sudo check, no Ansible check phase and no handshake read
   end
-  SW->>N: Check the Node agent<br/>cfgmgmt systemd
-  SW->>N: Check the agent binary<br/>cfgmgmt fetch
-  SW->>N: Check the observer secret<br/>cfgmgmt file
-  SW->>N: Read tunnel handshakes<br/>SSH argv
-  SW->>SW: Check the Node<br/>native assert
-  opt run completed or failed
-  SW->>N: Remove staged sudo rule<br/>cfgmgmt file, best effort
-  end
-  %%> Secrets:
-  %%> - bootstrap SSH and the observer secret use existing execution vault copies
-  %%> - WireGuard private keys remain in Node key files; only public keys enter outputs
-  %%> Root boundary:
-  %%> - roles are frozen child-workflow inputs in this run, with no child Operations
+  SW->>N: Check the Node<br/>Ansible phase: check
+  %%> What it does:
+  %%> - the agent and its binary run, the observer secret is in place, and the tunnel handshakes with the hub; the hub itself is exempt
+  %%> - it is the one end check the Gateway reads
   alt every step passes
     N-->>SW: arch · host key · WG key
     %%> Returns:
@@ -167,11 +118,11 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event and reads the run's outputs; Swamp never calls the Gateway
-    Note over GW: Record Node 12 active<br/>pins · roles · task succeeded
+    Note over GW: Record the Node active
     %%> Result:
-    %%> - Node 12 becomes active, with its architecture, SSH host key pins and WireGuard key
+    %%> - the Node becomes active, with its architecture, SSH host key pins and WireGuard key
     %%> - each converged role becomes active; storage settings are stored
-    %%> - task #6201 succeeds
+    %%> - the task succeeds
     %%> Next:
     %%> - Metrics exporters start only with `metrics:exporter:enable`
   else a step fails
@@ -179,24 +130,20 @@ sequenceDiagram
     %%> When:
     %%> - the host key or architecture differs, the bootstrap or a role fails, the hub refuses its configuration, or the check fails
     SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark Node 12 failed<br/>task failed · rerun is safe
+    Note over GW: Mark the Node failed
     %%> Result:
-    %%> - a new Node 12 stays, marked failed at that step, so you can see it
+    %%> - a new Node stays, marked failed at that step, so you can see it
     %%> - an existing Node keeps its earlier record and stays active
-    %%> - task #6201 fails
+    %%> - a role created by this request that did not finish stays marked failed, and the rerun converges it
+    %%> - the task fails
     %%> On the Node:
     %%> - finished steps stay; there is no rollback
-    %%> - the hub peer stays; it is harmless and a rerun reuses it
     %%> Retry:
     %%> - run the same `node:add` again after fixing the cause; every step skips work that is already done
+    %%> Removal:
+    %%> - `node:remove` removes a failed Node
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #6201
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
+    CLI->>GW: operation:show TASK
     GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
   end

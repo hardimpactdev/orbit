@@ -31,6 +31,7 @@ Follow [flow-tighten](../flow-tighten/SKILL.md) and the rules in `docs/cli/READM
 - The main path uses only required parameters. Each optional flag gets its own `opt` block.
 - Use role names and placeholders, never concrete Node ids, task ids or hostnames.
 - Show the failure and cleanup contract (flow-tighten rule 28): what a failure leaves behind, and what a rerun does.
+- If the kind is in `docs/cli/flows-migrated.txt` and your chart changes its step names, remove the kind from that list in the same PR. The list means the workflow follows its chart; the build puts the kind back.
 - A read-only command that answers from Gateway state needs no chart unless it reads Node facts.
 
 ## 3. Draft the docs page
@@ -67,10 +68,11 @@ Do this before you show Nick anything. He should only have to say "proceed". Fix
 
 1. Read the code each claim relies on (planner, controller, CLI) and correct any claim it contradicts. Mark "fails today" from the code, never "unverified". Search the rest of the docs and Recall for the behavior you describe, especially failure, retry and removal, and settle any conflict between a page, a decision and the code before you show the draft.
 2. Run the rules once more: no implementation names on the page (Swamp, workflow, planner), placeholders only (no Node ids, task ids, hosts), minimal chart (rule 25), failure and retry (rule 28), the visible skip with its reason code, no names or dates.
-3. Walk the cases against the page: every error code, flag, repeat and refusal has a case, and every example on the page passes its own refusals.
+3. Walk the cases against the page: every error code, flag, repeat and refusal has a case, and every example on the page passes its own refusals. Check mechanically that each code on the page appears in the cases file. Give each optional flag its own row.
 4. Check the page and cases against the CLI design standard, one section at a time: input, consent, results, progress. Report a rule that looks outdated instead of copying it.
 5. Open the approved sibling's page beside yours and compare the usage line, option tables, section order and wording. Apply any difference to both commands and the family page.
-6. Open the preview yourself, run `bin/check-flows`, `composer docs-build` and `composer docs-lint`, and confirm the cases file is linked in your message.
+6. When no one reviews the draft before it lands, run one independent read-only sub-agent review (Sonnet at high effort) against these skills and the CLI standard, and fix what it finds.
+7. Open the preview yourself, run `bin/check-flows`, `composer docs-build` and `composer docs-lint`, and confirm the cases file is linked in your message.
 
 ## 6. Review with Nick
 
