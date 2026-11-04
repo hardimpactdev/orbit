@@ -2,18 +2,62 @@
   "kind": "node.role_add.metrics.instance",
   "defaults": "node-role-add-defaults.json",
   "before_gateway": [
-    ["apt-get", "update"],
-    ["apt-get", "install", "--yes", "python3-venv"],
-    ["python3", "-m", "venv", "/opt/orbit/ansible/venv"],
-    ["/opt/orbit/ansible/venv/bin/pip", "install", "--disable-pip-version-check", "-r", "swamp/ansible/requirements.txt"],
-    ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
+    [
+      "apt-get",
+      "update"
+    ],
+    [
+      "apt-get",
+      "install",
+      "--yes",
+      "python3-venv"
+    ],
+    [
+      "python3",
+      "-m",
+      "venv",
+      "/opt/orbit/ansible/venv"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/pip",
+      "install",
+      "--disable-pip-version-check",
+      "-r",
+      "swamp/ansible/requirements.txt"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/ansible-galaxy",
+      "collection",
+      "install",
+      "-r",
+      "swamp/ansible/requirements.yml",
+      "-p",
+      "/opt/orbit/ansible/collections"
+    ],
     [
       "python3",
       "-c",
       "from pathlib import Path; public=' '.join(Path('/home/orbit/.orbit/ssh/proof_worker_ed25519.pub').read_text().split()[:2]); target=Path('/home/orbit/.ssh/authorized_keys'); lines=target.read_text().splitlines(); target.write_text('\\n'.join([*lines, public])+'\\n') if not any(' '.join(line.split()[:2]) == public for line in lines) else None"
     ],
-    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.metrics}", "metrics"],
-    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}"],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.metrics}",
+      "metrics"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.peer}"
+    ],
     [
       "sh",
       "-c",
@@ -22,12 +66,37 @@
       "{\"node_updates\": [{\"id\": \"${node.peer}\", \"attributes\": {\"tld\": \"prod.test\"}}]}"
     ]
   ],
-  "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "metrics"}},
-  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "metrics", "instance"],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {
+      "role": "metrics"
+    }
+  },
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "metrics",
+    "metrics",
+    "instance"
+  ],
   "prepare": [
-    {"method": "POST", "path": "nodes/${node.metrics}/converge", "body": {}},
-    {"method": "POST", "path": "nodes/${node.peer}/converge", "body": {}},
-    {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "app-prod"}},
+    {
+      "method": "POST",
+      "path": "nodes/${node.metrics}/converge",
+      "body": {}
+    },
+    {
+      "method": "POST",
+      "path": "nodes/${node.peer}/converge",
+      "body": {}
+    },
+    {
+      "method": "POST",
+      "path": "nodes/${node.peer}/roles",
+      "body": {
+        "role": "app-prod"
+      }
+    },
     {
       "method": "POST",
       "path": "projects",
@@ -56,7 +125,12 @@
       "method": "POST",
       "path": "instances",
       "bind": "instance",
-      "body": {"project_id": "${project.id}", "node_id": "${node.target}", "name": "default", "domain": "role-${proof.run}.proof.test"}
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "default",
+        "domain": "role-${proof.run}.proof.test"
+      }
     },
     {
       "method": "POST",
@@ -66,7 +140,25 @@
         "name": "production",
         "preview_name": "production-${proof.run}",
         "sqlite_source_path": "/home/orbit/apps/proof-role-${proof.run}/default/database/database.sqlite"
+      },
+      "bind": "production"
+    },
+    {
+      "method": "POST",
+      "path": "instances/${production.id}/deploy-steps",
+      "operation": false,
+      "body": {
+        "name": "composer-install",
+        "phase": "before_activation",
+        "command": "composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress",
+        "timeout_seconds": 300
       }
+    },
+    {
+      "method": "POST",
+      "path": "instances/${production.id}/deploy",
+      "body": {}
     }
-  ]
+  ],
+  "clean": true
 }

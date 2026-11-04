@@ -1,0 +1,42 @@
+{
+  "kind": "node.role_add.metrics.instance.deploy",
+  "defaults": "node-role-add-defaults.json",
+  "prepare": [
+    {
+      "method": "GET",
+      "path": "instances/2",
+      "operation": false,
+      "bind": "production"
+    },
+    {
+      "method": "POST",
+      "path": "instances/${production.id}/deploy-steps",
+      "operation": false,
+      "body": {
+        "name": "composer-install",
+        "phase": "before_activation",
+        "command": "composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress",
+        "timeout_seconds": 300
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances/${production.id}/deploy",
+      "body": {}
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {
+      "role": "metrics",
+      "converge_existing": true
+    }
+  },
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "metrics",
+    "metrics",
+    "instance"
+  ]
+}
