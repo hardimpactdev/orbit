@@ -24,7 +24,9 @@
   loop_control: { loop_var: rule, index_var: firewall_index, label: "{{ rule[-1] }}" }
 - name: Find misplaced service isolation rules
   ansible.builtin.set_fact:
-    firewall_retire: "{{ firewall_retire | default([]) + ([rule[-1], allow_comment] if not ordered else []) }}"
+    firewall_retire: >-
+      {{ firewall_retire + ([rule[-1], allow_comment] if
+         not ordered or rule[-1] in firewall_retire or allow_comment in firewall_retire else []) }}
   vars:
     allow_comment: "{{ firewall_commands[firewall_index + 1][-1] }}"
     deny_indices: "{{ firewall_numbered.stdout | regex_findall('(?m)^\\[\\s*(\\d+)\\].*# ' ~ (rule[-1] | regex_escape) ~ '\\s*$') | map('int') | list }}"
