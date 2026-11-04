@@ -12,7 +12,7 @@
     ],
     [
       "python3",
-      "swamp/proof/node.add/fresh.py"
+      "swamp/proof/node.add/fresh_fixture.py"
     ]
   ],
   "prepare": [
