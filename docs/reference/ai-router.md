@@ -4,7 +4,6 @@ description: "The optional Orbit extension that collects CLIProxyAPI quota and i
 covers:
   - apps/gateway/extensions/ai-router/**
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/tests/{Feature,Unit}/Extensions/AiRouter/**
   - apps/web/src/extensions/ai-router/**
 ---
 

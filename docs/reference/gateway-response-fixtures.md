@@ -3,7 +3,6 @@ title: "Gateway response fixtures"
 description: "Recorded Gateway responses are the contract that CLI tests replay, so a response change shows which commands it reaches before it ships."
 covers:
   - packages/php-sdk/fixtures/**
-  - apps/gateway/tests/Support/ResponseFixtures.php
   - apps/cli/tests/Helpers/GatewayFixtures.php
   - bin/api-fixtures
   - bin/cli-contract

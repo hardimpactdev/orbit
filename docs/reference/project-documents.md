@@ -6,7 +6,6 @@ covers:
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Infrastructure/Gateway/NativeGatewayFpmConverger.php
   - apps/gateway/artisan
-  - apps/gateway/tests/Feature/Extensions/Documents/**
   - apps/cli/app/Commands/ProjectDocuments/Concerns/GatesDocumentsExtension.php
   - apps/web/src/{api/documents.ts,extensions/documents/**,pages/ProjectMenu.tsx}
 ---
