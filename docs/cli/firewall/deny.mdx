@@ -1,22 +1,38 @@
 ---
 title: "orbit firewall:deny"
 sidebarTitle: "firewall:deny"
-description: "Deny traffic to one destination port or port range, optionally from one source. It accepts the same argument and options as `firewall:allow`."
+description: "Deny traffic to one destination port or port range, optionally from one source."
 ---
 
 ```bash
 orbit firewall:deny <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT]
 ```
 
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `port` | yes | Destination port from 1 through 65535, or an ordered range such as `8000:8100`. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--node=ID` | required | Numeric target Node ID. |
+| `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, a CIDR such as `10.6.0.0/24`, or `any`. |
+| `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both. |
+| `--label=TEXT` | none | Free text that describes the rule. |
+
 ```bash
-orbit firewall:deny 22 --node=7 --from=203.0.113.9 --label=scanner
+orbit firewall:deny 25 --node=7 --from=203.0.113.9 --label=scanner
+orbit firewall:deny 5432 --node=7 --protocol=tcp
 ```
 
 <Warning>
-A Node can never be cut off. The Gateway refuses a deny whose port or range includes SSH port 22, the Node's recovery SSH port, the configured WireGuard port, or a port in the Node's managed firewall catalog, including ports reserved by assigned roles, with `firewall.protected_port`. An allow on these ports is accepted.
+A deny can never cut a Node off. The Gateway refuses a deny, with any `--from`, whose port or range includes SSH port 22, the recovery SSH port, the WireGuard port, or a port that one of the Node's roles needs. The error is `firewall.protected_port`. A source range can cover the Gateway or other Nodes, so no source is safe to deny.
 </Warning>
 
-Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
+Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`. To change an active rule, remove it and create it again. The CLI follows progress and reports the result with the Operation and request IDs.
+
+A deny without `--from` also blocks WireGuard peers. Narrower rules take precedence, so an allow for one source can override a broader deny. To restrict a port without an exposure window, add the allows first, then the deny. See [rule ordering](/cli/firewall#order-on-the-node).
+
+Repeating the command skips entries already in the correct position and applies any missing changes. If the whole rule is already correct, the command succeeds with `Skipped — already applied (firewall.rule_exists)`. A failed command does not undo changes already applied on the Node.
 
 ## How it works
 

@@ -40,6 +40,8 @@ The current minimal topology has a broad unmanaged `proof-network` allowance. A 
 
 Compare relevant state before and after a refusal. For a repeat, assert no additional managed resources or configuration changes. A documented successful skip must return success and its reason code in human and machine output; also prove that partial state is repaired rather than reported as already correct. New Operation history may be expected; do not compare the entire database byte for byte. Distinguish a documented duplicate refusal from replay with the same idempotency key. Neither should create duplicate Node state.
 
+Give every refusal guard one case per bypass form, not only the obvious input. For a protected port, deny it with no source, with a single address and with a CIDR that covers the management network.
+
 Exercise failures after meaningful side effects, including partial changes within a step. Verify cleanup preserves pre-existing resources, retained targets remain inspectable, and repeated recovery leaves no duplicates or disposable leftovers. Where interruption or cleanup failure can change the result, prove that incomplete cleanup stays visible and can be completed safely. Do not count an ordinary failure test as proof of crash recovery.
 
 Wait for observable readiness within a bounded deadline. Report infrastructure failures separately from failed command assertions, but neither is a passing case. Include setup, failed assertions and cleanup in the receipt.

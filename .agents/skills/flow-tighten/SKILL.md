@@ -53,6 +53,8 @@ Every Orbit command is designed as a flow chart first, and the code follows the 
     - Account for partial changes within a failing step, cleanup failure, and interruption. Cleanup must wait until the work it would remove has stopped. Preserve the original failure and expose incomplete cleanup; a worker crash does not prove cleanup ran.
     Show meaningful recovery branches in the chart and document only the consequences the command's user needs. Prove them with [verifying-commands](../verifying-commands/SKILL.md).
 
+29. **A guard refuses by what it protects, not by input shape.** Before you add a refusal, list the ways a caller can reach the same harm with other inputs: a narrower or wider source, a range, another protocol, a CIDR that covers management addresses. If a narrower input can cause the same harm, refuse every input. Example: `firewall:deny` refuses any deny on a protected port, because a `--from` range can cover the Gateway. State what the inverse command does on the same input, for example an allow on a protected port skips as already applied.
+
 ## Swamp gotchas
 
 Swamp's own skill (`swamp`, installed by `swamp repo upgrade`) explains how to build a workflow. These points change the design:
