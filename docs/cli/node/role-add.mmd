@@ -1,11 +1,8 @@
 sequenceDiagram
-  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4 + 5 (shared SSH identity), metrics.exporter_enable decisions, single-swamp-node. docs/cli/node.mdx#orbit-noderoleadd, docs/reference/node-provisioning.md.
-  %% Tightened: flow-tighten 2026-11-02, rules 9, 22 (cfgmgmt behaviors named; their checks are the end check, no file read-back).
-  %% status: migrated
+  %% Target design: ADR 0243/0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md.
+  %% status: reviewed
   %% command: node:role:add
   %% kind: node.role_add
-  %% Rule 23: 2026-11-03 required-only main path.
-  %% Pinned Debian downloads use admitted candidates in Ansible prerequisites; transport failures alone permit upstream, and checksum verification precedes publication.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -14,211 +11,117 @@ sequenceDiagram
   %% lane M icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as Node 12<br/>gets the role
+  participant SW as Swamp<br/>workflow execution
+  participant N as Target Node<br/>gets the role
   participant M as Metrics Node<br/>Prometheus
-  CLI->>GW: node:role:add 12 app-dev<br/>Node and role
+  CLI->>GW: node:role:add NODE ROLE
   %%> Command:
-  %%> - `orbit node:role:add 12 app-dev`
-  %%> - syntax: `<node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]`
+  %%> - `orbit node:role:add NODE ROLE`
+  %%> - syntax: `<node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--json]`
   %%> Input:
-  %%> - the Node, by id or exact name, and the role, such as `app-dev`, `app-prod`, `ingress`, `database`, `websocket`, `analytics`, `ci-runner`, `gateway` or `swamp`
-  %%> - for `analytics` only: the PostgreSQL and ClickHouse Processes; in a terminal the CLI asks for them
-  %%> Optional flags:
-  %%> - `--converge` converges a role the Node already has; that is `node.role_converge`, with its own chart
-  %%> - `--postgres-process=ID`, `--clickhouse-process=ID`: required for `analytics` only; they feed the role plan and add no steps of their own
-  %%> - `--idempotency-key=KEY` reuses a key to retry the start; `--json` gives machine-readable output
+  %%> - the Node and the role, such as `app-dev`, `app-prod`, `ingress`, `database`, `websocket`, `analytics`, `ci-runner`, `gateway` or `swamp`
+  %%> - `--converge` runs `node.role_converge` for a role the Node already has; it has its own chart
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, claim the role<br/>role: provisioning · task #5170
+  Note over GW: Validate, claim the role
   %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - Node 12 is an active, managed Linux Node
+  %%> - the calling Node has an access grant to the target Node, and the target is an active, managed Linux Node
   %%> - the role is not `vpn` or `router`; those are protected from this command
-  %%> - Node 12 doesn't have the role yet, and holds no role it conflicts with, such as `app-prod` beside `app-dev`
-  %%> - a singleton role, such as `gateway` or `swamp`, has no holder yet; to move one, use `node:role:relocate`
-  %%> - one add or converge Operation per Node: the Gateway holds the Node until terminal status; a busy admission refuses with `operation.target_busy` before role state changes
+  %%> - the Node doesn't have the role yet and holds no role it conflicts with; a singleton role such as `gateway`, `websocket`, `metrics`, `analytics` or `swamp` has no holder yet (`node:role:relocate` moves `gateway`, `websocket` and `metrics`; `swamp` cannot be moved)
+  %%> - one add or converge Operation per Node (`operation.target_busy`)
   %%> Builds:
-  %%> - the role plan: packages, files, units, Caddy sites, PHP settings, firewall rules and certificate requests
-  %%> - for the `metrics` role, the Prometheus and Grafana container specifications and their systemd units
-  %%> - the Metrics fleet change, when Node 12 becomes a selected exporter
+  %%> - the role plan: packages, files, units, Caddy sites, PHP settings, firewall rules and certificate requests, and for `metrics` the Prometheus and Grafana specifications
   %%> Secrets:
-  %%> - role credentials go to the Swamp vault as execution copies; the inputs hold only their key names
+  %%> - role credentials reach the run only through the vault, as key names
   %%> Result:
-  %%> - the `app-dev` assignment recorded with status provisioning
-  %%> - task #5170 recorded with the full intent
-  %%> - nothing has happened on the Node yet
+  %%> - the assignment is recorded as `provisioning`, and a task is recorded with the full intent
+  %%> - a `provisioning` assignment with no Operation holding the Node for 11 minutes is a stale claim, left by an interrupted run
   GW->>SW: Start run, full intent<br/>operation-node-role-add
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the role plan with its files and digests
-  %%> - the vault key names of the role credentials
-  %%> - Node 12's and the Metrics Node's addresses and SSH host keys; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task #5170
+  GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
-  %%> - the task number, at once
+  %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>SW: Write the intent<br/>intent file and assets
-  opt role credentials are present
-    SW->>SW: Write the private input<br/>vault to mode 0600 files
-  end
-  opt WebSocket credentials
-    SW->>SW: Write WebSocket input<br/>vault to private file
-  end
-  opt Analytics credentials
-    SW->>SW: Write Analytics input<br/>vault to private file
-  end
-  SW->>SW: Write the playbook input<br/>inventory and host keys
-  SW->>N: Read the OS release<br/>SSH argv
-  SW->>SW: Require supported Ubuntu<br/>native assert
-  opt swamp role
-    SW->>N: Install Python venv<br/>native bootstrap
-  end
-  opt swamp role
-    SW->>N: Create Ansible venv<br/>native bootstrap
-  end
-  opt swamp role
-    SW->>N: Write Ansible pin<br/>native bootstrap
-  end
-  opt swamp role
-    SW->>N: Write collection pins<br/>native bootstrap
-  end
+  SW->>N: Require supported Ubuntu<br/>SSH argv · native assert
   opt swamp role
     SW->>N: Install Ansible<br/>native bootstrap
+    %%> Why:
+    %%> - the Swamp role provides the worker's Ansible; it installs the pinned version and collections first
   end
-  opt swamp role
-    SW->>N: Install collections<br/>native bootstrap
-  end
-  SW->>N: Apply role prerequisites<br/>Ansible phase: prerequisites
-  %%> Pinned packages:
-  %%> - Caddy and PHP use the admitted candidate list, mirror first
-  %%> - only transport failure permits upstream; checksum failure stops and removes staging
+  SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
+  %%> What it does:
+  %%> - the role's repositories and packages, at the pins of the release
+  %%> Downloads:
+  %%> - a pinned package comes from the mirror first; only a transport failure falls back to upstream, and a checksum failure stops the run and removes the staged file
   opt role needs Tool Managers
     SW->>N: Set up Tool Managers<br/>native child workflow
   end
-  SW->>N: Apply the role on the Node<br/>Ansible phase: node
-  opt Analytics uses local storage
-    SW->>N: Open Analytics storage<br/>Ansible phase: storage-firewall
-  %%> - for local Analytics storage, retire its previous owned port before applying the admitted port
-  end
-  opt Analytics needs initialization
-    SW->>N: Pull the Analytics image<br/>cfgmgmt docker_image
-    SW->>N: Create Analytics database<br/>native SSH argv
-    SW->>N: Migrate Analytics database<br/>native SSH argv
-    SW->>N: Apply Analytics runtime<br/>native child workflow
+  SW->>N: Apply the role<br/>Ansible phase: node
+  %%> What it does:
+  %%> - the role's files, units, ports and storage directory owner and mode; protected paths are refused before any host work
+  opt Analytics
+    SW->>N: Initialize Analytics<br/>native SSH argv · child
+    %%> What it does:
+    %%> - opens local storage, pulls the image, creates and migrates the database and applies the runtime
     SW->>N: Wait for Analytics<br/>Ansible phase: readiness
   end
-  opt role plan needs this action
-  SW->>N: Install Swamp<br/>cfgmgmt fetch
-  %%> What it does:
-  %%> - installs the recipe's pinned Swamp release by SHA-256 at `/usr/local/lib/orbit-swamp/<version>/swamp`, a path no process runs from yet
-  end
-  opt role plan needs this action
-  SW->>N: Keep the running Swamp<br/>SSH argv
-  %%> What it does:
-  %%> - while `/usr/local/bin/swamp` is still a file, renames it into a new directory under `/usr/local/lib/orbit-swamp` and links the path to the release at once; a rename keeps the inode, so a running serve or worker keeps a binary it can start children from
-  %%> Why:
-  %%> - replacing the file in place left the running workers on a deleted binary, and every 209 dispatch failed until they restarted
-  end
-  opt role plan needs this action
-  SW->>N: Link Swamp<br/>cfgmgmt link
-  %%> What it does:
-  %%> - points `/usr/local/bin/swamp`, which serve and the workers run, at the pinned release; a running process keeps the file it started from, and the new release takes effect at its next restart
-  end
-  opt role plan needs this action
-  SW->>N: Apply Swamp identity<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Apply Swamp serve<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Apply Swamp worker unit<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Start ${{ self.worker }}<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp serve<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp worker unit<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check ${{ self.worker }}<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp binary<br/>cfgmgmt fetch
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp link<br/>cfgmgmt link
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp identity<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>SW: Check Swamp runtime<br/>native assert
+  opt swamp role
+    SW->>N: Install Swamp<br/>native steps
+    %%> What it does:
+    %%> - installs the binary beside the running one, links it, then applies the identity, the serve unit and the worker units
+    %%> Why not in place:
+    %%> - replacing the running binary breaks every dispatch, so the running serve and workers keep working until they restart
   end
   opt role needs certificates
     SW->>GW: Sign role certificates<br/>native child workflow
+    %%> Why this calls the Gateway:
+    %%> - certificate signing is the one call a step makes to the Gateway
   end
   opt role changes PHP pools
     SW->>N: Publish PHP pools<br/>native delta publication
   end
   SW->>N: Publish role sites<br/>Ansible phase: publication
   SW->>N: Open the firewall<br/>Ansible phase: firewall
-  %%> - repair owned rule shapes and keep specific allows before isolation denies and broad peer trust
+  %%> What it does:
+  %%> - adds the role's rules, each specific allow before its isolation deny and the broader peer trust rule; unrelated rules stay
   opt role changes DNS
     SW->>N: Publish private DNS<br/>native delta publication
+    %%> Why last:
+    %%> - a name is reachable only after the site serves and the firewall is open
   end
   opt role joins Metrics
     SW->>N: Add the exporters<br/>Ansible phase: exporters
-    %%> - apply canonical exporter rules and repair owned service isolation shapes and order
     SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
   end
   SW->>N: Check the role<br/>Ansible phase: check
-  %%> Role boundary:
-  %%> - node:converge owns the Node observer and Orbit CLI
-  %%> - each phase is idempotent; a second run reports zero changes
+  %%> What it does:
+  %%> - the one end check: the role's services, ports, sites and rules are in place
   alt every step passes
     N-->>SW: role services ready
-    %%> Returns:
-    %%> - the check passed for every part of the role
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway for a result
-    Note over GW: Record result<br/>role: active · task succeeded
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the role active
     %%> Result:
-    %%> - the `app-dev` role on Node 12 becomes active, with the digest of each applied part
-    %%> - Node 12's exporter is recorded as active, when it joined Metrics
-    %%> - task #5170 succeeds
+    %%> - the assignment becomes `active`
   else a step fails
     N--xSW: exit ≠ 0 or no match
-    %%> When:
-    %%> - a package, file, unit, Caddy validation, certificate, firewall or check step fails
     SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark the role failed<br/>converge:STEP · rerun --converge
+    Note over GW: Mark the role failed
     %%> Result:
-    %%> - the role stays recorded, marked failed at `converge:STEP` with the step's own error code
-    %%> - task #5170 fails
+    %%> - the assignment stays, marked `failed` at `converge:STEP`, so you can see it
     %%> On the Node:
-    %%> - finished steps stay; there is no rollback
-    %%> - that is safe: every step is idempotent and Caddy is never reloaded with a config that fails validation
+    %%> - finished host changes stay; there is no rollback
     %%> Retry:
-    %%> - run `orbit node:role:add 12 app-dev --converge` after fixing the cause
+    %%> - fix the cause and run `node:role:add --converge`
   end
   opt run completed or failed
-    SW->>SW: Remove the playbook input<br/>private run folder cleanup
-    SW->>N: Remove init containers<br/>best-effort cfgmgmt cleanup
+    SW->>SW: Remove the run folder<br/>private run files
+    %%> Why:
+    %%> - the intent, vault values and role configuration do not outlive the run, whatever its result
+    SW->>N: Remove init containers<br/>best effort
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5170
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
+    CLI->>GW: operation:show TASK
     GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
   end

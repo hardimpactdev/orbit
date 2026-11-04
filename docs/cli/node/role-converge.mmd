@@ -1,12 +1,8 @@
 sequenceDiagram
-  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4 + 5, single-swamp-node, swamp-role-includes-caddy, swamp-workers-two-concurrency. docs/cli/node.mdx#orbit-noderoleadd, docs/reference/node-provisioning.md#native-role-convergence.
-  %% Tightened: flow-tighten 2026-11-02, rules 9, 22 (cfgmgmt behaviors named; their checks are the end check, no file read-back).
-  %% status: migrated
+  %% Target design: ADR 0243/0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md.
+  %% status: reviewed
   %% command: node:role:add
   %% kind: node.role_converge
-  %% Rule 23: 2026-11-03 required-only main path.
-  %% Metrics compliance uses the canonical mount, public environment, port and restart settings; missing official launch-option checks are noted in swamp-evaluation.md.
-  %% Pinned Debian downloads use native SSH curl exit codes for transport-only fallback, then verify the pin before publication.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -15,207 +11,109 @@ sequenceDiagram
   %% lane M icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as Node 12<br/>has the role
+  participant SW as Swamp<br/>workflow execution
+  participant N as Target Node<br/>has the role
   participant M as Metrics Node<br/>Prometheus
-  CLI->>GW: node:role:add 12 app-dev<br/>--converge
+  CLI->>GW: node:role:add NODE ROLE<br/>--converge
   %%> Command:
-  %%> - `orbit node:role:add 12 app-dev --converge`
-  %%> - syntax: `<node> <role> --converge [--idempotency-key=KEY] [--json]`
+  %%> - `orbit node:role:add NODE ROLE --converge`
+  %%> - syntax: `<node> <role> --converge [--json]`
   %%> Input:
-  %%> - the Node, by id or exact name, and a role it already has
-  %%> - `--converge` is required: this kind only exists with it
-  %%> Without --converge:
-  %%> - the same call on a role Node 12 already has is refused at once: 422 `validation.failed`, "explicit convergence is required"; no task, no run
-  %%> - exception: an `active` `ingress` role may be added again without `--converge`; that runs `node.role_add`
-  %%> - a Node without the role gets `node.role_add`, with its own chart
-  %%> Optional flags:
-  %%> - `--idempotency-key=KEY` reuses a key to retry the start; `--json` gives machine-readable output
+  %%> - the Node and a role it already has; without `--converge` the same call is refused (`validation.failed`), except an `active` `ingress` role, which runs `node.role_add`
   %%> What it does:
-  %%> - applies the role's packages, files, units and publication again, and repairs drift
-  %%> - never changes an Instance, a Process, a Schedule or the role assignment itself
+  %%> - applies the role's packages, files, units and publications again and repairs drift
+  %%> - never changes an Instance, a Process, a Schedule or the assignment itself
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
-  %%> - `node:converge` runs the same role steps for each active role, but only for parts whose digest changed
-  Note over GW: Validate, claim the Node<br/>role: stays active · task #5171
+  Note over GW: Validate, claim the Node
   %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - Node 12 is an active, managed Linux Node and has the `app-dev` role
-  %%> - the role is `active`, `failed` at a `converge:` step, or `provisioning` with a stale claim: older than 11 minutes, with no operation holding the role lock
-  %%> - the role is not `vpn` or `router`; `node:converge` re-applies the `vpn` files
-  %%> - one add or converge Operation per Node: the Gateway holds the Node until terminal status; a busy admission refuses with `operation.target_busy` before role state changes
-  %%> Builds:
-  %%> - the complete role plan, with one digest per part
-  %%> - the current Metrics fleet change for Node 12, when there is one
+  %%> - the same Node checks as for an add, and the role is `active`, `failed` at a `converge:` step, or `provisioning` for more than 11 minutes with no Operation holding the Node's role lock
+  %%> - one add or converge Operation per Node (`operation.target_busy`)
   %%> Result:
-  %%> - an `active` role stays `active`; a `failed` or stale-claimed role is marked provisioning
-  %%> - the Node's Operation lock is the claim, so no other add or converge runs on the Node; a role such as `gateway` keeps serving during the run
-  %%> - task #5171 recorded with the full intent
+  %%> - an `active` role keeps its status; a `failed` or stale role is marked `provisioning` for the run
+  %%> - a task is recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-node-role-add
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the role plan with its files and digests, and the vault key names of the role credentials
-  %%> - for the `metrics` role, the Prometheus and Grafana container specifications and their systemd units
-  %%> - Node 12's and the Metrics Node's addresses and SSH host keys; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task #5171
+  GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  %% Each Swamp label below is an actual shared resource workflow step.
-  %% Official child workflows retain their own resource checks.
-  SW->>SW: Write the intent<br/>intent file and assets
-  opt role credentials are present
-    SW->>SW: Write the private input<br/>vault to mode 0600 files
-  end
-  opt WebSocket credentials
-    SW->>SW: Write WebSocket input<br/>vault to private file
-  end
-  opt Analytics credentials
-    SW->>SW: Write Analytics input<br/>vault to private file
-  end
-  SW->>SW: Write the playbook input<br/>inventory and host keys
-  SW->>N: Read the OS release<br/>SSH argv
-  SW->>SW: Require supported Ubuntu<br/>native assert
-  opt swamp role
-    SW->>N: Install Python venv<br/>native bootstrap
-  end
-  opt swamp role
-    SW->>N: Create Ansible venv<br/>native bootstrap
-  end
-  opt swamp role
-    SW->>N: Write Ansible pin<br/>native bootstrap
-  end
-  opt swamp role
-    SW->>N: Write collection pins<br/>native bootstrap
-  end
+  %%> - the task ID, at once
+  SW->>N: Require supported Ubuntu<br/>SSH argv · native assert
   opt swamp role
     SW->>N: Install Ansible<br/>native bootstrap
+    %%> Why:
+    %%> - the Swamp role provides the worker's Ansible; it installs the pinned version and collections first
   end
-  opt swamp role
-    SW->>N: Install collections<br/>native bootstrap
-  end
-  SW->>N: Apply role prerequisites<br/>Ansible phase: prerequisites
+  SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
+  %%> What it does:
+  %%> - the role's repositories and packages, at the pins of the release
   opt role needs Tool Managers
     SW->>N: Set up Tool Managers<br/>native child workflow
   end
-  SW->>N: Apply the role on the Node<br/>Ansible phase: node
-  %%> - Gateway DNS applies only when its unit or live resolver policy changed
+  SW->>N: Apply the role<br/>Ansible phase: node
+  %%> What it does:
+  %%> - the role's files, units, ports and storage directory owner and mode; protected paths are refused before any host work
   opt Analytics uses local storage
     SW->>N: Open Analytics storage<br/>Ansible phase: storage-firewall
-  %%> - for local Analytics storage, retire its previous owned port before applying the admitted port
+    %%> Not included:
+    %%> - a converge creates no Process and runs no database migration
   end
-  opt role plan needs this action
-  SW->>N: Install Swamp<br/>cfgmgmt fetch
-  %%> What it does:
-  %%> - installs the recipe's pinned Swamp release by SHA-256 at `/usr/local/lib/orbit-swamp/<version>/swamp`, a path no process runs from yet
-  end
-  opt role plan needs this action
-  SW->>N: Keep the running Swamp<br/>SSH argv
-  %%> What it does:
-  %%> - while `/usr/local/bin/swamp` is still a file, renames it into a new directory under `/usr/local/lib/orbit-swamp` and links the path to the release at once; a rename keeps the inode, so a running serve or worker keeps a binary it can start children from
-  %%> Why:
-  %%> - replacing the file in place left the running workers on a deleted binary, and every 209 dispatch failed until they restarted
-  end
-  opt role plan needs this action
-  SW->>N: Link Swamp<br/>cfgmgmt link
-  %%> What it does:
-  %%> - points `/usr/local/bin/swamp`, which serve and the workers run, at the pinned release; a running process keeps the file it started from, and the new release takes effect at its next restart
-  end
-  opt role plan needs this action
-  SW->>N: Apply Swamp identity<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Apply Swamp serve<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Apply Swamp worker unit<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Start ${{ self.worker }}<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp serve<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp worker unit<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check ${{ self.worker }}<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp binary<br/>cfgmgmt fetch
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp link<br/>cfgmgmt link
-  end
-  opt role plan needs this action
-  SW->>N: Check Swamp identity<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>SW: Check Swamp runtime<br/>native assert
+  opt swamp role
+    SW->>N: Install Swamp<br/>native steps
+    %%> What it does:
+    %%> - installs the binary beside the running one, links it, then applies the identity, the serve unit and the worker units
+    %%> Why not in place:
+    %%> - replacing the running binary breaks every dispatch, so the running serve and workers keep working until they restart
   end
   opt role needs certificates
     SW->>GW: Sign role certificates<br/>native child workflow
+    %%> Why this calls the Gateway:
+    %%> - certificate signing is the one call a step makes to the Gateway
   end
   opt role changes PHP pools
     SW->>N: Publish PHP pools<br/>native delta publication
   end
   SW->>N: Publish role sites<br/>Ansible phase: publication
   SW->>N: Open the firewall<br/>Ansible phase: firewall
-  %%> - repair owned rule shapes and keep specific allows before isolation denies and broad peer trust
+  %%> What it does:
+  %%> - adds the role's rules, each specific allow before its isolation deny and the broader peer trust rule; unrelated rules stay
   opt role changes DNS
     SW->>N: Publish private DNS<br/>native delta publication
+    %%> Why last:
+    %%> - a name is reachable only after the site serves and the firewall is open
   end
   opt role joins Metrics
     SW->>N: Add the exporters<br/>Ansible phase: exporters
-    %%> - apply canonical exporter rules and repair owned service isolation shapes and order
     SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
   end
   SW->>N: Check the role<br/>Ansible phase: check
-  %%> Role boundary:
-  %%> - node:converge owns the Node observer and Orbit CLI
-  %%> - each phase is idempotent; a second run reports zero changes
+  %%> What it does:
+  %%> - the one end check: the role's services, ports, sites and rules are in place
   alt every step passes
     N-->>SW: role services ready
-    %%> Returns:
-    %%> - the check passed for every part of the role
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway for a result
-    Note over GW: Record result<br/>role: active · task succeeded
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the role active
     %%> Result:
-    %%> - the `app-dev` role on Node 12 is active again, with the digest of each applied part
-    %%> - a failed step from an earlier run is cleared
-    %%> - task #5171 succeeds
+    %%> - the assignment is `active` and an earlier failed step is cleared; a second convergence reports no changes
   else a step fails
     N--xSW: exit ≠ 0 or no match
-    %%> When:
-    %%> - a package, file, unit, Caddy validation, certificate, firewall or check step fails
     SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Record the failure<br/>role: stays active · task failed
+    Note over GW: Keep the role as it was
     %%> Result:
-    %%> - an `active` role stays `active`: a failed converge never takes a role out of service, so a failed `gateway` converge cannot lock the Gateway out of its own access checks
-    %%> - the failed step and its error code stay on task #5171, and `doctor` shows the drift
-    %%> - a role that was `failed` at `converge:STEP` or had a stale claim stays `failed` with the new step's error code
-    %%> - task #5171 fails
+    %%> - an `active` role stays `active`, so a role such as `gateway` is never taken out of service by a failed run
+    %%> - a role that was `failed` or stale is marked `failed` again, with the new step's code
+    %%> - running services keep their last valid configuration, and Caddy never reloads one that fails validation
     %%> On the Node:
-    %%> - finished steps stay; there is no rollback
-    %%> - running services keep their last valid configuration, because nothing reloads with one that fails validation
+    %%> - finished host changes stay; there is no rollback
     %%> Retry:
-    %%> - run the same command again after fixing the cause; it is a new task
+    %%> - run the same command again; the failed step and error code stay on the Operation and `doctor` shows the drift
   end
   opt run completed or failed
-    SW->>SW: Remove the playbook input<br/>private run folder cleanup
+    SW->>SW: Remove the run folder<br/>private run files
+    %%> Why:
+    %%> - the intent, vault values and role configuration do not outlive the run, whatever its result
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5171
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
+    CLI->>GW: operation:show TASK
     GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
   end
