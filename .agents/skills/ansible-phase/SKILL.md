@@ -56,6 +56,8 @@ The `node.role_add` flow provides these shared parts:
 
 - UFW skips an existing rule even when its position is wrong. Compare the public rule shape and numbered order, remove only changed owned rules, then insert the specific allow before its isolation deny and broad peer trust. Remove a replaced broad tuple only when its complete old shape matches.
 
+- A dedicated FPM pool is a fragment: its process-manager settings can live in the master’s local include. Validate a candidate full master with the candidate pool and the live local settings before replacing the pool. Stage candidates only on drift and remove them in an `always` block, so an unchanged phase reports zero changes.
+
 ## Prove it
 
 1. Start a proof topology (`bin/swamp-proof up`) and admit the command once, so you have a real intent.
