@@ -10,17 +10,7 @@ covers:
 
 # CLI design standard
 
-This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. It defines the shared design standard. A command's adoption record states which requirements the command meets and how they were verified. This standard alone does not make a command compliant.
-
-`gateway:release:rollback` uses `--yes` to confirm a code switch that leaves the database in place. Its interactive confirmation defaults to No; see [the command contract](/cli/gateway/release-rollback).
-
-`database:server:close` reports whether an adopted Valkey server now requires its admin password. A refusal keeps the clients' addresses and the reason visible in human output, and preserves `database.server_in_use` in JSON. See [Database servers](/reference/database-servers#close-an-adopted-server).
-
-`websocket:app:destroy` and `instance:websocket:remove` use `--force` for destructive consent, like their Database siblings. Their default-No prompts name the app and the effect. JSON and non-interactive calls without `--force` return `websocket.confirmation_required`. See [Reverb app commands](/cli/websocket).
-
-When removing a command, remove its response fixtures and CLI replay tests together. `bin/cli-contract --changed` accepts that retirement. A remaining fixture without a replay still fails; a replay that uses a deleted fixture still runs and fails.
-
-The docs-first addition for [fixed repository analysis](/cli/tasks/analyze) uses existing operation following, cancellation, and failure rendering, not a new progress mechanism. Runtime verification must keep complete bounded report/provenance bytes in JSON while making the human outcome (`ready`, `action_required`, `blocked`, or `changed`) distinct from operation status and scanner exit. A valid blocked report is not a generic green success, and following cancellation is not proof that descendants have stopped. Its native request/refusal contract stays in Tasks; exact help, human renderings, and terminal verification belong to runtime delivery.
+This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. A command's page and its cases file (`swamp/proof/<family>/<command>.cases.md`) state which requirements it meets and how a proof observes them. This standard alone does not make a command compliant.
 
 ## Scope and authority
 
@@ -47,6 +37,8 @@ Resolve and validate required fields before mutations. Validate a supplied value
 
 In a terminal, a command prompts for every required input the caller omitted, and it offers a default where one exists, such as `root` for a bootstrap user or the Project default branch. A destructive target is selected through the interactive data list, never inferred. A noninteractive or machine call refuses an omitted required input with the command's documented error code. Read-only lookups needed to resolve a prompt may run before consent. A slow lookup needs visible waiting feedback.
 
+An argument or option that names a Node, Project or other record takes its numeric ID, as the API and the MCP tools do. A prompt for such an input selects from a list and passes the ID.
+
 ## Prompt selection
 
 Choose a prompt by the values the command admits.
@@ -72,7 +64,7 @@ Use a finite selector for an existing registry entity; an open text or numeric p
 
 Search callbacks are read-only. A noninteractive caller supplies the same value through the documented argument or option. A secret is the exception: it never travels in argv, so a noninteractive caller pipes it on standard input, and a terminal asks for it with a hidden prompt. Input secrets are not echoed or logged.
 
-Only an explicit current credential-delivery contract may return secret values. Verify those commands with disposable credentials and keep raw artifacts private; remove credentials from shared report excerpts. For each prompt, the command contract states its ID, label, source argument or option, choices, default, validation timing, cancellation, and follow-up behavior.
+Only an explicit current credential-delivery contract may return secret values. Verify those commands with disposable credentials and keep raw artifacts private; remove credentials from shared report excerpts.
 
 ## Consent
 
@@ -98,9 +90,13 @@ Select the display from the task the user is performing.
 
 Human output names a related record by its name or slug, such as the Project `charlie-shop` or the Node `beast`, never by its numeric id alone. JSON output carries the id and, where the Gateway provides it, the name and slug beside it.
 
-A list does not become interactive unless its command contract defines a selection and follow-up action. Tables use short uppercase headers. Data lists retain the exact documented column names. Empty lists state that no matching records were found. Missing display values use an em dash; JSON keeps its documented null or omission behavior. A property list uses a group heading, a primary item label, and indented labeled values.
+A list does not become interactive unless its command contract defines a selection and follow-up action. Tables use short uppercase headers. Data lists retain the exact documented column names. An empty list says so in one line, such as `No firewall rules.`. Missing display values use an em dash; JSON keeps its documented null or omission behavior. A property list uses a group heading, a primary item label, and indented labeled values.
 
-When a human field represents a user and host together, display `user@host`; retain separate machine fields. Display a top-level domain with its leading dot. Project detail output may include its source defaults, task settings and `Maintenance` switch, plus a separate table of related Instances; keep those machine values in JSON without changing accepted selectors. These formatting rules do not change accepted selectors or serialized values.
+A list is ordered by what the reader needs, and human and JSON output use the same order. Where order carries meaning, such as firewall rules where the first match wins, show that order; otherwise sort by a stable key such as the name.
+
+A skipped action, such as a repeat of a request that is already applied, succeeds. Human and JSON output carry a short explanation and a stable reason code, for example `firewall.rule_exists`; the same code is not an error here although it refuses a request elsewhere. Partial state converges and is not reported as already applied, so verify the state before reporting a skip.
+
+When a human field represents a user and host together, display `user@host`; retain separate machine fields. Display a top-level domain with its leading dot. These formatting rules do not change accepted selectors or serialized values.
 
 Do not dump nested JSON into human output as a replacement for a documented renderer. Avoid introductory lines that repeat the table or tree heading. Errors identify the failed field or operation in clear prose, preserve request correlation where provided, and give recovery guidance only when it is valid for the current product.
 
@@ -124,7 +120,7 @@ The title uses the singular human entity label and its selector. Align property 
 
 Property values wrap at spaces. Only a word longer than the line breaks by width.
 
-Optional feature properties follow the command's contract, not a second machine schema. For example, `instance:show` adds `Production user` and `Production home` only for a production Instance, while JSON always carries the nullable `production_user` and `production_home` fields. Keep this distinction in the response fixtures and expected CLI output.
+Optional feature properties follow the command's contract, not a second machine schema. Keep this distinction in the response fixtures and expected CLI output.
 
 ## Progress and liveness
 
@@ -154,9 +150,7 @@ Logs are their own output and do not need an enclosing progress tree. A bespoke 
 
 A successful command returns zero. A handled command failure returns the current command's nonzero status; success-with-warning is successful only when the command contract defines that outcome. Keep parser usage errors distinct from handled product failures. Do not introduce new numeric error classes or rename stable error codes as a rendering change.
 
-A JSON failure is one `error` envelope with `code`, `message`, optional `details`, and `request_id`. The `details` keep only bounded values from the Gateway: the failed `step` or `teardown_step`, the closed `outcome`, `adoption_block`, `reason`, `cleanup`, `role`, `field`, and `error_code` tokens, a record `id`, the Node, stage, and message of a failed Caddy build, and validation field messages.
-
-When a revision conflict occurs, `project_documents.revision_conflict` also keeps positive integer `entry_id` and `current_revision` fields so clients can preserve and reconcile drafts. `env.configuration_invalid` keeps only the `key`, `rule`, and `placeholder` of the invalid value. `operation.target_busy` and `operation.dispatch_failed` keep a positive integer `operation_id`, so a caller can follow or cancel that [operation](/reference/operations). Other details, such as command output, drop. A Gateway consent refusal that ends a noninteractive or JSON run keeps its details too, such as `field: force` and `reason: destructive_consent_required`. Human output prints each kept detail as a `field: value` line after the message, except the build details that the message already names.
+A JSON failure is one `error` envelope with `code`, `message`, optional `details`, and `request_id`. The `details` keep only bounded values from the Gateway, listed with each error on the page that owns it; command output and other unbounded values drop. A Gateway consent refusal that ends a noninteractive or JSON run keeps its details too, such as `field: force` and `reason: destructive_consent_required`. Human output prints each kept detail as a `field: value` line after the message, except details the message already names.
 
 Preserve each command's documented stdout and stderr channels. Machine output must remain parseable on its result channel, including failures and stream termination. Human diagnostics and progress must not leak into that channel. Check the two streams separately with redirection; a combined PTY transcript cannot prove channel placement.
 
@@ -166,27 +160,13 @@ Partial work reports the verified outcome and remaining failure. A request that 
 
 Decorated terminals may repaint active output in place. Restore cursor visibility and terminal settings on success, failure, cancellation, and timeout. Handle interruption while an HTTP response is pending, without waiting for the remote operation to finish. SIGINT and SIGTERM remain cancellation (exit 128 plus the signal) even when a request-ID or transport layer wraps the throw. A client interruption does not establish that the server stopped or rolled back. Piped and undecorated output has no escape codes or repeated animation frames; emit readable settled results. Keep color selection separate from input availability and live terminal capability.
 
+The [console notes](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/app/Support/Console/README.md) cover panel wrapping, character widths, nested progress and the shared helpers.
+
 When stdin is a pipe, measure the selected output's terminal. Plain output may write one complete waiting line before admitted slow work, followed by its settled outcome. A forced color option cannot turn a pipe into a terminal.
-
-Wrap panel content inside its borders. Account for visible character width rather than ANSI bytes. Long labels and errors must not collide with borders or depend on terminal auto-wrap. Summaries and detail lines have distinct jobs and do not repeat the same full error twice. A human issue cap reports omitted items and does not truncate the machine result.
-
-Measure ordinary terminal cells without assuming emoji sequences collapse into one glyph. Keep each grapheme intact when wrapping, but count its visible base characters separately. Combining marks and joiners add no cells. Verify widths in the actual terminal. Text measurements do not prove terminal alignment.
 
 Tables keep all supplied columns and wrap headers and values within their cells. Their minimum width includes borders, separators, padding, and room for each column's widest indivisible character. Below that width, a read-only table uses a plain labeled record display that preserves every field. An interactive data list reports the required width and stops without selecting a row. It never hides a column or truncates a selector to force a selection into the available space.
 
-An initially unstarted nested progress panel starts and settles while the outer callback is active. It shares the surrounding renderer without moving either callback to a child process.
-
-Prompt, progress, and interruption state belong to one invocation. Finishing a nested or sequential command restores the surrounding command's prompt configuration, output, cursor, terminal settings, and interrupt intent. A forced color option does not make a pipe repaintable or permit escape codes in machine output.
-
 An interactive prompt without decoration still shows input edits, search results, and the current selection before submission. Append changed prompt frames without escape codes when repainting is unavailable. These user-driven updates are separate from animation. SIGINT and SIGTERM interrupt a waiting prompt, restore its terminal, and stop before the command can use a submitted value.
-
-## Shared helpers
-
-The shared implementation lives under `apps/cli/app/Support/Console`. `ConsoleMode` keeps machine output, prompt admission, decoration, repainting, and terminal width separate. `GatewayCommand` resolves these facts after input binding when a command requests its shared helpers. `CommandPrompts` takes a factory for a Laravel Prompts instance and owns its input and terminal scope. Commands still decide which inputs may be prompted and how to report a typed `PromptAborted` failure.
-
-`HumanRenderer` returns terminal bytes for details, tables, properties, and failures. Write these bytes through `ConsoleWriter` so literal formatter tags remain data. `ProgressDisplay` admits known steps and runs each callback in the parent process. Its `during()` method returns the callback result without inferring product success. Set the terminal state with `complete()` after checking that result, then call `finish()` with the verified outcome. `SpinnerDisplay::during()` reports a completed wait and preserves the callback's value or exception. An inner spinner shares the active tree's rendering and animation clock.
-
-These helpers do not migrate a command automatically. Keep its adoption verdict unverified until its documented input, output, and terminal cases pass.
 
 ## Canonical renderings
 
@@ -201,25 +181,7 @@ The agreed rendering of a command is its expected output under `apps/cli/tests/E
 | JSON result | `node:list` | [default.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.json) |
 | JSON failure envelope | `node:add` | [tld-required.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.json) |
 
-macOS enrollment and removal reuse that progress tree and JSON result. Their recordings are [macos-enrolled.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/macos-enrolled.human.txt) and [macos-removed.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-remove/macos-removed.human.txt). The removal recording lists `user`, `package-managers`, and `host-wireguard` under `retained_on_node` in both human output and [macos-removed.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-remove/macos-removed.json). Refusals before SSH use the same failure envelope, for example [macos-account-required.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/macos-account-required.json).
-
-The `node:list` table shows the agent state in its Agent column: online, offline, not seen or unknown. `node:show` adds the time to an offline state, as in "offline since 2026-11-02T17:55:00Z", because a table column must not wrap. `doctor` prints that line for each Node before its findings, and marks each finding of an offline agent's Node "possibly outdated". `tool:adopt` prints the Node's line before its answer or refusal, and marks an answer from an offline agent "possibly outdated".
-
-`node:update` uses the same progress tree for a synchronous request. Its recordings are [platform-updated.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-update/platform-updated.human.txt) and the refusal [platform-managed-refused.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-update/platform-managed-refused.human.txt).
-
-Streams and prompt flows have no recorded canonical rendering yet. The `design:node-add` sketch under `apps/cli/design` is the reference for a prompt flow until its real command lands. [Gateway response fixtures](/reference/gateway-response-fixtures) describes how a family gains recorded renderings.
-
-The Tasks JSON rendering preserves the distinction between a watched branch pull request and the reviewed pull request Orbit opened. The canonical [watched task result](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-show/watched.json) includes `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` with a null `pr_url`. Unwatched task results keep all three watched fields null. Do not substitute the watched URL for `pr_url`. The [Tasks command contract](/cli/tasks/show) owns these fields; the human rendering still uses the reviewed pull request.
-
-`tasks:agent:show` reuses the progress tree and prints the read as a detail tree. Each transcript entry follows under a heading with its time, kind, and label. Its recordings are [default.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/default.human.txt) for a live thread, [delta.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/delta.human.txt) for a read after a cursor, [pending.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/pending.human.txt) for a thread that has not started, and [archived.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/archived.human.txt) for a saved transcript.
-
-`tasks:question:close` reuses the progress tree and prints the closed question as `tasks:question:list` does. Its recordings are [closed.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-question-close/closed.human.txt) and the failure envelope [already-closed.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-question-close/already-closed.json).
-
-Subtask detail output adds a `Topology` property when the subtask declares workload nodes, with the roles separated by commas. An empty declaration omits that human property. JSON always retains the `topology` array, including `[]`. The [subtask commands](/cli/tasks) own the input contract; recorded task responses and CLI expectations cover both empty and declared topology.
-
-`tasks:analyze` keeps a failed operation failed: human output names its failed step and error code, while JSON retains the operation and its closed [public failure metadata](/reference/tasks#public-analysis-failure-metadata). `operation:show --json` also preserves the [immutable provision identity](/reference/tasks#public-provision-identity), including an unavailable `analysis_base: null`. Consumers read these fields from the operation result, never from human text. The `failure-overflow`, `failure-unavailable`, `pinned`, and `unavailable` recordings under [Tasks expectations](https://github.com/hardimpactdev/orbit/tree/main/apps/cli/tests/Expected/tasks) check human and JSON rendering.
-
-`tasks:status` includes workspace lease holders and queued actors in its human detail tree. JSON preserves the typed `workspace_leases` array. A busy checkout is a wait, so its queued actors do not appear as command failures. Doctor reports unresolved ownership without clearing it. See the [workspace lease contract](/reference/tasks#workspace-lease).
+Streams have no recorded canonical rendering yet. The `design:node-add` sketch under `apps/cli/design` is the reference for a prompt flow until a command with one has a recording. [Gateway response fixtures](/reference/gateway-response-fixtures) describes how a family gains recorded renderings.
 
 ## Command reference
 
@@ -227,13 +189,11 @@ Every visible product command has its own page, `docs/cli/<family>/<command>.mdx
 
 `apps/cli/tests/Feature/CommandSurfaceTest.php` reads the registered commands and fails when a command has no page or its page misses an argument or option. CI runs that test on every pull request, including a pull request that changes only docs.
 
-## Verification and adoption
+## Verification
 
-Each supported public command has an adoption record with its source identity, supported modes, applicable rules, contract-backed exceptions, checks, terminal artifacts, and verdict. Include extension-provided commands with the extension enabled. Extension command discovery reads the enabled set from the active Gateway; do not assume an extension command appears in the default command list when that Gateway has it disabled or its state is unknown. The `project:document` and `project:document-storage` commands belong to the `documents` extension, and the `vault` commands to the `vault` extension. Account separately for internal commands that share input or output infrastructure.
+Each supported public command has a cases file with its applicable rules, contract-backed exceptions, and the observations a proof must make; see [verifying commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md). Include extension-provided commands with the extension enabled. Extension command discovery reads the enabled set from the active Gateway; do not assume an extension command appears in the default command list when that Gateway has it disabled or its state is unknown. The `project:document` and `project:document-storage` commands belong to the `documents` extension, and the `vault` commands to the `vault` extension. Account separately for internal commands that share input or output infrastructure.
 
 Check success, empty results, invalid and missing input, cancellation, consent, warnings, partial results, and failures wherever the command supports them. Check human, JSON, streaming, noninteractive, piped, and decorated paths that exist for that command. Expected command failures are successful verification only when a verifier asserts the exact intended result and absence of forbidden side effects.
-
-The [`node:wireguard-key`](/cli/node/wireguard-key) command uses shared Node selection, a validated key prompt, and an indeterminate progress operation for hub convergence. Its [command tests](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Feature/Nodes/SetNodeWireGuardKeyCommandTest.php) check prompt cancellation, invalid-key retry, missing or invalid supplied input before Gateway access, and human/JSON success and failure contracts. The [recorded outputs](https://github.com/hardimpactdev/orbit/tree/main/apps/cli/tests/Expected/nodes/node-wireguard-key) preserve the request ID and safe error codes. Review its interactive behavior with a real terminal recording as well as these text assertions.
 
 ### Recording
 

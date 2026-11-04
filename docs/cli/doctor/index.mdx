@@ -23,7 +23,7 @@ Doctor compares current Node and runtime facts with the Gateway's recorded inten
 
 ### Verify only
 
-Doctor reports from the facts each Node's agent reported, and shares its firewall comparison with `firewall:live:list`. Each native family owns the checks that establish its configuration. Repeating those implementations in Doctor creates a second execution engine and competing definitions of success.
+For each Node, Doctor prints the agent's liveness line before its findings and marks the findings of a Node whose agent is offline "possibly outdated". Doctor reports from the facts each Node's agent reported, and shares its firewall comparison with `firewall:live:list`. Each native family owns the checks that establish its configuration. Repeating those implementations in Doctor creates a second execution engine and competing definitions of success.
 
 ### Informational findings stay healthy
 
