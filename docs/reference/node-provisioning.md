@@ -74,6 +74,8 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort and private DNS after role checks. Exporters require explicit enablement. |
 | End check | Verify managed SSH and sudo, check the observer resources and prove the tunnel. The native `Check the Node` assertion determines completion. |
 
+Role PHP packages, Composer prerequisites and Caddy use the [recipe artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) for each pinned Debian file. Native fetch verifies the checksum and stops on any download or integrity failure.
+
 Native Node roots freeze certificate scopes and publication plans at admission. Their explicit resource steps publish the target and withdraw the source after target readiness. Official cfgmgmt resources own file, package, account and service changes. A single command uses SSH argv. No script is copied to a Node. A completed run removes the staged sudo candidate as best effort. A failure retains completed work; reruns use native resource checks and guards.
 
 The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. Before hub peer synchronization, SSH commands compose the existing key and the public peer plan into a protected configuration on that hub. The workflow verifies that the hub public key is unchanged afterward. Certificate signing stays at the existing Gateway signer boundary.

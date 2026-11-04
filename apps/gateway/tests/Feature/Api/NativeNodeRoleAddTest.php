@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\NodeFootprint;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -58,6 +59,17 @@ it('captures application role setup without a target worker or observer work', f
     expect($input['intent']['ssh']['control_node_id'])->toBe(209);
     expect(array_column($input['intent']['managers'], 'manager'))->toBe(['vp', 'composer']);
     expect($input['intent']['caddy_package']['sha256'])->toHaveLength(64);
+    $recipe = new RecipeLoader()->load();
+    foreach ($input['intent']['php_packages'] as $package) {
+        expect($package['url'])->toBe($recipe->artifactMirror.'/'.$package['name'].'_'.$package['sha256'].'.deb');
+    }
+    foreach ($input['intent']['managers'][1]['setup']['apt']['packages'] as $package) {
+        if ($package['artifact'] !== null) {
+            expect($package['artifact']['url'])->toBe($recipe->artifactMirror.'/'.$package['name'].'_'.$package['artifact']['digest'].'.deb');
+        }
+    }
+    $caddy = $recipe->tools['caddy']->artifacts['amd64'];
+    expect($input['intent']['caddy_package']['url'])->toBe($recipe->artifactMirror.'/caddy_'.$caddy->digest.'.deb');
     expect($input['intent'])->not->toHaveKeys(['agent', 'verifier_hash', 'cli', 'secret_hash']);
 })->with([RoleName::AppDev, RoleName::AppProd]);
 

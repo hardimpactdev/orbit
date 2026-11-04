@@ -43,6 +43,11 @@ for resource in [*intent['files'], *intent['runtime']['files']]:
 for resource in intent['runtime']['secret_files']:
     check(run('stat', '-c', '%a', resource['path']).stdout.strip() == '600', 'private runtime file is mode 0600')
 if role in ('app-dev', 'app-prod'):
+    composer = next(manager['setup'] for manager in intent['managers'] if manager['manager'] == 'composer')
+    for package in composer['apt']['packages']:
+        if package['name'] in ('git', 'git-man'):
+            check(run('dpkg-query', '-W', '-f=${Version}', package['name']).stdout == package['version'],
+                  package['name'] + ' was restored at the pin after its upstream build was deleted')
     check(run('bun', '--version').stdout.strip() == intent['bun']['version'], 'Bun matches the recipe')
     check(run('test', '-d', '/home/orbit/apps').returncode == 0, 'the application storage directory exists')
     for php in intent['php']:
