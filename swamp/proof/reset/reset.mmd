@@ -1,0 +1,20 @@
+flowchart TD
+  hook[Existing tasks.script / check hook] --> lock[Hold group lock for whole native run]
+  lock --> inventory[Pin candidate and inventory owned / unrelated resources]
+  inventory --> release[Validate every owned resource then scoped release]
+  release --> snapshot[Export pinned source to disposable checkout]
+  snapshot --> prepare[Harness reserve / boot / mount; offline owned Gateway resize to 2560MiB, boot and wait for agent; not ready]
+  prepare --> fixture[Shared fixture bootstrap: Swamp then Gateway, canonical firewall baseline, trust, observers and projection queue]
+  fixture --> readiness[Authenticated operator HTTP; native SSH probe; fresh facts; scoped Doctor baseline]
+  readiness --> result[Publish generation, readiness and preservation evidence]
+  result --> cases{Verification run?}
+  cases -->|yes| commands[Run real candidate CLI cases; scoped case cleanup]
+  cases -->|no| held[Keep generation for explicit test use]
+  commands --> baseline[Compare scoped database and firewall baseline; reject case residue]
+  baseline --> receipt[Record actual case exit; release group lock]
+  held --> receipt
+  prepare -. failure .-> diagnose[Retain bounded nonsecret diagnostics; timeouts do not skip release]
+  fixture -. failure .-> diagnose
+  readiness -. failure .-> diagnose
+  diagnose --> ownedCleanup[Release only this generation; preserve failure]
+  ownedCleanup --> receipt

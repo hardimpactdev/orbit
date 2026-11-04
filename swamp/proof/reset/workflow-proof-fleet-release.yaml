@@ -1,0 +1,46 @@
+id: fda7f7e1-8b19-40e5-af88-d25462e0e2cc
+name: proof-fleet-release
+description: Task-local disposable proof fleet; never touches the outer control plane.
+version: 1
+inputs:
+  type: object
+  properties:
+    request:
+      type: string
+      description: Absolute path to the owned nonsecret execution request.
+    candidate:
+      type: string
+      description: Candidate repository owning the bounded phase programs.
+  required: [request, candidate]
+  additionalProperties: false
+jobs:
+  - name: release
+    steps:
+      - name: inventory
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-inventory
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" inventory'
+            timeout: 2400000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+      - name: release-active
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-release-active
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" release-active'
+            timeout: 2400000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: inventory
+            condition:
+              type: succeeded

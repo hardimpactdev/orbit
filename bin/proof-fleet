@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Repository program for existing tasks.script / Project check execution."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'swamp/proof/reset'))
+from launcher import main
+
+raise SystemExit(main())

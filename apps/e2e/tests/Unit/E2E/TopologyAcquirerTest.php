@@ -103,7 +103,7 @@ function acquirerResponder(FakeIncus $incus, array &$steps, ?Closure $override =
 }
 
 /** @return array{acquirer:TopologyAcquirer, releaser:TopologyReleaser, incus:FakeIncus, worktree:string, request:TopologyRequest} */
-function acquirerFixture(?Closure $override = null, array &$steps = [], bool $template = true): array
+function acquirerFixture(?Closure $override = null, array &$steps = [], bool $template = true, ?Closure $attempts = null): array
 {
     $incus = new FakeIncus()->install();
     $incus->respond(acquirerResponder($incus, $steps, $override));
@@ -129,7 +129,7 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $te
             hostPaths: $paths,
             operation: $operation,
             repositoryRoot: $worktree,
-            attempts: static fn (): AttemptId => attemptId(),
+            attempts: $attempts ?? static fn (): AttemptId => attemptId(),
         ),
         'releaser' => new TopologyReleaser($host, $networks, $paths, $operation, new OrphanNetworkSweep($host, $networks, $paths, $operation)),
         'incus' => $incus,
@@ -436,6 +436,82 @@ describe('TopologyAcquirer', function () {
             ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt')
             ->and($incus->guests())->toHaveCount(1)
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeTrue();
+    });
+
+    it('refuses the whole release before stopping guests when network ownership is missing or conflicting', function (string $key, ?string $value) {
+        ['acquirer' => $acquirer, 'releaser' => $releaser, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture();
+        $topology = $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']));
+        if ($value === null) {
+            unset($incus->networks[$topology->network]['config'][$key]);
+        } else {
+            $incus->networks[$topology->network]['config'][$key] = $value;
+        }
+        $instances = $incus->instances;
+        $networks = $incus->networks;
+        $execs = $incus->execs;
+        $firewall = $incus->firewall;
+
+        expect(fn () => $releaser->release($request))
+            ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt');
+
+        expect($incus->instances)->toBe($instances);
+        expect($incus->networks)->toBe($networks);
+        expect($incus->execs)->toBe($execs);
+        expect($incus->firewall)->toBe($firewall);
+        expect($incus->callsOf('stop'))->toBe([]);
+        expect($incus->callsOf('delete'))->toBe([]);
+        expect(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeTrue();
+    })->with([
+        'missing owner' => ['user.orbit.e2e.owner', null],
+        'missing issue' => ['user.orbit.e2e.issue', null],
+        'missing attempt' => ['user.orbit.e2e.attempt', null],
+        'wrong owner' => ['user.orbit.e2e.owner', 'another-harness'],
+        'wrong issue' => ['user.orbit.e2e.issue', 'TST-10'],
+        'wrong attempt' => ['user.orbit.e2e.attempt', str_repeat('b', 32)],
+    ]);
+
+    it('preserves the whole attempt when its network cannot be inventoried', function () {
+        ['acquirer' => $acquirer, 'releaser' => $releaser, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture();
+        $acquirer->acquire($request, TopologyRecipe::compose([]));
+        $instances = $incus->instances;
+        $networks = $incus->networks;
+        $incus->failWhen(static fn (array $argv): ?string => array_slice($argv, 0, 2) === ['network', 'list'] ? 'network inventory unavailable' : null);
+
+        expect(fn () => $releaser->release($request))->toThrow(RuntimeException::class, 'network inventory unavailable');
+
+        expect($incus->instances)->toBe($instances);
+        expect($incus->networks)->toBe($networks);
+        expect($incus->callsOf('stop'))->toBe([]);
+        expect($incus->callsOf('delete'))->toBe([]);
+        expect(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeTrue();
+    });
+
+    it('reacquires and releases two distinct generations without sweeping an unrelated fixture', function () {
+        $attempts = [attemptId(), new AttemptId(str_repeat('b', 32))];
+        ['acquirer' => $acquirer, 'releaser' => $releaser, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(
+            attempts: static function () use (&$attempts): AttemptId {
+                return array_shift($attempts);
+            },
+        );
+        $fixture = ['config' => [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => 'TST-9',
+            'user.orbit.e2e.attempt' => str_repeat('f', 32),
+        ]];
+        $incus->networks['oe-fixture'] = $fixture;
+        $template = $incus->instances[IncusHost::TEMPLATE];
+
+        foreach ([str_repeat('a', 32), str_repeat('b', 32)] as $attempt) {
+            $topology = $acquirer->acquire($request, TopologyRecipe::compose([]));
+            $result = $releaser->release($request, sweepOrphans: false);
+
+            expect($topology->attempt->value)->toBe($attempt);
+            expect($result)->toMatchArray(['state' => 'released', 'attempt_id' => $attempt, 'networks_reaped' => []]);
+            expect($incus->instances)->toBe([IncusHost::TEMPLATE => $template]);
+            expect($incus->networks)->toBe(['oe-fixture' => $fixture]);
+            expect(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
+        }
+        expect(array_column($incus->firewall, 'network'))->not->toContain('oe-fixture');
     });
 
     it('records schema 7 without the retired attempt purpose', function () {

@@ -86,6 +86,31 @@ function node(string $name, string $address, string $hostKey, array $roles = [],
     return $node;
 }
 
+// Non-secret reset baseline: real observer facts and the records cases may mutate.
+if ($argv[1] === 'proof-state') {
+    $facts = \App\Models\NodeFact::query()->orderBy('node_id')->orderBy('kind')->get()
+        ->map(static fn (\App\Models\NodeFact $fact): array => [
+            'node_id' => $fact->node_id, 'kind' => $fact->kind->value,
+            'received_at' => $fact->received_at->toIso8601String(), 'digest' => $fact->digest,
+            'enabled' => $fact->kind->value === 'ufw' ? ($fact->data['enabled'] ?? false) : null,
+        ])->all();
+    $rules = Node::query()->where('name', '!=', 'operator')->get()->mapWithKeys(
+        static fn (Node $node): array => [$node->name => app(\App\Domain\Firewall\FirewallInspectionInput::class)->expected($node)],
+    )->all();
+    $catalog = app(\App\Infrastructure\Firewall\NodeFirewallRuleCatalog::class);
+    $commands = [];
+    foreach (Node::query()->where('name', '!=', 'operator')->get() as $node) {
+        $managed = $catalog->desiredBaseline($node);
+        foreach ($node->roles()->get() as $assignment) {
+            array_push($managed, ...$catalog->forRole($node, $assignment->role));
+        }
+        $commands[$node->name] = array_map(static fn ($rule): array => $rule->arguments, $managed);
+    }
+    echo json_encode(['facts' => $facts, 'expected_firewall' => $rules, 'baseline_commands' => $commands,
+        'firewall_records' => \App\Models\FirewallRule::query()->orderBy('id')->get()->toArray()]), PHP_EOL;
+    exit(0);
+}
+
 if ($argv[1] === 'seed') {
     if (Node::query()->exists()) {
         throw new RuntimeException('proof.seed_database_not_empty');
