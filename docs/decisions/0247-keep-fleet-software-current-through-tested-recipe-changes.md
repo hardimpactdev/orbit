@@ -97,7 +97,12 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - No recipe version reaches a Node untested. Two exceptions remain: Ubuntu security patches, which the next test confirms after the fact, and Tool versions, which follow their constraint and the 24-hour rule without a test, isolated by the recipe hold.
 - The task VM image build, `fleet.recipe_pr`, the agent image phases, the Tool candidate and decision steps, and the footprint digests are removed.
 - Every rollout visits every Node. A visit with no changes takes about a minute.
-- Open: two timings, to be measured on the shared proof topology: a release onto an existing topology (release, Swamp load, converge on both Nodes), and one nested Node from stock to `app-dev`.
+- Timings of today's workflows, not of the Ansible phases, measured on the shared proof topology on Shark on 2026-11-03 and 2026-11-04:
+  - Release: the release run took 49 seconds on topology version 16, and the Swamp load (16 seconds) is part of it. On version 17 the release fixture failed in its preparation, because serve holds port 9418.
+  - Converge: `node:converge` took 25 seconds on version 17 and 57 seconds on version 14, for one Node.
+  - Release onto an existing topology with two Nodes: about 2 to 3 minutes, estimated from the runs above.
+  - Stock Ubuntu 26.04 to `app-dev`: neither step succeeded. `node:add` ran every phase in 70 seconds, and then failed its final check because of a key workaround that only the proof needs. The `app-dev` role then ran for 4 minutes 17 seconds and failed at a Tool Manager download (HTTP 404). Most of that time went to prerequisites (45 seconds), PHP packages (62 seconds) and Tool Managers (69 seconds). The failed attempts took 5 minutes 27 seconds combined. A complete successful run remains unmeasured.
+  - Estimate: `test:run` adds about 2 to 3 minutes before its cases run. The time of a full nightly build is still unverified.
 
 ## Affects
 
