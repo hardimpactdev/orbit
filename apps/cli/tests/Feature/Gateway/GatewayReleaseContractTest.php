@@ -145,12 +145,12 @@ describe('gateway release contract', function (): void {
         run_contract('gateway-releases/gateway-release-deploy/in-progress', 'gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET, '--json' => true], 'gateway-releases/gateway-release-deploy/in-progress.json', 1);
     });
 
-    it('refuses a branch name before it contacts the Gateway', function (): void {
+    it('refuses a branch name or a short SHA before it contacts the Gateway', function (string $commit): void {
         MockClient::global([]);
 
-        expect(Artisan::call('gateway:release:deploy', ['commit' => 'main', '--json' => true]))->toBe(1)
+        expect(Artisan::call('gateway:release:deploy', ['commit' => $commit, '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('gateway.release_commit_invalid');
-    });
+    })->with(['branch' => ['main'], 'short SHA' => ['fedcba9']]);
 
     it('rolls back with consent and follows the rollback', function (): void {
         $mock = gateway_release_follow('gateway-releases/gateway-release-rollback/queued', ['gateway-releases/gateway-release-show/rolled-back'], 'gateway:release:rollback', ['release' => 'fedcba987654', '--yes' => true], 'gateway-releases/gateway-release-rollback/rolled-back.human.txt', 0);

@@ -10,6 +10,7 @@ use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
@@ -25,7 +26,7 @@ use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
- * Admits one Gateway release as the `gateway.release` Swamp run (`gateway:release:deploy --swamp`). The Gateway is
+ * Admits one Gateway release, manual or automatic, as the `gateway.release` Swamp run. The Gateway is
  * the trust anchor: it verifies the commit's agent pin and selects its web build here, and freezes them in the intent.
  * Swamp builds, migrates, loads and switches on the Gateway Node; the run's terminal result ends the release record.
  */
@@ -44,7 +45,7 @@ final readonly class AdmitSwampGatewayReleaseAction
         private GatewayReleaseLock $lock,
     ) {}
 
-    public function execute(string $commit, bool $force = false): GatewayRelease
+    public function execute(string $commit, bool $force = false, string $trigger = 'deploy'): GatewayRelease
     {
         if (! GatewayReleaseCommit::isSha($commit)) {
             throw new GatewayReleaseException('deploy', 'gateway.release_commit_invalid', 'A Swamp release needs the full commit SHA.', 422);
@@ -60,26 +61,39 @@ final readonly class AdmitSwampGatewayReleaseAction
         $horizon = GatewayHorizon::find($gateway);
 
         // The lock keeps the release unit and a second admission out until the run owns its record.
-        return $this->lock->run(function () use ($commit, $force, $previous, $delivery, $web, $horizon, $gateway): GatewayRelease {
+        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $delivery, $web, $horizon, $gateway): GatewayRelease {
             // An automatic record that waits for its commit's publication is superseded by begin().
             if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
                 ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
             }
+            // A release that went live during the checks above is the one a failed check switches back to.
+            if ($this->layout->currentReleaseId() !== $previous) {
+                throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
+            }
 
-            return $this->admit($commit, $force, $previous, $delivery['manifest'], $web, $horizon, $gateway);
+            return $this->admit($commit, $force, $trigger, $previous, $delivery['manifest'], $web, $horizon, $gateway);
         });
     }
 
     /**
      * @param  array{repository: string, artifact_id: int, size: int, digest: string}  $web
      */
-    private function admit(string $commit, bool $force, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): GatewayRelease
+    private function admit(string $commit, bool $force, string $trigger, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): GatewayRelease
     {
-        $record = $this->recorder->begin('deploy', $commit, null, $force) ?? throw new GatewayReleaseException('deploy', 'gateway.release_record_failed', 'The release record cannot be written.', 500);
+        $record = $this->recorder->begin($trigger, $commit, null, $force) ?? throw new GatewayReleaseException('deploy', 'gateway.release_record_failed', 'The release record cannot be written.', 500);
         try {
             $operation = $this->start($record, $commit, $force, $previous, $manifest, $web, $horizon, $gateway);
         } catch (Throwable $exception) {
+            // Swamp may run a start it did not confirm: the record stays running under its Operation, which the shared
+            // observer settles.
+            $uncertain = Operation::query()->where('kind', 'gateway.release')->where('target_id', $record->id)->latest('id')->first();
+            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'swamp.start_uncertain'
+                && $uncertain instanceof Operation && ! $uncertain->status->terminal()) {
+                $this->recorder->progress($record, ['run' => ['operation_id' => $uncertain->id]], $commit);
+
+                throw $exception;
+            }
             // A run that never started changed nothing; its record must not hold the release unit back.
             $this->recorder->fail($record, $exception, retryable: true, durationMs: 0, phase: 'run');
 

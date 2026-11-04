@@ -1,8 +1,8 @@
 id: 3effe849-5048-45ba-8a9a-6bc62ef70c57
 name: gateway-release-activate
 description: Switch the Gateway to a built release, verify it and resume its cleanups; the release run starts it from the new commit's definition.
-# A forward release never switches back: the migration already ran, so a failure here pauses automatic releases with
-# the new release current (docs/reference/gateway-recovery.md#deploy-a-release).
+# A failed check switches back to the previous release; migrations are expand and contract, so it runs on the new
+# schema (docs/reference/gateway-recovery.md#release-as-a-swamp-run).
 queueTimeout: 120
 vaults: []
 inputs:
@@ -109,8 +109,10 @@ jobs:
         - ${{ inputs.intent.id }}
         - ${{ inputs.intent.sha }}
         - ${{ inputs.intent.horizon_unit }}
+    # A failed check fails no run by itself: the switch-back after it does, so its marker reaches the Gateway.
   - name: Verify the Gateway
     labels: {role: swamp}
+    allowFailure: true
     dependsOn: [{step: Switch the release, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -134,13 +136,43 @@ jobs:
             || { echo "gateway.release_verify_failed: status is not ok on $1" >&2; exit 1; }
         - sh
         - ${{ inputs.intent.sha }}
+    # After a failed check, the same script from the new release puts the previous release back: links, PHP-FPM and
+    # running services. It then fails the run with its marker; a switch-back that fails reports its own error instead.
+  - name: Switch back
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Verify the Gateway, condition: {type: failed}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-back-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - '150'
+        - /bin/sh
+        - -c
+        - |
+          "/home/orbit/releases/$1/bin/gateway-rollback" "$2" >&2 \
+            && echo "gateway.release_switched_back: the check failed; release $2 is current again" >&2
+          exit 1
+        - sh
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.previous }}
     # Best effort: the scheduler restart paused the release cleanups; they resume once a reconciliation finds no
     # differences. One that stays paused fails this step and keeps its own status; the release stays live.
   - name: Resume document cleanup
     labels: {role: swamp}
     writes: true
     allowFailure: true
-    dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
+    dependsOn:
+    - {step: Verify the Gateway, condition: {type: or, conditions: [{type: succeeded}, {type: failed}]}}
+    - {step: Switch back, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

@@ -16,8 +16,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
 {
     #[\Override]
     protected $signature = 'gateway:release:deploy
-        {commit? : Hex SHA of the commit to release, 7 to 40 characters}
-        {--swamp : Run the release as one Swamp workflow; needs the full 40-character SHA}
+        {commit? : Full 40-character SHA of the commit to release}
         {--json : Return the final release record as JSON}';
 
     #[\Override]
@@ -31,7 +30,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
             try {
                 $commit = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
                     'Commit',
-                    placeholder: '0123456789ab',
+                    placeholder: '0123456789abcdef0123456789abcdef01234567',
                     required: true,
                     validate: self::commitError(...),
                 ));
@@ -43,7 +42,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
         if (! is_string($commit) || self::commitError($commit) !== null) {
             return $this->renderGatewayFailure(
                 'gateway.release_commit_invalid',
-                'Name the commit by its hex SHA (7 to 40 characters).',
+                'Name the commit by its full 40-character SHA.',
                 details: ['field' => 'commit'],
             );
         }
@@ -58,12 +57,12 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
             $connector,
             'Deploy Gateway release '.substr($commit, 0, 12),
             ['prepare', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web'],
-            fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new DeployGatewayReleaseRequest($commit, (bool) $this->option('swamp')), GatewayReleaseResponse::class),
+            fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new DeployGatewayReleaseRequest($commit), GatewayReleaseResponse::class),
         );
     }
 
     private static function commitError(string $commit): ?string
     {
-        return preg_match('/\A[0-9a-f]{7,40}\z/D', $commit) === 1 ? null : 'Enter a hex SHA of 7 to 40 lowercase characters.';
+        return preg_match('/\A[0-9a-f]{40}\z/D', $commit) === 1 ? null : 'Enter the full 40-character lowercase SHA.';
     }
 }

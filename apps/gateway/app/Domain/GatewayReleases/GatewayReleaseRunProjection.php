@@ -107,16 +107,24 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         }
         // The fleet rollout plans from a verified record whose verify version is the commit.
         $phases[$phase] = [...($phases[$phase] ?? []), ...($code === null ? ['outcome' => 'passed', 'status' => 'ok', 'version' => $sha] : ['outcome' => 'failed', 'error_code' => $code])];
+        // The run put the previous release back after a failed check; it runs on the new, expanded schema.
+        $previous = ValidatedData::string($operation->input['previous']);
+        $back = $code === 'gateway.release_switched_back';
+        if ($back) {
+            $code = 'gateway.release_verify_failed';
+            $phases[$phase]['error_code'] = $code;
+            $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous];
+        }
         $recorder = app(GatewayReleaseRecorder::class);
         $recorder->write(new DeployedGatewayRelease(
             id: GatewayReleaseCommit::id($sha),
             sha: $sha,
-            outcome: $code === null ? 'verified' : ($migrated ? 'paused' : 'failed'),
+            outcome: $code === null ? 'verified' : ($back ? 'switched_back' : ($migrated ? 'paused' : 'failed')),
             trigger: $record->trigger,
             migrationsRan: $migrated,
-            previousId: ValidatedData::string($operation->input['previous']),
+            previousId: $previous,
             // A pause names the copy from before this attempt's migration, or the clean one an earlier pause named.
-            snapshotPath: $migrated ? ($recorder->pausedSnapshot($sha) ?? $snapshot) : $snapshot,
+            snapshotPath: $migrated && ! $back ? ($recorder->pausedSnapshot($sha) ?? $snapshot) : $snapshot,
             cleanupPaused: false,
             retryable: $code !== null && ! $migrated && app(GatewayReleaseRetry::class)->retryable($code, $sha, $record->id),
             durationMs: $record->created_at === null ? 0 : (int) $record->created_at->diffInMilliseconds(now()),

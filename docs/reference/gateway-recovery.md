@@ -316,7 +316,9 @@ The run must be a run of `.github/workflows/ci.yml` in this repository: a `push`
 
 ### Deploy a release
 
-Deploy is the manual release. Before it changes anything, it:
+This section describes the release unit. Manual and automatic deploys run as a [Swamp run](#release-as-a-swamp-run), which switches back after a failed check. Only rollback and adoption still run through the release unit, with the steps, verification and pauses below.
+
+Before the release unit changes anything, it:
 
 1. prepares the commit;
 2. refuses a commit that does not descend from the current release, with `gateway.release_downgrade`;
@@ -416,7 +418,7 @@ Omitting `unrelated_processes` preserves the original conservative behavior. Thi
 
 ### Release as a Swamp run
 
-`orbit gateway:release:deploy <sha> --swamp` runs a manual release as one Swamp workflow instead of the release unit. The release unit stays the default and runs every automatic release. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd) shows the flow.
+`orbit gateway:release:deploy <sha>` and every [automatic release](#automatic-releases) run as one Swamp workflow. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd) shows the flow.
 
 The Gateway admits the run. It needs the full commit, no other queued or running release and no staged hold. It verifies the commit's agent pin, as [Deploy a release](#deploy-a-release) does, and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
 
@@ -433,17 +435,19 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
-The child drains Horizon. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon. It verifies `/up` and the status version, resumes the release cleanups and prunes old releases.
+The child drains Horizon. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon. It verifies `/up` and the status version, resumes the release cleanups and prunes old releases. When the check fails, the same script from the new release switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
 
 The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
 
 The run leaves the PHP-FPM pool, the Gateway's service units, its Caddy sites and the Gateway Node's agent as they are, because a release does not change them. `gateway:release:handoff` installs them.
 
-The run's native terminal ends the record through the same recorder as the release unit. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and nothing changed. Migrate or a later step pauses automatic releases with reason `migration_failure` and names the snapshot. A forward release never switches back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
+The run's native terminal ends the record through the same recorder as the release unit. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and nothing changed.
+
+A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and names the snapshot, such as a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
 A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,000 seconds. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
 
-While the run is active, every release path refuses with `gateway.release_in_progress`: the release unit, rollback and adoption begin their records through the same recorder. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
+While the run is active, every release path refuses with `gateway.release_in_progress`: the automatic tick, rollback and adoption begin their records through the same recorder. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
 
 ### Execution identity
 
@@ -709,26 +713,24 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 4. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
 5. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
 6. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
-7. It deploys that commit with the trigger `auto`, under the release lock.
+7. It admits that commit as the [Swamp run](#release-as-a-swamp-run) with the trigger `auto`. The run's end records the outcome.
 
 The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts. Waiting for published agent delivery is not a failed attempt and spends no retry budget.
 
-The automatic command continues publication checks for up to 15 minutes per invocation. Each check releases the lock before the 20-second wait, then resolves the newest green commit again. A newer green commit replaces the queued candidate. Disable, pause, a manual request or a busy lock stops this invocation. After the bound, the command exits successfully with the record still queued; the next timer invocation resumes it.
+Until the commit's agent delivery is published, admission refuses and writes no record. The automatic command checks again every 20 seconds, for up to 15 minutes per invocation, and resolves the newest green commit each time. The wait counts toward a stall, so it alerts once after 30 minutes.
 
-Publication waiting survives process exit and raises one alert after 15 minutes of continuous publication waiting, even if newer green candidates replace the original. A queued publication record has changed no live state and does not block a manual request. A manual release or an already-current target ends it as `superseded`, without a failure or an alert.
-
-Every tick stores its result as the last tick. A tick prints it as one JSON object. It exits 1 only when it ran a release that failed.
+Every tick stores its result as the last tick. A tick prints it as one JSON object. It exits 1 only when it paused for a manual deploy, or when a run it admitted did not start.
 
 | Result | Meaning |
 | --- | --- |
 | `disabled`, `paused`, `busy` | Automatic releases are off or paused, or another release step runs or waits for its unit. A `busy` result counts toward a stall |
 | `not_adopted`, `no_deployed_release` | The Gateway does not run from a release, or its `REVISION` is unreadable. Deploy the first release by hand |
 | `up_to_date` | No newer commit qualifies |
-| `waiting_for_agent_delivery` | The candidate stays queued until its published delivery can be verified; the runner rechecks every 20 seconds |
+| `waiting_for_agent_delivery` | The candidate's published delivery cannot be verified yet; the command rechecks every 20 seconds |
 | `backing_off` | The newest commit failed for a retryable reason less than 10 minutes ago |
 | `source_unavailable` | GitHub, the App, or the shared repository's origin did not answer. The tick is skipped |
-| `released` | The tick released a commit, and it went live |
-| `failed` | The tick released a commit, and the release failed or switched back |
+| `started` | The tick admitted the Swamp run of a commit; its end records the outcome |
+| `failed` | The tick could not admit the run. The next tick tries again |
 
 ### Pause
 
