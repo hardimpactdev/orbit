@@ -106,11 +106,10 @@ If authorized overlap narrowing occurred, restore the exact previous operator re
 
 A rule's identity on a Node is its port, protocol, and source ([ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source)). An omitted `--protocol` means both `tcp` and `udp`; an omitted `--from` means `any`. Admission refuses:
 
-- a second active or in-progress deny rule with the same identity: `firewall.rule_exists`;
 - an allow and a deny with the same identity: `firewall.rule_conflict`;
 - a rule for both protocols beside a `tcp` or `udp` rule on the same port and source: `firewall.rule_overlap`.
 
-Repeating `firewall:allow` reuses the rule record and checks the Node. Correct entries are skipped; missing or misplaced entries are repaired. If the whole rule is already correct, the command succeeds with skip reason `firewall.rule_exists`. A failed rule can be retried with the same identity and action. A running firewall change still excludes another change on the same Node.
+Repeating `firewall:allow` or `firewall:deny` reuses the rule record and checks the Node. Correct entries are skipped; missing or misplaced entries are repaired. If the whole rule is already correct, the command succeeds with skip reason `firewall.rule_exists`. A failed rule can be retried with the same identity and action. A running firewall change still excludes another change on the same Node.
 
 The port is one number from 1 through 65535, such as `25`, or an ordered range, such as `8000:8100`. Service names are not accepted. The CLI checks the port, source, and protocol before it sends a request.
 
@@ -157,7 +156,7 @@ The CLI validates the port, source, and protocol before it sends a request. The 
 | `firewall.source_invalid` | The source is not `any`, an IP address, or a valid CIDR. |
 | `firewall.protocol_invalid` | The protocol is not `tcp` or `udp`. |
 | `firewall.port_invalid` | The port is outside 1 through 65535 or the range is not ordered. |
-| `firewall.rule_exists` | Successful skip reason for an already-correct allow rule; a refusal for an existing active or in-progress deny rule. |
+| `firewall.rule_exists` | Successful skip reason for an already-correct rule. |
 | `firewall.rule_conflict` | An allow and a deny would have the same port, protocol, and source. |
 | `firewall.rule_overlap` | A rule for both protocols overlaps a `tcp` or `udp` rule on the same port and source. |
 | `firewall.rule_not_found` | No rule matches the removal. |
