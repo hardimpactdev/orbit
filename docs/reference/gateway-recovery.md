@@ -433,7 +433,11 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
-The child drains Horizon and switches the link. It runs `gateway:release:handoff --phase=serve` and verifies `/up` and the status version. It then runs `gateway:release:handoff --phase=schedule`, switches the web build and prunes old releases.
+The child drains Horizon. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon. It verifies `/up` and the status version, resumes the release cleanups and prunes old releases.
+
+The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
+
+The run leaves the PHP-FPM pool, the Gateway's service units, its Caddy sites and the Gateway Node's agent as they are, because a release does not change them. `gateway:release:handoff` installs them.
 
 The run's native terminal ends the record through the same recorder as the release unit. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and nothing changed. Migrate or a later step pauses automatic releases with reason `migration_failure` and names the snapshot. A forward release never switches back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
@@ -655,9 +659,9 @@ When Swamp or the Gateway cannot run `gateway:release:rollback`, run the rollbac
 sudo /home/orbit/orbit/bin/gateway-rollback <id>
 ```
 
-It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise. Then it restarts each `orbit-process-*` unit that runs from the application, such as Horizon and the scheduler.
+It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise. It reloads PHP-FPM, so every request runs the release and OPcache starts empty. Then it restarts each running service whose working directory is under the application, such as Horizon, the scheduler and agent-view. A stopped Process stays stopped. The release run switches forward with the same script.
 
-It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also republishes no runtime files, loads no Swamp definitions and writes no release record. When the Gateway answers again, run `gateway:release:rollback <id>` to bring the record and runtime files in line.
+It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, run `gateway:release:rollback <id>` to bring the record in line.
 
 ### Apply an env change
 

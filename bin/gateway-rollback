@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Rolls the Gateway back to a retained release when Swamp or the Gateway cannot run `gateway:release:rollback`.
-# Run it on the Gateway Node with sudo. It switches the application link, and the web link when the release keeps its
-# web build, then restarts each Gateway Process that runs from the application, such as Horizon and the scheduler.
+# Switches the Gateway to a retained release: the release run switches forward with it, and an operator rolls back
+# with it when Swamp or the Gateway cannot run `gateway:release:rollback`. Run it on the Gateway Node with sudo.
+# It switches the application link, and the web link when the release keeps its web build, reloads PHP-FPM so every
+# request runs the release, and restarts each running service that runs from the application, such as the scheduler.
 # It changes no schema and restores no snapshot. docs/reference/gateway-recovery.md#roll-back-without-swamp
 set -euo pipefail
 
@@ -27,7 +28,10 @@ else
 fi
 
 application=$base/orbit/apps/gateway
-for unit in $(systemctl list-units --type=service --all --plain --no-legend 'orbit-process-*' | awk '{print $1}'); do
+# A reload replaces every PHP-FPM worker and clears OPcache; requests in flight finish first.
+systemctl reload php8.5-fpm && echo "gateway-rollback: reloaded php8.5-fpm"
+# Only running services: a stopped Process stays stopped, and a running one-shot unit is activating, not active.
+for unit in $(systemctl list-units --type=service --state=active --plain --no-legend | awk '{print $1}'); do
     directory=$(systemctl show -p WorkingDirectory --value "$unit")
     case $directory in "$application" | "$application"/*) systemctl restart "$unit" && echo "gateway-rollback: restarted $unit" ;; esac
 done
