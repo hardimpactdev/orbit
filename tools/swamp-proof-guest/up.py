@@ -461,14 +461,7 @@ def serve_gateway(node_id, swamp_route):
     leaf(Path('/etc/caddy/orbit-cert-current'), 'gateway', ['gateway.orbit', address])
     leaf(Path('/etc/caddy/orbit-websocket-cert-current'), 'reverb', ['reverb.orbit'])
     route_leaf(swamp_route, ['swamp.orbit'])
-    # Without this line gateway.orbit resolves through fleet private DNS to the production Gateway; a signing
-    # step would then call production. up fails unless the name resolves to this VM.
-    hosts = Path('/etc/hosts')
-    lines = [line for line in hosts.read_text().splitlines() if 'gateway.orbit' not in line.split()[1:]]
-    hosts.write_text('\n'.join([*lines, f'{address} gateway.orbit']) + '\n')
-    resolved = run(['getent', 'hosts', 'gateway.orbit']).split()
-    if not resolved or resolved[0] != address:
-        raise RuntimeError(f'gateway.orbit resolves to {resolved[:1]}, not this topology Gateway {address}')
+    gateway_name()
     Path('/etc/php/8.5/fpm/pool.d/proof-gateway.conf').unlink(missing_ok=True)
     Path('/etc/php/8.5/fpm/pool.d/orbit-gateway.conf').write_text(
         f'[orbit-gateway]\nuser = {ACCOUNT}\ngroup = {ACCOUNT}\nlisten = /run/php/orbit-gateway.sock\nlisten.owner = caddy\n'
@@ -492,12 +485,26 @@ def baseline_network():
     """The standalone Gateway binds the Incus bridge, which does not exist before Incus starts."""
     if TOPOLOGY['gateway'] != 'standalone':
         return
+    # A copied VM gets a new cloud-init identity. Keep its local Gateway mapping across that first boot.
+    Path('/etc/cloud/cloud.cfg.d/99-orbit-proof.cfg').write_text('manage_etc_hosts: false\n')
+    gateway_name()
     directory = Path('/etc/systemd/system/caddy.service.d')
     directory.mkdir(parents=True, exist_ok=True)
     # Incus finishes bringing up its managed networks before its service is ready.
     (directory / 'zz-orbit-proof-network.conf').write_text(
         '[Unit]\nAfter=incus.service\nRequires=incus.service\n')
     run(['systemctl', 'daemon-reload'])
+
+
+def gateway_name():
+    """Keep Gateway calls inside this topology rather than resolving the fleet's Gateway."""
+    address = TOPOLOGY['network']['gateway']
+    hosts = Path('/etc/hosts')
+    lines = [line for line in hosts.read_text().splitlines() if 'gateway.orbit' not in line.split()[1:]]
+    hosts.write_text('\n'.join([*lines, f'{address} gateway.orbit']) + '\n')
+    resolved = run(['getent', 'hosts', 'gateway.orbit']).split()
+    if not resolved or resolved[0] != address:
+        raise RuntimeError(f'gateway.orbit resolves to {resolved[:1]}, not this topology Gateway {address}')
 
 
 def publish_caddy(node_id):
