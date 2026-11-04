@@ -388,6 +388,19 @@ def observe(node_id):
     run(['chown', '-R', 'root:root', str(AGENT)])
     run(['chmod', '0600', str(AGENT / 'secret')])
     delivery = SOURCE.parent / 'agent-delivery/orbit-agent-linux-x86_64'
+    if TOPOLOGY['gateway'] == 'standalone':
+        # No outer fleet observer shares this VM. Use the normal system unit and credential paths.
+        run(['groupadd', '--system', '--force', 'orbit-env'])
+        run(['install', '-d', '-m', '0700', '/etc/orbit/agent'])
+        for name in ('secret', 'config.toml', 'ca.pem'):
+            run(['install', '-m', '0600', str(AGENT / name), f'/etc/orbit/agent/{name}'])
+        if delivery.is_file():
+            run(['install', '-m', '0755', str(delivery), '/usr/local/bin/orbit-agent'])
+        Path('/etc/systemd/system/orbit-agent.service').write_text(rendered['unit'])
+        run(['systemctl', 'daemon-reload'])
+        run(['systemctl', 'enable', '--now', 'orbit-agent'])
+        run(['systemctl', 'is-active', '--quiet', 'orbit-agent'])
+        return
     binary = '/usr/local/bin/orbit-proof-agent'
     run(['install', '-m', '0755', str(delivery if delivery.is_file() else Path('/usr/local/bin/orbit-agent')), binary])
     # The agent starts only in a cgroup named orbit-agent.service, and the task VM's observer holds that system unit.
