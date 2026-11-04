@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 /*
  * Minimal proof Gateway driver, run in apps/gateway of the staged commit.
- *   seed     stdin {gateway, operator, target}: fixture Node records and access, nothing else.
+ *   seed     stdin {gateway, gateway_agent_secret_hash, operator, target}: fixture Node records and access, and the
+ *            swamp.orbit Route an operator records before the first swamp role (version 17).
+ *   known-hosts the worker known-hosts publication, once swamp.orbit answers through Caddy (version 17).
+ *   agent    stdin {node}: the Node agent's configuration, certificate and unit as node:converge renders them.
  *   request  stdin {caller, method, path, body, key, seconds}: one real API request through the HTTP
  *            kernel from the caller's address, then the production SwampRunSubscriber follows the
  *            admitted Operation to its native terminal projection. Reverb, which drives the
@@ -38,6 +41,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
+use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
@@ -103,16 +107,34 @@ if ($argv[1] === 'seed') {
     foreach ($targets as $index => $target) {
         $target->forceFill(['agent_secret_hash' => $input['targets'][$index]['agent_secret_hash'], 'wireguard_public_key' => null])->saveQuietly();
     }
+    // This VM runs a second Node agent for Node 209 beside the task VM's own observer, so Doctor reads 209's facts (version 17).
+    $gateway->forceFill(['agent_secret_hash' => $input['gateway_agent_secret_hash']])->saveQuietly();
+    // swamp.orbit as the operator records it on 209: a private custom proxy Route to serve on loopback (ADR 0243, version 17).
+    $swamp = Route::query()->forceCreate(['kind' => RouteKind::CustomProxy, 'node_id' => $gateway->id, 'domain' => 'swamp.orbit',
+        'provenance' => RouteProvenance::Explicit, 'publication' => 'private', 'status' => RouteStatus::Active, 'sites_published' => true]);
+    $swamp->customProxy()->create(['node_id' => $gateway->id, 'upstream' => 'http://127.0.0.1:9418']);
     app(GatewayServingHost::class)->remember($gateway);
     // The private network is this topology's, so Caddy listeners and peer checks use it (version 12).
     app(VpnSettings::class)->configure(subnet: $input['subnet']);
     $operator->accessibleNodes()->attach([$gateway->id, ...array_map(static fn (Node $target): int => $target->id, $targets)]);
-    app(WorkerKnownHostsPublisher::class)->publish();
     $nodes = ['gateway' => $gateway->id, 'operator' => $operator->id];
     foreach ($targets as $target) {
         $nodes[$target->name] = $target->id;
     }
-    echo json_encode(['nodes' => $nodes]), PHP_EOL;
+    echo json_encode(['nodes' => $nodes, 'swamp_route' => $swamp->id]), PHP_EOL;
+    exit(0);
+}
+
+// The known-hosts publication starts a Swamp run, so it waits until swamp.orbit answers through Caddy.
+if ($argv[1] === 'known-hosts') {
+    app(WorkerKnownHostsPublisher::class)->publish();
+    exit(0);
+}
+
+// The Node agent's files exactly as node:converge renders them (NodeAgentSshExecutor), for 209's own agent.
+if ($argv[1] === 'agent') {
+    $rendered = app(NodeAgentSshExecutor::class)->configurationForRoot(Node::query()->findOrFail((int) $input['node']), null);
+    echo json_encode(['configuration' => $rendered['configuration'], 'certificate' => $rendered['certificate'], 'unit' => $rendered['unit']]), PHP_EOL;
     exit(0);
 }
 
