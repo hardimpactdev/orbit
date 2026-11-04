@@ -122,8 +122,8 @@ jobs:
       - name: Native workflow validation with dedicated registry-read credentials
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (github.event.repository.full_name == github.repository && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')))) || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (github.event.repository.full_name == github.repository && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')))) || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
@@ -133,8 +133,8 @@ jobs:
       - name: Validate release grants with pinned serve check-config
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (github.event.repository.full_name == github.repository && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')))) || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (github.event.repository.full_name == github.repository && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')))) || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: |
           python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
       - name: Check placement on every step

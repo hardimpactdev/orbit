@@ -52,7 +52,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
         run: |
-          if [[ "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
+          if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
 
   gateway-static:
@@ -270,8 +270,8 @@ jobs:
       working-directory: swamp
       changed-only: false
     secrets:
-      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
-      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (github.event.repository.full_name == github.repository && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff'))))) && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (github.event.repository.full_name == github.repository && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff'))))) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
     name: Gateway release inputs
     needs: changes
