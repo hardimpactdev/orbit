@@ -17,5 +17,5 @@ The `Agent` field shows whether the Node's agent is online. The JSON field is `a
 | `not_seen` | The Gateway never received an event from this agent. |
 | `unknown` | The Gateway's [agent view](/reference/node-agent#gateway-view) is down, so it cannot tell. |
 
-A Node that runs no observing agent, such as an unmanaged Node, has `agent: null`.
+Human output shows an offline agent as `offline since <time>`, because a table column must not wrap. A Node that runs no observing agent, such as an unmanaged Node, has `agent: null`.
 
