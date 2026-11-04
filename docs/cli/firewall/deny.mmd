@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - the calling Node has an access grant to the target Node
   %%> - the target is an active Linux Node
   %%> - the port and source are valid
-  %%> - the port or range includes no protected port: SSH 22, the recovery SSH port, the WireGuard port or a port one of the target's roles needs (`firewall.protected_port`), so a deny can never cut the Node off
+  %%> - the port or range includes no protected port, with any `--from`: SSH 22, the recovery SSH port, the WireGuard port or a port one of the target's roles needs (`firewall.protected_port`), so a deny can never cut the Node off
   %%> - no opposite rule for the same port, protocol and source; an allow and a deny for exactly the same scope is refused (`firewall.rule_conflict`)
   %%> - no other firewall change runs on the target; the Gateway holds one lock per Node
   %%> Allowed:

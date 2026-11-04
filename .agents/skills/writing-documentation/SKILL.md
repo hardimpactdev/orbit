@@ -26,6 +26,8 @@ Remove repetition, filler and implementation details that do not help the reader
 | `solutions/` | Reusable lessons and their verification |
 | `decisions/` | Architectural choices, alternatives, and consequences |
 
+Do not state behavior nobody has decided. If a page needs a sentence about an edge case, such as what the sibling command does or what a repeat does, decide it first. Check that every example on a page passes the page's own refusals.
+
 Link to the page that owns an explanation. Use tables for command options, fields, and error codes. Keep change history in Git, and contributor workflow in contributor guidance.
 
 Write each Markdown paragraph on one line for the prose linter. Use root-relative Mintlify links without `.md` or `.mdx`, such as `/reference/apps`. Use GitHub URLs for repository files outside `docs/`.

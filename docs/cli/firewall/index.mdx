@@ -161,7 +161,7 @@ The CLI validates the port, source, and protocol before it sends a request. The 
 | `firewall.rule_overlap` | A rule for both protocols overlaps a `tcp` or `udp` rule on the same port and source. |
 | `firewall.rule_not_found` | No rule matches the removal. |
 | `firewall.rule_ambiguous` | More than one rule matches the removal; `details.matches` lists them. |
-| `firewall.protected_port` | A deny would cover SSH, recovery SSH, WireGuard, or a managed role port. |
+| `firewall.protected_port` | A deny, with any source, would cover SSH, recovery SSH, WireGuard, or a managed role port. |
 | `firewall.backend_inactive` | UFW is inactive on the Node. |
 | `firewall.platform_unsupported` | The Node is not a Linux Node. macOS is refused before SSH and before a rule is stored. |
 | `firewall.apply_failed`, `firewall.verify_failed` | UFW did not accept the rule, or the check did not find its lines in the required order. |

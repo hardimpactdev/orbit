@@ -26,7 +26,7 @@ orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 
 Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`. To change an active rule, remove it and create it again. The CLI follows progress and reports the result with the Operation and request IDs.
 
-Narrower rules take precedence, so an allow for one source can override a broader deny. See [rule ordering](/cli/firewall#order-on-the-node).
+Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow on a protected port succeeds as skipped (`firewall.rule_exists`) when it only repeats that access. Narrower rules take precedence, so an allow for one source can override a broader deny. See [rule ordering](/cli/firewall#order-on-the-node).
 
 Repeating the command skips entries already in the correct position and applies any missing changes. If the whole rule is already correct, the command succeeds with `Skipped — already applied (firewall.rule_exists)`. A failed command does not undo changes already applied on the Node.
 

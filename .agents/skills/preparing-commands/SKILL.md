@@ -22,6 +22,8 @@ Prepare one command at a time. Take the next command from the review queue on th
 1. Call Recall `resolve` for the command and its family, and `decisions` for the family. Current decisions override older text.
 2. Read the existing page, chart and any old fixture `swamp/proof/<family>.<command>*.json`. Read the code only to learn what exists, never as the target.
 
+3. For a command that mirrors an approved sibling, such as `firewall:deny` after `firewall:allow`, start from the sibling's chart, page and cases and show Nick the diff. Then settle the edge cases that differ (protected resources, repeats, conflicts) and apply the answer to both commands and the family page in the same PR.
+
 ## 2. Draft the chart
 
 Follow [flow-tighten](../flow-tighten/SKILL.md) and the rules in `docs/cli/README.md`.
@@ -55,7 +57,7 @@ Cover the call with required arguments only, each optional flag, each error on t
 - the Gateway record, the observed Node state and the **real effect**, such as traffic that passes or stays blocked;
 - what must stay unchanged.
 
-Derive every expectation from the chart and the page, never from the current code. Where the code is known to differ, keep the case and mark it "fails today". Do not weaken a case to fit the code.
+Derive every expectation from the chart and the page, never from the current code. Then read the code for each new or changed expectation and mark the ones it fails. Where the code is known to differ, keep the case and mark it "fails today". Do not weaken a case to fit the code.
 
 ## 5. Review with Nick
 
