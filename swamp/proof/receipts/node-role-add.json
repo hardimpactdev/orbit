@@ -1,8 +1,8 @@
 {
   "kind": "node.role_add",
   "status": "blocked",
-  "source_commit": "33c8067c07a502ce9e039e2a107099e61ec98751",
-  "base_commit": "77cf030b45599a83b80b0abd950d88faf7a6df8e",
+  "source_commit": "89f73137331fc0e231ebca39cd9b22403d732ca2",
+  "base_commit": "d1f6c62299b72cc96efde6e6a00d36c046ca8d1b",
   "topology": "minimal",
   "topology_version": 16,
   "budget_seconds": 1800,
@@ -33,6 +33,10 @@
     {
       "owner": "migration orchestrator / native Instance clone lane",
       "issue": "A real Laravel web Instance, setup and attached SQLite succeed. Production PHP pool preparation through POST instances/1/clone returns 503 operation.kind_unavailable. No production record or pool was faked."
+    },
+    {
+      "owner": "Ansible phases lane: allocate and rerun proof; task VM provisioning owner: restore provisioning",
+      "issue": "Three fresh allocations failed before topology setup:9897 and9912 on GitHub observer download timeouts,9906 on the shared host SSH behavior lock. No new role or admission case ran today. No task VM image or agent code changed."
     }
   ],
   "remaining_proof": [
@@ -239,19 +243,19 @@
   ],
   "growth": {
     "orbit": {
-      "added": 3220,
-      "deleted": 2119,
-      "net": 1101
+      "added": 3491,
+      "deleted": 2239,
+      "net": 1252
     },
     "other": {
-      "added": 136,
+      "added": 144,
       "deleted": 433,
-      "net": -297
+      "net": -289
     },
     "ansible": {
-      "added": 950,
+      "added": 976,
       "deleted": 0,
-      "net": 950
+      "net": 976
     },
     "behaviors": {
       "added": 168,
@@ -259,9 +263,9 @@
       "net": 41
     },
     "fixtures": {
-      "added": 1196,
-      "deleted": 140,
-      "net": 1056
+      "added": 1433,
+      "deleted": 260,
+      "net": 1173
     },
     "tests": {
       "added": 77,
@@ -283,17 +287,17 @@
   },
   "checks": {
     "operation_deno_tests": "652 passed",
-    "input_builder_tests": "2 passed again at cd30ba6f10",
-    "input_behavior_tests": "2 passed",
+    "input_builder_tests": "2passed again",
+    "input_behavior_tests": "2passed again",
     "changed_gateway_tests": "70 passed",
     "gateway_composer_check": "passed",
     "gateway_full_tests": "254 failures; seven role admission failures also reproduce with the main catalog preloaded",
-    "ansible_lint": "passed again at cd30ba6f10;9 files",
+    "ansible_lint": "Passed again on current branch:10files",
     "ruff": "passed",
     "shape_placement_names": "passed",
-    "docs_build_lint_impact": "passed",
+    "docs_build_lint_impact": "Existing docs build passed; docs lint and impact gate passed again after rebase",
     "native_validation": "Latest all-workflow validation blocked by the local CLI account gate; real VM runs executed the changed workflow.",
-    "new_fixture_python_lint": "Ruff passed; Analytics canonical map contains4 files"
+    "new_fixture_python_lint": "Ruff passed; PHP fixture syntax passed;38fixture JSON files parsed"
   },
   "independent_review": {
     "reviewed_commit": "cd30ba6f10ccce0d0ecc579291f0771753253228",
@@ -404,6 +408,17 @@
       "reason": "Shared @swamp/ssh vm-first host behavior lock held by orbit@swamp pid3634319 timed out after60001ms",
       "destroyed": true,
       "independent_check": "incus info --project orbit-tasks tvm-530: Instance not found"
+    },
+    {
+      "operation_id": 9912,
+      "task_group_id": 3143,
+      "task_vm_id": 532,
+      "status": "failed",
+      "step": "bootstrap-observer-download",
+      "reason": "curl exit28; GitHub observer artifact connection timed out after120002ms",
+      "destroyed": true,
+      "cancel_operation_id": 9914,
+      "independent_check": "incus info --project orbit-tasks tvm-532: Instance not found"
     }
   ],
   "readiness_wait": {
@@ -413,5 +428,29 @@
       "phase_budget_seconds": 120
     },
     "existing_analytics": "A single health check; no migration or Process recreation."
-  }
+  },
+  "pending_runtime_fixes": [
+    "Bounded initial Analytics readiness in the final check,120s phase budget with60retries at1s",
+    "Gateway DNS oneshot compares actual resolver policy, respects existing unit conditions and skips unchanged state",
+    "Doctor checks all publication,exporter,ClickHouse and Prometheus Nodes; Analytics includes Process family; Instance case includes Instance,Route and database connection families",
+    "Invalid-Node admission fixtures restore their original preconditions and check the actual refused target"
+  ],
+  "unrun_cases": [
+    "node.role_add.analytics",
+    "node.role_add.analytics.no-drift",
+    "node.role_add.app-prod",
+    "node.role_add.app-prod.no-drift",
+    "node.role_add.gateway",
+    "node.role_add.gateway.no-drift",
+    "node.role_add.ingress",
+    "node.role_add.ingress.no-drift",
+    "node.role_add.refuse-analytics-flags-for-other-role",
+    "node.role_add.refuse-analytics-postgres-missing",
+    "node.role_add.refuse-converge-unassigned",
+    "node.role_add.refuse-inactive",
+    "node.role_add.refuse-ingress-no-cluster",
+    "node.role_add.refuse-non-linux",
+    "node.role_add.refuse-router",
+    "node.role_add.refuse-unmanaged"
+  ]
 }
