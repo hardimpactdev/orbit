@@ -1,9 +1,8 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1 (task_vms is record-only), R2, R4 (apps.path is Node work), decision 8 (one node:update). docs/reference/node-settings.md.
-  %% status: draft
+  %% Target design: ADR 0244 task, task_vms is record-only, apps.path is Node work, one node:update. docs/reference/node-settings.md.
+  %% status: reviewed
   %% command: node:update
   %% kind: node.update
-  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -11,107 +10,80 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: node:update 12<br/>--apps-path=/srv/apps
+  CLI->>GW: node:update NODE<br/>--apps-path=PATH
   %%> Command:
-  %%> - `orbit node:update 12 --apps-path=/srv/apps`
-  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--idempotency-key=KEY] [--json]`
+  %%> - `orbit node:update NODE --apps-path=PATH`
+  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--json]`
   %%> Input:
-  %%> - the Node, by id or exact name
-  %%> - `--apps-path` is required for this chart: `node.update` only starts with it
-  %%> Without --apps-path (R1):
-  %%> - `--name`, `--platform` and `--task-vms` alone are record-only; the Gateway stores them and answers at once with the Node, no task and no run
-  %%> - unsetting the apps folder on a Node without an active `app-dev` role needs no folder; it is record-only too
-  %%> Optional flags:
-  %%> - `--name`, `--platform`, `--task-vms` in the same request: a name or platform is saved at once, `task_vms` with the run's result; they add no steps
-  %%> - `--idempotency-key=KEY` reuses a key to retry the start; `--json` gives machine-readable output
-  %%> - an empty value unsets a setting: `--apps-path=` sends a null path, `--task-vms=null` removes the task VM host settings
+  %%> - the Node, and at least one setting to change
+  %%> - `--apps-path` is the change that needs Node work; the other settings are records
+  %%> - an empty value unsets a setting: `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, lock the Node<br/>task #5131 · Node 12
+  Note over GW: Validate, lock the Node
   %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - an apps folder needs an active, managed Linux Node
-  %%> - no other lifecycle change runs for Node 12; the Gateway holds the Node's name lock, and the new name's lock for a rename
-  %%> Checks for the name:
-  %%> - ASCII letters, digits, dashes and underscores, at most 63 characters, unique among Nodes
-  %%> Checks for the platform:
-  %%> - `linux`, `macos` or `ipados`, and only on an unmanaged Node: no pinned SSH host key and no role
-  %%> Checks for the apps folder:
-  %%> - absolute and normalized: not `/`, no trailing or repeated `/`, no `.` or `..` part
-  %%> - not the managed user's home (`/home/<user>`, as Orbit creates it) or an ancestor of it, and not inside a hidden folder of that home
-  %%> - not overlapping `/boot`, `/dev`, `/etc`, `/proc`, `/run`, `/sys`, `/usr`, `/opt/orbit`, `/var/lib/orbit`, `/var/www`, or the Gateway checkout and release layout
-  %%> - not equal to, or inside, an existing Instance checkout on Node 12
-  %%> Checks for `task_vms`:
-  %%> - typed fields only, such as `cidr`, `max_vms`, `pool`, `image_alias`
-  %%> - the bridge `cidr` overlaps no other task VM host
+  %%> - the calling Node has an access grant to the target Node
+  %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
+  %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:
-  %%> - that the apps folder needs Node work, so a run starts
-  GW->>SW: Start run, full intent<br/>operation-node-update
-  %%> When:
-  %%> - the request changes the apps folder, alone or together with other fields
-  %%> - a new name or platform in the same request is saved at once; it needs no run
-  %%> - unsetting it on a Node with an active `app-dev` role prepares the default folder, `<managed-user-home>/apps`
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the new apps folder, and the managed user and group that must own it
-  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
-  %%> Not stored yet:
-  %%> - the settings stay unchanged until the run succeeds (R2)
-  GW-->>CLI: 202 Accepted<br/>task #5131
-  %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
-  %%> What it does:
-  %%> - creates `/srv/apps` and any missing folders above it
-  %%> - gives `/srv/apps` the managed user and group and mode `0755`
-  %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/cfgmgmt/directory` behavior and sudo
-  %%> Not included:
-  %%> - existing Instances don't move; their checkouts stay where they are
-  %%> - new development Instances use `/srv/apps/<project>/<instance>`
-  SW->>N: Check owner and mode<br/>@swamp/ssh exec · stat
-  %%> What it does:
-  %%> - reads the folder's type, owner, group and mode in one `stat`
-  %%> Why:
-  %%> - it is the one end check: the Gateway compares its output with the intent, a real folder of the managed user and group, mode 0755
-  alt folder is ready
-    N-->>SW: orbit:orbit · 0755
-    %%> Returns:
-    %%> - the check passed
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Save the settings<br/>apps.path set · task succeeded
-    %%> Result:
-    %%> - Node 12's apps folder is `/srv/apps`; any `task_vms` change in the same request is saved with it
-    %%> - task #5131 succeeds
-  else a step fails
-    N--xSW: wrong owner or exit ≠ 0
-    %%> When:
-    %%> - the folder can't be created, a file is in the way, or the check doesn't match
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Keep the old settings<br/>task failed · rerun after a fix
-    %%> Result:
-    %%> - Node 12's settings stay unchanged
-    %%> - task #5131 fails
-    %%> On the Node:
-    %%> - folders created before the failure stay; there is no rollback
-    %%> - that is safe: an empty folder is harmless, and a rerun leaves it as it is
-    %%> Retry:
-    %%> - run the same command again after fixing the cause; it is a new task
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5131
+  %%> - whether the apps folder changes and needs Node work, so a run starts
+  alt apps folder changes
+    GW->>SW: Start run, full intent<br/>operation-node-update
+    %%> Inputs:
+    %%> - the new apps folder, and the managed user and group that must own it
+    %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
+    %%> Not stored yet:
+    %%> - the settings stay unchanged until the run succeeds; a new name or platform in the same request is saved at once
+    %%> Unsetting on a Node with an active `app-dev` role:
+    %%> - prepares the default folder, `<managed-user-home>/apps`
+    GW-->>CLI: 202 Accepted<br/>task ID
+    %%> What you get:
+    %%> - the task ID, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
     %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
-    GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
+    %%> - creates the folder and any missing folders above it
+    %%> - gives it the managed user and group and mode `0755`
+    %%> Not included:
+    %%> - existing Instances don't move; new development Instances use the new folder
+    SW->>N: Check owner and mode<br/>@swamp/ssh exec · stat
+    %%> Why:
+    %%> - it is the one end check: a real folder of the managed user and group, mode 0755
+    alt folder is ready
+      N-->>SW: owner, group, mode
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Save the settings
+      %%> Result:
+      %%> - the apps folder is set, and any task VM host change in the same request is saved with it
+      %%> - the task succeeds
+    else a step fails
+      N--xSW: wrong owner or exit ≠ 0
+      %%> When:
+      %%> - the folder can't be created, a file is in the way, or the check doesn't match
+      SW--xGW: Run failed<br/>error_code, failed step
+      Note over GW: Keep the old settings
+      %%> Result:
+      %%> - the settings stay unchanged and the task fails
+      %%> On the Node:
+      %%> - folders created before the failure stay; an empty folder is harmless and there is no rollback
+      %%> Retry:
+      %%> - run the same command again after fixing the cause; it is a new task
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
+  else only records change
+    Note over GW: Save the records
+    %%> What it does:
+    %%> - saves the name, platform and task VM host settings at once; no task and no run, and no Node is contacted
+    %%> Skipped:
+    %%> - when every value equals the stored one, nothing is written and the result reports `Skipped — already set (node.unchanged)`
+    %%> - the skip reason is part of the successful result in human and machine output, not an error
+    GW-->>CLI: 200 OK<br/>the Node
   end
