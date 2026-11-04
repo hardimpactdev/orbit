@@ -1,31 +1,59 @@
 ---
 title: "orbit node:remove"
 sidebarTitle: "node:remove"
-description: "Remove a Node through one native Swamp Operation. The Gateway keeps the Node record until cleanup succeeds. The CLI follows the Operation and reports its final result."
+description: "Remove a Node from the fleet: its roles, its Orbit footprint on the machine, and its record."
 ---
 
 ```bash
-orbit node:remove <node> [--force] [--offline] [--idempotency-key=KEY] [--json]
+orbit node:remove <node> [--force] [--offline] [--json]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--force` | Confirm removal without a prompt. Required without a terminal and with `--json`. |
-| `--offline` | Remove an unreachable Node. Swamp probes it first. A reachable Node keeps every online guard. |
-| `--idempotency-key=KEY` | Recover the same Operation after a lost start response. |
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Numeric Node ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--force` | prompt | Confirm without prompting. Required without a terminal and with `--json`. An API or MCP client needs it for a Node with roles and for an offline removal. |
+| `--offline` | off | Remove a Node Orbit cannot reach. Orbit probes it first; a reachable Node still gets ordinary cleanup. |
+| `--json` | off | Print the final Operation as JSON. |
 
 ```bash
 orbit node:remove 7
 orbit node:remove 7 --offline --force
 ```
 
-Remove Instances, Database servers, Schedules, active Routes and firewall rules first. Online removal also requires no roles or Processes. The caller, Gateway and VPN Nodes are protected. Drain task VMs and clear the task VM host setting before removing their host.
+In a terminal, an omitted Node is chosen from an interactive list, and the CLI asks to confirm with the Node's name and the effect, with No selected. This is the consent for a Node with roles and for `--offline` too. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--force`, a call that cannot prompt is refused with `node.confirmation_required`. Without the Node, it is refused with `node.id_invalid`. A declined or refused call sends no request.
 
-An unreachable Node keeps its host state. The final Operation result lists `roles_shed` and `retained_on_node`. Human output shows the same retained state. macOS retains `user`, `package-managers` and `host-wireguard`. An iPadOS peer retains `host-wireguard`. Online Linux removal retires its observer and worker only after the serving fleet is clean.
+Remove a Node's Instances, Database servers, Schedules, Routes and user firewall rules first, including before an offline removal. An online removal also needs no Processes and no role dependents. Drain a task VM host and clear its task VM settings first. The caller cannot be removed, and neither can the Gateway Node, the VPN Node or the control Node. A Node whose resources remain gets the matching `node.has_*` code, or `schedule.target_in_use` for a Schedule.
 
-A failed cleanup retains the Node record. Swamp restores membership and serving publications in the same run. If restoration fails or retirement has an uncertain outcome, the Operation reports `node.removal_rollback_failed`. Ctrl-C stops following; it leaves the Operation running. Use `operation:show` to follow it again.
+Removal sheds the Node's mutable roles, then removes what Orbit created on the machine, checks it, and revokes its management keys last. It retains packages, users, user data, package managers and unrelated SSH keys. It then withdraws the Node from the hub, the Router, Metrics and private DNS. Only after the final check passes is the Node record deleted. An unreachable Node is refused with `node.removal_incomplete` unless you pass `--offline --force`.
 
-[Remove a Node](/reference/node-provisioning#remove-a-node) describes placement, cleanup and restoration.
+An unreachable Node keeps its host state, because only its membership and fleet publications are removed, and its machine still trusts Orbit's management keys. The final result lists `roles_shed` and `retained_on_node`. macOS retains `user`, `package-managers` and `host-wireguard`. An iPadOS peer retains `host-wireguard`.
+
+A failed removal keeps the Node, marked `failed`, with the failed step, and marks its claimed roles failed too. It does not roll back: finished steps stay, and later retirement steps do not run. A cancelled or interrupted run, and an expired budget (`operation.timed_out`), end the same way. After you fix the cause, run the same command again; every step skips work that is already done. Ctrl-C stops following and leaves the Operation running; use `operation:show` to follow it again.
+
+[Remove a Node](/reference/node-provisioning#remove-a-node) describes the placement and cleanup in detail.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
+| `node.confirmation_required` | Consent is missing and the call cannot prompt, or an API client removes a Node with roles or offline without `force`. |
+| `node.self_removal_forbidden` | The Node is the caller. |
+| `node.control_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is the control Node, the Gateway Node or the VPN Node. |
+| `node.has_instances`, `node.has_database_servers`, `node.has_routes`, `node.has_firewall_rules` | Resources still depend on the Node, offline or online. Remove them first. |
+| `schedule.target_in_use` | A Schedule still targets the Node. Remove it first. |
+| `node.has_processes`, `node.has_role_dependents` | An online removal still has Processes or role dependents. |
+| `node.has_task_vms`, `node.task_vm_host_configured` | The Node hosts task VMs, or still has task VM host settings. Drain and clear them first. |
+| `node.role_busy`, `websocket.runtime_shutdown_required` | A role operation runs on the Node, or its WebSocket runtime must be shut down first. |
+| `node.removal_owner_required`, `node.removal_owner_mismatch` | The Node is a task VM guest, or its record changed after admission. |
+| `node.removal_busy` | An admitted removal already exists for the Node. |
+| `node.removal_incomplete` | The Node is unreachable and `--offline` was not given, or the final check failed. |
+| `swamp.ssh_target_unavailable` | A required SSH target is unavailable (503). Retry later. |
+| `operation.timed_out` | The budget expired. The Node stays, marked failed. |
+| `node.access_denied` | The caller has no access grant to the Node. |
 
 ## How it works
 

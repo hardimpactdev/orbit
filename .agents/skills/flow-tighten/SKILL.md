@@ -50,6 +50,7 @@ Every Orbit command is designed as a flow chart first, and the code follows the 
     - Restore a changed setting only when its prior value is known and restoration will not overwrite a later change. Remove only resources the run owns; never restore a whole Node snapshot to undo one command.
     - Keep a failed target when it is useful for diagnosis or recovery, such as an Instance and its checkout. Record its failed state and retained resources, and define the retry and removal path. Retention must be deliberate, not an untracked leftover.
     - Convergence repairs declared desired state within its ownership scope. It may remove resources explicitly marked for removal; do not assume it discovers and deletes every leftover. A failed target retained for inspection is not an orphan.
+    - Order steps that remove access (revoking keys, closing ports) after the checks that need that access, so a failed run stays reachable and its rerun works.
     - Account for partial changes within a failing step, cleanup failure, and interruption. Cleanup must wait until the work it would remove has stopped. Preserve the original failure and expose incomplete cleanup; a worker crash does not prove cleanup ran.
     Show meaningful recovery branches in the chart and document only the consequences the command's user needs. Prove them with [verifying-commands](../verifying-commands/SKILL.md).
 

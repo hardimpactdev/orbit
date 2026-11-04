@@ -1,9 +1,8 @@
 sequenceDiagram
-  %% Rule 22: official cfgmgmt resources and SSH argv; Gateway captures intent and projects native completion.
+  %% Target design: ADR 0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md#remove-a-node.
   %% status: reviewed
   %% command: node:remove
   %% kind: node.remove
-  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,105 +11,96 @@ sequenceDiagram
   %% lane P icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
   participant P as Fleet Nodes<br/>hub · DNS
-  CLI->>GW: node:remove 12<br/>Node id
+  CLI->>GW: node:remove NODE
   %%> Command:
-  %%> - `orbit node:remove 12`
-  %%> - syntax: `<node> [--force] [--offline] [--idempotency-key=KEY] [--json]`
+  %%> - `orbit node:remove NODE`
+  %%> - syntax: `<node> [--force] [--offline] [--json]`
   %%> Input:
-  %%> - the Node id
-  %%> Optional flags:
-  %%> - `--force` skips the confirmation prompt; it is required without a terminal and with `--json`
-  %%> - `--offline` gives consent to remove a Node Orbit cannot reach: it relaxes the `Require offline consent` assert when the login fails; it adds no steps, and the Gateway still sends SSH targets when the Node has roles or a pinned host key
-  %%> - `--idempotency-key=KEY` reuses a key to retry the start
-  Note over GW: Admit removal intent<br/>mark the record removing
-  %%> Requirements: no attached resources or active role operation; the Gateway, VPN and Swamp guards apply.
-  %%> Builds: pinned SSH targets, complete publication changes and exact managed resource paths.
-  GW->>SW: Start the removal run<br/>full public intent
-  GW-->>CLI: 202 Accepted<br/>operation id
-  opt admitted resources exist
-    SW->>N: Log in to departing Node
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
+  %%> - the Node ID
+  %%> - `--force` and `--offline` are consent; the Gateway requires `--force` for an offline removal or a Node with roles
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, mark removing
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the target Node, and the target is not the caller
+  %%> - the Gateway, VPN and control Nodes are protected
+  %%> - no Instances, Database servers, Schedules, Routes or user firewall rules remain; an online removal also has no Processes and no role dependents
+  %%> - a task VM host is drained and its task VM settings cleared
+  %%> - no other removal runs for the Node (`node.removal_busy`)
+  %%> Builds:
+  %%> - the pinned SSH targets, the publication changes for the fleet, and the exact managed paths
+  %%> Result:
+  %%> - the Node is recorded as `removing`, and a task is recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-node-remove
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> What you get:
+  %%> - the task ID, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Reach the Node<br/>SSH argv
+  %%> What it does:
+  %%> - probes the Node with its approved identity
+  %%> - an unreachable Node without `--offline` fails the run here (`node.removal_incomplete`); with `--offline` only its registry membership and fleet publications are removed
+  SW->>N: Shed the Node's roles<br/>native child workflow
+  %%> What it does:
+  %%> - removes each mutable role and withdraws its publications on other Nodes; protected roles stay with their owning lifecycle
+  %%> - an unreachable Node's own services are not touched
+  opt Linux Node reachable
+    SW->>N: Remove Orbit from the Node<br/>Ansible phase: remove
+    %%> What it does:
+    %%> - restores public SSH, removes the services, files, configuration, containers and firewall rules Orbit created, and the agent and worker footprint
+    %%> Retained:
+    %%> - packages, users, user data, package managers and unrelated SSH keys
+    SW->>N: Check the removal<br/>Ansible phase: check
+    %%> Why before the keys:
+    %%> - the check needs SSH, and a failed run must stay reachable for the rerun
+    SW->>N: Revoke management keys<br/>Ansible phase: keys
+    %%> What it does:
+    %%> - removes only the admitted Orbit management keys; the control key goes last, and nothing connects to the Node afterwards
   end
-    SW->>SW: Require offline consent
-  opt admitted resources exist
-    SW->>P: Publish Metrics membership
-    %%> Uses: `@swamp/cfgmgmt/file apply`. Each admitted resource has its own stable behavior name.
+  opt macOS or iPadOS peer reachable
+    SW->>N: Remove the peer's keys<br/>SSH argv
+    %%> What it does:
+    %%> - revokes the admitted keys; the account, tools and host tunnel stay
   end
-  opt admitted resources exist
-    SW->>P: Reload Metrics membership
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
+  SW->>P: Remove the hub peer<br/>SSH argv
+  SW->>P: Withdraw Router ingress<br/>SSH argv
+  SW->>P: Withdraw Metrics<br/>cfgmgmt file · SSH argv
+  SW->>P: Withdraw private DNS<br/>native child workflow
+  opt routing domains change
+    SW->>P: Refresh peer DNS<br/>native child workflow
   end
-  opt admitted resources exist
-    SW->>N: Remove Node roles
+  %%> Why after the Node:
+  %%> - the hub peer is withdrawn after the Node-side cleanup, so the cleanup still has a path
+  SW->>SW: Confirm the removal<br/>native assert
+  %%> What it does:
+  %%> - checks the fleet no longer lists the Node; it contacts no machine
+  %%> Run files:
+  %%> - the run folder with the intent, inventory and any secrets is removed after success or failure
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Delete the Node record
+    %%> Result:
+    %%> - the Node record and its owned records are deleted, and the removal is broadcast
+    %%> - the result lists `roles_shed` and `retained_on_node`; for an unreachable machine it also names the Orbit keys and the worker unit that stay on it
+  else a step fails, is cancelled or the budget ends
+    N--xSW: exit ≠ 0 or timeout
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Keep the Node, mark failed
+    %%> Result:
+    %%> - the Node stays with status `failed` and the failed step `remove:operation`, so you can see it; its claimed roles are marked failed too
+    %%> - a cancelled or interrupted run ends the same way; later retirement steps do not run
+    %%> On the Node:
+    %%> - finished steps stay; there is no rollback
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; every step skips work that is already done
   end
-  opt admitted resources exist
-    SW->>N: Keep public SSH access
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
   end
-  opt admitted resources exist
-    SW->>N: Disable the services
-    %%> Uses: `@swamp/cfgmgmt/systemd apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Stop activating services
-    %%> Uses: `@swamp/cfgmgmt/exec apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Remove managed files
-    %%> Uses: `@swamp/cfgmgmt/file apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Remove service config
-    %%> Uses: `@swamp/cfgmgmt/directory apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Remove the containers
-    %%> Uses: `@swamp/cfgmgmt/docker_container apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Reload unit catalogue
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Withdraw firewall rules
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>P: Remove hub peer
-  end
-  opt admitted resources exist
-    SW->>P: Remove router ingress
-    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>P: Refresh peer DNS
-  end
-  opt admitted resources exist
-    SW->>P: Withdraw Node DNS
-  end
-  opt admitted resources exist
-    SW->>N: Check removed files
-    %%> Uses: `@swamp/cfgmgmt/file check`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Check removed directories
-    %%> Uses: `@swamp/cfgmgmt/directory check`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Revoke management keys
-    %%> Uses: `@swamp/cfgmgmt/authorized_key apply`. Each admitted resource has its own stable behavior name.
-  end
-  opt admitted resources exist
-    SW->>N: Revoke control key
-    %%> Uses: `@swamp/cfgmgmt/authorized_key apply`. Each admitted resource has its own stable behavior name.
-    %%> The behavior reads back using its existing connection. No target connection follows key removal.
-  end
-    SW->>SW: Confirm Node removal
-  SW-->>GW: Native terminal state
-  Note over GW: Record completed removal
-  %%> Result: remove records only after the native end check succeeds. A failed run keeps failed intent for a rerun; completed effects stay applied.
-  %%> On the Node: preserve packages, users, user data and unrelated keys. Retain runtime data unless role removal explicitly requests purge.
-  GW-->>CLI: Removal result<br/>or failed step
