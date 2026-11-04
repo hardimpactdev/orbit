@@ -380,7 +380,7 @@ it('checks out the immutable event commit in every job including reruns', functi
     }
 });
 
-it('publishes the web build of each main push for the Gateway to install', function (): void {
+it('publishes web builds for main pushes and merge queue candidates for the Gateway to install', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $steps = array_column($workflow['jobs']['web']['steps'], null, 'name');
     $names = array_keys($steps);
@@ -388,7 +388,7 @@ it('publishes the web build of each main push for the Gateway to install', funct
     expect($steps['Publish web build']['uses'])->toStartWith('actions/upload-artifact@');
     expect($steps['Publish web build'])->toMatchArray([
         'name' => 'Publish web build',
-        'if' => "steps.scope.outputs.selected == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+        'if' => "steps.scope.outputs.selected == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event.merge_group.base_ref == 'refs/heads/main')",
         'with' => [
             'name' => 'web-dist-${{ github.sha }}',
             'path' => 'apps/web/dist',

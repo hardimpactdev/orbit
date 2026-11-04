@@ -20,6 +20,7 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
     {
         $intent = array_diff_key($operation->input, ['execution_secrets' => true]);
         $intent['command_deliverables'] = array_values(array_filter(array_map(ValidatedData::object(...), is_array($intent['deliverables']) ? $intent['deliverables'] : []), static fn (array $item): bool => $item['type'] === 'command'));
+        $intent['command_deliverables'] = array_map(static fn (array $item): array => ['fails_on_base' => false, 'paths' => [], ...$item], $intent['command_deliverables']);
         $intent['execution_references_json'] = json_encode($operation->input['execution_secrets'] === [] ? (object) [] : $operation->input['execution_secrets'], JSON_THROW_ON_ERROR);
 
         return ['intent' => $intent, 'execution_secrets' => $operation->input['execution_secrets']];

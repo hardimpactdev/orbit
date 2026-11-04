@@ -1216,7 +1216,7 @@ The unit loads the table after `nftables.service` and before `wg-quick@orbit` st
 The command takes every value from Gateway records and settings:
 
 - the reserved range from `task_vms.wireguard_range`;
-- the active209 control Node's recorded WireGuard address, for SSH on TCP22 only;
+- the active Swamp control Node's recorded WireGuard address, for SSH on TCP 22 and task turns on the configured Pi port;
 - the VPN DNS address: the `vpn.dns_server` setting, or else the WireGuard address of the `vpn` Node;
 - the Node with the `gateway` role, and the Pi port `orbit.pi.port` (`ORBIT_PI_PORT`, default `3774`);
 - Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role; the Swamp Route uses that same Node and port;
@@ -1228,7 +1228,7 @@ The table filters only the reserved range. Its first rule passes every packet th
 | Direction | Allowed |
 | --- | --- |
 | From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
-| To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
+| To task VMs | The Gateway and Swamp control Node on TCP 22 and the Pi port, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
 
 The209 SSH rule and Cluster Router web rules come from the same canonical definitions shown by `firewall-managed-list` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall-live-list` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
 

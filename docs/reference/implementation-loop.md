@@ -101,11 +101,15 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
 
+On a new branch push with an all-zero before SHA, `ci-scope` fetches the event commit's parent when the checkout is shallow. The syntax check compares changed PHP files against that parent (`HEAD^`), without requiring `origin/main`.
+
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The merge queue run for `main` selects builds the same way, because `Required checks` passes there first.
 
 The Swamp shape job runs its gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. Tests live beside the checked scripts in `swamp/bin/` and run one file at a time. Python helpers run as subprocesses with assertions in Deno. These regression tests use disposable fixtures and do not run the Swamp CLI.
 
 Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. The downloaded runtime is cached under a key of the node-worker pin file, `swamp/extensions/behaviors/node-worker/config.ts`, so a pin change downloads the new runtime once. The validation job uses a disposable hosted runner, where the pinned PHP setup action can install PHP without changing a restricted self-hosted runner. It also runs that pinned binary's `serve check-config` against disposable grant files rendered by the Gateway's production `SwampGrantRenderer` through `apps/gateway/bin/render-swamp-grants` (PHP 8.5, no Laravel boot or deployment credentials) from every `swamp/config/*grants*.json` input.
+
+Only native workflow and grant validation receive the existing dedicated registry-read collective token (`extensions:read`), through `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Their credential guards admit pull requests, merge groups, pushes to `main`, same-repository pushes to `task-*-handoff` branches and scheduled validation. Arbitrary branch pushes and manual runs receive no credentials. Shape checks and unit tests receive none.
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants.
 

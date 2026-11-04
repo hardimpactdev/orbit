@@ -96,18 +96,23 @@ final readonly class TaskVmHubPolicy
     }
 
     /**
-     * The control SSH and Router web rules exactly as `nft list` prints them; the file holds them in this form, and
+     * The control SSH, Pi and Router web rules exactly as `nft list` prints them; the file holds them in this form, and
      * the workflow's end check requires each as a line of the live chain.
      *
-     * @param  array{range:string,routers:list<string>}  $input
+     * @param  array{range:string,pi_port:int,routers:list<string>}  $input
      * @return list<string>
      */
     public function liveRules(array $input, UfwManagedRule $control): array
     {
         $range = TaskVmConfig::wireguardRange($input['range'])->value();
 
-        return array_map(static fn (UfwManagedRule $rule): string => 'ip saddr '.$rule->shape->source.' ip daddr '.$range
+        $rules = array_map(static fn (UfwManagedRule $rule): string => 'ip saddr '.$rule->shape->source.' ip daddr '.$range
             .' tcp dport '.$rule->shape->port.' accept comment "'.$rule->shape->comment.'"', [$control, ...$this->routerRules($input['routers'], $range)]);
+
+        $rules[] = 'ip saddr '.$control->shape->source.' ip daddr '.$range
+            .' tcp dport '.$input['pi_port'].' accept comment "orbit:task-vm-control-pi"';
+
+        return $rules;
     }
 
     /** Render the admitted endpoints using the same rules as the managed catalog.

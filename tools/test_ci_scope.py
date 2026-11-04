@@ -11,6 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = (ROOT / '.github/actions/ci-scope/action.yml').read_text()
 COMMAND = textwrap.dedent(ACTION.split('      run: |\n', 1)[1])
+CI = (ROOT / '.github/workflows/ci.yml').read_text()
+PHP_COMMAND = textwrap.dedent(CI.split('      - name: Check changed PHP syntax\n', 1)[1]
+    .split('        run: |\n', 1)[1].split('\n  gateway-static:', 1)[0])
 
 
 class ScopeActionTest(unittest.TestCase):
@@ -48,12 +51,12 @@ class ScopeActionTest(unittest.TestCase):
         self.git('add', '.')
         self.git('commit', '-m', message)
 
-    def scope(self, base, *, history=False, root=None, enabled=True):
+    def scope(self, base, *, history=False, root=None, enabled=True, job='swamp'):
         root = root or self.root
         output = root / '.git/scope-output'
         output.write_text('')
         result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', COMMAND], cwd=root,
-            env=dict(os.environ, SCOPE_JOB='swamp', SCOPE_ENABLED=str(enabled).lower(),
+            env=dict(os.environ, SCOPE_JOB=job, SCOPE_ENABLED=str(enabled).lower(),
                 SWAMP_BASE=str(history).lower(), BASE=base, EVENT_SHA='HEAD', MAIN='false',
                 GITHUB_OUTPUT=str(output)), capture_output=True, text=True, timeout=60, check=False)
         values = dict(line.split('=', 1) for line in output.read_text().splitlines())
@@ -98,6 +101,40 @@ class ScopeActionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(values['swamp-base-ref'], self.source)
         self.assertEqual(self.scope('', enabled=False)[1], {'selected': 'true'})
+
+    def test_new_handoff_push_lints_changed_php_without_origin_main(self):
+        self.git('checkout', '-b', 'task-3187-handoff')
+        (self.root / 'apps/gateway/unchanged.php').write_text('<?php this is invalid;\n')
+        self.commit('Unchanged PHP is outside syntax scope')
+        (self.root / 'apps/gateway/changed file.php').write_text('<?php echo "changed";\n')
+        (self.root / 'apps/gateway/example.php').write_text('<?php echo "also changed";\n')
+        self.commit('Changed PHP on new handoff branch')
+        shallow = self.root / 'shallow'
+        self.git('clone', '--depth=1', '--single-branch', self.root.as_uri(), str(shallow))
+        for ref in ['HEAD^', 'origin/main']:
+            result = subprocess.run(['git', 'rev-parse', '--verify', ref], cwd=shallow,
+                capture_output=True, text=True, timeout=60, check=False)
+            self.assertNotEqual(result.returncode, 0, ref)
+        result, values = self.scope('0' * 40, root=shallow, job='php')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values['selected'], 'true')
+        parent = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD^'], cwd=shallow,
+            capture_output=True, text=True, timeout=60, check=False)
+        self.assertEqual(parent.returncode, 0, parent.stderr)
+        main = subprocess.run(['git', 'rev-parse', '--verify', 'origin/main'], cwd=shallow,
+            capture_output=True, text=True, timeout=60, check=False)
+        self.assertNotEqual(main.returncode, 0)
+        for content, passes in [('<?php echo "valid";\n', True), ('<?php this is invalid;\n', False)]:
+            with self.subTest(valid_php=passes):
+                (shallow / 'apps/gateway/changed file.php').write_text(content)
+                result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', PHP_COMMAND],
+                    cwd=shallow, env=dict(os.environ, BASE='0' * 40),
+                    capture_output=True, text=True, timeout=60, check=False)
+                output = result.stdout + result.stderr
+                self.assertIn('apps/gateway/changed file.php', output)
+                self.assertIn('apps/gateway/example.php', output)
+                self.assertNotIn('unchanged.php', output)
+                self.assertEqual(result.returncode == 0, passes, output)
 
     def test_workflow_always_runs_cheap_gates_before_toolchains(self):
         ci = (ROOT / '.github/workflows/ci.yml').read_text()

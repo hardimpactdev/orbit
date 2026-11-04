@@ -11,7 +11,13 @@ Use this with [developing-commands](../developing-commands/SKILL.md). The target
 
 ## Define the cases
 
-Read the command's page and chart before writing assertions. Cover the call with required arguments only, each optional flag, error paths and interactions that can change the outcome. Keep cases beside the chart in the planned `<command>.cases.yaml` format once its runner exists; until then, use the existing fixture format and identify gaps explicitly.
+Review the command's page, chart and verification together. Cover the call with required arguments only, each optional flag, error paths and interactions that can change the outcome. Update cases when behavior changes; for behavior-preserving changes, review the existing cases without a mandatory file edit. For a bug, add a regression that fails before the fix. Do not weaken an expectation to match a bug.
+
+Keep verification assets version-controlled with the command in `swamp/proof/`: the current entry fixture is `swamp/proof/<family>.<command>.json`, with helpers under the family directory. Keep native verification workflows alongside those assets and stage and load them into the isolated proof controller. Do not improvise them at run time or install them in production for verification. Share reset and workflow phases when parameters suffice. Once an executable verification entrypoint exists, link to it from the command page and chart; do not add a dead link.
+
+Native Swamp workflows own the verification sequence, setup, checks and cleanup; use existing bounded helpers where needed. Do not add Ansible as a dependency of the current verification pipeline. Ansible remains available for product operation flows, and its use in verification may be reconsidered later.
+
+Start each independent command-verification run with a fresh nested topology. Reuse it across cases, cleaning up after each case. Reset the nested topology again for an explicit clean case or after failed cleanup. Preserve the outer task VM, Pi and checkout.
 
 Each case specifies:
 
@@ -20,6 +26,7 @@ Each case specifies:
 - The recorded state, Node state and functional effect to assert after completion.
 - What must remain unchanged, including unmanaged resources and state after a refusal.
 - What repeating the request must do under the command's documented contract.
+- For failure cases, what is cleaned up, restored or retained, and how retry or removal settles retained state, following [flow-tighten rule 28](../flow-tighten/SKILL.md#what-a-good-flow-looks-like).
 
 Setup can use other commands or shared fixtures, but the case must invoke the command under test through its real interface. A CLI contract needs the built CLI from the tested commit; an API-only proof does not establish CLI behavior.
 
@@ -31,7 +38,9 @@ For `firewall:allow`, use an isolated listener and probe Nodes. Confirm the list
 
 The current minimal topology has a broad unmanaged `proof-network` allowance. A probe admitted by that rule cannot prove the new rule works. Arrange the case's test traffic so no broader rule admits it, without removing management access or changing another case's shared topology.
 
-Compare relevant state before and after a refusal. For a repeat, assert no additional managed resources or configuration changes. New Operation history may be expected; do not compare the entire database byte for byte. Distinguish a documented duplicate refusal from replay with the same idempotency key. Neither should create duplicate Node state.
+Compare relevant state before and after a refusal. For a repeat, assert no additional managed resources or configuration changes. A documented successful skip must return success and its reason code in human and machine output; also prove that partial state is repaired rather than reported as already correct. New Operation history may be expected; do not compare the entire database byte for byte. Distinguish a documented duplicate refusal from replay with the same idempotency key. Neither should create duplicate Node state.
+
+Exercise failures after meaningful side effects, including partial changes within a step. Verify cleanup preserves pre-existing resources, retained targets remain inspectable, and repeated recovery leaves no duplicates or disposable leftovers. Where interruption or cleanup failure can change the result, prove that incomplete cleanup stays visible and can be completed safely. Do not count an ordinary failure test as proof of crash recovery.
 
 Wait for observable readiness within a bounded deadline. Report infrastructure failures separately from failed command assertions, but neither is a passing case. Include setup, failed assertions and cleanup in the receipt.
 
@@ -47,7 +56,7 @@ The following is the target contract; the template-based CI runner is not implem
 4. Clean up owned clones after success or failure. Retain diagnostic artifacts, not running proof VMs.
 5. Report a required CI result for the exact tested commit. Any failed or unexecuted selected case fails the result. Exercise this gate with a known failing case before relying on it.
 
-Select cases from changed executable inputs and their dependencies. A shared workflow, extension or role can affect several commands. Changes only to documentation must not start a VM job. Missing dependency coverage must be made explicit; it must not silently produce a green result with no tests. Apply the same selection and required check to the merge queue's combined commit.
+Run the whole affected proof, including commands that transitively consume a changed shared workflow, extension or role. Changes only to documentation must not start a VM job. Missing dependency coverage must be made explicit; it must not silently produce a green result with no tests. Apply the same selection and required check to the merge queue's combined commit.
 
 ## Report
 
