@@ -37,7 +37,7 @@ sequenceDiagram
   %%> - the role is not `vpn` or `router`; those are protected from this command
   %%> - Node 12 doesn't have the role yet, and holds no role it conflicts with, such as `app-prod` beside `app-dev`
   %%> - a singleton role, such as `gateway` or `swamp`, has no holder yet; to move one, use `node:role:relocate`
-  %%> - one role operation per Node: the Gateway holds a role lock for Node 12 and waits up to 2 minutes for a busy one, then refuses with `node_role.node_busy`
+  %%> - one add or converge Operation per Node: the Gateway holds the Node until terminal status; a busy admission refuses with `operation.target_busy` before role state changes
   %%> Builds:
   %%> - the role plan: packages, files, units, Caddy sites, PHP settings, firewall rules and certificate requests
   %%> - for the `metrics` role, the Prometheus and Grafana container specifications and their systemd units

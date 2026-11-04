@@ -43,7 +43,7 @@ sequenceDiagram
   %%> - Node 12 is an active, managed Linux Node and has the `app-dev` role
   %%> - the role is `active`, `failed` at a `converge:` step, or `provisioning` with a stale claim: older than 11 minutes, with no operation holding the role lock
   %%> - the role is not `vpn` or `router`; `node:converge` re-applies the `vpn` files
-  %%> - one role operation per Node: the Gateway waits up to 2 minutes for Node 12's role lock, then refuses with `node_role.node_busy`
+  %%> - one add or converge Operation per Node: the Gateway holds the Node until terminal status; a busy admission refuses with `operation.target_busy` before role state changes
   %%> Builds:
   %%> - the complete role plan, with one digest per part
   %%> - the current Metrics fleet change for Node 12, when there is one

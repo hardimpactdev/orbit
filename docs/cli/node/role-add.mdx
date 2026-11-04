@@ -22,7 +22,7 @@ orbit node:role:add services analytics --postgres-process=41 --clickhouse-proces
 
 `vpn` and `router` fail with `validation.failed` and `Role [ROLE] is protected from generic mutation.` A role that conflicts with one the Node holds fails with `validation.failed` before anything changes. [Role compatibility](/reference/node-provisioning#role-compatibility) lists the pairs. For `analytics`, a terminal lists the Docker Processes that run the right image and asks for each missing option. With `--json` or without a terminal, the command refuses. The [Analytics role](/reference/analytics) page describes that role.
 
-Role operations on one Node run one at a time. A command that waits more than 2 minutes fails with `node_role.convergence_failed`, `details.step` `converge:node-lock`, and `details.error_code` `node_role.node_busy`. Run it again.
+Adding or converging roles on one Node runs one Operation at a time. An admission while the Node is held fails with `operation.target_busy` (HTTP 409), before role state changes. Run it again after the current Operation ends.
 
 Adding or converging a role runs one Swamp workflow from the control worker. Each Ansible phase applies idempotent Node state: packages, files, services, ports and Metrics configuration. Native Swamp steps handle certificates, Tool Managers and one-time initialization. The final Ansible check must pass before the assignment becomes `active`. A second convergence reports no changes. A failed step leaves the assignment recorded as failed; fix its cause and use `--converge`. Finished host changes remain.
 

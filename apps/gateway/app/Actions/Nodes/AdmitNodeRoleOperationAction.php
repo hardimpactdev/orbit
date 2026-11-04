@@ -85,7 +85,8 @@ final readonly class AdmitNodeRoleOperationAction
             }
             $beforePublications = app(NativeNodeRoleRemovalInput::class)->publications($node, $role);
             $operation = $this->operations->execute($kind, 'node', $node->id, $node->id,
-                ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge], 'operator', $requestId);
+                ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge], 'operator', $requestId,
+                lockKey: OperationStore::lockKey('node', $node->id));
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
