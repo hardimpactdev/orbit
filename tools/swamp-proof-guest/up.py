@@ -320,6 +320,8 @@ def gateway(nodes):
         'ORBIT_SWAMP_RUN_TOKEN': (STATE / 'credentials/gateway').read_text().strip(),
         'ORBIT_SWAMP_READ_TOKEN': (STATE / 'credentials/reader').read_text().strip(),
         'ORBIT_HOME': str(HOME / '.orbit'),
+        # Admission sends the public half of the identity the swamp role copies to its workers (version 18).
+        'ORBIT_SWAMP_SSH_PUBLIC_KEY': '"' + ' '.join(IDENTITY.with_suffix('.pub').read_text().split()[:2]) + '"',
         # The Gateway site and Metrics publication render this checkout, as a release's checkout link (version 12).
         'ORBIT_GATEWAY_CHECKOUT': str(GATEWAY),
     }
