@@ -4,10 +4,10 @@ description: "How a managed Node selects its resolver, how the Gateway answers C
 covers:
   - apps/gateway/app/Infrastructure/AppDev/{DnsmasqPrivateDnsManager,DevelopmentDnsConfigRenderer,PrivateDns*,*PrivateDns*,*DnsRequester*,DnsAddress,DecodedDnsQuery,VpnDnsmasqBackendListen,NativeClusterRouterDnsSelectionReconciler}.php
   - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
-  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy,PeerDnsInspector}.php
+  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
   - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
-  - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Actions/Fleet/AdmitPeerDnsAction,Console/Commands/RepairNodeDnsCommand,Console/Commands/CheckNodeDnsCommand,Console/Commands/ReconcilePeerDnsCommand}.php
+  - apps/gateway/app/{Actions/Fleet/AdmitPeerDnsAction,Console/Commands/ReconcilePeerDnsCommand}.php
 ---
 
 # Private DNS
@@ -214,29 +214,13 @@ An unreachable LAN address stays selected. Orbit does not fall back to WireGuard
 
 ## Repair one peer
 
-Run this command on the Gateway to update the resolver settings of one active managed Linux peer. It runs the [Node agent](/reference/node-agent#commands)'s `wireguard.repair-peer-dns` over SSH to the saved WireGuard address with the pinned identity. Roles and the running tunnel stay the same.
-
-```bash
-php artisan orbit:node-dns-repair <node-name>
-```
-
-After upgrading the Gateway, repair app-prod and verify separate resolver paths with these Gateway commands:
-
-```bash
-php artisan orbit:node-dns-repair app-prod
-php artisan orbit:node-dns-check app-prod ai-cli-proxy.test --public-domain=example.com
-orbit doctor --node=4 --family=node
-```
-
-`orbit:node-dns-check` is read-only. It runs uncached A queries through the peer's normal resolved policy. It succeeds only when the private name resolves on `orbit` and the public name resolves on another link or a global resolver. The output shows both answers and links. It refuses names that do not fit the private and public scopes. This verifies provider selection without stopping VPN DNS. `orbit node:converge app-prod --force` also applies the peer policy through the `peer-dns` footprint artifact.
+Provisioning an app-dev Node runs the [Node agent](/reference/node-agent#commands)'s `wireguard.repair-peer-dns` over SSH to the saved WireGuard address with the pinned identity. It updates the peer's resolver settings. Roles and the running tunnel stay the same.
 
 DNS repair does not replace a WireGuard key. The separate [`node:wireguard-key`](/cli/node/wireguard-key) command only changes an unmanaged peer's desired public key and reconverges the hub; it refuses managed peers and leaves the peer's resolver policy unchanged. Use DNS repair for resolver faults, not key recovery.
 
-The command refuses a missing or inactive Node, a [Node without roles](/reference/node-provisioning#nodes-without-roles), and the Node that holds `vpn`, before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
+The repair can change the DNS server, routing domains, hooks, and saved DNS state. The key fingerprint, role services, tunnel state, application placement, and `ip route` stay the same.
 
-Record the [inspect](#inspect-a-peer) commands, `systemctl is-active wg-quick@orbit`, each role's service state, and a fingerprint of `wg show orbit public-key` before and after the repair. The DNS server, routing domains, hooks, and saved DNS state can change. The key fingerprint, role services, tunnel state, application placement, and `ip route` stay the same.
-
-The repair takes `/run/lock/orbit-wireguard-peer.lock`, the lock that peer convergence also takes, and validates the proposed configuration. It backs up managed files and records a `dns-repair-v2` transaction in `/etc/wireguard/.orbit.peer-transaction`. Then it writes the hooks and DNS state and applies the resolver settings. A refusal before publication leaves no candidate file. Repeating the command gives the same result.
+The repair takes `/run/lock/orbit-wireguard-peer.lock`, the lock that peer convergence also takes, and validates the proposed configuration. It backs up managed files and records a `dns-repair-v2` transaction in `/etc/wireguard/.orbit.peer-transaction`. Then it writes the hooks and DNS state and applies the resolver settings. A refusal before publication leaves no candidate file. Repeating the repair gives the same result.
 
 On the `orbit` link, it changes DNS servers and routing domains and sets `DefaultRoute=no`. It preserves LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. When it migrates an old underlay selection, networkd restores the uplink configuration.
 
@@ -244,16 +228,14 @@ Each failure reports one code without remote command output. The agent refuses w
 
 | Failure code | Result and recovery |
 | --- | --- |
-| `node.dns_repair_missing`, `node.dns_repair_inactive` | Nothing changes. Correct the Node name, or restore the Node through its own lifecycle. |
-| `node.dns_repair_operator_owned`, `node.dns_repair_vpn_server`, `node.dns_repair_platform_unsupported`, `node.dns_repair_identity_missing` | The Node is outside this command. Use its own resolver or provisioning workflow. |
 | `vpn.peer_dns_busy` | Another peer operation holds the lock. Wait, then retry. |
 | `vpn.peer_dns_unreadable` | Inspection could not read the saved or live DNS state. Check the peer's files and resolver service, then retry. |
 | `vpn.peer_recovery_pending` | Another peer operation owns the saved candidate or backup. Keep the recovery files and finish that operation first. |
 | `vpn.peer_dns_state_unsupported`, `vpn.peer_dns_candidate_invalid` | Nothing is published. Inspect `orbit.conf` and `orbit.dns-link`, then fix the peer through normal provisioning. |
-| `vpn.peer_dns_apply_failed` | The command restored the previous files and resolver selection. Fix the DNS or systemd-resolved fault, then retry. |
+| `vpn.peer_dns_apply_failed` | The repair restored the previous files and resolver selection. Fix the DNS or systemd-resolved fault, then retry. |
 | `vpn.peer_dns_recovery_failed` | Recovery files stay under `/etc/wireguard`. Keep them, fix the fault, and retry the same repair. The retry restores the previous state first. |
 | `vpn.peer_dns_uplink_missing` | The previous DNS state stays or is restored. Configure a non-Orbit per-link or global DNS server, then retry. |
-| `vpn.peer_dns_repair_failed`, `vpn.configuration_invalid` | The command reports no success. Fix SSH reachability, the agent, or the Gateway VPN configuration, then retry. |
+| `vpn.peer_dns_repair_failed`, `vpn.configuration_invalid` | The repair reports no success. Fix SSH reachability, the agent, or the Gateway VPN configuration, then retry. |
 
 The network part of `node.converge` and `fleet.peer_dns` keep no snapshot. They write Gateway-rendered files with official cfgmgmt behaviors and stop on the first failed step. A rerun writes the same files again.
 

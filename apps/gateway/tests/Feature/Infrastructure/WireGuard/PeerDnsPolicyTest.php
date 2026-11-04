@@ -9,10 +9,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Fleet\Footprint\NetworkFootprintArtifact;
-use App\Infrastructure\WireGuard\PeerDnsInspector;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -20,7 +17,6 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Tests\Support\FakeAgentCommandRunner;
 
 it('renders every private namespace and changes it when records change', function (): void {
     Cluster::query()->create(['name' => 'dev', 'tld' => 'test']);
@@ -60,21 +56,13 @@ it('accepts the Orbit domain limit and refuses one more without truncating', fun
     expect(fn () => app(PeerDnsPolicy::class)->domains())->toThrow(NodeProvisioningException::class);
 });
 
-it('verifies uncached private and public lookups on separate resolver links', function (string $fault, int $exit): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    Cluster::query()->create(['name' => 'dev', 'tld' => 'test']);
-    $peer->fault = $fault;
-
-    $this->artisan('orbit:node-dns-check', ['name' => $node->name, 'private-domain' => 'ai-cli-proxy.test', '--public-domain' => 'example.com'])->assertExitCode($exit);
-})->with(['split' => ['', 0], 'public over VPN' => ['public-over-vpn', 1], 'private query fails' => ['private-fails', 1], 'global public DNS' => ['global', 0], 'public query fails' => ['public-fails', 1]]);
-
 it('refuses a global underlay DNS server before inspecting a peer', function (): void {
     [$node] = peer_dns_inspection_fixture();
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: '10.0.0.2');
     expect(fn () => app(PeerDnsPolicy::class)->server($node))->toThrow(NodeProvisioningException::class, 'The private DNS server must be a usable address in the WireGuard subnet.');
 });
 
-/** @return array{Node, object{fault: string, domains: list<string>, agents: FakeAgentCommandRunner}} */
+/** @return array{Node} */
 function peer_dns_inspection_fixture(): array
 {
     $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => LifecycleStatus::Active]);
@@ -82,43 +70,8 @@ function peer_dns_inspection_fixture(): array
     $gateway->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     $node = Node::query()->create(['name' => 'app-prod', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3', 'wireguard_public_key' => str_repeat('A', 43).'=', 'ssh_host_fingerprint' => 'SHA256:managed', 'status' => LifecycleStatus::Active]);
     $node->roles()->create(['role' => RoleName::AppProd]);
-    $peer = new class
-    {
-        public string $fault = '';
 
-        /** @var list<string> */
-        public array $domains = ['orbit'];
-
-        public FakeAgentCommandRunner $agents;
-    };
-    $peer->agents = new FakeAgentCommandRunner;
-    $unreachable = static fn (string $command): AgentRunnerFailure => new AgentRunnerFailure($command, AgentRunnerFailure::Transport, 'SSH unavailable');
-    $peer->agents->answer('wireguard.inspect-peer-dns', static function () use ($peer, $unreachable): array {
-        if ($peer->fault === 'ssh') {
-            throw $unreachable('wireguard.inspect-peer-dns');
-        }
-
-        return [
-            'state' => "orbit\n10.44.0.1\n".($peer->fault === 'saved' ? '.' : implode("\n", $peer->domains)),
-            'hooks' => 'PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i '.($peer->fault === 'hook' ? '\\~.' : implode(' ', array_map(static fn (string $domain): string => '\\~'.$domain, $peer->domains))),
-            'dns' => 'Link 7 (orbit): '.($peer->fault === 'server' ? '10.0.0.2' : '10.44.0.1'),
-            'domains' => 'Link 7 (orbit): '.($peer->fault === 'domains' ? '~.' : implode(' ', array_map(static fn (string $domain): string => '~'.$domain, $peer->domains))),
-            'default_route' => 'Link 7 (orbit): '.($peer->fault === 'default' ? 'yes' : 'no'),
-            'uplink' => $peer->fault !== 'uplink-missing',
-        ];
-    });
-    $peer->agents->answer('wireguard.query-dns', static function (array $input) use ($peer, $unreachable): array {
-        if (in_array($peer->fault, ['ssh', 'query-ssh'], true)) {
-            throw $unreachable('wireguard.query-dns');
-        }
-
-        return ['answers' => array_map(static fn (string $name): string => str_starts_with($name, 'example.')
-            ? ($peer->fault === 'public-fails' ? '' : 'example.com: 93.184.215.14'.($peer->fault === 'global' ? '' : ' -- link: '.($peer->fault === 'public-over-vpn' ? 'orbit' : 'eth0')))
-            : (in_array($peer->fault, ['private-fails', 'answer'], true) ? '' : $name.': '.($peer->fault === 'wrong-answer' ? '192.0.2.99' : ($name === 'gateway.orbit' ? '10.44.0.1' : '10.44.0.7')).' -- link: orbit'), $input['names'])];
-    });
-    app()->instance(AgentCommandRunner::class, $peer->agents);
-
-    return [$node->refresh()->load('roles'), $peer];
+    return [$node->refresh()->load('roles')];
 }
 
 it('excludes the Gateway after VPN moves to another Node', function (): void {
@@ -170,20 +123,6 @@ it('refuses removal of a covering namespace when its descendants exceed the cap'
     $this->assertModelExists($cover);
     expect(app(PeerDnsPolicy::class)->domains())->toBe(['example.test', 'orbit']);
 })->with(['node', 'cluster', 'route']);
-
-it('inspects the complete maximum namespace without truncating the snapshot', function (): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    $rows = [];
-    for ($i = 0; $i < 511; $i++) {
-        $domain = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_pad((string) $i, 61, 'x', STR_PAD_LEFT);
-        $rows[] = ['name' => 'c'.$i, 'tld' => $domain];
-        $peer->domains[] = $domain;
-    }
-    Cluster::query()->insert($rows);
-    sort($peer->domains, SORT_STRING);
-
-    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => true, 'uplink' => true]);
-});
 
 it('allows nonincreasing teardown and TLD rollback when stored namespace already exceeds the cap', function (string $kind): void {
     $node = Node::query()->create(['name' => 'prod', 'public_ssh_host' => '192.0.2.3', 'tld' => 'original.internal']);
