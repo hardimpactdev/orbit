@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-target, role = sys.argv[1:]
+target, role = sys.argv[1:3]
 
 
 def run(*argv):
@@ -18,7 +18,8 @@ if role == 'app-dev':
     if not services:
         sys.exit('the baseline has no running PHP-FPM master')
     state['services'] = {service: run('systemctl', 'show', service, '-p', 'MainPID', '--value') for service in services}
-    run('chmod', '0777', '/home/orbit/apps')
+    if 'stable' not in sys.argv[3:]:
+        run('chmod', '0777', '/home/orbit/apps')
 elif role == 'websocket':
     state['services'] = {'orbit-websocket.service': run('systemctl', 'show', 'orbit-websocket.service', '-p', 'MainPID', '--value')}
 elif role == 'metrics':

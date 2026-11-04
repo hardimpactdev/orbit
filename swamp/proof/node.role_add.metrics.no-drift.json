@@ -15,5 +15,6 @@
     {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
     {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 120}
   ],
-  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "metrics", "no-drift"]
+  "parity": ["swamp/proof/node.role_converge/parity.py", "metrics", "metrics", "no-drift"],
+  "after_prepare": [["python3", "swamp/proof/node.role_converge/capture.py", "metrics", "metrics", "stable"]]
 }
