@@ -460,7 +460,7 @@ jobs:
         env: *id001
 - name: swamp_runtime_job
   dependsOn:
-  - {job: phase_48, condition: {type: succeeded}}
+  - {job: readiness, condition: {type: succeeded}}
   steps:
     # The recipe's pinned release, by checksum, at a path of its own version: no process runs from it yet.
   - name: Install Swamp
@@ -891,7 +891,9 @@ jobs:
   - {job: "node", condition: *settled}
   - {job: "phase_46", condition: *settled}
   - {job: "phase_47", condition: *settled}
+  - {job: "analytics_migrate", condition: *settled}
   - {job: "phase_48", condition: *settled}
+  - {job: "readiness", condition: *settled}
   - {job: "swamp_runtime_job", condition: *settled}
   - {job: "swamp_workers_job", condition: *settled}
   - {job: "swamp_check_job", condition: *settled}
