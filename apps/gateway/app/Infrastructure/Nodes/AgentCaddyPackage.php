@@ -43,7 +43,7 @@ final readonly class AgentCaddyPackage
     /** @return array{url:string,path:string,sha256:string,minimum_version:string} */
     public static function nativeInput(): array
     {
-        $recipe = new RecipeLoader()->load();
+        $recipe = new RecipeLoader()->source();
         $artifact = $recipe->tools['caddy']->artifacts['amd64'];
         $file = 'caddy_'.self::RELEASE.'_linux_amd64.deb';
 
