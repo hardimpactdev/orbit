@@ -1,9 +1,8 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign 2026-11-03 (recipe.json read by Ansible, Tools phase last, recipe packages held). docs/reference/node-provisioning.md#converge-the-orbit-footprint.
-  %% status: draft
+  %% Target design: fleet maintenance redesign (recipe.json read by Ansible, Tools phase last, recipe packages held). docs/reference/node-provisioning.md#converge-the-orbit-footprint.
+  %% status: reviewed
   %% command: node:converge
   %% kind: node.converge
-  %% Pinned Debian downloads use native SSH curl exit codes for transport-only fallback, then verify the pin before publication.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,56 +11,85 @@ sequenceDiagram
   %% lane H icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as Node 12<br/>reached over ssh
+  participant SW as Swamp<br/>workflow execution
+  participant N as Target Node<br/>reached over ssh
   participant H as VPN hub<br/>WireGuard peers
-  CLI->>GW: node:converge 12
+  CLI->>GW: node:converge NODE
   %%> Command:
-  %%> - `orbit node:converge 12`
-  %%> - syntax: `<node> [--idempotency-key=KEY] [--json]`
-  Note over GW: Validate, lock Node + hub<br/>task #5180
+  %%> - `orbit node:converge NODE`
+  %%> - syntax: `<node> [--json]`
+  %%> What it does:
+  %%> - brings one Node fully to the release: Orbit binaries, role software, roles, Tools and network
+  %%> - every run applies all phases; each phase skips what already matches
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, lock Node, hub
   %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - Node 12 is an active, managed Linux Node
+  %%> - the calling Node has an access grant to the target Node
+  %%> - the target is an active, managed Linux Node (`node.converge_unsupported`)
+  %%> - no other converge runs for the target or the hub; the Gateway holds one lock for each
   %%> Builds:
-  %%> - targets only: Node 12, its active roles, its Tools, its recorded network, and the hub
-  %%> - no versions: the playbooks read them from the release's recipe.json
+  %%> - targets only: the Node, its active roles, its Tools, its recorded network and the hub
+  %%> - no versions: the playbooks read the pins of the release
   GW->>SW: Start run, full intent<br/>operation-node-converge
-  GW-->>CLI: 202 Accepted<br/>task #5180
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> What you get:
+  %%> - the task ID, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
   SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
   %%> Why:
-  %%> - the intent is too large for one environment value, so it goes to a 0600 run file
-  SW->>N: Install Orbit binaries<br/>ansible · tags binaries
+  %%> - the intent is too large for one environment value, so it goes to a private run file
+  SW->>N: Install Orbit binaries<br/>Ansible phase: binaries
   %%> Why first:
-  %%> - later phases and Doctor rely on the agent's facts and the orbit-env group
-  %%> - the CLI comes with it, so one converge brings a Node fully to the release
-  SW->>N: Install role software<br/>ansible · tags software
+  %%> - later phases and Doctor rely on the agent's facts and the `orbit-env` group
+  %%> - it covers the agent's configuration and unit, the `orbit-env` access to Instance `.env` files, and the temporary-file cleanup rule; the agent restarts only when a file changed
+  %%> - the Orbit CLI comes with it, so one converge brings a Node fully to the release
+  SW->>N: Install role software<br/>Ansible phase: software
   %%> Why:
   %%> - installs the recipe's common and role tools at their pins, then holds them
-  %%> - the hold keeps Tools from moving tested software; Ubuntu `-security` updates still pass
-  SW->>N: Configure the roles<br/>ansible · tags roles
-  opt Node 12 has Tools
-    SW->>N: Install Tools<br/>ansible · tags tools
-    %%> Why last:
+  %%> - the hold keeps Tools from moving tested software; Ubuntu security updates still pass
+  SW->>N: Configure the roles<br/>Ansible phase: roles
+  %%> Best effort:
+  %%> - closing world access on Instance `.env` files and clearing Route residue never fail the run; the next converge tries again
+  opt Node has Tools
+    SW->>N: Install Tools<br/>Ansible phase: tools
+    %%> Why last of the software:
     %%> - a Tool that needs another version of a held package fails alone; role software stays as tested
     %%> On a Tool failure:
-    %%> - the phase goes on with the other Tools and returns each Tool's result; the Gateway marks only that Tool failed
+    %%> - the phase goes on with the other Tools and returns each Tool's result; only that Tool is marked failed
   end
-  SW->>H: Apply the network<br/>ansible · network · Node + hub
+  SW->>H: Apply the network<br/>Ansible phase: network
   %%> Why one phase on both Nodes:
-  %%> - the peer and the hub change together; Ansible runs them in parallel
+  %%> - the peer and the hub change together; the hub first, then the Node, then a wait for the handshake
   %%> - no drift writes no file and reloads nothing
-  SW->>N: Check the Node<br/>ansible · tags check
+  SW->>N: Check the Node<br/>Ansible phase: check
   %%> Why:
   %%> - the one end check: role software, units, sites and a recent handshake
+  %%> - a hub with no peers has no handshake to check, and a Node with no recorded hub skips the network phase
   alt check passes
-    SW-->>GW: Run succeeded
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Record converged state
-    GW-->>CLI: Operation succeeded
+    %%> Result:
+    %%> - the task succeeds; a failed Tool is marked failed on its own record
   else a phase fails
-    SW--xGW: Run failed
-    %%> On failure:
-    %%> - nothing is rolled back; a rerun starts from the first phase and skips what matches
+    SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Mark the task failed
-    GW--xCLI: Operation failed
+    %%> Result:
+    %%> - the task fails with the failed phase
+    %%> On the Node:
+    %%> - finished phases stay; there is no rollback
+    %%> Retry:
+    %%> - run the same command again: it starts from the first phase and skips what matches
+  end
+  opt run completed or failed
+    SW->>SW: Remove the run folder<br/>private run files
+    %%> Why:
+    %%> - the intent, inventory and any secrets do not outlive the run, whatever its result
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
   end
