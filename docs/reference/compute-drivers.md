@@ -277,6 +277,8 @@ The `Recipe artifact mirror` workflow, `.github/workflows/php-build-mirror.yml`,
 
 `bin/php-build mirror` downloads every external Debian artifact of every architecture and checks its recipe digest. The workflow lists published assets before downloading, skips those files, and uploads each missing file to the `php-build-mirror` release, named `<package>_<digest>.deb`. It retains the existing release URL. That release is a prerelease and never the latest release.
 
+Gateway native intents select the first URL from `ArtifactPin::candidateUrls`. For Debian files this is the mirror URL, with the package name and pinned digest in the filename. Tool Manager setup (including Git), role PHP packages and Caddy therefore keep working after upstream removes a build. Native cfgmgmt fetch still accepts one URL and checks its pinned checksum; a download or integrity failure stops the run. Recipe validation retains its existing mirror-then-upstream candidates, with fallback only after a transport failure. Other artifact formats, including the agent and CLI release binaries, retain their existing URLs.
+
 Sury, Launchpad, and Zabbly can delete superseded builds. The mirror keeps rollbacks, new Nodes, images, and CI on the exact build after that.
 
 #### Bump Vite+

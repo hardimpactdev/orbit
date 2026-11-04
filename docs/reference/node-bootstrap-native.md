@@ -12,6 +12,8 @@ covers:
 
 The standalone `node.bootstrap_probe` and `node.macos_inspect` scaffolds are removed. `git grep` found no production caller of their admission action. `node:add` owns the probe and Mac tunnel inspection in its enrollment workflow. The shared public probe decoder remains because enrollment calls it directly.
 
+Tool Manager setup uses the mirror URL captured by the Gateway for pinned Debian files. The official cfgmgmt fetch verifies the checksum and stops on any download or integrity failure. See the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror).
+
 ## Swamp execution copies
 
 The Gateway remains the source of truth for bootstrap SSH credentials. `SwampCommandStep::executionCopy` pushes a changed value inside a native `vault.put` frame over the authenticated serve WebSocket using the existing Gateway run credential. It launches no CLI and puts no value in process arguments.

@@ -8,6 +8,7 @@ use App\Domain\Nodes\CaddyRelease;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
@@ -42,9 +43,11 @@ final readonly class AgentCaddyPackage
     /** @return array{url:string,path:string,sha256:string,minimum_version:string} */
     public static function nativeInput(): array
     {
+        $recipe = new RecipeLoader()->source();
+        $artifact = $recipe->tools['caddy']->artifacts['amd64'];
         $file = 'caddy_'.self::RELEASE.'_linux_amd64.deb';
 
-        return ['url' => 'https://github.com/caddyserver/caddy/releases/download/v'.self::RELEASE.'/'.$file,
+        return ['url' => $artifact->candidateUrls('caddy', $recipe->artifactMirror)[0],
             'path' => '/var/cache/apt/archives/'.$file, 'sha256' => self::AMD64_SHA256, 'minimum_version' => CaddyRelease::MINIMUM];
     }
 

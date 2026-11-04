@@ -26,7 +26,7 @@ final readonly class ToolManagerIntent
             foreach (['node', 'vp-cli', 'vp', 'pnpm'] as $name) {
                 $pin = $recipe->tools[$name]->forArchitecture('amd64');
                 $artifact = $pin->artifacts['amd64'];
-                $tools[$name] = ['version' => $pin->version, 'url' => $artifact->location,
+                $tools[$name] = ['version' => $pin->version, 'url' => $artifact->candidateUrls($name, $recipe->artifactMirror)[0],
                     'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest,
                     ...($pin->lockSha256 === null ? [] : ['lock_sha256' => $pin->lockSha256])];
             }
@@ -40,7 +40,7 @@ final readonly class ToolManagerIntent
                 $pin = $recipe->tools[$name]->forArchitecture('amd64');
                 $artifact = $pin->artifacts['amd64'] ?? null;
                 $packages[] = ['name' => $name, 'version' => $pin->version,
-                    'artifact' => $artifact === null ? null : ['url' => $artifact->location, 'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest]];
+                    'artifact' => $artifact === null ? null : ['url' => $artifact->candidateUrls($name, $recipe->artifactMirror)[0], 'algorithm' => $artifact->algorithm, 'digest' => $artifact->digest]];
             }
 
             return ['manager' => 'composer', 'packages' => [], 'input' => ['user' => $node->user, 'version' => $recipe->tools['composer']->version],

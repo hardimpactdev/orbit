@@ -76,6 +76,8 @@ During convergence, official APT checks compare every package with its pin befor
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.
 
+Manager setup captures the recipe artifact URL at admission. Pinned Debian prerequisites, including Git for Composer, download from the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) at its pinned checksum. A download or integrity failure stops setup.
+
 Tool Managers do not belong to roles. A Node with no role can use every manager its platform supports. `apt` and `composer` stay Linux-only. `brew` and `vp` run on Linux and macOS. `brew-cask` runs on macOS only.
 
 ## Tool Managers
