@@ -9,16 +9,14 @@ Some flows hand Node work to Ansible. Swamp keeps the steps, progress, vault rea
 
 Nick decided this on 2026-11-03, after a trial with the `node.role_add` proof fixtures for `app-dev` and `metrics`. On fresh Nodes, the native workflow took 239 and 271 s, Ansible phases in Swamp took 87 and 135 s, and Ansible alone took 74 and 104 s. All passed the same parity checks.
 
-## Not in the repository yet
+## Shared setup
 
-The first flow that uses a phase adds these, with a proof receipt:
+The `node.role_add` flow provides these shared parts:
 
 - the `@nckrtl/ansible-input` behavior, which writes the admitted intent to a run file and ships the playbooks to the worker. It is TypeScript growth (F15); its reason is that Swamp has no other way to hand a whole object to a command;
 - the `swamp/ansible/` folder with the playbooks and the input builder, which writes the inventory, the vars and `known_hosts`;
 - the pinned `ansible-core` and collections in the `swamp` role ([role prerequisites](../../../docs/reference/node-provisioning.md#role-prerequisites));
 - `ansible-lint` in CI, and the shape gate's acceptance of `ansible-playbook` phase commands.
-
-Until then, follow this skill and add the missing part in the same PR.
 
 ## Layout and contract
 
@@ -42,6 +40,7 @@ Until then, follow this skill and add the missing part in the same PR.
 
 ## Pitfalls from the trial
 
+- `incus query` takes the Project in the URL (`?project=...`), not `--project`.
 - A file bind-mounted into a container keeps its old inode when `copy` replaces the host file atomically. Recreate the container on change, or validate the new public config, compare its checksum, write it in place through stdin and reload. `unsafe_writes` permits a fallback; it does not force an in-place write.
 - Ansible treats a string with `{{` as a Jinja template, for example in Grafana dashboards. Tag such strings `!unsafe`, and only those: `!unsafe "on"` loads as `True`.
 - A `when` condition must be a real boolean. Write `x is not none`, not `x`.

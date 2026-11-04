@@ -13,11 +13,13 @@
   loop: "{{ exporter.service.downloads }}"
   loop_control: { label: "{{ item.path }}" }
   register: downloads
+- name: Read exporter services
+  ansible.builtin.service_facts:
 - name: Stop disabled exporters
   ansible.builtin.systemd: { name: "{{ item.service }}", state: stopped, enabled: false }
   loop: "{{ exporter.service.units | rejectattr('enabled') | list }}"
   loop_control: { label: "{{ item.service }}" }
-  failed_when: false
+  when: item.service in ansible_facts.services
 - name: Make exporter folders
   ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
   loop: [/etc/systemd/system/prometheus-node-exporter.service.d, /etc/orbit/service-metrics]

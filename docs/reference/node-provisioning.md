@@ -772,7 +772,7 @@ After checking its admitted publication participant, the parent uses `NodeRolePu
 
 Matching Reverb inputs skip its restart, while an inactive service starts. Matching Metrics containers keep running. Prometheus configuration is validated, copied onto the existing bind-mounted file and reloaded with SIGHUP. Analytics convergence repairs role-owned configuration and checks its existing Process; it creates no Process and runs no database migration.
 
-Official resource checks and the native role assertion determine completion. The Gateway marks the same assignment active on success or failed at the native step on failure. Finished changes remain for the next convergence. Cancellation goes to the bound Swamp run, and only its terminal event settles the Operation.
+The role's Ansible end check determines completion. The Gateway marks the same assignment active on success or failed at the native step on failure. Finished changes remain for the next convergence. Cancellation goes to the bound Swamp run, and only its terminal event settles the Operation.
 
 ### Role Ansible phases
 

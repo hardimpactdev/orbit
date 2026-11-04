@@ -2,7 +2,7 @@
   "kind": "node.role_add.metrics.instance",
   "workflow": "operation-node-role-add",
   "topology": "minimal",
-  "clean": true,
+  "clean": false,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "before_gateway": [
@@ -161,17 +161,6 @@
     },
     {
       "method": "POST",
-      "path": "instances",
-      "bind": "production",
-      "body": {
-        "project_id": "${project.id}",
-        "node_id": "${node.peer}",
-        "name": "production",
-        "domain": "production-${proof.run}.proof.test"
-      }
-    },
-    {
-      "method": "POST",
       "path": "database-connections",
       "operation": false,
       "bind": "database",
@@ -188,6 +177,17 @@
       "operation": false,
       "body": {
         "prefix": "DB"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances/${instance.id}/clone",
+      "bind": "production",
+      "body": {
+        "node_id": "${node.peer}",
+        "name": "production",
+        "preview_name": "production-${proof.run}.proof.test",
+        "sqlite_source_path": "/home/orbit/apps/proof-role-${proof.run}/default/database/database.sqlite"
       }
     }
   ]
