@@ -14,10 +14,16 @@ const workflow = parse(
     ),
 ) as {
     jobs: {
+        name: string;
+        dependsOn?: { job: string }[];
         steps: {
             name: string;
             guard?: string;
-            task: { globalArgs: { transport: Record<string, unknown> } };
+            task: {
+                globalArgs: Record<string, unknown> & {
+                    transport: Record<string, unknown>;
+                };
+            };
         }[];
     }[];
 };
@@ -64,5 +70,20 @@ Deno.test("bootstrap key guard skips grep success and leaves absence to append",
     assertEquals(
         steps.find((step) => step.name === "Authorize the control key")!.guard,
         '${{ steps["Read bootstrap keys-0"].outputs.exitCode == 0 }}',
+    );
+});
+
+Deno.test("observer starts only after its declared environment group is created", () => {
+    const group = steps.find((step) => step.name === "Create observer group");
+    assertEquals(
+        group?.task.globalArgs.groupname,
+        "${{ inputs.intent.agent.environment_group }}",
+    );
+    assertEquals(group?.task.globalArgs.ensure, "present");
+    assertEquals(
+        workflow.jobs.find((job) => job.name === "phase_30")?.dependsOn?.map((
+            dependency,
+        ) => dependency.job),
+        ["observer_group"],
     );
 });

@@ -111,7 +111,7 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 
 ### Bootstrap identity
 
-A new Linux machine needs only root SSH access with the Gateway bootstrap key. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. A true Swamp guard skips an action: enrollment appends the control key when `grep` exits 1 and skips it when `grep` exits 0.
+A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. A true Swamp guard skips an action: enrollment appends the control key when `grep` exits 1 and skips it when `grep` exits 0.
 
 The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key for the bootstrap and managed accounts. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
 
