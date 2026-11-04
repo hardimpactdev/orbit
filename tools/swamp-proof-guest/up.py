@@ -88,6 +88,9 @@ def private(path, value):
 @step('target')
 def target():
     """Every Node of the topology; the first is the fixtures' target."""
+    if TOPOLOGY['gateway'] == 'standalone':
+        # Enrollment establishes this on task VMs. Host setup adds the nested guests' routed allowances.
+        run(['ufw', '--force', 'enable'])
     run(['bin/e2e-topology-host-setup'], cwd=SOURCE)
     network = TOPOLOGY['network']
     if run(['incus', 'network', 'list', '--format', 'csv', '--columns', 'n']).split().count(network['name']) == 0:
