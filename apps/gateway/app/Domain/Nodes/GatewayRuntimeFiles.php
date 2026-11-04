@@ -25,10 +25,10 @@ final readonly class GatewayRuntimeFiles
         $home = Config::string('orbit.home');
         $file = static fn (string $path, string $content, string $ensure = 'present'): array => ['path' => $path, 'ensure' => $ensure,
             'content' => $content, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
-        $service = static fn (string $description, string $type, string $command, string $extra = ''): string => "[Unit]\nDescription={$description}\n"
-            ."After=network-online.target\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\nWorkingDirectory={$application}\n"
-            ."Environment=ORBIT_HOME={$home}\nExecStart=\"/usr/bin/php8.5\" \"{$application}/artisan\" \"{$command}\"\n{$extra}";
-        $log = $application.'/storage/logs/laravel.log';
+        $service = fn (string $description, string $type, string $command, string $extra = ''): string => "[Unit]\nDescription={$description}\n"
+            ."After=network-online.target\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\nWorkingDirectory={$this->directive($application)}\n"
+            ."Environment=ORBIT_HOME={$this->directive($home)}\nExecStart=\"/usr/bin/php8.5\" {$this->argument($application.'/artisan')} \"{$command}\"\n{$extra}";
+        $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $application.'/storage/logs/laravel.log');
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
 
@@ -55,6 +55,19 @@ final readonly class GatewayRuntimeFiles
                     .'OnUnitActiveSec='.Config::integer('orbit.hibernation.sweep_seconds')."s\nPersistent=true\nUnit=orbit-runtime-hibernator.service\n\n[Install]\nWantedBy=timers.target\n"],
             ],
         ];
+    }
+
+    /** A systemd directive value, escaped as the agent wrote it: `%` doubles, and blanks, quotes, `$` and `\` become `\xNN`. */
+    private function directive(string $value): string
+    {
+        return (string) preg_replace_callback('/[\x00-\x20"\'$\\\\\x7f]|%/', static fn (array $match): string => $match[0] === '%' ? '%%'
+            : sprintf('\\x%02x', ord($match[0])), $value);
+    }
+
+    /** A quoted systemd command argument, escaped as the agent wrote it. */
+    private function argument(string $value): string
+    {
+        return '"'.str_replace(['\\', '"', '$', '%'], ['\\\\', '\\"', '$$', '%%'], $value).'"';
     }
 
     private function pool(string $application, string $home): string

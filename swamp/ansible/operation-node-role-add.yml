@@ -136,6 +136,12 @@
         owner: "{{ item.owner }}"
         group: "{{ item.group }}"
         mode: "{{ item.mode }}"
+        # The Gateway pool is tested alone, under a minimal global section, before it replaces the live one.
+        validate: "{{ gateway_pool_check if rt.gateway is not none and item.path == rt.gateway.pool else omit }}"
+      vars:
+        gateway_pool_check: >-
+          /bin/sh -c 'c=$(mktemp); printf "[global]\npid = %%s.pid\nerror_log = /proc/self/fd/2\ninclude = %%s\n" "$c" "$0" > "$c";
+          /usr/sbin/php-fpm8.5 -t -y "$c"; r=$?; rm -f "$c" "$c.pid"; exit $r' %s
       loop: "{{ rt.files }}"
       loop_control: { label: "{{ item.path }}" }
       when:
@@ -149,7 +155,7 @@
       loop_control: { label: "{{ item.path }}" }
       when: item.ensure | default('present') == 'absent'
       notify: Reload units
-    - { name: Reload the Gateway PHP-FPM pool, when: rt.gateway is not none, ansible.builtin.import_tasks: tasks/gateway-pool.yml }
+    - { name: Apply the Gateway runtime, when: rt.gateway is not none, ansible.builtin.import_tasks: tasks/gateway-runtime.yml }
     - name: Write private files
       ansible.builtin.copy:
         dest: "{{ item.path }}"

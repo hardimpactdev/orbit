@@ -35,3 +35,15 @@ it('converges the Gateway runtime with the gateway role and retires the release 
         ->and(array_column($runtime['units'], 'name'))->toBe(['orbit-agent-view.service', 'orbit-runtime-hibernator.timer'])
         ->and($runtime['units'][1]['unit'])->toContain("OnUnitActiveSec=600s\n");
 });
+
+it('escapes configured paths in the units and the logrotate rule as the agent wrote them', function (): void {
+    config(['orbit.gateway_checkout' => '/srv/orbit 50%/orbit/apps/gateway', 'orbit.home' => '/srv/Orbit "State"']);
+    $runtime = app(GatewayRuntimeFiles::class)->render();
+    $files = collect($runtime['files'])->keyBy('path');
+
+    expect($runtime['units'][0]['unit'])->toContain(
+        "WorkingDirectory=/srv/orbit\\x2050%%/orbit/apps/gateway\n",
+        "Environment=ORBIT_HOME=/srv/Orbit\\x20\\x22State\\x22\n",
+        "ExecStart=\"/usr/bin/php8.5\" \"/srv/orbit 50%%/orbit/apps/gateway/artisan\" \"orbit:agent-view\"\n",
+    )->and($files['/etc/logrotate.d/orbit-gateway']['content'])->toContain("\"/srv/orbit 50%/orbit/apps/gateway/storage/logs/laravel.log\" {\n");
+});

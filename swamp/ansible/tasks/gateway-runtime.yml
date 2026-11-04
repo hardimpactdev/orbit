@@ -1,0 +1,16 @@
+---
+# Write runtime files validated the pool before it replaced the live one. A reload replaces the workers after their
+# requests end; it runs only when the pool changed.
+- name: Reload PHP-FPM # noqa no-handler
+  when: >-
+    rt.gateway.pool in (runtime_files.results | selectattr('changed') | map(attribute='item.path'))
+  ansible.builtin.systemd: { name: php8.5-fpm.service, state: reloaded }
+# Hourly log rotation, unless an operator masked logrotate.
+- name: Read the logrotate mask
+  ansible.builtin.command: { argv: [systemctl, is-enabled, logrotate.service, logrotate.timer] }
+  register: logrotate_state
+  changed_when: false
+  failed_when: false
+- name: Run logrotate hourly
+  when: logrotate_state.stdout_lines | select('match', '^masked') | list | length == 0
+  ansible.builtin.systemd: { name: logrotate.timer, state: started, enabled: true }

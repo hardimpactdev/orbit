@@ -166,6 +166,7 @@ elif role == 'gateway':
     for unit in intent['runtime']['units']:
         check(run('systemctl', 'is-enabled', '--quiet', unit['name']).returncode == 0, unit['name'] + ' is enabled')
     check(run('systemctl', 'is-active', '--quiet', 'orbit-gateway-release.timer').returncode != 0, 'the release unit timer is retired')
+    check(run('systemctl', 'is-enabled', '--quiet', 'logrotate.timer').returncode == 0, 'logrotate runs from its hourly timer')
     print('parity: Gateway pool, agent-view and hibernator units; release timer retired')
 elif role == 'analytics':
     analytics = intent['runtime']['analytics']
