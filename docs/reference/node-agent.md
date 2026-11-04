@@ -531,13 +531,13 @@ The Gateway keeps the latest state that each agent reports, so it can skip repea
 
 ### Subscriber
 
-The subscriber runs next to PHP-FPM on the Gateway machine. `gateway.converge-agent-view` renders and installs its fixed unit, enables it and restarts it under a root command. PHP supplies the stable Gateway path, Orbit home and account; the service runs Gateway PHP as that account.
+The subscriber runs next to PHP-FPM on the Gateway machine. Gateway releases leave its installed unit unchanged. A follow-up moves this static file to Node convergence. The service runs Gateway PHP as the Gateway account from the stable application path.
 
 | Item | Value |
 | --- | --- |
 | Command | `/usr/bin/php8.5 artisan orbit:agent-view`, as the `orbit` user in the Gateway checkout |
 | Unit | `/etc/systemd/system/orbit-agent-view.service`, with `Restart=always` and `RestartSec=2` |
-| Installed by | The Gateway runtime handoff |
+| Installed by | Gateway host setup; release runs do not converge this unit |
 | Connection | One WebSocket to Reverb for all Nodes, verifying `reverb.orbit` against the Orbit root CA |
 | Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every managed Linux Node |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed with the Reverb app secret |
@@ -548,7 +548,7 @@ Every 5 seconds, the subscriber checks the Reverb connection, and every 30 secon
 
 When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node.
 
-Every 60 seconds, the subscriber compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code. The unit and that check use the stable `ORBIT_GATEWAY_CHECKOUT` path, so in the [release layout](/reference/gateway-recovery#release-layout) they follow a release switch. A release's runtime handoff also restarts the subscriber at once.
+Every 60 seconds, the subscriber compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code. The unit and that check use the stable `ORBIT_GATEWAY_CHECKOUT` path, so in the [release layout](/reference/gateway-recovery#release-layout) they follow a release switch. The release switch also restarts the running subscriber. A follow-up moves its static unit to Node convergence.
 
 ### Stored state
 
@@ -625,13 +625,13 @@ Every Gateway release uses the pinned `cli-v0.9128.0` agent delivery. CI builds 
 
 The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. An existing local artifact with the wrong digest refuses; only an absent local file uses the published URL. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
 
-[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the pin of the commit it prepares and fetches that manifest from its published release, in PHP and without the agent. It first verifies the release's [provenance](/reference/gateway-recovery#release-provenance): a Sigstore bundle that proves the release workflow on `main` signed the manifest and `SHA256SUMS`. It then checks every digest against `SHA256SUMS` before any agent command.
+[Gateway release admission](/reference/gateway-recovery#build-and-seal-a-release) reads the target commit's pin and fetches its published manifest in PHP. It verifies the [provenance](/reference/gateway-recovery#release-provenance), checksums and manifest before starting the Swamp run.
 
-Prepare then writes the manifest into the release and installs the pin on the Gateway's own Node; for a release the Gateway already holds, that also comes before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
+The Swamp build step writes the admitted manifest into the release. Its private configuration cache selects that manifest, so a shared env override cannot keep the previous release's pin. The release does not install the agent on the Gateway Node.
 
 The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes.
 
-Convergence, the fleet verifier, the release handoff, and the [desired fleet state](/reference/self-update#desired-fleet-state) all read this one pin.
+Convergence, the fleet verifier, and the [desired fleet state](/reference/self-update#desired-fleet-state) all read this one pin.
 
 ## Install and upgrade
 
@@ -678,7 +678,7 @@ The Gateway converges the agent at these points.
 
 During the freeze, Gateway releases keep the same agent pin. After the Swamp port, one final agent release will remove its action commands. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
 
-The rollout leaves out the Gateway's own Node. [Prepare](/reference/gateway-recovery#prepare-a-release) installs the release's pin there, and the [runtime handoff](/reference/gateway-recovery#gateway-node-agent) installs it again through the local transport.
+The rollout leaves out the Gateway's own Node. Gateway release runs leave its agent unchanged. Its CLI comes from the current release's `apps/cli`.
 
 `agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. `agent.configure` and `agent.remove` hold the same lock, after the installation. So no two of them swap or restart the agent at the same time. A CLI self-update that keeps the lock longer than 5 minutes fails `agent.configure` with `agent.update_busy`.
 
@@ -735,9 +735,9 @@ The supervised fixture sends a Unix datagram after execution, including its proc
 
 ## Releases
 
-The Gateway installs the agent that its pin names: `apps/gateway/resources/agent/frozen-manifest.json`, a byte copy of one release's `manifest.json`. [Gateway preparation](/reference/gateway-recovery#prepare-a-release) verifies that delivery independently of the Gateway commit's publication.
+The Gateway selects the agent that its pin names: `apps/gateway/resources/agent/frozen-manifest.json`, a byte copy of one release's `manifest.json`. [Release admission](/reference/gateway-recovery#build-and-seal-a-release) verifies that delivery independently of the Gateway commit's publication.
 
-A [CLI release](/reference/cli-binaries#published-releases) also builds and carries the agent when the agent source changed since the previous release. Its manifest names the agent source commit. Other releases contain only CLI assets. A new agent reaches Nodes only when a reviewed commit moves the pin. That commit copies the release's `manifest.json` into the pin and records the binary's command contract in `frozen-commands.json` and `frozen-commands-source.json`, which `bin/check-frozen-agent-commands` verifies. The next Gateway release prepares the new pin, and the fleet rollout installs it Node by Node.
+A [CLI release](/reference/cli-binaries#published-releases) also builds and carries the agent when the agent source changed since the previous release. Its manifest names the agent source commit. Other releases contain only CLI assets. A new agent reaches Nodes only when a reviewed commit moves the pin. That commit copies the release's `manifest.json` into the pin and records the binary's command contract in `frozen-commands.json` and `frozen-commands-source.json`, which `bin/check-frozen-agent-commands` verifies. The next Gateway release records the new pin, and the fleet rollout installs it Node by Node.
 
 An agent release carries these assets:
 

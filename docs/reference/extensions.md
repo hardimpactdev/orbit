@@ -4,8 +4,8 @@ description: "How an optional Gateway feature lives in its own directory, contri
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
-  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
-  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php}
+  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
+  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php}
   - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -90,12 +90,11 @@ Core receives tagged implementations through constructor parameters marked with 
 | Interface | Called by | Methods |
 | --- | --- | --- |
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
-| `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release handoff](/reference/gateway-recovery) | `configured()`, `status()`, `reconcile()`, and `resume()` |
+| `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release cleanup command](/reference/gateway-recovery#release-as-a-swamp-run) | `configured()`, `status()`, `reconcile()`, and `resume()` |
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
 | `App\Infrastructure\Caddy\Build\ContributedCaddySiteSource` | The [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | `sites()`, `order()`, and `certificateSlug()` |
 | `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, and `digest()` |
 | `App\Domain\Routes\ContributedPrivateHostnames` | Route and analytics hostname checks, and private DNS publication | `hostnames()` returns each reserved hostname with its current address, or `null` when it must not be published |
-| `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `command()` and `input()` |
 | `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process/destroy) | `assertRemovable()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database/update) | `validate()` and `afterCommit()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database/destroy) | `assertRemovable()` |
@@ -114,7 +113,7 @@ The issuer checks its admitted repository and current run before and after minti
 
 Core tags `PostgresConnectionUpdateHook` to protect managed PostgreSQL identity and credentials, and `AnalyticsDatabaseConnectionGuard` to protect the analytics owner connection from `database:destroy`. They run through these existing callers and add no plug-in point. Vault publication is unchanged. Contributions must not depend on their order. The AI router contributes its cache validation, collector reconvergence, and cache ownership guard, even while the extension switch is off.
 
-After the release handoff restarts the scheduler, it waits for each configured `GatewayReleaseCleanup` to report a new generation. Then it reconciles and resumes that cleanup. The release records one cleanup outcome: `paused` when any cleanup stays paused, otherwise `resumed`, `running`, or `skipped`.
+After the release switch restarts the scheduler, `gateway:release:cleanup` waits for each configured `GatewayReleaseCleanup` to report a new generation. It then reconciles and resumes that cleanup. A cleanup that stays paused fails its own step; it does not fail the release.
 
 `ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns, then sanitizes it like any other input. `input()` receives a closure that returns the request input. Activity runs before authorization, so the request body is parsed only when the extension calls that closure. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity. Documents never calls the closure, so document bytes are never parsed or recorded before authorization.
 
@@ -132,15 +131,7 @@ The digest of the `private-dns` [footprint artifact](/reference/node-provisionin
 
 The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. AI router reserves `collector.ai-router.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
 
-`GatewayServiceStartHook` contributes a compiled startup command and its typed JSON input. The extension owns its Rust crate under `extensions/<name>/agent/`. Core composes it through one Cargo dependency and one registration call. The shared `orbit-agent-contract` crate defines commands, startup hooks, and registration without importing core or extension behavior.
-
-`gateway.converge-fpm` validates every startup hook contribution before publication. The command must be registered as a Linux root startup hook. Its compiled metadata owns a unique name ending in `-start`, an `orbit-*.conf` drop-in other than `orbit-vpn.conf`, and a printable description. Callers cannot supply executable paths or source. The command writes root-owned JSON at `/etc/orbit/<name>.json`; the drop-in runs `orbit-agent service <command>` in `ExecStartPre`. That service loads only its registered configuration and uses the normal command supervisor, deadline, identity checks, and locks.
-
-Web convergence and the release handoff install the hooks before activating the pool. A reload skips `ExecStartPre`, so they ask the agent to run each hook before reloading. A matching pool in the release handoff only updates hook configuration. Hook failure prevents activation. Documents uses this point to invalidate document-body cleanup even while the extension is disabled.
-
-Unchanged bytes, ownership, and modes preserve the file and its modification time. Existing directories keep their modes, including a shared `/etc/orbit` at 0711. A shared command lock serializes installation and hook execution. Unsafe files or malformed ownership records refuse before publication.
-
-The agent records ownership in `/etc/orbit/php-fpm-start-hooks`. It records the union of old and desired hooks before publishing, removes stale drop-ins, reloads systemd, and only then removes each deleted hook’s configuration and installed program. Failed reloads retain the ownership records for retry. It also reloads when systemd reports a changed unit. Without a manifest, unrelated files stay in place. No delivered hook program is executed.
+Gateway releases leave PHP-FPM startup hooks unchanged. A follow-up moves the Gateway runtime files to Node convergence. Documents keeps its [scheduler startup gate](/reference/project-documents#local-state-and-startup-ordering).
 
 `ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Contribute a matcher only for a route that bounds its body itself after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON. The Gateway asks the matchers once per request.
 

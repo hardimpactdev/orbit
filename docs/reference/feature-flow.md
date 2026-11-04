@@ -202,7 +202,7 @@ This table separates the parts already built from the work still planned.
 | 3. Auto-merge by the author | Built |
 | 4. Fast CI and merge queue | Built (about 1 minute) |
 | 4. VM job in CI | Not built |
-| 6. Release as a Swamp workflow | R1 built, manual only; R1b, R2 (automatic) and R3 (delete the old path) to do |
+| 6. Release as a Swamp workflow | Built: manual and automatic releases use one Swamp run; the old release runner is removed |
 | 7. Templates | Designed (ADR 0247), not built |
 | 8. Rollout of the Orbit footprint | Built (`fleet.rollout`) |
 | 8. Rollout of changed roles | Not built |
@@ -219,4 +219,4 @@ These choices remain open.
 - The exact path rules that select CI jobs, and how a changed file maps to the affected commands.
 - How Pi's PRs merge: check App-token auto-merge through the queue after task-VM development restarts.
 - Speed of nested VMs inside a task VM, for the nightly build.
-- The agent becomes an observer only after templates replace the image build, R3 lands and the remaining Gateway calls to agent commands are gone.
+- The agent becomes an observer only after templates replace the image build and the remaining Gateway calls to agent commands are gone.

@@ -150,12 +150,9 @@ Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a
 
 ### One update at a time
 
-The CLI changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`. Gateway steps hold the same lock:
+The CLI changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`.
 
-- the [agent converge](/reference/node-agent#install-and-upgrade), whose `agent.configure` holds it from the secret check through the agent restart;
-- a release's [runtime handoff](/reference/gateway-recovery#gateway-node-agent), while it updates the Gateway Node's agent.
-
-So these Gateway steps never replace a binary while a self-update replaces the CLI. The converge waits up to 300 seconds for the lock, and the handoff waits up to 120 seconds. The native CLI publication takes no lock: it writes a new versioned file and switches the link atomically, so a concurrent self-update ends with one complete release on the link.
+The [agent converge](/reference/node-agent#install-and-upgrade) takes the same lock from the secret check through the agent restart. It waits up to 300 seconds. Gateway releases do not update the Gateway Node's agent. Native CLI publication writes a new versioned file and switches the link atomically, so a concurrent self-update ends with one complete release on the link.
 
 Each candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
 

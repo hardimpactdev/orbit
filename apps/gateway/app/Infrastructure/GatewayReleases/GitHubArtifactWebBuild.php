@@ -4,40 +4,30 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
-use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Domain\GitHub\GitHubRepository;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\GitHub\GitHubActionsUnavailable;
 
 /**
- * Selects and downloads the CI artifact `web-dist-<sha>`. Named agent commands own its
- * validation, installation, publication, and retention on the Gateway Node.
+ * Selects the CI artifact `web-dist-<sha>` for a release; the release run downloads, checks and installs it on the
+ * Gateway Node.
  *
  * CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it
  * succeeds, in the merge queue run as well as on `main`. A commit whose checks passed therefore has
  * the artifact, so a missing or expired one fails the commit instead of waiting for it. GitHub that
  * cannot be read is retried later.
  */
-final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
+final readonly class GitHubArtifactWebBuild
 {
     /** The largest archive a Swamp release downloads: 128 MiB, the agent install's limit. */
     public const int ArchiveLimit = 134217728;
 
-    /** Whether this attempt switched `current`, and the link target it replaced. */
-    private bool $published = false;
-
-    private ?string $publishedFrom = null;
-
     public function __construct(
-        private readonly GatewayReleaseLayout $layout,
-        private readonly GatewayReleaseCommands $commands,
-        private readonly GitHubActionsReader $actions,
-        private readonly string $webRoot,
-        private readonly string $branch = 'main',
-        private readonly string $workflow = '.github/workflows/ci.yml',
+        private GatewayReleaseSource $source,
+        private GitHubActionsReader $actions,
+        private string $branch = 'main',
+        private string $workflow = '.github/workflows/ci.yml',
     ) {}
 
     public static function artifactName(string $sha): string
@@ -45,74 +35,10 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
         return 'web-dist-'.$sha;
     }
 
-    public function install(string $id, string $sha): bool
-    {
-        $id = GatewayReleaseCommit::assertId($id);
-
-        if (strlen($sha) !== 40 || ! GatewayReleaseCommit::isSha($sha) || ! str_starts_with($sha, $id)) {
-            throw $this->invalid("Web build [{$id}] needs the full commit, not [{$sha}].");
-        }
-
-        $inspection = $this->commands->inspectWeb($this->webRoot, $id);
-
-        if ($inspection['installed']) {
-            return true;
-        }
-
-        $repository = $this->repository();
-        $archive = @tempnam(sys_get_temp_dir(), 'orbit-web-build-');
-
-        if ($archive === false) {
-            throw $this->installFailed('The web build archive cannot be created in the temporary directory.');
-        }
-
-        try {
-            if (! chmod($archive, 0600)) {
-                throw $this->installFailed('The downloaded web archive cannot be made private.');
-            }
-            $digest = $this->downloadArtifact($repository, $sha, $archive, $inspection['archive_limit']);
-
-            return $this->commands->installWeb($this->webRoot, $sha, $archive, $digest);
-        } finally {
-            @unlink($archive);
-        }
-    }
-
-    public function publish(string $id): void
-    {
-        $previous = $this->commands->publishWeb($this->webRoot, GatewayReleaseCommit::assertId($id));
-        $this->published = true;
-        $this->publishedFrom = $previous;
-    }
-
-    public function restore(string $id): void
-    {
-        if (! $this->published) {
-            return;
-        }
-
-        $this->commands->restoreWeb($this->webRoot, GatewayReleaseCommit::assertId($id), $this->publishedFrom);
-        $this->published = false;
-        $this->publishedFrom = null;
-    }
-
-    public function remove(string $id): void
-    {
-        $this->commands->removeWeb($this->webRoot, GatewayReleaseCommit::assertId($id));
-    }
-
-    public function prune(array $retained): void
-    {
-        // An empty list means release inventory was unavailable.
-        if ($retained !== []) {
-            $this->commands->pruneWeb($this->webRoot, $retained);
-        }
-    }
-
     private function repository(): GitHubRepository
     {
         try {
-            $repository = GitHubRepository::fromOrigin($this->commands->origin($this->layout));
+            $repository = $this->source->repository();
         } catch (GatewayReleaseException) {
             $repository = null;
         }
@@ -131,7 +57,7 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
 
     /**
      * The newest unexpired `web-dist-<sha>` artifact from an accepted CI run of exactly this commit, with its digest.
-     * A Swamp release downloads it on the Gateway Node; the legacy runner downloads it here.
+     * The release run downloads it on the Gateway Node.
      *
      * @return array{repository: string, artifact_id: int, size: int, digest: string}
      */
@@ -141,26 +67,6 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
         $selected = $this->selectArtifact($repository, $sha, $archiveLimit);
 
         return ['repository' => $repository->owner.'/'.$repository->name, 'artifact_id' => $selected['id'], 'size' => $selected['size'], 'digest' => $selected['digest']];
-    }
-
-    /**
-     * Downloads the selected artifact and checks it against its required digest.
-     */
-    private function downloadArtifact(GitHubRepository $repository, string $sha, string $archive, int $archiveLimit): string
-    {
-        $selected = $this->selectArtifact($repository, $sha, $archiveLimit);
-
-        try {
-            $digest = $this->actions->download($this->actions->archiveLocation($repository, $selected['id'], $selected['token']), $archive, $archiveLimit);
-        } catch (GitHubActionsUnavailable) {
-            throw $this->unavailable($sha);
-        }
-
-        if (! hash_equals($selected['digest'], 'sha256:'.$digest)) {
-            throw $this->invalid('The downloaded web build ['.self::artifactName($sha).'] does not match its artifact digest.');
-        }
-
-        return $digest;
     }
 
     /** @return array{id: int, size: int, digest: string, token: string} */
@@ -295,10 +201,5 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
     private function invalid(string $message): GatewayReleaseException
     {
         return new GatewayReleaseException(step: 'web', errorCode: 'gateway.release_web_build_invalid', message: $message, status: 422);
-    }
-
-    private function installFailed(string $message): GatewayReleaseException
-    {
-        return new GatewayReleaseException(step: 'web', errorCode: 'gateway.release_web_install_failed', message: $message, status: 500);
     }
 }

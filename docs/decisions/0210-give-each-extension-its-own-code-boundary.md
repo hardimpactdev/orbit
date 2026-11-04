@@ -18,7 +18,7 @@ Principle: [lean](/mission#principles). An optional feature costs core nothing w
 
 Today an [extension](/cli/extension) is only a switch. `ExtensionStore` holds a fixed list, `['tasks', 'proxycli']`, and the request middleware, the MCP server, the CLI, and the web app each repeat that list or a route name prefix. The code of an optional feature lives in the core namespaces next to everything else.
 
-Project Documents shows the cost. Its models, actions, controllers, requests, data classes, console commands, migrations, and schedule entries sit in `App\Models`, `App\Actions\ProjectDocuments`, `App\Console\Commands`, and the other core folders. Core calls it directly: `DestroyProjectAction` locks and removes a Project's documents, and the Gateway release handoff binds `ActionGatewayDocumentCleanup`. The same pattern holds for Conn, Vault, and ProxyCli. Core also names ProxyCli in its Caddy site sources, private DNS records, reserved hostnames, and firewall rules. Nobody can tell which code belongs to an optional feature, and nobody can remove one without a search through core.
+Project Documents shows the cost. Its models, actions, controllers, requests, data classes, console commands, migrations, and schedule entries sit in `App\Models`, `App\Actions\ProjectDocuments`, `App\Console\Commands`, and the other core folders. Core calls it directly: `DestroyProjectAction` locks and removes a Project's documents, and the Gateway release cleanup binds `ActionGatewayDocumentCleanup`. The same pattern holds for Conn, Vault, and ProxyCli. Core also names ProxyCli in its Caddy site sources, private DNS records, reserved hostnames, and firewall rules. Nobody can tell which code belongs to an optional feature, and nobody can remove one without a search through core.
 
 The Gateway caches its routes, and migrations must give the same schema on every install. So an extension cannot be loaded or skipped based on a database switch.
 
@@ -61,7 +61,7 @@ Core defines an interface for each place where an extension adds behavior. The e
 | Interface | Core caller | What an extension does |
 | --- | --- | --- |
 | `App\Domain\Projects\ProjectRemovalHook` | `DestroyProjectAction` | `lock()` runs first in the removal transaction, before the guards. `remove()` runs after every guard passed, before the Project row is deleted. It may refuse with a `ResourceOperationException`. |
-| `App\Domain\GatewayReleases\GatewayReleaseCleanup` | `GatewayCleanupHandoff` | Reports its cleanup state and generation, reconciles, and resumes after the release handoff restarts the scheduler. With no contributions, the handoff reports `skipped`. |
+| `App\Domain\GatewayReleases\GatewayReleaseCleanup` | `GatewayCleanupHandoff` | Reports its cleanup state and generation, reconciles, and resumes after the release switch restarts the scheduler. With no contributions, cleanup reports `skipped`. |
 
 The Conn move adds a third point:
 
@@ -75,10 +75,9 @@ Two more points move the last Documents footprints out of core:
 
 | Interface | Core caller | What an extension does |
 | --- | --- | --- |
-| `App\Domain\Gateway\GatewayServiceStartHook` | `NativeGatewayFpmConverger`, bound once for web convergence and the release handoff | Names a program that ends in `-start`, an `orbit-*.conf` drop-in, and a one-line description, and renders the program. Core runs the program at each PHP-FPM start and before each pool reload. |
 | `App\Domain\Gateway\ExactRequestBody` | `ValidateRequestBodySize` | Matches request paths whose body stays exact. Core skips PHP's `post_max_size` check, string trimming, and empty-string conversion for them. The route bounds the body after authorization. |
 
-Core checks each start hook before it changes anything, then installs the program and its drop-in. Core keeps the MCP envelopes exact itself. Documents contributes its startup hook and its document routes. The hook and its drop-in keep their paths and bytes. Core records the hooks it installed in a manifest and removes only what the manifest lists. The first run on a Gateway without a manifest adopts the Documents files and removes nothing.
+Core keeps the MCP envelopes exact itself. Documents contributes its document routes. The PHP-FPM start hook point, `GatewayServiceStartHook`, was removed with the release handoff that installed it; the scheduler's own start invalidates Documents cleanup.
 
 Each extension that moves after Documents adds points the same way: Caddy site sources, private hostnames with optional DNS addresses, footprint artifacts, firewall rules, ownership guards, Activity redaction, and schedule entries. Each point is a narrow typed interface. A generic event bus or hook registry is not part of the design.
 
@@ -264,9 +263,9 @@ Runtime install, a Composer package for each extension, separate processes, and 
 
 ## Consequences
 
-- An extension can be found, reviewed, and deleted as one directory plus its tests and one provider line. The next Gateway convergence removes the start hooks of a deleted extension.
+- An extension can be found, reviewed, and deleted as one directory plus its tests and one provider line.
 - Core states what an extension may change through plug-in interfaces, and the architecture test keeps core from reaching back.
-- Core no longer installs the Documents PHP-FPM startup hook or matches document routes. Documents contributes the hook, which runs `project-documents:cleanup:invalidate`, through `GatewayServiceStartHook`, and its exact request bodies through `ExactRequestBody`.
+- Core no longer matches document routes. Documents contributes its exact request bodies through `ExactRequestBody`.
 - Documents contributes its Activity rule through `ActivityInputRedaction`: it matches `project:document:*` by route name and never calls the input closure, so Activity never parses a document body.
 - `bin/docs-openapi` also reads controllers, form requests, and data classes under `apps/gateway/extensions/*/src`.
 - `bin/docs-openapi` derives extension tags and slugs from `RequireEnabledExtension:<slug>` in the route middleware, without a database. The CLI keeps one slug list only to show `UNKNOWN` when the Gateway cannot answer.
@@ -279,4 +278,4 @@ Runtime install, a Composer package for each extension, separate processes, and 
 - Components: apps/gateway, apps/cli, apps/web, apps/docs
 - ADRs: none
 - Detail: [Extensions](/reference/extensions)
-- Verify: `tests/Unit/Architecture/ExtensionBoundaryTest.php`, `tests/Feature/Api/ExtensionsTest.php`, `tests/Feature/Domain/Activity/ActivityInputRedactionTest.php`, `tests/Feature/Http/Middleware/ValidateRequestBodySizeTest.php`, `tests/Feature/Infrastructure/Gateway/GatewayServiceStartHookTest.php`, the tests under `tests/Feature/Extensions/{Documents,Vault,Conn}`, and `composer test:affected` in apps/gateway and apps/cli
+- Verify: `tests/Unit/Architecture/ExtensionBoundaryTest.php`, `tests/Feature/Api/ExtensionsTest.php`, `tests/Feature/Domain/Activity/ActivityInputRedactionTest.php`, `tests/Feature/Http/Middleware/ValidateRequestBodySizeTest.php`, the tests under `tests/Feature/Extensions/{Documents,Vault,Conn}`, and `composer test:affected` in apps/gateway and apps/cli

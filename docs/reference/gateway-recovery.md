@@ -6,7 +6,7 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
+  - "{apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
@@ -20,7 +20,7 @@ Node convergence applies its recorded network part after the other footprint par
 
 ## Gateway request logs
 
-The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any checkout, certificate, PHP-FPM, Caddy, or service change. Its native parent workflow is not installed. Normal Gateway releases use the [runtime handoff](#runtime-handoff).
+The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any checkout, certificate, PHP-FPM, Caddy, or service change. Its native parent workflow is not installed. Normal Gateway releases use a [Swamp run](#release-as-a-swamp-run).
 
 The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request.
 
@@ -36,15 +36,13 @@ Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the co
 
 ### Disk retention
 
-Gateway release unit convergence also installs a journald drop-in and a logrotate rule for the plain `storage/logs/laravel.log`. That file can remain from an earlier logging configuration or grow while `LOG_CHANNEL=single` is selected. Logrotate checks it hourly, rotates it daily or above 32 MiB, compresses old copies, and keeps seven copies. Its timer does not catch up missed runs at activation. It uses `copytruncate` so existing writers continue without a service restart; a small amount of output can be lost during the copy. Daily Laravel files keep their own rotation policy.
-
-`config/retention.php` sets these limits. `ORBIT_JOURNAL_MAX_MB` defaults to 256 MiB, `ORBIT_JOURNAL_KEEP_FREE_MB` to 1024 MiB, `ORBIT_JOURNAL_DAYS` to seven days, and `ORBIT_JOURNAL_RUNTIME_MAX_MB` to 64 MiB. Journald reads the drop-in at its next start; convergence does not restart it or vacuum existing journals. `ORBIT_LOG_ROTATE_MB` and `ORBIT_LOG_ROTATE_KEEP` set the plain log's threshold and archive count. These are rotation limits, not a hard disk quota: an active journal and log output between hourly checks can exceed them.
+Gateway releases do not install host log-retention files. Existing journald and logrotate rules stay in place. A follow-up moves these static files to Node convergence. Laravel's daily logs keep their own rotation policy.
 
 The Gateway scheduler runs Laravel's `queue:prune-failed` daily. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours. The daily `queue:prune-batches` uses `ORBIT_JOB_BATCH_HOURS`, which defaults to 24 hours, for finished, unfinished, and cancelled batches. The daily `activitylog:clean` deletes [Activity](/cli/activity) records older than `ORBIT_ACTIVITY_LOG_DAYS`, which defaults to 30 days. Task insights keep their own fields, so they do not depend on old Activity. None of these commands vacuums SQLite: SQLite reuses the freed pages, and only a manual `VACUUM` shrinks the file. [Scheduled work](/reference/gateway-queue#scheduled-work) lists all three.
 
-Local recovery archives need an operator retirement step. Copy a complete state set off the Gateway, verify it there, and remove superseded local copies after the maintenance operation succeeds. Do not accumulate whole-state archives inside `ORBIT_HOME`: the next archive would include them again. Normal release retention owns only `backups/pre-*.sqlite`; it does not own manually named backups, `shared/env-backups`, experiment checkouts, or protected staged recovery copies. The staged copy remains protected until an operator explicitly retires it, as [finalization](#finalization) describes.
+Local recovery archives need an operator retirement step. Copy a complete state set off the Gateway, verify it there, and remove superseded local copies after the maintenance operation succeeds. Do not accumulate whole-state archives inside `ORBIT_HOME`: the next archive would include them again. Normal release retention owns only `backups/pre-*.sqlite`; it does not own manually named backups, `shared/env-backups`, experiment checkouts, or manually saved recovery copies.
 
-Gateway web setup lets Caddy read the regular files and directories under the checkout's `public` directory, also files restored with restrictive permissions. It does not follow symlinks there or change the permissions of other source files. The Gateway `.env` stays at mode `0600`. In the [release layout](#release-layout), each release gets this access when it is prepared.
+The release build gives Caddy access to the release's public files. The shared Gateway `.env` stays private at mode `0600`.
 
 ## Preserve a complete state set
 
@@ -109,15 +107,54 @@ The Gateway reads the current link and the release inventory itself, as the Gate
 | `/home/orbit/shared/gateway-storage/` | The Gateway storage directory. `apps/gateway/storage` in every release links to it, so the file cache, its locks, and the logs stay the same across releases. |
 | `ORBIT_HOME` | Gateway state, outside every release, as before. |
 
-The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. Run release commands through that link, as `php /home/orbit/orbit/apps/gateway/artisan`. A shell that changed into the directory before a switch still runs the release it entered. A release directory is never changed after it is prepared. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable. Preparation makes the Gateway cache directory private (`0700`), independent of the preparing process's umask; PHP-FPM and release commands use the same service account.
+The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. Run release commands through that link, as `php /home/orbit/orbit/apps/gateway/artisan`. A shell that changed into the directory before a switch still runs the release it entered. A sealed release keeps its source unchanged. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable. The build makes the Gateway cache directory private (`0700`); PHP-FPM and release commands use the same service account.
 
 The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset or empty, the version is the full commit in the release's `REVISION` file, so `bin/deploy-verify --sha` works without an env edit. Without either, the version is `dev`. Leave `APP_VERSION` out of the shared env file in the release layout; a set value always wins.
 
+### Release as a Swamp run
+
+`orbit gateway:release:deploy <sha>` and every [automatic release](#automatic-releases) run as one Swamp workflow. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd) shows the flow.
+
+The Gateway admits the run. It needs the full commit and no other queued or running release. It verifies the commit's [agent pin](#build-and-seal-a-release) and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
+
+The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
+
+| Step | What it does |
+| --- | --- |
+| Build the release | Fetches the commit, refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
+| Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
+| Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
+| Migrate | Runs `artisan migrate --force --isolated` from the new release. |
+| Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
+| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
+
+The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
+
+The activate child drains Horizon before the switch. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon.
+
+It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/caddy/orbit-cert-current/root-ca.pem`. The status must be `ok` and name the full commit or its 12-digit ID. It then resumes the release cleanups and prunes old releases. When the check fails, the same script from the new release switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
+
+The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
+
+Releases do not converge the PHP-FPM pool, hibernator and agent-view units, or Caddy sites. A follow-up moves these static files to Node convergence. Releases also leave the Gateway Node's agent binary unchanged.
+
+The Gateway records the run's terminal result. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and the old release stays live.
+
+A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and names the snapshot, such as a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
+
+A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,000 seconds. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
+
+While the run is active, every release path refuses with `gateway.release_in_progress`: manual releases, automatic releases and rollbacks use the same admission path. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
+
+Read release records with `orbit gateway:release:list` and `orbit gateway:release:show <id>`. The CLI follows an admitted release until it ends. Interrupting the CLI stops following; the Swamp run continues.
+
+After verification, pruning keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` sealed releases, plus the current and previous releases and the build served by `web/current`. The setting defaults to 3 and has a minimum of 2. Pruning also removes incomplete releases older than one hour and web builds with no retained release. A pruning failure leaves the release live; a later release retries.
+
 ### Load Swamp
 
-Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The Gateway renders both grants files from the prepared release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and Node 209's SSH target in the load intent. This uses the target release, not the running Gateway's older manifests. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
+Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The build renders both grants files from the target release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and Node 209's SSH target in the load intent. This uses the target release, not the running Gateway's older manifests. The release run starts `operation-gateway-swamp-load` as a child with the release commit. That workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
 
-1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
+1. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
 2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
 3. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
 4. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
@@ -129,99 +166,31 @@ Required checks invoke the Gateway renderer without deployment credentials and v
 
 Grant rendering stays in the Gateway; no Node script renders or publishes grants.
 
-The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
+The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
 Serve's reload re-reads each extension manifest's `additionalFiles` ([Lab #4282](https://swamp-club.com/lab/4282), fixed in Swamp `20261103.000636.0-sha.db3f6373`), so a newly shipped file reaches workers without a restart. The load never restarts serve or a worker.
 
 A new workflow needs no grant. The Gateway principal `user:orbit-gateway` has one `run` and `read` grant on every workflow (`workflow:*`), so serve accepts its start as soon as the load step has loaded the workflow.
 
-### Prepare a release
+### Build and seal a release
 
-Each commit pins its observer in `apps/gateway/resources/agent/frozen-manifest.json`, a byte copy of one published agent release's manifest. Prepare reads the pin of the commit it prepares, not of the Gateway that prepares it, so a commit that moves the pin ships the new agent in its own release. It verifies that delivery's manifest, checksums and provenance, and never waits for the Gateway commit's CLI release or for new agent builds. Changing agent source does not change the delivered agent until a commit moves the pin.
+Admission reads the target commit's pin from `apps/gateway/resources/agent/frozen-manifest.json`. It verifies the published manifest, checksums and [provenance](#release-provenance) in PHP. The manifest must match the pin. Changing agent source does not change the delivered observer until a commit moves the pin. An unavailable delivery returns `gateway.release_agent_delivery_unavailable`; a bad proof returns `gateway.release_provenance_invalid`.
 
-As `orbit`, build a release for one commit:
+The Swamp build step fetches the full commit through the run's GitHub token. It checks ancestry and refuses a downgrade with `gateway.release_downgrade`, unless the run has `force=true`. It then:
 
-```bash
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
-```
+1. checks for free space equal to the database size plus 1 GiB;
+2. creates `releases/<id>` as a Git worktree of that commit;
+3. links the shared env file and storage directory;
+4. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` in `apps/cli` and `apps/gateway`;
+5. writes the admitted agent manifest into `apps/agent/delivery/`;
+6. sets source permissions and writes `REVISION`;
+7. caches the configuration privately, with mode `0600`.
 
-Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused.
-
-Prepare first verifies the pinned agent, in PHP and before any agent command:
-
-1. It accepts the full Gateway commit SHA directly. For a short SHA, `git ls-remote` resolves it from published tags or branches. An unresolved prefix requires the full SHA.
-2. It downloads that commit's pin from `<repository>/raw/<SHA>/apps/gateway/resources/agent/frozen-manifest.json`. The pin names the agent release. A pin it cannot download waits, as an unpublished release does.
-3. It downloads `manifest.json`, `SHA256SUMS`, and `provenance.sigstore.json` without authentication, and [verifies the provenance](#release-provenance) of the first two.
-4. It checks that the manifest equals the commit's pin and matches `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
-
-An unreachable pin or delivery refuses with `gateway.release_agent_delivery_unavailable`, before anything changes. The automatic runner keeps one queued record and rechecks availability every 20 seconds, without starting the failure cooldown. It raises one `release_stalled` alert after 15 minutes and keeps the request queued for later checks. A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
-
-Prepare then fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
-
-1. creates the worktree `releases/<id>` for the exact commit and makes its Gateway cache directory private before Composer or Artisan runs; linked cache directories are refused;
-2. links the shared env file and the shared storage directory into it;
-3. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` for `apps/cli` and `apps/gateway`, with the committed locks. A release holds only the packages it runs, not Pest, PHPStan, Pint, Rector, or Boost;
-4. writes the agent's `manifest.json` into `apps/agent/delivery/` and installs that pin on the Gateway's own Node, through the new binary's own [`agent.install`](/reference/node-agent#install-on-mismatch);
-5. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
-6. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
-7. writes `REVISION`, which the release reads for its [version](#release-layout), then runs `php artisan config:cache` in the release. The cache holds `APP_KEY`, so it is mode `0600`.
-
-A release that already exists skips steps 1 to 3, and gets the manifest too when an older Gateway prepared it without one. A release that holds another manifest is refused.
-
-Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
-
-The account command `gateway.inspect-release-preparation` checks the shared layout and free-space reservation before the Gateway acquires repository access. Existing shared storage directories must belong to the account and must not be symlinks, including the standard storage subdirectories. A locally available full SHA needs no GitHub credential.
-
-`gateway.prepare-release` resolves or fetches the commit, creates its worktree, links shared state, and installs the fixed runtime dependencies. PHP installs the web build and requests Caddy access before `gateway.finish-release` seals the source, publishes `REVISION`, and caches private configuration. A configuration failure removes `REVISION`, so the release remains incomplete. `gateway.refresh-release-configuration` replaces a prepared release's cache atomically.
-
-`gateway.remove-release` refuses the current release and removes other release trees without following shared links. Removal needs the shared repository but does not require a usable shared environment or storage tree.
-
-Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run of the same commit, or [pruned](#deploy-a-release) by a later verified release once it is 1 hour old.
-
-Prepare never touches the current release link, the database, or a running service other than the Gateway Node's agent.
-
-A Gateway whose current release predates this agent delivery or the Horizon publication barrier must enter deployment through the prepared release's code. Older deployment code cannot install the delivery or drain consumers before switching the serving link. Upgrade it once by hand, as `orbit`. Prepare the new commit with the current code, then deploy that commit with the new release's own code:
-
-```bash
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
-php /home/orbit/releases/<id>/apps/gateway/artisan gateway:release:deploy <SHA>
-```
-
-The second command fills in the release's manifest and installs its agent before any agent command, then deploys as usual.
-
-A Gateway whose current release predates [release provenance](#release-provenance) needs no hand step. Its prepare reads only `manifest.json` and `SHA256SUMS`, and its CLI release catalog ignores an asset it does not expect, so the new bundle changes nothing for it. It deploys the first commit with the verifier as before. From then on, the running code verifies each newer release.
-
-Orbit is dropping Linux ARM. Prepare accepts an agent delivery with or without a `linux-aarch64` artifact. It verifies that artifact against `SHA256SUMS` like the others. The Gateway installs only its own build, and the release manifest still lists the Linux ARM agent. Any other platform outside the expected set still refuses. The CLI release catalog reads only the `linux-x86_64` and `macos-arm64` binaries. A Gateway that runs this code can therefore prepare the first release that ships no Linux ARM agent or CLI. A later change removes the allowance.
-
-Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
-
-The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.
-
-| Error code | Meaning |
-| --- | --- |
-| `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters. |
-| `gateway.release_commit_unknown` | The repository does not have the commit, or the prefix names more than one commit. |
-| `gateway.release_layout_missing` | The shared repository or env file is missing. |
-| `gateway.release_in_progress` | Another release step holds the single-flight lock in `ORBIT_HOME/gateway-release.lock`, or a command of an earlier step still runs. |
-| `gateway.release_disk_low` | The releases directory has less free space than the floor. |
-| `gateway.release_conflict` | The release directory holds another commit with the same 12-digit id. |
-| `gateway.release_current_incomplete` | The current release has no `REVISION`. Repair it before preparing it again. |
-| `gateway.release_layout_invalid` | `ORBIT_GATEWAY_CHECKOUT` is not an absolute `<base>/<checkout>/apps/gateway` path. |
-| `gateway.release_lock_unavailable` | The release lock file cannot be opened. |
-| `gateway.release_fetch_failed`, `gateway.release_worktree_failed`, `gateway.release_link_failed`, `gateway.release_dependencies_failed`, `gateway.release_access_failed`, `gateway.release_revision_failed`, `gateway.release_configuration_failed` | The named build step failed. The live release is unchanged, and the commit is marked failed unless the failure is the machine (disk, lock, or a missing layout). |
-| `gateway.release_web_build_missing` | CI published no unexpired `web-dist-<sha>` artifact from an [accepted CI run](#accepted-ci-runs) of the commit. The commit is marked failed. |
-| `gateway.release_web_build_invalid` | The artifact is larger than the limits, has no digest or does not match it, has an unsafe entry, or has no `index.html`. The commit is marked failed. |
-| `gateway.release_web_build_unavailable` | GitHub Actions cannot be read: no GitHub App, no `Actions: read` permission, or no answer. The commit is tried again later. |
-| `gateway.release_web_directory_missing`, `gateway.release_web_install_failed` | The web directory is missing, or the build cannot be written or given to the `caddy` group. The commit is tried again later. |
-| `gateway.release_agent_delivery_unavailable` | The pinned agent delivery or the commit's pin cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
-| `gateway.release_agent_delivery_invalid` | The release's manifest does not match its files or `SHA256SUMS`, or the release directory already holds another manifest. |
-| `gateway.release_provenance_invalid` | The release has no `provenance.sigstore.json`, or the bundle does not [verify](#release-provenance). Nothing changed. The commit is marked failed and is not tried again automatically. |
-| `gateway.release_provenance_unconfigured` | The trust root cannot be read or is malformed, or `ORBIT_CLI_RELEASE_REPOSITORY` is not on github.com. Nothing changed. The commit is tried again later without spending its attempts. |
-| `gateway.release_agent_install_failed` | The release's agent could not be installed on the Gateway's own Node. The message names the installer's error code. |
+A sealed release of the same commit is reused. Its configuration is cached again from the shared env file. A partial build is rebuilt on the next run of that commit. Building leaves the serving links and running services unchanged. The next step installs the [web build](#web-build).
 
 #### Release provenance
 
-CI signs each release with the workflow's own identity ([CLI binaries: Provenance](/reference/cli-binaries#provenance)). The Gateway checks that proof in two places. Prepare checks it before it installs a release's agent. The [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) checks it before it names a CLI digest. Both use one step. It downloads `provenance.sigstore.json` from the release without authentication. It then verifies the bundle offline, with PHP's OpenSSL extension and no call to GitHub or Sigstore.
+CI signs each release with the workflow's own identity ([CLI binaries: Provenance](/reference/cli-binaries#provenance)). The Gateway checks that proof in two places. Release admission checks it before it starts the Swamp run. The [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) checks it before it names a CLI digest. Both use one step. It downloads `provenance.sigstore.json` from the release without authentication. It then verifies the bundle offline, with PHP's OpenSSL extension and no call to GitHub or Sigstore.
 
 ##### What the Gateway checks
 
@@ -243,7 +212,7 @@ The certificate and the statement must pass these checks:
 5. Its OIDC issuer extension, OID `1.3.6.1.4.1.57264.1.8`, is exactly `https://token.actions.githubusercontent.com`.
 6. The DSSE signature over the payload verifies with the certificate key.
 7. The payload is an in-toto statement v1 with SLSA provenance v1.
-8. The statement names `SHA256SUMS` with the SHA-256 of the bytes the Gateway downloaded. For prepare, it also names `manifest.json` that way.
+8. The statement names `SHA256SUMS` with the SHA-256 of the bytes the Gateway downloaded. For release admission, it also names `manifest.json` that way.
 
 The checkpoint must also name the entry's log: its first line is the log host, a space, a hyphen, a space, and the tree ID. Every hash of the proof is 32 bytes. The issuer extension must be a minimal DER UTF8String with no trailing bytes.
 
@@ -253,7 +222,7 @@ The binaries chain through those two files as before.
 
 A bundle that fails any check refuses. So does a Rekor v2 entry, an entry without a signed entry timestamp, or a bundle with only RFC 3161 timestamps. A missing bundle refuses too. A bundle that cannot be downloaded because of a network or server error waits, as a missing release does.
 
-A trust root that cannot be read or parsed, or a release repository that is not on github.com, is a fault of the Gateway, not of the release. Prepare then refuses with `gateway.release_provenance_unconfigured`, which waits without spending the commit's attempts. The desired fleet state reports `provenance_unconfigured`.
+A trust root that cannot be read or parsed, or a release repository that is not on github.com, is a fault of the Gateway, not of the release. Admission then refuses with `gateway.release_provenance_unconfigured`, which waits without spending the commit's attempts. The desired fleet state reports `provenance_unconfigured`.
 
 ##### Trust root
 
@@ -269,14 +238,14 @@ gh attestation trusted-root | head -n 1 | jq . > apps/gateway/resources/sigstore
 
 | Situation | What happens | Recovery |
 | --- | --- | --- |
-| A release has no bundle, or a bundle that does not verify | Prepare refuses with `gateway.release_provenance_invalid`. The desired fleet state reports `release_unverified` | None for that commit, because its release never changes. Deploy a later commit |
-| A commit from before release provenance | Its release has no bundle, so a deploy of it refuses | [Roll back](#roll-back) to a retained release instead. Rollback prepares nothing and needs no release download |
+| A release has no bundle, or a bundle that does not verify | Admission refuses with `gateway.release_provenance_invalid`. The desired fleet state reports `release_unverified` | None for that commit, because its release never changes. Deploy a later commit |
+| A commit whose pinned delivery has no provenance | Release admission refuses | Use [Roll back without Swamp](#roll-back-without-swamp) for a retained release when admission cannot verify its delivery |
 | Sigstore adds a new Fulcio CA or Rekor key | Sigstore publishes new keys in its TUF root before it uses them | Refresh the trust root and release it while the old keys still sign |
-| A release is signed with a key that the trust root lacks | Prepare refuses every new release. The desired fleet state stays unavailable | Override the trust root once, as described below |
+| A release is signed with a key that the trust root lacks | Admission refuses every new release. The desired fleet state stays unavailable | Override the trust root once, as described below |
 | The attest action signs with Rekor v2 or with RFC 3161 timestamps only | Every new release refuses | Revert the action's pin change, as described below |
 | Sigstore's Fulcio or Rekor is down while the publish job runs | The attest step fails, so the job fails before the release exists. The Gateway waits for the release | Run the release workflow with `workflow_dispatch` for the commit once Sigstore answers ([Publish a missed commit](/reference/cli-binaries#publish-a-missed-commit)) |
 | The repository becomes private | The attest action signs with GitHub's own Sigstore, with RFC 3161 timestamps only. Every new release refuses | Make the repository public again. Release provenance needs the public-good Sigstore |
-| The trust root path or the repository setting is wrong | Prepare refuses with `gateway.release_provenance_unconfigured` and tries again later. The desired fleet state reports `provenance_unconfigured` | Fix the setting and run [`gateway:release:configure`](#apply-an-env-change) |
+| The trust root path or the repository setting is wrong | Admission refuses with `gateway.release_provenance_unconfigured` and tries again later. The desired fleet state reports `provenance_unconfigured` | Fix the setting and run [`gateway:release:configure`](#apply-an-env-change) |
 
 To override the trust root once:
 
@@ -287,375 +256,44 @@ To override the trust root once:
 
 The attest action is pinned by commit SHA, so its bundle format changes only when its pin changes. When a new pin signs in a format the verifier refuses, revert the pin. Teach the verifier the new format first and release that change. Change the pin after.
 
-Rolling back to a release from before provenance runs code without the verifier. Its later deploys check only `SHA256SUMS` until the Gateway deploys a release with the verifier again.
-
 #### Web build
 
-The web app ships with the Gateway release of the same commit. On CI runs that select Gateway release inputs, in the merge queue or from a push or a manual dispatch on `main`, CI uploads the build of `apps/web` as the artifact `web-dist-<sha>` and keeps it for 14 days ([Feature delivery: CI](/reference/implementation-loop#ci)). Prepare installs it into `web/releases/<id>` of the [web directory](/reference/web-app#web-directory), in the layout `bin/web-deploy` uses:
+CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB.
 
-1. It asks the [GitHub App](/reference/github-app#read-ci-artifacts) for a token with only `Actions: read`, for the repository that `shared/orbit.git` names as `origin`.
-2. It finds the newest unexpired artifact with that name from an [accepted CI run](#accepted-ci-runs) of exactly this commit.
-3. It downloads the archive, at most 128 MiB, from GitHub's artifact storage without the token. The download must match the artifact's SHA-256 digest.
-4. It extracts the archive into a hidden staging directory and refuses unsafe entries, listed below.
-5. It requires `index.html` at the top. It gives directories mode `0750` and files `0640`, with group `caddy`.
-6. It moves the staging directory to `web/releases/<id>` in one rename.
+The Swamp step downloads the artifact with the run's GitHub token, checks its digest and extracts it into a private staging directory. It accepts only regular files and directories with safe relative names. It refuses links, special files, absolute paths, `..`, more than 20,000 entries or more than 512 MiB of files. The build must have `index.html` at its root. The step gives Caddy access and moves the build into `web/releases/<id>` with one rename. A complete build is reused.
 
-Extraction accepts only regular files and directories with plain relative names. It refuses links, special files, absolute names, `..`, duplicate and encrypted entries, and entries whose size or checksum differs from their header. It also refuses more than 20,000 entries or more than 512 MiB of files.
+The activate child switches `web/current` together with the Gateway code, before verification. A failed check switches both back. Open pages read `version.json` and move to the new build on their next navigation or resume ([Updates to open pages](/reference/web-app#updates-to-open-pages)). Pruning keeps the current web build and every retained release's build.
 
-The Gateway selects and downloads the GitHub artifact. It calls `gateway.inspect-web-build` before downloading and passes the private local archive path, its digest and the full commit to `gateway.install-web-build`. Archive bytes never enter the command envelope. The agent owns the archive limits, validates the complete archive, extracts it privately and grants Caddy access before publication. An invalid archive leaves the installed build untouched.
+A missing or expired artifact refuses admission with `gateway.release_web_build_missing`. An invalid artifact returns `gateway.release_web_build_invalid`. A deploy or rollback needs a valid artifact even when it can reuse a sealed release.
 
-`gateway.publish-web-build` switches the web link and returns its exact previous target. `gateway.restore-web-build` restores that target when an activation fails. `gateway.remove-web-build` and `gateway.prune-web-builds` preserve the current build. Mutations declare root privilege to assign the Caddy group, preserve the web directory owner and share the root lock with web-directory convergence. Each mutation also locks the canonical web directory; a foreign path or link refuses before changing a build. GitHub access and release orchestration stay in PHP.
-
-A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. Open pages read the new build's `version.json` and move to it on their next navigation or resume ([Updates to open pages](/reference/web-app#updates-to-open-pages)). A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves. When the releases directory cannot be read, it skips this cleanup and logs a warning.
-
-CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. A commit also needs a passing `Gateway release inputs` check for automatic release. Every main commit runs both, Swamp-only ones too, because the release also [loads Swamp](#load-swamp). So a release candidate with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
+CI's `Required checks` needs the Web job, which uploads the artifact before it succeeds. Automatic releases also need `Gateway release inputs`. Every main commit runs both, including Swamp-only changes, because the release also [loads Swamp](#load-swamp).
 
 ##### Accepted CI runs
 
 The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`, or a `merge_group` run on a `gh-readonly-queue/main/` branch. The merge queue run tests the exact commit the queue then puts on `main`, and `Required checks` passes there first. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
 
-### Deploy a release
 
-This section describes the release unit. Manual and automatic deploys run as a [Swamp run](#release-as-a-swamp-run), which switches back after a failed check. Only rollback and adoption still run through the release unit, with the steps, verification and pauses below.
+### Migrations and the snapshot
 
-Before the release unit changes anything, it:
+Before it migrates, the run writes a consistent SQLite copy with `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes a new file. Retention keeps the newest three snapshots and the one a pause names. Snapshots stay on the Gateway; keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
 
-1. prepares the commit;
-2. refuses a commit that does not descend from the current release, with `gateway.release_downgrade`;
-3. caches the release's configuration again from the shared env file, so a broken env file stops the release before any migration.
+The new release runs `php artisan migrate --force --isolated` while the old release still serves. Migrations must use expand and contract: both releases must work with the new schema. Before a schema squash, finish the existing migration chain, as the [contributor guide](/contributor-guide#3-implement-and-verify) requires.
 
-`--force` skips only the commit ancestry check. Laravel owns migration discovery, including migrations registered by vendor service providers.
+A failed snapshot leaves the live database unchanged. A failed migration may have applied some changes. The run then pauses and names its snapshot. Restoring that snapshot is an operator action; follow [Recover a failed update](#recover-a-failed-update).
 
-Before deploying a schema squash, finish the existing migration chain on the current release. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the baseline loader and its requirements.
+### Roll back
 
-Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, [loads Swamp](#load-swamp), [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
-
-The native command validates the prepared release and replaces `/home/orbit/orbit` with one atomic rename under the release target lock. Readers keep either the old or new release. Repeating the switch leaves the link unchanged. An in-place checkout or a link to something else is refused until `gateway:release:adopt`. A staging path that is not the requested release link is refused without replacing it.
-
-`gateway.inspect-release-source` reads the shared repository's credential-free origin for the Gateway's GitHub source policy. `gateway.check-release-forward` reads the current release and checks Git ancestry without starting Git or changing its index. It returns the current release identity for the release record. The Gateway sends the requested commit and explicit force flag; a non-forward commit refuses with `gateway.release_downgrade` unless force was requested.
+To return to a retained release, run:
 
 ```bash
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA>
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA> --force
+orbit gateway:release:rollback <id>
 ```
 
-After the switch, deploy:
+`<id>` is the first 12 hex digits of its commit. The Gateway resolves that release's full commit and admits a forced `gateway.release` run with trigger `rollback`. Force skips the ancestry check. The build reuses the sealed release and refreshes its configuration. The load step brings back that commit's Swamp workflows. The run snapshots the database, runs migrations, switches both links and verifies the Gateway, as for a forward release.
 
-1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
-2. verifies the release, as described below;
-3. runs the [scheduler phase](#runtime-handoff) of the handoff;
-4. switches `web/current` to the release's [web build](#web-build) with one rename.
+Rollback needs the target commit's verified agent delivery and a valid web build. Migrations must use expand and contract so the retained code can use the current database. Rollback does not restore data. If you need to restore a snapshot, follow [Recover a failed update](#recover-a-failed-update). A successful rollback pauses automatic releases with reason `rollback`.
 
-Verify runs before the scheduler phase, so a broken release is found and switched back without waiting for a long scheduled command or an idle pool.
-
-Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`). Status must be `ok`, and the version must be the full commit or its 12-digit id. A busy pool can queue `/up` behind long requests, so a failed check runs again after 2, 4, 8, 16, and 30 seconds.
-
-Each request has a 15-second overall deadline. HTTPS trusts only `/etc/caddy/orbit-cert-current/root-ca.pem`, with the system CA directory disabled. A missing CA file fails verification. Laravel's HTTP client retries the complete check, including status and version validation. After the last failure, it reports `gateway.release_verify_failed` at the `verify` step with the failed endpoint or the observed status and version.
-
-Any failure after the switch counts, including `gateway.release_unexpected_failure`.
-
-Deploy pauses after running the migrator. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. This also applies when Laravel has no pending migrations. Deploy does not inspect migration files or infer schema compatibility. A failed switch pauses too; the previous code then still serves.
-
-Rollback does not run migrations. A failed rollback switches back to the previous release and restores `web/current`. It repeats the handoff phases that started before the failure. The prepared release must provide both handoff phases. A release without them fails with `gateway.release_handoff_failed`.
-
-After a verified release, deploy removes old releases. It keeps at most `ORBIT_GATEWAY_RELEASES_KEEP` releases, 3 by default and at least 2: the current one and the previous one, whatever their age, and then the newest others. After a rollback to an older release, the previous release takes the place of the oldest of the newest others, so the count never grows.
-
-It also removes each release directory without `REVISION` that is more than 1 hour old, with its web build. Such a directory is left by a prepare that stopped, for example an adoption that lacked a GitHub App permission, and no later prepare of another commit removes it. Every prepare holds the release lock, and so does deploy while it prunes, so no prepare is writing to the directory. The age is a margin on top.
-
-Deploy keeps an incomplete directory that is the current or the previous release, because that release needs a repair. It also keeps a directory whose `REVISION` names another commit. Remove that one by hand. A directory that cannot be removed stays, and each verified release logs a warning with its id.
-
-#### Stage a release with consumers held
-
-For a destructive schema change, use the local operator command `gateway:release:stage <full-SHA>` after a maintenance drain. It reuses prepare, snapshot, migration and atomic switch, but stops after the switch. It does not run runtime handoff, verification, scheduler startup, web publication, fleet convergence or release/web pruning. The snapshot step still applies the configured database-backup retention policy. Its trigger is `stage` and its result is `paused`, with `gateway.release_held` and pause reason `held`; it is not a verified release. Intentional staging raises no failure alert and does not consume normal deploy retry attempts.
-
-Before snapshot, migration and promotion, staging checks a root-owned `/run/orbit-gateway-drain/hold.json` bound to that exact SHA. The file lists the complete installed and loaded Gateway writer units and the previous release SHA. Every writer unit and timer must be masked, inactive with no MainPID and no remaining cgroup members. PHP-FPM must be masked and stopped, so no HTTP request, including health requests, reaches application code during migration.
-
-The Gateway sends the stable checkout, target SHA and calling PHP process ID to `gateway.inspect-release-hold`. This account-privilege command reads the fixed root-owned manifest, checks its source against the prepared current release, inventories service and timer units, verifies their masks and empty control groups, and checks the visible process inventory. It changes no file or service. The Gateway compares any returned unrelated-Process declarations with fresh observations and checks Redis reservations itself. An incomplete or unreadable native observation refuses with `gateway.release_not_drained`.
-
-The supported Gateway uses PHP 8.5 and the six queues declared in `config/horizon.php`: `tasks`, `problems`, `task-vms`, `builds`, `builds-optional` and `operations`. The observer checks this closed runtime contract, including `php8.5-fpm.service`; a different runtime needs a reviewed observer change.
-
-The observer inventories all installed and loaded service and timer units with full unit names. Other systemd unit types do not consume the inventory output limit. Unknown managed writers, templates and loaded concrete instances still require the hold. Each observation has a 65,536-byte output limit; truncation or command failure refuses admission. The separate all-owner process scan keeps this limit too. If a service/timer inventory or the all-owner process scan exceeds it, keep the hold and obtain a reviewed observer change; never remove host units or hide processes to pass the check.
-
-Every Gateway queue must have zero reservations. Other PHP processes refuse staging. Missing observations and changed inventory refuse it too. Waiting and delayed jobs stay intact. The manifest records an operator-maintained hold; it does not replace live checks or stop external console users by itself.
-
-The Gateway's `retry_after` is 1,800 seconds. Expiry alone does not remove a reservation while workers are stopped: Laravel moves expired reservations when a worker next pops that queue. A stuck reservation therefore has no safe fixed waiting period under a stopped hold. Establish whether its worker is still running, then let the source worker complete or retry it under a separate controlled maintenance window before draining again. Never delete a reservation to make the observer pass.
-
-Before staging code that retires a job class, inspect waiting, delayed, reserved and failed job payload class names under the source release. Record affected classes and counts without logging payload secrets. Finish or reconcile those jobs on the source before the final drain; do not deserialize them with target code or clear queues. Staging checks reservations only and does not prove that waiting or delayed payloads remain compatible.
-
-Quiesce ingress, suppress service restart, then let requests and jobs finish. Never force an idle claim by killing work or clearing reservations. Keep the hold on timeout and every failure. The normal handoff is not a pre-migration drain: it can restart consumers and replace Caddy configuration. Stop external console writers too. The manifest and its directory must be root-owned and not group- or other-writable. Its required fields are `target_sha`, `source_sha` and `units`. The optional `unrelated_processes` declarations below contain identities and hashes, not secrets.
-
-#### Keep an unrelated Node Process running
-
-The unit prefix alone does not identify a Gateway consumer: all managed systemd Processes use the same prefix. Process presets, names and working directories do not prove that arbitrary code has no Gateway data dependency. There is no durable Process purpose or capability field for that claim.
-
-The root operator may make that claim for one maintenance hold through an explicit `unrelated_processes` list. Each entry binds one exact Process record, serving Node, rendered unit and running invocation to the hold's source and target SHAs. This is an operator attestation that the reviewed program has no Gateway database, release or shared-state dependency. The observer verifies identity, not the universal absence of side effects. Nothing populates this trust automatically.
-
-This narrow path supports an active Node-owned systemd Process on the remembered serving Gateway Node. The Process must have no preset, Project definition, unfinished runtime replacement, pending activation, environment map or environment file. Its unit must match the product renderer exactly, with no drop-ins or pending daemon reload. The observer requires readable native account, argv, executable, directory and start identity, a single main process, and no descendant cgroups. Missing or unsupported observations refuse; no permission is expanded to inspect them.
-
-The Gateway validates the record and placement, renders its expected unit and sends that intent to `gateway.inspect-release-process`. The agent checks canonical paths, exact installed unit bytes, systemd properties and the live process identity, and returns the source SHA and unit/runtime hashes. Reads are bounded; an oversized identity file or capped inventory refuses. The command runs as the Gateway account and returns no command arguments or environment values. The Gateway adds the record specification hash and compares the complete declaration with the operator's entry.
-
-Gateway application paths, Horizon and scheduler commands, PHP consumers, and the fixed FPM, agent-view and release units cannot be declared unrelated. Known consumers remain masked and stopped. Unknown managed units remain writers. The independent PHP inventory, required unit inventory, template and concrete-instance masks, descendant checks and all six queue reservations still apply.
-
-Review the Process record and its Node ownership and placement. The stored Node owner type is `App\Models\Node`, not the API input word `node`. Confirm the remembered `gateway.serving_node_id` identifies this host. Review the installed unit with `systemctl cat <exact-unit>` locally and review the actual executable or script and its external dependencies. Keep raw configuration and environment secrets out of shared logs.
-
-As the Gateway execution account, obtain a fresh observation from the reviewed prepared release:
-
-```sh
-sudo -u orbit -H php <reviewed-prepared-release>/apps/gateway/artisan gateway:release:inspect-process <full-target-SHA> <process-id>
-```
-
-The read-only command prints one JSON object with `observation`. Its fields are `process_id`, `node_id`, `unit`, `source_sha`, `target_sha`, `spec_sha256`, `unit_sha256` and `runtime_sha256`. It emits hashes, not raw command arguments, environment values or record configuration. It neither authorizes an exclusion nor edits the manifest, service, Process record or release hold.
-
-After reviewing the program's independence, the root operator copies that exact observation object into `hold.json` under `unrelated_processes: [<observation>]`. Preserve the existing target, source, writer inventory, ownership and permissions. The exact declared ordinary unit may be present in `units` or omitted; it is removed from the writer comparison only after verification. Every other observed writer must still be listed and held.
-
-Keep the program specification and placement frozen through staging. Restarting it, changing its invocation, environment, unit, executable or specification invalidates the entry. A missing, duplicated, malformed or stale declaration refuses. Re-review the program before replacing a stale entry; do not refresh hashes merely to suppress a refusal.
-
-Finish the operator's masks, stops and systemd daemon reload before observing the reviewed unrelated Process. A daemon reload can change systemd's reported execution metadata even when the main PID stays the same. A declaration captured before that reload is stale.
-
-After the operator procedure succeeds, retire the root manifest and its declarations as part of restoring the documented consumer service state. On failure, keep the hold and use the restore/abandon procedure below. Removing an entry does not release a staged pause: it restores conservative writer treatment, which requires that unit to be listed, masked and stopped. Never reuse declarations for another source or target.
-
-Omitting `unrelated_processes` preserves the original conservative behavior. This is no wildcard, name-based exemption, or replacement for Process identity. An ordinary Process whose identity cannot be proved needs operator repair or a separately reviewed procedure.
-
-### Release as a Swamp run
-
-`orbit gateway:release:deploy <sha>` and every [automatic release](#automatic-releases) run as one Swamp workflow. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd) shows the flow.
-
-The Gateway admits the run. It needs the full commit, no other queued or running release and no staged hold. It verifies the commit's agent pin, as [Deploy a release](#deploy-a-release) does, and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
-
-The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
-
-| Step | What it does |
-| --- | --- |
-| Build the release | Fetches the commit, refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
-| Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
-| Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
-| Migrate | Runs `artisan migrate --force --isolated` from the new release. |
-| Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
-| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
-
-The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
-
-The child drains Horizon. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon. It verifies `/up` and the status version, resumes the release cleanups and prunes old releases. When the check fails, the same script from the new release switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
-
-The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
-
-The run leaves the PHP-FPM pool, the Gateway's service units, its Caddy sites and the Gateway Node's agent as they are, because a release does not change them. `gateway:release:handoff` installs them.
-
-The run's native terminal ends the record through the same recorder as the release unit. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and nothing changed.
-
-A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and names the snapshot, such as a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
-
-A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,000 seconds. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
-
-While the run is active, every release path refuses with `gateway.release_in_progress`: the automatic tick, rollback and adoption begin their records through the same recorder. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
-
-### Execution identity
-
-Run `sudo -u orbit php <prepared-release>/apps/gateway/artisan gateway:release:stage <full-SHA>` from the reviewed prepared release, using shared configuration and stable release-layout paths. Stage, deploy, finalize and abandon refuse root, a different execution account, or mismatched ownership/configuration before opening release locks or writing shared state. The old stable artisan entry point cannot execute new tooling. Keep automatic releases disabled; normal deploy does not acquire this maintenance hold. The first rollout needs operator-controlled bootstrap and independent disposable-environment verification.
-
-Release stage, deploy, finalize and abandon require one canonical, owned SQLite database file. Database URLs (`DB_URL`), read/write connection splits and PDO options are unsupported for these operations and refuse before release work. Admission compares the running Laravel connection and its open SQLite file with each cached configuration. Stage rechecks the newly regenerated target cache before snapshot or migration. Finalize rechecks under the release lock before its migration-status subprocess. Matching raw `DB_DATABASE` values alone do not establish identity.
-
-The Gateway checks the execution account, canonical database path, shared state, existing lock modes and private configuration-cache files itself, without the agent, and changes none of them. It includes the prepared target's cache when that release exists. It requires an existing canonical SQLite file and checks the live connection, so a wrong configured path cannot create a new database, then compares the verified caches with that connection.
-
-Release admission creates absent release and step lock files exclusively with mode `0600`, independent of the caller’s umask. Existing locks must be regular, owned by the executing account and mode `0600`; symlinks, foreign ownership and permissive modes refuse without changing the file or its inode. The command does not repair existing locks.
-
-The Gateway holds the operation lock and checks itself, without the agent, whether the preceding native step has finished. It checks both the step lock and the control group of the command service that the lock records. Releasing the file lock does not admit another release while that service still has live children. An invalid or unreadable record refuses admission.
-
-### Finalization
-
-`gateway.check-release-migrations` runs the prepared release’s fixed `migrate:status --pending=3` command with its private cache and a clean environment under the release step lock. A failed or incomplete status check keeps the hold.
-
-After staging, verify the ledger and new source while holds remain. Restore only PHP-FPM first, with Caddy allowing only GET `/up` and GET `/api/v1/gateway/status`; require the exact target version. When the operator approves consumer startup, run `sudo -u orbit php /home/orbit/orbit/apps/gateway/artisan gateway:release:finalize <full-SHA> <staged-record-id>`. Finalization binds to that original record and source, refuses pending migrations, and verifies a private SQLite recovery copy under `ORBIT_HOME/recovery` outside ordinary snapshot retention before clearing the hold. It does not snapshot, migrate or switch again.
-
-Recovery is checked before runtime handoff and again immediately before recording verification and clearing the pause. If recovery changes after the first check, the second check refuses and retains the logical hold. Consumers may already have started: stop them and re-establish the full drain before recovery. A held record does not prove that services are stopped.
-
-`gateway.protect-release-recovery` preserves the original snapshot as a private, account-owned file under `ORBIT_HOME/recovery`. `gateway.verify-release-recovery` checks its ownership, permissions, SHA-256 and SQLite integrity without changing it. Both refuse a live WAL or journal and report at most 20 foreign-key violations. The Gateway supplies the staged record and target SHA, validates the returned identity and keeps the recovery phase on the record.
-
-Repeating the same successful finalization verifies its recovery copy and returns the recorded result without restarting consumers. Keep this recovery copy until an operator explicitly retires it; release retention never removes it. Deploy, rollback and automatic resume cannot bypass a staged hold, including after failed finalization. Automatic releases remain disabled until explicitly enabled.
-
-Staged intent and its original source/snapshot are persisted before migration. A failed or interrupted migration remains held even when the source switch never happened; ordinary deploy, rollback and automatic resume refuse it. Keep consumers stopped and use the operator recovery procedure. Finalization requires the staged target already current and its migration ledger complete; it does not repair a partially applied schema or promote an unstaged target.
-
-Do not use code rollback or migration down to claim deleted data was recovered. Restoring the paused record's snapshot is a separate operator action.
-
-### Abandon a failed stage after restoring its snapshot
-
-`gateway:release:abandon <full-SHA> <staged-record-id>` clears one staged hold only after a verified database restore. It does not restore data, switch code, run migrations, start consumers or enable automatic releases. Even a migration reporting “No data was removed” needs this procedure: a pending migration ledger cannot exclude partial or unrecorded changes.
-
-Before migration, stage protects the original snapshot and writes a private recovery receipt under `ORBIT_HOME/recovery`. The receipt binds the target SHA, original record, source release and snapshot hash. Keep both files and the pause marker. They survive a database restore and ordinary backup retention. Never edit the receipt or delete the marker to bypass a refusal.
-
-`gateway.write-release-receipt` publishes the record attributes atomically in a mode-0600 file. Repeating the same receipt leaves it unchanged; different attributes never overwrite it. `gateway.read-release-receipt` requires that private account-owned file and reads at most 1 MiB. The agent derives its path from the Orbit home, record ID and full target SHA. The Gateway checks the receipt's staged identity and source, then verifies its protected snapshot. The live-PDO comparison and abandonment write stay in one Gateway transaction.
-
-1. Keep ingress, all writers and automatic releases disabled.
-2. Re-establish the exact maintenance drain, including PHP-FPM and external console writers.
-3. Preserve the failed database, its WAL/SHM, release record and logs as a separate recovery set.
-4. Preserve annotation files and their associations.
-5. Read the receipt and its named protected snapshot.
-6. Check the snapshot's SHA-256, `PRAGMA integrity_check` and `PRAGMA foreign_key_check`.
-
-A foreign-key violation needs a source-data repair or a different verified recovery point. There is no bypass. Do not edit the protected snapshot.
-
-7. Close every SQLite connection.
-8. Acquire both release locks exclusively as the recovery operator.
-9. Move the failed database and its sidecars together to the recovery set.
-10. Restore the exact protected snapshot to the canonical database path with the original account ownership and mode `0600`.
-11. Keep `ORBIT_HOME/recovery` and `gateway-release.paused` in place.
-
-Never reuse the failed database's WAL/SHM with the restored database. This restores database data only. Use [Recover a failed update](#recover-a-failed-update) for external migration effects or machine-state restore.
-
-12. Restore the receipt's exact prepared source release as current while consumers remain stopped.
-13. Verify its `REVISION`, link and shared database/configuration identity.
-14. Release the operator's locks before the command acquires them.
-
-Do not use ordinary release rollback to restore the source link: rollback starts consumers. Run abandon from the reviewed prepared release, which contains the new tooling:
-
-```bash
-sudo -u orbit php <reviewed-prepared-release>/apps/gateway/artisan gateway:release:abandon <full-SHA> <staged-record-id>
-```
-
-The command repeats account, lock, source, drain and recovery checks. It compares every schema object and every table row, including the migration ledger, with the protected snapshot in a database transaction.
-
-The comparison preserves each cell’s SQLite storage class and exact value, including TEXT/BLOB bytes, row identity and duplicate rows. The command refuses a change to the storage class even if the displayed value or bytes match. Page layout and WAL mode may differ. Differences refuse with the hold intact. It records `abandoned` on the original record, retaining source and snapshot provenance, then clears only that staged marker. Automatic releases remain disabled and consumers remain stopped.
-
-Repair the refusal's cause on the source under a separately controlled maintenance procedure. Repeat the drain and public `gateway:release:stage` command. A new attempt gets a new record and snapshot. It never overwrites the first recovery set.
-
-A crash after the abandoned record is committed but before marker removal is safe: repeat abandon with the same identities. It accepts only the restored database plus that exact completed record, including its SQLite storage classes. If the database differs, restore the same protected snapshot again and repeat.
-
-Tables with an inaccessible intrinsic rowid (all three names `rowid`, `_rowid_` and `oid` shadowed) or virtual tables cannot be verified by abandon. Keep the hold and use a separately reviewed forward recovery for these unsupported schemas. Missing or corrupt evidence refuses; recover the complete state saved before the update. Do not guess a migration result. A schema changed by a failed migration requires this verified restore, or a separately reviewed forward recovery under the hold.
-
-
-#### Migrations and the snapshot
-
-Before every deploy switch, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes its own file, so a retry after a failed migration never replaces the clean copy. A retry of a paused commit keeps naming the copy from before its first attempt, in its record and in the pause marker. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
-
-- The Gateway keeps the newest `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` snapshots (default 3), and always the one the pause marker names.
-- The release migrates with `migrate --isolated`, so a second migration waits for a running one.
-- A snapshot needs room for the database and its WAL plus the free-space floor. Prepare keeps that room too, so a release refuses with `gateway.release_disk_low` before it builds anything.
-- A failed snapshot changes nothing, and the commit is tried again later.
-- A failed migration may have applied part of its changes. Deploy then pauses with `gateway.release_migrate_failed` and names the snapshot. To go back to it, follow [Recover a failed update](#recover-a-failed-update) with the snapshot as the database file.
-
-#### Runtime handoff
-
-The Gateway sends the release ID and phase to `gateway.handoff-release`. The agent checks the prepared release and private configuration, holds the release step lock, and runs its fixed PHP 8.5 Artisan entry point with a clean environment. It runs `gateway:release:handoff --phase=serve`, then, after verify, `--phase=schedule`, with the code of the release that just became current. The Gateway interprets the phase report and records its result. A release that changes what the Gateway renders applies that change at once, although the deployer itself runs from the previous release. In order, the handoff:
-
-The serving phase:
-
-1. skips Caddy publication when its rendered digest matches the published target;
-2. converges the PHP-FPM pool and the start hooks, as described below;
-3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
-4. starts [Laravel Horizon](/reference/gateway-queue#releases) after the pre-switch drain. A manual handoff of an active Process uses `php artisan horizon:terminate`.
-
-An unchanged digest records `caddy: unchanged` and a null `caddy_operation_id`, with no Swamp call. A changed configuration submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its ID. The Operation owns publication and its final result. Submission is not a publication claim. The digest comparison reads the actual `/etc/caddy/Caddyfile` managed link, not the last submitted Operation. Release verification still checks live HTTPS.
-
-Only the Gateway release runner has a bounded self-recovery exception: after an explicitly refused or unavailable Caddy or Horizon start, it waits up to 600 seconds for Swamp's HTTPS health endpoint, using the configured CA. It then makes one fresh submission. If that attempt cannot connect before sending, the runner keeps waiting within the same deadline; a healthy HTTPS response alone does not establish a working WebSocket connection.
-
-A refusal after healthy serve, an uncertain admission, or another failure still fails the handoff. An uncertain start is never repeated. The existing release failure rules preserve or restore the prior release when safe. This wait is not available to other Operation kinds or Swamp steps.
-
-An explicit rollback uses the running release's handoff code against the stable Gateway path. It does not execute a retained target's older handoff implementation, which may still require Swamp for unchanged Caddy configuration. Forward deploys keep using the target release's handoff code.
-
-The handoff command's exit status determines success. The caller validates only the stable envelope (`succeeded` and the report object), then records the target's report. It does not impose its own version's Caddy or scheduler report fields on the target release. Release815 exposed this boundary: the older runner rejected `caddy: unchanged` after the new serve phase had already completed successfully. Changes to this caller contract must reach a verified release before a target depends on them.
-
-The scheduler phase:
-
-1. moves the scheduler to the new release without cutting off a scheduled command;
-2. restarts every other Gateway Node Process whose directory is in the Gateway application, except the `horizon` Process;
-3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
-5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
-6. resets OPcache, described below.
-
-The managed Gateway FPM pool recycles each worker after 100 requests to limit retained memory. It allows eight workers. This pool setting is applied by the release handoff.
-
-The handoff sends the rendered pool and contributed [start hooks](/reference/extensions#plug-in-points) to `gateway.converge-fpm`. The agent compares the pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` under the shared PHP-FPM publication lock. A matching active pool keeps serving without a reload; hook configuration still converges. For a changed pool, the agent validates a private candidate with every other enabled pool, installs and runs the hooks, publishes the pool atomically, and activates PHP-FPM. A failed activation restores the prior pool bytes, permissions, and service state; a failed restoration has its own refusal. An inactive service starts even when the pool matches.
-
-PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
-
-Release files never change in place, so OPcache never marks the scripts of an old release as wasted, and the cache fills up. The scheduler phase therefore ends with an OPcache reset through the pool's socket, with a script outside `public/`.
-
-All pools of the PHP-FPM master share one OPcache. OPcache restarts once no request uses the cache. A restart that stays pending for `opcache.force_restart_timeout` (180 seconds) kills the workers that still serve a request, and a Gateway request may run 600 seconds.
-
-The native `gateway.inspect-fpm-connections` command counts connections on the `listen` sockets of all enabled pools. An unavailable observation fails the reset without stopping the release. So the handoff resets only while no enabled pool has a connection on its `listen` socket, and the restart happens with the next request. It waits up to 60 seconds for that moment. Then it asks the pool again until the restart has happened.
-
-| `opcache.outcome` | Meaning |
-| --- | --- |
-| `reset` | The cache restarted. `cache_full` and the memory figures from before and after are in the record. |
-| `deferred` | A pool stayed busy for 60 seconds. A later release resets it. |
-| `pending` | The reset was accepted, but the restart was still pending after 5 seconds. |
-| `failed` | The pool could not be asked. The release continues. |
-
-A request that starts in the milliseconds between the idle check and the reset, and runs longer than 180 seconds, could still be killed. Setting `opcache.force_restart_timeout` above 600 seconds closes that gap, but it needs a PHP-FPM restart, and a restart ends requests in flight while `process_control_timeout` is 0. Leave it for a planned PHP-FPM restart. The handoff never reloads PHP-FPM for OPcache.
-
-The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. Every Gateway runs one. A missing one fails the handoff with `gateway.release_scheduler_missing`, and one in another directory with `gateway.release_scheduler_mismatch`, because it would keep the old code. The handoff never cuts off a scheduled command in the normal path. It moves the scheduler in these steps:
-
-The handoff compares recorded working-directory paths to find the scheduler and other Gateway systemd Processes. A null Docker working-directory override is not a Gateway application path and is left alone. Ordinary [Process convergence](/reference/processes-and-schedules#persisted-intent-and-retry-recovery) leaves an unchanged completed unit untouched; the release handoff still explicitly moves Gateway services to the new release.
-
-The Gateway sends the selected Process identity and drain limit to `gateway.drain-scheduler`. The agent checks the owned unit, probes the fixed Gateway PHP 8.5 runtime for `pcntl`, reads the main PID and bounded control-group members, and signals only the main process. It returns the drain result. `gateway.start-scheduler` starts the unit and waits for active state; `gateway.stop-scheduler` stops it without changing its enabled state. `gateway.restart-release-process` applies the handoff's try-restart to each other selected Process. These commands share the Process mutation lock.
-
-The Gateway retains `schedule:interrupt` and `schedule:clear-cache`. On a forced drain it performs native stop, overlap-lock cleanup, and native start. A failed step still requests a scheduler start and preserves the original failure.
-
-The drain needs the Gateway's PHP 8.5 runtime to have the `pcntl` extension, so `schedule:work` can handle SIGTERM. Without it, the handoff takes the forced path at once and records `reason: no_pcntl`.
-
-1. It runs `schedule:interrupt`, so repeating events such as recipe refreshes stop after their current run.
-2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
-3. When the main process has exited, it starts the unit, which now runs the new release, and waits until it is active.
-
-Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so scheduled work pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler dispatches most work, so a running tick finishes in Laravel Horizon.
-
-Explicit fleet and Horizon health collection run in the native Doctor workflow on Node 209, independently of Horizon workers and the scheduler drain. Problem filing retains its separate [scheduler entry](/reference/gateway-queue#scheduled-work).
-
-The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600, maximum 3600). After that limit, the handoff stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
-
-The new scheduler pauses document cleanup when it starts. The handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. The documents extension contributes this cleanup through the `GatewayReleaseCleanup` [plug-in point](/reference/extensions#plug-in-points); with several contributions, the release records the first cleanup that stays paused. When the report has differences or resume is refused, cleanup stays paused. The release record then has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release continues.
-
-The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning. It queues [host-local recipe image builds](/reference/compute-drivers#build-the-base-image) when the deployed recipe changes. This only records and dispatches work; it never builds on the release process. A dispatch failure logs an error and the minute recipe check retries it without rolling back a healthy Gateway.
-
-When publication is needed, the Caddy handoff submits the normal
-`route.caddy_converge` native root on the Gateway Node worker. Its report records
-`caddy: submitted` and `caddy_operation_id`; the Operation records publication
-success or failure. With an unchanged published digest, deploy and rollback can
-complete while Swamp is unreachable. A changed configuration still requires a
-successful native admission within the release-only health window.
-
-When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
-
-##### Gateway Node agent
-
-The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine. [Prepare](#prepare-a-release) installs the release's pin there. For a release the Gateway already holds, such as one an older Gateway prepared, it does so before any agent command, so an agent that predates that release's code does not block its deploy. Every agent command then keeps that Node at the pin of the code that sends it, through [install on mismatch](/reference/node-agent#install-on-mismatch). So the deployer's own later commands move it back to the deployer's pin until the switch.
-
-The scheduler phase updates that Node's `orbit-agent` to the release's pin once more. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When a later step fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
-
-The update installs the release's pin through the agent's own installer, as a local process, never over SSH to itself. It stages the pinned binary under `ORBIT_HOME/agent-candidates` and runs that candidate's [`agent.install`](/reference/node-agent#install-on-mismatch). The installer holds `/run/lock/orbit-self-update.lock` and waits up to 120 seconds for it. It does nothing when the binary already matches the pin.
-
-Otherwise it replaces the binary. When the observer unit exists, it restarts the observer and requires it to stay active for 5 seconds. A failed health check restores the kept binary. The Gateway Node needs the binary for command mode, so the update runs also when the Node has no observer unit.
-
-The handoff result records the update as `gateway_agent`. It has an `outcome` and the pinned `version`, as the observer reports it:
-
-| Outcome | When |
-| --- | --- |
-| `unchanged` | The binary already matched the pin. The agent did not restart |
-| `updated` | The pinned binary replaced the old one, and the observer stayed up |
-| `skipped` | `reason` is `platform` when the Node does not run Linux |
-| `failed` | `error_code` and `message` say why: the installer's code, such as `agent.health_check_failed`, `agent.update_busy`, or `agent.replace_failed`, or `agent.install_failed` when no valid result arrived |
-
-A failed update never fails or switches back the release. The release stays `verified`, and the record raises one [`release_gateway_agent_failed` alert](#release-alerts), stored as `gateway_agent.alert`. Doctor keeps reporting `node.agent_binary_mismatch` for the Gateway Node until a later release updates the agent. To retry sooner, run the scheduler phase of the handoff again by hand, as described above. Do not run `orbit self-update` on the Gateway machine, because it also replaces the Gateway's CLI.
-
-##### Roll back
-
-Roll back to return the Gateway to a release it still keeps, for example after a pause or a bad release that verify did not catch.
-
-```bash
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
-```
-
-`<id>` is the first 12 hex digits of a retained release. With the default of 3, a rollback can reach the previous release and one other retained release. Rollback switches to it and runs the same handoff, verify, and web switch as a deploy.
-
-Rollback switches code only. It names the newest pre-release snapshot for recovery, but never runs migrations or restores the database. Check that the target code can use the current database.
-
-If a database restore is needed, keep access and automation paused and follow [Recover a failed update](#recover-a-failed-update) with the matching snapshot; restore is an explicit operator step. A failed verification switches back to the release that was current, because rollback itself does not migrate.
-
-Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning. A deploy always fails without its web build.
-
-##### Roll back without Swamp
+### Roll back without Swamp
 
 When Swamp or the Gateway cannot run `gateway:release:rollback`, run the rollback script on the Gateway Node:
 
@@ -667,7 +305,7 @@ It needs only the release directories. It refuses an id that is not 12 hex digit
 
 It reloads PHP-FPM, so every request runs the release and OPcache starts empty. Then it restarts each running service whose working directory is under the application, such as Horizon, the scheduler and agent-view. A stopped Process stays stopped. The release run switches forward with the same script.
 
-It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, run `gateway:release:rollback <id>` to bring the record in line.
+It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, admit a release of the serving commit to load its workflows and record a verified release.
 
 ### Apply an env change
 
@@ -677,11 +315,11 @@ Before editing `/home/orbit/shared/gateway.env`, make a private backup with mode
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
 ```
 
-It caches the current release's configuration beside the live cache and renames it into place, so a request never reads half of it. Do not run `php artisan config:cache` in a release: it rewrites the live cache in place. A deploy or rollback caches its target again, so a retained release picks up the edit when it goes current.
+It runs `config:cache` locally into a temporary file, sets mode `0600`, then renames it over the current release's `bootstrap/cache/config.php`. A request never reads a partial cache. Do not run `php artisan config:cache` in a release: it rewrites the live cache in place. A deploy or rollback caches its target again, so a retained release picks up the edit when it goes current.
 
 ## Automatic releases
 
-The Gateway can release itself from its own branch. A timer looks for a new commit that passed CI's `Required checks` every minute, and the release goes live without a maintenance window. Automatic releases are disabled by default. An operator turns them on after [adoption](#release-layout) and a first release by hand. The operator also decides what happens after a [pause](#pause).
+The Gateway scheduler runs `gateway:release:auto` every minute through `GatewaySchedule::command`. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
 ```bash
 orbit gateway:release:auto:enable
@@ -689,48 +327,38 @@ orbit gateway:release:auto:status
 orbit gateway:release:auto:disable
 ```
 
-### Release units
+A Gateway that ran the release unit still has `orbit-gateway-release.timer`. It runs the same tick every minute; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. A later release removes the timer and its units once the previous release also runs the tick from the scheduler, so a switch-back never lands on a release without a tick.
 
-`gateway.converge-release-units` renders and installs the fixed release units and host retention files through `AgentCommandRunner`. The Gateway supplies the stable application path, account, Orbit home, and retention limits. The agent preserves operator logrotate masks, removes only temporary masks it created during package installation, and never starts a release service during convergence. Requested records use `gateway.start-release-run`; `gateway.inspect-release-run` reports their systemd state while PHP checks whether the record was claimed.
-
-The Gateway runs releases in systemd units, never in PHP-FPM or the scheduler. The [runtime handoff](#runtime-handoff) installs them. The handoff writes the units and enables the timer, but it never starts or restarts a release unit, so the release that runs the handoff keeps running.
-
-| Unit | Runs |
-| --- | --- |
-| `orbit-gateway-release.timer` | Starts `orbit-gateway-release.service` every minute, with up to 10 seconds of random delay. It does not catch up missed runs |
-| `orbit-gateway-release.service` | One `gateway:release:auto` tick |
-| `orbit-gateway-release-run@.service` | One [requested release](#deploy-through-the-api), with the record id as the instance |
-
-Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts from the release that is current. It sets `PATH`, `HOME`, and `LANG=C.UTF-8`, so `php`, `git`, and `composer` resolve as they do for the account. A unit may run for one hour, because prepare runs `composer install`. A timer tick that comes while the service still runs starts nothing. After the main process exits, `ExecStopPost` runs `gateway:release:settle`: the run unit with its record id, the service without one.
 
 ### What a tick does
 
 Each tick of `gateway:release:auto` takes these steps and stops at the first that ends it:
 
-1. It stops when automatic releases are disabled or paused. A stall ends then.
-2. A requested release that waits for its unit goes first. The tick stops.
-3. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
-4. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
-5. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
-6. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
-7. It admits that commit as the [Swamp run](#release-as-a-swamp-run) with the trigger `auto`. The run's end records the outcome.
+1. It stops when automatic releases are disabled or paused.
+2. It stops when a release run is active or the release lock is busy.
+3. It settles dead records and stops if this creates a pause.
+4. It reads the current release and its `REVISION`. An invalid layout stops the tick.
+5. It reads the repository origin locally with `git --git-dir <shared>/orbit.git config --get remote.origin.url`.
+6. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) that descends from the current release.
+7. It respects a manual pin and the retry delay, then admits the [Swamp run](#release-as-a-swamp-run) with trigger `auto`.
 
-The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts. Waiting for published agent delivery is not a failed attempt and spends no retry budget.
+`ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and check, by default `main` and `Required checks`. A retryable failure waits 10 minutes between attempts, up to three attempts. Waiting for agent delivery spends no retry budget.
 
-Until the commit's agent delivery is published, admission refuses and writes no record. The automatic command checks again every 20 seconds, for up to 15 minutes per invocation, and resolves the newest green commit each time. The wait counts toward a stall, so it alerts once after 30 minutes.
+If the agent delivery is unpublished, the tick returns `waiting_for_agent_delivery` and writes no release record. It does not loop or sleep. The next scheduled tick checks again and selects the newest green commit. This wait counts toward the 30-minute stall alert.
 
-Every tick stores its result as the last tick. A tick prints it as one JSON object. It exits 1 only when it paused for a manual deploy, or when a run it admitted did not start.
+Every tick stores its result and prints one JSON object. It exits 1 for a manual-deploy pause or when an admitted run did not start.
 
 | Result | Meaning |
 | --- | --- |
-| `disabled`, `paused`, `busy` | Automatic releases are off or paused, or another release step runs or waits for its unit. A `busy` result counts toward a stall |
-| `not_adopted`, `no_deployed_release` | The Gateway does not run from a release, or its `REVISION` is unreadable. Deploy the first release by hand |
+| `disabled`, `paused` | Automatic releases are off or paused |
+| `busy` | Another release holds the lock or has an active run; this counts toward a stall |
+| `not_adopted`, `no_deployed_release` | The Gateway has no valid current release or readable `REVISION`; repair the release layout |
 | `up_to_date` | No newer commit qualifies |
-| `waiting_for_agent_delivery` | The candidate's published delivery cannot be verified yet; the command rechecks every 20 seconds |
-| `backing_off` | The newest commit failed for a retryable reason less than 10 minutes ago |
-| `source_unavailable` | GitHub, the App, or the shared repository's origin did not answer. The tick is skipped |
-| `started` | The tick admitted the Swamp run of a commit; its end records the outcome |
-| `failed` | The tick could not admit the run. The next tick tries again |
+| `waiting_for_agent_delivery` | The candidate's agent delivery is not available; the next tick checks again |
+| `backing_off` | A retryable failure is less than 10 minutes old |
+| `source_unavailable` | GitHub, the App, or the shared repository's origin could not be read |
+| `started` | A Swamp run was admitted; its terminal result ends the record |
+| `failed` | Admission failed; the retry policy decides whether the commit is tried again |
 
 ### Pause
 
@@ -738,13 +366,13 @@ A pause is durable state with a reason. It holds until `resume` or until a deplo
 
 | Reason | Cause |
 | --- | --- |
-| `migration_failure` | A release failed after its migrations ran. It stays current |
+| `migration_failure` | Migrate or a later step failed, without a successful switch-back; inspect the run and snapshot |
 | `rollback` | A rollback went live. The runner does not release a newer commit over it |
 | `manual_deploy` | A manual deploy went live while a newer green commit already existed: a deliberate pin of an older commit. The runner does not undo it |
 | `interrupted` | A release died after a snapshot, a migration, or a switch |
 | `marker` | Only `ORBIT_HOME/gateway-release.paused` exists, as an older Gateway wrote it |
 
-A manual deploy or rollback still runs during a pause. A manual deploy, an automatic release, or an adoption that ends `verified` ends a pause, so a forward fix hands back to automation. An adoption that ends `resumed` serves a release that was never verified, so it keeps the pause. A rollback that goes live starts a `rollback` pause instead.
+A manual deploy or rollback still runs during a pause. A manual or automatic release that ends `verified` ends a pause, so a forward fix hands back to automation. A rollback that goes live starts a `rollback` pause instead.
 
 When a manual deploy goes live, the Gateway asks GitHub whether a newer green commit exists. It stores the answer on the record as the `newest_green` step: `superseded` with that commit, `newest`, or `unknown` when GitHub did not answer. `superseded` and `unknown` make the next tick pause with `manual_deploy`, so a pin is never undone on a guess. After a GitHub outage, a manual deploy may need one `resume`. A manual deploy of the newest green commit hands back to automation, and a newer commit that turns green later is released as usual.
 
@@ -769,115 +397,8 @@ While it is up to date, the runner reads the branch head at most every 15 minute
 
 ### Read the state
 
-`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the current release's [tick confirmation](#post-release-tick-confirmation). `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes means the timer does not run. Check it with `systemctl status orbit-gateway-release.timer` on the Gateway.
+`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the last run result. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes needs investigation. Check the Gateway scheduler, its logs and, when configured, the queue workers.
 
-## Adopt the release layout
-
-A Gateway installed with the [Quickstart](/quickstart) runs from an in-place checkout at `/home/orbit/orbit`. `gateway:release:adopt` converts it into the [release layout](#release-layout) once, and the Gateway keeps serving throughout. Run it from a temporary checkout of the commit to adopt into, so the in-place checkout needs no update first. After adoption, deploy, roll back, and configure with the release commands. An update in place then fails, because each release is read-only.
-
-### Before you adopt
-
-Check these conditions on the Gateway before you run the command.
-
-- Back up as in [Back up before an update](#back-up-before-an-update).
-- `git status --short --untracked-files=no` in `/home/orbit/orbit` prints nothing. Untracked files, such as `.env` backups, are fine.
-- The disk has room for one release, about the size of the checkout without `.git`, plus the free-space floor and a database snapshot.
-- The pinned agent and file system support Linux atomic exchanges between the checkout and shared storage.
-- The Gateway GitHub App installation has accepted `Actions: read`. See [Read CI artifacts](/reference/github-app#read-ci-artifacts). Phase 2 needs it for the web build.
-
-Without the permission, phase 2 stops in prepare with `gateway.release_web_build_unavailable`. Nothing changes live.
-
-### Run adoption
-
-As `orbit`, make a temporary checkout of the commit to adopt into, `<SHA>`, and install its dependencies. Its env file is a link to the Gateway's, so the command reads the Gateway's configuration and state. Keep its logs, which record the run:
-
-```bash
-git clone --quiet https://github.com/hardimpactdev/orbit.git /home/orbit/adopt-tmp
-git -C /home/orbit/adopt-tmp checkout --quiet --detach <SHA>
-composer --working-dir=/home/orbit/adopt-tmp/apps/gateway install --prefer-dist --no-interaction
-ln -s /home/orbit/orbit/apps/gateway/.env /home/orbit/adopt-tmp/apps/gateway/.env
-php /home/orbit/adopt-tmp/apps/gateway/artisan gateway:release:adopt --commit=<SHA> | tee /home/orbit/.orbit/logs-adopt.json
-mv /home/orbit/adopt-tmp/apps/gateway/storage/logs /home/orbit/.orbit/logs-adopt-tmp
-rm -rf /home/orbit/adopt-tmp
-```
-
-Adoption holds the release lock and runs in two phases. The first changes the layout but not the code. The second changes the code through a normal deploy. So no process ever runs code from two commits.
-
-Phase 1 runs these steps for the commit the in-place checkout has:
-
-| Step | What happens |
-| --- | --- |
-| Check | Tracked changes in the checkout refuse adoption with `gateway.release_adopt_local_changes`. |
-| Repository | `shared/orbit.git` is a bare clone of the checkout's repository, with the same `origin` and remote branches. `<SHA>` comes from the temporary checkout, or through the [GitHub App](/reference/github-app). |
-| Env file | `shared/gateway.env` is a copy of `apps/gateway/.env` with any `APP_VERSION` line commented out, so each release reports its own commit. |
-| Env link | The original stays as `apps/gateway/.env.pre-adopt`, and one rename replaces `.env` with a link to the shared file. The running code uses its cached configuration, so it serves the same. |
-| Env backups | Each `apps/gateway/.env.bak*` file is copied to `shared/env-backups/`. |
-| Storage | `apps/gateway/storage` moves to `shared/gateway-storage` through two exchanges with prepared links, so its path always reaches the same directory and is never missing. |
-| Prepare | `releases/<id>` is built for the checkout's own commit. With `--commit`, it gets no web build, because that commit may predate the CI artifact. |
-| Swap | `renameat2(RENAME_EXCHANGE)` swaps the checkout directory with a link to that release. The directory stays as `/home/orbit/orbit.pre-adopt-<time>`. |
-| Handoff | The temporary checkout's code hands the runtime over, because the checkout's commit may predate the handoff command. The app code that serves is the same as before. |
-| Serving | `/up` is up and Gateway status is `ok`. The version may be `dev`, because `APP_VERSION` is commented out. |
-
-Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describes, with its snapshot, migrations, handoff, verify, and web build. Without `--commit`, it deploys the checkout's commit itself, which then must have the command; that adds the web build and the exact version check. The web build comes from the commit's CI artifact, which CI keeps for 14 days, so phase 2 needs a commit built within that time.
-
-The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `shared`, `switch`, `phase1`, and `deploy`, the phase-2 release record. `switch.method` and `shared.storage_method` are `exchange`, with zero in `switch.gap_us` and `shared.storage_gap_us`. Each phase writes a release record with trigger `adopt` and an Activity entry.
-
-The Gateway sends adoption intent through `AgentCommandRunner`. Native commands check the clean checkout, preserve its commit and origin in the shared bare repository, resolve a target from a local checkout, and publish or restore the shared environment. The environment and its backups stay private; command output contains paths and outcomes, never environment contents. A conflicting repository or environment is refused before it is replaced.
-
-| Command | Result |
-| --- | --- |
-| `gateway.check-release-adoption` | The clean in-place checkout's full commit, without refreshing its Git index. |
-| `gateway.adopt-release-repository` | A shared bare repository with the checkout's origin and retained commit. |
-| `gateway.resolve-adoption-target` | The target commit, fetched from the supplied local checkout only when its head matches. An unresolved prefix goes back to the authenticated release builder. |
-| `gateway.inspect-adoption-origin` | The retained pre-adoption commit, or null. |
-| `gateway.adopt-release-environment` | Private shared environment and backups, with the original kept beside the checkout. |
-| `gateway.restore-adoption-environment` | Restoration of the original environment after a failed adoption. |
-
-The account commands `gateway.adopt-release-storage`, `gateway.switch-release-adoption`, `gateway.restore-release-adoption`, and `gateway.finish-release-adoption` own the storage exchanges, checkout switch, restoration, and interrupted-switch cleanup. They derive every path from the stable checkout, validate the release and kept-checkout identity, and serialize mutations for that checkout. They execute no Python or shell source and refuse unavailable exchanges. A failed exchange leaves the serving path in place; an interrupted storage move remains reachable and the next call finishes it.
-
-Running it again on a Gateway that finished adoption prints `"already": true` and changes nothing. When an earlier run swapped and then stopped before it verified, for example because its session dropped, the next run hands the runtime over and checks serving again. It records outcome `resumed`, prints `"resumed": true`, and then runs phase 2, which verifies the exact version. Only the phase-1 release can resume this way, and a `resumed` record keeps any pause marker; only a verified release clears it.
-
-The kept checkout is a complete way back. Its `.env.pre-adopt` holds the original env file, so keep its permissions, and remove it once a few releases have verified:
-
-```bash
-rm -rf /home/orbit/orbit.pre-adopt-<time>
-```
-
-The first release runs the checkout's own commit. That commit may predate the release version, so the release reports `dev`, and a rollback to it fails verify and switches back. With `--commit`, it also has no web build of its own. Roll back to a later release instead.
-
-### When adoption fails
-
-Each step checks whether it already ran, so after fixing the cause, run the command again.
-
-| Failure | Result |
-| --- | --- |
-| A refusal, or a failure before the swap | The checkout keeps serving, with its original `.env` back. The storage link stays, as it reaches the same files. |
-| Phase-1 handoff or serving check | Adoption swaps the checkout back, restores the original `.env`, and hands the runtime back. The record says `switched_back`. |
-| Phase 2 | The Gateway stays adopted. The deploy switches back to the phase-1 release or pauses, as any deploy does. |
-
-Phase 1 uses the temporary checkout's in-process handoff, including when it restores the original checkout. Phase 2 uses the prepared release's handoff phases. If its switch-back target lacks those phases, the handoff fails and recovery requires the temporary checkout's explicit handoff below.
-
-When even the swap back fails, the outcome is `gateway.release_switch_back_failed`. Swap back by hand as `orbit`, then hand the runtime over with the temporary checkout's code:
-
-```bash
-cd /home/orbit
-mv -T orbit orbit.adopt-link && mv -T orbit.pre-adopt-<time> orbit && rm orbit.adopt-link
-mv orbit/apps/gateway/.env.pre-adopt orbit/apps/gateway/.env
-php /home/orbit/adopt-tmp/apps/gateway/artisan gateway:release:handoff
-```
-
-| Error code | Meaning |
-| --- | --- |
-| `gateway.release_adopt_local_changes` | The checkout has tracked changes. |
-| `gateway.release_adopt_not_checkout`, `gateway.release_adopt_unsupported` | `/home/orbit/orbit` is not an in-place checkout, or is a link to something other than a release. |
-| `gateway.release_adopt_env_missing`, `gateway.release_adopt_env_conflict` | The checkout has no `.env` file, or `shared/gateway.env` exists with other contents. |
-| `gateway.release_adopt_storage_missing`, `gateway.release_adopt_storage_conflict` | The storage directory is missing, or both it and `shared/gateway-storage` exist. |
-| `gateway.release_adopt_repository_conflict` | `shared/orbit.git` exists without the checkout's commit. |
-| `gateway.release_adopt_conflict` | A link or kept checkout from an earlier attempt is in the way. |
-
-### After adoption
-
-The release directories are read-only, and `bin/bootstrap` refuses to run in a release. The manual `orbit:gateway-web` command is unavailable and makes no permission changes. The release path keeps the shared environment private and leaves prepared release trees unchanged.
 
 ## Recover a failed update
 
@@ -902,9 +423,8 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | `release_failed` | A release failed. Nothing went live, or the previous release serves again |
 | `release_paused` | A release failed after its migrations ran, or died after it touched the schema or the current link, and automatic releases are paused |
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
-| `release_stalled` | Published agent delivery waited 15 minutes, [automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
-| `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
-| `release_gateway_agent_failed` | A release went live, but the handoff could not bring the [Gateway Node's agent](#gateway-node-agent) to the pin. At most once per release; nothing switches back or pauses |
+| `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, including a wait for agent delivery, or the branch head stayed unreleased for 6 hours |
+| `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the release switch |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 | `rollout_cli_fallback` | A fleet rollout used an ancestor's CLI release. The summary names why the commit's own release was not used. Once per rollout; the rollout does not halt |
@@ -1006,7 +526,7 @@ The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's env
 
 Swamp's fleet maintenance workflow reads the current Gateway plan each minute and admits one fleet-wide `fleet.rollout` Operation. The same workflow admits [peer DNS](/reference/private-dns#resolver-selection) for one changed peer at a time. The Gateway validates the serving release and captures the participants and their pinned release assets.
 
-The Operation belongs to Node 209, because its steps run there and record the result on it. A run that fails before it visits any Node settles the Operation as failed and leaves the rollout and its Nodes pending, so the next admission retries them. Swamp owns order, maintenance windows and publication. The release command and runtime handoff do not install or start a fleet service or timer.
+The Operation belongs to Node 209, because its steps run there and record the result on it. A run that fails before it visits any Node settles the Operation as failed and leaves the rollout and its Nodes pending, so the next admission retries them. Swamp owns order, maintenance windows and publication. The release run does not install or start a fleet service or timer.
 
 During this conversion's deployment, stop and disable `orbit-fleet-converge.timer` and remove its service and timer files. Swamp's maintenance workflow owns further visits and catch-ups.
 
@@ -1023,7 +543,7 @@ The rollout visits a Node when all of these hold:
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
 - its `/usr/local/bin/orbit` is not a CLI that Orbit did not install.
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Each release's [runtime handoff](#gateway-node-agent) updates its agent, and its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, or `roleless`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, or `roleless`.
 
 A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) owns, on an Incus host or at [UpCloud](/reference/compute-drivers#upcloud-overflow). The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
 
@@ -1048,11 +568,11 @@ App-dev-only Nodes may start at any hour. Other Nodes use 03:00 inclusive to 06:
 
 ### Desired state
 
-One run resolves the desired state of the commit the Gateway serves: the CLI release `cli-v0.N.0` with the SHA-256 of each binary, the agent pin with the SHA-256 of each binary, and the footprint digest of each Node. A footprint digest covers only what Orbit renders from its own code and pins, never a user's sites, Routes, or DNS records. It stores the state on a rollout record for that commit. The record belongs to the commit's `verified` release record, and [`gateway:release:show`](#deploy-a-release) shows it under `fleet_rollout`, with each Node's result.
+One run resolves the desired state of the commit the Gateway serves: the CLI release `cli-v0.N.0` with the SHA-256 of each binary, the agent pin with the SHA-256 of each binary, and the footprint digest of each Node. A footprint digest covers only what Orbit renders from its own code and pins, never a user's sites, Routes, or DNS records. It stores the state on a rollout record for that commit. The record belongs to the commit's `verified` release record, and [`gateway:release:show`](/cli/gateway/release-show) shows it under `fleet_rollout`, with each Node's result.
 
 A Gateway in the release layout rolls out only a commit whose release record is `verified`. A run during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the run rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
 
-CI publishes the commit's release a few minutes after its checks pass, and the Gateway deploys the commit only after that, because [prepare](#prepare-a-release) takes the agent from it. A Gateway that runs a commit without a CLI release, from before releases carried the agent, rolls out as follows. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
+The Gateway can release before CI publishes that commit's CLI: admission verifies the commit's pinned agent delivery. The rollout waits until the CLI release exists. A Node whose `orbit self-update` reports a pending release waits too.
 
 When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. The rollout then starts with that release and raises `rollout_cli_fallback` once, so a missing release is never silent. When the commit's own release appears later, the catch-up visits each Node again and brings it to that release.
 
@@ -1111,11 +631,11 @@ Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating
 | `kind` | The Node is updating while | `since` | Id field |
 | --- | --- | --- | --- |
 | `fleet_rollout` | The rollout or the catch-up visits it: the visit has a `started_at` and no `finished_at` | The visit's `started_at` | `rollout`, the rollout id |
-| `gateway_release` | A [release record](#release-records) is `running`. Only the Node with the active `gateway` role updates | The record's `created_at` | `release`, the record id |
+| `gateway_release` | A [release record](/cli/gateway/release-show) is `running`. Only the Node with the active `gateway` role updates | The record's `created_at` | `release`, the record id |
 
 The other id field is null. A visit clears its `finished_at` when it starts, so a catch-up visit of a converged Node counts too. The rollout visits one Node at a time, so at most one Node is `fleet_rollout`. The Gateway Node is never in the [rollout set](#rollout-set-and-order), so one Node is never both. A `queued` release record does not count, because nothing changed yet.
 
-A visit counts while its queued or running fleet Operation owns it. An expired worker lease keeps the same visit active while Swamp recovers its receipts. A terminal completion ends the visit. A dead `running` release record ends as `interrupted`, as [Release records](#release-records) describes.
+A visit counts while its queued or running fleet Operation owns it. An expired worker lease keeps the same visit active while Swamp recovers its receipts. A terminal completion ends the visit. The Gateway reads a running release's result from its Swamp run. An interrupted run pauses releases, as [Release as a Swamp run](#release-as-a-swamp-run) describes.
 
 The list reads Operation-backed visits and the running release from Gateway records.
 
@@ -1127,19 +647,15 @@ Automatic releases and the fleet rollout have these limits.
 
 ### Release limits
 
-A release that fails after its migrations ran pauses automatic releases until an operator acts. A deploy never switches back automatically after its migrator ran. Orbit cannot prove that older code runs on the resulting schema.
+A release needs an existing [release layout](#release-layout), the verified agent delivery, a valid CI web build and access to Swamp. There is no in-place update or layout-adoption command.
 
-Pre-migration snapshots stay on the Gateway host, in `ORBIT_HOME/backups`. Orbit does not copy them off the host. Keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
+Migrations must use expand and contract. A failed health check switches back; another failure from Migrate on pauses automation for an operator. Snapshots stay on the Gateway host. The run needs the database size plus 1 GiB free and keeps the newest three snapshots plus the snapshot a pause names.
 
-The Gateway sends its configured SQLite path and retention policy through `AgentCommandRunner`. `gateway.inspect-release-database` counts the database and WAL bytes for the disk reservation. `gateway.snapshot-release-database` checks the paths and free space before creating a private `VACUUM INTO` copy. Each attempt gets a new file, including retries of the same release. Retention always keeps that new copy and the snapshot named by a paused release. It never removes the configured live database.
-
-`gateway.migrate-release` runs the prepared release's fixed Artisan migration command with its private configuration cache and a clean environment under the release step lock. PHP keeps the release intent and error mapping; the agent owns these Node operations.
-
-The release steps up to the switch run the code of the release that was current. A change to those steps takes effect from the release after the one that ships it. The deploying code also writes the release record and raises its alerts. So when the release that adds the [Gateway Node's agent](#gateway-node-agent) update fails that update, its record shows the failure, but no alert is raised. Later releases alert.
+The parent workflow runs the definition loaded when it started. The activate child runs the target commit's definition after Load Swamp. Releases reload PHP-FPM and restart running application services. They do not converge static Gateway runtime files or update the Gateway Node's agent.
 
 ### Rollout limits
 
-The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order). Each release's handoff updates the [Gateway Node's agent](#gateway-node-agent). An operator updates an operator machine or a macOS Node with `orbit self-update`, and the CLI [tells the operator](/reference/self-update#the-newer-release-notice) about a newer release.
+The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order). An operator updates an operator machine or a macOS Node with `orbit self-update`, and the CLI [tells the operator](/reference/self-update#the-newer-release-notice) about a newer release.
 
 The rollout visits one Node at a time, so it takes longer as the fleet grows. A halted rollout blocks every later rollout until an operator resumes it.
 
@@ -1150,7 +666,7 @@ The Gateway pushes the rendered footprint over SSH, such as the Caddyfile or the
 Each of these needs its own decision:
 
 - copies of the pre-migration snapshots off the Gateway host;
-- an expand and contract policy for Gateway migrations;
+- Node convergence of the static Gateway runtime files;
 - `orbit self-update` that applies the rendered footprint on the Node, so the Gateway stops pushing configuration over SSH;
 - automatic updates on operator Macs;
 - a macOS Node agent;
@@ -1166,7 +682,7 @@ The Gateway is the fleet's trust anchor, so it alone proves where a release came
 
 No PHP Sigstore library exists in the locks, and a general one would carry far more code than the one bundle shape that `actions/attest-build-provenance` writes. A pinned external verifier, such as `cosign` or `sigstore-go` offline with a trusted root, or `gh attestation verify --bundle --custom-trusted-root`, was rejected too.
 
-It would be one more binary to pin, deliver, and update on the Gateway, beside the agent. Prepare would depend on a process outside PHP before any agent command. Its output would be one more contract for PHP to parse. So the verifier accepts only that shape, a Rekor v1 `dsse` entry with a signed entry timestamp, and refuses the rest. A format change then stops releases instead of weakening the check.
+It would be one more binary to pin, deliver, and update on the Gateway, beside the agent. Admission would depend on a process outside PHP before the release starts. Its output would be one more contract for PHP to parse. So the verifier accepts only that shape, a Rekor v1 `dsse` entry with a signed entry timestamp, and refuses the rest. A format change then stops releases instead of weakening the check.
 
 The cost is a trust root to keep current and a verifier to teach a new format before the attest action changes it. Both changes reach the Gateway through a normal release, as long as they ship before the old format or keys stop.
 
@@ -1178,7 +694,7 @@ A CI deploy job that connects to the Gateway over SSH was rejected too: the CI r
 
 ### Code decides what ships
 
-Whether a commit passed its checks, and whether a release serves, are deterministic questions. `Required checks` and verify answer them, not an agent's judgment. A deploy bot was planned for this duty and rejected for that reason. Judgment is needed only after a pause, and the operator gives it. Every step is a `gateway:release:*` command that an agent can run and a person can read.
+Whether a commit passed its checks, and whether a release serves, are deterministic questions. `Required checks` and verify answer them, not an agent's judgment. A deploy bot was planned for this duty and rejected for that reason. Judgment is needed only after a pause, and the operator gives it. Each release is one Swamp run whose steps and result an operator can inspect.
 
 ### Immutable releases behind one link
 
@@ -1190,21 +706,17 @@ A release runs the Gateway, its artisan commands, and its own CLI. None of them 
 
 Copying the current release's `vendor/` into the next one when `composer.lock` is unchanged was measured and rejected. The copy, the write bit it needs back, and the `composer install` that still runs to rebuild the autoloader took 6.6 to 7.2 s against 4.6 to 5.1 s for a fresh no-dev install. Hard links are not an option, because Composer rewrites autoload files in place.
 
-### No PHP-FPM restart
+### Reload and verify the release
 
-A PHP-FPM restart or reload ends the requests in flight, and a Gateway request may run 600 seconds. Caddy resolves the release link for each request instead, so a running request finishes on its release and the next one runs the new release.
+The switch reloads PHP-FPM so new requests use the new code and OPcache. It restarts running application services so they follow the stable release path. Draining Horizon first lets jobs finish on the release that started them.
 
-### Pause after the migrator
+### Expand and contract
 
-Older code on a newer schema is untested, and it can damage live data without a visible error. So a release that fails after its migrations pauses, and a person chooses between a forward fix, a code rollback, and a restore from the snapshot. Refusing automatic releases for commits with migrations was rejected: most commits that change the Gateway ship a migration, so automation would rarely run. The snapshot and the pause cover the risk.
+The old release serves while the new release migrates. Both must work with the resulting schema. This also lets a failed health check switch back without restoring the database. A snapshot protects operator recovery; it does not replace compatible migrations.
 
 ### Laravel owns migrations
 
-A Gateway deploy follows a Laravel production deploy: take the pre-release database snapshot, run `php artisan migrate --force`, and switch code. The snapshot implementation, retention, permissions, and protection of a paused release's clean copy stay the safety net. Rollback switches code; restoring a database snapshot is an explicit operator decision.
-
-This supersedes the migration-crossing part of ADR 0201. Release 200 (`fa72c0f1e`) was blocked because `nckrtl/horizon-new-dawn` registers a migration with `loadMigrationsFrom()`. Laravel had applied it at batch 145 during release `fbeeb79d5`, but the guard looked only in the Gateway's own migration directory. Identical package code in every release therefore looked incompatible.
-
-Extending the guard to vendor directories is rejected: it duplicates Laravel's migration discovery and still cannot prove that code and schema are compatible. Deploy leaves migration discovery to Laravel. Every deploy runs the migrator, including a release with only vendor migrations or none pending. A failure after the migrator runs pauses the release. A person chooses recovery.
+Laravel owns migration discovery, including vendor migrations. The run uses `migrate --force --isolated` rather than duplicating that discovery in a release guard. A migration failure or another unresolved failure after it pauses automation and names the snapshot for the operator.
 
 ### The Gateway is not an Orbit Instance
 

@@ -7,18 +7,13 @@ namespace App\Infrastructure\GatewayReleases;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Infrastructure\Releases\ReleaseProvenanceRefused;
 use App\Infrastructure\Releases\ReleaseProvenanceUnavailable;
 use App\Models\Node;
-use Closure;
 use Illuminate\Support\Facades\Http;
 use JsonException;
 use Throwable;
@@ -39,14 +34,12 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
     /**
      * @param  string  $repository  The public repository that publishes the releases, `orbit.cli_releases.repository`.
      * @param  string  $cacheDirectory  Where verified agent binaries wait, `ORBIT_HOME/agent-artifacts`, as {@see AgentDelivery} keeps them.
-     * @param  Closure(AgentDelivery): AgentCommandRunner  $runner  A runner that installs the given delivery's pin.
      */
     public function __construct(
         private ProcessRunner $processes,
         private ReleaseProvenance $provenance,
         private string $repository,
         private string $cacheDirectory,
-        private Closure $runner,
     ) {}
 
     /**
@@ -97,23 +90,6 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         }
 
         return ['sha' => $sha, 'manifest' => $manifest];
-    }
-
-    /** Also fills a release that an older Gateway prepared without a manifest; one with another manifest is refused. */
-    public function install(array $delivery, GatewayReleaseLayout $layout, Node $gateway): void
-    {
-        $release = $layout->releasePath(GatewayReleaseCommit::id($delivery['sha']));
-        $path = $release.'/'.self::Manifest;
-        $this->place($path, $delivery['manifest'], $delivery['sha']);
-
-        try {
-            ($this->runner)(new AgentDelivery($path, $this->cacheDirectory))->install($gateway);
-        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
-            $cause = $exception instanceof AgentCommandRefused ? ($exception->details['cause'] ?? $exception->errorCode) : null;
-            $code = is_string($cause) ? $cause : 'agent.install_failed';
-
-            throw new GatewayReleaseException('agent-delivery', 'gateway.release_agent_install_failed', "The release agent could not be installed on the Gateway ({$code}): ".$exception->getMessage(), 500, sha: $delivery['sha'], previous: $exception);
-        }
     }
 
     /** Resolve the Gateway commit independently of the frozen agent's published release. */
@@ -211,36 +187,6 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
      * Writes the manifest once; a sealed release is opened for that one file and sealed again. A `delivery`
      * directory that an interrupted attempt left without a manifest is used again.
      */
-    private function place(string $path, string $manifest, string $sha): void
-    {
-        if (is_file($path) && ! is_link($path)) {
-            if (@file_get_contents($path) !== $manifest) {
-                throw $this->invalid($sha, 'The release already holds another agent manifest.');
-            }
-
-            return;
-        }
-        $agent = dirname($path, 2);
-        $delivery = dirname($path);
-        $mode = @fileperms($agent);
-        if (! is_dir($agent) || is_link($agent) || $mode === false || is_link($delivery) || (file_exists($delivery) && ! is_dir($delivery))) {
-            throw $this->invalid($sha, 'The release has no place for its agent manifest.');
-        }
-        $mode &= 0o7777;
-        $candidate = $delivery.'/.manifest-'.bin2hex(random_bytes(8));
-
-        try {
-            if (! @chmod($agent, $mode | 0o700) || (! is_dir($delivery) && ! @mkdir($delivery, 0o755)) || ! @chmod($delivery, 0o755)
-                || @file_put_contents($candidate, $manifest) === false
-                || ! @chmod($candidate, 0o444) || ! @rename($candidate, $path) || ! @chmod($delivery, $mode)) {
-                throw $this->invalid($sha, 'The agent manifest cannot be written into the release.');
-            }
-        } finally {
-            @unlink($candidate);
-            @chmod($agent, $mode);
-        }
-    }
-
     private function unavailable(?string $sha, string $message): GatewayReleaseException
     {
         return new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', $message.' The frozen published agent must be reachable.', 503, sha: $sha);

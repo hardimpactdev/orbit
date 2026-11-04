@@ -6,11 +6,9 @@ namespace App\Providers\Domains;
 
 use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\AgentView\AgentStateView;
-use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Infrastructure\AgentView\NativeAgentViewConverger;
 use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
@@ -27,7 +25,6 @@ final class AgentViewServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         AgentStateView::class => CacheAgentStateView::class,
-        AgentViewConverger::class => NativeAgentViewConverger::class,
     ];
 
     public function register(): void

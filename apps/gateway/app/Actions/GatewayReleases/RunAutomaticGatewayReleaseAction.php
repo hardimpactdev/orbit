@@ -24,7 +24,7 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * One tick of automatic Gateway releases, run every minute by `orbit-gateway-release.timer`
+ * One tick of automatic Gateway releases, run every minute by the Gateway scheduler
  * ([Automatic releases](/reference/gateway-recovery#automatic-releases)).
  *
  * The tick exits quietly when automatic releases are disabled or paused, when a requested release
@@ -50,10 +50,6 @@ final readonly class RunAutomaticGatewayReleaseAction
 
     /** A commit whose release failed for a transient reason is tried again after this long. */
     public const int RetryMinutes = 10;
-
-    public const int PublicationCheckSeconds = 20;
-
-    public const int PublicationWaitMinutes = 15;
 
     public const int HeadCheckMinutes = 15;
 
@@ -86,16 +82,6 @@ final readonly class RunAutomaticGatewayReleaseAction
             $this->watchWhilePaused();
 
             return $this->automation->recordTick('paused');
-        }
-
-        $waiting = GatewayRelease::query()
-            ->where('outcome', GatewayRelease::Queued)
-            ->where('created_at', '>', CarbonImmutable::now()->subSeconds(GatewayReleaseRecorder::QueuedStartSeconds))
-            ->get()->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication());
-
-        if ($waiting) {
-            // A requested release goes first. Taking the lock now would make its unit fail.
-            return $this->stalled($this->deployedCommit(), 'busy', null, 'gateway.release_queued', 'A requested release waits for its unit.');
         }
 
         if ($this->recorder->swampRunActive()) {
@@ -170,8 +156,7 @@ final readonly class RunAutomaticGatewayReleaseAction
 
     /**
      * Admits the newest green commit as the `gateway.release` Swamp run; its native terminal ends the record. Until the
-     * commit's agent delivery is published, the tick waits; the command checks again every
-     * {@see self::PublicationCheckSeconds} seconds.
+     * commit's agent delivery is published, each tick waits.
      *
      * @return Tick
      */

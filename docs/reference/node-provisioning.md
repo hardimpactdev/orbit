@@ -88,7 +88,7 @@ The enrollment workflow records the verified bootstrap host key for the WireGuar
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
-The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. The release handoff installs its [disk retention configuration](/reference/gateway-recovery#disk-retention) beside the release units. They install a missing package only on Gateways not yet converged to the recipe. APT waits up to 300 seconds for dpkg locks. During that installation, temporary systemd masks block logrotate's package hooks and `NEEDRESTART_MODE=l` prevents automatic service restarts. Cleanup attempts to remove every temporary mask, even if one removal fails, and preserves the original installation error.
+The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. Releases leave installed [host log-retention rules](/reference/gateway-recovery#disk-retention) unchanged. A follow-up moves these static files to Node convergence.
 
 Existing operator masks remain in place. Convergence skips enabling `logrotate.timer` when `systemctl is-enabled` reports `masked` or `masked-runtime` for either `logrotate.service` or `logrotate.timer`, so an operator mask does not block releases. Otherwise it enables the configured timer afterward; it does not restart journald or force a rotation.
 
@@ -494,7 +494,7 @@ Convergence never restarts serve or a running worker, so a changed unit or binar
 
 A new Swamp release reaches serve and its workers through the role, with one restart in a quiet moment.
 
-1. Merge the pin change in the recipe and the other pins. The release handoff rebuilds the task VM images.
+1. Merge the pin change in the recipe and the other pins. The recipe reconcile builds the task VM images.
 2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
 3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then both workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b`. The workers retry until serve listens.
 4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`).

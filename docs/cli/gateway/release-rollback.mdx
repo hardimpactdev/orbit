@@ -13,4 +13,13 @@ orbit gateway:release:rollback [<release>] [--yes] [--json]
 | `release` | The 12-digit id of a retained release. In a terminal, an omitted value opens a list of the releases that went live. |
 | `--yes` | Confirm the code rollback without a prompt. Required with `--json` or without a terminal. |
 
-The Gateway checks that the target is a retained release before it queues anything. Rollback switches code and leaves the database in place. Confirm with `--yes` for noninteractive or JSON calls; the interactive prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Database restore is an explicit operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back). Output and exit status follow `gateway:release:deploy`.
+The Gateway checks that the target is a retained release, other than the current one, before it starts anything. It then runs the target's commit as a forced [Swamp release run](/reference/gateway-recovery#release-as-a-swamp-run): the build reuses the sealed release, and the load brings back that commit's workflows. Rollback switches code and leaves the database in place; migrations are expand and contract, so the older code runs on the current schema. Confirm with `--yes` for noninteractive or JSON calls; the interactive prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Database restore is an explicit operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back). Output and exit status follow `gateway:release:deploy`.
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.release_not_prepared` | The release is not a retained release. |
+| `gateway.release_already_current` | The release is already current. |
+| `gateway.release_in_progress` | Another release is queued or running. |
+| `input.cancelled` | The rollback was not confirmed. Nothing started. |

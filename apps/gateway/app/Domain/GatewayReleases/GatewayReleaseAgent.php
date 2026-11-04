@@ -18,13 +18,4 @@ interface GatewayReleaseAgent
      *                                 `gateway.release_provenance_invalid` when its release has no valid provenance
      */
     public function fetch(string $revision, Node $gateway): array;
-
-    /**
-     * Puts the manifest into the release and installs its agent on the Gateway.
-     *
-     * @param  array{sha: string, manifest: string}  $delivery
-     *
-     * @throws GatewayReleaseException
-     */
-    public function install(array $delivery, GatewayReleaseLayout $layout, Node $gateway): void;
 }

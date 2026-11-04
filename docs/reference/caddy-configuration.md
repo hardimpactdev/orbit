@@ -17,7 +17,7 @@ Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy.
 
 ## Native publication
 
-The manual `orbit:caddy-build` command and the Gateway runtime handoff submit `route.caddy_converge`. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
+The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; a follow-up moves the static Gateway sites to Node convergence. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
 
 This workflow creates no version directory or backup and does not restore the previous file on failure. If validation or reload fails, the new bytes remain at `/etc/caddy/Caddyfile`; the Operation records the failure. Correct the owning stored intent and submit another publication. A successful command exit means the Operation was submitted, not that publication has completed.
 
@@ -159,7 +159,7 @@ The shared `caddy.install-certificate` and `caddy.remove-certificate` commands o
 
 Publication validates the key match before it changes the live pair, then swaps the complete directory atomically under the Caddy publication lock. The same lock covers reload and rollback. Matching bytes cause no reload, and an inactive Caddy service stays inactive. A failed reload restores the previous directory and reloads the prior certificate; failed recovery has its own refusal and retains the prior pair. Removal accepts only an owned pair or an absent directory, and runs after the Gateway withdraws its site.
 
-The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any certificate or Caddy change. Normal releases use the [Gateway runtime handoff](/reference/gateway-recovery#runtime-handoff).
+The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any certificate or Caddy change. Normal [Gateway releases](/reference/gateway-recovery#release-as-a-swamp-run) switch the code and web build without converging Caddy sites.
 
 Metrics convergence publishes the `metrics.orbit` certificate through `metrics.certificate`. The agent keeps each publication in its own version directory under `/etc/caddy/orbit-metrics-cert-versions`, and the `orbit-metrics-cert-current` link selects one. It holds the Caddy publication lock through the switch, the reload, and any rollback. It reads the Caddy service state as the shared certificate commands do, and refuses before a change when it cannot read that state.
 
@@ -211,7 +211,7 @@ The next convergence of a Caddy role on the Node installs Caddy and builds the N
 
 The retained Gateway builder does not publish a new file when validation fails. Native publication writes before validation and leaves the new file on failure, as [native publication](#native-publication) describes. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
 
-While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. An invalid `task_vms.swamp_host` also refuses a build at stage `render`. No other task VM value affects a build.
+While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. Gateway releases do not run this build. Correct the range in the Gateway's environment and run `gateway:release:configure`. An invalid `task_vms.swamp_host` also refuses a build at stage `render`. No other task VM value affects a build.
 
 In the agent publication path described above, a failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 

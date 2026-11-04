@@ -21,7 +21,7 @@ sequenceDiagram
   %%> - `orbit gateway:release:deploy <full sha>`; the automatic tick admits the newest green commit the same way
   Note over GW: Admit the release<br/>verify agent pin · web build
   %%> Requirements:
-  %%> - the full commit; no other release queued or running; no staged hold
+  %%> - the full commit; no other release queued or running
   %%> - the agent pin passes its Sigstore check; CI published the commit's web build
   %%> Result:
   %%> - a running release record; the pin, artifact, Horizon unit and SSH targets frozen as inputs

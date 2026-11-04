@@ -39,11 +39,8 @@ return [
     ],
     // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
     'gateway_releases' => [
-        'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
         // The most releases deploy keeps, the current and the previous one included; at least 2, so the way back stays.
         'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 3),
-        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 3),
-        'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
         // Automatic releases ship the newest commit of this branch whose check run of this name passed.
         // The repository is the origin of the shared release repository.
         'branch' => env(key: 'ORBIT_GATEWAY_RELEASE_BRANCH', default: 'main'),
@@ -51,10 +48,6 @@ return [
     ],
     'gateway_web' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
-        characters: '/',
-    ),
-    'gateway_verify_origin' => rtrim(
-        string: env(key: 'ORBIT_GATEWAY_VERIFY_ORIGIN', default: 'https://gateway.orbit'),
         characters: '/',
     ),
     // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
