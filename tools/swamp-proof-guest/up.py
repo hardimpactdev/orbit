@@ -135,6 +135,8 @@ def prepare(node, network):
         run(['incus', 'config', 'device', 'add', node['key'], 'eth0', 'nic', f'network={network["name"]}', f'ipv4.address={node["address"]}'])
     if status(node['key']) != 'Running':
         run(['incus', 'start', node['key']])
+    if TOPOLOGY['gateway'] == 'standalone':
+        run(['incus', 'config', 'set', node['key'], 'boot.autostart=true'])
     deadline = time.monotonic() + 900
     while subprocess.run(['incus', 'exec', node['key'], '--', 'true'], capture_output=True, check=False).returncode:
         # A Node that stopped while booting never answers; say so now instead of at the deadline.
@@ -270,12 +272,16 @@ def swamp():
                               + f'--cache-dir={STATE}/worker-cache --concurrency 16 --label role=swamp --label node=209\n'),
     }
     for name, contents in units.items():
+        if TOPOLOGY['gateway'] == 'standalone':
+            contents += '\n[Install]\nWantedBy=multi-user.target\n'
         Path(f'/etc/systemd/system/{name}.service').write_text(contents)
     # Serve schedules as 209 does, so a Schedule's own workflow fires; the checked-in schedules stay paused,
     # because a proof exercises one kind, not fleet upkeep. A pause is kept in the datastore across restarts.
     for row in native('workflow', 'schedule', 'list')['schedules']:
         native('workflow', 'schedule', 'pause', row['workflowId'], '--reason', 'proof topology')
     run(['systemctl', 'daemon-reload'])
+    if TOPOLOGY['gateway'] == 'standalone':
+        run(['systemctl', 'enable', *units])
     run(['systemctl', 'restart', *units])
     deadline = time.monotonic() + 180
     while True:
