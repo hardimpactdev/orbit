@@ -30,6 +30,104 @@ def systemctl(args):
     return checked(subprocess.run(['systemctl', *args], capture_output=True, timeout=120), 'systemctl')
 
 
+# The nested topology's own private network. The outer VM is a roleless member (wg-nested, the Node record `operator`)
+# beside the Gateway hub and the targets; its real `orbit` interface and 10.44.0.0/24 are never touched.
+WG_DIR = Path('/home/orbit/.orbit/proof-wg')
+WG_SUBNET = '10.45.0.0/24'
+WG_ADDRESSES = {'gateway': '10.45.0.1', 'app-dev': '10.45.0.2', 'app-prod': '10.45.0.3', 'operator': '10.45.0.10'}
+WG_PORT = 51820
+WG_OUTER_PORT = 51821
+WG_OUTER = 'wg-nested'
+CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
+
+
+def as_orbit(argv):
+    return ['runuser', '-u', 'orbit', '--', *argv] if os.geteuid() == 0 else argv
+
+
+def privileged(argv, *, data=None, timeout=60):
+    return checked(subprocess.run(argv if os.geteuid() == 0 else ['sudo', '-n', *argv], input=data, capture_output=True, timeout=timeout), argv[0])
+
+
+def orbit_home():
+    """The CLI's private home on the outer VM; the CLI refuses a configuration directory others can read."""
+    home = Path(CLI_ENV['ORBIT_HOME'])
+    home.mkdir(parents=True, exist_ok=True)
+    home.chmod(0o700)
+    return home
+
+
+def wg_key(name):
+    """The fixed key pair of one member, kept on the outer VM so every reset and every ready copy agree. Never printed."""
+    private = WG_DIR / (name + '.key')
+    if not private.exists():
+        orbit_home()
+        WG_DIR.mkdir(exist_ok=True, mode=0o700)
+        value = checked(subprocess.run(['wg', 'genkey'], capture_output=True, timeout=30), 'wg')
+        descriptor = os.open(private, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(value)
+    secret = private.read_bytes()
+    return secret.decode().strip(), checked(subprocess.run(['wg', 'pubkey'], input=secret, capture_output=True, timeout=30), 'wg').decode().strip()
+
+
+def wireguard(topology):
+    """The public facts of the nested private network; private keys stay in wg_key() callers."""
+    keys = [key for key in topology['nodes'] if key != 'operator']
+    return {'subnet': WG_SUBNET, 'endpoint': topology['nodes']['gateway']['incus_address'] + ':' + str(WG_PORT),
+            'nodes': {key: {'ip': WG_ADDRESSES[key], 'public_key': wg_key(key)[1]} for key in [*keys, 'operator']}}
+
+
+def wg_config(key, network, endpoint):
+    """orbit.conf for a nested Node (hub on the Gateway), or wg-nested.conf for the outer VM: AllowedIPs only the nested
+    subnet, no DNS line and no default route, so the real fleet's tunnel and resolver stay as they are."""
+    members = network['nodes']
+    lines = ['[Interface]', f"Address = {members[key]['ip']}/24", 'PrivateKey = ' + wg_key(key)[0]]
+    if key == 'gateway':
+        lines.append(f'ListenPort = {WG_PORT}')
+        for peer, member in members.items():
+            if peer != 'gateway':
+                lines += ['', '[Peer]', 'PublicKey = ' + member['public_key'], f"AllowedIPs = {member['ip']}/32"]
+    else:
+        if key == 'operator':
+            lines.append(f'ListenPort = {WG_OUTER_PORT}')
+        lines += ['', '[Peer]', 'PublicKey = ' + members['gateway']['public_key'], 'Endpoint = ' + endpoint,
+                  f'AllowedIPs = {WG_SUBNET}', 'PersistentKeepalive = 25']
+    return '\n'.join(lines) + '\n'
+
+
+def bring_up_wireguard(topology, network):
+    """Hub first, then the peers and the outer VM's second interface, before anything listens on a nested address."""
+    for key in sorted((k for k in topology['nodes'] if k != 'operator'), key=lambda k: k != 'gateway'):
+        instance = topology['nodes'][key]['instance']
+        incus(['exec', instance, '--', 'sh', '-c', 'umask 077; install -d -m 0700 /etc/wireguard; cat > /etc/wireguard/orbit.conf'],
+              data=wg_config(key, network, network['endpoint']).encode())
+        incus(['exec', instance, '--', 'systemctl', 'enable', 'wg-quick@orbit'])
+        incus(['exec', instance, '--', 'systemctl', 'restart', 'wg-quick@orbit'])
+    configuration = wg_config('operator', network, network['endpoint']).encode()
+    path = '/etc/wireguard/wg-nested.conf'
+    current = subprocess.run(['cat', path] if os.geteuid() == 0 else ['sudo', '-n', 'cat', path], capture_output=True, timeout=30).stdout
+    if current != configuration:
+        privileged(['sh', '-c', f'umask 077; cat > {path}'], data=configuration)
+        privileged(['systemctl', 'enable', f'wg-quick@{WG_OUTER}'])
+        privileged(['systemctl', 'restart', f'wg-quick@{WG_OUTER}'])
+    else:
+        privileged(['systemctl', 'enable', '--now', f'wg-quick@{WG_OUTER}'])
+    # A recreated Gateway cannot read the old session; one packet starts the handshake at once.
+    subprocess.run(['ping', '-c', '1', '-W', '3', network['nodes']['gateway']['ip']], capture_output=True, timeout=15, check=False)
+
+
+def tunnel_ready(network, *, seconds=120):
+    """The outer VM's latest handshake with the Gateway hub is recent and the real interface is still the fleet's."""
+    published = wg_key('gateway')[1]
+    rows = privileged(['wg', 'show', WG_OUTER, 'latest-handshakes']).decode().split()
+    stamps = dict(zip(rows[0::2], rows[1::2]))
+    age = datetime.now().timestamp() - int(stamps.get(published, '0'))
+    if age > seconds:
+        raise RuntimeError(f'{WG_OUTER} has no handshake with the nested Gateway in the last {seconds} s.')
+    return round(age, 1)
+
+
 def git(candidate, *args, env=None):
     return checked(subprocess.run(['git', '-C', str(candidate), *map(str, args)],
                                   env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', **(env or {})},
@@ -62,6 +160,8 @@ def outer_identity():
                              '--property=ExecMainStartTimestampMonotonic']).decode().strip() for unit in pi_units},
             'hostname': os.uname().nodename,
             'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+            # The fleet's own tunnel: the second interface must leave it exactly as it was.
+            'orbit_tunnel': privileged(['wg', 'show', 'orbit', 'public-key']).decode().strip(),
             'observer': systemctl(['show', 'orbit-agent.service', '--property=MainPID',
                              '--property=ActiveState', '--property=ExecMainStartTimestampMonotonic']).decode().strip()}
 
@@ -176,8 +276,12 @@ def guest(request, action):
     topology = prepared(request)['construction']
     source_for(request, request['generation'])
     gateway = topology['nodes']['gateway']['instance']
+    network = wireguard(topology)
     facts = {'group': request['group'], 'generation': request['generation'],
-             'nodes': topology['nodes']}
+             'nodes': topology['nodes'], 'wireguard': network}
+    if action == 'gateway-db':
+        # The hub and the peers exist before the Gateway seeds addresses on them and Caddy binds one.
+        bring_up_wireguard(topology, network)
     # All credential delivery is the one explicitly approved proof file, never discovered fleet credentials.
     if action == 'swamp-state':
         incus(['exec', gateway, '--', 'install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/home/orbit/.config/swamp'])
@@ -203,7 +307,7 @@ def guest(request, action):
                             'host_key': incus(['exec', instance, '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1],
                             'agent_secret_hash': hashlib.sha256(secret.encode()).hexdigest()})
         facts['targets'] = targets
-    # Only the Gateway mounts the checkout; the operator receives configuration through Incus below.
+    # Only the Gateway mounts the checkout; the outer VM, the operator, is configured locally below.
     script = '/home/orbit/orbit/swamp/proof/reset/guest.py'
     result = json.loads(incus(['exec', gateway, '--', 'python3', script, action], data=json.dumps(facts).encode(), timeout=1800))
     if action == 'gateway-runtime':
@@ -228,18 +332,21 @@ def guest(request, action):
                 return incus(['exec', instance, '--', *argv], data=input.encode() if input else None)
             fixture.install_agent(None, rendered, secret, execute=execute)
         certificate = incus(['exec', gateway, '--', 'cat', '/home/orbit/.orbit/ca/root.pem'])
-        address = topology['nodes']['gateway']['incus_address']
+        address = network['nodes']['gateway']['ip']
         for key, node in topology['nodes'].items():
-            if key == 'gateway':
+            if key in ('gateway', 'operator'):
                 continue
             incus(['exec', node['instance'], '--', 'sh', '-c',
                  'printf "\\n%s gateway.orbit swamp.orbit reverb.orbit\\n" "$1" >> /etc/hosts', 'sh', address])
-        operator = topology['nodes']['operator']['instance']
-        address = topology['nodes']['gateway']['incus_address']
-        incus(['exec', operator, '--', 'install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/home/orbit/.orbit'])
-        incus(['exec', operator, '--', 'sh', '-c', 'cat > /home/orbit/.orbit/proof-ca.pem; chmod 0644 /home/orbit/.orbit/proof-ca.pem'], data=certificate)
-        incus(['exec', operator, '--', 'sh', '-c',
-             'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit gateway:add https://"$1" --name=proof --use --ca=/home/orbit/.orbit/proof-ca.pem --json', 'sh', address], timeout=120)
+        # The outer VM is the operator: its CLI profile names the Gateway by address only, never gateway.orbit.
+        pinned = orbit_home() / 'nested-ca.pem'
+        pinned.write_bytes(certificate)
+        pinned.chmod(0o644)
+        install_cli(request)
+        local_cli(request, 'gateway:add', 'https://' + address, '--name=nested', '--use', '--accept-ca-change', '--ca=' + str(pinned), '--json')
+        profiles = json.loads((Path(CLI_ENV['ORBIT_HOME']) / 'config.json').read_text()).get('gateways', {})
+        if list(profiles) != ['nested']:
+            raise RuntimeError('The outer VM CLI must have exactly one profile, nested; found ' + ', '.join(profiles))
     if action == 'gateway-runtime':
         return {'agents_installed': list(result['agents'])}
     return result
@@ -251,14 +358,19 @@ def gateway_state(request):
         'cd /home/orbit/orbit/apps/gateway; exec sudo -u orbit php /home/orbit/orbit/tools/swamp-proof-guest/gateway.php proof-state'], data=b'{}'))
 
 
-def operator_cli(request, *args, allow_failure=False):
-    node = prepared(request)['construction']['nodes']['operator']['instance']
-    completed = subprocess.run(['incus', 'exec', node, '--', 'sh', '-c',
-               'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit "$@"', 'sh', *args],
-               capture_output=True, timeout=120)
+def local_cli(request, *args, allow_failure=False):
+    """The candidate CLI on the outer VM as user orbit, with its one profile for the nested Gateway."""
+    completed = subprocess.run(as_orbit([str(Path(request['candidate']) / 'apps/cli/orbit'), *args]), env=CLI_ENV, cwd='/',
+                               capture_output=True, timeout=120)
     if completed.returncode and not allow_failure:
         raise RuntimeError('Authenticated candidate CLI failed: ' + completed.stdout.decode()[-4000:] + completed.stderr.decode()[-1000:])
-    return completed.returncode, json.loads(completed.stdout)
+    return completed.returncode, json.loads(completed.stdout) if completed.stdout.strip() else None
+
+
+def install_cli(request):
+    """`orbit` on the outer VM's PATH, for the candidate checkout."""
+    wrapper = f"#!/bin/sh\nexec {Path(request['candidate']) / 'apps/cli/orbit'} \"$@\"\n".encode()
+    privileged(['sh', '-c', 'umask 022; cat > /usr/local/bin/orbit; chmod 0755 /usr/local/bin/orbit'], data=wrapper)
 
 
 def fresh_facts(state, managed_ids, since):
@@ -281,7 +393,9 @@ def transport_readiness(request):
     topology = lease['construction']
     observed = inventory()
     attempt = topology['attempt_id']
-    for node in topology['nodes'].values():
+    for key, node in topology['nodes'].items():
+        if key == 'operator':
+            continue  # the operator is the outer VM; a construction that still composes an operator VM leaves it unused
         matches = [g for g in observed['guests'] if g['name'] == node['instance']]
         if len(matches) != 1 or matches[0]['status'] != 'Running' or matches[0]['metadata'] != {
             'user.orbit.e2e.owner': 'orbit-e2e', 'user.orbit.e2e.issue': request['issue'],
@@ -292,12 +406,17 @@ def transport_readiness(request):
     service = incus(['exec', gateway, '--', 'python3', '/home/orbit/orbit/swamp/proof/reset/guest.py', 'readiness'],
                   data=json.dumps({'group': request['group'], 'nodes': topology['nodes'],
                                    'managed': {key: {'address': node['incus_address'], 'host_key': incus(['exec', node['instance'], '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1]} for key, node in topology['nodes'].items() if key != 'operator'}}).encode(), timeout=240).decode()
-    operator = topology['nodes']['operator']['instance']
-    listed = json.loads(incus(['exec', operator, '--', 'sh', '-c',
-                            'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit node:list --json']))
-    if {n['name'] for n in listed['nodes']} != set(topology['nodes']):
+    network = wireguard(topology)
+    handshake_age = tunnel_ready(network)
+    _, status = local_cli(request, 'gateway:status', '--json')
+    # Only an active WireGuard member is told the release state, so this proves the Gateway knows the outer VM by 10.45.0.10.
+    if status is None or (status.get('data', status)).get('auto_release') is None:
+        raise RuntimeError('The nested Gateway does not recognise the outer VM as a WireGuard member.')
+    _, listed = local_cli(request, 'node:list', '--json')
+    if {n['name'] for n in listed['nodes']} != {*(k for k in topology['nodes'] if k != 'operator'), 'operator'}:
         raise RuntimeError('Candidate CLI does not see the exact fixture Nodes.')
     return {'attempt_id': attempt, 'control_plane': json.loads(service),
+            'wireguard': {'interface': WG_OUTER, 'handshake_age_seconds': handshake_age, 'subnet': WG_SUBNET},
             'candidate_cli': {'command': 'node:list --json', 'nodes': listed['nodes']}}
 
 
@@ -321,7 +440,7 @@ def readiness(request):
     for key, value in ids.items():
         if key == 'operator':
             continue
-        _, doctors[key] = operator_cli(request, 'doctor', '--node=' + str(value), '--family=firewall', '--json')
+        _, doctors[key] = local_cli(request, 'doctor', '--node=' + str(value), '--family=firewall', '--json')
         if doctors[key].get('healthy') is not True:
             raise RuntimeError('Scoped firewall Doctor baseline is not healthy: ' + key)
     baseline = case_baseline(request)

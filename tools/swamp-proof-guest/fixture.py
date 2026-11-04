@@ -26,6 +26,11 @@ def context(source, topology, *, home=Path('/home/orbit'), state=None, repo=None
         ROLE_CREDENTIALS=Path('/etc/orbit/swamp-role-worker'), AGENT=state / 'agent',
         IDENTITY=home / '.orbit/ssh/proof_worker_ed25519', BOOTSTRAP=home / '.orbit/ssh/id_ed25519', nested=nested)
 
+def member_address(ctx):
+    """The Gateway's address on the topology's private network: its WireGuard hub address, else the Incus address."""
+    wireguard = ctx.TOPOLOGY.get('wireguard')
+    return wireguard['nodes']['gateway']['ip'] if wireguard else ctx.TOPOLOGY['network']['gateway']
+
 def run(ctx, argv, *, input=None, timeout=300, user=None, cwd=None, env=None):
     if user:
         argv = ['/usr/sbin/runuser', '-u', user, '--', *argv]
@@ -103,7 +108,7 @@ def swamp(ctx):
     run(ctx, ['chown', '-R', 'orbit:orbit', str(ctx.STATE)])
     hosts = Path('/etc/hosts')
     lines = [line for line in hosts.read_text().splitlines() if 'swamp.orbit' not in line.split()[1:]]
-    hosts.write_text('\n'.join([*lines, f"{ctx.TOPOLOGY['network']['gateway']} swamp.orbit"]) + '\n')
+    hosts.write_text('\n'.join([*lines, f"{member_address(ctx)} swamp.orbit"]) + '\n')
     common = f'User=orbit\nEnvironment=HOME=/home/orbit SWAMP_HOME={ctx.STATE}/home SWAMP_CONFIG_DIR={ctx.STATE}/config\nEnvironment=SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\nUMask=0077\nRestart=on-failure\n'
     units = {'orbit-swamp-serve': '[Unit]\nDescription=Proof Swamp serve\n[Service]\n' + common + f'WorkingDirectory={ctx.REPO}\n' + f'ExecStart={ctx.BINARY} serve --repo-dir {ctx.REPO} --port {ctx.PORT} --host 127.0.0.1 --auth-mode token ' + f'--admins user:proof-operator --club-api-key-file {club} --trusted-hosts swamp.orbit --trust-proxy ' + '--dispatch-env-allow=, --remote-only --hot-reload ' + f'--grants-file {ctx.STATE}/grants.yaml\n', 'orbit-node-worker': '[Unit]\nDescription=Proof Swamp worker orbit-node-209\nAfter=orbit-swamp-serve.service\n[Service]\n' + common + f'WorkingDirectory={ctx.STATE}\nLoadCredential=enrollment:{ctx.STATE}/credentials/enrollment\n' + f'LoadCredential=server:{ctx.STATE}/credentials/worker\nLoadCredential=proxy-ssh-identity:{ctx.IDENTITY}\n' + f'ExecStart={ctx.BINARY} worker connect {ctx.URL} --token-file=%d/enrollment --server-token-file=%d/server ' + f'--cache-dir={ctx.STATE}/worker-cache --concurrency 16 --label role=swamp --label node=209\n'}
     for name, contents in units.items():
@@ -155,7 +160,13 @@ def gateway(ctx, nodes):
     if not (ctx.AGENT / 'secret').exists():
         private(ctx, ctx.AGENT / 'secret', secrets.token_hex(32))
         run(ctx, ['chown', 'root:root', str(ctx.AGENT / 'secret')])
-    facts = {'gateway': network['gateway'], 'gateway_host_key': Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[1], 'gateway_agent_secret_hash': hashlib.sha256((ctx.AGENT / 'secret').read_text().encode()).hexdigest(), 'operator': ctx.TOPOLOGY['operator']['address'], 'targets': nodes, 'subnet': str(ipaddress.ip_network(f"{network['gateway']}/{network['prefix']}", strict=False))}
+    wireguard = ctx.TOPOLOGY.get('wireguard')
+    if wireguard:
+        nodes = [{**node, 'wireguard_ip': wireguard['nodes'][node['key']]['ip']} for node in nodes]
+    facts = {'gateway': network['gateway'], 'gateway_host_key': Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[1], 'gateway_agent_secret_hash': hashlib.sha256((ctx.AGENT / 'secret').read_text().encode()).hexdigest(), 'operator': ctx.TOPOLOGY['operator']['address'], 'targets': nodes,
+             'subnet': wireguard['subnet'] if wireguard else str(ipaddress.ip_network(f"{network['gateway']}/{network['prefix']}", strict=False))}
+    if wireguard:
+        facts['wireguard'] = wireguard
     seeded = json.loads(run(ctx, ['php', str(ctx.SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'seed'], input=json.dumps(facts), user=ctx.ACCOUNT, cwd=ctx.GATEWAY))
     public = ' '.join(ctx.IDENTITY.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-worker'
     run(ctx, ['sh', '-c', 'install -d -m 0700 -o orbit -g orbit /home/orbit/.ssh; f=/home/orbit/.ssh/authorized_keys; touch "$f"; chown orbit:orbit "$f"; chmod 0600 "$f"; grep -qxF "$1" "$f" || printf "%s\\n" "$1" >> "$f"', 'sh', public])
@@ -234,7 +245,8 @@ def serve_gateway(ctx, node_id, swamp_route):
     ca = ctx.HOME / '.orbit/ca'
     run(ctx, ['install', '-m', '0644', str(ca / 'root.pem'), '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'])
     run(ctx, ['update-ca-certificates'])
-    address = ctx.TOPOLOGY['network']['gateway']
+    address = member_address(ctx)
+    # The outer VM reaches the Gateway as https://<address>, never by name, so the leaf carries the address as an IP SAN.
     leaf(ctx, Path('/etc/caddy/orbit-cert-current'), 'gateway', ['gateway.orbit', address])
     leaf(ctx, Path('/etc/caddy/orbit-websocket-cert-current'), 'reverb', ['reverb.orbit'])
     route_leaf(ctx, swamp_route, ['swamp.orbit'])
@@ -246,10 +258,17 @@ def serve_gateway(ctx, node_id, swamp_route):
         raise RuntimeError(f'gateway.orbit resolves to {resolved[:1]}, not this topology Gateway {address}')
     Path('/etc/php/8.5/fpm/pool.d/proof-gateway.conf').unlink(missing_ok=True)
     Path('/etc/php/8.5/fpm/pool.d/orbit-gateway.conf').write_text(f'[orbit-gateway]\nuser = {ctx.ACCOUNT}\ngroup = {ctx.ACCOUNT}\nlisten = /run/php/orbit-gateway.sock\nlisten.owner = caddy\nlisten.group = caddy\npm = ondemand\npm.max_children = 4\nclear_env = no\n')
-    # As on the nested Nodes, proof traffic crosses the isolated bridge, not the fleet's orbit interface (version 19).
-    network = ctx.TOPOLOGY['network']
-    run(ctx, ['ufw', 'allow', 'in', 'on', network['name'], 'from', str(ipaddress.ip_network(f'{address}/{network["prefix"]}', strict=False)), 'to', address, 'comment', 'proof-network'])
-    run(ctx, ['ufw', '--force', 'delete', 'allow', 'in', 'on', network['name'], 'to', address, 'port', '443', 'proto', 'tcp', 'comment', 'orbit-proof gateway'])
+    if ctx.TOPOLOGY.get('wireguard'):
+        # Caddy listens on the hub address, so it starts after the hub; HTTPS arrives on the orbit interface under the
+        # product's own gateway rule, and the handshakes arrive from the bridge under the proof-network rule.
+        run(ctx, ['install', '-d', '/etc/systemd/system/caddy.service.d'])
+        Path('/etc/systemd/system/caddy.service.d/orbit-wireguard.conf').write_text('[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n')
+        run(ctx, ['systemctl', 'daemon-reload'])
+    else:
+        # As on the nested Nodes, proof traffic crosses the isolated bridge, not the fleet's orbit interface (version 19).
+        network = ctx.TOPOLOGY['network']
+        run(ctx, ['ufw', 'allow', 'in', 'on', network['name'], 'from', str(ipaddress.ip_network(f'{address}/{network["prefix"]}', strict=False)), 'to', address, 'comment', 'proof-network'])
+        run(ctx, ['ufw', '--force', 'delete', 'allow', 'in', 'on', network['name'], 'to', address, 'port', '443', 'proto', 'tcp', 'comment', 'orbit-proof gateway'])
     path = ctx.HOME
     for part in ctx.GATEWAY.relative_to(ctx.HOME).parts:
         run(ctx, ['setfacl', '-m', 'u:caddy:x', str(path)])

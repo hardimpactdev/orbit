@@ -12,9 +12,11 @@ fixture = importlib.import_module('fixture')
 
 
 def context(facts):
-    nodes = facts['nodes']
+    nodes = facts['nodes']  # the Incus transport addresses; the private network is facts['wireguard']
+    wireguard = facts.get('wireguard')  # absent only for phases that never seed or serve the Gateway
     topology = {'network': {'gateway': nodes['gateway']['incus_address'], 'prefix': 24, 'name': 'eth0'},
-                'operator': {'address': nodes['operator']['incus_address']}, 'websocket': True}
+                'operator': {'address': wireguard['nodes']['operator']['ip'] if wireguard else None},
+                'wireguard': wireguard, 'websocket': True}
     state = Path('/home/orbit/.orbit/proof-control')
     return fixture.context(SOURCE, topology, state=state, repo=state / 'repo', nested=True)
 

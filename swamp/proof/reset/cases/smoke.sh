@@ -9,20 +9,20 @@ import subprocess
 
 result = json.loads(Path(os.environ['PROOF_RESULT']).read_text())
 nodes = result['topology']['construction']['nodes']
-operator = nodes['operator']['instance']
 evidence = Path(os.environ['PROOF_EVIDENCE'])
+# The outer VM is the operator: its CLI profile points at the nested Gateway over wg-nested.
+orbit = Path(os.environ['PROOF_SOURCE']) / 'apps/cli/orbit'
+environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 
 def cli(label, *args):
-    command = ['incus', 'exec', operator, '--', 'sh', '-c',
-        'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit "$@"', 'sh', *args, '--json']
-    run = subprocess.run(command, capture_output=True, timeout=180)
+    run = subprocess.run([str(orbit), *args, '--json'], capture_output=True, timeout=180, env=environment, cwd='/')
     (evidence / ('smoke-' + label + '.json')).write_bytes(run.stdout)
     if run.returncode:
         raise RuntimeError(label + ' failed: ' + run.stdout.decode() + run.stderr.decode())
     return json.loads(run.stdout)
 
 listed = cli('nodes', 'node:list')
-assert {node['name'] for node in listed['nodes']} == set(nodes)
+assert {node['name'] for node in listed['nodes']} == {*nodes, 'operator'}
 node_id = next(node['id'] for node in listed['nodes'] if node['name'] == 'app-dev')
 options = ['--node=' + str(node_id), '--from=192.0.2.89', '--protocol=tcp']
 cli('allow', 'firewall:allow', '43189', *options, '--label=proof3189-smoke')
