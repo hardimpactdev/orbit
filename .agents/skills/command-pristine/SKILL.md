@@ -57,3 +57,4 @@ End with: the command, the PRs, net lines, fresh and no-drift times, which relea
 - When a phase replaces several native steps, update the Gateway projections that read their names. Test a successful phase followed by a later failure: completed publication stays recorded.
 - Prove private-input cleanup after a failure that happens after vault staging. An admission refusal never creates those files, so it cannot prove cleanup.
 - A new intent field needs its Gateway producer in an earlier release. Confirm the live release SHA before shipping the workflow reader; a merged producer alone is not release uptake.
+- Prepare every Node a command touches with its baseline state and a working observer. A prior case must not supply missing prerequisites by accident. Keep proof-network allowances separate from product firewall policy.
