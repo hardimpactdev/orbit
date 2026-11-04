@@ -4,31 +4,36 @@ import hashlib
 import ipaddress
 import json
 import os
-from pathlib import Path
-import shutil
+import secrets
 import subprocess
 import sys
 import tarfile
 import tempfile
-import secrets
-import time
-from datetime import datetime, timezone
-
-
+from datetime import datetime
+from pathlib import Path
 
 from launcher import write_json
 
 
-def run(argv, *, cwd=None, env=None, data=None, timeout=120):
-    result = subprocess.run([str(x) for x in argv], cwd=cwd, env=env, input=data,
-                            capture_output=True, timeout=timeout)
+def checked(result, program):
     if result.returncode:
-        raise RuntimeError(f'{argv[0]} exited {result.returncode}: ' + (result.stderr + result.stdout).decode(errors='replace')[-3000:])
+        raise RuntimeError(f'{program} exited {result.returncode}: ' + (result.stderr + result.stdout).decode(errors='replace')[-3000:])
     return result.stdout
 
 
+def incus(args, *, data=None, timeout=120):
+    return checked(subprocess.run(['incus', *map(str, args)], input=data,
+                                  capture_output=True, timeout=timeout), 'incus')
+
+
+def systemctl(args):
+    return checked(subprocess.run(['systemctl', *args], capture_output=True, timeout=120), 'systemctl')
+
+
 def git(candidate, *args, env=None):
-    return run(['git', '-C', candidate, *args], env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', **(env or {})})
+    return checked(subprocess.run(['git', '-C', str(candidate), *map(str, args)],
+                                  env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', **(env or {})},
+                                  capture_output=True, timeout=120), 'git')
 
 
 def digest(path):
@@ -49,24 +54,25 @@ def identity(candidate):
 
 
 def outer_identity():
-    units = json.loads(run(['systemctl', 'list-units', '--all', '--type=service', '--output=json']))
+    units = json.loads(systemctl(['list-units', '--all', '--type=service', '--output=json']))
     pi_units = sorted(row['unit'] for row in units if row['unit'].endswith('-pi-server.service'))
     if not pi_units:
         raise RuntimeError('Outer Pi service is missing; reset cannot claim preservation.')
-    return {'pi': {unit: run(['systemctl', 'show', unit, '--property=MainPID', '--property=ActiveState',
+    return {'pi': {unit: systemctl(['show', unit, '--property=MainPID', '--property=ActiveState',
                              '--property=ExecMainStartTimestampMonotonic']).decode().strip() for unit in pi_units},
             'hostname': os.uname().nodename,
             'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
-            'observer': run(['systemctl', 'show', 'orbit-agent.service', '--property=MainPID',
+            'observer': systemctl(['show', 'orbit-agent.service', '--property=MainPID',
                              '--property=ActiveState', '--property=ExecMainStartTimestampMonotonic']).decode().strip()}
 
 
 def inventory():
     # Never persist cloud-init, environment, device secrets, or arbitrary guest configuration.
-    guests = json.loads(run(['incus', 'list', '--format=json']))
-    networks = json.loads(run(['incus', 'network', 'list', '--format=json']))
+    guests = json.loads(incus(['list', '--format=json']))
+    networks = json.loads(incus(['network', 'list', '--format=json']))
     # Incus reports null config for some unmanaged interfaces; null carries no ownership.
-    metadata = lambda row: {k: v for k, v in (row.get('config') or {}).items() if k.startswith('user.orbit.e2e.')}
+    def metadata(row):
+        return {k: v for k, v in (row.get('config') or {}).items() if k.startswith('user.orbit.e2e.')}
     return {'guests': [{'name': row['name'], 'status': row['status'], 'metadata': metadata(row)} for row in guests],
             'networks': [{'name': row['name'], 'metadata': metadata(row)} for row in networks]}
 
@@ -93,7 +99,9 @@ def active_generation(request):
 def harness(request, action, source, guest=None):
     # Bootstrap the isolated app, but retain the original host-wide lock namespace.
     env = {**os.environ, 'PROOF_REQUEST': os.environ['PROOF_REQUEST']}
-    return json.loads(run(['php', Path(request['candidate']) / 'swamp/proof/reset/topology.php', action, source, *([guest] if guest else [])], env=env, timeout=1800))
+    result = subprocess.run(['php', str(Path(request['candidate']) / 'swamp/proof/reset/topology.php'),
+                             action, str(source), *([guest] if guest else [])], env=env, capture_output=True, timeout=1800)
+    return json.loads(checked(result, 'php'))
 
 
 
@@ -101,15 +109,15 @@ def gateway_resources(request, prepared, source):
     """The proof Gateway also hosts Swamp; do not change ordinary harness budgets."""
     construction = prepared['construction']
     name = construction['nodes']['gateway']['instance']
-    observed = json.loads(run(['incus', 'query', '/1.0/instances/' + name]))['config']
+    observed = json.loads(incus(['query', '/1.0/instances/' + name]))['config']
     expected = {'owner': 'orbit-e2e', 'issue': construction['issue'],
                 'attempt': construction['attempt_id'], 'operation': prepared['source']['operation_id']}
     if any(observed.get('user.orbit.e2e.' + key) != value for key, value in expected.items()):
         raise RuntimeError('Refusing resource changes on a foreign Gateway.')
     # Resizing live memory kills virtiofsd on this Incus/QEMU version. Size offline.
-    run(['incus', 'stop', name])
-    run(['incus', 'config', 'set', name, 'limits.memory=2560MiB'])
-    run(['incus', 'start', name])
+    incus(['stop', name])
+    incus(['config', 'set', name, 'limits.memory=2560MiB'])
+    incus(['start', name])
     harness(request, 'wait-agent', source, guest=name)
     return {'instance': name, 'memory': '2560MiB', 'ownership': expected}
 
@@ -139,7 +147,8 @@ def snapshot(request):
     directory.mkdir(parents=True, mode=0o700)
     write_json(directory / 'owner.json', {k: request[k] for k in ('candidate', 'group')})
     source = directory / 'source'
-    run(['git', 'clone', '--no-local', '--no-checkout', '--', request['candidate'], source], timeout=180)
+    checked(subprocess.run(['git', 'clone', '--no-local', '--no-checkout', '--', request['candidate'], str(source)],
+                           capture_output=True, timeout=180), 'git')
     git(source, 'reset', '--mixed', 'HEAD')
     archive = git(request['candidate'], 'archive', before['candidate']['effective_tree'])
     with tempfile.TemporaryFile() as stream:
@@ -151,7 +160,8 @@ def snapshot(request):
         installed = Path(request['candidate']) / package / 'vendor'
         if not (installed / 'autoload.php').is_file():
             raise RuntimeError(f'Missing installed dependencies for {package}; use existing task provisioning.')
-        run(['cp', '-a', '--reflink=auto', installed, source / package / 'vendor'], timeout=180)
+        checked(subprocess.run(['cp', '-a', '--reflink=auto', str(installed), str(source / package / 'vendor')],
+                               capture_output=True, timeout=180), 'cp')
     if identity(source)['effective_tree'] != before['candidate']['effective_tree']:
         raise RuntimeError('Exported candidate identity differs from the pinned tree.')
     write_json(Path(request['root']) / 'active.json', {'generation': request['generation']})
@@ -164,38 +174,38 @@ def prepared(request):
 
 def guest(request, action):
     topology = prepared(request)['construction']
-    source = source_for(request, request['generation'])
+    source_for(request, request['generation'])
     gateway = topology['nodes']['gateway']['instance']
     facts = {'group': request['group'], 'generation': request['generation'],
              'nodes': topology['nodes']}
     # All credential delivery is the one explicitly approved proof file, never discovered fleet credentials.
     if action == 'swamp-state':
-        run(['incus', 'exec', gateway, '--', 'install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/home/orbit/.config/swamp'])
+        incus(['exec', gateway, '--', 'install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/home/orbit/.config/swamp'])
         # The orchestration process's HOME is private, so use the approved path supplied by the launcher.
         key = Path(request['key_file'])
-        run(['incus', 'file', 'push', key, gateway + '/home/orbit/.config/swamp/club-api-key', '--mode=0600', '--uid=1000', '--gid=1000'])
-        run(['incus', 'file', 'push', '/usr/local/bin/swamp', gateway + '/usr/local/bin/swamp', '--mode=0755'])
+        incus(['file', 'push', key, gateway + '/home/orbit/.config/swamp/club-api-key', '--mode=0600', '--uid=1000', '--gid=1000'])
+        incus(['file', 'push', '/usr/local/bin/swamp', gateway + '/usr/local/bin/swamp', '--mode=0755'])
     if action == 'gateway-db':
-        public = run(['incus', 'exec', gateway, '--', 'cat', '/home/orbit/.orbit/ssh/proof_worker_ed25519.pub'])
+        public = incus(['exec', gateway, '--', 'cat', '/home/orbit/.orbit/ssh/proof_worker_ed25519.pub'])
         targets = []
         for key, node in topology['nodes'].items():
             if key in ('gateway', 'operator'):
                 continue
             instance = node['instance']
             secret = secrets.token_hex(32)
-            run(['incus', 'exec', instance, '--', 'sh', '-c',
+            incus(['exec', instance, '--', 'sh', '-c',
                  'install -d -m 0700 /etc/orbit/agent; umask 077; cat > /etc/orbit/agent/secret'], data=secret.encode())
-            run(['incus', 'exec', instance, '--', 'sh', '-c',
+            incus(['exec', instance, '--', 'sh', '-c',
                  'install -d -m 0700 -o orbit -g orbit /home/orbit/.ssh; cat >> /home/orbit/.ssh/authorized_keys; '
                  'chown orbit:orbit /home/orbit/.ssh/authorized_keys; chmod 0600 /home/orbit/.ssh/authorized_keys'], data=public)
             targets.append({'key': key, 'address': node['incus_address'], 'roles': [key],
                             'settings': {'apps': {'path': '/home/orbit/apps'}},
-                            'host_key': run(['incus', 'exec', instance, '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1],
+                            'host_key': incus(['exec', instance, '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1],
                             'agent_secret_hash': hashlib.sha256(secret.encode()).hexdigest()})
         facts['targets'] = targets
     # Only the Gateway mounts the checkout; the operator receives configuration through Incus below.
     script = '/home/orbit/orbit/swamp/proof/reset/guest.py'
-    result = json.loads(run(['incus', 'exec', gateway, '--', 'python3', script, action], data=json.dumps(facts).encode(), timeout=1800))
+    result = json.loads(incus(['exec', gateway, '--', 'python3', script, action], data=json.dumps(facts).encode(), timeout=1800))
     if action == 'gateway-runtime':
         sys.path.insert(0, str(Path(request['candidate']) / 'tools/swamp-proof-guest'))
         import fixture
@@ -203,29 +213,32 @@ def guest(request, action):
         for key, commands in result['baseline_commands'].items():
             instance = topology['nodes'][key]['instance']
             for command in commands:
-                run(['incus', 'exec', instance, '--', *command])
-            run(['incus', 'exec', instance, '--', 'ufw', 'allow', 'from', str(ipaddress.ip_network(topology['nodes']['gateway']['incus_address'] + '/24', strict=False)), 'comment', 'proof-network'])
-            run(['incus', 'exec', instance, '--', 'ufw', '--force', 'enable'])
+                incus(['exec', instance, '--', *command])
+            incus(['exec', instance, '--', 'ufw', 'allow', 'from', str(ipaddress.ip_network(topology['nodes']['gateway']['incus_address'] + '/24', strict=False)), 'comment', 'proof-network'])
+            incus(['exec', instance, '--', 'ufw', '--force', 'enable'])
+        # The Gateway observer starts during fixture bootstrap, before this baseline is installed.
+        # Restart it once so the one-shot native facts step can observe the enabled firewall.
+        incus(['exec', topology['nodes']['gateway']['instance'], '--', 'systemctl', 'restart', 'orbit-agent'])
         for key, rendered in result['agents'].items():
             if key == 'gateway':
                 continue  # Shared gateway bootstrap already starts its observer.
             instance = topology['nodes'][key]['instance']
-            secret = run(['incus', 'exec', instance, '--', 'cat', '/etc/orbit/agent/secret']).decode()
+            secret = incus(['exec', instance, '--', 'cat', '/etc/orbit/agent/secret']).decode()
             def execute(argv, *, input=None):
-                return run(['incus', 'exec', instance, '--', *argv], data=input.encode() if input else None)
+                return incus(['exec', instance, '--', *argv], data=input.encode() if input else None)
             fixture.install_agent(None, rendered, secret, execute=execute)
-        certificate = run(['incus', 'exec', gateway, '--', 'cat', '/home/orbit/.orbit/ca/root.pem'])
+        certificate = incus(['exec', gateway, '--', 'cat', '/home/orbit/.orbit/ca/root.pem'])
         address = topology['nodes']['gateway']['incus_address']
         for key, node in topology['nodes'].items():
             if key == 'gateway':
                 continue
-            run(['incus', 'exec', node['instance'], '--', 'sh', '-c',
+            incus(['exec', node['instance'], '--', 'sh', '-c',
                  'printf "\\n%s gateway.orbit swamp.orbit reverb.orbit\\n" "$1" >> /etc/hosts', 'sh', address])
         operator = topology['nodes']['operator']['instance']
         address = topology['nodes']['gateway']['incus_address']
-        run(['incus', 'exec', operator, '--', 'install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/home/orbit/.orbit'])
-        run(['incus', 'exec', operator, '--', 'sh', '-c', 'cat > /home/orbit/.orbit/proof-ca.pem; chmod 0644 /home/orbit/.orbit/proof-ca.pem'], data=certificate)
-        run(['incus', 'exec', operator, '--', 'sh', '-c',
+        incus(['exec', operator, '--', 'install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/home/orbit/.orbit'])
+        incus(['exec', operator, '--', 'sh', '-c', 'cat > /home/orbit/.orbit/proof-ca.pem; chmod 0644 /home/orbit/.orbit/proof-ca.pem'], data=certificate)
+        incus(['exec', operator, '--', 'sh', '-c',
              'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit gateway:add https://"$1" --name=proof --use --ca=/home/orbit/.orbit/proof-ca.pem --json', 'sh', address], timeout=120)
     if action == 'gateway-runtime':
         return {'agents_installed': list(result['agents'])}
@@ -234,15 +247,15 @@ def guest(request, action):
 
 def gateway_state(request):
     node = prepared(request)['construction']['nodes']['gateway']['instance']
-    return json.loads(run(['incus', 'exec', node, '--', 'sh', '-c',
+    return json.loads(incus(['exec', node, '--', 'sh', '-c',
         'cd /home/orbit/orbit/apps/gateway; exec sudo -u orbit php /home/orbit/orbit/tools/swamp-proof-guest/gateway.php proof-state'], data=b'{}'))
 
 
 def operator_cli(request, *args, allow_failure=False):
     node = prepared(request)['construction']['nodes']['operator']['instance']
-    command = ['incus', 'exec', node, '--', 'sh', '-c',
-               'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit "$@"', 'sh', *args]
-    completed = subprocess.run(command, capture_output=True, timeout=120)
+    completed = subprocess.run(['incus', 'exec', node, '--', 'sh', '-c',
+               'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit "$@"', 'sh', *args],
+               capture_output=True, timeout=120)
     if completed.returncode and not allow_failure:
         raise RuntimeError('Authenticated candidate CLI failed: ' + completed.stdout.decode()[-4000:] + completed.stderr.decode()[-1000:])
     return completed.returncode, json.loads(completed.stdout)
@@ -259,42 +272,51 @@ def fresh_facts(state, managed_ids, since):
 def case_baseline(request):
     state = gateway_state(request)
     return {'firewall_records': state['firewall_records'],
-            'ufw': {key: run(['incus', 'exec', node['instance'], '--', 'ufw', 'status', 'numbered']).decode()
+            'ufw': {key: incus(['exec', node['instance'], '--', 'ufw', 'status', 'numbered']).decode()
                     for key, node in prepared(request)['construction']['nodes'].items() if key != 'operator'}}
 
 
-def readiness(request):
-    topology = prepared(request)['construction']
+def transport_readiness(request):
+    lease = prepared(request)
+    topology = lease['construction']
     observed = inventory()
     attempt = topology['attempt_id']
     for node in topology['nodes'].values():
         matches = [g for g in observed['guests'] if g['name'] == node['instance']]
         if len(matches) != 1 or matches[0]['status'] != 'Running' or matches[0]['metadata'] != {
             'user.orbit.e2e.owner': 'orbit-e2e', 'user.orbit.e2e.issue': request['issue'],
-            'user.orbit.e2e.attempt': attempt, 'user.orbit.e2e.operation': matches[0]['metadata'].get('user.orbit.e2e.operation')}:
+            'user.orbit.e2e.attempt': attempt, 'user.orbit.e2e.operation': lease['source']['operation_id']}:
             raise RuntimeError('Guest readiness/ownership mismatch: ' + node['instance'])
-        run(['incus', 'exec', node['instance'], '--', 'true'])
+        incus(['exec', node['instance'], '--', 'true'])
     gateway = topology['nodes']['gateway']['instance']
-    service = run(['incus', 'exec', gateway, '--', 'python3', '/home/orbit/orbit/swamp/proof/reset/guest.py', 'readiness'],
+    service = incus(['exec', gateway, '--', 'python3', '/home/orbit/orbit/swamp/proof/reset/guest.py', 'readiness'],
                   data=json.dumps({'group': request['group'], 'nodes': topology['nodes'],
-                                   'managed': {key: {'address': node['incus_address'], 'host_key': run(['incus', 'exec', node['instance'], '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1]} for key, node in topology['nodes'].items() if key != 'operator'}}).encode(), timeout=240).decode()
+                                   'managed': {key: {'address': node['incus_address'], 'host_key': incus(['exec', node['instance'], '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1]} for key, node in topology['nodes'].items() if key != 'operator'}}).encode(), timeout=240).decode()
     operator = topology['nodes']['operator']['instance']
-    listed = json.loads(run(['incus', 'exec', operator, '--', 'sh', '-c',
+    listed = json.loads(incus(['exec', operator, '--', 'sh', '-c',
                             'cd /; exec sudo -u orbit env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit /home/orbit/orbit/apps/cli/orbit node:list --json']))
     if {n['name'] for n in listed['nodes']} != set(topology['nodes']):
         raise RuntimeError('Candidate CLI does not see the exact fixture Nodes.')
+    return {'attempt_id': attempt, 'control_plane': json.loads(service),
+            'candidate_cli': {'command': 'node:list --json', 'nodes': listed['nodes']}}
+
+
+def observer_facts(request):
     ids = json.loads((Path(request['evidence']) / 'gateway-db.json').read_text())['nodes']
     managed = [value for key, value in ids.items() if key != 'operator']
     since = (Path(request['evidence']) / 'prepare.json').stat().st_mtime
-    deadline = time.monotonic() + 120
-    while True:
-        state = gateway_state(request)
-        if fresh_facts(state, managed, since):
-            break
-        if time.monotonic() >= deadline:
-            write_json(Path(request['evidence']) / 'facts-not-ready.json', state)
-            raise RuntimeError('Fresh host/ufw/units observer facts missing; see facts-not-ready.json.')
-        time.sleep(3)
+    state = gateway_state(request)
+    if not fresh_facts(state, managed, since):
+        write_json(Path(request['evidence']) / 'facts-not-ready.json', state)
+        raise RuntimeError('Fresh host/ufw/units observer facts missing; see facts-not-ready.json.')
+    return {'facts': state['facts']}
+
+
+def readiness(request):
+    evidence = Path(request['evidence'])
+    transport = json.loads((evidence / 'transport-readiness.json').read_text())
+    facts = json.loads((evidence / 'observer-facts.json').read_text())
+    ids = json.loads((evidence / 'gateway-db.json').read_text())['nodes']
     doctors = {}
     for key, value in ids.items():
         if key == 'operator':
@@ -304,9 +326,7 @@ def readiness(request):
             raise RuntimeError('Scoped firewall Doctor baseline is not healthy: ' + key)
     baseline = case_baseline(request)
     write_json(Path(request['evidence']) / 'baseline.json', baseline)
-    return {'passed': True, 'attempt_id': attempt, 'control_plane': json.loads(service),
-            'facts': state['facts'], 'doctor': doctors,
-            'candidate_cli': {'command': 'node:list --json', 'nodes': listed['nodes']}}
+    return {'passed': True, **transport, **facts, 'doctor': doctors}
 
 
 
@@ -354,6 +374,10 @@ def execute(request, action):
         return value
     if action in ('gateway-db', 'swamp-state', 'gateway-runtime'):
         return guest(request, action)
+    if action == 'transport-readiness':
+        return transport_readiness(request)
+    if action == 'observer-facts':
+        return observer_facts(request)
     if action == 'readiness':
         return readiness(request)
     if action == 'publish':
@@ -370,7 +394,7 @@ def execute(request, action):
             statuses = {}
             for key, node in prepared(request)['construction']['nodes'].items():
                 try:
-                    statuses[key] = run(['incus', 'exec', node['instance'], '--', 'journalctl', '-k', '--no-pager', '-n', '40', '--grep=Out of memory|Killed process'], timeout=30).decode()
+                    statuses[key] = incus(['exec', node['instance'], '--', 'journalctl', '-k', '--no-pager', '-n', '40', '--grep=Out of memory|Killed process'], timeout=30).decode()
                 except (RuntimeError, subprocess.TimeoutExpired) as error:
                     statuses[key] = str(error)
             write_json(evidence / 'failure-kernel.json', statuses)

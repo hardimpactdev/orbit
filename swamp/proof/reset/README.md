@@ -17,9 +17,14 @@ once with `sudo bin/e2e-topology-host-setup`.
 
 ## Ownership and results
 
-The entrypoint holds one group lock across the whole native run, including the
-verification cases. Concurrent resets and independent verification runs wait
-for it. Each independent verification run calls `proof-fleet-reset` once. Cases
+The entrypoint runs its whole transaction inside the stable `proof-owner`
+`command/shell` behavior in the owned group controller. Swamp's native per-behavior
+method lock covers workflow definition installation, validation, the entire native
+run, failure cleanup, cases and receipt collection. Reset, verify and release use
+the same behavior. There is no Python lock or second workflow mutex. Contenders
+use Swamp's default lock wait and report native lock timeout without touching the
+active lease; they do not bypass the owner. The owner command has a one-hour
+budget covering the existing reset, case and cleanup budgets. Each independent verification run calls `proof-fleet-reset` once. Cases
 share that generation and must clean their own fixtures. A clean-state case or
 failed case cleanup requires a new independent run, not an implicit reset.
 
@@ -51,7 +56,7 @@ or ignored artifacts. No commit, real-index staging, fetch or publication occurs
 The harness prepares VM copies from the existing seed with its normal attempt
 lease, ownership metadata, host creation lock and capacity checks. This is not
 normal `acquire`: the retired Gateway bootstrap action is unavailable. Preparation
-explicitly does **not** claim a ready product topology. The combined nested Gateway/Swamp runtime needs 2560 MiB, not the ordinary Gateway catalog budget; preparation verifies its complete attempt ownership before stopping, resizing and booting that guest through the existing harness agent-readiness gate. Do not hotplug memory on its live virtiofs source mount. Other guests and the outer VM retain their limits. Use an allocated task VM with at least 8 GiB. Separate native steps use the shared `tools/swamp-proof-guest/fixture.py` bootstrap with explicit source, state and topology paths inside the nested Gateway. Swamp starts before Gateway seeding. The fixture installs its own RSA4096 CA, worker identity at the admitted role-worker path, matching agent secrets and observers, and publishes known-hosts. The same shared helper starts pinned Reverb, the agent-view subscriber and the real operations queue worker against the isolated SQLite database. The fixture uses the product firewall catalog to install the managed baseline, adds an unmanaged proof-network transport rule, and enables UFW before readiness. It never changes the outer host's services. Readiness requires authenticated operator HTTP, loaded firewall workflows, a native queued SSH probe using the admitted identity on each managed Node, fresh host/ufw/units facts and a scoped Doctor baseline before publishing a result. Test fixture seeding is setup, not command proof. Command
+explicitly does **not** claim a ready product topology. The combined nested Gateway/Swamp runtime needs 2560 MiB, not the ordinary Gateway catalog budget; preparation verifies its complete attempt ownership before stopping, resizing and booting that guest through the existing harness agent-readiness gate. Do not hotplug memory on its live virtiofs source mount. Other guests and the outer VM retain their limits. Use an allocated task VM with at least 8 GiB. Separate native steps use the shared `tools/swamp-proof-guest/fixture.py` bootstrap with explicit source, state and topology paths inside the nested Gateway. Swamp starts before Gateway seeding. The fixture installs its own RSA4096 CA, worker identity at the admitted role-worker path, matching agent secrets and observers, and publishes known-hosts. The same shared helper starts pinned Reverb, the agent-view subscriber and the real operations queue worker against the isolated SQLite database. The fixture uses the product firewall catalog to install the managed baseline, adds an unmanaged proof-network transport rule, and enables UFW before readiness. It never changes the outer host's services. Readiness has separate native steps: authenticated operator HTTP and a queued SSH probe using the admitted identity on each managed Node; one fresh host/ufw/units observation; then scoped Doctor and firewall baseline checks. The fact check requires generation-fresh real records and enabled UFW on every managed Node. It never polls or retries Gateway state: missing, stale or disabled facts fail closed, retain `facts-not-ready.json`, skip cases, and enter native owned cleanup. Native queueTimeout bounds worker admission. These are observations, not service-name-only checks. Test fixture seeding is setup, not command proof. Command
 cases must invoke the actual candidate CLI and independently inspect effects. After cases, the workflow compares real UFW output and firewall database records with the pre-case baseline. Any residue fails verification; it never silently repairs a failing case.
 
 Before deleting anything, scoped release validates the recorded network and all
@@ -63,7 +68,12 @@ rollback; later fixture/readiness failure releases the prepared generation.
 
 The pinned Swamp `command/shell` builtin supplies bounded repository phase
 execution and structured exit results. Native workflow dependencies supply
-ordering/failure handling; a child workflow supplies reset reuse. Discovery found
+ordering/failure handling; a child workflow supplies reset reuse. The pinned
+[behavior reference](https://swamp-club.com/manual/reference/behavior-definitions#per-behavior-method-locking)
+and `swamp help behavior run` document the native owner lock and its default wait.
+The workflow schema has no automatic step retry or observer-state wait primitive;
+therefore the observation is one-shot and fails closed, rather than hiding an
+Orbit-state polling loop in a helper. Discovery found
 no official Incus extension; the community `@whitemars/incus` offers generic VM
 lifecycle but not Orbit's attempt leases, seed topology, capacity locks or ownership
 preflight. Replacing the existing harness would duplicate those rules. The
