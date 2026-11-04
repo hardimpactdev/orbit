@@ -79,6 +79,17 @@ elif role == 'metrics':
         if exporter['enabled']:
             address = exporter['ssh_execution']['target']['host']
             check(address + ':9100' in active, 'Prometheus loaded the selected exporter target')
+elif role == 'analytics':
+    analytics = intent['runtime']['analytics']
+    processes = gateway('GET', 'processes')['response']['data']
+    plausible = [item for item in processes if item['name'] == 'plausible' and item['target_id'] == intent['node_id']]
+    check(len(plausible) == 1 and plausible[0]['id'] == analytics['process_id'], 'one managed Plausible Process is recorded')
+    check(run('curl', '--max-time', '15', '--fail', '--silent', analytics['health_url']).returncode == 0,
+          'Plausible serves its health endpoint')
+    unchanged = 'no-drift' in sys.argv[3:]
+    check(len(analytics['initialize']) == (0 if unchanged else 2), 'only initial admission runs createdb and migrate')
+    subprocess.run(['python3', str(Path(__file__).with_name('analytics.py')),
+                    'verify' if unchanged else 'capture', str(analytics['process_id'])], check=True)
 elif role == 'ci-runner':
     check(run('incus', 'project', 'get', 'orbit-ci', 'restricted').stdout.strip() == 'true', 'CI is restricted')
     check(run('incus', 'network', 'get', 'orbitci0', 'security.acls').stdout.strip() == 'orbit-ci-egress', 'CI egress ACL applies')
@@ -126,6 +137,9 @@ if 'no-drift' in sys.argv[3:]:
 check(not Path('/tmp/orbit-ansible-' + operation['swamp_run_id']).exists(), 'the private Ansible run folder was removed')
 # --idempotency-key replays the original admission without another run or Node change.
 body = {'role': role, **({'converge_existing': True} if operation['kind'] == 'node.role_converge' else {})}
+if role == 'analytics':
+    body |= {engine + '_process_id': next(item['id'] for item in processes if item['name'] == 'proof-analytics-' + engine)
+             for engine in ['postgres', 'clickhouse']}
 replayed = gateway('POST', 'nodes/' + str(intent['node_id']) + '/roles', body, 'proof-' + os.environ['PROOF_RUN'] + '-request')
 record = replayed['response']['data']
 check((record.get('operation') or record).get('id') == operation['id'], 'the idempotency key returns the same Operation')

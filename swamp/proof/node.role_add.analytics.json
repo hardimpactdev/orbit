@@ -1,0 +1,187 @@
+{
+  "kind": "node.role_add.analytics",
+  "workflow": "operation-node-role-add",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "apt-get",
+      "update"
+    ],
+    [
+      "apt-get",
+      "install",
+      "--yes",
+      "python3-venv"
+    ],
+    [
+      "python3",
+      "-m",
+      "venv",
+      "/opt/orbit/ansible/venv"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/pip",
+      "install",
+      "--disable-pip-version-check",
+      "-r",
+      "swamp/ansible/requirements.txt"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/ansible-galaxy",
+      "collection",
+      "install",
+      "-r",
+      "swamp/ansible/requirements.yml",
+      "-p",
+      "/opt/orbit/ansible/collections"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.metrics}"
+    ],
+    [
+      "python3",
+      "swamp/proof/node.role_add/analytics.py",
+      "prepare"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {
+      "role": "analytics",
+      "postgres_process_id": "${postgres.id}",
+      "clickhouse_process_id": "${clickhouse.id}"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Apply role prerequisites",
+      "job": "prerequisites",
+      "step": "Apply role prerequisites",
+      "budget_seconds": 900
+    },
+    {
+      "name": "Apply the role on the Node",
+      "job": "node",
+      "step": "Apply the role on the Node",
+      "budget_seconds": 900
+    },
+    {
+      "name": "Publish role sites",
+      "job": "publication",
+      "step": "Publish role sites",
+      "budget_seconds": 180
+    },
+    {
+      "name": "Open the firewall",
+      "job": "firewall",
+      "step": "Open the firewall",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Check the role",
+      "job": "role",
+      "step": "Check the role",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "metrics",
+    "analytics"
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.metrics}/converge",
+      "body": {}
+    },
+    {
+      "method": "POST",
+      "path": "nodes/${node.metrics}/roles",
+      "body": {
+        "role": "database"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "processes",
+      "bind": "postgres",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.metrics}",
+        "name": "proof-analytics-postgres",
+        "runtime": "docker",
+        "image": "postgres:16",
+        "command": [
+          "postgres"
+        ],
+        "environment": {
+          "POSTGRES_PASSWORD": "${secret.postgres}"
+        },
+        "ports": [
+          "10.231.0.11:5432:5432"
+        ],
+        "start": true
+      }
+    },
+    {
+      "method": "POST",
+      "path": "processes",
+      "bind": "clickhouse",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.metrics}",
+        "name": "proof-analytics-clickhouse",
+        "runtime": "docker",
+        "image": "clickhouse/clickhouse-server:24.12",
+        "command": [
+          "--logger.level=warning"
+        ],
+        "environment": {
+          "CLICKHOUSE_DB": "plausible_events_db",
+          "CLICKHOUSE_USER": "plausible",
+          "CLICKHOUSE_PASSWORD": "${secret.clickhouse}"
+        },
+        "ports": [
+          "10.231.0.11:8123:8123"
+        ],
+        "volumes": [
+          {
+            "source": "/etc/orbit/analytics/clickhouse/config.d/logs.xml",
+            "target": "/etc/clickhouse-server/config.d/logs.xml",
+            "read_only": true
+          },
+          {
+            "source": "/etc/orbit/analytics/clickhouse/config.d/ipv4-only.xml",
+            "target": "/etc/clickhouse-server/config.d/ipv4-only.xml",
+            "read_only": true
+          },
+          {
+            "source": "/etc/orbit/analytics/clickhouse/config.d/low-resources.xml",
+            "target": "/etc/clickhouse-server/config.d/low-resources.xml",
+            "read_only": true
+          },
+          {
+            "source": "/etc/orbit/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml",
+            "target": "/etc/clickhouse-server/users.d/default-profile-low-resources-overrides.xml",
+            "read_only": true
+          }
+        ],
+        "start": true
+      }
+    }
+  ]
+}
