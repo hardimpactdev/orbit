@@ -180,7 +180,8 @@ final readonly class NativeNodeRoleAddInput
             foreach (RouteExecutionProof::objects(ValidatedData::object($version)['packages']) as $package) {
                 $artifact = new ArtifactPin(ValidatedData::string($package['url']), 'sha256', ValidatedData::string($package['sha256']));
                 $urls = $artifact->candidateUrls(ValidatedData::string($package['name']), ValidatedData::string($build['mirror']));
-                $packages[] = [...$package, 'url' => $urls[0], 'urls' => $urls, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
+                unset($package['url']);
+                $packages[] = [...$package, 'urls' => $urls, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
             }
         }
 

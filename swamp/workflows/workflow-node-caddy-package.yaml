@@ -21,14 +21,14 @@ jobs:
     labels: {role: swamp}
     writes: true
     task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/fetch'
-      behaviorName: ${{ "node-caddy-fetch-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {url: '${{ inputs.intent.package.url }}', path: '${{ inputs.intent.package.path }}', checksum: '${{ "sha256:" + inputs.intent.package.sha256 }}',
-        owner: root, group: root, mode: '0644', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
+      type: workflow
+      workflowIdOrName: node-artifact-fetch
+      inputs:
+        name: '${{ "node-caddy-artifact-" + string(inputs.node_id) }}'
+        ssh: '${{ inputs.intent.ssh }}'
+        urls: '${{ inputs.intent.package.urls }}'
+        path: '${{ inputs.intent.package.path }}'
+        checksum: '${{ "sha256:" + inputs.intent.package.sha256 }}'
     # A Caddy at or above the floor is left alone; apt never downgrades it.
   - name: 'Install Caddy'
     labels: {role: swamp}

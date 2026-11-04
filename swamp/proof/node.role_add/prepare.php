@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Domain\Nodes\NativeCaddyPackageInput;
 use Illuminate\Contracts\Console\Kernel;
 
 $root = dirname(__DIR__, 3).'/apps/gateway';
@@ -45,3 +46,33 @@ if (isset($argv[2])) {
 } else {
     $node->roles()->delete();
 }
+
+// This fixture changes only the disposable Gateway's recipe before admission.
+if (($argv[3] ?? null) === 'missing-mirror') {
+    $path = $root.'/resources/machine-software/recipe.json';
+    $recipe = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+    $recipe['artifact_mirror'] = 'https://github.com/hardimpactdev/orbit/releases/download/proof-missing-deb-mirror';
+    file_put_contents($path, json_encode($recipe, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+}
+
+if (($argv[3] ?? null) === 'corrupt-mirror') {
+    $path = $root.'/resources/machine-software/recipe.json';
+    $recipe = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+    // The topology Gateway already serves this public static path over its IP certificate.
+    $directory = $root.'/public/vendor/horizon-new-dawn/proof-corrupt-mirror';
+    $recipe['artifact_mirror'] = 'https://'.Node::findOrFail(209)->wireguard_ip.'/vendor/horizon-new-dawn/proof-corrupt-mirror';
+    file_put_contents($path, json_encode($recipe, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+    if (! is_dir($directory)) {
+        mkdir($directory, 0755, recursive: true);
+    }
+    $url = NativeCaddyPackageInput::make()['urls'][0];
+    $filename = basename(parse_url($url, PHP_URL_PATH));
+    file_put_contents($directory.'/'.$filename, "corrupt artifact bytes\n");
+}
+
+$caddy = NativeCaddyPackageInput::make();
+$bindings = ['caddy_path' => $caddy['path']];
+if (isset($url)) {
+    $bindings['corrupt_url'] = $url;
+}
+echo json_encode(['bindings' => $bindings], JSON_THROW_ON_ERROR)."\n";

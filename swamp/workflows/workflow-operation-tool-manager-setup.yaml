@@ -103,12 +103,12 @@ jobs:
         labels: {role: swamp}
         writes: true
         forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha256_fetches.filter(r,r.package_index == null || steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant") : [] }}'}
-        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "tm-fetch-sha256-artifacts-"+string(inputs.node_id) + "-" + string(self._index) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, url: '${{ self.resource.url }}', path: '${{ self.resource.path }}', checksum: '${{ self.resource.checksum }}', mode: '0644', owner: root}, inputs: {}}
+        task: {type: workflow, workflowIdOrName: node-artifact-fetch, inputs: {name: '${{ "tm-artifact-"+string(inputs.node_id)+"-"+string(self._index) }}', ssh: '${{ inputs.ssh }}', urls: '${{ self.resource.urls }}', path: '${{ self.resource.path }}', checksum: '${{ self.resource.checksum }}'}}
       - name: Fetch SHA512 artifacts
         labels: {role: swamp}
         writes: true
         forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha512_fetches.filter(r,r.package_index == null || steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant") : [] }}'}
-        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "tm-fetch-sha512-artifacts-"+string(inputs.node_id) + "-" + string(self._index) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, url: '${{ self.resource.url }}', path: '${{ self.resource.path }}', mode: '0644', owner: root}, inputs: {}}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "tm-fetch-sha512-artifacts-"+string(inputs.node_id) + "-" + string(self._index) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, url: '${{ self.resource.urls[0] }}', path: '${{ self.resource.path }}', mode: '0644', owner: root}, inputs: {}}
   - name: phase_7
     dependsOn:
       - job: phase_6

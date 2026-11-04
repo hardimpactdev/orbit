@@ -7,6 +7,9 @@ description: Private intent files and shipped playbooks for Ansible phases.
 behaviors:
   - operations/ansible-input/write.ts
 additionalFiles:
+  - ansible/library/orbit_artifact.py
+  - ansible/tasks/artifact-fetch.yml
+  - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
   - ansible/tasks/php.yml
   - ansible/tasks/exporter.yml

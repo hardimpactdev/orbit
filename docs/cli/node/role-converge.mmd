@@ -6,7 +6,7 @@ sequenceDiagram
   %% kind: node.role_converge
   %% Rule 23: 2026-11-03 required-only main path.
   %% Metrics compliance uses the canonical mount, public environment, port and restart settings; missing official launch-option checks are noted in swamp-evaluation.md.
-  %% Pinned Debian downloads use the first ArtifactPin candidate: the durable mirror URL, verified at the pin.
+  %% Pinned Debian downloads use native SSH curl exit codes for transport-only fallback, then verify the pin before publication.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue

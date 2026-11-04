@@ -16,11 +16,9 @@
             group: root
             mode: "0755"
         - name: Download Caddy
-          ansible.builtin.get_url:
-            url: "{{ intent.caddy_package.url }}"
-            dest: "{{ intent.caddy_package.path }}"
-            checksum: sha256:{{ intent.caddy_package.sha256 }}
-            mode: "0644"
+          ansible.builtin.include_tasks: tasks/artifact-fetch.yml
+          vars:
+            artifact: "{{ intent.caddy_package }}"
         - name: Read the Caddy version
           ansible.builtin.command: dpkg-query -W -f=${Version} caddy
           register: caddy
@@ -65,9 +63,9 @@
             - { src: "{{ intent.bun.binary }}", dest: /opt/orbit/bun/bin/bun }
             - { src: /opt/orbit/bun/bin/bun, dest: /usr/local/bin/bun }
     - name: Download PHP packages
-      ansible.builtin.get_url: { url: "{{ item.url }}", dest: "{{ item.path }}", checksum: "sha256:{{ item.sha256 }}", mode: "0644" }
+      ansible.builtin.include_tasks: tasks/artifact-fetch.yml
       loop: "{{ intent.php_packages }}"
-      loop_control: { label: "{{ item.name }}" }
+      loop_control: { loop_var: artifact, label: "{{ artifact.name }}" }
     - { name: Read installed packages again, ansible.builtin.package_facts: !!null "" }
     - name: Find missing PHP packages
       ansible.builtin.set_fact:

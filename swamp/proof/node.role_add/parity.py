@@ -24,6 +24,62 @@ def check(ok, message):
         sys.exit('parity: ' + message)
 
 
+mode = sys.argv[3:]
+if mode == ['corrupt-mirror']:
+    package = operation['input']['native_role']['caddy_package']
+    check(operation['status'] == 'failed', 'corrupt mirror fails the Operation')
+    check('/proof-corrupt-mirror/' in package['urls'][0], 'known corrupt mirror is admitted')
+    check(len(package['urls']) == 2 and package['urls'][1].startswith('https://github.com/caddyserver/caddy/'),
+          'reachable upstream remains admitted')
+    state = Path('/home/orbit/.orbit/swamp-proof')
+    query = ('workflowRunId == ' + json.dumps(operation['swamp_run_id']) +
+             ' && jobName == "prerequisites" && stepName == "Apply role prerequisites"' +
+             ' && name == "result" && version >= 0')
+    result = subprocess.run([
+        'runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit',
+        'SWAMP_HOME=' + str(state / 'home'), 'SWAMP_CONFIG_DIR=' + str(state / 'config'),
+        'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/club-api-key',
+        '/usr/local/bin/swamp', 'data', 'query', query, '--select', 'content', '--single',
+        '--repo-dir', str(Path(__file__).resolve().parents[2]),
+        '--server', 'wss://swamp.orbit:443', '--token-file', str(state / 'credentials/operator'),
+        '--ca-cert', '/home/orbit/.orbit/ca/root.pem', '--json',
+    ], capture_output=True, text=True, check=True, timeout=30)
+    # Failed shell outputs are absent from step history; the exact run's durable result remains queryable.
+    outputs = json.loads(result.stdout)
+    check(outputs['exitCode'] == 2, 'the real Ansible phase failed')
+
+    def texts(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for child in value.values():
+                yield from texts(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from texts(child)
+
+    failures = []
+    for text in texts(outputs):
+        for match in re.finditer(r'=>\s*(\{)', text):
+            try:
+                result, _ = json.JSONDecoder().raw_decode(text[match.start(1):])
+            except ValueError:
+                continue
+            if result.get('dest') == package['path'] and result.get('msg') == 'Artifact SHA-256 mismatch':
+                failures.append(result)
+    check(len(failures) == 1, 'one real Ansible Caddy download failure is retained')
+    failure = failures[0]
+    check(failure['attempts'] == [{'url': package['urls'][0], 'exit_code': 0, 'checksum_valid': False}],
+          'mirror transferred, real SHA-256 failed, upstream was never attempted')
+    check(failure['published'] is False, 'corrupt bytes were never published')
+    check(run('test', '-e', package['path']).returncode == 1, 'destination remains absent')
+    staging = run('find', str(Path(package['path']).parent), '-maxdepth', '1',
+                  '-name', Path(package['path']).name + '.artifact-*', '-print')
+    check(staging.returncode == 0 and not staging.stdout.strip(), 'artifact staging was removed')
+    check(not Path('/tmp/orbit-ansible-' + operation['swamp_run_id']).exists(), 'private run folder removed')
+    print('parity: corrupt mirror rejected by SHA-256; no upstream or publication; staging removed')
+    sys.exit(0)
+
 if role == 'swamp':
     installed = run('/opt/orbit/ansible/venv/bin/python', '-c', 'import ansible; print(ansible.__version__)')
     pin = (Path(__file__).resolve().parents[2] / 'ansible/requirements.txt').read_text().strip().split('==')[1]
@@ -45,6 +101,10 @@ check(operation['status'] == 'succeeded', 'native role-add succeeded')
 check(operation['result'].get('role_proven') is True, 'the Gateway records the native end check')
 intent = operation['input']['native_role']
 check(intent['role'] == role, 'the admitted role is preserved')
+if mode == ['missing-mirror']:
+    check('/proof-missing-deb-mirror/' in intent['caddy_package']['urls'][0], 'missing mirror admitted first')
+    check(run('test', '-f', intent['caddy_package']['path']).returncode == 0, 'upstream artifact published')
+
 for service in intent['services']:
     check(run('systemctl', 'is-active', '--quiet', service['name']).returncode == 0, service['name'] + ' is active')
 for resource in [*intent['files'], *intent['runtime']['files']]:
@@ -88,8 +148,8 @@ elif role == 'metrics':
         node = next(name for name, value in nodes.items() if value == identifier)
         prefix = [] if node == 'gateway' else ['incus', 'exec', node, '--']
         numbered = subprocess.run([*prefix, 'ufw', 'status', 'numbered'], capture_output=True, text=True, check=True).stdout
-        def positions(comment):
-            return [int(index) for index in re.findall(r'^\[\s*(\d+)\].*# ' + re.escape(comment) + r'\s*$', numbered, re.M)]
+        def positions(comment, numbered=numbered):
+            return [int(index) for index in re.findall(r'^\[\s*(\d+)\].*# ' + re.escape(comment) + r'\s*$', numbered, re.MULTILINE)]
         trust = positions(intent['firewall']['desired'][0][-1])
         for index, command in enumerate(commands):
             if command[1:4] == ['insert', '1', 'deny']:

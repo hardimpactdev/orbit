@@ -41,4 +41,4 @@ When no Node holds Router state, admission ends the unset at once with no run (R
 
 The Gateway reads the outcome from Swamp's run data, never from step output. It changes only the admitted Router assignment IDs and leaves unrelated roles intact.
 
-Native Router admission captures both Caddy `url` and candidate `urls` during the [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror). The consumer changes only after the Gateway producer release is live.
+Native Router admission captures ordered Caddy candidate `urls` during the [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror). The shared native fetch consumer requires candidates only after the Gateway producer release is live. A transport failure may try upstream; a checksum mismatch stops before publication.

@@ -5,7 +5,7 @@ sequenceDiagram
   %% command: node:role:add
   %% kind: node.role_add
   %% Rule 23: 2026-11-03 required-only main path.
-  %% Pinned Debian downloads use the first ArtifactPin candidate: the durable mirror URL, verified at the pin.
+  %% Pinned Debian downloads use admitted candidates in Ansible prerequisites; transport failures alone permit upstream, and checksum verification precedes publication.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -92,6 +92,9 @@ sequenceDiagram
     SW->>N: Install collections<br/>native bootstrap
   end
   SW->>N: Apply role prerequisites<br/>Ansible phase: prerequisites
+  %%> Pinned packages:
+  %%> - Caddy and PHP use the admitted candidate list, mirror first
+  %%> - only transport failure permits upstream; checksum failure stops and removes staging
   opt role needs Tool Managers
     SW->>N: Set up Tool Managers<br/>native child workflow
   end

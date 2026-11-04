@@ -12,7 +12,7 @@ covers:
 
 The standalone `node.bootstrap_probe` and `node.macos_inspect` scaffolds are removed. `git grep` found no production caller of their admission action. `node:add` owns the probe and Mac tunnel inspection in its enrollment workflow. The shared public probe decoder remains because enrollment calls it directly.
 
-Tool Manager setup uses the mirror URL captured by the Gateway for pinned Debian files. The official cfgmgmt fetch verifies the checksum and stops on any download or integrity failure. See the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror).
+Tool Manager setup uses the ordered artifact candidates captured by the Gateway for pinned Debian files. Shared native fetch classifies the structured curl exit code and tries upstream only after a transport failure. Local I/O, size-limit and checksum failures stop. See the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror).
 
 ## Swamp execution copies
 
@@ -63,5 +63,3 @@ Official cfgmgmt version `2026.10.27.1` has no host-key connection input or loca
 ### Topology proof
 
 The topology proof showed the writer repairs an empty mode-0644 file to the exact admitted public pins at mode 0600, owned by the worker account. The Gateway records the matching digest and successful native step. It makes no production uptake or concurrent-publication claim.
-
-Tool Setup accepts optional artifact candidate lists before the Gateway emits them. The Gateway now emits both `url` and `urls`; the consumer still uses `url` until this producer release is live. Follow the [native candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror); never activate a required intent field in its producer release.

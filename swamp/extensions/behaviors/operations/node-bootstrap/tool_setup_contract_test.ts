@@ -18,17 +18,22 @@ const composer = (pin: unknown) => ({
     packages: [],
 });
 
-Deno.test("schema expansion accepts old and dual Composer pins without activating candidates", async () => {
-    const old = await toolSetupPlan(composer(artifact), "/home/orbit");
-    const dual = await toolSetupPlan(
-        composer({ ...artifact, urls }),
+Deno.test("candidate consumers accept both producer shapes and ignore the old single URL", async () => {
+    const { url: _url, ...pin } = artifact;
+    const current = await toolSetupPlan(
+        composer({ ...pin, urls }),
         "/home/orbit",
     );
-    assertEquals(dual.sha256_fetches, old.sha256_fetches);
-    assertEquals(dual.sha256_fetches[0].url, artifact.url);
+    const dual = await toolSetupPlan(
+        composer({ ...pin, urls, url: "https://ignored.invalid/old.deb" }),
+        "/home/orbit",
+    );
+    assertEquals(dual.sha256_fetches, current.sha256_fetches);
+    assertEquals(dual.sha256_fetches[0].urls, urls);
+    assertEquals(Setup.safeParse(composer(artifact)).success, false);
 });
 
-Deno.test("schema expansion accepts candidates on every JavaScript pin and retains strict validation", () => {
+Deno.test("candidate schema accepts every JavaScript pin and retains strict validation", () => {
     const pin = { ...artifact, version: "1.0.0", urls };
     const setup = {
         manager: "javascript",

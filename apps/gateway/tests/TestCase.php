@@ -36,6 +36,8 @@ abstract class TestCase extends BaseTestCase
 
         TestDatabaseGuard::register($app);
         $app->make(Kernel::class)->bootstrap();
+        $app['config']->set('swamp.ssh_public_key',
+            'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('t', 32)));
 
         return $app;
     }
