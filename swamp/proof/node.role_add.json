@@ -39,22 +39,5 @@
     "swamp/proof/node.role_add/parity.py",
     "peer",
     "app-dev"
-  ],
-  "before_node": {
-    "peer": [
-      [
-        "dpkg",
-        "--purge",
-        "--force-depends",
-        "git",
-        "git-man"
-      ],
-      [
-        "rm",
-        "-f",
-        "/var/cache/orbit/tool-setup/composer/git.deb",
-        "/var/cache/orbit/tool-setup/composer/git-man.deb"
-      ]
-    ]
-  }
+  ]
 }
