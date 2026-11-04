@@ -156,8 +156,7 @@
     },
     {
       "method": "POST",
-      "path": "instances/${production.id}/deploy",
-      "body": {}
+      "path": "instances/${production.id}/deploy"
     }
   ],
   "clean": true

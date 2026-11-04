@@ -10,19 +10,7 @@
     },
     {
       "method": "POST",
-      "path": "instances/${production.id}/deploy-steps",
-      "operation": false,
-      "body": {
-        "name": "composer-install",
-        "phase": "before_activation",
-        "command": "composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress",
-        "timeout_seconds": 300
-      }
-    },
-    {
-      "method": "POST",
-      "path": "instances/${production.id}/deploy",
-      "body": {}
+      "path": "instances/${production.id}/deploy"
     }
   ],
   "request": {
