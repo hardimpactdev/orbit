@@ -5,8 +5,21 @@
   "clean": true,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
-  "before_gateway": [["python3", "swamp/proof/node.add/prepare.py"]],
-  "prepare": [{"method": "POST", "path": "nodes/${node.target}/converge", "body": {"force": false}}],
+  "before_gateway": [
+    [
+      "python3",
+      "swamp/proof/node.add/prepare.py"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/converge",
+      "body": {
+        "force": false
+      }
+    }
+  ],
   "request": {
     "method": "POST",
     "path": "nodes",
@@ -19,7 +32,28 @@
       "host_key_fingerprint": "${secret.enrollment_fingerprint}"
     }
   },
-  "expect": {"status": "succeeded"},
-  "phases": [{"name": "Check the Node", "job": "node", "step": "Check the Node", "budget_seconds": 20}],
-  "parity": ["swamp/proof/node.add/parity.py"]
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Check the Node",
+      "job": "node",
+      "step": "Check the Node",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.add/parity.py"
+  ],
+  "before_node": {
+    "metrics": [
+      [
+        "groupadd",
+        "--system",
+        "--force",
+        "orbit-env"
+      ]
+    ]
+  }
 }

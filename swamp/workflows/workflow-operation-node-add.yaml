@@ -815,34 +815,6 @@ jobs:
       in: '${{ inputs.intent.platform == "linux" ? [inputs.execution_secrets.agent_secret] : [] }}'
   dependsOn:
   - {job: phase_28, condition: {type: succeeded}}
-- name: observer_group
-  labels:
-    role: swamp
-  dependsOn:
-  - {job: phase_29, condition: {type: succeeded}}
-  steps:
-  - name: Create observer group
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/group'
-      behaviorName: '${{ "node-add-observer-group-"+string(inputs.node_id)+"-"+string(self._index) }}'
-      methodName: apply
-      globalArgs:
-        nodeHost: '${{ inputs.intent.bootstrap.host }}'
-        nodeUser: '${{ inputs.intent.bootstrap.user }}'
-        nodePort: '${{ inputs.intent.bootstrap.port }}'
-        nodeIdentityFile: '${{ inputs.intent.identity.identity_file }}'
-        become: '${{ inputs.intent.bootstrap.user != "root" }}'
-        groupname: '${{ inputs.intent.agent.environment_group }}'
-        ensure: present
-        system: true
-      inputs: {}
 - name: phase_30
   labels:
     role: swamp
@@ -859,7 +831,7 @@ jobs:
       item: linux
       in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
   dependsOn:
-  - {job: observer_group, condition: {type: succeeded}}
+  - {job: phase_29, condition: {type: succeeded}}
 - name: phase_31
   labels:
     role: swamp

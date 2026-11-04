@@ -145,17 +145,16 @@ Deno.test("bootstrap key guard skips grep success and leaves absence to append",
     );
 });
 
-Deno.test("observer starts only after its declared environment group is created", () => {
-    const group = steps.find((step) => step.name === "Create observer group");
-    assertEquals(
-        group?.task.globalArgs.groupname,
-        "${{ inputs.intent.agent.environment_group }}",
+Deno.test("producer release does not require the future observer group intent", () => {
+    assertFalse(
+        JSON.stringify(workflow).includes(
+            "inputs.intent.agent.environment_group",
+        ),
     );
-    assertEquals(group?.task.globalArgs.ensure, "present");
     assertEquals(
         workflow.jobs.find((job) => job.name === "phase_30")?.dependsOn?.map((
             dependency,
         ) => dependency.job),
-        ["observer_group"],
+        ["phase_29"],
     );
 });
