@@ -3,7 +3,7 @@ title: "Feature flow"
 description: "The target flow for an Orbit change, from idea to deployed, and what is built today."
 ---
 
-This is the target flow for an Orbit change, agreed with Nick on 2026-11-04. The `command-pristine` skill (`.agents/skills/command-pristine/SKILL.md`) applies it to one command at a time. The last section shows what is built today.
+This is the target flow for an Orbit change, agreed with Nick on 2026-11-04. The `developing-commands` skill (`.agents/skills/developing-commands/SKILL.md`) applies it to one command at a time. The `verifying-commands` skill defines the VM proof used during development and in CI. The last section shows what is built today.
 
 ## Words used here
 
@@ -54,7 +54,9 @@ Use the chart to cover the command's paths.
    - one for each optional flag;
    - one for each error path.
 
-   Each case checks two things: Doctor reports zero drift for the records it touched, and a second run changes nothing. An error case checks that the command refuses and nothing changes.
+   Each case asserts the command's promised effect, the recorded state and the observed Node state. Doctor reports zero drift for the records it touched, and a second run changes nothing. An error case checks that the command refuses and nothing changes.
+
+   For example, a firewall case proves that traffic reaches a blocked port after the allow command. A restricted source case also proves that an excluded source stays blocked. A broad test-network allowance must not let either assertion pass without the tested rule. The `verifying-commands` skill owns the case contract and evidence requirements.
 4. Converge the branch onto the dev topology and run the cases there. The change works there before it is pushed.
 
 ## 3. Pull request
@@ -80,6 +82,8 @@ CI is the only gate: if CI passes, the PR merges. So CI must be strict about wha
    1. A task VM host starts a copy of the templates, in seconds.
    2. It converges the PR's code onto that copy, in about 2 to 3 minutes.
    3. It runs only the test cases of the affected commands, in parallel, each on its own copy.
+
+   Development and CI use the same cases and assertions. The required check identifies the tested commit and reports every selected case. A missing result or a failed assertion fails the check. A passing check confirms the defined cases; it does not prove behavior that the cases omit.
 
    This adds about 5 to 8 minutes, and only to PRs that change commands.
 3. The merge queue applies the same selection rule.
@@ -170,6 +174,21 @@ The nightly build checks that templates match a fresh installation.
    - an Orbit bug: Pi fixes the code, proves it, and opens a PR;
    - an upstream break: Pi pins the last working version and opens a PR with the reason;
    - an infrastructure problem: Pi reruns once, then reports.
+
+## First complete command: firewall:allow
+
+`firewall:allow` is the first command to complete this whole flow. The existing `node:role:add` work continues through its conversion, shared Ansible setup and proofs. That work is reused where needed; it does not own the new CI, template or scoped rollout work. Firewall uses native Swamp steps, so its preparation can proceed while the role conversion finishes.
+
+Build the missing parts in dependency order. This order prepares the pipeline; a release still follows steps 6 through 9 above.
+
+1. **Agree the command contract and cases.** Align the documented contract with the implementation. Extend the existing harness with chart-path cases. Verify the CLI output and intended Node state, including Doctor and unchanged reruns.
+2. **Establish the templates.** Verify the Gateway with Swamp, app-dev and app-prod templates. Record their release and snapshot identities. Development and CI clone the same set.
+3. **Connect the cases to CI.** Run affected cases on clones converged to the tested commit. Changes only to documentation skip VM tests. Prove that a failed case blocks the merge queue.
+4. **Verify the Swamp release.** Follow the merged commit into the running Gateway and loaded workflows. A manual proof receipt does not establish that the automatic release works.
+5. **Complete template refresh.** Refresh and distribute verified snapshots as described in step 7. Keep previous templates on failure. Verify that the next development or CI clone uses the new release.
+6. **Complete scoped fleet convergence.** Apply the release scope from step 8. Compare Doctor with the pre-release baseline. Record evidence and update the skills before the next full command pass.
+
+These stages can ship in focused PRs, but `firewall:allow` is complete only after all of them work. Manual CI runs, a manual template update or a Doctor check on just one Node do not replace the automatic stages or fleet verification. Renovate and the nightly fresh build follow after this first complete path works.
 
 ## What is built today
 

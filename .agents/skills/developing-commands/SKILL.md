@@ -1,13 +1,15 @@
 ---
-name: command-pristine
-description: Use when taking one Orbit command through the per-command loop until it is pristine: docs, chart, CLI/Gateway/Swamp/Ansible split, minimal code, tests, and the full release flow. One command at a time.
+name: developing-commands
+description: Use when developing or repairing an Orbit command through its documented flow, VM proof, pull request, CI, release and fleet verification.
 ---
 
-# Make one command pristine
+# Develop and deliver an Orbit command
 
-Orbit converts its commands one at a time, each in its own task VM. A command is pristine when every step below holds and it has gone through the whole release flow. The next command starts only after the lessons from this one are in this skill.
+Take one command at a time through the full development and release flow, using an isolated task VM. A command is complete when every step below holds and it has gone through the whole release flow. Record its lessons in the relevant skills before starting the next command.
 
 The target flow, from idea to deployed, is in [the feature flow](../../../docs/reference/feature-flow.md). Write only to `hardimpactdev/orbit`.
+
+For the first complete pass, follow the feature flow's build order: establish verified baseline templates before wiring the VM CI job that clones them. Reuse the same command cases for development and CI. A manual proof or template update helps build the pipeline, but does not complete its automatic release stages.
 
 ## Before code
 
@@ -33,7 +35,7 @@ Work through it in order. Each item ends with evidence in the PR.
 3. **Code is minimal.** Delete unused CLI and Gateway paths for this command, including old execution code and agent command calls it no longer needs. Report net lines.
 4. **The workflow matches the chart** step for step; Swamp lane labels equal step names. Build with [swamp-flow](../swamp-flow/SKILL.md) and the phases with [ansible-phase](../ansible-phase/SKILL.md).
 5. **Tests.**
-   - VM cases from the chart: the main path, one per optional flag, one per error path. Each asserts Doctor reports zero drift for the records it touched and that a second run changes nothing. An error case asserts the refusal and no change.
+   - Use [verifying-commands](../verifying-commands/SKILL.md) to turn the contract and chart into executable VM cases. The same cases and assertions run during development and in CI.
    - Gateway Pest tests only for what this command's Gateway code needs: admission, refusals, intent rendering, projection. The old suite was deleted; for how things were set up, read git history at tag `pest-before-rewrite`. Keep them fast.
 6. **Proof.** Run the cases on the shared proof topology. Record fresh and no-drift times against the old workflow.
 7. **The whole release flow.** The command is not done until it has gone through all of it:
