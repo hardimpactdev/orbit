@@ -2,441 +2,61 @@
   "kind": "node.role_add",
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
-  "baseline": {
-    "source": "Nick-approved Ansible trial",
-    "evidence": "/home/nckrtl/swamp-execution/evidence/ansible-trial-phase",
-    "fresh_seconds": {
-      "app-dev": 239,
-      "metrics": 271
-    },
-    "no_drift_seconds": {
-      "app-dev": 294,
-      "metrics": 156
-    }
-  },
-  "ansible_trial_seconds": {
-    "fresh": {
-      "app-dev": 87,
-      "metrics": 135
-    },
-    "no_drift": {
-      "app-dev": 71,
-      "metrics": 57
-    }
-  },
+  "baseline": {"source": "Nick-approved Ansible trial", "evidence": "/home/nckrtl/swamp-execution/evidence/ansible-trial-phase", "fresh_seconds": {"app-dev": 239, "metrics": 271}, "no_drift_seconds": {"app-dev": 294, "metrics": 156}},
+  "ansible_trial_seconds": {"fresh": {"app-dev": 87, "metrics": 135}, "no_drift": {"app-dev": 71, "metrics": 57}},
   "status": "in_progress",
   "topology": "minimal",
   "required_topology_version": 18,
-  "blockers": [
-    "minimal@18 admits proof Node 209 bridge ingress only on TCP 443. Canonical exporter rules correctly bind orbit, but Metrics traffic arrives on oeproof. Metrics-to-209 TCP 9100 times out while the local endpoint and nested target endpoint succeed. The topology owner must correct this boundary; no product-rule workaround is applied.",
-    "Final canonical firewall repair, deployed Laravel pool branch and full chart matrix need proof on the corrected shared topology. The prior intent producer is merged and live; focused pool/projection tests pass."
-  ],
+  "blockers": ["minimal@18 admits proof Node 209 bridge ingress only on TCP 443. Canonical exporter rules correctly bind orbit, but Metrics traffic arrives on oeproof. Metrics-to-209 TCP 9100 times out while the local endpoint and nested target endpoint succeed. The topology owner must correct this boundary; no product-rule workaround is applied.", "Final canonical firewall repair, deployed Laravel pool branch and full chart matrix need proof on the corrected shared topology. The prior intent producer is merged and live; focused pool/projection tests pass."],
   "cases": [
-    {
-      "case": "node.role_add",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add/20261104T092827Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 124.21,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.analytics",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics/20261104T101207Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 83.36,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.analytics.local-storage",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.local-storage/20261104T100233Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 89.45,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.analytics.local-storage.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.local-storage.no-drift/20261104T100506Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 39.31,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.analytics.local-storage.repair-port",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.local-storage.repair-port/20261104T100422Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 39.18,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.analytics.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.no-drift/20261104T101256Z-minimal.json",
-      "commit": "406d3a5887340c83ff4674315a86d10c37708ecd",
-      "proof_pass": true,
-      "seconds": 33.17,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.app-prod",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.app-prod/20261104T091750Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 110.22,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.app-prod.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.app-prod.no-drift/20261104T091928Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 94.17,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.ci",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci/20261104T101828Z-minimal.json",
-      "commit": "406d3a5887340c83ff4674315a86d10c37708ecd",
-      "proof_pass": true,
-      "seconds": 47,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.ci.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci.no-drift/20261104T101903Z-minimal.json",
-      "commit": "406d3a5887340c83ff4674315a86d10c37708ecd",
-      "proof_pass": true,
-      "seconds": 31.51,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.database",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database/20261104T094854Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 18.81,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.database.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database.no-drift/20261104T094916Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 19.02,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.gateway",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.gateway/20261104T091114Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 25.07,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.gateway.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.gateway.no-drift/20261104T091138Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 21.02,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.ingress",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ingress/20261104T090615Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 28.94,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.ingress.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ingress.no-drift/20261104T090639Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 21.01,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.metrics",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics/20261104T104943Z-minimal.json",
-      "commit": "6fcfe9620be9c93098bad73152ef58feebbf923e",
-      "proof_pass": false,
-      "seconds": 145.89,
-      "failure": "parity: node.role_add metrics\nparity: private inputs removed; original admission replayed\nDoctor Node 209: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=0, unverifiable=2\nDoctor role: role.inspection_failed\nDoctor firewall: firewall.inspection_failed\nparity: Doctor requires zero drift and no unverifiable records\n"
-    },
-    {
-      "case": "node.role_add.metrics.instance",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance/20261104T103152Z-minimal.json",
-      "commit": "406d3a5887340c83ff4674315a86d10c37708ecd",
-      "proof_pass": false,
-      "seconds": 73.73,
-      "failure": "parity: the Laravel Project exercises a dedicated PHP exporter pool\n"
-    },
-    {
-      "case": "node.role_add.metrics.instance.deploy",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance.deploy/20261104T103912Z-minimal.json",
-      "commit": "8e44fb6bcabc7935c52bd4734d4b37655d151e79",
-      "proof_pass": false,
-      "seconds": 61.59,
-      "failure": "parity: native role-add succeeded\n"
-    },
-    {
-      "case": "node.role_add.metrics.instance.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance.no-drift/20261104T104017Z-minimal.json",
-      "commit": "8e44fb6bcabc7935c52bd4734d4b37655d151e79",
-      "proof_pass": false,
-      "seconds": 61.63,
-      "failure": "parity: native role-add succeeded\nTraceback (most recent call last):\n  File \"/home/orbit/swamp-proof/src/swamp/proof/node.role_converge/parity.py\", line 8, in <module>\n    subprocess.run(['python3', 'swamp/proof/node.role_add/parity.py', target, role, *sys.argv[3:]], check=True, timeout=120)\n    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/subprocess.py\", line 578, in run\n    raise CalledProcessError(retcode, process.args,\n                             output=stdout, stderr=stderr)\nsubprocess.CalledProcessError: Command '['python3', 'swamp/proof/node.role_add/parity.py', 'metrics', 'metrics', 'instance', 'no-drift']' returned non-zero exit status 1.\n"
-    },
-    {
-      "case": "node.role_add.metrics.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.no-drift/20261104T105049Z-minimal.json",
-      "commit": "6fcfe9620be9c93098bad73152ef58feebbf923e",
-      "proof_pass": false,
-      "seconds": 61.55,
-      "failure": "ing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=0, unverifiable=2\nDoctor role: role.inspection_failed\nDoctor firewall: firewall.inspection_failed\nparity: Doctor requires zero drift and no unverifiable records\nTraceback (most recent call last):\n  File \"/home/orbit/swamp-proof/src/swamp/proof/node.role_converge/parity.py\", line 8, in <module>\n    subprocess.run(['python3', 'swamp/proof/node.role_add/parity.py', target, role, *sys.argv[3:]], check=True, timeout=120)\n    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/subprocess.py\", line 578, in run\n    raise CalledProcessError(retcode, process.args,\n                             output=stdout, stderr=stderr)\nsubprocess.CalledProcessError: Command '['python3', 'swamp/proof/node.role_add/parity.py', 'metrics', 'metrics', 'no-drift']' returned non-zero exit status 1.\n"
-    },
-    {
-      "case": "node.role_add.metrics.repair-missing-config",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-missing-config/20261104T094417Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": false,
-      "seconds": 65.89,
-      "failure": "parity: node.role_add metrics\nparity: private inputs removed; original admission replayed\nDoctor Node 209: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nparity: Doctor requires zero drift and no unverifiable records\n"
-    },
-    {
-      "case": "node.role_add.metrics.repair-restart",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-restart/20261104T094201Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": false,
-      "seconds": 61.5,
-      "failure": "parity: node.role_add metrics\nparity: private inputs removed; original admission replayed\nDoctor Node 209: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nparity: Doctor requires zero drift and no unverifiable records\n"
-    },
-    {
-      "case": "node.role_add.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.no-drift/20261104T093012Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 100.18,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-already-assigned",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-already-assigned/20261104T095504Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-analytics-flags-for-other-role",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-flags-for-other-role/20261104T091930Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-analytics-missing-clickhouse",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-clickhouse/20261104T095512Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-analytics-missing-postgres",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-postgres/20261104T095510Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-analytics-postgres-missing",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-postgres-missing/20261104T091932Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "analytics.postgres_process_missing",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-conflict",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-conflict/20261104T095508Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-converge-unassigned",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-converge-unassigned/20261104T091934Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-inactive",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-inactive/20261104T091936Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "operation.kind_unavailable",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-ingress-no-cluster",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-ingress-no-cluster/20261104T091937Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-non-linux",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-non-linux/20261104T091939Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "operation.kind_unavailable",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-protected",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-protected/20261104T095501Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-router",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-router/20261104T091941Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-singleton",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-singleton/20261104T095506Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-unknown",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-unknown/20261104T095503Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "validation.failed",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.refuse-unmanaged",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-unmanaged/20261104T091944Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "refusal": "operation.kind_unavailable",
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.swamp-bootstrap",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.swamp-bootstrap/20261104T095414Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 61.47,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.swamp.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.swamp.no-drift/20261104T095459Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 41.48,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.websocket",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket/20261104T095121Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 45.14,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_add.websocket.no-drift",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket.no-drift/20261104T095204Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 39.24,
-      "parity": "passed"
-    },
-    {
-      "case": "node.role_converge",
-      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_converge/20261104T093454Z-minimal.json",
-      "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb",
-      "proof_pass": true,
-      "seconds": 108.34,
-      "parity": "passed"
-    }
+    {"case": "node.role_add", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add/20261104T092827Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 124.21, "parity": "passed"},
+    {"case": "node.role_add.analytics", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics/20261104T101207Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 83.36, "parity": "passed"},
+    {"case": "node.role_add.analytics.local-storage", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.local-storage/20261104T100233Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 89.45, "parity": "passed"},
+    {"case": "node.role_add.analytics.local-storage.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.local-storage.no-drift/20261104T100506Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 39.31, "parity": "passed"},
+    {"case": "node.role_add.analytics.local-storage.repair-port", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.local-storage.repair-port/20261104T100422Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 39.18, "parity": "passed"},
+    {"case": "node.role_add.analytics.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.analytics.no-drift/20261104T101256Z-minimal.json", "commit": "406d3a5887340c83ff4674315a86d10c37708ecd", "proof_pass": true, "seconds": 33.17, "parity": "passed"},
+    {"case": "node.role_add.app-prod", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.app-prod/20261104T091750Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 110.22, "parity": "passed"},
+    {"case": "node.role_add.app-prod.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.app-prod.no-drift/20261104T091928Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 94.17, "parity": "passed"},
+    {"case": "node.role_add.ci", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci/20261104T101828Z-minimal.json", "commit": "406d3a5887340c83ff4674315a86d10c37708ecd", "proof_pass": true, "seconds": 47, "parity": "passed"},
+    {"case": "node.role_add.ci.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci.no-drift/20261104T101903Z-minimal.json", "commit": "406d3a5887340c83ff4674315a86d10c37708ecd", "proof_pass": true, "seconds": 31.51, "parity": "passed"},
+    {"case": "node.role_add.database", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database/20261104T094854Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 18.81, "parity": "passed"},
+    {"case": "node.role_add.database.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database.no-drift/20261104T094916Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 19.02, "parity": "passed"},
+    {"case": "node.role_add.gateway", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.gateway/20261104T091114Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 25.07, "parity": "passed"},
+    {"case": "node.role_add.gateway.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.gateway.no-drift/20261104T091138Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 21.02, "parity": "passed"},
+    {"case": "node.role_add.ingress", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ingress/20261104T090615Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 28.94, "parity": "passed"},
+    {"case": "node.role_add.ingress.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ingress.no-drift/20261104T090639Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 21.01, "parity": "passed"},
+    {"case": "node.role_add.metrics", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics/20261104T104943Z-minimal.json", "commit": "6fcfe9620be9c93098bad73152ef58feebbf923e", "proof_pass": false, "seconds": 145.89, "failure": "parity: node.role_add metrics\nparity: private inputs removed; original admission replayed\nDoctor Node 209: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=0, unverifiable=2\nDoctor role: role.inspection_failed\nDoctor firewall: firewall.inspection_failed\nparity: Doctor requires zero drift and no unverifiable records\n"},
+    {"case": "node.role_add.metrics.instance", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance/20261104T103152Z-minimal.json", "commit": "406d3a5887340c83ff4674315a86d10c37708ecd", "proof_pass": false, "seconds": 73.73, "failure": "parity: the Laravel Project exercises a dedicated PHP exporter pool\n"},
+    {"case": "node.role_add.metrics.instance.deploy", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance.deploy/20261104T103912Z-minimal.json", "commit": "8e44fb6bcabc7935c52bd4734d4b37655d151e79", "proof_pass": false, "seconds": 61.59, "failure": "parity: native role-add succeeded\n"},
+    {"case": "node.role_add.metrics.instance.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance.no-drift/20261104T104017Z-minimal.json", "commit": "8e44fb6bcabc7935c52bd4734d4b37655d151e79", "proof_pass": false, "seconds": 61.63, "failure": "parity: native role-add succeeded\nTraceback (most recent call last):\n  File \"/home/orbit/swamp-proof/src/swamp/proof/node.role_converge/parity.py\", line 8, in <module>\n    subprocess.run(['python3', 'swamp/proof/node.role_add/parity.py', target, role, *sys.argv[3:]], check=True, timeout=120)\n    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/subprocess.py\", line 578, in run\n    raise CalledProcessError(retcode, process.args,\n                             output=stdout, stderr=stderr)\nsubprocess.CalledProcessError: Command '['python3', 'swamp/proof/node.role_add/parity.py', 'metrics', 'metrics', 'instance', 'no-drift']' returned non-zero exit status 1.\n"},
+    {"case": "node.role_add.metrics.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.no-drift/20261104T105049Z-minimal.json", "commit": "6fcfe9620be9c93098bad73152ef58feebbf923e", "proof_pass": false, "seconds": 61.55, "failure": "ing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=0, unverifiable=2\nDoctor role: role.inspection_failed\nDoctor firewall: firewall.inspection_failed\nparity: Doctor requires zero drift and no unverifiable records\nTraceback (most recent call last):\n  File \"/home/orbit/swamp-proof/src/swamp/proof/node.role_converge/parity.py\", line 8, in <module>\n    subprocess.run(['python3', 'swamp/proof/node.role_add/parity.py', target, role, *sys.argv[3:]], check=True, timeout=120)\n    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/subprocess.py\", line 578, in run\n    raise CalledProcessError(retcode, process.args,\n                             output=stdout, stderr=stderr)\nsubprocess.CalledProcessError: Command '['python3', 'swamp/proof/node.role_add/parity.py', 'metrics', 'metrics', 'no-drift']' returned non-zero exit status 1.\n"},
+    {"case": "node.role_add.metrics.repair-missing-config", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-missing-config/20261104T094417Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": false, "seconds": 65.89, "failure": "parity: node.role_add metrics\nparity: private inputs removed; original admission replayed\nDoctor Node 209: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nparity: Doctor requires zero drift and no unverifiable records\n"},
+    {"case": "node.role_add.metrics.repair-restart", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-restart/20261104T094201Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": false, "seconds": 61.5, "failure": "parity: node.role_add metrics\nparity: private inputs removed; original admission replayed\nDoctor Node 209: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 211: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 212: role/firewall drift=4, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nDoctor Node 213: role/firewall drift=2, unverifiable=0\nDoctor firewall: firewall.rule_missing\nDoctor firewall: firewall.rule_missing\nparity: Doctor requires zero drift and no unverifiable records\n"},
+    {"case": "node.role_add.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.no-drift/20261104T093012Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 100.18, "parity": "passed"},
+    {"case": "node.role_add.refuse-already-assigned", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-already-assigned/20261104T095504Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-analytics-flags-for-other-role", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-flags-for-other-role/20261104T091930Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-analytics-missing-clickhouse", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-clickhouse/20261104T095512Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-analytics-missing-postgres", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-postgres/20261104T095510Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-analytics-postgres-missing", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-postgres-missing/20261104T091932Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "analytics.postgres_process_missing", "parity": "passed"},
+    {"case": "node.role_add.refuse-conflict", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-conflict/20261104T095508Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-converge-unassigned", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-converge-unassigned/20261104T091934Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-inactive", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-inactive/20261104T091936Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "operation.kind_unavailable", "parity": "passed"},
+    {"case": "node.role_add.refuse-ingress-no-cluster", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-ingress-no-cluster/20261104T091937Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-non-linux", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-non-linux/20261104T091939Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "operation.kind_unavailable", "parity": "passed"},
+    {"case": "node.role_add.refuse-protected", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-protected/20261104T095501Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-router", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-router/20261104T091941Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-singleton", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-singleton/20261104T095506Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-unknown", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-unknown/20261104T095503Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "validation.failed", "parity": "passed"},
+    {"case": "node.role_add.refuse-unmanaged", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-unmanaged/20261104T091944Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "refusal": "operation.kind_unavailable", "parity": "passed"},
+    {"case": "node.role_add.swamp-bootstrap", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.swamp-bootstrap/20261104T095414Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 61.47, "parity": "passed"},
+    {"case": "node.role_add.swamp.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.swamp.no-drift/20261104T095459Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 41.48, "parity": "passed"},
+    {"case": "node.role_add.websocket", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket/20261104T095121Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 45.14, "parity": "passed"},
+    {"case": "node.role_add.websocket.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket.no-drift/20261104T095204Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 39.24, "parity": "passed"},
+    {"case": "node.role_converge", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_converge/20261104T093454Z-minimal.json", "commit": "838e3aa9994ddd63e860a0bcf1e8853c0fd5f1cb", "proof_pass": true, "seconds": 108.34, "parity": "passed"}
   ],
-  "timing_findings": {
-    "app_dev_fresh_seconds": 124.21,
-    "app_dev_no_drift_seconds": 100.18,
-    "app_dev_native_manager_seconds": {
-      "fresh": 64.312,
-      "no_drift": 54.877
-    },
-    "trial_comparison": "The trial supplied precomputed manager plans. Current native manager children stay inside the measured command. Do not subtract their time from command totals.",
-    "metrics_fresh_seconds": 147.93,
-    "metrics_no_drift_seconds": 61.7,
-    "metrics_phase_seconds": {
-      "prerequisites": 9.351,
-      "node": 49.107,
-      "signing": 8.793,
-      "publication": 2.655,
-      "firewall": 2.19,
-      "exporters": 48.612,
-      "prometheus": 8.96,
-      "check": 9.454
-    },
-    "metrics_comparison": "Same-VM warm ABBA comparison isolates 5.1785s added phase time: end checks +4.174s and exporter service inspection +4.053s, partly offset by shorter Node work. Fresh runs of the same actor varied by16.50s. The historical fresh12.44s gap cannot be allocated exactly without trial phase receipts.",
-    "controlled_metrics_comparison": "/home/nckrtl/swamp-execution/evidence/ansible-phase-comparison-20261104.json",
-    "controlled_warm_mean_seconds": {
-      "trial": 34.787,
-      "current": 39.9655,
-      "added": 5.1785,
-      "sample_each": 2,
-      "all_changes_zero": true
-    }
-  },
-  "limitations": [
-    "Disposable minimal18 topology, public Laravel fixture, Orbit proof CA, no production data or scale.",
-    "65-second observer synchronization follows fresh success outside Operation timing; no-drift and refusals do not wait."
-  ],
-  "proof_vm_cleanup": {
-    "vm": "tvm-534",
-    "destroyed_at": "2026-11-04T11:02:26Z",
-    "operation_id": 10061,
-    "independent_host_result": "Instance not found",
-    "evidence": "/home/nckrtl/swamp-execution/evidence/ansible-phases-tvm-534-removed-20261104.txt"
-  },
-  "latest_attempt": {
-    "commit": "74cea440ca7550782be16259844ac202e31ac01c",
-    "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics/20261104T113658Z-minimal.json",
-    "proof_pass": false,
-    "total_seconds": 260,
-    "failure": "Publish Prometheus timed out after120.798s: Metrics cannot reach proof209 exporter across oeproof",
-    "endpoint_checks": {
-      "209_local_9100_exit": 0,
-      "metrics_to_209_9100_exit": 28,
-      "metrics_to_target_9100_exit": 0
-    },
-    "producer_release": "a2bfa79fff5348324a3b57934392054832d7b577"
-  }
+  "timing_findings": {"app_dev_fresh_seconds": 124.21, "app_dev_no_drift_seconds": 100.18, "app_dev_native_manager_seconds": {"fresh": 64.312, "no_drift": 54.877}, "trial_comparison": "The trial supplied precomputed manager plans. Current native manager children stay inside the measured command. Do not subtract their time from command totals.", "metrics_fresh_seconds": 147.93, "metrics_no_drift_seconds": 61.7, "metrics_phase_seconds": {"prerequisites": 9.351, "node": 49.107, "signing": 8.793, "publication": 2.655, "firewall": 2.19, "exporters": 48.612, "prometheus": 8.96, "check": 9.454}, "metrics_comparison": "Same-VM warm ABBA comparison isolates 5.1785s added phase time: end checks +4.174s and exporter service inspection +4.053s, partly offset by shorter Node work. Fresh runs of the same actor varied by16.50s. The historical fresh12.44s gap cannot be allocated exactly without trial phase receipts.", "controlled_metrics_comparison": "/home/nckrtl/swamp-execution/evidence/ansible-phase-comparison-20261104.json", "controlled_warm_mean_seconds": {"trial": 34.787, "current": 39.9655, "added": 5.1785, "sample_each": 2, "all_changes_zero": true}},
+  "limitations": ["Disposable minimal18 topology, public Laravel fixture, Orbit proof CA, no production data or scale.", "65-second observer synchronization follows fresh success outside Operation timing; no-drift and refusals do not wait."],
+  "proof_vm_cleanup": {"vm": "tvm-534", "destroyed_at": "2026-11-04T11:02:26Z", "operation_id": 10061, "independent_host_result": "Instance not found", "evidence": "/home/nckrtl/swamp-execution/evidence/ansible-phases-tvm-534-removed-20261104.txt"},
+  "latest_attempt": {"commit": "74cea440ca7550782be16259844ac202e31ac01c", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics/20261104T113658Z-minimal.json", "proof_pass": false, "total_seconds": 260, "failure": "Publish Prometheus timed out after120.798s: Metrics cannot reach proof209 exporter across oeproof", "endpoint_checks": {"209_local_9100_exit": 0, "metrics_to_209_9100_exit": 28, "metrics_to_target_9100_exit": 0}, "producer_release": "a2bfa79fff5348324a3b57934392054832d7b577"},
+  "proof_vm_current": {"session": "ansible-phases", "vm": "tvm-549", "group": 3177, "topology": "minimal@18", "status": "proofs_running"}
 }
