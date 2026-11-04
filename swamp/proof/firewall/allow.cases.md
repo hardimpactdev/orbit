@@ -1,6 +1,6 @@
 # firewall:allow verification cases
 
-Agreed with Nick on 2026-11-04. The proof runs the built CLI against a fresh nested topology and checks the Gateway record, the UFW state on the Node and real traffic. See [verifying-commands](../../../.agents/skills/verifying-commands/SKILL.md).
+The proof runs the built CLI against a fresh nested topology and checks the Gateway record, the UFW state on the Node and real traffic. See [verifying-commands](../../../.agents/skills/verifying-commands/SKILL.md).
 
 The proof topology has a broad `proof-network` allow. Test traffic must not pass through it: each case first shows its test path is blocked, without cutting management access.
 

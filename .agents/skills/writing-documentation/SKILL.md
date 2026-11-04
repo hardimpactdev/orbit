@@ -26,6 +26,8 @@ Remove repetition, filler and implementation details that do not help the reader
 | `solutions/` | Reusable lessons and their verification |
 | `decisions/` | Architectural choices, alternatives, and consequences |
 
+Do not name people or approval dates in maintained docs, such as "agreed with Nick on 2026-11-04". The PR records approval and a chart's `%% status: reviewed` marks it. Write the decision as a rule, and its reason where it helps.
+
 Do not state behavior nobody has decided. If a page needs a sentence about an edge case, such as what the sibling command does or what a repeat does, decide it first. Check that every example on a page passes the page's own refusals.
 
 Link to the page that owns an explanation. Use tables for command options, fields, and error codes. Keep change history in Git, and contributor workflow in contributor guidance.

@@ -1,6 +1,6 @@
 # firewall:deny verification cases
 
-Agreed with Nick on 2026-11-04. The proof runs the built CLI against a fresh nested topology and checks the Gateway record, the UFW state on the Node and real traffic. See [verifying-commands](../../../.agents/skills/verifying-commands/SKILL.md).
+The proof runs the built CLI against a fresh nested topology and checks the Gateway record, the UFW state on the Node and real traffic. See [verifying-commands](../../../.agents/skills/verifying-commands/SKILL.md).
 
 A deny must block traffic that would otherwise pass. Each case first shows its test path is open, through a control probe and the rule the case relies on, without opening management access to the probe.
 
