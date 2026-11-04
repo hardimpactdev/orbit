@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Console\Commands\BackfillTaskMergedAtCommand;
 use App\Console\Commands\FileProblemsCommand;
-use App\Console\Commands\JevReportCommand;
 use App\Console\Commands\ReleaseTaskWorkspaceLeaseCommand;
-use App\Console\Commands\RenderTaskPromptCommand;
-use App\Console\Commands\TaskGitHubReviewsCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
@@ -147,11 +143,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
     {
         $this->commands([
             FileProblemsCommand::class,
-            JevReportCommand::class,
             ReleaseTaskWorkspaceLeaseCommand::class,
-            RenderTaskPromptCommand::class,
-            TaskGitHubReviewsCommand::class,
-            BackfillTaskMergedAtCommand::class,
         ]);
 
         // {group} is the top-level task. The Task scope itself returns only subtasks.

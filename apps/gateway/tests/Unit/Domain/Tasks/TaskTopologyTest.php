@@ -3,12 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskPromptGroup;
-use App\Domain\Tasks\TaskPromptRenderer;
-use App\Domain\Tasks\TaskPromptSubtask;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyEvidence;
-use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\TaskVms\TaskVmSize;
 use Carbon\CarbonImmutable;
 
@@ -99,11 +95,6 @@ function evidence_line(string $start, string $label, string $node, array $argv, 
 }
 
 describe('JSON topology evidence', function (): void {
-    it('directs reviewers to the JSON evidence file written by the harness', function (): void {
-        expect(TaskTurnInstructions::topology(7, TaskTopology::fromInput(['app-dev']), reviewer: true))
-            ->toContain('`--record` appends to .e2e/evidence.jsonl');
-    });
-
     it('keeps a UTF-8 label whose bytes contain 0x85 in one record', function (): void {
         $line = json_encode(['v' => 1, 'start' => '2026-10-13T10:01:00Z', 'end' => '2026-10-13T10:01:00Z', 'label' => 'Ångström probe', 'node' => 'app-dev', 'exit' => 0, 'argv' => ['orbit', 'node:list']], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
 
@@ -152,12 +143,3 @@ it('counts a shell script that does work and shows its argv quoted', function ()
 });
 
 /** One evidence log entry in the harness's shape. */
-it('tells the implementer about the declared topology, and nothing without one', function (): void {
-    $group = new TaskPromptGroup(id: 7, title: 'Nodes', brief: 'Brief', projectSlug: 'orbit', projectId: 46, defaultBranch: 'main', taskCheck: null, startCommit: null);
-
-    expect(TaskPromptRenderer::implementer($group, new TaskPromptSubtask(1, 'Prove', 'Brief', 1, [], TaskTopology::fromInput(['app-prod+ingress']))))
-        ->toContain('This subtask declares the topology app-prod+ingress. Orbit prepared it nested in this task VM as TASK-7')
-        ->toContain('The reviewer must prove the deliverables on app-prod')
-        ->and(TaskPromptRenderer::implementer($group, new TaskPromptSubtask(1, 'Plain', 'Brief', 1, [])))
-        ->not->toContain('declares the topology')->not->toContain('topology_requested');
-});
