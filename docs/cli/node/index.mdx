@@ -37,7 +37,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:access:remove`](/cli/node/access-remove) | Remove an access grant. |
 | [`node:remove`](/cli/node/remove) | Remove a Node and hand the machine back. |
 
-Every command accepts `--json`. `node:show`, `node:remove`, and `node:access:*` take a numeric Node ID. The other commands also accept a Node name.
+Every command accepts `--json`. Every command that targets an existing Node takes its numeric Node ID, as the API and the MCP tools do; a name is only the label that `node:add` and `node:update` set. In a terminal, an omitted Node is chosen from an interactive list.
 
 Lists use tables. Below the minimum table width, each row becomes a labeled record. Details use an aligned tree, with an em dash for an empty value. While the Gateway works, the CLI shows one progress indicator per request, because it does not receive the steps. JSON output contains only the response.
 
