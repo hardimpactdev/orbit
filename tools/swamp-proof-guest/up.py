@@ -511,6 +511,13 @@ def operation_worker():
     """A standalone baseline serves real API calls without the fixture driver draining its queue."""
     if TOPOLOGY['gateway'] != 'standalone':
         return
+    # /run is volatile. Prepare the Documents start hook's private lock layout on every boot;
+    # queue:work then invalidates the cleanup permit through the normal application hook.
+    runtime = Path('/etc/tmpfiles.d/orbit-proof-documents.conf')
+    runtime.write_text('d /run/orbit 0755 root root -\n'
+                       f'd /run/orbit/project-documents 0700 {ACCOUNT} {ACCOUNT} -\n'
+                       f'f /run/orbit/project-documents/execution.lock 0600 {ACCOUNT} {ACCOUNT} -\n')
+    run(['systemd-tmpfiles', '--create', str(runtime)])
     name = 'orbit-baseline-operations'
     Path(f'/etc/systemd/system/{name}.service').write_text(
         '[Unit]\nDescription=Baseline Gateway operation projection\nAfter=network.target\n\n'
