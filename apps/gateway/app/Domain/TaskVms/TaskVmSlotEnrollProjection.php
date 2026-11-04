@@ -119,8 +119,12 @@ final readonly class TaskVmSlotEnrollProjection implements DirectOperationProjec
     private function free(TaskVm $vm, array $report): void
     {
         $vm->refresh();
-        if ($vm->state !== TaskVmState::Provisioning || $vm->slot === null || ! $vm->node instanceof Node) {
+        if ($vm->state === TaskVmState::Free && $vm->identity_revision === $report['revision']) {
             return;
+        }
+        // A slot that is no longer enrolling (retired, or failed by an earlier verdict) must not report a ready Operation.
+        if ($vm->state !== TaskVmState::Provisioning || $vm->slot === null || ! $vm->node instanceof Node) {
+            throw new ResourceOperationException('task_vm.slot_not_enrolling', 'The slot is no longer enrolling, so the run cannot make it free.', 409);
         }
         [$type, $key] = explode(' ', $report['ssh_host_key'], 2);
         $guest = $vm->node;
@@ -129,7 +133,7 @@ final readonly class TaskVmSlotEnrollProjection implements DirectOperationProjec
         $guest->forceFill(['agent_secret_hash' => $report['observer_digest'], 'wireguard_public_key' => $report['wireguard_public_key'],
             'public_ssh_host' => $vm->bridge_address ?? $guest->public_ssh_host, 'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null])->save();
         $guest->roles()->where('role', RoleName::AppDev)->update(['status' => LifecycleStatus::Active]);
-        // The image holds the pinned Pi unit; the Process is recorded as installed, and it runs only while a task holds the slot.
+        // The Process is recorded as installed; it runs only while a task holds the slot.
         Process::query()->where('owner_type', Node::class)->where('owner_id', $guest->id)->where('name', 'pi-server')->update([
             'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
         $vm->update(['state' => TaskVmState::Free, 'identity_revision' => $report['revision'], 'ready_at' => null, 'error_code' => null, 'error_message' => null]);

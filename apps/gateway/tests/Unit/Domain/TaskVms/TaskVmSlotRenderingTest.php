@@ -7,6 +7,7 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSlot;
 use App\Domain\TaskVms\TaskVmSlotBoot;
 use App\Domain\TaskVms\TaskVmSlotIdentity;
+use App\Infrastructure\TaskVms\TaskVmVolumes;
 
 function slotTestHost(): TaskVmHost
 {
@@ -59,4 +60,12 @@ it('boots the slot VM with the read-only identity disk named identity, the seed 
     expect($config['devices']['eth0'])->toMatchArray(['network' => 'orbittask0', 'ipv4.address' => '10.251.77.254', 'hwaddr' => '10:66:6a:01:02:03']);
     expect($config['config']['limits.cpu'])->toBe('4');
     expect($config['config']['cloud-init.user-data'])->toContain('ssh-ed25519 AAAA');
+})->group('slots');
+
+it('owns the seed clone and the identity volume of a slot, as well as the clone of a task VM', function (): void {
+    expect(TaskVmVolumes::owns('beast-tvm-1-topology-seed', []))->toBeTrue();
+    expect(TaskVmVolumes::owns('beast-tvm-1-identity', []))->toBeTrue();
+    expect(TaskVmVolumes::owns('tvm-7-topology-seed', []))->toBeTrue();
+    expect(TaskVmVolumes::owns('beast-identity', []))->toBeFalse();
+    expect(TaskVmVolumes::owns('backups-tvm-x-identity', []))->toBeFalse();
 })->group('slots');

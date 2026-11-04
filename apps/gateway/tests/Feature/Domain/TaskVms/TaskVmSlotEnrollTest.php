@@ -190,6 +190,32 @@ it('marks the slot failed, keeps its Node and takes no key from a failed run', f
     expect($operation->refresh()->status->value)->toBe('failed');
 })->group('slots');
 
+it('ends the slot failed when the run is cancelled or interrupted, as when it fails', function (string $status): void {
+    [, $vm, $operation] = enrollingSlot();
+
+    app(TaskVmSlotEnrollProjection::class)->apply($operation, slotRun($status, null, 'failed'));
+
+    expect($vm->refresh()->state)->toBe(TaskVmState::Failed);
+    expect($vm->error_code)->toBe('task_vm.slot_enroll_failed');
+    expect($vm->node->refresh()->status)->toBe(LifecycleStatus::Provisioning);
+    expect($operation->refresh()->status->value)->not->toBe('succeeded');
+})->with(['cancelled', 'interrupted'])->group('slots');
+
+it('does not report a ready Operation for a slot that is no longer enrolling, and accepts a replay', function (): void {
+    [, $vm, $operation] = enrollingSlot();
+    $vm->update(['state' => TaskVmState::Failed]);
+
+    expect(fn () => app(TaskVmSlotEnrollProjection::class)->apply($operation, slotRun('succeeded', slotReport())))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('task_vm.slot_not_enrolling'));
+
+    expect($vm->refresh()->state)->toBe(TaskVmState::Failed);
+    expect($operation->refresh()->status->value)->toBe('running');
+
+    $vm->update(['state' => TaskVmState::Provisioning]);
+    app(TaskVmSlotEnrollProjection::class)->apply($operation, slotRun('succeeded', slotReport()));
+    expect($vm->refresh()->state)->toBe(TaskVmState::Free);
+})->group('slots');
+
 it('refuses a success without the end check or with a bad report', function (string $case): void {
     [, $vm, $operation] = enrollingSlot();
     $run = match ($case) {

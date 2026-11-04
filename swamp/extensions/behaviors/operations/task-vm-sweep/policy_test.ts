@@ -175,3 +175,21 @@ Deno.test("sweep refuses malformed scope before returning any deletion plan", ()
         selectIncusOrphans({ ...scope, project: "../tasks" }, [], [])
     );
 });
+
+Deno.test("a slot's VM, seed clone and identity volume are owned and never deleted", () => {
+    const names = ["beast-tvm-1", "beast-tvm-1-topology-seed", "beast-tvm-1-identity"];
+    const strays = incusStrays(
+        scope,
+        false,
+        [...rows(["beast-tvm-1", "beast-tvm-x1"]), ...rows(["beast-tvm-2"], "default")],
+        rows(names.slice(1)),
+        [],
+    );
+    assertEquals(strays.instances, [
+        { project: "tasks", name: "beast-tvm-x1" },
+        { project: "default", name: "beast-tvm-2" },
+    ]);
+    assertEquals(strays.volumes, []);
+    const orphans = selectIncusOrphans(scope, rows(names.slice(0, 1)), rows(names.slice(1)));
+    assertEquals([orphans.instances, orphans.volumes], [[], []]);
+});

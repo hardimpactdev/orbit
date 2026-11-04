@@ -453,7 +453,7 @@ A slot is in one of these states:
 | `ready` | A task holds the slot, and Pi runs |
 | `parked` | A task holds the slot, and its VM is stopped. See [Park and resume](#park-and-resume) |
 | `destroying` | The task ended and Orbit is deleting the VM |
-| `failed` | A step failed. No claim can take the slot, and an alert fires |
+| `failed` | A step failed. No claim can take the slot. The failed Operation shows the cause; no alert fires |
 
 A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, but no VM runs, so its observer shows offline. Doctor skips a `free` slot, as it skips a `parked` one. Fleet rollout and Metrics skip every task VM Node already.
 
@@ -495,7 +495,7 @@ There is no CLI command of its own. An operator runs `php artisan task-vms:enrol
 
 The model key stays on the row because the router teardown fence and the revoke at slot retire read it there. The workflow registers the model key with the router before the identity phase writes it into `models.json`.
 
-A failed enrolment makes the slot `failed`. No claim can take it. The keys, the volume and the hub peer stay, and running the command again for the same slot continues from them. A `free` slot is not counted in the host capacity of today's task VMs, and Doctor reports nothing for it.
+A failed enrolment makes the slot `failed`. No claim can take it. The proof VM and its seed clone are deleted also after a failure, and the next boot removes any that a crash left. The keys, the volume and the hub peer stay, and running the command again for the same slot continues from them. A `free` slot is not counted in the host capacity of today's task VMs, and Doctor reports nothing for it.
 
 #### Claim
 

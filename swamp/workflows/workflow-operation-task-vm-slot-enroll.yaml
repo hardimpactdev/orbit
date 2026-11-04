@@ -121,7 +121,7 @@ jobs:
       # The guest pins the host key that the identity phase made. Its address and key are the slot's for life.
       globalArgs:
         name: '${{ ("task-vm-slot-guest-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
-        transport: {kind: ssh, user: '${{ inputs.intent.guest.user }}', port: 22, identityFile: '${{ inputs.intent.guest.identity_file }}'}
+        transport: {kind: ssh, user: '${{ inputs.intent.guest.user }}', port: 22, identityFile: '${{ inputs.intent.guest.identity_file }}', connectTimeoutSec: 10, extraOptions: [ConnectionAttempts=12]}
         hosts: [{name: slot, address: '${{ inputs.intent.guest.address }}', transport: {hostKeys: ['${{ steps["Create the identity"].outputs.result.ssh_host_key }}']}}]
       # The unit installs the identity before ssh starts, so a connection means it finished; the first line proves it did not fail.
       # The last line is the report that the Gateway records: public key, host key and observer digest, as the guest runs them.
@@ -151,7 +151,10 @@ jobs:
   - name: Delete the proof VM
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Check the slot VM, condition: {type: succeeded}}]
+    # It runs after a failed check or a failed boot too, so a failed run leaves no proof VM and no seed clone behind.
+    dependsOn:
+    - {step: Start a proof VM, condition: {type: completed}}
+    - {step: Check the slot VM, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

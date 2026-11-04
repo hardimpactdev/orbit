@@ -15,7 +15,7 @@ inputs:
 jobs:
 - name: boot
   steps:
-  - name: Clone the seed
+  - name: Remove a stale VM
     labels: {role: swamp}
     writes: true
     task:
@@ -27,24 +27,49 @@ jobs:
         name: '${{ ("task-vm-slot-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
         transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}
         hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]
-      # An existing clone is kept: a rerun after a failed boot starts from the same seed.
+      # A VM or a seed clone of an earlier attempt is stale: no VM of a slot exists while the slot is enrolling or free.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '120'
+        - sh
+        - -c
+        - |
+          set -eu
+          if incus --project "$1" info "$3" >/dev/null 2>&1; then incus --project "$1" delete --force "$3"; fi
+          if incus --project "$1" storage volume show "$2" "$4" >/dev/null 2>&1; then incus --project "$1" storage volume delete "$2" "$4"; fi
+        - sh
+        - '${{ inputs.intent.vm.project }}'
+        - '${{ inputs.intent.vm.pool }}'
+        - '${{ inputs.intent.vm.name }}'
+        - '${{ inputs.intent.vm.seed_clone }}'
+        timeoutSec: 130
+  - name: Clone the seed
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Remove a stale VM, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-slot-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
       inputs:
         hosts: name:host
         sudo: true
         argv:
         - timeout
         - '600'
-        - sh
-        - -c
-        - |
-          set -eu
-          if incus --project "$1" storage volume show "$2" "$4" >/dev/null 2>&1; then exit 0; fi
-          incus --project "$1" storage volume copy "$2/$3" "$2/$4"
-        - sh
+        - incus
+        - --project
         - '${{ inputs.intent.vm.project }}'
-        - '${{ inputs.intent.vm.pool }}'
-        - '${{ inputs.intent.vm.seed_source }}'
-        - '${{ inputs.intent.vm.seed_clone }}'
+        - storage
+        - volume
+        - copy
+        - '${{ inputs.intent.vm.pool + "/" + inputs.intent.vm.seed_source }}'
+        - '${{ inputs.intent.vm.pool + "/" + inputs.intent.vm.seed_clone }}'
         timeoutSec: 620
   - name: Create the VM
     labels: {role: swamp}
@@ -67,7 +92,6 @@ jobs:
         - -c
         - |
           set -eu
-          if incus --project "$1" info "$2" >/dev/null 2>&1; then exit 0; fi
           incus --project "$1" init --vm -- "$3" "$2"
         - sh
         - '${{ inputs.intent.vm.project }}'
@@ -95,9 +119,23 @@ jobs:
         - -c
         - |
           set -eu
-          if incus --project "$1" list --format csv --columns ns | grep -qx "$2,RUNNING"; then exit 0; fi
           incus --project "$1" start -- "$2"
         - sh
         - '${{ inputs.intent.vm.project }}'
         - '${{ inputs.intent.vm.name }}'
         timeoutSec: 130
+  - name: Wait for the guest
+    labels: {role: swamp}
+    dependsOn: [{step: Start the VM, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-slot-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # The guest has its static address once the Incus agent reports it; the check then connects over WireGuard.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv: [timeout, '130', incus, --project, '${{ inputs.intent.vm.project }}', wait, '${{ inputs.intent.vm.name }}', ipv4, --timeout, '120', --interval, '1']
+        timeoutSec: 140

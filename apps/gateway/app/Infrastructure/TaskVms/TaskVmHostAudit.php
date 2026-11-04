@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * Compares the instances of a task VM host's Incus project with the task VM rows of that host. The sweep job
  * acts on the result, and Doctor reports it.
  *
+ * - A slot VM `<node-slug>-tvm-<n>` is owned and never an orphan or a stray.
  * - An orphaned VM is a `tvm-<number>` instance with no live row of that name on the host. Other names,
  *   Build VMs `tvm-image-<build id>` without a running row on this host are orphaned too.
  * - A missing VM is a `ready`, or `parked` row whose instance is gone. Other states have jobs that check the VM.
@@ -29,6 +30,9 @@ use Illuminate\Support\Carbon;
 final readonly class TaskVmHostAudit
 {
     private const string TaskVmName = '/\Atvm-[0-9]+\z/D';
+
+    /** A slot VM, `<node-slug>-tvm-<n>`. Orbit owns it, but the sweep never deletes it: a slot outlives its VMs. */
+    private const string SlotName = '/\A[a-z0-9]+(?:-[a-z0-9]+)*-tvm-[0-9]+\z/D';
 
     public const int FailedBuildHours = 24;
 
@@ -175,7 +179,7 @@ final readonly class TaskVmHostAudit
 
     private function ownsInstance(Node $node, string $name): bool
     {
-        if (preg_match(self::TaskVmName, $name) === 1) {
+        if (preg_match(self::TaskVmName, $name) === 1 || preg_match(self::SlotName, $name) === 1) {
             return true;
         }
         if (self::isChainBuilder($name)) {

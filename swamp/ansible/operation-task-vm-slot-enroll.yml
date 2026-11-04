@@ -84,6 +84,15 @@
           args:
             creates: "{{ stage.path }}/new/etc/wireguard/orbit.key"
 
+        - name: Rebuild a missing public host key
+          ansible.builtin.shell: >-
+            ssh-keygen -y -f "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key"
+            > "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key.pub"
+          args:
+            creates: "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key.pub"
+            removes: "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key"
+          loop: [ed25519, ecdsa, rsa]
+
         - name: Make the SSH host keys
           ansible.builtin.command:
             argv: [ssh-keygen, -A, -f, "{{ stage.path }}/new"]
