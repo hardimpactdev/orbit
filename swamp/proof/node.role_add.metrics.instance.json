@@ -48,7 +48,7 @@
       "operation": false,
       "body": {
         "name": "prepare-laravel",
-        "command": "composer install --no-interaction --prefer-dist --no-progress && touch database/database.sqlite && php artisan migrate --force && touch .git/orbit-proof-setup",
+        "command": "composer install --no-interaction --prefer-dist --no-progress && rm -f composer.lock && touch database/database.sqlite && php artisan migrate --force && touch .git/orbit-proof-setup",
         "timeout_seconds": 300
       }
     },

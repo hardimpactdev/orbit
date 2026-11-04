@@ -129,7 +129,7 @@ if 'instance' in sys.argv[3:]:
     database = subprocess.run(['incus', 'exec', 'target', '--', 'python3', '-c',
                                'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from migrations").fetchone()[0])',
                                checkout + '/database/database.sqlite'], capture_output=True, text=True, check=False)
-    check(database.returncode == 0 and int(database.stdout) > 0, 'Laravel migrations ran on the attached database')
+    check(database.returncode == 0 and int(database.stdout) > 0, 'Laravel migrations ran on the source database')
     domain = 'role-' + instance_run + '.proof.test'
     route = subprocess.run(['curl', '--max-time', '15', '--fail', '--silent', '--show-error',
                             '--cacert', '/home/orbit/.orbit/ca/root.pem', '--resolve',
