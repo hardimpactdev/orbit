@@ -3,57 +3,57 @@
   "proof_pass": true,
   "topology": "minimal",
   "topology_version": 18,
-  "commit": "79ced57a3a931236200019cfd7a7827715a0d046",
+  "commit": "31756d275576c763635265b39cf72d1cb079d70e",
   "vm": {
-    "group_id": 3191,
-    "provision_operation_id": 10179,
-    "task_vm_id": 555,
-    "node_id": 583,
-    "name": "tvm-555",
-    "host_node_id": 9,
-    "seed": "c1c2cf4051fbb2e7f879131384eee7f12b83521ed441f42e2a6ea7e925af8179",
-    "provisioned_at": "2026-11-04T14:54:19Z"
+    "group_id": 3195,
+    "provision_operation_id": 10224,
+    "task_vm_id": 557,
+    "node_id": 585,
+    "name": "tvm-557",
+    "host_node_id": 13,
+    "seed": "3b114e8a0ad4f2589f714f10a1e2ba20d52da06f56378a34f99c53bc320c8f74",
+    "provisioned_at": "2026-11-04T16:33:28Z"
   },
   "refreshed": [],
   "timings": {
     "up_steps": [
       {
-        "step": "stage",
-        "seconds": 6.9
+        "step": "clean restage",
+        "seconds": 10.3
       },
       {
         "step": "target",
-        "seconds": 10.5
+        "seconds": 80.4
       },
       {
         "step": "swamp",
-        "seconds": 55.3
+        "seconds": 59.9
       },
       {
         "step": "gateway",
-        "seconds": 6.6
+        "seconds": 7.1
       },
       {
         "step": "realtime",
-        "seconds": 25.6
+        "seconds": 32.0
       }
     ],
-    "up_seconds": 105.6,
-    "run_seconds": 68.0,
-    "up_to_receipt_seconds": 174.4,
-    "since_first_provision_seconds": 598.9
+    "up_seconds": 190.1,
+    "run_seconds": 66.3,
+    "up_to_receipt_seconds": 257.0,
+    "since_first_provision_seconds": 2529.0
   },
-  "up_started_at": "2026-11-04T14:51:12Z",
-  "written_at": "2026-11-04T15:01:10Z",
+  "up_started_at": "2026-11-04T16:27:49Z",
+  "written_at": "2026-11-04T17:09:58Z",
   "workflow": "operation-gateway-release",
-  "run": "80de773d-46aa-4729-96de-cee210ebbca2",
+  "run": "25e0f641-3455-4317-91f1-998bc36e5713",
   "budget_seconds": 3000,
   "prepare": [
     {
       "path": "processes",
       "status": "succeeded",
       "error_code": null,
-      "seconds": 6.67
+      "seconds": 8.91
     }
   ],
   "http_status": 200,
@@ -64,16 +64,16 @@
     "status": "succeeded",
     "error_code": null,
     "input": {
-      "sha": "a06cc63fb8f8b2a49063a01fea7f0e6285d29487",
-      "id": "a06cc63fb8f8",
+      "sha": "4cc5ee38da85a7dd9d88287762c05b8ec0e5834d",
+      "id": "4cc5ee38da85",
       "force": false,
-      "previous": "79ced57a3a93",
+      "previous": "31756d275576",
       "repository": "hardimpactdev/orbit",
       "manifest": "{\n  \"commit\": \"a19ef2a8f9d49ea483ffa39680a17611d4c5eb3c\",\n  \"version\": \"0.11.0\",\n  \"artifacts\": {\n    \"linux-x86_64\": {\n      \"path\": \"orbit-agent-linux-x86_64\",\n      \"sha256\": \"fdd720a2375226c40560e91a200c781348b20c732e6930c9b457bdd65cd16dca\",\n      \"url\": \"https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9128.0/orbit-agent-linux-x86_64\"\n    },\n    \"macos-aarch64\": {\n      \"path\": \"orbit-agent-macos-aarch64\",\n      \"sha256\": \"0c267338a16e9e6307b67d01d88b6635f3d26100499a84943caf75d2f59cecfe\",\n      \"url\": \"https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9128.0/orbit-agent-macos-aarch64\"\n    },\n    \"macos-x86_64\": {\n      \"path\": \"orbit-agent-macos-x86_64\",\n      \"sha256\": \"d7bae271937a6aa931bcf63b27d561b6c37255a938a48914e9f1f9cce1093fe6\",\n      \"url\": \"https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9128.0/orbit-agent-macos-x86_64\"\n    }\n  }\n}\n",
       "web": {
         "artifact_id": 4242,
         "size": 323,
-        "digest": "sha256:383724b392b4297a8a522dd5f0f5ef0447644198fb14a06229270d97b640ca2b"
+        "digest": "sha256:cf1fb1cecc0151652cbc3fd199421b81121e1c8669cf43fc5f94008af9b6196d"
       },
       "horizon_unit": "",
       "horizon_drain_seconds": 1730,
@@ -88,7 +88,7 @@
           "user": "orbit",
           "port": 22,
           "host_keys": [
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINM8k1+coHy/XbSZMXtEThtpncNLnBM7It2tlhbt5qWe"
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKSwave+o6IP6lRvdj1zTA7Fd0QQ7uU7MS1GHwvdW4PC"
           ]
         }
       },
@@ -102,65 +102,65 @@
           "user": "orbit",
           "port": 22,
           "host_keys": [
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINM8k1+coHy/XbSZMXtEThtpncNLnBM7It2tlhbt5qWe"
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKSwave+o6IP6lRvdj1zTA7Fd0QQ7uU7MS1GHwvdW4PC"
           ]
         }
       }
     },
     "result": {
-      "sha": "a06cc63fb8f8b2a49063a01fea7f0e6285d29487",
-      "previous": "79ced57a3a93",
-      "snapshot": "/home/orbit/.orbit/backups/pre-a06cc63fb8f8-20261104T150047Z-40c36f3542b886ed.sqlite"
+      "sha": "4cc5ee38da85a7dd9d88287762c05b8ec0e5834d",
+      "previous": "31756d275576",
+      "snapshot": "/home/orbit/.orbit/backups/pre-4cc5ee38da85-20261104T170931Z-896ca9900668cfe4.sqlite"
     },
-    "swamp_run_id": "5c4a4e28-2254-4646-81db-fef7108b8807"
+    "swamp_run_id": "b3dcb081-926c-4e7f-b806-3df7c26ecb38"
   },
-  "admit_seconds": 0.14,
-  "total_seconds": 38.76,
+  "admit_seconds": 0.15,
+  "total_seconds": 42.87,
   "job_errors": {},
   "native": {
-    "run_id": "5c4a4e28-2254-4646-81db-fef7108b8807",
+    "run_id": "b3dcb081-926c-4e7f-b806-3df7c26ecb38",
     "status": "succeeded",
     "steps": [
       {
         "job": "release",
         "step": "Build the release",
         "status": "succeeded",
-        "seconds": 15.378,
+        "seconds": 16.351,
         "error": null
       },
       {
         "job": "release",
         "step": "Install the web build",
         "status": "succeeded",
-        "seconds": 1.073,
+        "seconds": 0.966,
         "error": null
       },
       {
         "job": "release",
         "step": "Snapshot the database",
         "status": "succeeded",
-        "seconds": 1.151,
+        "seconds": 1.26,
         "error": null
       },
       {
         "job": "release",
         "step": "Migrate",
         "status": "succeeded",
-        "seconds": 1.021,
+        "seconds": 1.147,
         "error": null
       },
       {
         "job": "release",
         "step": "Load Swamp on Node 209",
         "status": "succeeded",
-        "seconds": 13.798,
+        "seconds": 16.489,
         "error": null
       },
       {
         "job": "release",
         "step": "Hand over the release",
         "status": "succeeded",
-        "seconds": 4.266,
+        "seconds": 5.471,
         "error": null
       }
     ]
@@ -171,7 +171,7 @@
       "job": "release",
       "step": "Build the release",
       "budget_seconds": 900,
-      "seconds": 15.378,
+      "seconds": 16.351,
       "status": "succeeded",
       "passed": true
     },
@@ -180,7 +180,7 @@
       "job": "release",
       "step": "Install the web build",
       "budget_seconds": 120,
-      "seconds": 1.073,
+      "seconds": 0.966,
       "status": "succeeded",
       "passed": true
     },
@@ -189,7 +189,7 @@
       "job": "release",
       "step": "Snapshot the database",
       "budget_seconds": 120,
-      "seconds": 1.151,
+      "seconds": 1.26,
       "status": "succeeded",
       "passed": true
     },
@@ -198,7 +198,7 @@
       "job": "release",
       "step": "Migrate",
       "budget_seconds": 300,
-      "seconds": 1.021,
+      "seconds": 1.147,
       "status": "succeeded",
       "passed": true
     },
@@ -207,7 +207,7 @@
       "job": "release",
       "step": "Load Swamp on Node 209",
       "budget_seconds": 300,
-      "seconds": 13.798,
+      "seconds": 16.489,
       "status": "succeeded",
       "passed": true
     },
@@ -216,13 +216,13 @@
       "job": "release",
       "step": "Hand over the release",
       "budget_seconds": 900,
-      "seconds": 4.266,
+      "seconds": 5.471,
       "status": "succeeded",
       "passed": true
     }
   ],
   "parity": {
     "exit": 0,
-    "output": "Release a06cc63fb8f8 is current; status reports it; the scheduler runs from it; the run fetched the commit and the web build with its own token.\n"
+    "output": "Release 4cc5ee38da85 is current; status reports it; the scheduler runs from it; the run fetched the commit and the web build with its own token.\n"
   }
 }
