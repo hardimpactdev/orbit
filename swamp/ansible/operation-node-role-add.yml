@@ -299,14 +299,12 @@
   tags: [firewall]
   become: true
   tasks:
-    - name: Open role ports and close retired ones
-      ansible.builtin.command: { argv: "{{ item }}" }
-      loop: >-
-        {{ (intent.firewall.desired | reject('contains', 'docker0') | list
-        if intent.role == 'analytics' else intent.firewall.desired) + intent.firewall.remove }}
-      loop_control: { label: "{{ item | join(' ') }}" }
-      register: ufw
-      changed_when: ufw.stdout is not search('Skipping|non-existent')
+    - name: Converge the role firewall
+      ansible.builtin.import_tasks: tasks/firewall.yml
+      vars:
+        firewall_commands: >-
+          {{ (intent.firewall.desired | reject('contains', 'docker0') | list
+          if intent.role == 'analytics' else intent.firewall.desired) + intent.firewall.remove }}
 - name: Node exporters
   hosts: exporter_nodes
   tags:

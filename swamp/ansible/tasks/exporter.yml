@@ -45,15 +45,23 @@
     enabled: true
   loop: "{{ exporter.service.units | selectattr('enabled') | list }}"
   loop_control: { label: "{{ item.service }}" }
-- name: Allow Metrics scrapes
+- name: Read replaced exporter rules
+  ansible.builtin.command: ufw show added
+  register: replaced_exporter_rules
+  changed_when: false
+- name: Retire only the replaced broad exporter tuples
   community.general.ufw:
     rule: allow
     port: "{{ item.port | string }}"
     proto: tcp
     from_ip: "{{ item.source }}"
-    delete: "{{ item.ensure == 'absent' }}"
+    delete: true
   loop: "{{ exporter.service.rules }}"
-  loop_control: { label: "{{ item.port }} {{ item.ensure }}" }
+  loop_control: { label: "{{ item.port }}" }
+  when: ("ufw allow from " ~ item.source ~ " to any port " ~ item.port ~ " proto tcp") in replaced_exporter_rules.stdout_lines
+- name: Converge canonical exporter rules
+  ansible.builtin.import_tasks: firewall.yml
+  vars: { firewall_commands: "{{ exporter.service.firewall_commands }}" }
 - name: Publish the exporter's Caddy site
   when: exporter.service.caddy is not none
   ansible.builtin.copy:

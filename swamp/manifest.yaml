@@ -17,6 +17,7 @@ additionalFiles:
   - ansible/tasks/check-runtime.yml
   - ansible/tasks/gateway-dns.yml
   - ansible/tasks/firewall-port.yml
+  - ansible/tasks/firewall.yml
   - ansible/tasks/ci.yml
   - ansible/requirements.txt
   - ansible/requirements.yml

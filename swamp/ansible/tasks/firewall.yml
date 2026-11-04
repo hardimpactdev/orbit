@@ -1,0 +1,56 @@
+---
+- name: Start the owned rule comparison
+  ansible.builtin.set_fact: { firewall_retire: [] }
+- name: Read the public firewall rules
+  ansible.builtin.command: ufw show added
+  register: firewall_added
+  changed_when: false
+- name: Read the public firewall order
+  ansible.builtin.command: ufw status numbered
+  register: firewall_numbered
+  changed_when: false
+- name: Find changed owned firewall rules
+  ansible.builtin.set_fact:
+    firewall_retire: "{{ firewall_retire + ([rule[-1]] if observed != [expected] else []) }}"
+  vars:
+    expected: >-
+      {{ 'ufw ' ~ rule[rule.index('in') - 1] ~ ' in on ' ~ rule[rule.index('on') + 1]
+      ~ (' from ' ~ rule[rule.index('from') + 1] if rule[rule.index('from') + 1] != 'any' else '')
+      ~ ' to ' ~ rule[rule.index('to') + 1] ~ ' port ' ~ rule[rule.index('port') + 1]
+      ~ ' proto ' ~ rule[rule.index('proto') + 1] ~ " comment '" ~ rule[-1] ~ "'" }}
+    observed: >-
+      {{ firewall_added.stdout_lines | select('search', " comment '" ~ (rule[-1] | regex_escape) ~ "'$") | list }}
+  loop: "{{ firewall_commands | select('contains', 'from') | select('contains', 'on') | select('contains', 'port') | list }}"
+  loop_control: { loop_var: rule, index_var: firewall_index, label: "{{ rule[-1] }}" }
+- name: Find misplaced service isolation rules
+  ansible.builtin.set_fact:
+    firewall_retire: "{{ firewall_retire | default([]) + ([rule[-1], allow_comment] if not ordered else []) }}"
+  vars:
+    allow_comment: "{{ firewall_commands[firewall_index + 1][-1] }}"
+    deny_indices: "{{ firewall_numbered.stdout | regex_findall('(?m)^\\[\\s*(\\d+)\\].*# ' ~ (rule[-1] | regex_escape) ~ '\\s*$') | map('int') | list }}"
+    allow_indices: "{{ firewall_numbered.stdout | regex_findall('(?m)^\\[\\s*(\\d+)\\].*# ' ~ (allow_comment | regex_escape) ~ '\\s*$') | map('int') | list }}"
+    trust_indices: >-
+      {{ firewall_numbered.stdout | regex_findall('(?m)^\[\s*(\d+)\].*# ' ~
+         (intent.firewall.desired[0][-1] | regex_escape) ~ '\s*$') | map('int') | list }}
+    ordered: >-
+      {{ allow_indices | length == 1 and deny_indices | length == 1
+      and allow_indices[0] < deny_indices[0]
+      and (trust_indices | length == 0 or deny_indices[0] < trust_indices | min) }}
+  loop: "{{ firewall_commands }}"
+  loop_control: { loop_var: rule, index_var: firewall_index, label: "{{ rule[-1] }}" }
+  when: rule[1] == 'insert' and rule[3] == 'deny'
+- name: Remove only changed or misplaced owned rules
+  ansible.builtin.command:
+    argv: [ufw, --force, delete, "{{ item | string }}"]
+  loop: >-
+    {{ firewall_numbered.stdout | regex_findall('(?m)^\\[\\s*(\\d+)\\].*# (' ~
+       (firewall_retire | default([]) | unique | map('regex_escape') | join('|')) ~ ')\\s*$')
+       | map('first') | map('int') | sort(reverse=true) }}
+  when: firewall_retire | default([]) | length > 0
+  changed_when: true
+- name: Apply canonical firewall commands
+  ansible.builtin.command: { argv: "{{ item }}" }
+  loop: "{{ firewall_commands }}"
+  loop_control: { label: "{{ item[-1] }}" }
+  register: canonical_ufw
+  changed_when: canonical_ufw.stdout is not search('Skipping|non-existent')

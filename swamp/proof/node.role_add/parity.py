@@ -80,6 +80,27 @@ elif role == 'metrics':
         if exporter['enabled']:
             address = exporter['ssh_execution']['target']['host']
             check(address + ':9100' in active, 'Prometheus loaded the selected exporter target')
+    commands_by_node = {intent['node_id']: intent['firewall']['desired']}
+    for exporter in intent['exporters']:
+        commands_by_node.setdefault(exporter['exporter_node_id'], []).extend(exporter['service']['firewall_commands'])
+    nodes = json.loads(os.environ['PROOF_NODES'])
+    for identifier, commands in commands_by_node.items():
+        node = next(name for name, value in nodes.items() if value == identifier)
+        prefix = [] if node == 'gateway' else ['incus', 'exec', node, '--']
+        numbered = subprocess.run([*prefix, 'ufw', 'status', 'numbered'], capture_output=True, text=True, check=True).stdout
+        def positions(comment):
+            return [int(index) for index in re.findall(r'^\[\s*(\d+)\].*# ' + re.escape(comment) + r'\s*$', numbered, re.M)]
+        trust = positions(intent['firewall']['desired'][0][-1])
+        for index, command in enumerate(commands):
+            if command[1:4] == ['insert', '1', 'deny']:
+                deny, allow = positions(command[-1]), positions(commands[index + 1][-1])
+                check(len(allow) == len(deny) == 1 and allow[0] < deny[0] and (not trust or deny[0] < min(trust)),
+                      node + ' isolates the service after its specific allow and before broad trust')
+        if 'repair-firewall' in sys.argv[3:] and node == 'target':
+            added = subprocess.run([*prefix, 'ufw', 'show', 'added'], capture_output=True, text=True, check=True).stdout
+            check('proof-kept-exporter-port' in added, 'an unrelated rule on the exporter port survives')
+            check('ufw allow from 10.231.0.11 to any port 9100 proto tcp\n' not in added,
+                  'only the exact replaced broad exporter tuple is retired')
 elif role == 'analytics':
     analytics = intent['runtime']['analytics']
     processes = gateway('GET', 'processes')['response']['data']
