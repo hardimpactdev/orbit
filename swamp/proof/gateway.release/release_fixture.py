@@ -202,7 +202,7 @@ def setup(gateway_node, case=None):
     command(['openssl', 'x509', '-req', '-in', str(tls / 'request.pem'), '-CA', str(ca / 'root.pem'), '-CAkey', str(ca / 'root.key'), '-CAcreateserial', '-days', '1',
              '-extfile', str(tls / 'extensions'), '-out', str(tls / 'cert.pem')])
     hosts.write_text(hosts.read_text() + f'{LISTEN} github.com api.github.com\n')
-    DATA.write_text(json.dumps({'case': case, 'staged': staged, 'target': target, 'tag': tag, 'digest': digest, 'size': size, 'token': None, 'calls': [], 'minted': []}))
+    DATA.write_text(json.dumps({'case': case, 'staged': staged, 'target': target, 'tag': tag, 'digest': digest, 'size': size, 'token': None, 'tokens': [], 'calls': [], 'minted': []}))
     DATA.chmod(0o600)
     (STATE / 'ready').unlink(missing_ok=True)
     with (STATE / 'server.log').open('w') as log:
@@ -279,11 +279,13 @@ def serve():
                     permissions = json.loads(raw)['permissions']
                     # The newest minted token is the run's: the release fetch and download must use it.
                     data['token'] = token
+                    data['tokens'].append(token)
                     data['minted'].append(permissions)
                     DATA.write_text(json.dumps(data))
                     return self.respond({'token': token, 'permissions': {**permissions, 'metadata': 'read'},
                                          'expires_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + 3500))}, 201)
-                if scheme.lower() not in ('token', 'bearer') or credential != data['token']:
+                # The API accepts each token it minted, as GitHub does until they expire; Git takes only the newest.
+                if scheme.lower() not in ('token', 'bearer') or credential not in data['tokens']:
                     return self.respond({'message': 'Bad credentials'}, 401)
                 if path.path == '/installation/repositories':
                     return self.respond({'total_count': 1, 'repositories': [{'full_name': 'hardimpactdev/orbit'}]})
