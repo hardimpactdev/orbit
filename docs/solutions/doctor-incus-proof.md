@@ -118,7 +118,7 @@ Record the inventory, the row counts, and the three service lists again, with la
 
 ### Release
 
-Copy the evidence log entries that you need, then run `bin/e2e-topology release ISSUE`.
+For a manually acquired topology, save the evidence you need, then run `bin/e2e-topology release ISSUE --scoped`. Scoped release checks ownership and removes only the guests and network recorded by that lease; it does not sweep orphaned resources. Orbit releases task-owned topologies, so leave those allocated for review.
 
 ## Limits
 

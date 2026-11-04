@@ -25,7 +25,7 @@ Call Recall `resolve` for the command and its family first. Current decisions ov
 
 Work through it in order. Each item ends with evidence in the PR.
 
-1. **Docs match the ideal state.** The `.mdx` page and the chart agree with each other and with the brief. Decide the failure and cleanup contract during this review, using [flow-tighten rule 28](../flow-tighten/SKILL.md#what-a-good-flow-looks-like).
+1. **Docs match the ideal state.** Review the `.mdx` page, chart and command verification together. The page and chart agree with each other and with the brief. Decide the failure and cleanup contract during this review, using [flow-tighten rule 28](../flow-tighten/SKILL.md#what-a-good-flow-looks-like).
 2. **The split is right.**
    - CLI: parse arguments, call the API, show the result. No logic.
    - Gateway: admission (validation, refusals, conflicts), intent rendering, recording the result. No execution.
@@ -35,7 +35,7 @@ Work through it in order. Each item ends with evidence in the PR.
 3. **Code is minimal.** Delete unused CLI and Gateway paths for this command, including old execution code and agent command calls it no longer needs. Report net lines.
 4. **The workflow matches the chart** step for step; Swamp lane labels equal step names. Build with [swamp-flow](../swamp-flow/SKILL.md) and the phases with [ansible-phase](../ansible-phase/SKILL.md).
 5. **Tests.**
-   - Use [verifying-commands](../verifying-commands/SKILL.md) to turn the contract and chart into executable VM cases. The same cases and assertions run during development and in CI.
+   - Use [verifying-commands](../verifying-commands/SKILL.md) to maintain and run the affected proof, including its reset boundary. Update cases for behavior changes; review existing cases for behavior-preserving changes. The same cases and assertions run during development and in CI.
    - Gateway Pest tests only for what this command's Gateway code needs: admission, refusals, intent rendering, projection. The old suite was deleted; for how things were set up, read git history at tag `pest-before-rewrite`. Keep them fast.
 6. **Proof.** Run the cases on the shared proof topology. Record fresh and no-drift times against the old workflow.
 7. **The whole release flow.** The command is not done until it has gone through all of it:

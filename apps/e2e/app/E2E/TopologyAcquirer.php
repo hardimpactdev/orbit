@@ -77,6 +77,29 @@ final readonly class TopologyAcquirer
     }
 
     /**
+     * Prepare owned resources for a native proof workflow. No product convergence or readiness is claimed.
+     * The attempt lease remains releasable when a later native fixture step fails.
+     *
+     * @param  (Closure(string, float): void)|null  $progress
+     * @return array{construction: TopologyConstructionInputs, source: SourceState, mounts: array<string, array{device: string, source: string, path: string}>}
+     */
+    public function prepare(TopologyRequest $request, TopologyRecipe $recipe, ?Closure $progress = null): array
+    {
+        $this->assertRequestOwnership($request);
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = $this->issueLock($request->issue);
+        try {
+            if ($state->hasAttempt()) {
+                throw new RuntimeException("{$request->issue} already has an active topology attempt; release it first.");
+            }
+
+            return $this->prepareTopology($request, $state, $recipe, $progress ?? static function (string $step, float $seconds): void {});
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
      * Refresh the topology after a source change and publish the verified source binding.
      *
      * A quick sync proves the mount, installs the current guest helper scripts, and applies pending Gateway
@@ -199,6 +222,26 @@ final readonly class TopologyAcquirer
     /** @param Closure(string, float): void $progress */
     private function create(TopologyRequest $request, IssueState $state, TopologyRecipe $recipe, Closure $progress): TopologyRecord
     {
+        ['construction' => $construction, 'source' => $source, 'mounts' => $mounts] = $this->prepareTopology($request, $state, $recipe, $progress);
+        $target = $construction->target;
+        try {
+            StageTimer::run($progress, 'compose', fn () => $this->composer->compose($target, $progress));
+            $verification = StageTimer::run($progress, 'readiness', fn (): VerificationReport => $this->ready($target, $source));
+            $topology = new TopologyRecord($construction, $source, $verification, $mounts);
+            $state->writeTopology($topology);
+
+            return $topology;
+        } catch (Throwable $exception) {
+            $this->rollback($target, $state, $exception);
+        }
+    }
+
+    /**
+     * @param  Closure(string, float): void  $progress
+     * @return array{construction: TopologyConstructionInputs, source: SourceState, mounts: array<string, array{device: string, source: string, path: string}>}
+     */
+    private function prepareTopology(TopologyRequest $request, IssueState $state, TopologyRecipe $recipe, Closure $progress): array
+    {
         $this->assertMountableWorktree($request->worktree);
         $this->assertBootstrappedWorktree($request->worktree);
 
@@ -223,12 +266,8 @@ final readonly class TopologyAcquirer
                 $this->guests->assertSourceMounted($target);
             });
             $source = StageTimer::run($progress, 'scripts', fn (): SourceState => $this->synchronizer->syncWorkingTree($target, $request->worktree, $mountToken));
-            StageTimer::run($progress, 'compose', fn () => $this->composer->compose($target, $progress));
-            $verification = StageTimer::run($progress, 'readiness', fn (): VerificationReport => $this->ready($target, $source));
-            $topology = new TopologyRecord($construction, $source, $verification, $mounts);
-            $state->writeTopology($topology);
 
-            return $topology;
+            return ['construction' => $construction, 'source' => $source, 'mounts' => $mounts];
         } catch (Throwable $exception) {
             $this->rollback($target, $state, $exception);
         }

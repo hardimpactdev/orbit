@@ -6,6 +6,8 @@ Each Orbit operation kind has one sequence chart. The chart states the intent of
 
 Read the kind's chart first. Any change to a command's flow starts by updating its chart to the ideal flow; the code follows the chart. A chart shows the **target design**, not old code where it differs. Name what differs in your report, not in the chart.
 
+Command verification assets live in [swamp/proof](https://github.com/hardimpactdev/orbit/tree/main/swamp/proof). Review them with the command page and chart. Once a command has an executable verification entrypoint, link to it from its page and chart.
+
 Edit charts here, never in a copy. A chart-only change arrives as a pull request that touches only charts, their placements, and `flows-pending.txt`. A chart Nick approved carries `%% status: reviewed`.
 
 ## Where a chart lives

@@ -16,7 +16,7 @@ use RuntimeException;
  *
  * Every Incus resource is checked against the attempt (owner, issue, attempt) before deletion. The lease
  * names the declared Nodes, so a failed acquisition without a topology record is released exactly too.
- * The worktree's lease and record are dropped; the log stays. Every release ends with the orphan network sweep.
+ * The worktree's lease and record are dropped; the log stays. Scoped release skips the host-wide orphan sweep.
  */
 final readonly class TopologyReleaser
 {
@@ -29,7 +29,7 @@ final readonly class TopologyReleaser
     ) {}
 
     /** @return array{state:string,issue:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
-    public function release(TopologyRequest $request): array
+    public function release(TopologyRequest $request, bool $sweepOrphans = true): array
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = new OperationLock($this->hostPaths);
@@ -50,7 +50,7 @@ final readonly class TopologyReleaser
                 'attempt_id' => $target->attempt->value,
                 'released' => $released,
                 'already_absent' => $absent,
-                'networks_reaped' => $this->sweep?->sweep() ?? [],
+                'networks_reaped' => $sweepOrphans ? ($this->sweep?->sweep() ?? []) : [],
             ];
         } finally {
             $lock->release();
@@ -78,6 +78,11 @@ final readonly class TopologyReleaser
             if ($instance->isRunning()) {
                 $running[] = $name;
             }
+        }
+        // Inventory and validate the whole target before stopping work or deleting any guest.
+        $network = $this->host->network($target->network());
+        if ($network !== null) {
+            $this->assertOwnership($network->metadata, $target, $target->network());
         }
         $operator = $target->instance('operator');
         if (in_array($operator, $present, true)) {
