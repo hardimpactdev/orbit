@@ -15,6 +15,7 @@ use App\Domain\GitHub\GreenCommitResolver;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Models\GatewayRelease;
@@ -68,6 +69,7 @@ final readonly class RunAutomaticGatewayReleaseAction
         private GatewayReleaseAlerts $alerts,
         private BranchHeadReader $heads,
         private GatewayReleaseRecorder $recorder,
+        private GatewayReleaseRetry $retry,
     ) {}
 
     /** @return Tick */
@@ -178,13 +180,28 @@ final readonly class RunAutomaticGatewayReleaseAction
         try {
             $record = $this->admit->execute($sha, trigger: 'auto');
         } catch (GatewayReleaseException $exception) {
-            $result = match ($exception->errorCode) {
-                'gateway.release_in_progress' => 'busy',
-                'gateway.release_agent_delivery_unavailable' => 'waiting_for_agent_delivery',
-                default => 'failed',
-            };
+            if ($exception->errorCode === 'gateway.release_in_progress') {
+                return $this->stalled($deployed, 'busy', null, $exception->errorCode, $exception->getMessage(), $sha);
+            }
+            if ($exception->errorCode === 'gateway.release_agent_delivery_unavailable') {
+                return $this->stalled($deployed, 'waiting_for_agent_delivery', null, $exception->errorCode, $exception->getMessage(), $sha);
+            }
+            // A refusal before the run, such as an expired web build, is a failed attempt: the resolver leaves the
+            // commit out, or tries it again under the retry limit.
+            $record = $this->lock->run(function () use ($sha, $exception): ?GatewayRelease {
+                $record = $this->recorder->begin('auto', $sha);
+                $this->recorder->fail($record, $exception, retryable: $this->retry->retryable($exception->errorCode, $sha, $record?->id),
+                    durationMs: 0, phase: $exception->step);
 
-            return $this->stalled($deployed, $result, $this->record($sha)?->id, $exception->errorCode, $exception->getMessage(), $sha);
+                return $record?->refresh();
+            });
+            if ($record instanceof GatewayRelease && ! $record->retryable) {
+                $this->automation->clearStall();
+
+                return $this->automation->recordTick('failed', $sha, $record->id, $exception->errorCode, $exception->getMessage());
+            }
+
+            return $this->stalled($deployed, 'failed', $record?->id, $exception->errorCode, $exception->getMessage(), $sha);
         } catch (Throwable $exception) {
             report($exception);
 

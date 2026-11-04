@@ -10,6 +10,7 @@ use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
@@ -66,6 +67,10 @@ final readonly class AdmitSwampGatewayReleaseAction
                 ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
             }
+            // A release that went live during the checks above is the one a failed check switches back to.
+            if ($this->layout->currentReleaseId() !== $previous) {
+                throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
+            }
 
             return $this->admit($commit, $force, $trigger, $previous, $delivery['manifest'], $web, $horizon, $gateway);
         });
@@ -80,6 +85,15 @@ final readonly class AdmitSwampGatewayReleaseAction
         try {
             $operation = $this->start($record, $commit, $force, $previous, $manifest, $web, $horizon, $gateway);
         } catch (Throwable $exception) {
+            // Swamp may run a start it did not confirm: the record stays running under its Operation, which the shared
+            // observer settles.
+            $uncertain = Operation::query()->where('kind', 'gateway.release')->where('target_id', $record->id)->latest('id')->first();
+            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'swamp.start_uncertain'
+                && $uncertain instanceof Operation && ! $uncertain->status->terminal()) {
+                $this->recorder->progress($record, ['run' => ['operation_id' => $uncertain->id]], $commit);
+
+                throw $exception;
+            }
             // A run that never started changed nothing; its record must not hold the release unit back.
             $this->recorder->fail($record, $exception, retryable: true, durationMs: 0, phase: 'run');
 

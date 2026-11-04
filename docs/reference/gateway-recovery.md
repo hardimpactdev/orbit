@@ -316,7 +316,9 @@ The run must be a run of `.github/workflows/ci.yml` in this repository: a `push`
 
 ### Deploy a release
 
-A deploy, manual or automatic, runs as a [Swamp run](#release-as-a-swamp-run). The release unit still runs rollback and adoption the way this section describes. Before it changes anything, it:
+This section describes the release unit. Manual and automatic deploys run as a [Swamp run](#release-as-a-swamp-run), which switches back after a failed check. Only rollback and adoption still run through the release unit, with the steps, verification and pauses below.
+
+Before the release unit changes anything, it:
 
 1. prepares the commit;
 2. refuses a commit that does not descend from the current release, with `gateway.release_downgrade`;

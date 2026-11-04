@@ -30,7 +30,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
             try {
                 $commit = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
                     'Commit',
-                    placeholder: '0123456789ab',
+                    placeholder: '0123456789abcdef0123456789abcdef01234567',
                     required: true,
                     validate: self::commitError(...),
                 ));
@@ -42,7 +42,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
         if (! is_string($commit) || self::commitError($commit) !== null) {
             return $this->renderGatewayFailure(
                 'gateway.release_commit_invalid',
-                'Name the commit by its hex SHA (7 to 40 characters).',
+                'Name the commit by its full 40-character SHA.',
                 details: ['field' => 'commit'],
             );
         }
@@ -63,6 +63,6 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
 
     private static function commitError(string $commit): ?string
     {
-        return preg_match('/\A[0-9a-f]{7,40}\z/D', $commit) === 1 ? null : 'Enter a hex SHA of 7 to 40 lowercase characters.';
+        return preg_match('/\A[0-9a-f]{40}\z/D', $commit) === 1 ? null : 'Enter the full 40-character lowercase SHA.';
     }
 }
