@@ -427,7 +427,7 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### Task VM slots
 
-This section describes the target design. It is not built yet: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
+This section describes the target design. Only the [identity unit](#the-identity-volume) in the task image is built. Everything else is not: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
 
 A task VM host has a fixed number of slots. Each slot is a task VM identity that Orbit enrols once. A task takes a free slot. It does not enrol a new Node.
 
@@ -459,9 +459,31 @@ A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, 
 
 #### The identity volume
 
-Each slot has one small Incus custom volume, `<node-slug>-tvm-<n>-identity`. The VM mounts it read-only at `/opt/orbit-slot`. The volume holds the keys, the WireGuard config, the Pi token, `models.json` and a `REVISION` file. The host enforces the read-only flag. Root in the guest cannot write to the volume, so a task cannot change the identity of the slot for the next task.
+Each slot has one small Incus custom volume, `<node-slug>-tvm-<n>-identity`. The VM gets it as a read-only filesystem device named `identity` at `/opt/orbit-slot`. The volume holds the keys, the WireGuard config, the Pi token, `models.json` and a `REVISION` file. The host enforces the read-only flag. Root in the guest cannot write to the volume, so a task cannot change the identity of the slot for the next task.
 
-The task image holds `orbit-slot-identity.service`. It runs at boot, after the Incus agent has mounted the volume and before ssh, WireGuard, the observer and Pi start. It copies the files to the root disk with the right owner and mode. The image holds no key and no secret. A VM with no volume stays quiet: it starts no WireGuard and no observer.
+The volume holds this tree. The unit installs every file in it, so a missing file fails the unit:
+
+```
+etc/wireguard/{orbit.key,orbit.conf,orbit.dns-link}
+etc/ssh/ssh_host_{ed25519,ecdsa,rsa}_key{,.pub}
+etc/cloud/cloud.cfg.d/99-orbit-slot.cfg
+etc/orbit/agent/secret
+home/orbit/.pi/agent/{orbit-token,models.json}
+REVISION
+```
+
+Built: the task image holds `orbit-slot-identity.service`, enabled in `sysinit.target`. The [image build](#build-the-base-image) installs it. At boot it checks that the kernel exposes the virtiofs tag `incus_identity`, mounts the tag read-only at `/run/orbit-slot`, and copies the files to the root disk with these owners and modes. Then it unmounts. It runs before `sshd-keygen.service`, ssh, WireGuard, the observer and Pi, so ssh uses the slot host keys. It does not wait for the Incus agent, which mounts `/opt/orbit-slot` later. The unit never logs file contents. The image holds no key and no secret.
+
+| Files | Owner and mode |
+| --- | --- |
+| `/etc/wireguard/orbit.key`, `orbit.conf` | `root:root` `0600` |
+| `/etc/wireguard/orbit.dns-link`, `/etc/ssh/ssh_host_*_key.pub`, `/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg` | `root:root` `0644` |
+| `/etc/ssh/ssh_host_*_key`, `/etc/orbit/agent/secret` | `root:root` `0600` |
+| `/home/orbit/.pi/agent/orbit-token`, `models.json` | `orbit:orbit` `0600` |
+
+The file `99-orbit-slot.cfg` is the single line `ssh_deletekeys: false`. Without it, cloud-init deletes the host keys on the first boot of every clone and makes new ones, and the slot would not keep its host key. The enrol writes this file into the volume with the keys.
+
+A VM with no volume stays quiet. The unit has no matching virtiofs tag, so its start check skips it. It installs nothing and starts no WireGuard and no observer, and today's enrolment is unchanged.
 
 The Gateway computes `identity_revision` from the fleet-wide inputs, such as the model list and the CA. The volume keeps the same value in `REVISION`. A claim compares them. If they differ, the claim rewrites the volume before it clones the VM.
 
@@ -1195,6 +1217,8 @@ In an Incus build, four native steps run each phase: `image.start-phase` starts 
 Swamp resumes failed native steps; completed steps remain checkpoints in the same root. The retained UpCloud path uses its existing child and service identities until its separate cutover.
 
 An Incus build copies the pinned Pi build from the Gateway Node to 209 with official SSH, checks its SHA-256 there, copies it to the build host, and pushes it with `incus file push --mode 0600 --uid 0 --gid 0` to `/var/cache/orbit/pi/<sha256>.bin` in the guest. The `pi` phase verifies that file against its pin before `pi.install-artifact` publishes it. Final cleanup removes both staged copies. A recipe without Pi skips the copies; its `pi` phase changes nothing.
+
+After `ssh.service` is enabled, an Incus build installs the [slot identity unit](#the-identity-volume). The `slot-identity-unit` step runs `incus file push` with the unit text as stdin, and `slot-identity-enable` runs `systemctl enable orbit-slot-identity.service`. The unit is not part of the recipe, so it does not change the recipe identity and starts no rebuild: request one with `task-vms:build-recipe --rebuild`. The smoke VM has no identity volume. Its `smoke-slot-identity` step only checks that the unit is enabled in the published image.
 
 UpCloud Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
 
