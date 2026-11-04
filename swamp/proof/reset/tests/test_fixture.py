@@ -27,7 +27,7 @@ class SharedFixtureTests(unittest.TestCase):
                 commands.append(argv)
                 if argv[-1] == 'seed':
                     seeds.append(('seed', json.loads(kwargs['input'])))
-                    return json.dumps({'nodes': {'gateway': 209, 'operator': 210}, 'swamp_route': {}})
+                    return json.dumps({'nodes': {'gateway': 209, 'operator': 210}, 'swamp_route': {}, 'gateway_firewall': []})
                 return ''
             def native(_ctx, action, facts=None):
                 seeds.append((action, facts))
@@ -67,9 +67,10 @@ class SharedFixtureTests(unittest.TestCase):
                 if argv[-1] == 'agent':
                     return json.dumps({'configuration': 'config', 'certificate': 'CA', 'unit': 'unit'})
                 raise AssertionError(argv)
-            with patch.object(guest, 'context', return_value=ctx), patch.object(fixture, 'run', side_effect=execute), patch.object(fixture, 'native') as native, patch.object(fixture, 'realtime'), patch.object(fixture, 'projection_queue'):
+            with patch.object(guest, 'context', return_value=ctx), patch.object(fixture, 'run', side_effect=execute), patch.object(fixture, 'native') as native, patch.object(fixture, 'realtime'), patch.object(fixture, 'projection_queue'), patch.object(guest.boot, 'apply') as boot:
                 value = guest.main('gateway-runtime', {'nodes': {}})
                 native.assert_not_called()
+            self.assertEqual(('gateway', '10.232.1.10'), boot.call_args.args[1:])
             self.assertEqual({'gateway', 'app-dev'}, set(value['agents']))
             self.assertEqual([['ufw', 'allow', '22']], value['baseline_commands']['gateway'])
 

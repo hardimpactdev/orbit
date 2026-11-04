@@ -138,7 +138,7 @@ class OwnershipTests(unittest.TestCase):
         with patch.object(phases, 'incus', return_value=json.dumps({'config': config}).encode()) as run, patch.object(phases, 'harness') as harness:
             value = phases.gateway_resources({}, prepared, 'source')
             self.assertEqual('2560MiB', value['memory'])
-            self.assertEqual([['stop', 'owned'], ['config', 'set', 'owned', 'limits.memory=2560MiB'], ['start', 'owned']], [c.args[0] for c in run.call_args_list[1:]])
+            self.assertEqual([['stop', 'owned'], ['config', 'set', 'owned', 'limits.memory=2560MiB', 'limits.cpu=2'], ['start', 'owned']], [c.args[0] for c in run.call_args_list[1:]])
             harness.assert_called_once_with({}, 'wait-agent', 'source', guest='owned')
         for key in config:
             with patch.object(phases, 'incus', return_value=json.dumps({'config': {**config, key: 'foreign'}}).encode()) as run:

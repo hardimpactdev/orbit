@@ -8,6 +8,7 @@ from pathlib import Path
 
 SOURCE = Path('/home/orbit/orbit')
 sys.path.insert(0, str(SOURCE / 'tools/swamp-proof-guest'))
+boot = importlib.import_module('boot')
 fixture = importlib.import_module('fixture')
 
 
@@ -47,6 +48,7 @@ def main(action, facts):
         seeded = json.loads((ctx.STATE / 'fixture.json').read_text())
         fixture.realtime(ctx, seeded['nodes'])
         fixture.projection_queue(ctx)
+        boot.apply(lambda argv, input=None: fixture.run(ctx, argv, input=input), 'gateway', fixture.member_address(ctx), checkout=str(SOURCE))
         baseline = json.loads(fixture.run(ctx, ['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'proof-state'], user=ctx.ACCOUNT, cwd=ctx.GATEWAY, input='{}'))
         return {'baseline_commands': baseline['baseline_commands'], 'agents': {key: driver(ctx, 'agent', {'node': value}) for key, value in seeded['nodes'].items() if key != 'operator'}}
     if action == 'install-agent':

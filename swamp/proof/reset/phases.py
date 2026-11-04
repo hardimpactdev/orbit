@@ -41,12 +41,8 @@ WG_OUTER = 'wg-nested'
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 
 
-def as_orbit(argv):
-    return ['runuser', '-u', 'orbit', '--', *argv] if os.geteuid() == 0 else argv
-
-
 def privileged(argv, *, data=None, timeout=60):
-    return checked(subprocess.run(argv if os.geteuid() == 0 else ['sudo', '-n', *argv], input=data, capture_output=True, timeout=timeout), argv[0])
+    return checked(subprocess.run(['sudo', '-n', *argv], input=data, capture_output=True, timeout=timeout), argv[0])
 
 
 def orbit_home():
@@ -106,7 +102,10 @@ def bring_up_wireguard(topology, network):
         incus(['exec', instance, '--', 'systemctl', 'restart', 'wg-quick@orbit'])
     configuration = wg_config('operator', network, network['endpoint']).encode()
     path = '/etc/wireguard/wg-nested.conf'
-    current = subprocess.run(['cat', path] if os.geteuid() == 0 else ['sudo', '-n', 'cat', path], capture_output=True, timeout=30).stdout
+    try:
+        current = privileged(['cat', path], timeout=30)
+    except RuntimeError:
+        current = b''  # no configuration yet
     if current != configuration:
         privileged(['sh', '-c', f'umask 077; cat > {path}'], data=configuration)
         privileged(['systemctl', 'enable', f'wg-quick@{WG_OUTER}'])
@@ -216,10 +215,10 @@ def gateway_resources(request, prepared, source):
         raise RuntimeError('Refusing resource changes on a foreign Gateway.')
     # Resizing live memory kills virtiofsd on this Incus/QEMU version. Size offline.
     incus(['stop', name])
-    incus(['config', 'set', name, 'limits.memory=2560MiB'])
+    incus(['config', 'set', name, 'limits.memory=2560MiB', 'limits.cpu=2'])
     incus(['start', name])
     harness(request, 'wait-agent', source, guest=name)
-    return {'instance': name, 'memory': '2560MiB', 'ownership': expected}
+    return {'instance': name, 'memory': '2560MiB', 'cpu': 2, 'ownership': expected}
 
 def release(request, generation, label):
     if generation is None:
@@ -312,6 +311,7 @@ def guest(request, action):
     result = json.loads(incus(['exec', gateway, '--', 'python3', script, action], data=json.dumps(facts).encode(), timeout=1800))
     if action == 'gateway-runtime':
         sys.path.insert(0, str(Path(request['candidate']) / 'tools/swamp-proof-guest'))
+        import boot
         import fixture
         # Canonical product baseline, plus one unmanaged fixture-transport rule.
         for key, commands in result['baseline_commands'].items():
@@ -336,8 +336,9 @@ def guest(request, action):
         for key, node in topology['nodes'].items():
             if key in ('gateway', 'operator'):
                 continue
-            incus(['exec', node['instance'], '--', 'sh', '-c',
-                 'printf "\\n%s gateway.orbit swamp.orbit reverb.orbit\\n" "$1" >> /etc/hosts', 'sh', address])
+            # Boot behaviour (cloud-init off, hosts line, agent after the tunnel) as the ready copies carry it.
+            boot.apply(lambda argv, *, input=None, instance=node['instance']: incus(
+                ['exec', instance, '--', *argv], data=None if input is None else input.encode()), 'node', address)
         # The outer VM is the operator: its CLI profile names the Gateway by address only, never gateway.orbit.
         pinned = orbit_home() / 'nested-ca.pem'
         pinned.write_bytes(certificate)
@@ -360,8 +361,11 @@ def gateway_state(request):
 
 def local_cli(request, *args, allow_failure=False):
     """The candidate CLI on the outer VM as user orbit, with its one profile for the nested Gateway."""
-    completed = subprocess.run(as_orbit([str(Path(request['candidate']) / 'apps/cli/orbit'), *args]), env=CLI_ENV, cwd='/',
-                               capture_output=True, timeout=120)
+    cli = str(Path(request['candidate']) / 'apps/cli/orbit')
+    if os.geteuid() == 0:
+        completed = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', cli, *args], env=CLI_ENV, cwd='/', capture_output=True, timeout=120)
+    else:
+        completed = subprocess.run(['php', cli, *args], env=CLI_ENV, cwd='/', capture_output=True, timeout=120)
     if completed.returncode and not allow_failure:
         raise RuntimeError('Authenticated candidate CLI failed: ' + completed.stdout.decode()[-4000:] + completed.stderr.decode()[-1000:])
     return completed.returncode, json.loads(completed.stdout) if completed.stdout.strip() else None
