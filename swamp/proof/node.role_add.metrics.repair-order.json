@@ -1,0 +1,7 @@
+{
+  "kind": "node.role_add.metrics.repair-order",
+  "defaults": "node-role-add-defaults.json",
+  "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "metrics", "converge_existing": true}},
+  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "metrics"],
+  "before_node": {"metrics": [["ufw", "--force", "delete", "deny", "in", "on", "orbit", "proto", "tcp", "from", "any", "to", "10.231.0.11", "port", "3000", "comment", "orbit:metrics-grafana-isolation"], ["ufw", "--force", "delete", "allow", "in", "on", "orbit", "proto", "tcp", "from", "10.231.0.1", "to", "10.231.0.11", "port", "3000", "comment", "orbit:metrics-grafana-upstream"], ["ufw", "deny", "in", "on", "orbit", "proto", "tcp", "from", "any", "to", "10.231.0.11", "port", "3000", "comment", "orbit:metrics-grafana-isolation"], ["ufw", "allow", "in", "on", "orbit", "proto", "tcp", "from", "10.231.0.1", "to", "10.231.0.11", "port", "3000", "comment", "orbit:metrics-grafana-upstream"]]}
+}
