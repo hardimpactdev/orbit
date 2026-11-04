@@ -765,6 +765,7 @@ One native assert, `Confirm the move`, ends the run. The Gateway records the res
 - On success the target assignment becomes active. The certificate and serving state follow the move.
 - The Gateway forgets the source's transferred settings.
 - A failed step marks the assignment `failed` with `converge:STEP`, or `remove:Remove from the source`.
+- A role that was already `active` stays `active` when `node:role:add --converge` fails. The failure stays on the Operation.
 
 Relocation does not reconcile Metrics. When a Metrics role exists and `websocket` or `gateway` moved, `follow_up` names `orbit node:role:add <metrics-node> metrics --converge`.
 
