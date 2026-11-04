@@ -121,3 +121,18 @@ it('refuses an admission when another release went live during its checks', func
             ->toBe(['gateway.release_in_progress', 'The current release changed during admission.']))
         ->and(GatewayRelease::query()->count())->toBe(0);
 });
+
+it('rolls back to a retained release by releasing its commit, and refuses an unknown or current one', function (): void {
+    $fetched = [];
+    releaseAgent(static function (string $revision) use (&$fetched): never {
+        $fetched[] = $revision;
+
+        throw new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'No valid provenance.', 422, sha: $revision);
+    });
+    $admit = app(AdmitSwampGatewayReleaseAction::class);
+
+    expect(fn () => $admit->rollback('cccccccccccc'))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_not_prepared'))
+        ->and(fn () => $admit->rollback(substr(ReleaseA, 0, 12)))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_already_current'))
+        ->and(fn () => $admit->rollback(substr(ReleaseB, 0, 12)))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_provenance_invalid'))
+        ->and($fetched)->toBe([ReleaseB]);
+});
