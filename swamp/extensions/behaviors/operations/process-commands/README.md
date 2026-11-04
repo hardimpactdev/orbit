@@ -6,7 +6,7 @@ The public rendering method substitutes the observed account home in a systemd u
 
 ## Private files and Docker argv
 
-Q-SECRET passed in a shared minimal@6 proof VM on Beast. The official file behavior received `vault.get` as `content`; create, changed content, drift, compliant checks and a refused write exposed no test content in data, the file changes array, histories, definitions or logs. The historical receipt is `swamp/proof/receipts/qsecret-file.json`; its limits and source identity stay recorded there.
+Q-SECRET passed in a shared minimal@6 proof VM on Beast. The official file behavior received `vault.get` as `content`; create, changed content, drift, compliant checks and a refused write exposed no test content in data, the file changes array, histories, definitions or logs.
 
 Both runtimes write their environment with cfgmgmt file, root owner and mode 0600. Systemd keeps its immutable EnvironmentFile. Docker receives a raw env file path in one SSH `docker run -d` argv, along with exact command argv, labels, working directory, ports and mounts. Create performs one detached run; duplicate requests join the admitted operation and native resume skips its completed steps. Update removes the old container without removing volumes before one detached run. A stopped desired state uses a separate stop. The managed env file remains 0600 until destroy, including after a failed run. The official docker_container check confirms image, restart policy and state; its private current environment is stored only in the vault. No Process Node script remains.
 

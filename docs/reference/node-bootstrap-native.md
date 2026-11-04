@@ -65,4 +65,4 @@ Official cfgmgmt version `2026.10.27.1` has no host-key connection input or loca
 
 ### Topology proof
 
-The [topology receipt](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/node-worker-known-hosts.json) proves the writer repairs an empty mode-0644 file to the exact admitted public pins at mode 0600, owned by the worker account. The Gateway records the matching digest and successful native step. It makes no production uptake or concurrent-publication claim.
+The topology proof showed the writer repairs an empty mode-0644 file to the exact admitted public pins at mode 0600, owned by the worker account. The Gateway records the matching digest and successful native step. It makes no production uptake or concurrent-publication claim.
