@@ -30,11 +30,8 @@ use Throwable;
  */
 final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowInput
 {
-    /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. A child's step
-     * is named before its parent step, because the earliest failed step names the failure. */
+    /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. */
     public const array Steps = [
-        'Switch the release' => ['switch', 'gateway.release_switch_failed', true],
-        'Verify the Gateway' => ['verify', 'gateway.release_verify_failed', true],
         'Build the release' => ['prepare', 'gateway.release_prepare_failed', false],
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Snapshot the database' => ['snapshot', 'gateway.release_snapshot_failed', false],
@@ -110,10 +107,12 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         }
         // The fleet rollout plans from a verified record whose verify version is the commit.
         $phases[$phase] = [...($phases[$phase] ?? []), ...($code === null ? ['outcome' => 'passed', 'status' => 'ok', 'version' => $sha] : ['outcome' => 'failed', 'error_code' => $code])];
-        // The run put the previous release back after a failed switch or check; it runs on the new, expanded schema.
+        // The run put the previous release back after a failed check; it runs on the new, expanded schema.
         $previous = ValidatedData::string($operation->input['previous']);
-        $back = $code !== null && is_string(ValidatedData::object($data['result'] ?? [])['switched_back'] ?? null);
+        $back = $code === 'gateway.release_switched_back';
         if ($back) {
+            $code = 'gateway.release_verify_failed';
+            $phases[$phase]['error_code'] = $code;
             $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous];
         }
         $recorder = app(GatewayReleaseRecorder::class);

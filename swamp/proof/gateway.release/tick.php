@@ -17,7 +17,9 @@ $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
 openssl_pkey_export($key, $pem);
 app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'proof', 'proof', 'hardimpactdev', 'organization', 'https://github.com/apps/proof', $pem));
+// Automatic releases on and not paused, as an operator leaves them after a first release by hand.
 app(GatewayReleaseAutomation::class)->enable();
+app(GatewayReleaseAutomation::class)->resume();
 $tick = app(RunAutomaticGatewayReleaseAction::class)->execute();
 if ($tick['result'] !== 'started' || $tick['sha'] !== $argv[1]) {
     fwrite(STDERR, json_encode($tick, JSON_THROW_ON_ERROR)."\n");

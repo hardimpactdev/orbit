@@ -34,24 +34,21 @@ it('records a succeeded run as verified with the version the fleet rollout reads
         ->and($record->phases['verify'])->toBe(['outcome' => 'passed', 'status' => 'ok', 'version' => str_repeat('ab', 20)]);
 });
 
-it('records a failed check that the run switched back from as switched back', function (string $step, string $code): void {
-    $record = endReleaseRun('failed', ['switched_back' => "gateway-rollback: reloaded php8.5-fpm\n"], $step, "{$code}: the check failed\n");
+it('records a failed check that the run switched back from as switched back', function (): void {
+    $record = endReleaseRun('failed', [], 'Hand over the release', "gateway-rollback: reloaded php8.5-fpm\ngateway.release_switched_back: the check failed; release cdcdcdcdcdcd is current again\n");
 
     expect($record->outcome)->toBe('switched_back')
-        ->and($record->error_code)->toBe($code)
+        ->and($record->error_code)->toBe('gateway.release_verify_failed')
         ->and($record->migrations_ran)->toBeTrue()
         ->and($record->phases['switch_back'])->toBe(['outcome' => 'switched_back', 'to' => str_repeat('cd', 6)]);
-})->with([
-    'check' => ['Verify the Gateway', 'gateway.release_verify_failed'],
-    'switch' => ['Switch the release', 'gateway.release_switch_failed'],
-]);
+});
 
-it('pauses a failed check when the switch-back did not succeed, and fails a build without changing anything', function (?array $result, string $step, string $outcome): void {
-    $record = endReleaseRun('failed', $result ?? [], $step);
+it('pauses a hand-over whose switch-back failed, and fails a build without changing anything', function (string $step, string $detail, string $outcome): void {
+    $record = endReleaseRun('failed', [], $step, $detail);
 
     expect($record->outcome)->toBe($outcome)
         ->and($record->phases)->not->toHaveKey('switch_back');
 })->with([
-    'check, no switch-back' => [null, 'Verify the Gateway', 'paused'],
-    'build' => [null, 'Build the release', 'failed'],
+    'switch-back failed' => ['Hand over the release', "gateway-rollback: release cdcdcdcdcdcd is not sealed\n", 'paused'],
+    'build' => ['Build the release', '', 'failed'],
 ]);

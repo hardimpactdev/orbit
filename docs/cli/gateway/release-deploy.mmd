@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: docs/reference/feature-flow.md section 6, one Swamp workflow per Gateway release, manual or automatic.
-  %% A failed switch or check switches back; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
+  %% A failed check switches back; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
   %% status: reviewed
   %% command: gateway:release:deploy
   %% kind: gateway.release
@@ -50,7 +50,7 @@ sequenceDiagram
   %%> Why:
   %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
   AC->>GN: Verify the Gateway<br/>/up · status version
-  opt the switch or the check failed
+  opt the check failed
     AC->>GN: Switch back<br/>gateway-rollback previous
   end
   AC->>GN: Resume document cleanup<br/>best effort
@@ -63,7 +63,7 @@ sequenceDiagram
   else a step before Migrate fails
     SW--xGW: Run failed<br/>failed step
     Note over GW: Mark failed<br/>nothing changed · rerun safe
-  else the switch or the check failed, switched back
+  else the check failed, switched back
     SW--xGW: Run failed<br/>failed step
     Note over GW: Record switched back<br/>alert · next commit releases
   else another step from Migrate on fails
