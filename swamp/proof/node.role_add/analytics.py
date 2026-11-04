@@ -28,9 +28,9 @@ if sys.argv[1] == 'prepare':
         on('tee', path, input=ast.literal_eval(content))
     print(json.dumps({'secrets': {engine: secrets.token_hex(20) for engine in ['postgres', 'clickhouse']}}))
 else:
-    identifier = sys.argv[2]
-    state = json.loads(on('docker', 'inspect', 'orbit-' + identifier))[0]
-    actual = {'id': state['Id'], 'started': state['State']['StartedAt'], 'process_id': identifier}
+    name = sys.argv[2]
+    state = json.loads(on('docker', 'inspect', name))[0]
+    actual = {'id': state['Id'], 'started': state['State']['StartedAt'], 'name': name}
     assert state['State']['Running']
     if sys.argv[1] == 'verify':
         assert json.loads(SNAPSHOT.read_text()) == actual, 'Analytics converge replaced or restarted Plausible'

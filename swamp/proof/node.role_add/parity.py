@@ -89,7 +89,7 @@ elif role == 'analytics':
     unchanged = 'no-drift' in sys.argv[3:]
     check(len(analytics['initialize']) == (0 if unchanged else 2), 'only initial admission runs createdb and migrate')
     subprocess.run(['python3', str(Path(__file__).with_name('analytics.py')),
-                    'verify' if unchanged else 'capture', str(analytics['process_id']), target], check=True)
+                    'verify' if unchanged else 'capture', operation['input']['_role']['runtime']['installation']['name'], target], check=True)
 elif role == 'ci-runner':
     check(run('incus', 'project', 'get', 'orbit-ci', 'restricted').stdout.strip() == 'true', 'CI is restricted')
     check(run('incus', 'network', 'get', 'orbitci0', 'security.acls').stdout.strip() == 'orbit-ci-egress', 'CI egress ACL applies')

@@ -59,7 +59,7 @@
         "name": "proof-analytics-clickhouse",
         "runtime": "docker",
         "image": "clickhouse/clickhouse-server:24.12",
-        "command": ["--logger.level=warning"],
+        "command": ["--", "--logger.level=warning"],
         "environment": {"CLICKHOUSE_DB": "plausible_events_db", "CLICKHOUSE_USER": "plausible", "CLICKHOUSE_PASSWORD": "${secret.clickhouse}"},
         "ports": ["10.231.0.11:8123:8123"],
         "volumes": [
