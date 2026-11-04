@@ -1,0 +1,15 @@
+{
+  "kind": "node.role_add.swamp-bootstrap",
+  "defaults": "node-role-add-defaults.json",
+  "before_gateway": [["rm", "-rf", "/opt/orbit/ansible"]],
+  "request": {"method": "POST", "path": "nodes/${node.gateway}/roles", "body": {"role": "swamp", "converge_existing": true}},
+  "phases": [
+    {"name": "Install Ansible", "job": "ansible", "step": "Install Ansible", "budget_seconds": 900},
+    {"name": "Apply role prerequisites", "job": "prerequisites", "step": "Apply role prerequisites", "budget_seconds": 900},
+    {"name": "Apply the role on the Node", "job": "node", "step": "Apply the role on the Node", "budget_seconds": 900},
+    {"name": "Publish role sites", "job": "publication", "step": "Publish role sites", "budget_seconds": 180},
+    {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
+    {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 120}
+  ],
+  "parity": ["swamp/proof/node.role_add/parity.py", "gateway", "swamp"]
+}

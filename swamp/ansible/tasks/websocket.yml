@@ -1,0 +1,18 @@
+---
+- name: Check out Reverb
+  become: true
+  become_user: "{{ rt.websocket.user }}"
+  ansible.builtin.git: { repo: "{{ rt.websocket.repository }}", dest: "{{ rt.websocket.release }}", version: "{{ rt.websocket.ref }}" }
+  register: reverb_checkout
+- name: Install Reverb packages
+  become: true
+  become_user: "{{ rt.websocket.user }}"
+  community.general.composer: { command: install, working_dir: "{{ rt.websocket.release }}", no_dev: true, optimize_autoloader: true }
+- name: Publish the Reverb release
+  ansible.builtin.file:
+    src: "{{ rt.websocket.release }}"
+    dest: "{{ rt.websocket.path }}"
+    owner: "{{ rt.websocket.user }}"
+    state: link
+    force: true
+  register: reverb_link

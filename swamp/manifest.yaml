@@ -1,0 +1,25 @@
+manifestVersion: 1
+name: '@nckrtl/ansible-input'
+version: 2026.11.03.1
+visibility: private
+license: MIT
+description: Private intent files and shipped playbooks for Ansible phases.
+behaviors:
+  - operations/ansible-input/write.ts
+additionalFiles:
+  - ansible/operation-node-role-add.yml
+  - ansible/tasks/php.yml
+  - ansible/tasks/exporter.yml
+  - ansible/tasks/exporter-pool.yml
+  - ansible/tasks/metrics.yml
+  - ansible/tasks/websocket.yml
+  - ansible/tasks/check-files.yml
+  - ansible/tasks/check-runtime.yml
+  - ansible/tasks/gateway-dns.yml
+  - ansible/tasks/firewall-port.yml
+  - ansible/tasks/firewall.yml
+  - ansible/tasks/ci.yml
+  - ansible/requirements.txt
+  - ansible/requirements.yml
+  - ansible/build_vars.py
+  - ansible/ansible.cfg

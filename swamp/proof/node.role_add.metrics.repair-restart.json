@@ -1,0 +1,7 @@
+{
+  "kind": "node.role_add.metrics.repair-restart",
+  "defaults": "node-role-add-defaults.json",
+  "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "metrics", "converge_existing": true}},
+  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "metrics"],
+  "before_node": {"metrics": [["docker", "update", "--restart=no", "orbit-metrics-prometheus"]]}
+}

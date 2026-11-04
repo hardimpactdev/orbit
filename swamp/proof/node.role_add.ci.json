@@ -1,43 +1,16 @@
 {
   "kind": "node.role_add.ci",
-  "workflow": "operation-node-role-add",
-  "topology": "minimal",
-  "clean": false,
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": 30,
+  "defaults": "node-role-add-defaults.json",
+  "clean": true,
   "before_gateway": [
-    [
-      "runuser",
-      "-u",
-      "orbit",
-      "--",
-      "php",
-      "swamp/proof/node.role_add/prepare.php",
-      "${node.peer}",
-      "ci-runner"
-    ]
+    ["apt-get", "update"],
+    ["apt-get", "install", "--yes", "python3-venv"],
+    ["python3", "-m", "venv", "/opt/orbit/ansible/venv"],
+    ["/opt/orbit/ansible/venv/bin/pip", "install", "--disable-pip-version-check", "-r", "swamp/ansible/requirements.txt"],
+    ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
+    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.peer}", "ci-runner"]
   ],
-  "request": {
-    "method": "POST",
-    "path": "nodes/${node.peer}/roles",
-    "body": {
-      "role": "ci-runner"
-    }
-  },
-  "expect": {
-    "status": "succeeded"
-  },
-  "phases": [
-    {
-      "name": "Check the role",
-      "job": "role",
-      "step": "Check the role",
-      "budget_seconds": 20
-    }
-  ],
-  "parity": [
-    "swamp/proof/node.role_add/parity.py",
-    "peer",
-    "ci-runner"
-  ]
+  "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "ci-runner"}},
+  "parity": ["swamp/proof/node.role_add/parity.py", "peer", "ci-runner"],
+  "prepare": [{"method": "POST", "path": "nodes/${node.peer}/converge", "body": {}}]
 }

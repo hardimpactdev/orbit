@@ -57,3 +57,7 @@ A scheduled producer with no Operation uses `scheduled_run` instead of `request`
 
 - No WireGuard, Router, ingress, Reverb, Horizon or Caddy. Reverb drives the subscriber and Horizon works the queue in production; here `gateway.php` does both, paced below serve's per-IP WebSocket burst limit.
 - The Gateway runs from source with `composer install --no-dev --no-scripts`; the release runner is not exercised.
+
+Use `bin/swamp-proof up --fresh` to restage changed workflow code and replace the nested Nodes in one pass on the held VM.
+
+A fixture can name a shared JSON map with `"defaults": "node-role-add-defaults.json"`. Its own fields override that map, including complete arrays such as `phases`. Both the host and guest use the same loader.

@@ -1,15 +1,22 @@
 """Role-owned resources work through the real Gateway and native workflow."""
 import json
 import os
+import re
 import subprocess
 import sys
+from pathlib import Path
 
-operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
-target, role = sys.argv[1:]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from common import doctor, gateway
+
+operation = json.loads(Path(os.environ['PROOF_OPERATION_FILE']).read_text())
+target, role = sys.argv[1:3]
 
 
 def run(*argv):
-    return subprocess.run(['incus', 'exec', target, '--', *argv], capture_output=True, text=True, check=False)
+    prefix = [] if target == 'gateway' else ['incus', 'exec', target, '--']
+    return subprocess.run([*prefix, *argv], capture_output=True, text=True, check=False)
 
 
 def check(ok, message):
@@ -17,6 +24,11 @@ def check(ok, message):
         sys.exit('parity: ' + message)
 
 
+if role == 'swamp':
+    installed = run('/opt/orbit/ansible/venv/bin/python', '-c', 'import ansible; print(ansible.__version__)')
+    pin = (Path(__file__).resolve().parents[2] / 'ansible/requirements.txt').read_text().strip().split('==')[1]
+    check(installed.returncode == 0 and installed.stdout.strip() == pin, 'the Swamp role installs pinned Ansible from a cold environment')
+    print('parity: Swamp role installed ansible-core ' + pin, flush=True)
 if operation['status'] != 'succeeded' and role == 'websocket':
     state = run('systemctl', 'show', 'orbit-websocket.service', '-p', 'Result', '-p', 'ExecMainStatus')
     sys.stderr.write(state.stdout)
@@ -44,7 +56,8 @@ for resource in intent['runtime']['secret_files']:
     check(run('stat', '-c', '%a', resource['path']).stdout.strip() == '600', 'private runtime file is mode 0600')
 if role in ('app-dev', 'app-prod'):
     check(run('bun', '--version').stdout.strip() == intent['bun']['version'], 'Bun matches the recipe')
-    check(run('test', '-d', '/home/orbit/apps').returncode == 0, 'the application storage directory exists')
+    if role == 'app-dev':
+        check(run('test', '-d', '/home/orbit/apps').returncode == 0, 'the application storage directory exists')
     for php in intent['php']:
         check(run('systemctl', 'is-active', '--quiet', 'php' + php['version'] + '-fpm.service').returncode == 0,
               'the admitted PHP-FPM version serves')
@@ -67,7 +80,113 @@ elif role == 'metrics':
         if exporter['enabled']:
             address = exporter['ssh_execution']['target']['host']
             check(address + ':9100' in active, 'Prometheus loaded the selected exporter target')
+    commands_by_node = {intent['node_id']: intent['firewall']['desired']}
+    for exporter in intent['exporters']:
+        commands_by_node.setdefault(exporter['exporter_node_id'], []).extend(exporter['service']['firewall_commands'])
+    nodes = json.loads(os.environ['PROOF_NODES'])
+    for identifier, commands in commands_by_node.items():
+        node = next(name for name, value in nodes.items() if value == identifier)
+        prefix = [] if node == 'gateway' else ['incus', 'exec', node, '--']
+        numbered = subprocess.run([*prefix, 'ufw', 'status', 'numbered'], capture_output=True, text=True, check=True).stdout
+        def positions(comment):
+            return [int(index) for index in re.findall(r'^\[\s*(\d+)\].*# ' + re.escape(comment) + r'\s*$', numbered, re.M)]
+        trust = positions(intent['firewall']['desired'][0][-1])
+        for index, command in enumerate(commands):
+            if command[1:4] == ['insert', '1', 'deny']:
+                deny, allow = positions(command[-1]), positions(commands[index + 1][-1])
+                check(len(allow) == len(deny) == 1 and allow[0] < deny[0] and (not trust or deny[0] < min(trust)),
+                      node + ' isolates the service after its specific allow and before broad trust')
+        if 'repair-firewall' in sys.argv[3:] and node == 'target':
+            added = subprocess.run([*prefix, 'ufw', 'show', 'added'], capture_output=True, text=True, check=True).stdout
+            check('proof-kept-exporter-port' in added, 'an unrelated rule on the exporter port survives')
+            check('ufw allow from 10.231.0.11 to any port 9100 proto tcp\n' not in added,
+                  'only the exact replaced broad exporter tuple is retired')
+elif role == 'analytics':
+    analytics = intent['runtime']['analytics']
+    processes = gateway('GET', 'processes')['response']['data']
+    plausible = [item for item in processes if item['name'] == 'plausible' and item['target_id'] == intent['node_id']]
+    check(len(plausible) == 1 and plausible[0]['id'] == analytics['process_id'], 'one managed Plausible Process is recorded')
+    check(run('curl', '--max-time', '15', '--fail', '--silent', analytics['health_url']).returncode == 0,
+          'Plausible serves its health endpoint')
+    added = run('ufw', 'show', 'added').stdout.splitlines()
+    for rule in intent['firewall']['desired']:
+        if 'docker0' in rule:
+            matches = [line for line in added if rule[-1] in line]
+            check(len(matches) == 1 and ' port ' + rule[rule.index('port') + 1] + ' ' in matches[0],
+                  'one owned local storage rule uses the admitted port')
+    if 'repair-port' in sys.argv[3:]:
+        check(any('proof-kept-other-rule' in line for line in added), 'the unrelated firewall rule survives port repair')
+    unchanged = operation['kind'] == 'node.role_converge'
+    check(len(analytics['initialize']) == (0 if unchanged else 2), 'only initial admission runs createdb and migrate')
+    subprocess.run(['python3', str(Path(__file__).with_name('analytics.py')),
+                    'verify' if unchanged else 'capture', operation['input']['_role']['runtime']['installation']['name'], target], check=True)
 elif role == 'ci-runner':
     check(run('incus', 'project', 'get', 'orbit-ci', 'restricted').stdout.strip() == 'true', 'CI is restricted')
     check(run('incus', 'network', 'get', 'orbitci0', 'security.acls').stdout.strip() == 'orbit-ci-egress', 'CI egress ACL applies')
+    acl = json.loads(run('incus', 'query', '/1.0/network-acls/orbit-ci-egress').stdout)
+    check(all(not rule.get(field) for rule in acl['egress'] for field in
+              ('source', 'source_port', 'destination_port', 'protocol', 'icmp_type', 'icmp_code')),
+          'CI egress rules retain no foreign selector')
+
+if 'instance' in sys.argv[3:]:
+    pools = [pool for exporter in intent['exporters'] for pool in exporter['service']['pools']]
+    check(bool(pools), 'the Laravel Project exercises a dedicated PHP exporter pool')
+    for pool in pools:
+        runtime = pool['php_runtime']
+        host = next(item['exporter_node_id'] for item in intent['exporters'] if pool in item['service']['pools'])
+        node = next(name for name, identifier in json.loads(os.environ['PROOF_NODES']).items() if identifier == host)
+        def on(*argv, node=node):
+            return subprocess.run(['incus', 'exec', node, '--', *argv], capture_output=True, text=True, check=False)
+        metadata = on('stat', '-c', '%U:%G:%a', '/etc/orbit/php-fpm/' + runtime['user'] + '/generated/pool.conf')
+        check(metadata.returncode == 0 and metadata.stdout.strip() == 'root:root:644', 'the dedicated pool is root-owned with mode 0644')
+        current = on('test', '-e', runtime['home'] + '/current').returncode == 0
+        expected = runtime['configuration']['pool' if current else 'initial_pool']
+        check(on('cat', '/etc/orbit/php-fpm/' + runtime['user'] + '/generated/pool.conf').stdout == expected,
+              'the admitted exporter status pool is installed')
+    projects = gateway('GET', 'projects')['response']['data']
+    project = next(item for item in projects if item['name'] == 'Role phase web proof')
+    instance_run = project['slug'].removeprefix('proof-role-')
+    checkout = '/home/orbit/apps/' + project['slug'] + '/default'
+    check(subprocess.run(['incus', 'exec', 'target', '--', 'test', '-f', checkout + '/.git/orbit-proof-setup'],
+                         check=False).returncode == 0, 'Laravel setup ran')
+    database = subprocess.run(['incus', 'exec', 'target', '--', 'python3', '-c',
+                               'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from migrations").fetchone()[0])',
+                               checkout + '/database/database.sqlite'], capture_output=True, text=True, check=False)
+    check(database.returncode == 0 and int(database.stdout) > 0, 'Laravel migrations ran on the source database')
+    domain = 'role-' + instance_run + '.proof.test'
+    route = subprocess.run(['curl', '--max-time', '15', '--fail', '--silent', '--show-error',
+                            '--cacert', '/home/orbit/.orbit/ca/root.pem', '--resolve',
+                            domain + ':443:10.231.0.10', 'https://' + domain + '/up'],
+                           capture_output=True, text=True, check=False)
+    check(route.returncode == 0, 'the Laravel Route serves: ' + route.stderr)
+    print('parity: Laravel setup, database, Route and dedicated exporter pool')
 print('parity: node.role_add ' + role)
+
+if 'no-drift' in sys.argv[3:]:
+    outputs = json.loads(Path(os.environ['PROOF_OUTPUTS']).read_text())
+    recaps = re.findall(r'changed=(\d+)', json.dumps(outputs))
+    check(bool(recaps), 'Ansible phase recaps were retained')
+    check(all(value == '0' for value in recaps), 'the second run changed no Node state: ' + ','.join(recaps))
+    print('parity: all Ansible phases changed=0')
+
+check(not Path('/tmp/orbit-ansible-' + operation['swamp_run_id']).exists(), 'the private Ansible run folder was removed')
+# --idempotency-key replays the original admission without another run or Node change.
+body = {'role': role, **({'converge_existing': True} if operation['kind'] == 'node.role_converge' else {})}
+if role == 'analytics':
+    body |= {engine + '_process_id': next(item['id'] for item in processes if item['name'] == 'proof-analytics-' + engine)
+             for engine in ['postgres', 'clickhouse']}
+replayed = gateway('POST', 'nodes/' + str(intent['node_id']) + '/roles', body, 'proof-' + os.environ['PROOF_RUN'] + '-request')
+record = replayed['response']['data']
+check((record.get('operation') or record).get('id') == operation['id'], 'the idempotency key returns the same Operation')
+print('parity: private inputs removed; original admission replayed')
+# Evaluate every participant before failing, so a missing observer cannot hide another Node's drift.
+participants = {intent['node_id'], *(item['node_id'] for item in intent['publications']),
+                *(item['exporter_node_id'] for item in intent['exporters'])}
+if intent['prometheus']:
+    participants.add(intent['prometheus']['node_id'])
+if intent['runtime']['analytics']:
+    participants.add(intent['runtime']['analytics']['clickhouse_node_id'])
+families = ['role', 'firewall', *(['process'] if role == 'analytics' else []),
+            *(['instance', 'route', 'database_connection'] if 'instance' in sys.argv[3:] else [])]
+reports = [doctor(node, families) for node in sorted(participants)]
+check(all(reports), 'Doctor requires zero drift and no unverifiable records')

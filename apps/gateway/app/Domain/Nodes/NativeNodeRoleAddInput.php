@@ -144,9 +144,6 @@ final readonly class NativeNodeRoleAddInput
                 if (($publication['caddy'] ?? null) !== null) {
                     $service['caddy'] = null;
                 }
-                if (($publication['php'] ?? null) !== null) {
-                    $service['pools'] = [];
-                }
                 $exporters[] = ['exporter_node_id' => $target->id, 'enabled' => $enabled, 'metrics_address' => $metrics->wireguard_ip,
                     'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
                     'runtime' => ['ssh_execution' => $metricsSsh, 'configuration' => $configuration], 'compose_only' => true,

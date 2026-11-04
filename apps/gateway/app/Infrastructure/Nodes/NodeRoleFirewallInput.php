@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Firewall\RouterLanIngressPolicy;
+use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
@@ -23,19 +24,19 @@ final readonly class NodeRoleFirewallInput
         return $this->rules($desired, $remove);
     }
 
-    /** Canonical UFW arguments for visible native actions; no status parser or embedded program.
+    /** Canonical UFW arguments; the role firewall phase owns local storage port replacement; no status parser or embedded program.
      * @return array{desired:list<list<string>>,remove:list<list<string>>}
      */
     public function convergeCommands(Node $node, RoleName $role): array
     {
         [$desired, $remove] = $this->convergenceRules($node, $role);
-        $arguments = static function (UfwManagedRule $rule, bool $delete): array {
-            if ($rule->replacePort) {
-                throw new \LogicException('Native rule replacement requires its owning transition.');
+        if ($role === RoleName::Metrics) {
+            $gateway = app(MetricsGatewayResolver::class)->resolve();
+            foreach ([$this->catalog->metricsGrafanaIsolation($node), $this->catalog->metricsGrafanaUpstream($node, (string) $gateway->wireguard_ip)] as $rule) {
+                $desired[] = new UfwManagedRule($rule->shape, ['sudo', 'ufw', 'insert', '1', ...array_slice($rule->arguments, 2)]);
             }
-
-            return $delete ? $rule->removalArguments() : ['ufw', ...array_slice($rule->arguments, 2)];
-        };
+        }
+        $arguments = static fn (UfwManagedRule $rule, bool $delete): array => $delete ? $rule->removalArguments() : ['ufw', ...array_slice($rule->arguments, 2)];
 
         return ['desired' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, false), $desired),
             'remove' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, true), $remove)];

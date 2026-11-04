@@ -2,7 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
+  - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeNetworkReservation,NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
@@ -451,7 +451,9 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.de
 
 ### Role prerequisites
 
-New assignments from `node:role:add` run through the native role workflow. It reads the supported Ubuntu release, applies prerequisites with official cfgmgmt resources, and checks the resulting files and services. Application roles fetch the recipe's PHP packages and Bun archive with checksums, install PHP in one APT transaction, and converge the shared Tool Managers. Role add applies role-owned resources even when an earlier Node footprint has the same digest. It leaves the observer and Orbit CLI to `node:converge`.
+New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result.
+
+Application roles fetch the recipe's PHP packages and Bun archive with checksums, install PHP in one APT transaction, and converge the shared Tool Managers. Role add applies role-owned resources even when an earlier Node footprint has the same digest. It leaves the observer and Orbit CLI to `node:converge`.
 
 The native Gateway role installs an enabled `orbit-gateway-dns.service` oneshot. It applies the resolver policy when the Orbit interface exists and no peer-owned DNS policy is present. Role removal disables and removes that unit. Native role failures retain completed resources and the failed assignment; there is no rollback chain.
 
@@ -525,24 +527,23 @@ Caddy also serves the Gateway API. A convergence that installs a newer Caddy res
 
 ## Role operations on one Node
 
-The Gateway runs one role operation per Node at a time. The role lock covers the role's baseline convergence or removal, the Tool Manager setup for `app-dev` and `app-prod`, and the Node agent converge that follows.
+The Gateway holds one Node Operation for `node:role:add` and explicit role convergence. Admission claims `node:<id>` before changing the assignment. A competing role-add or convergence admission refuses with `operation.target_busy` (HTTP 409), without creating an Operation or changing the assignment. The hold lasts until the native run settles. Tool Manager setup runs inside that workflow. `node:converge` owns the observer and Orbit CLI separately.
 
-`node:role:add`, `node:role:remove`, and the role steps of `node:add` take the lock before they claim the assignment. A second operation waits up to 2 minutes. Then it fails and leaves the assignment as it was.
+Retained provisioning and removal paths use the role lock before claiming the assignment. A second operation waits up to 2 minutes, then fails and leaves the assignment as it was.
 
 | Command | Error |
 | --- | --- |
-| `node:role:add` | `node_role.convergence_failed`, with `details.step` `converge:node-lock` and `details.error_code` `node_role.node_busy` |
 | `node:role:remove` | `node_role.remove_failed`, with `details.step` `node-lock` and `details.error_code` `node_role.node_busy` |
 
-Every failed role operation returns its step's own code in `details.error_code`, such as `node_role.tool_manager_locked`, a `metrics.*` code, or `ingress.caddy_config_failed` for a Caddy removal. `node:add` and `node:remove` do the same when a role step failed.
+Retained provisioning and removal paths return each failed step's own code in `details.error_code`, such as `node_role.tool_manager_locked`, a `metrics.*` code, or `ingress.caddy_config_failed` for a Caddy removal. `node:add` and `node:remove` do the same when a role step failed.
 
-Cluster Router changes take the lock only around the baseline step. `node:role:relocate` holds its operation's target lock on the target Node until the run ends. The Metrics fleet reconcile runs inside the lock for `node:role:add`, `node:role:remove`, and `node:add`. It converges exporters on other Nodes without their locks, so two operations can never wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
+Cluster Router changes take the lock only around the baseline step. `node:role:relocate` holds its operation's target lock on the target Node until the run ends. For role addition and convergence, the Node Operation hold covers Metrics reconciliation. The retained removal and provisioning paths reconcile Metrics inside their role lock. Metrics reconciliation converges exporters on other Nodes without their locks, so two operations cannot wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
 
-An operation that dies, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no operation holds the lock. That is the role lock's request term plus a 1-minute margin. `node:role:add --converge` and `node:role:remove` then take it over. Doctor reports the inactive role lifecycle.
+A retained provisioning or removal path that dies can leave its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no Operation holds the Node. `node:role:add --converge` and `node:role:remove` can then take it over. Swamp runs continue if a Gateway worker exits. Doctor reports the inactive role lifecycle.
 
 ### Per-Node locks
 
-Four locks guard work on one Node. They live in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says.
+Retained provisioning and removal paths, Tool operations and observer convergence use these four locks. They live in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says. Role addition and explicit convergence use the Node Operation hold described above.
 
 | Lock | Guards | Term | When it is busy |
 | --- | --- | --- | --- |
@@ -551,7 +552,7 @@ Four locks guard work on one Node. They live in a file cache store under `ORBIT_
 | Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
 | Node agent | The [agent converge](/reference/node-agent#install-and-upgrade) | 7 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
 
-A Tool operation takes its Tool lock, then its manager lock. Several manager locks are taken in the order `apt`, `vp`, `composer`, `brew`. `brew-cask` takes the `brew` lock rather than a fifth lock. A role operation on `app-dev` or `app-prod` takes the `vp` and `composer` manager locks first, and then the role lock. The Node agent lock comes last. The locks cannot deadlock: the Tool and manager locks never wait, and no code takes the role lock while it holds the agent lock.
+A Tool operation takes its Tool lock, then its manager lock. Several manager locks are taken in the order `apt`, `vp`, `composer`, `brew`. `brew-cask` takes the `brew` lock rather than a fifth lock. A retained role operation on `app-dev` or `app-prod` takes the `vp` and `composer` manager locks first, and then the role lock. The Node agent lock comes last. The locks cannot deadlock: the Tool and manager locks never wait, and no code takes the role lock while it holds the agent lock.
 
 ### Lock renewal
 
@@ -723,17 +724,19 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses its role convergence DAG. VPN and Router retain their protected-role policy.
 
-The Gateway freezes the role's public packages, files, services, certificate requests, publications and Metrics changes at admission. The control worker on Node 209 applies them over pinned SSH. Neither additions nor role convergence require a worker on the target. Both use the shared native role resource graph; Node convergence separately owns the observer and Orbit CLI.
+The Gateway freezes the role's public packages, files, services, certificate requests, publications and Metrics changes at admission. The control worker on Node 209 applies them over pinned SSH. Neither additions nor role convergence require a worker on the target. Both use the shared Swamp workflow and Ansible phases; Node convergence separately owns the observer and Orbit CLI.
+
+Shared PHP publication and dedicated FPM status pools have separate files. A Metrics role change captures both, so publishing shared pools does not discard the dedicated exporter pool plan. Before it publishes a status pool fragment, Ansible validates a candidate master that includes that fragment and the existing local settings.
 
 Private role files come from execution vault values and use mode `0600`. The Gateway projects the native terminal check, completed certificate and Caddy publication, and role-owned artifact digests. Finished host changes remain after failure. Analytics addition records its managed Process when its runtime succeeded, even if a later publication fails. No step reads intent or sends a result callback to the Gateway.
 
-Exporter children share the prospective certificate plan. They omit Caddy and PHP publication when the parent owns that Node’s complete publication, so a role change reloads each configuration once.
+Exporter work shares the prospective certificate plan. It omits Caddy and shared PHP publication when the parent owns that Node’s complete publication. Dedicated FPM status pools remain in the exporter phase.
 
 
 
 ### Native role lifecycle
 
-Role convergence uses the same native chain as role addition. Removal first records the assignment as removing, then publishes the remaining PHP, Caddy and DNS state and reconciles the complete Metrics fleet. It removes only the withdrawn role's runtime, certificate and firewall rules. The last role restores public SSH before closing role access. Shared packages and Tool managers remain.
+Role convergence uses the same Swamp workflow and Ansible phases as role addition. Removal first records the assignment as removing, then publishes the remaining PHP, Caddy and DNS state and reconciles the complete Metrics fleet. It removes only the withdrawn role's runtime, certificate and firewall rules. The last role restores public SSH before closing role access. Shared packages and Tool managers remain.
 
 ### Native role relocation
 
@@ -772,4 +775,12 @@ After checking its admitted publication participant, the parent uses `NodeRolePu
 
 Matching Reverb inputs skip its restart, while an inactive service starts. Matching Metrics containers keep running. Prometheus configuration is validated, copied onto the existing bind-mounted file and reloaded with SIGHUP. Analytics convergence repairs role-owned configuration and checks its existing Process; it creates no Process and runs no database migration.
 
-Official resource checks and the native role assertion determine completion. The Gateway marks the same assignment active on success or failed at the native step on failure. Finished changes remain for the next convergence. Cancellation goes to the bound Swamp run, and only its terminal event settles the Operation.
+The role's Ansible end check determines completion. The Gateway marks the same assignment active on success or failed at the native step on failure. Finished changes remain for the next convergence. Cancellation goes to the bound Swamp run, and only its terminal event settles the Operation.
+
+### Role Ansible phases
+
+`node:role:add` and its role-converge run use one Swamp step per Ansible phase: prerequisites, Node resources, publications, firewall, exporters, Prometheus and check. Each phase applies the admitted state and is safe to run from the start. Tool Manager setup, certificate signing, Analytics initialization and Swamp bootstrap keep their native steps.
+
+A readiness phase waits up to 60 seconds for a newly started Analytics Process before publication. The Gateway DNS oneshot runs only when its unit or live resolver policy changed, under the unit’s existing conditions. PHP and DNS delta publications retain their shared native three-way composition, which preserves unrelated changes admitted by other commands; Ansible has no built-in equivalent. Ansible runs only on the Swamp Node; targets need SSH and Python.
+
+The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.

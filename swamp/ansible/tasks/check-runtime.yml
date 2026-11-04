@@ -1,0 +1,27 @@
+---
+- name: Read runtime groups
+  ansible.builtin.getent: { database: group, key: "{{ item.name }}" }
+  loop: "{{ rt.groups }}"
+  register: runtime_groups
+- name: Check runtime groups
+  ansible.builtin.assert: { that: "item.ansible_facts.getent_group[item.item.name][1] | int == item.item.gid", quiet: true }
+  loop: "{{ runtime_groups.results }}"
+- name: Read runtime users
+  ansible.builtin.getent: { database: passwd, key: "{{ item.name }}" }
+  loop: "{{ rt.users }}"
+  register: runtime_users
+- name: Check runtime users
+  ansible.builtin.assert:
+    that:
+      - item.ansible_facts.getent_passwd[item.item.name][1] | int == item.item.uid
+      - item.ansible_facts.getent_passwd[item.item.name][2] | int == item.item.gid
+      - item.ansible_facts.getent_passwd[item.item.name][5] == '/usr/sbin/nologin'
+    quiet: true
+  loop: "{{ runtime_users.results }}"
+- name: Check runtime unit files
+  ansible.builtin.copy: { dest: "/etc/systemd/system/{{ item.name }}", content: "{{ item.unit }}", owner: root, group: root, mode: "0644" }
+  loop: "{{ rt.units }}"
+  check_mode: true
+  register: runtime_unit_check
+- name: Require matching runtime units
+  ansible.builtin.assert: { that: runtime_unit_check is not changed, quiet: true }

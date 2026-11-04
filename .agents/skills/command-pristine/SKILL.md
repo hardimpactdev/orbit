@@ -51,3 +51,9 @@ Work through it in order. Each item ends with evidence in the PR.
 ## Report
 
 End with: the command, the PRs, net lines, fresh and no-drift times, which release-flow steps it went through, the gaps you filled, and the lessons you added here.
+
+## Lessons from the first Ansible conversion
+
+- When a phase replaces several native steps, update the Gateway projections that read their names. Test a successful phase followed by a later failure: completed publication stays recorded.
+- Prove private-input cleanup after a failure that happens after vault staging. An admission refusal never creates those files, so it cannot prove cleanup.
+- A new intent field needs its Gateway producer in an earlier release. Confirm the live release SHA before shipping the workflow reader; a merged producer alone is not release uptake.

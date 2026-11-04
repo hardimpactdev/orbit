@@ -1,0 +1,35 @@
+---
+- name: Write Gateway DNS unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/orbit-gateway-dns.service
+    content: "{{ rt.gateway_dns.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: dns_unit
+- name: Enable Gateway DNS policy
+  ansible.builtin.systemd:
+    name: orbit-gateway-dns.service
+    enabled: true
+    daemon_reload: "{{ dns_unit is changed }}"
+# The admitted oneshot exits after applying the policy. Inactive does not mean drift.
+- name: Read Gateway DNS conditions
+  ansible.builtin.stat: { path: "{{ item }}" }
+  loop: [/sys/class/net/orbit, /etc/wireguard/orbit.dns-link]
+  register: dns_conditions
+- name: Apply the Gateway resolver policy when its unit conditions hold
+  when: dns_conditions.results[0].stat.exists and not dns_conditions.results[1].stat.exists
+  block:
+    - name: Read Gateway resolver policy
+      ansible.builtin.command: { argv: [resolvectl, "{{ item[0] }}", orbit] }
+      loop: "{{ rt.gateway_dns.unit | regex_findall('ExecStart=/usr/bin/resolvectl (domain|default-route|dns) orbit ([^\\n]+)') }}"
+      register: dns_state
+      changed_when: false
+    - name: Compare Gateway resolver policy
+      ansible.builtin.set_fact:
+        dns_needs_apply: "{{ (dns_needs_apply | default(false)) or item.stdout.split(': ', 1)[-1].split() != item.item[1].split() }}"
+      loop: "{{ dns_state.results }}"
+      loop_control: { label: "{{ item.item[0] }}" }
+    - name: Start Gateway DNS policy
+      when: dns_unit is changed or dns_needs_apply
+      ansible.builtin.systemd: { name: orbit-gateway-dns.service, state: started }

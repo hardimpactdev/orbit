@@ -1,0 +1,54 @@
+---
+- name: Read the Prometheus file before binding it
+  ansible.builtin.stat: { path: /etc/orbit/metrics/prometheus.yml }
+  register: metrics_prometheus_file
+- name: Restore a missing Prometheus file
+  when: not metrics_prometheus_file.stat.exists
+  ansible.builtin.copy:
+    dest: /etc/orbit/metrics/prometheus.yml
+    content: "{{ intent.prometheus.configuration }}"
+    owner: root
+    group: root
+    mode: "0644"
+  check_mode: "{{ metrics_check_only }}"
+- name: Require the Prometheus file
+  when: metrics_check_only
+  ansible.builtin.assert: { that: metrics_prometheus_file.stat.exists, quiet: true }
+- name: Apply Metrics volumes
+  community.docker.docker_volume: { name: "{{ item.volume.name }}", labels: "{{ item.volume.labels }}" }
+  loop: "{{ containers }}"
+  check_mode: "{{ metrics_check_only }}"
+  register: metrics_volumes
+  no_log: true
+
+- name: Apply Metrics containers
+  community.docker.docker_container:
+    name: "{{ item.name }}"
+    image: "{{ item.image }}"
+    state: started
+    pull: missing
+    network_mode: "{{ item.network }}"
+    restart_policy: "{{ item.check.restart }}"
+    volumes: "{{ item.check.volumes }}"
+    published_ports: "{{ item.check.ports }}"
+    labels: "{{ item.labels }}"
+    env: "{{ item.env }}"
+    command: "{{ item.command }}"
+    healthcheck: "{{ item.healthcheck }}"
+    log_driver: "{{ item.log_driver }}"
+    log_options: "{{ item.log_options }}"
+    comparisons: { volumes: strict, published_ports: strict }
+    recreate: >-
+      {{ not metrics_check_only and
+      ((item.name == 'orbit-metrics-grafana' and metrics_config_changed) or
+      (item.name == 'orbit-metrics-prometheus' and not metrics_prometheus_file.stat.exists)) }}
+  loop: "{{ containers }}"
+  check_mode: "{{ metrics_check_only }}"
+  register: metrics_runtime
+  no_log: true
+
+- name: Assert Metrics has no drift
+  when: metrics_check_only
+  ansible.builtin.assert:
+    that: [metrics_volumes is not changed, metrics_runtime is not changed]
+    quiet: true

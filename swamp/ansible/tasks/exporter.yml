@@ -1,0 +1,79 @@
+---
+- name: Install the node exporter
+  ansible.builtin.apt: { name: prometheus-node-exporter, state: "{{ 'present' if exporter.enabled else 'absent' }}" }
+  environment: { NEEDRESTART_MODE: l }
+- name: Download exporters
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ item.path }}"
+    checksum: "{{ item.checksum if ':' in item.checksum else 'sha256:' ~ item.checksum }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ exporter.service.downloads }}"
+  loop_control: { label: "{{ item.path }}" }
+  register: downloads
+- name: Read exporter services
+  ansible.builtin.service_facts:
+- name: Stop disabled exporters
+  ansible.builtin.systemd: { name: "{{ item.service }}", state: stopped, enabled: false }
+  loop: "{{ exporter.service.units | rejectattr('enabled') | list }}"
+  loop_control: { label: "{{ item.service }}" }
+  when: item.service in ansible_facts.services
+- name: Make exporter folders
+  ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+  loop: [/etc/systemd/system/prometheus-node-exporter.service.d, /etc/orbit/service-metrics]
+- name: Write exporter files
+  ansible.builtin.copy:
+    dest: "{{ item.path }}"
+    content: "{{ item.content }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ exporter.service.files | selectattr('ensure', 'equalto', 'present') | list }}"
+  loop_control: { label: "{{ item.path }}" }
+  register: files
+- name: Remove retired exporter files
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: "{{ exporter.service.files | selectattr('ensure', 'equalto', 'absent') | list }}"
+  loop_control: { label: "{{ item.path }}" }
+- name: Start exporters, restarting them when their files changed
+  ansible.builtin.systemd:
+    name: "{{ item.service }}"
+    daemon_reload: "{{ files is changed }}"
+    state: "{{ 'restarted' if files is changed or downloads is changed else 'started' }}"
+    enabled: true
+  loop: "{{ exporter.service.units | selectattr('enabled') | list }}"
+  loop_control: { label: "{{ item.service }}" }
+- name: Read replaced exporter rules
+  ansible.builtin.command: ufw show added
+  register: replaced_exporter_rules
+  changed_when: false
+- name: Retire only the replaced broad exporter tuples
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port | string }}"
+    proto: tcp
+    from_ip: "{{ item.source }}"
+    delete: true
+  loop: "{{ exporter.service.rules }}"
+  loop_control: { label: "{{ item.port }}" }
+  when: ("ufw allow from " ~ item.source ~ " to any port " ~ item.port ~ " proto tcp") in replaced_exporter_rules.stdout_lines
+- name: Converge canonical exporter rules
+  ansible.builtin.import_tasks: firewall.yml
+  vars: { firewall_commands: "{{ exporter.service.firewall_commands }}" }
+- name: Publish the exporter's Caddy site
+  when: exporter.service.caddy is not none
+  ansible.builtin.copy:
+    dest: /etc/caddy/Caddyfile
+    content: "{{ exporter.service.caddy.caddy.content }}"
+    owner: root
+    group: caddy
+    mode: "0640"
+    validate: caddy validate --config %s --adapter caddyfile
+  notify: Reload exporter Caddy
+
+- name: Apply exporter PHP pools
+  ansible.builtin.include_tasks: exporter-pool.yml
+  loop: "{{ exporter.service.pools }}"
+  loop_control: { loop_var: pool, label: "{{ pool.php_runtime.user }}" }

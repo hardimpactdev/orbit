@@ -4,8 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-target, role = sys.argv[1:]
-subprocess.run(['python3', 'swamp/proof/node.role_add/parity.py', target, role], check=True, timeout=120)
+target, role = sys.argv[1:3]
+subprocess.run(['python3', 'swamp/proof/node.role_add/parity.py', target, role, *sys.argv[3:]], check=True, timeout=120)
 before = json.loads(Path('/home/orbit/.orbit/swamp-proof/role-converge-' + role + '-before.json').read_text())
 
 

@@ -22,15 +22,17 @@ orbit node:role:add services analytics --postgres-process=41 --clickhouse-proces
 
 `vpn` and `router` fail with `validation.failed` and `Role [ROLE] is protected from generic mutation.` A role that conflicts with one the Node holds fails with `validation.failed` before anything changes. [Role compatibility](/reference/node-provisioning#role-compatibility) lists the pairs. For `analytics`, a terminal lists the Docker Processes that run the right image and asks for each missing option. With `--json` or without a terminal, the command refuses. The [Analytics role](/reference/analytics) page describes that role.
 
-Role operations on one Node run one at a time. A command that waits more than 2 minutes fails with `node_role.convergence_failed`, `details.step` `converge:node-lock`, and `details.error_code` `node_role.node_busy`. Run it again.
+Adding or converging roles on one Node runs one Operation at a time. An admission while the Node is held fails with `operation.target_busy` (HTTP 409), before role state changes. Run it again after the current Operation ends.
 
-Adding or converging a role runs one native Swamp workflow from the control worker. It applies the role's packages, files, services, certificates, ports and Metrics changes. Official resource checks and a native assertion must pass before the assignment becomes `active`. A failed step leaves the assignment recorded as failed; fix its cause and use `--converge`. Finished host changes remain.
+Adding or converging a role runs one Swamp workflow from the control worker. Each Ansible phase applies idempotent Node state: packages, files, services, ports and Metrics configuration. Native Swamp steps handle certificates, Tool Managers and one-time initialization. The final Ansible check must pass before the assignment becomes `active`. A second convergence reports no changes. A failed step leaves the assignment recorded as failed; fix its cause and use `--converge`. Finished host changes remain.
 
 Application roles converge the configured storage directory's owner and mode. Protected paths, including the managed user's home itself, are refused before host work. Role addition and convergence install no Node observer or Orbit CLI; [`node:converge`](/cli/node/converge) owns them.
 
-Private role configuration goes directly from vault values into files with mode `0600`. Grafana's file belongs to the `orbit-grafana` system account at its container UID and GID, `472`. Neither the workflow inputs nor command arguments contain these values.
+Swamp writes the admitted intent and vault values to private run files with mode `0600`. It removes these files after success or failure. Ansible writes private role configuration to files with mode `0600`. Grafana's file belongs to the `orbit-grafana` system account at its container UID and GID, `472`. Neither the workflow inputs nor command arguments contain these values.
 
 The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the Incus host boundary without creating or registering containers. It cannot share `gateway` or `vpn`. Add it to CI-only hosts and alongside Beast's existing roles through this command.
+
+Metrics firewall rules use the admitted interface, source, destination and ownership comment. Convergence repairs changed owned rules and puts each specific allow before its isolation deny and the broader peer trust rule. It preserves unrelated rules.
 
 Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](/cli/node/role-relocate) to move `gateway`, `websocket`, or `metrics`.
 

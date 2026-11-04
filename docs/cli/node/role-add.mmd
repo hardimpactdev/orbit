@@ -37,7 +37,7 @@ sequenceDiagram
   %%> - the role is not `vpn` or `router`; those are protected from this command
   %%> - Node 12 doesn't have the role yet, and holds no role it conflicts with, such as `app-prod` beside `app-dev`
   %%> - a singleton role, such as `gateway` or `swamp`, has no holder yet; to move one, use `node:role:relocate`
-  %%> - one role operation per Node: the Gateway holds a role lock for Node 12 and waits up to 2 minutes for a busy one, then refuses with `node_role.node_busy`
+  %%> - one add or converge Operation per Node: the Gateway holds the Node until terminal status; a busy admission refuses with `operation.target_busy` before role state changes
   %%> Builds:
   %%> - the role plan: packages, files, units, Caddy sites, PHP settings, firewall rules and certificate requests
   %%> - for the `metrics` role, the Prometheus and Grafana container specifications and their systemd units
@@ -60,153 +60,52 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  %% Each Swamp label below is an actual shared resource workflow step.
-  %% Official child workflows retain their own resource checks.
+  SW->>SW: Write the intent<br/>intent file and assets
+  opt role credentials are present
+    SW->>SW: Write the private input<br/>vault to mode 0600 files
+  end
+  opt WebSocket credentials
+    SW->>SW: Write WebSocket input<br/>vault to private file
+  end
+  opt Analytics credentials
+    SW->>SW: Write Analytics input<br/>vault to private file
+  end
+  SW->>SW: Write the playbook input<br/>inventory and host keys
   SW->>N: Read the OS release<br/>SSH argv
   SW->>SW: Require supported Ubuntu<br/>native assert
-  opt role plan needs this action
-  SW->>N: Install Caddy<br/>native child workflow
+  opt swamp role
+    SW->>N: Install Python venv<br/>native bootstrap
   end
-  opt Docker is a prerequisite
-  SW->>N: Inspect Docker CE<br/>cfgmgmt apt check
+  opt swamp role
+    SW->>N: Create Ansible venv<br/>native bootstrap
   end
-  SW->>N: Refresh package lists<br/>cfgmgmt apt
-  SW->>N: Install prerequisites<br/>bounded SSH argv
-  opt role plan needs this action
-  SW->>N: Create role folders<br/>cfgmgmt directory
+  opt swamp role
+    SW->>N: Write Ansible pin<br/>native bootstrap
   end
-  opt role plan needs this action
-  SW->>N: Download Bun<br/>cfgmgmt fetch
+  opt swamp role
+    SW->>N: Write collection pins<br/>native bootstrap
   end
-  opt role plan needs this action
-  SW->>N: Extract Bun<br/>cfgmgmt archive
+  opt swamp role
+    SW->>N: Install Ansible<br/>native bootstrap
   end
-  opt role plan needs this action
-  SW->>N: Publish Bun<br/>cfgmgmt link
+  opt swamp role
+    SW->>N: Install collections<br/>native bootstrap
   end
-  opt role plan needs this action
-  SW->>N: Publish the Bun command<br/>cfgmgmt link
+  SW->>N: Apply role prerequisites<br/>Ansible phase: prerequisites
+  opt role needs Tool Managers
+    SW->>N: Set up Tool Managers<br/>native child workflow
   end
-  opt role plan needs this action
-  SW->>N: Check Bun version<br/>SSH argv
+  SW->>N: Apply the role on the Node<br/>Ansible phase: node
+  opt Analytics uses local storage
+    SW->>N: Open Analytics storage<br/>Ansible phase: storage-firewall
+  %%> - for local Analytics storage, retire its previous owned port before applying the admitted port
   end
-  opt role plan needs this action
-  SW->>N: Download PHP packages<br/>cfgmgmt fetch
-  end
-  opt role plan needs this action
-  SW->>N: Install PHP packages<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Set up Tool Managers<br/>native child workflow
-  end
-  opt role plan needs this action
-  SW->>N: Configure PHP-FPM<br/>native child workflow
-  end
-  opt role plan needs this action
-  SW->>N: Write role files<br/>cfgmgmt file
-  end
-  SW->>N: Reload role units<br/>SSH argv
-  opt role plan needs this action
-  SW->>N: Start role services<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Create runtime groups<br/>cfgmgmt group
-  end
-  opt role plan needs this action
-  SW->>N: Create runtime users<br/>cfgmgmt user
-  end
-  opt role plan needs this action
-  SW->>N: Create runtime folders<br/>cfgmgmt directory
-  end
-  opt role plan needs this action
-  SW->>N: Check out Reverb<br/>cfgmgmt git
-  end
-  opt role plan needs this action
-  SW->>N: Install Reverb packages<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Write runtime files<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>N: Write private files<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>N: Publish the Reverb release<br/>cfgmgmt link
-  end
-  opt role plan needs this action
-  SW->>N: Apply Gateway DNS policy<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Start Gateway DNS policy<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Check Gateway DNS policy<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Apply runtime units<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Restart Reverb<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Start Reverb<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Pull Metrics images<br/>cfgmgmt docker_image
-  end
-  opt role plan needs this action
-  SW->>N: Create Metrics volumes<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Remove Metrics containers<br/>cfgmgmt docker_container
-  end
-  opt role plan needs this action
-  SW->>N: Start Metrics containers<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Check Metrics containers<br/>cfgmgmt docker_container
-  end
-  opt role plan needs this action
-  SW->>N: Start Incus<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>SW: Plan CI resources<br/>public resource plan
-  end
-  opt role plan needs this action
-  SW->>N: Read CI resources<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Create CI resources<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Configure CI resources<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Check CI resources<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>SW: Prepare ClickHouse files<br/>public resource plan
-  end
-  opt role plan needs this action
-  SW->>N: Create ClickHouse folders<br/>cfgmgmt directory
-  end
-  opt role plan needs this action
-  SW->>N: Write ClickHouse config<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>N: Pull the Analytics image<br/>cfgmgmt docker_image
-  end
-  opt role plan needs this action
-  SW->>N: Prepare Analytics storage<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Apply Analytics runtime<br/>native child workflow
-  end
-  opt role plan needs this action
-  SW->>N: Wait for runtime endpoints<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Set the Grafana password<br/>SSH argv
+  opt Analytics needs initialization
+    SW->>N: Pull the Analytics image<br/>cfgmgmt docker_image
+    SW->>N: Create Analytics database<br/>native SSH argv
+    SW->>N: Migrate Analytics database<br/>native SSH argv
+    SW->>N: Apply Analytics runtime<br/>native child workflow
+    SW->>N: Wait for Analytics<br/>Ansible phase: readiness
   end
   opt role plan needs this action
   SW->>N: Install Swamp<br/>cfgmgmt fetch
@@ -258,87 +157,27 @@ sequenceDiagram
   opt role plan needs this action
   SW->>SW: Check Swamp runtime<br/>native assert
   end
-  opt role plan needs this action
-  SW->>GW: Sign role certificates<br/>native child workflow
+  opt role needs certificates
+    SW->>GW: Sign role certificates<br/>native child workflow
   end
-  opt role plan needs this action
-  SW->>N: Publish PHP pools<br/>native child workflow
+  opt role changes PHP pools
+    SW->>N: Publish PHP pools<br/>native delta publication
   end
-  opt role plan needs this action
-  SW->>N: Publish Caddy sites<br/>native child workflow
+  SW->>N: Publish role sites<br/>Ansible phase: publication
+  SW->>N: Open the firewall<br/>Ansible phase: firewall
+  %%> - repair owned rule shapes and keep specific allows before isolation denies and broad peer trust
+  opt role changes DNS
+    SW->>N: Publish private DNS<br/>native delta publication
   end
-  opt role plan needs this action
-  SW->>N: Open role ports<br/>SSH argv
+  opt role joins Metrics
+    SW->>N: Add the exporters<br/>Ansible phase: exporters
+    %%> - apply canonical exporter rules and repair owned service isolation shapes and order
+    SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
   end
-  opt role plan needs this action
-  SW->>N: Close retired ports<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Publish private DNS<br/>native child workflow
-  end
-  opt role plan needs this action
-  SW->>N: Add the exporters<br/>native child workflow
-  %%> - parent-owned Caddy and PHP publications happen once; exporter children only install the remaining resources
-  end
-  opt role plan needs this action
-  SW->>N: Allow Metrics scrapes<br/>native child workflow
-  end
-  opt role plan needs this action
-  SW->>N: Check exporter endpoints<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>M: Stage Prometheus config<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>M: Validate Prometheus config<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>M: Publish Prometheus config<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>M: Reload Prometheus<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>M: Check Prometheus<br/>SSH argv
-  end
-  opt role plan needs this action
-  SW->>N: Check role services<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check runtime units<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check Incus<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>N: Check runtime groups<br/>cfgmgmt group
-  end
-  opt role plan needs this action
-  SW->>N: Check runtime users<br/>cfgmgmt user
-  end
-  SW->>N: Check prerequisites<br/>cfgmgmt apt
-  opt role plan needs this action
-  SW->>N: Check role folders<br/>cfgmgmt directory
-  end
-  opt role plan needs this action
-  SW->>N: Check role files<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>N: Check runtime folders<br/>cfgmgmt directory
-  end
-  opt role plan needs this action
-  SW->>N: Check runtime files<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>N: Check private files<br/>cfgmgmt file
-  end
-  opt role plan needs this action
-  SW->>N: Check PHP package versions<br/>SSH argv
-  end
-  SW->>SW: Check the role<br/>native assert
+  SW->>N: Check the role<br/>Ansible phase: check
   %%> Role boundary:
   %%> - node:converge owns the Node observer and Orbit CLI
-  %%> - official resource checks supply compliance; Check the role requires it
+  %%> - each phase is idempotent; a second run reports zero changes
   alt every step passes
     N-->>SW: role services ready
     %%> Returns:
@@ -369,7 +208,7 @@ sequenceDiagram
     %%> - run `orbit node:role:add 12 app-dev --converge` after fixing the cause
   end
   opt run completed or failed
-    SW->>N: Remove Prometheus staging<br/>best-effort cfgmgmt cleanup
+    SW->>SW: Remove the playbook input<br/>private run folder cleanup
     SW->>N: Remove init containers<br/>best-effort cfgmgmt cleanup
   end
   loop every 2 s until terminal

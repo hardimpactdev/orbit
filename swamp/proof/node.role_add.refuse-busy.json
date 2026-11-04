@@ -1,0 +1,11 @@
+{
+  "kind": "node.role_add.refuse-busy",
+  "defaults": "node-role-add-defaults.json",
+  "budget_seconds": 30,
+  "before_gateway": [["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "0", "snapshot"], ["sh", "-c", "printf %s \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture", "sh", "{\"operations\": [{\"kind\": \"node.role_add\", \"target_type\": \"node\", \"target_id\": \"${node.target}\", \"node_id\": \"${node.target}\", \"lock_key\": \"node:${node.target}\", \"status\": \"queued\", \"sequence\": 1, \"attempts\": 0, \"input\": {}, \"state\": {}}]}"]],
+  "request": {"method": "POST", "path": "nodes/${node.target}/roles", "body": {"role": "database"}},
+  "expect": {"http_status": 409, "error_code": "operation.target_busy"},
+  "phases": [],
+  "parity": "swamp/proof/node.role_add/refusal.py",
+  "clean": true
+}
