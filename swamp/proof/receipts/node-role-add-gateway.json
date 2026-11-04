@@ -3,50 +3,50 @@
   "proof_pass": true,
   "topology": "minimal",
   "topology_version": 19,
-  "commit": "4104475be1d499d7f45ae44aebfaf419ad991dac",
+  "commit": "662e1ce99e14460f2ea3852d339c17e9533f6a75",
   "vm": {
-    "group_id": 3205,
-    "provision_operation_id": 10315,
-    "task_vm_id": 562,
-    "node_id": 590,
-    "name": "tvm-562",
+    "group_id": 3207,
+    "provision_operation_id": 10330,
+    "task_vm_id": 563,
+    "node_id": 591,
+    "name": "tvm-563",
     "host_node_id": 9,
     "seed": "c1c2cf4051fbb2e7f879131384eee7f12b83521ed441f42e2a6ea7e925af8179",
-    "provisioned_at": "2026-11-04T19:38:52Z"
+    "provisioned_at": "2026-11-04T20:09:55Z"
   },
   "refreshed": [],
   "timings": {
     "up_steps": [
       {
         "step": "stage",
-        "seconds": 7.4
+        "seconds": 6.2
       },
       {
         "step": "target",
-        "seconds": 15.5
+        "seconds": 124.1
       },
       {
         "step": "swamp",
-        "seconds": 65.1
+        "seconds": 61.9
       },
       {
         "step": "gateway",
-        "seconds": 9.9
+        "seconds": 11.0
       },
       {
         "step": "realtime",
-        "seconds": 61.4
+        "seconds": 54.6
       }
     ],
-    "up_seconds": 160.0,
-    "run_seconds": 104.9,
-    "up_to_receipt_seconds": 265.8,
-    "since_first_provision_seconds": 1470.6
+    "up_seconds": 258.7,
+    "run_seconds": 169.4,
+    "up_to_receipt_seconds": 428.9,
+    "since_first_provision_seconds": 947.4
   },
-  "up_started_at": "2026-11-04T19:34:59Z",
-  "written_at": "2026-11-04T19:59:30Z",
+  "up_started_at": "2026-11-04T20:06:49Z",
+  "written_at": "2026-11-04T20:22:37Z",
   "workflow": "operation-node-role-add",
-  "run": "d14c844a-a026-4d82-94d2-e69734961e3b",
+  "run": "2eaf6cc3-f598-48e3-91d1-8c18b50f311f",
   "budget_seconds": 1800,
   "prepare": [],
   "http_status": 202,
@@ -151,7 +151,7 @@
           "artifacts": [
             {
               "name": "agent",
-              "digest": "f4ad6194a0d6b0f2246e4c974eb5140900e6caccaa2a95a63af77dc5fe0fe29c",
+              "digest": "65b1a6b29f5edf44fca0d7554e24ec81d7253c1b729aec9d3fc73b83a36d263d",
               "required": true,
               "repair": false
             },
@@ -171,7 +171,7 @@
           "payloads": {
             "agent": {
               "configuration": "gateway_url = \"https://gateway.orbit\"\ngateway_address = \"10.231.0.1\"\n",
-              "certificate": "-----BEGIN CERTIFICATE-----\nMIIFLTCCAxWgAwIBAgIUechle5ESXzrk1NZDYWLofroSbZwwDQYJKoZIhvcNAQEL\nBQAwHjEcMBoGA1UEAwwTT3JiaXQgcHJvb2Ygcm9vdCBDQTAeFw0yNjExMDQxOTQy\nMTRaFw0yNjEyMDQxOTQyMTRaMB4xHDAaBgNVBAMME09yYml0IHByb29mIHJvb3Qg\nQ0EwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQC9ui7wzlQ8IKLH2EpJ\neqffPEv403YctiGuLYow+B6x6TnE41rdHm/PdczdURrKSgR4RAUISUZqvDPoxUnP\nvjXaYlGMvBCUSrKJ23f5ie2SyOjcrI9q++Q5wyce5tlDo6203qGC0+LrhIjv1Z7K\nYfZPl48WThvuaYZY6Q9CJFAAh7n7iNns4dYfNmld7PO0mqebcRTvjjmNxGu2exzT\nJQBeGVon/XBpH3GhKmT6b4RR1MWKREtCNV0vPAIjKD4XdjIZLkpgFFUksjuz15wo\nSaVQ/4jYzOKz+/C+G3JO4e72xAEi9wsgDhna0O4Fos2V6jj1ziEFIxZClneoT1vs\naVvu04C8rl+YK1/1S/ANwQv8TOMMG6TOtBNk8k6ia4ga3DVPX3Hpdh2nJWLL71pW\nkUl5CTF7L5fRlmX0uu7km2WaTnlnDCvuu2zmJA3OlrB4jSfdF9/S15ikB8Td/H+U\n/eTUbo/Jm0+mKD4BKuBWET62sSElhc3EH8C2Fozsldwf1qCdx2MJanpSLVCYN5Q+\nvIV93Q5vo7s2SAVk814RddLSwD5XKvSDMHy6THBhmTE+YhPSTwZkNblkXKVUnIi/\nQYDf4vyuJFxDnXrlui1tEhrHL3AjPqtocwZQmn+MtmIWxLMBea6MhBOLlfgg5MNs\nZ9mFxLL0JeMl6qtfSuRhEr3zXwIDAQABo2MwYTAdBgNVHQ4EFgQUy8xMWHWHon0J\ngNLaZZXZzzr+xBowHwYDVR0jBBgwFoAUy8xMWHWHon0JgNLaZZXZzzr+xBowDwYD\nVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwDQYJKoZIhvcNAQELBQADggIB\nAIYmAh/Am3+DthT404RFsgSS9gkTsF6P3ItypDQF/4CsNB0+B/tIjHATgsE7BpbF\n2pKNAXxJwV8c9yQNTaCKqxLeuYwEqSqR4ree7OMI8fx4k4VY83fg9IlqACT8WfGC\n1Ep8lf+41D64y1bne27RW1yC0g5kYyndewZWmrGW4OTruMFI0bDTqd2s4lYGiE9F\nQaFNXAAvLS5xzH1hthMupmmYrb3mmioqtJRH/yn5d+pe+2jzU10PaptzPVLJbc9z\na0D+wwAnD3yNyl7kzl/qtg+1OoWCwVZmCbc/tyyTNX/N/WabEJMyiY+8Z/lDjDct\nbcNgLmPTPtAPUqAtBi5ZMJBae0rGovTM99KyM0v9mI5dQsUeiMCVpJpQjnwlIBc/\nxQAZyph4yiF0s+SLL+e33Q5JRCb0YaxeVYgxrruiu057VrOgYG/QgikfLOTqoO/A\nglGCE2pKcxev0+UdV3kRI38JHyymExbB7fsUWNg07eNsrdJhUgi/6wThcIo0qy7p\nvYAqd/zujiNnrVET06EMLU38ngecS19wMuPlNPyaLuvAcANDFLf67rW3K2Nxwwup\nFqN7vgjyzzGkAvMvMWsmz3LepnZ1bRkt+af1qi3DIPMpWMam9gzaj/NiHDMdC8+s\nh5Qa/GyoJyORZOMnQ9o6jn9cBhe6wli4MMhprjhZyjDU\n-----END CERTIFICATE-----\n",
+              "certificate": "-----BEGIN CERTIFICATE-----\nMIIFLTCCAxWgAwIBAgIUQTodool7p0vcCd4It5l3fD82vWEwDQYJKoZIhvcNAQEL\nBQAwHjEcMBoGA1UEAwwTT3JiaXQgcHJvb2Ygcm9vdCBDQTAeFw0yNjExMDQyMDE4\nNDdaFw0yNjEyMDQyMDE4NDdaMB4xHDAaBgNVBAMME09yYml0IHByb29mIHJvb3Qg\nQ0EwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQCYSYAJE11hzLXFpvzm\n5fYcUSFmy5JU1KLHT35fDpB9PQAJTFWXZ4NB1ZcbI17sOZoIUtfUHYRsiOcJgZNE\n2XxAO2n+g7c789XhgSxprbjULtszpDSlm7mS2z5oJS9hQ/1id7GzL+AfSDGjYuUC\nEReq05ByWiClEpip58g2RHHi6H3GvNSEe33U3J0LHfacbhc2XQHhxPQnZO19neOK\nFDMbqC2b+614VQURubHT3nAVZpjY3gmXfotbBSG9HzF42m72kfHe7yG/7wtJutj5\nd/kGAhx+pwovxZ4ObNTje1NL9+Ak/r99ZWJX0UPT1JABZKf5rEeJ1AEXH5MmnBWU\nJSbzGGB5lLaYoH9wd4zgOQhWbogo5urCr4hsMFk5eBe6aQhHriH5+Zi6qS4Ad3Ya\npJ5atxYdqZA0DWXqMUmo5XFyi5TKnrLYMGgfvKbo54xBTqNYALXBqS7Oago/QTrG\n/qoU1NusYyZLI5whCrJd262BAFubKvqghisG/9y++aySJslQoLkpZ7LyrbEjOLGW\nM/pJ7dHMZNeHJdUUcBdrI8mWN/xjwvzLJOLp9FBhvhlocZzKJnf6G67G+A03+59D\ngGIOuS8mOpe09KRVvhc280ktIlNHOYJirniad64FJsVfO/ASdansMsfYVV+QQ6mI\nsEOtkXDNcO3iNRqFylXxy14TFQIDAQABo2MwYTAdBgNVHQ4EFgQUQEFzqnyvFTco\no8jzA8DH8ZYMn6IwHwYDVR0jBBgwFoAUQEFzqnyvFTcoo8jzA8DH8ZYMn6IwDwYD\nVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwDQYJKoZIhvcNAQELBQADggIB\nAGSSY3yI939Ok3W19lkRsXMghfa6Gczi5EQLIUrk4Eo13hvNAJOMFm8nb9YVlUs7\nK3WaMwijOljbn/9zTFHshgvkMAZd232us7fMYP+S2E7DvcB9dmkMsAEZnMMVYFIG\nJA8UYBtY+fpgjf/nn04LY8nQ4KwXdYpdDYBr9aoii27mNThkbKdgDVLneRZz32gP\nkrRzKhV9CE5ouVfmnSTu5WQBP7zS1n5Jna4zgSJ1bP/wR5ursgrAUc6Px9Wq85md\nL8T9WZ3/pHCsxE/WJbv1PaRtvJXq9MMPZE7cJF0jvjjXdde3lAF5cH4jLqqDq9lk\nfOhtToDhPNLnyU/4M1qObQHUuTjYaiOYcYieoGGtu7+uB4Xcz9gu3g+1gpxKyHWJ\n6MF7UaUn90dyEpo4PBG464i53FefdmPjyGBDN5OYyqd8LRpgTd/SwFBEu3MRU3y4\nZ1rqc+sEHAZImSLO698GSd7gYToPuVTS7NeZypbxIdtOL1oVSrWzIiZBWbaqjyp/\nvbTU8qRV9ZiX8SGRFMwBHVDr7M+js8SkCgsjtx2IcNIrc9ZKke88Z5XqqXKUTBLO\n21m3nojoF/zZXfyoWP1O6jV4JyViUruTOAYE/hhBF3/xqPBeszzmszJhBrKr6MDP\nsV6Vwc0ABTKWusN+VlTl4m85A8WHYXbOLtukMDL15eAG\n-----END CERTIFICATE-----\n",
               "unit": "# Managed by Orbit: agent\n[Unit]\nDescription=Orbit Node agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart=/usr/local/bin/orbit-agent\nRestart=always\nRestartSec=2\nUser=root\nGroup=root\nSupplementaryGroups=orbit-env\nCapabilityBoundingSet=\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=tmpfs\nBindReadOnlyPaths=-/home/linuxbrew/.linuxbrew\nBindReadOnlyPaths=-/home/orbit/.vite-plus\nBindReadOnlyPaths=-/home/orbit/.local/share/vite-plus\nPrivateTmp=yes\nMemoryMax=128M\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n\n[Install]\nWantedBy=multi-user.target\n",
               "checkouts": [],
               "user": "orbit",
@@ -231,14 +231,14 @@
         "ssh": {
           "control_node_id": 209,
           "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
-          "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaiiBusiJTNPLkKjWEmNNig8IkOsbOFSKRgOb7GaDp5",
+          "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKHFVrroAK80bgOeRlHTI3JHKP7mpRcc6mhYSCPeTzeQ",
           "target": {
             "name": "target",
             "host": "10.231.0.1",
             "user": "orbit",
             "port": 22,
             "host_keys": [
-              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIOdOmCRY/UBRWgcjU3x8PbyArUKLa0r1B5Zj9/LxMqC"
+              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKDjJCKYnrym0g+dJYWGWCnCLQCo81Zw6WGmTV5AqEAp"
             ]
           }
         },
@@ -275,14 +275,14 @@
         "ssh": {
           "control_node_id": 209,
           "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
-          "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaiiBusiJTNPLkKjWEmNNig8IkOsbOFSKRgOb7GaDp5",
+          "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKHFVrroAK80bgOeRlHTI3JHKP7mpRcc6mhYSCPeTzeQ",
           "target": {
             "name": "target",
             "host": "10.231.0.1",
             "user": "orbit",
             "port": 22,
             "host_keys": [
-              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIOdOmCRY/UBRWgcjU3x8PbyArUKLa0r1B5Zj9/LxMqC"
+              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKDjJCKYnrym0g+dJYWGWCnCLQCo81Zw6WGmTV5AqEAp"
             ]
           }
         },
@@ -339,7 +339,7 @@
               "become": true
             },
             "host_keys": [
-              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIOdOmCRY/UBRWgcjU3x8PbyArUKLa0r1B5Zj9/LxMqC"
+              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKDjJCKYnrym0g+dJYWGWCnCLQCo81Zw6WGmTV5AqEAp"
             ],
             "before": {
               "php": null,
@@ -588,20 +588,20 @@
       "created": true,
       "role_proven": true
     },
-    "swamp_run_id": "0b9cfd28-2f1e-4b39-a981-2ae48b9601e9"
+    "swamp_run_id": "69f4d766-ef95-42fc-839f-0be751810339"
   },
-  "admit_seconds": 0.51,
-  "total_seconds": 33.07,
+  "admit_seconds": 0.45,
+  "total_seconds": 33.14,
   "job_errors": {},
   "native": {
-    "run_id": "0b9cfd28-2f1e-4b39-a981-2ae48b9601e9",
+    "run_id": "69f4d766-ef95-42fc-839f-0be751810339",
     "status": "succeeded",
     "steps": [
       {
         "job": "intent",
         "step": "Write the intent",
         "status": "succeeded",
-        "seconds": 0.97,
+        "seconds": 0.936,
         "error": null
       },
       {
@@ -629,21 +629,21 @@
         "job": "input",
         "step": "Write the playbook input",
         "status": "succeeded",
-        "seconds": 0.86,
+        "seconds": 0.711,
         "error": null
       },
       {
         "job": "phase_0",
         "step": "Read the OS release",
         "status": "succeeded",
-        "seconds": 0.933,
+        "seconds": 0.893,
         "error": null
       },
       {
         "job": "phase_1",
         "step": "Require supported Ubuntu",
         "status": "succeeded",
-        "seconds": 0.08,
+        "seconds": 0.045,
         "error": null
       },
       {
@@ -692,14 +692,14 @@
         "job": "prerequisites",
         "step": "Apply role prerequisites",
         "status": "succeeded",
-        "seconds": 5.074,
+        "seconds": 6.09,
         "error": null
       },
       {
         "job": "node",
         "step": "Apply the role on the Node",
         "status": "succeeded",
-        "seconds": 10.244,
+        "seconds": 9.946,
         "error": null
       },
       {
@@ -804,14 +804,14 @@
         "job": "publication",
         "step": "Publish role sites",
         "status": "succeeded",
-        "seconds": 2.163,
+        "seconds": 2.23,
         "error": null
       },
       {
         "job": "firewall",
         "step": "Open the firewall",
         "status": "succeeded",
-        "seconds": 2.8,
+        "seconds": 2.647,
         "error": null
       },
       {
@@ -832,14 +832,14 @@
         "job": "role",
         "step": "Check the role",
         "status": "succeeded",
-        "seconds": 7.133,
+        "seconds": 6.404,
         "error": null
       },
       {
         "job": "cleanup",
         "step": "Remove the playbook input",
         "status": "succeeded",
-        "seconds": 0.723,
+        "seconds": 0.674,
         "error": null
       }
     ]
@@ -850,7 +850,7 @@
       "job": "prerequisites",
       "step": "Apply role prerequisites",
       "budget_seconds": 900,
-      "seconds": 5.074,
+      "seconds": 6.09,
       "status": "succeeded",
       "passed": true
     },
@@ -859,7 +859,7 @@
       "job": "node",
       "step": "Apply the role on the Node",
       "budget_seconds": 900,
-      "seconds": 10.244,
+      "seconds": 9.946,
       "status": "succeeded",
       "passed": true
     },
@@ -868,7 +868,7 @@
       "job": "publication",
       "step": "Publish role sites",
       "budget_seconds": 180,
-      "seconds": 2.163,
+      "seconds": 2.23,
       "status": "succeeded",
       "passed": true
     },
@@ -877,7 +877,7 @@
       "job": "firewall",
       "step": "Open the firewall",
       "budget_seconds": 120,
-      "seconds": 2.8,
+      "seconds": 2.647,
       "status": "succeeded",
       "passed": true
     },
@@ -886,7 +886,7 @@
       "job": "role",
       "step": "Check the role",
       "budget_seconds": 60,
-      "seconds": 7.133,
+      "seconds": 6.404,
       "status": "succeeded",
       "passed": true
     }
