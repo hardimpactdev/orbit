@@ -246,10 +246,6 @@ A later `node:add` without `--role` keeps this setup. To call the Gateway API fr
 
 On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Adding the first role closes public SSH and moves the Node to managed DNS in the same operation. macOS refuses every role with `node.platform_unsupported` before SSH.
 
-[`orbit:node-dns-repair`](/reference/private-dns#repair-one-peer) still refuses a Node without roles with `node.dns_repair_operator_owned`.
-
-[Node retarget](/reference/node-retarget) keeps a Node without roles in operator DNS mode. The `DNS =` line stays, and the Node does not get an `orbit.dns-link`.
-
 Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. A Node without a pinned SSH host key dispatches no Doctor reads and supplies no positive recovery evidence.
 
 ## iPadOS peers
@@ -269,7 +265,6 @@ The Gateway treats an `ipados` Node as a peer it never contacts. It reuses the p
 | Schedule mutation | `schedule.platform_unsupported` (HTTP 422). |
 | Metrics exporter or Metrics role | `metrics.platform_unsupported` (HTTP 422). |
 | Firewall mutation | `firewall.platform_unsupported` (HTTP 422). |
-| DNS repair | `node.dns_repair_operator_owned`, because the Node has no role. |
 | Tool operations | `tool.node_unmanaged` (HTTP 409). |
 | Fleet rollout | Left out with reason `platform`. |
 | Doctor | No SSH reads or positive recovery evidence without a pinned SSH host key. |
@@ -522,6 +517,10 @@ Converging the `gateway` role runs the Caddy step over SSH before its firewall s
 
 Caddy also serves the Gateway API. A convergence that installs a newer Caddy restarts it, so the CLI can report `Could not reach the gateway.` while the Gateway finishes. `orbit activity:list` shows the real result. Run the command again after a minute.
 
+## One lifecycle owner per Node name
+
+`node:add`, `node:remove`, and `node:update` each take one lock for the Node name; a rename also takes the new name's lock. They hold it from the lookup to the last remote step and rollback. Another operation on the same name fails with `node.provisioning_busy` (HTTP 409) before it changes anything. A retry reads the Node again after it gets the lock. Operations on different names run at the same time. The lock does not block role changes. A lock that nobody releases expires after one hour.
+
 ## Role operations on one Node
 
 The Gateway runs one role operation per Node at a time. The role lock covers the role's baseline convergence or removal, the Tool Manager setup for `app-dev` and `app-prod`, and the Node agent converge that follows.
@@ -582,7 +581,6 @@ The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. An 
 - Removing the last role restores `orbit:public-ssh-recovery` over WireGuard before the Gateway deletes the assignment.
 - When that restore fails, the role stays `failed` at step `remove:firewall-recovery` with `node.firewall_recovery_failed`. A retry repeats the removal.
 - Removing a role while another role remains keeps public SSH closed.
-- [Node retarget](/reference/node-retarget) picks its path from the same boundary.
 
 ## WireGuard hub
 

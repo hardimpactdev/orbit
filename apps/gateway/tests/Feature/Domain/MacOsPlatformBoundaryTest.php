@@ -7,7 +7,6 @@ use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Actions\Metrics\AdmitMetricsExporterAction;
 use App\Actions\Metrics\AdmitMetricsRoleAction;
 use App\Actions\Nodes\AddNodeRoleAction;
-use App\Actions\Nodes\RepairNodeDnsAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Schedules\CreateScheduleAction;
@@ -19,7 +18,6 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
-use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
@@ -100,10 +98,6 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
                 ->and($exception->status)->toBe(422);
         });
     expect(fn () => app(StartNodeConvergeAction::class)->execute($node))->toThrow(ResourceOperationException::class, 'Only an active, managed Linux Node');
-    expect(fn () => app(RepairNodeDnsAction::class)->execute($node->name))
-        ->toThrow(function (NodeProvisioningException $exception): void {
-            expect($exception->errorCode)->toBe('node.dns_repair_operator_owned');
-        });
 
     $accounts = new FakeScheduleRuntimeAccountResolver;
     $accounts->unavailable = true;

@@ -8,7 +8,6 @@ use App\Console\Commands\AgentViewCommand;
 use App\Console\Commands\AgentViewPublishCommand;
 use App\Console\Commands\BootstrapGatewayCommand;
 use App\Console\Commands\CaddyBuildCommand;
-use App\Console\Commands\CheckNodeDnsCommand;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\ConvergeGatewayWebCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
@@ -17,8 +16,6 @@ use App\Console\Commands\MachineRecipeCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
-use App\Console\Commands\RepairNodeDnsCommand;
-use App\Console\Commands\RetargetNodeCommand;
 use App\Console\Commands\RuntimeHibernatorCommand;
 use App\Console\Commands\ServePrivateDnsCommand;
 use App\Domain\Gateway\GatewayCacheStore;
@@ -40,15 +37,12 @@ final class ApplicationServiceProvider extends ServiceProvider
             AgentViewPublishCommand::class,
             BootstrapGatewayCommand::class,
             CaddyBuildCommand::class,
-            CheckNodeDnsCommand::class,
             ConvergeGatewayWebCommand::class,
             FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
             ProvisionNodeCommand::class,
             ReconcilePeerDnsCommand::class,
             RenderNodeRecipeCommand::class,
-            RepairNodeDnsCommand::class,
-            RetargetNodeCommand::class,
             RuntimeHibernatorCommand::class,
             ServePrivateDnsCommand::class,
         ]);

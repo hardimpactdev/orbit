@@ -46,13 +46,11 @@ final readonly class DocsImpact
         'orbit:agent-view-publish' => 'docs/reference/node-agent.md',
         'orbit:activity-redact' => 'docs/cli/activity/index.mdx',
         'orbit:bootstrap' => 'docs/reference/gateway-trust.md',
-        'orbit:node-dns-repair' => 'docs/reference/node-agent.md',
         'orbit:node-provision' => 'docs/reference/node-agent.md',
         'tasks:collect-t3-metrics' => 'docs/reference/tasks.md',
         'problems:collect' => 'docs/reference/tasks.md',
         'problems:file' => 'docs/reference/tasks.md',
         'tasks:archive-threads' => 'docs/reference/tasks.md',
-        'orbit:node-retarget' => 'docs/reference/node-agent.md',
         'orbit:node-recipe' => 'docs/reference/incus-topologies.md',
         'orbit:machine-recipe' => 'docs/reference/compute-drivers.md',
         // The task VM worker. Keyed by name, so a change of its options keeps the owner.
