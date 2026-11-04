@@ -39,6 +39,14 @@ Deno.test("workflow queue bounds have measured per-kind budgets", async () => {
     else if ("queueTimeout" in workflow) assert([30, 60].includes(workflow.queueTimeout), path.name);
   }
 });
+Deno.test("every Ansible file ships with the ansible-input extension", async () => {
+  // A playbook that imports a task file the manifest does not list fails on the worker before any task runs.
+  const shipped = new Set((parse(Deno.readTextFileSync(`${ROOT}/manifest.yaml`)) as { additionalFiles: string[] }).additionalFiles);
+  for await (const path of expandGlob(`${ROOT}/ansible/**/*.{yml,py,txt,cfg}`)) {
+    const relative = path.path.slice(ROOT.length + 1);
+    assert(shipped.has(relative), `${relative} is missing from manifest.yaml additionalFiles`);
+  }
+});
 Deno.test("runtime credentials and generated records are ignored", async () => {
   const paths = [
     "models/swamp/enrollment-token/example.yaml",
