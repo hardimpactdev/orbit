@@ -1,0 +1,53 @@
+{
+  "kind": "node.add",
+  "workflow": "operation-node-add",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "python3",
+      "swamp/proof/node.add/prepare.py"
+    ],
+    [
+      "python3",
+      "swamp/proof/node.add/fresh_fixture.py"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/converge",
+      "body": {
+        "force": false
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes",
+    "body": {
+      "name": "enroll-${proof.run}",
+      "public_ssh_host": "${fixture.stock_address}",
+      "orbit_user": "orbit",
+      "wireguard_ip": "10.232.0.11",
+      "host_key_fingerprint": "${secret.enrollment_fingerprint}",
+      "tld": "stock.test"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Check the Node",
+      "job": "node",
+      "step": "Check the Node",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.add/fresh_parity.py"
+  ]
+}

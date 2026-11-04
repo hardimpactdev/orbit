@@ -10,7 +10,7 @@ with open(os.environ['PROOF_OPERATION_FILE']) as stream:
 
 
 def run(*argv):
-    return subprocess.run(['incus', 'exec', 'metrics', '--', *argv], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+    return subprocess.run(['incus', 'exec', os.environ.get('PROOF_ENROLLMENT_CANDIDATE', 'metrics'), '--', *argv], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
 
 
 def check(ok, message):
