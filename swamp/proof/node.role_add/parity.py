@@ -119,7 +119,10 @@ if 'no-drift' in sys.argv[3:]:
 
 # Doctor reads the observer facts installed by fixture preparation.
 
-doctor(json.loads(os.environ['PROOF_NODES'])[target])
+participants = {intent['node_id'], *(item['node_id'] for item in intent['publications']),
+                *(item['exporter_node_id'] for item in intent['exporters'])}
+for node in sorted(participants):
+    doctor(node)
 check(not Path('/tmp/orbit-ansible-' + operation['swamp_run_id']).exists(), 'the private Ansible run folder was removed')
 # --idempotency-key replays the original admission without another run or Node change.
 body = {'role': role, **({'converge_existing': True} if operation['kind'] == 'node.role_converge' else {})}
