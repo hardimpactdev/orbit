@@ -39,7 +39,19 @@ Every Orbit command is designed as a flow chart first, and the code follows the 
 23. **Required parameters make the main path.** The main path is the command with only its required arguments. Each optional parameter appears only in its own `opt --flag` block, with the steps it adds. The main call line shows no optional flags, and no branch reads `alt no --flag … else --flag`. The workflow matches: a step for an optional input is conditional on that input. Example: `instance:register --project=7` checks and records; `opt --setup` and `opt --domain` hold the Node work.
 24. **Caller-agnostic.** A chart shows the generic caller (CLI, MCP, API). A client that calls the command, such as Conn, is not drawn in; its steps belong in its own flow.
 
-25. **Minimal charts.** A chart holds the flow steps and the true exceptions only. A step explanation says what the label does not: why, when, what happens on failure. Never restate the label. What a command covers (for example the parts a converge applies) and what a flag means (`--force`) go in the docs page description and option table, not in the chart. A flag that adds no steps, only a different check, gets no `opt` block. If an explanation has more than a few bullets, cut it or move it to the docs page.
+25. **Minimal charts.** A chart holds the flow steps and the true exceptions only. Show meaningful alternate outcomes, including a successful skip and its reason code, in the visible chart; do not hide them only in the step panel. A step explanation says what the label does not: why, when, what happens on failure. Never restate the label. What a command covers (for example the parts a converge applies) and what a flag means (`--force`) go in the docs page description and option table, not in the chart. A flag that adds no steps, only a different check, gets no `opt` block. If an explanation has more than a few bullets, cut it or move it to the docs page.
+
+26. **Installation-independent charts.** Name roles and use placeholders for command inputs and returned IDs. Do not hard-code Node or task IDs, deployment hostnames or an execution host. Keep lifecycle states and implementation details in the step panel when they do not name the action. Concrete usage examples belong on the command's documentation page.
+
+27. **Share flows when only inputs differ.** Reuse one workflow across actions when they follow the same steps and inputs express their differences. Do not duplicate the graph or add wrappers just to give each action its own workflow name. If action-specific conditions create substantial branching or obscure the order, failures or end checks, split the flows. Extract cohesive common phases into native child workflows with explicit input and output contracts. Keep each command's chart specific to that command (rule 21).
+
+28. **Define the state after failure.** Decide during chart review what the command cleans up, restores or retains; do not default every command to rollback or retention.
+    - Remove temporary files, credentials and other disposable resources owned by the run after success or failure. Declare cleanup through native dependencies (rule 19).
+    - Restore a changed setting only when its prior value is known and restoration will not overwrite a later change. Remove only resources the run owns; never restore a whole Node snapshot to undo one command.
+    - Keep a failed target when it is useful for diagnosis or recovery, such as an Instance and its checkout. Record its failed state and retained resources, and define the retry and removal path. Retention must be deliberate, not an untracked leftover.
+    - Convergence repairs declared desired state within its ownership scope. It may remove resources explicitly marked for removal; do not assume it discovers and deletes every leftover. A failed target retained for inspection is not an orphan.
+    - Account for partial changes within a failing step, cleanup failure, and interruption. Cleanup must wait until the work it would remove has stopped. Preserve the original failure and expose incomplete cleanup; a worker crash does not prove cleanup ran.
+    Show meaningful recovery branches in the chart and document only the consequences the command's user needs. Prove them with [verifying-commands](../verifying-commands/SKILL.md).
 
 ## Swamp gotchas
 
@@ -49,13 +61,13 @@ Swamp's own skill (`swamp`, installed by `swamp repo upgrade`) explains how to b
 - A step that waits for a behavior another step holds fails after 60 seconds (`SWAMP_LOCK_TIMEOUT_MS`). Keep steps on one behavior short, or give long work its own behavior name.
 - Official SSH puts its connection name in an OpenSSH control-socket path. Keep that name short, preferably a short step family plus Node id: a valid 58-character behavior name can exceed Linux’s socket-path limit after SSH adds its suffix. Prove the actual transport; local SSH shims do not exercise this limit.
 - Workflow inputs are recorded in the run. Pass vault key names, never secrets.
-- Nest a workflow only for a typed boundary or its own schedule, never just to order steps.
+- Nest a workflow for a cohesive reusable phase with an explicit input and output contract, or for work with its own schedule. Do not nest merely to order steps (rule 27).
 - Create a workflow with `swamp workflow create`, never by writing its id by hand.
 
 ## The loop
 
 1. For a new command, draft the chart by the README rules first. Then read the chart and the kind's live facts: its workflow in `swamp/workflows/`, its Gateway declaration, and recent runs (`operation-list --kind <kind>`). Use `gh api` only; never `git clone` or `git fetch`.
-2. Walk the steps in order and test each one against rules 1–25. Note the step number, the rule and the change.
+2. Walk the steps in order and test each one against rules 1–28. Note the step number, the rule and the change.
 3. Write the proposal: each change with its step numbers and the reason in one line. Add the step count of the common path before and after, and what you keep on purpose and why.
 4. Ask before applying to a reviewed chart. Show Nick the chart rendered (a local docs preview, see the README's "Edit, render and preview") and explain by step number. Change one chart at a time.
 5. Apply the agreed changes:

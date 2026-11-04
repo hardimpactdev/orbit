@@ -25,13 +25,13 @@ function gatewayRollbackFixture(bool $web = true): array
     }
     symlink('releases/bbbbbbbbbbbb', $base.'/orbit');
     symlink('releases/bbbbbbbbbbbb', $base.'/web/current');
-    // Two Processes run from the application, one from elsewhere.
+    // Two Processes and agent-view run from the application; another Process and PHP-FPM do not.
     file_put_contents($tools.'/systemctl', <<<BASH
         #!/usr/bin/env bash
         case "\$1" in
-            list-units) printf '%s\n' 'orbit-process-1-horizon.service loaded active running' 'orbit-process-2-schedule-work.service loaded active running' 'orbit-process-3-other.service loaded active running' ;;
-            show) case "\$5" in *other*) echo /srv/other ;; *horizon*) echo {$base}/orbit/apps/gateway ;; *) echo {$base}/orbit/apps/gateway/ ;; esac ;;
-            restart) echo "\$2" >> {$root}/restarted ;;
+            list-units) [ "\$3" = --state=active ] && printf '%s\n' 'orbit-process-1-horizon.service loaded active running' 'orbit-process-2-schedule-work.service loaded active running' 'orbit-agent-view.service loaded active running' 'orbit-process-3-other.service loaded active running' 'php8.5-fpm.service loaded active running' ;;
+            show) case "\$5" in *other*) echo /srv/other ;; php*) echo ;; *horizon*) echo {$base}/orbit/apps/gateway ;; *) echo {$base}/orbit/apps/gateway/ ;; esac ;;
+            restart | reload) echo "\$1 \$2" >> {$root}/restarted ;;
         esac
         BASH);
     chmod($tools.'/systemctl', 0755);
@@ -44,14 +44,14 @@ function gatewayRollback(array $fixture, string $id): ProcessResult
     return new ProcessFactory()->env($fixture['environment'])->run([dirname(__DIR__, 5).'/bin/gateway-rollback', $id]);
 }
 
-it('switches the application and web links to a retained release and restarts the Processes that run from it', function (): void {
+it('switches the application and web links, reloads PHP-FPM and restarts the running services that run from the release', function (): void {
     $fixture = gatewayRollbackFixture();
     $result = gatewayRollback($fixture, 'aaaaaaaaaaaa');
 
     expect($result->successful())->toBeTrue($result->errorOutput())
         ->and(readlink($fixture['base'].'/orbit'))->toBe('releases/aaaaaaaaaaaa')
         ->and(readlink($fixture['base'].'/web/current'))->toBe('releases/aaaaaaaaaaaa')
-        ->and(file($fixture['root'].'/restarted', FILE_IGNORE_NEW_LINES))->toBe(['orbit-process-1-horizon.service', 'orbit-process-2-schedule-work.service'])
+        ->and(file($fixture['root'].'/restarted', FILE_IGNORE_NEW_LINES))->toBe(['reload php8.5-fpm', 'restart orbit-process-1-horizon.service', 'restart orbit-process-2-schedule-work.service', 'restart orbit-agent-view.service'])
         ->and(file_exists($fixture['base'].'/orbit.next'))->toBeFalse();
 });
 

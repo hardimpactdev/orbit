@@ -1,0 +1,8 @@
+{
+  "kind": "node.role_add.ingress.no-drift",
+  "defaults": "node-role-add-defaults.json",
+  "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "ingress", "converge_existing": true}},
+  "parity": ["swamp/proof/node.role_add/parity.py", "peer", "ingress", "no-drift"],
+  "prepare": [],
+  "observer_wait_seconds": 0
+}

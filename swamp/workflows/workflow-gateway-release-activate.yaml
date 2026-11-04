@@ -1,8 +1,8 @@
 id: 3effe849-5048-45ba-8a9a-6bc62ef70c57
 name: gateway-release-activate
-description: Switch the Gateway to a built release and hand its runtime over; the release run starts it from the new commit's definition.
-# A forward release never switches back: the migration already ran, so a failure here pauses automatic releases with
-# the new release current (docs/reference/gateway-recovery.md#deploy-a-release).
+description: Switch the Gateway to a built release, verify it and resume its cleanups; the release run starts it from the new commit's definition.
+# A failed check switches back to the previous release; migrations are expand and contract, so it runs on the new
+# schema (docs/reference/gateway-recovery.md#release-as-a-swamp-run).
 queueTimeout: 120
 vaults: []
 inputs:
@@ -74,7 +74,9 @@ jobs:
           fi
         - sh
         - ${{ inputs.intent.horizon_unit }}
-    # One rename of the application link; Caddy resolves it per request, so PHP-FPM keeps serving.
+    # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
+    # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
+    # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
   - name: Switch the release
     labels: {role: swamp}
     writes: true
@@ -87,38 +89,31 @@ jobs:
       globalArgs: *ssh
       inputs:
         hosts: name:target
-        timeoutSec: 60
+        sudo: true
+        timeoutSec: 180
         argv:
         - /usr/bin/timeout
-        - '30'
+        - '150'
         - /bin/sh
         - -c
         - |
           set -eu
-          base=/home/orbit
-          [ "$(cat "$base/releases/$1/REVISION" 2>/dev/null)" = "$2" ] || { echo "gateway.release_not_prepared: release $1 is not sealed" >&2; exit 1; }
-          rm -f "$base/orbit.next" && ln -s "releases/$1" "$base/orbit.next" && mv -T "$base/orbit.next" "$base/orbit"
+          release=/home/orbit/releases/$1
+          [ "$(cat "$release/REVISION" 2>/dev/null)" = "$2" ] || { echo "gateway.release_not_prepared: release $1 is not sealed" >&2; exit 1; }
+          generations=$(runuser -u orbit -- php8.5 "$release/apps/gateway/artisan" gateway:release:cleanup --no-interaction | jq -ce .generations) \
+            || { echo "gateway.release_cleanup_unreadable: the release cleanup generations cannot be read" >&2; exit 1; }
+          "$release/bin/gateway-rollback" "$1" >&2
+          [ -z "$3" ] || systemctl start "$3"
+          printf '%s\n' "$generations"
         - sh
         - ${{ inputs.intent.id }}
         - ${{ inputs.intent.sha }}
-    # The new release renders and publishes its Caddyfile, PHP-FPM pool and units, and starts Horizon.
-  - name: Publish runtime files
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Switch the release, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "gateway-release-serve-" + string(inputs.node_id) }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        timeoutSec: 1860
-        argv: [/usr/bin/timeout, '1800', /bin/sh, -c, 'cd /home/orbit/orbit/apps/gateway && exec php8.5 artisan gateway:release:handoff --phase=serve --no-interaction', sh]
+        - ${{ inputs.intent.horizon_unit }}
+    # A failed check fails no run by itself: the switch-back after it does, so its marker reaches the Gateway.
   - name: Verify the Gateway
     labels: {role: swamp}
-    dependsOn: [{step: Publish runtime files, condition: {type: succeeded}}]
+    allowFailure: true
+    dependsOn: [{step: Switch the release, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -141,53 +136,60 @@ jobs:
             || { echo "gateway.release_verify_failed: status is not ok on $1" >&2; exit 1; }
         - sh
         - ${{ inputs.intent.sha }}
-    # The scheduler finishes its commands and starts on the release; then cleanups resume, other Processes restart,
-    # the Gateway Node's agent moves to the release pin, and OPcache resets.
-  - name: Move the scheduler
+    # After a failed check, the same script from the new release puts the previous release back: links, PHP-FPM and
+    # running services. It then fails the run with its marker; a switch-back that fails reports its own error instead.
+  - name: Switch back
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
+    dependsOn: [{step: Verify the Gateway, condition: {type: failed}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "gateway-release-schedule-" + string(inputs.node_id) }}'
+      behaviorName: '${{ "gateway-release-back-" + string(inputs.node_id) }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
         hosts: name:target
-        timeoutSec: 3760
-        argv: [/usr/bin/timeout, '3700', /bin/sh, -c, 'cd /home/orbit/orbit/apps/gateway && exec php8.5 artisan gateway:release:handoff --phase=schedule --no-interaction', sh]
-  - name: Switch the web build
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Move the scheduler, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "gateway-release-webswitch-" + string(inputs.node_id) }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        timeoutSec: 60
+        sudo: true
+        timeoutSec: 180
         argv:
         - /usr/bin/timeout
-        - '30'
+        - '150'
         - /bin/sh
         - -c
         - |
-          set -eu
-          web=/home/orbit/web
-          [ -f "$web/releases/$1/index.html" ] || { echo "gateway.release_web_build_missing: web build $1 is not installed" >&2; exit 1; }
-          rm -f "$web/.current.next" && ln -s "releases/$1" "$web/.current.next" && mv -T "$web/.current.next" "$web/current"
+          "/home/orbit/releases/$1/bin/gateway-rollback" "$2" >&2 \
+            && echo "gateway.release_switched_back: the check failed; release $2 is current again" >&2
+          exit 1
         - sh
         - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.previous }}
+    # Best effort: the scheduler restart paused the release cleanups; they resume once a reconciliation finds no
+    # differences. One that stays paused fails this step and keeps its own status; the release stays live.
+  - name: Resume document cleanup
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn:
+    - {step: Verify the Gateway, condition: {type: or, conditions: [{type: succeeded}, {type: failed}]}}
+    - {step: Switch back, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-cleanup-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 360
+        argv: [/usr/bin/timeout, '300', php8.5, /home/orbit/orbit/apps/gateway/artisan, gateway:release:cleanup, --no-interaction,
+          '${{ "--before=" + steps["Switch the release"].outputs.stdout }}']
     # Best effort: keep the newest sealed releases, the current and the previous one; a later release retries.
   - name: Prune old releases
     labels: {role: swamp}
     writes: true
     allowFailure: true
-    dependsOn: [{step: Switch the web build, condition: {type: succeeded}}]
+    dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

@@ -5,19 +5,18 @@ description: "Release one commit to the active Gateway, then follow it until it 
 ---
 
 ```bash
-orbit gateway:release:deploy [<commit>] [--swamp] [--json]
+orbit gateway:release:deploy [<commit>] [--json]
 ```
 
 | Argument | Meaning |
 | --- | --- |
-| `commit` | A hex SHA of 7 to 40 characters. In a terminal, an omitted value is asked for. |
-| `--swamp` | Run the release as one Swamp workflow instead of the release unit. Needs the full 40-character SHA. |
+| `commit` | The full 40-character SHA. In a terminal, an omitted value is asked for. |
 
-The Gateway queues the release and runs it in its own unit. The CLI reads the record every 2 seconds and shows each step as the Gateway records it: queue, prepare, migrate, switch, hand off, verify, move the scheduler, and publish the web app. The tree ends with the outcome, and the record id and request ID follow it. JSON prints the final record. The command exits 0 only when the outcome is `verified`.
+The Gateway checks the commit's agent pin and selects its web build. It then starts the `gateway.release` run on Node 209. Swamp builds, migrates, loads Swamp and switches the release on the Gateway Node. A failed check switches back to the previous release. Automatic releases run the same way. [Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run) describes the run.
+
+The CLI reads the record every 2 seconds until the run ends. The record shows the run's Operation under `phases.run` and gets its outcome from the run's end. JSON prints the final record. The command exits 0 only when the outcome is `verified`.
 
 Interrupting the CLI stops following, not the release. Read the outcome later with `gateway:release:show <id>`. The CLI keeps reading while the Gateway reloads. It gives up with `gateway.release_follow_failed` after 30 failed reads in a row, or once 65 minutes have passed, whatever the reads return.
-
-With `--swamp`, the Gateway checks the commit's agent pin and selects its web build, then starts the `gateway.release` run on Node 209. Swamp builds, migrates, loads Swamp and switches the release on the Gateway Node. The record shows the run's Operation under `phases.run` and gets its outcome from the run's end. [Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run) describes it.
 
 ## How it works
 
@@ -27,9 +26,8 @@ With `--swamp`, the Gateway checks the commit's agent pin and selects its web bu
 
 | Error code | Meaning |
 | --- | --- |
-| `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters. |
-| `gateway.release_in_progress` | Another release step runs, or another requested release waits to start. |
+| `gateway.release_commit_invalid` | The commit is not a full 40-character SHA. |
+| `gateway.release_in_progress` | Another release is queued or running. |
 | `gateway.release_not_adopted` | The Gateway does not run from a release yet. |
-| `gateway.release_unit_failed` | systemd did not start the release unit. |
-| `gateway.release_web_build_missing` | With `--swamp`: CI published no web build for the commit. |
+| `gateway.release_web_build_missing` | CI published no web build for the commit. |
 | `gateway.release_follow_failed` | The CLI stopped reading the record. The release continues on the Gateway. |

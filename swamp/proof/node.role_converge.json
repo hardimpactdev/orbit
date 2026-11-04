@@ -1,10 +1,6 @@
 {
   "kind": "node.role_converge",
-  "workflow": "operation-node-role-add",
-  "topology": "minimal",
-  "clean": false,
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": 30,
+  "defaults": "node-role-add-defaults.json",
   "prepare": [
     {
       "method": "POST",
@@ -30,9 +26,6 @@
       "role": "app-dev",
       "converge_existing": true
     }
-  },
-  "expect": {
-    "status": "succeeded"
   },
   "phases": [
     {

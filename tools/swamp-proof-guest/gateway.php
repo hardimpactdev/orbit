@@ -41,6 +41,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
@@ -123,7 +124,10 @@ if ($argv[1] === 'seed') {
     foreach ($targets as $target) {
         $nodes[$target->name] = $target->id;
     }
-    echo json_encode(['nodes' => $nodes, 'swamp_route' => $swamp->id]), PHP_EOL;
+    $firewall = app(NodeFirewallRuleCatalog::class);
+    $gatewayRules = [...$firewall->desiredBaseline($gateway), ...$firewall->forRole($gateway, App\Domain\Nodes\RoleName::Gateway)];
+    echo json_encode(['nodes' => $nodes, 'swamp_route' => $swamp->id,
+        'gateway_firewall' => array_map(static fn ($rule): array => $rule->arguments, $gatewayRules)]), PHP_EOL;
     exit(0);
 }
 

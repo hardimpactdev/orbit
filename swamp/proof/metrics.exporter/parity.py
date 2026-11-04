@@ -20,6 +20,13 @@ def check(condition, message):
 
 
 check(operation['status'] == 'succeeded', f'the Operation is {operation["status"]} ({operation.get("error_code")})')
+commands = operation['input']['service']['firewall_commands']
+check(len(commands) == 6, 'the Gateway captures both exporters and both service rule pairs')
+for command, port, comment in zip(commands[:2], ['9100', '9102'], ['orbit:metrics-node-exporter', 'orbit:metrics-cadvisor']):
+    prefix = ['ufw'] if mode == 'enable' else ['ufw', '--force', 'delete']
+    check(command == [*prefix, 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', operation['input']['metrics_address'],
+                      'to', operation['input']['exporter_address'], 'port', port, 'comment', comment],
+          f'the canonical {comment} command retains its complete identity')
 address = operation['input']['exporter_address']
 targets = node('target', 'curl', '--silent', '--fail', 'http://127.0.0.1:9090/api/v1/targets?state=active')
 listed = f'"{address}:9100"' in targets

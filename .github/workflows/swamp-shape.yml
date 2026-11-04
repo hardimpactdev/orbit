@@ -60,8 +60,18 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
           python3 -m venv "$RUNNER_TEMP/shape-tools"
-          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1 shfmt-py==4.2.0
+          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1 shfmt-py==4.2.0 ansible-lint==26.10.1 -r ansible/requirements.txt
           echo "$RUNNER_TEMP/shape-tools/bin" >> "$GITHUB_PATH"
+      - name: Check Ansible phases
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        env:
+          ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/ansible-collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml -p "$ANSIBLE_COLLECTIONS_PATH"
+          ansible-lint ansible/operation-node-role-add.yml
+          python3 -I tests/ansible_inputs_test.py
+          python3 -I tests/ansible_firewall_test.py
+          ruff check ansible/build_vars.py tests/ansible_inputs_test.py tests/ansible_firewall_test.py
       - name: Check shape regression fixtures
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
@@ -69,7 +79,8 @@ jobs:
           deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
           deno test -A bin/swamp-liveness_test.ts
           deno test -A bin/source_test.ts
-          deno test -A tests/operation_schedules_test.ts
+          deno test -A --ignore=tests/repository_analysis_producer_test.ts,tests/metrics_exporter_firewall_test.ts,tests/native_host_method_test.ts tests/
+          deno test -A extensions/behaviors/automatic-deploy extensions/behaviors/composer-maintenance extensions/behaviors/js-maintenance extensions/behaviors/projects
           deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-shape-python_test.ts
           deno test --allow-env --allow-read --allow-run --allow-write bin/validate-swamp-workflows_test.ts
           deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-base-policy_test.ts

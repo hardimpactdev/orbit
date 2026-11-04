@@ -11,83 +11,93 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: firewall:allow 5432<br/>--node=7
+  CLI->>GW: firewall:allow PORT<br/>--node=NODE
   %%> Command:
-  %%> - `orbit firewall:allow 5432 --node=7`
+  %%> - `orbit firewall:allow PORT --node=NODE`
   %%> - syntax: `<port> --node=ID [--from=SOURCE] [--protocol=tcp|udp] [--label=TEXT]`
   %%> Input:
-  %%> - the port as the argument: a number such as `5432`, or a range such as `8000:8100`
+  %%> - the destination port or port range
   %%> - the Node, and optionally the source address and the protocol
   %%> - optionally a label or short description
   %%> Not accepted:
   %%> - service names such as `postgres` as the port
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, record the rule<br/>rule: provisioning · task #5130
+  Note over GW: Validate, record the rule
   %%> Requirements:
-  %%> - your Node has an access grant to Node 7
-  %%> - Node 7 is an active Linux Node
+  %%> - the calling Node has an access grant to the target Node
+  %%> - the target is an active Linux Node
   %%> - the port and source are valid
-  %%> - Node 7 has no rule yet for the same port, protocol and source
   %%> - no opposite rule for the same port, protocol and source; an allow and a deny for exactly the same scope is refused (`firewall.rule_conflict`)
+  %%> - no other firewall change runs on the target; the Gateway holds one lock per Node
   %%> Allowed:
-  %%> - overlapping rules with a different scope, for example deny `5432` from anywhere plus allow `5432` from one IP
-  %%> - no other firewall change runs on Node 7; the Gateway holds one lock per Node
+  %%> - repeat an active or failed allow rule: reuse its record and check the Node in a new task
+  %%> - overlapping rules with a different scope, such as a broad deny with an allow for one source
   %%> Result:
-  %%> - the rule for port 5432 recorded with status provisioning
-  %%> - task #5130 recorded with the full intent
+  %%> - the new or reused rule is recorded with status provisioning
+  %%> - a task is recorded with the full intent
   %%> - nothing has happened on the Node yet
   GW->>SW: Start run, full intent<br/>operation-firewall-direct
   %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
+  %%> - starts one Swamp run
   %%> Inputs:
   %%> - the rule as exact ufw lines: port, protocol, source, direction
-  %%> - Node 7's address and SSH host keys; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task #5130
+  %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
-  %%> - the task number, at once
+  %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
   %%> How:
-  %%> - Swamp reaches Node 7 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> - a Swamp worker reaches the target over SSH with the official `@swamp/ssh` behavior
   %%> - refuses an inactive firewall (`firewall.backend_inactive`) before any change
-  Note over SW: Plan the changes<br/>typed step on 209
+  Note over SW: Plan the changes
   %%> What it does:
   %%> - turns ufw's numbered rows into the ufw commands this rule needs, in order
   %%> - an insert position counts the rows as they will be after the earlier commands
+  %%> - plans no changes when every expected line already exists in the correct position
   %%> Order:
   %%> - narrower rules go above broader ones, allow or deny, so an exception such as one IP wins over a rule for anywhere
   %%> - ufw stops at the first match, so Orbit sets this order on every change
   %%> - all operator rules sit above Orbit's own broad rules, such as WireGuard peer trust, so a deny on a port also applies to WireGuard peers
   %%> Why typed, not cfgmgmt:
   %%> - `@swamp/cfgmgmt/firewall` cannot insert at a position (Lab #4334) or name a port range
-  SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
-  %%> What it does:
-  %%> - adds one ufw allow line per port, protocol and family, commented with its label
-  %%> - inserts each line at the position the plan names; an existing identical, well-placed line is left as it is
-  %%> - moves a line that sits in the wrong place: deletes it, then inserts it again
-  %%> - runs the planned commands one at a time; nothing is copied to the Node
+  alt changes needed
+    SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
+    %%> What it does:
+    %%> - adds one ufw allow line per port, protocol and family, commented with its label
+    %%> - inserts each line at the position the plan names; an existing identical, well-placed line is left as it is
+    %%> - moves a line that sits in the wrong place: deletes it, then inserts it again
+    %%> - runs the planned commands one at a time; nothing is copied to the Node
+  else already applied
+    Note over SW: Skipped — already applied<br/>firewall.rule_exists
+    %%> Result:
+    %%> - the plan contains no changes
+    %%> - the final read and check still run before the task can succeed
+  end
   SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
-  Note over SW: Check the rules<br/>typed step on 209
+  Note over SW: Check the rules
   %%> What it does:
   %%> - checks every expected line is present, in narrow-first order
   %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
   %%> Why:
   %%> - the rule only counts as active when ufw shows it
-  alt every line is present
-    N-->>SW: ufw lines present
+  alt rules present and ordered
+    N-->>SW: ufw lines in order
     %%> Returns:
-    %%> - the check passed for every line
+    %%> - the check passed for every line and its narrow-first order
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record result<br/>rule: active · task succeeded
+    Note over GW: Record result
     %%> Result:
-    %%> - the rule for port 5432 becomes active
-    %%> - task #5130 succeeds
+    %%> - the rule becomes active
+    %%> - the task succeeds
+    %%> - if no changes were needed, reports `Skipped — already applied (firewall.rule_exists)`
+    %%> - the skip reason is part of the successful result in human and machine output, not an error
   else adding or checking fails
     N--xSW: exit ≠ 0
     %%> When:
@@ -95,10 +105,10 @@ sequenceDiagram
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
-    Note over GW: Mark the rule failed<br/>task failed · rerun after a fix
+    Note over GW: Mark the rule failed
     %%> Result:
-    %%> - the rule for port 5432 is marked failed, so you can see it
-    %%> - task #5130 fails
+    %%> - the rule is marked failed, so you can see it
+    %%> - the task fails
     %%> On the Node:
     %%> - lines added before the failure stay; there is no rollback
     %%> - that is safe: the rule is marked failed, and a rerun skips lines that already exist
@@ -106,7 +116,7 @@ sequenceDiagram
     %%> - run the same command again after fixing the cause; it is a new task
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5130
+    CLI->>GW: operation:show TASK
     %%> What it does:
     %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result

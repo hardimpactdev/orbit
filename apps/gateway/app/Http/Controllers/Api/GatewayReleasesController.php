@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\GatewayReleases\AdmitSwampGatewayReleaseAction;
 use App\Actions\GatewayReleases\ShowGatewayReleaseAction;
-use App\Actions\GatewayReleases\StartGatewayReleaseDeployAction;
 use App\Actions\GatewayReleases\StartGatewayReleaseRollbackAction;
 use App\Data\GatewayReleases\GatewayReleaseData;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -37,9 +36,9 @@ final class GatewayReleasesController extends Controller
         return $this->respond($request, GatewayReleaseData::fromModel($action->find($release))->toArray());
     }
 
-    public function store(DeployGatewayReleaseRequest $request, StartGatewayReleaseDeployAction $action, AdmitSwampGatewayReleaseAction $swamp): JsonResponse
+    public function store(DeployGatewayReleaseRequest $request, AdmitSwampGatewayReleaseAction $action): JsonResponse
     {
-        $release = $request->swamp() ? $swamp->execute($request->commit()) : $action->execute($request->commit());
+        $release = $action->execute($request->commit());
 
         return $this->respond($request, GatewayReleaseData::fromModel($release)->toArray(), 202);
     }

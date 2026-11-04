@@ -15,12 +15,12 @@ use App\Domain\GitHub\GreenCommitResolver;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
-use LogicException;
 use Throwable;
 
 /**
@@ -65,10 +65,11 @@ final readonly class RunAutomaticGatewayReleaseAction
         private GatewayReleaseLayout $layout,
         private GatewayReleaseSource $source,
         private GreenCommitResolver $resolver,
-        private DeployGatewayReleaseAction $deploy,
+        private AdmitSwampGatewayReleaseAction $admit,
         private GatewayReleaseAlerts $alerts,
         private BranchHeadReader $heads,
         private GatewayReleaseRecorder $recorder,
+        private GatewayReleaseRetry $retry,
     ) {}
 
     /** @return Tick */
@@ -167,25 +168,37 @@ final readonly class RunAutomaticGatewayReleaseAction
         return $this->release($green->sha, $deployed);
     }
 
-    /** @return Tick */
+    /**
+     * Admits the newest green commit as the `gateway.release` Swamp run; its native terminal ends the record. Until the
+     * commit's agent delivery is published, the tick waits; the command checks again every
+     * {@see self::PublicationCheckSeconds} seconds.
+     *
+     * @return Tick
+     */
     private function release(string $sha, string $deployed): array
     {
         try {
-            $this->deploy->execute($sha, trigger: 'auto');
+            $record = $this->admit->execute($sha, trigger: 'auto');
         } catch (GatewayReleaseException $exception) {
             if ($exception->errorCode === 'gateway.release_in_progress') {
                 return $this->stalled($deployed, 'busy', null, $exception->errorCode, $exception->getMessage(), $sha);
             }
-
-            $record = $this->record($sha);
-            if ($exception->errorCode === 'gateway.release_agent_delivery_unavailable' && $record?->awaitingPublication()) {
-                return $this->waitingForPublication($record, $deployed, $exception);
+            if ($exception->errorCode === 'gateway.release_agent_delivery_unavailable') {
+                return $this->stalled($deployed, 'waiting_for_agent_delivery', null, $exception->errorCode, $exception->getMessage(), $sha);
             }
+            // A refusal before the run, such as an expired web build, is a failed attempt: the resolver leaves the
+            // commit out, or tries it again under the retry limit.
+            $record = $this->lock->run(function () use ($sha, $exception): ?GatewayRelease {
+                $record = $this->recorder->begin('auto', $sha);
+                $this->recorder->fail($record, $exception, retryable: $this->retry->retryable($exception->errorCode, $sha, $record?->id),
+                    durationMs: 0, phase: $exception->step);
 
+                return $record?->refresh();
+            });
             if ($record instanceof GatewayRelease && ! $record->retryable) {
                 $this->automation->clearStall();
 
-                return $this->automation->recordTick($record->outcome === 'paused' ? 'paused' : 'failed', $sha, $record->id, $exception->errorCode, $exception->getMessage());
+                return $this->automation->recordTick('failed', $sha, $record->id, $exception->errorCode, $exception->getMessage());
             }
 
             return $this->stalled($deployed, 'failed', $record?->id, $exception->errorCode, $exception->getMessage(), $sha);
@@ -197,25 +210,7 @@ final readonly class RunAutomaticGatewayReleaseAction
 
         $this->automation->clearStall();
 
-        return $this->automation->recordTick('released', $sha, $this->record($sha)?->id);
-    }
-
-    /** @return Tick */
-    private function waitingForPublication(GatewayRelease $record, string $deployed, GatewayReleaseException $exception): array
-    {
-        $publication = $record->publicationPhase() ?? throw new LogicException('The queued release has no publication wait.');
-        $publication['checked_at'] = CarbonImmutable::now('UTC')->toIso8601String();
-        if (! $publication['alerted'] && CarbonImmutable::parse($publication['since'])->lte(CarbonImmutable::now()->subMinutes(self::PublicationWaitMinutes))) {
-            $this->alerts->stalled($deployed, sprintf(
-                'Release %s has waited for published agent delivery since %s: %s',
-                $record->requested, $publication['since'], $exception->getMessage(),
-            ), 'publication:'.$record->requested, $exception->errorCode);
-            $publication['alerted'] = true;
-        }
-        $record->forceFill(['phases' => ['publication' => $publication], 'message' => $exception->getMessage()])->save();
-        $this->automation->clearStall();
-
-        return $this->automation->recordTick('waiting_for_agent_delivery', $record->requested, $record->id, message: $exception->getMessage());
+        return $this->automation->recordTick('started', $sha, $record->id);
     }
 
     /**

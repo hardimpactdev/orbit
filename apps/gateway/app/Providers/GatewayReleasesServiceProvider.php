@@ -17,6 +17,7 @@ use App\Console\Commands\HandoffGatewayReleaseCommand;
 use App\Console\Commands\InspectGatewayReleaseProcessCommand;
 use App\Console\Commands\ListGatewayReleasesCommand;
 use App\Console\Commands\PrepareGatewayReleaseCommand;
+use App\Console\Commands\ResumeGatewayReleaseCleanupCommand;
 use App\Console\Commands\RollbackGatewayReleaseCommand;
 use App\Console\Commands\RunGatewayReleaseCommand;
 use App\Console\Commands\SettleGatewayReleaseCommand;
@@ -283,6 +284,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             DeployGatewayReleaseCommand::class,
             FinalizeGatewayReleaseCommand::class,
             HandoffGatewayReleaseCommand::class,
+            ResumeGatewayReleaseCleanupCommand::class,
             InspectGatewayReleaseProcessCommand::class,
             ListGatewayReleasesCommand::class,
             PrepareGatewayReleaseCommand::class,

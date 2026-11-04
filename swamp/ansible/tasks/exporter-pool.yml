@@ -1,0 +1,55 @@
+---
+- name: Read the dedicated FPM master
+  ansible.builtin.stat: { path: "/etc/orbit/php-fpm/{{ pool.php_runtime.user }}/generated/php-fpm.conf" }
+  register: exporter_master
+
+- name: Enable the existing FPM master's status pool
+  when: exporter_master.stat.exists
+  vars: { runtime: "{{ pool.php_runtime }}", generated: "/etc/orbit/php-fpm/{{ runtime.user }}/generated" }
+  block:
+    - name: Read the current application
+      ansible.builtin.stat: { path: "{{ runtime.home }}/current" }
+      register: exporter_application
+    - name: Read the published status pool
+      ansible.builtin.stat: { path: "{{ generated }}/pool.conf", checksum_algorithm: sha256 }
+      register: current_pool
+    - name: Keep status pool ownership and permissions
+      ansible.builtin.file: { path: "{{ generated }}/pool.conf", owner: root, group: root, mode: "0644" }
+      when: current_pool.stat.exists
+    - name: Validate and publish a changed status pool
+      when: current_pool.stat.checksum | default('') != desired_pool | hash('sha256')
+      vars:
+        desired_pool: "{{ runtime.configuration.pool if exporter_application.stat.exists else runtime.configuration.initial_pool }}"
+      block:
+        - name: Create the pool validation folder
+          ansible.builtin.tempfile: { state: directory, suffix: -orbit-role-pool }
+          register: pool_candidate
+        - name: Stage the pool and its full master
+          ansible.builtin.copy:
+            dest: "{{ pool_candidate.path }}/{{ item.name }}"
+            content: "{{ item.content }}"
+            mode: "0600"
+          loop:
+            - { name: pool.conf, content: "{{ desired_pool }}" }
+            - name: php-fpm.conf
+              content: "{{ runtime.configuration.main | replace(generated ~ '/pool.conf', pool_candidate.path ~ '/pool.conf') }}"
+          loop_control: { label: "{{ item.name }}" }
+        - name: Validate the candidate FPM master
+          ansible.builtin.command:
+            argv: ["/usr/sbin/php-fpm{{ runtime.version }}", -t, --fpm-config, "{{ pool_candidate.path }}/php-fpm.conf"]
+          environment: { PHP_INI_SCAN_DIR: "/etc/php/{{ runtime.version }}/fpm/conf.d:{{ generated }}" }
+          changed_when: false
+        - name: Publish the validated status pool
+          ansible.builtin.copy:
+            dest: "{{ generated }}/pool.conf"
+            content: "{{ desired_pool }}"
+            owner: root
+            group: root
+            mode: "0644"
+        # Each include validates and reloads its own master before proceeding to the next pool.
+        - name: Reload the changed FPM master # noqa no-handler
+          ansible.builtin.systemd: { name: "orbit-{{ runtime.user }}-php{{ runtime.version }}-fpm.service", state: reloaded }
+      always:
+        - name: Remove the pool validation folder
+          ansible.builtin.file: { path: "{{ pool_candidate.path }}", state: absent }
+          when: pool_candidate is defined and pool_candidate.path is defined

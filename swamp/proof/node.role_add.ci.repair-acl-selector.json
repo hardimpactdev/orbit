@@ -1,0 +1,16 @@
+{
+  "kind": "node.role_add.ci.repair-acl-selector",
+  "defaults": "node-role-add-defaults.json",
+  "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "ci-runner", "converge_existing": true}},
+  "parity": ["swamp/proof/node.role_add/parity.py", "peer", "ci-runner"],
+  "prepare": [],
+  "before_node": {
+    "peer": [
+      [
+        "python3",
+        "-c",
+        "import json,subprocess; state=json.loads(subprocess.check_output(['incus','query','/1.0/network-acls/orbit-ci-egress'])); state['egress'][0]['source']='192.0.2.1'; subprocess.run(['incus','network','acl','edit','orbit-ci-egress'],input=json.dumps(state).encode(),check=True)"
+      ]
+    ]
+  }
+}

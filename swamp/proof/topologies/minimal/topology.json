@@ -1,6 +1,6 @@
 {
   "name": "minimal",
-  "version": 18,
+  "version": 19,
   "gateway": "task-vm",
   "websocket": true,
   "network": {
@@ -34,6 +34,7 @@
     },
     {
       "key": "peer",
+      "agent": true,
       "address": "10.231.0.12",
       "memory": "2GiB",
       "roles": [

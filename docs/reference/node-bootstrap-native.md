@@ -37,10 +37,7 @@ A Node that does not accept the `swamp` role identity yet needs Node bootstrap f
 
 ## Shared public role prerequisites
 
-`swamp/extensions/behaviors/operations/node-role-command/steps.ts` supplies placed steps for an owning native role or enrollment workflow. The owner supplies complete official SSH globals with a host named `target`; every returned step runs on209. `roleAccountSteps(name, userExpr, globalArgs, dependency?)` reads the account with two official SSH execs, `getent passwd <user>` and `id -gn <user>`, and decodes `{user,group,home}` on 209. `roleCaddyPackageStep(name, packageExpr, sshExpr, dependency)` calls the shared `node-caddy-package` workflow with `AgentCaddyPackage::nativeInput` (`{url,path,sha256,minimum_version}`): official cfgmgmt `fetch` checks the SHA-256 pin, apt installs the package below the floor, and the floor is proven after. No step ships a script.
-
-`rolePackageSteps(name, prerequisitesExpr, globalArgs, dependency)` accepts the admitted `{releases,packages}` object and runs one operating-system package action after its dependency. It preserves installed packages and uses the captured supported release policy. The final step returns official SSH outputs. The owner retains runtime, settings, services, publication, failure ordering and restoration. These exports create no Operation, callback or credential.
-
+Role addition applies packages and Caddy through its [Ansible prerequisites phase](/reference/node-provisioning#role-prerequisites). The Gateway captures the managed account and pinned SSH identity; no workflow discovers a replacement account. Enrollment keeps its native bootstrap steps.
 
 Native role addition calls the shared Tool Manager resource plan from Node 209. A manager package already at the admitted version is kept. Its configuration and installed version still pass the role end checks. Node convergence retains ownership of the observer and Orbit CLI.
 
@@ -66,3 +63,5 @@ Official cfgmgmt version `2026.10.27.1` has no host-key connection input or loca
 ### Topology proof
 
 The topology proof showed the writer repairs an empty mode-0644 file to the exact admitted public pins at mode 0600, owned by the worker account. The Gateway records the matching digest and successful native step. It makes no production uptake or concurrent-publication claim.
+
+Tool Setup accepts optional artifact candidate lists before the Gateway emits them. Its consumer still uses `url` until the producer release is live. Follow the [native candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror); never activate a required intent field in its producer release.

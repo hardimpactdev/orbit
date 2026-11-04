@@ -24,9 +24,11 @@ orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --label="of
 orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 ```
 
-A running Operation keeps its Node firewall target and returns `operation.target_busy` to another admission. To change a rule, remove it and create it again. Human output follows the UFW step and reports `Firewall rule succeeded.` with the Operation and request IDs.
+Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`. To change an active rule, remove it and create it again. The CLI follows progress and reports the result with the Operation and request IDs.
 
-Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
+Narrower rules take precedence, so an allow for one source can override a broader deny. See [rule ordering](/cli/firewall#order-on-the-node).
+
+Repeating the command skips entries already in the correct position and applies any missing changes. If the whole rule is already correct, the command succeeds with `Skipped — already applied (firewall.rule_exists)`. A failed command does not undo changes already applied on the Node.
 
 ## How it works
 

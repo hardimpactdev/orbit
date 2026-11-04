@@ -1,0 +1,7 @@
+{
+  "kind": "node.role_add.swamp.no-drift",
+  "defaults": "node-role-add-defaults.json",
+  "observer_wait_seconds": 0,
+  "request": {"method": "POST", "path": "nodes/${node.gateway}/roles", "body": {"role": "swamp", "converge_existing": true}},
+  "parity": ["swamp/proof/node.role_add/parity.py", "gateway", "swamp", "no-drift"]
+}

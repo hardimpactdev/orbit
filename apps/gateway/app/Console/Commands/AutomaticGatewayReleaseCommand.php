@@ -10,8 +10,8 @@ use Illuminate\Support\Sleep;
 
 /**
  * One tick of automatic Gateway releases, started every minute by `orbit-gateway-release.timer`.
- * It prints the tick as one JSON object. Only a release that failed exits 1; a quiet skip, such as
- * disabled, paused, busy, up to date, or a GitHub error, exits 0.
+ * It prints the tick as one JSON object. A pause for a manual deploy, or a run that did not start, exits 1; a quiet
+ * skip, such as disabled, busy, up to date, or a GitHub error, exits 0.
  */
 final class AutomaticGatewayReleaseCommand extends GatewayReleaseCommand
 {
