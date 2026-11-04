@@ -2,6 +2,7 @@
   "name": "baseline",
   "version": 1,
   "gateway": "standalone",
+  "converge_gateway_roles": ["gateway"],
   "websocket": true,
   "network": {"name": "oeproof", "gateway": "10.231.0.1", "prefix": 24},
   "operator": {"address": "10.231.0.2"},

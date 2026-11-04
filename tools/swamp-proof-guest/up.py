@@ -507,6 +507,20 @@ def request(path, body, seconds=600):
         raise RuntimeError(f'{path} did not succeed: ' + json.dumps({k: reply.get(k) for k in ('http_status', 'operation', 'job_errors')})[:1500])
 
 
+def operation_worker():
+    """A standalone baseline serves real API calls without the fixture driver draining its queue."""
+    if TOPOLOGY['gateway'] != 'standalone':
+        return
+    name = 'orbit-baseline-operations'
+    Path(f'/etc/systemd/system/{name}.service').write_text(
+        '[Unit]\nDescription=Baseline Gateway operation projection\nAfter=network.target\n\n'
+        f'[Service]\nUser={ACCOUNT}\nGroup={ACCOUNT}\nWorkingDirectory={GATEWAY}\n'
+        f'ExecStart=/usr/bin/php {GATEWAY}/artisan queue:work gateway --queue=operations --sleep=1 --tries=1 --timeout=1700\n'
+        'Restart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n')
+    run(['systemctl', 'daemon-reload'])
+    run(['systemctl', 'enable', '--now', name])
+
+
 @step('realtime')
 def realtime(ids):
     """Reverb, the agent-view subscriber and a running Node agent (version 11).
@@ -552,6 +566,7 @@ def realtime(ids):
             run(['incus', 'file', 'push', '--mode', '0755', str(delivery), f'{node["key"]}/usr/local/bin/orbit-agent'])
             run(['incus', 'exec', node['key'], '--', 'systemctl', 'start', 'orbit-agent'])
         run(['incus', 'exec', node['key'], '--', 'systemctl', 'is-active', '--quiet', 'orbit-agent'])
+    operation_worker()
 
 
 @step('roles')
@@ -561,6 +576,8 @@ def provision_roles(ids):
         if node.get('provision_roles'):
             for role in node.get('roles', []):
                 request(f'nodes/{ids[node["key"]]}/roles', {'role': role}, seconds=1800)
+    for role in TOPOLOGY.get('converge_gateway_roles', []):
+        request(f'nodes/{ids["gateway"]}/roles', {'role': role, 'converge_existing': True}, seconds=1800)
 
 
 def main():
