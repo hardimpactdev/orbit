@@ -42,6 +42,9 @@ Choose the entry point for the work at hand.
 | Merge an approved PR | [merging-pull-requests](.agents/skills/merging-pull-requests/SKILL.md) |
 | Create or change a command's Swamp flow, or review a flow PR | [swamp-flow](.agents/skills/swamp-flow/SKILL.md) |
 | Write or review the Ansible part of a flow | [ansible-phase](.agents/skills/ansible-phase/SKILL.md) |
+| Prepare a command for the pipeline: chart, docs and cases | [preparing-commands](.agents/skills/preparing-commands/SKILL.md) |
+| Take a ready command through proof, PR, CI and release | [developing-commands](.agents/skills/developing-commands/SKILL.md) |
+| Define or run a command's VM proof | [verifying-commands](.agents/skills/verifying-commands/SKILL.md) |
 
 For focused documentation work, use [writing-documentation](.agents/skills/writing-documentation/SKILL.md). For CLI design and audits, use [designing-cli-commands](.agents/skills/designing-cli-commands/SKILL.md). For real terminal recordings, use [verifying-cli-output](.agents/skills/verifying-cli-output/SKILL.md). For web UI layout on a phone and a desktop, use [verifying-web-ui](.agents/skills/verifying-web-ui/SKILL.md). For discovery on a task group's Incus topology, use [using-incus-topologies](.agents/skills/using-incus-topologies/SKILL.md). Project guidance supplies coding and testing conventions.
 

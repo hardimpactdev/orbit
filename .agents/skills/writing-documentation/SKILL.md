@@ -7,13 +7,17 @@ description: Use when writing, updating, or auditing Orbit documentation and ADR
 
 Write or check maintained pages under `docs/` against the feature's intended behavior, ADRs, code, and tests.
 
+This is Orbit's single documentation-writing skill. Other skills link here for writing rules and documentation checks; they keep only guidance specific to their task.
+
 ## Find and check the pages
 
 Use existing pages and links, or `composer docs-context` filtered by component or concept. Check accuracy, missing coverage, terminology, and consistency. During a review, return findings to the author. For requested edits, fix the affected pages.
 
 ## Write
 
-Answer the reader's question early. Use common words, short sentences, clear actors, and the terms in `docs/concepts.md`. Describe the behavior delivered by the branch in the present tense.
+Use the least text that remains factually and technically correct. Answer the reader's question early. Use common words, short sentences, clear actors, and the terms in `docs/concepts.md`. Describe the behavior delivered by the branch in the present tense.
+
+Remove repetition, filler and implementation details that do not help the reader use or understand the feature. Omit advice already implied by an error, such as "fix the problem and try again"; document recovery only when it requires a specific action or has a non-obvious consequence. Keep required conditions, defaults, limits, failure behavior and distinctions that affect the outcome. If shortening a sentence changes its meaning or hides a condition, keep the necessary detail. Explain a shared rule once on its owning page and link to it.
 
 | Location | Content |
 | --- | --- |
