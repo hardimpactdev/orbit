@@ -36,7 +36,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - A new version is proposed when it is at least 24 hours old, or right away when it fixes a known CVE.
 - Non-major updates go into one rolling batch PR. Each tool has a track (its major line); a new major gets its own PR that waits for Nick.
 - A green PR merges automatically. A red PR stays open. A person or agent excludes the broken version, and Renovate rebuilds the PR.
-- Checksums are stored only where Renovate fills them in, which is GitHub releases. Sury, Zabbly and Launchpad packages come from signed apt repositories at exact versions. Other downloads are checked against the upstream checksum file at install time.
+- Checksums are stored only where Renovate fills them in, which is GitHub releases. Sury, Zabbly and Launchpad packages are pinned as exact pool URLs with a checksum. These pools delete old builds within days, so every install fetches the copy on Orbit's artifact mirror first and falls back to the upstream URL only on a transport failure, never on a checksum mismatch. Other downloads are checked against the upstream checksum file at install time.
 
 **Tests.**
 
@@ -70,6 +70,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - One template set lives on one Incus host.
 - After a release that changes Node state, a refresh converges the templates and snapshots them. One refresh runs at a time, and the latest release wins.
 - The app-dev snapshot is the task VM image. It is copied to the other Incus hosts and to UpCloud.
+- Image creation and distribution, UpCloud included, run as plain Swamp workflows. No step calls an orbit-agent command. The existing UpCloud image workflows move into the publish step of the refresh.
 - A nightly task builds the topology from stock Ubuntu in a task VM, runs every case, and compares the result with the templates through Doctor.
   - On a pass, the fresh build replaces the templates.
   - On a failure, Pi works in that VM, on Codex Sol 6.1 at High effort. It fixes an Orbit bug with a PR, pins and excludes a broken upstream version with a PR, or reruns once and then reports.
@@ -101,8 +102,8 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
   - Release: the release run took 49 seconds on topology version 16, and the Swamp load (16 seconds) is part of it. On version 17 the release fixture failed in its preparation, because serve holds port 9418.
   - Converge: `node:converge` took 25 seconds on version 17 and 57 seconds on version 14, for one Node.
   - Release onto an existing topology with two Nodes: about 2 to 3 minutes, estimated from the runs above.
-  - Stock Ubuntu 26.04 to `app-dev`: neither step succeeded. `node:add` ran every phase in 70 seconds, and then failed its final check because of a key workaround that only the proof needs. The `app-dev` role then ran for 4 minutes 17 seconds and failed at a Tool Manager download (HTTP 404). Most of that time went to prerequisites (45 seconds), PHP packages (62 seconds) and Tool Managers (69 seconds). The failed attempts took 5 minutes 27 seconds combined. A complete successful run remains unmeasured.
-  - Estimate: `test:run` adds about 2 to 3 minutes before its cases run. The time of a full nightly build is still unverified.
+  - Stock Ubuntu 26.04 to `app-dev`: about 9 minutes, measured on 2026-11-04 with the fresh-machine `node:add` fix (#2576). `node:add` took 84 seconds and the `app-dev` role 453 seconds.
+  - Estimate: `test:run` adds about 2 to 3 minutes before its cases run. In the nightly build, each stock Node takes about 9 minutes before the cases run.
 
 ## Affects
 

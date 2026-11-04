@@ -29,6 +29,7 @@ sequenceDiagram
   %%> Why:
   %%> - task VMs boot from the app-dev template; there is no separate image build
   %%> - one template set lives on one Incus host; the other hosts and UpCloud get a copy of the image, a few minutes later
+  %%> - plain Swamp workflows, UpCloud included; no orbit-agent command
   alt refresh succeeds
     SW-->>GW: Run succeeded
     Note over GW: Record template release
