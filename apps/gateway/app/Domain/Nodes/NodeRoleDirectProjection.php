@@ -44,14 +44,14 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             $terminal = $operation->status->terminal();
             $snapshot = ValidatedData::object($operation->input['_role']);
             $raw = ValidatedData::object($data['result'] ?? []);
-            $proven = ($data['status'] ?? null) === 'succeeded' && NativeRunResult::stepStatus($raw, 'Check the role') === 'succeeded';
+            $proven = $data['status'] === 'succeeded' && NativeRunResult::stepStatus($raw, 'Check the role') === 'succeeded';
             $summary = ValidatedData::object($raw['summary'] ?? []);
             $failed = $raw['failed_step'] ?? (is_array($summary['failed_steps'] ?? null) ? ($summary['failed_steps'][0] ?? 'operation') : 'operation');
             $error = $failed === 'Require supported Ubuntu' ? 'role.os_unsupported' : ($raw['error_code'] ?? $data['error_code'] ?? 'node_role.convergence_failed');
             $result = $proven
                 ? ['assignment_id' => $snapshot['assignment_id'], 'role' => $snapshot['role'], 'created' => $snapshot['created'], 'role_proven' => true]
                 : ['failed_step' => $failed, 'error_code' => $error];
-            if (! $proven && ($data['status'] ?? null) === 'failed') {
+            if (! $proven && $data['status'] === 'failed') {
                 $data['error_code'] = $error;
             }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
