@@ -8,12 +8,9 @@ use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Domain\GatewayReleases\GatewayReleaseHold;
-use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -31,62 +28,13 @@ use Throwable;
  */
 final readonly class GatewayReleaseRecorder
 {
-    /** A queued record whose unit is not running after this long is ended as interrupted. */
-    public const int QueuedStartSeconds = 120;
-
     public function __construct(
-        private GatewayReleaseRecovery $recovery,
-        private GatewayReleaseRestore $restore,
         private ?string $orbitHome = null,
         private ?GatewayReleaseAlerts $alerts = null,
         private ?GatewayReleaseAutomation $automation = null,
-        private ?GatewayReleaseUnitStarter $units = null,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
         private ?NodeUpdateBroadcaster $nodes = null,
     ) {}
-
-    /**
-     * Records a requested release before its unit starts. A full SHA or a release id names the
-     * release at once; a short SHA is resolved by prepare.
-     */
-    public function queue(string $trigger, string $requested, ?string $sha, bool $force = false): GatewayRelease
-    {
-        return GatewayRelease::query()->create([
-            'release_id' => $sha === null ? null : GatewayReleaseCommit::id($sha),
-            'sha' => $sha,
-            'requested' => $requested,
-            'trigger' => $trigger,
-            'outcome' => GatewayRelease::Queued,
-            'force' => $force,
-            'phases' => [],
-            'duration_ms' => 0,
-        ]);
-    }
-
-    /** Keep one queued candidate while its immutable published delivery is not available yet. */
-    public function queuePublication(string $sha): GatewayRelease
-    {
-        $record = GatewayRelease::publicationWaiting();
-        if ($record instanceof GatewayRelease && $record->requested === $sha) {
-            return $record;
-        }
-        $publication = $record?->publicationPhase() ?? [
-            'outcome' => 'waiting',
-            'since' => Carbon::now('UTC')->toIso8601String(),
-            'alerted' => false,
-        ];
-        $record ??= $this->queue('auto', $sha, $sha);
-        $record->forceFill([
-            'requested' => $sha,
-            'sha' => $sha,
-            'release_id' => GatewayReleaseCommit::id($sha),
-            'phases' => ['publication' => $publication],
-            'error_code' => null,
-            'message' => null,
-        ])->save();
-
-        return $record;
-    }
 
     /** A manual release or an already-current target makes the pending candidate obsolete. */
     public function supersedePublication(?int $except = null): void
@@ -153,9 +101,8 @@ final readonly class GatewayReleaseRecorder
     }
 
     /**
-     * Ends every record whose owner is gone. The caller holds the release lock, so no release
-     * process runs: a `running` record is dead. A `queued` record is dead once its unit is not
-     * running {@see self::QueuedStartSeconds} seconds after it was queued.
+     * Ends every record whose owner is gone. The caller holds the release lock and no Swamp run owns the record, so a
+     * `running` or `queued` record is dead.
      *
      * @return list<GatewayRelease> the records it ended
      */
@@ -172,38 +119,13 @@ final readonly class GatewayReleaseRecorder
             if ($record->awaitingPublication() || $record->swampRunActive()) {
                 continue;
             }
-            if ($record->outcome === GatewayRelease::Queued) {
-                $young = $record->created_at !== null && $record->created_at->gt(Carbon::now()->subSeconds(self::QueuedStartSeconds));
-
-                if ($young || $this->units?->isActive($record->id) === true) {
-                    continue;
-                }
-            }
-
             $this->interrupt($record, $record->outcome === GatewayRelease::Queued
-                ? 'The release unit did not run the queued release.'
+                ? 'No release ran the queued record.'
                 : 'The release process ended before it recorded an outcome.');
             $settled[] = $record;
         }
 
         return $settled;
-    }
-
-    /**
-     * Ends a record whose process has exited, from the unit's `ExecStopPost`. A record that already
-     * has an outcome is left alone.
-     */
-    public function settle(GatewayRelease $record): bool
-    {
-        $record->refresh();
-
-        if ($record->finished() || $record->awaitingPublication()) {
-            return false;
-        }
-
-        $this->interrupt($record, 'The release process ended before it recorded an outcome.');
-
-        return true;
     }
 
     /** Whether a dead release had touched the schema or the current link, so it may not be retried blindly. */
@@ -260,40 +182,8 @@ final readonly class GatewayReleaseRecorder
         }
     }
 
-    /** @return array{outcome: string, original: string, path: string, sha256: string} */
-    public function protectSnapshot(?GatewayRelease $record, string $snapshot): array
-    {
-        if (! $record instanceof GatewayRelease) {
-            throw new GatewayReleaseException('hold', 'gateway.release_hold_unrecorded', 'A durable staged record is required before migration.');
-        }
-        $record->snapshot_path = $snapshot;
-
-        return $this->recovery->protect($record);
-    }
-
-    /** @param array<string, mixed> $phases */
-    public function stageIntent(?GatewayRelease $record, string $sha, string $snapshot, array $phases): void
-    {
-        if (! $record instanceof GatewayRelease) {
-            throw new GatewayReleaseException('hold', 'gateway.release_hold_unrecorded', 'A durable staged record is required before migration.');
-        }
-        $record->forceFill(['sha' => $sha, 'release_id' => GatewayReleaseCommit::id($sha), 'snapshot_path' => $snapshot,
-            'previous_release_id' => data_get($phases, 'hold.source'), 'phases' => $phases])->saveOrFail();
-        $record->refresh();
-        $this->restore->remember($record);
-        $this->writeMarker(['staged_record' => $record->id, 'release' => GatewayReleaseCommit::id($sha), 'sha' => $sha,
-            'error_code' => 'gateway.release_held', 'snapshot' => $snapshot], strict: true);
-    }
-
     public function write(DeployedGatewayRelease $release, ?GatewayRelease $record = null): GatewayRelease
     {
-        if ($release->outcome === 'verified') {
-            if (data_get($release->phases, 'hold.outcome') === 'held' && $record instanceof GatewayRelease) {
-                $this->recovery->verify($record);
-            } else {
-                GatewayReleaseHold::assertNone();
-            }
-        }
         $attributes = [
             'release_id' => $release->id,
             'sha' => $release->sha,

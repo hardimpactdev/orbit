@@ -2,14 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Processes\HorizonOperation;
 use App\Domain\Processes\ProcessControlProjection;
 use App\Domain\Processes\ProcessInstanceOperation;
 
 $control = ['workflow' => 'operation-process-control', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'runtime', 'step' => 'Verify the state', 'native' => true], 'projection' => ProcessControlProjection::class];
 
 return [
-    'process.horizon_handoff' => ['workflow' => 'operation-process-horizon-handoff', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'horizon', 'step' => 'Check Horizon runs', 'native' => true], 'projection' => HorizonOperation::class],
     'process.install_instance_definitions' => ['workflow' => 'operation-process-install-instance-definitions', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'instance', 'step' => 'result'], 'projection' => ProcessInstanceOperation::class],
     'process.update' => ['workflow' => 'operation-process-create', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-update-operation-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'process', 'step' => 'Verify it runs', 'native' => true], 'projection' => ProcessControlProjection::class],
     'process.create' => ['workflow' => 'operation-process-create', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-create-operation-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'process', 'step' => 'Verify it runs', 'native' => true], 'projection' => ProcessControlProjection::class],

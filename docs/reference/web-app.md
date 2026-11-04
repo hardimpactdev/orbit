@@ -80,7 +80,7 @@ The Gateway's Caddy site sends each request to one of these places.
 
 A path without a file returns the release's `index.html`, and the app's router shows the page. Files under `/assets/` carry content hashes, so browsers cache them as immutable. A missing file under `/assets/` returns 404 with `Cache-Control: no-cache`, never `index.html`. Every other web response has `Cache-Control: no-cache`, so a new release shows on the next load, and [open pages](#updates-to-open-pages) move to it.
 
-`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. For PHP requests and that check, Caddy resolves the checkout link for each request (`resolve_root_symlink`), so a Gateway [release](/reference/gateway-recovery#runtime-handoff) switch reaches every request at once. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
+`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. For PHP requests and that check, Caddy resolves the checkout link for each request (`resolve_root_symlink`), so a Gateway [release](/reference/gateway-recovery#release-as-a-swamp-run) switch reaches every request at once. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
 
 The app connects to Reverb at the URL that `GET /api/v1/realtime` returns. Its pusher-js client reconnects after a Reverb restart and authorizes and subscribes to each channel again, including Node presence channels. Each presence subscription rebuilds its member list; the next agent event restores the Node's online state.
 
@@ -255,7 +255,7 @@ Added to the home screen of an iPhone or iPad, the app stays in memory and navig
 
 ## Web directory
 
-The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another direct child of `/home/orbit`. The Gateway calls `gateway.prepare-web-directory` through the agent runner. The command checks the path and existing directories before any change, refuses symlinks, and prepares the web directory and its `releases` child as `orbit:caddy` with mode `0750`. Repeating the command leaves matching directories unchanged.
+The Swamp release run uses `/home/orbit/web` and installs each build under its `releases` directory. It gives the build to the `caddy` group, with directory mode `0750` and file mode `0640`. `ORBIT_GATEWAY_WEB` selects another direct child of `/home/orbit` for the manual web tooling; it does not change the release workflow's fixed path.
 
 | Path | Contents |
 | --- | --- |
@@ -264,11 +264,11 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 
 Manual `orbit:bootstrap` and `orbit:gateway-web` refuse before any host change while their native Swamp parent workflows are unavailable. `orbit:gateway-web` returns `gateway.web_unavailable`; it does not publish a site or certificate, prepare directories, reload PHP-FPM, or start services.
 
-Normal [Gateway releases](/reference/gateway-recovery#web-build) install their own web build in `releases/` and switch `current` after verification. The [runtime handoff](/reference/gateway-recovery#runtime-handoff) owns release-time service convergence.
+Normal [Gateway releases](/reference/gateway-recovery#web-build) install their own web build in `releases/` and switch `current` with the code before verification. Releases do not converge the static Caddy sites or PHP-FPM pool. A follow-up moves that work to Node convergence.
 
 ## Release a build
 
-Each Gateway release ships the web app of its commit. CI builds `apps/web` in the merge queue run and on every push to `main`, and uploads it as the artifact `web-dist-<sha>`. While it prepares the release, the Gateway downloads that artifact through its GitHub App and installs it as `releases/<commit>`. It switches `current` after the release verified, and switches it back when the release switches back. The Gateway needs no Node or Bun for this. [Web build](/reference/gateway-recovery#web-build) describes the checks, and [Deploy a release](/reference/gateway-recovery#deploy-a-release) the order.
+Each Gateway release ships the web app of its commit. CI builds `apps/web` and uploads `web-dist-<sha>`. Admission selects the artifact; the Swamp run downloads and installs it as `releases/<id>`. The activate child switches `current` with the code and switches both back when verification fails. The Gateway needs no Node or Bun for this. [Web build](/reference/gateway-recovery#web-build) describes the checks, and [Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run) the order.
 
 When the Gateway prunes a release, it removes that release's web build too. After each verified release it also removes every build that belongs to no retained release, a `bin/web-deploy` build of another commit included. It never removes the build `current` names.
 

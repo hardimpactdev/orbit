@@ -6,7 +6,6 @@ namespace Orbit\Extensions\Documents;
 
 use App\Domain\Activity\ActivityInputRedaction;
 use App\Domain\Gateway\ExactRequestBody;
-use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\Projects\ProjectRemovalHook;
 use App\Providers\ExtensionServiceProvider;
@@ -31,7 +30,6 @@ use Orbit\Extensions\Documents\Infrastructure\DocumentsExactRequestBody;
 use Orbit\Extensions\Documents\Infrastructure\DocumentsFilesystem;
 use Orbit\Extensions\Documents\Infrastructure\DocumentsProjectRemoval;
 use Orbit\Extensions\Documents\Infrastructure\DocumentsReleaseCleanup;
-use Orbit\Extensions\Documents\Infrastructure\DocumentsServiceStartHook;
 
 /** The documents extension: Project folders and versioned files ([Project Documents](/reference/project-documents)). */
 final class DocumentsServiceProvider extends ExtensionServiceProvider
@@ -56,7 +54,6 @@ final class DocumentsServiceProvider extends ExtensionServiceProvider
         $this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
         $this->contribute(GatewayReleaseCleanup::class, DocumentsReleaseCleanup::class);
         $this->contribute(ActivityInputRedaction::class, DocumentsActivityInputRedaction::class);
-        $this->contribute(GatewayServiceStartHook::class, DocumentsServiceStartHook::class);
         $this->contribute(ExactRequestBody::class, DocumentsExactRequestBody::class);
     }
 

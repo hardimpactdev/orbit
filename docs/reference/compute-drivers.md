@@ -1254,7 +1254,7 @@ Caddy renders the guard only after you configure task VMs: you enable them, or y
 
 The next Gateway release rebuilds only the Gateway Node's Caddyfile. After you set these values, run `php artisan orbit:caddy-build NODE` for every other Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. Changing or clearing `swamp_host` also reports this drift on the Node that serves the hostname until its next build. Unset these values only after every task VM is destroyed, because the next build of each Node then drops the guard.
 
-While task VMs are configured and the range or Swamp hostname is invalid, every Node Caddy build refuses at stage `render` and names the problem, so live Caddyfiles do not change. This includes the Gateway release handoff, which fails with `gateway.release_caddy_failed`. So after [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change), run `php artisan orbit:caddy-build NODE --dry-run` for the Gateway Node. It prints `Build refused:` and the problem when the range is invalid.
+While task VMs are configured and the range or Swamp hostname is invalid, every Node Caddy build refuses at stage `render` and names the problem. Live Caddyfiles stay unchanged. After [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change), run the Node Caddy build to apply a corrected range. Gateway releases do not converge Caddy sites.
 
 ### Placement invariant
 
@@ -1451,7 +1451,7 @@ One build runs at a time. A build marks its time stamp as running for two hours,
 
 ### Refresh the UpCloud template on recipe changes
 
-The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds-optional` queue when UpCloud is configured and no verified template matches the deployed recipe. The [Gateway queue](/reference/gateway-queue#queues) gives waiting required builds priority. There is no separate nightly schedule.
+Each minute, the recipe reconcile queues `RefreshUpCloudTaskVmBaseImage` on the `builds-optional` queue when UpCloud is configured and no verified template matches the deployed recipe. The [Gateway queue](/reference/gateway-queue#queues) gives waiting required builds priority. There is no separate nightly schedule.
 
 The job checks the identity again before building. A database ledger records each attempt before remote work, including failed and interrupted builds. Reconcile does not dispatch that identity again unless `task-vms:build-recipe --retry` explicitly requests it. A new identity can build automatically. A queued build that finds an earlier attempt refuses with `task_vm.image_build_superseded`; use the explicit retry command instead of redispatching it. The manual `task-vms:build-upcloud-image` command also starts an explicit attempt.
 

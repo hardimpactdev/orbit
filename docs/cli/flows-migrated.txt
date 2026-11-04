@@ -41,7 +41,6 @@ node.ssh_access_converge
 node.update
 process.create
 process.destroy
-process.horizon_handoff
 process.restart
 process.start
 process.stop

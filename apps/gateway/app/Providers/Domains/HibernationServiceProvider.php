@@ -11,14 +11,11 @@ use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
-use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Gateway\GatewayServiceCommands;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
-use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
 use App\Infrastructure\Hibernation\RemoteInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteInstanceRuntimeReadiness;
@@ -48,13 +45,6 @@ final class HibernationServiceProvider extends ServiceProvider
                 idleSeconds: Config::integer('orbit.hibernation.idle_seconds'),
                 dependencyIdleSeconds: Config::integer('orbit.hibernation.dependency_idle_seconds'),
                 agents: $app->make(AgentProcessView::class),
-            ),
-        );
-        $this->app->bind(
-            RuntimeHibernatorConverger::class,
-            static fn ($app): NativeRuntimeHibernatorConverger => new NativeRuntimeHibernatorConverger(
-                commands: $app->make(GatewayServiceCommands::class),
-                sweepSeconds: Config::integer('orbit.hibernation.sweep_seconds'),
             ),
         );
         $this->app->bind(

@@ -14,7 +14,7 @@ sequenceDiagram
   participant H as Incus host<br/>Node 13 over ssh
   Note over GW: Admit build 61<br/>host Node 13 · task #5182
   %%> Started by:
-  %%> - `php artisan task-vms:build-recipe` (also `--retry`, `--rebuild`), `task-vms:build-image 13`, the release handoff, or the per-minute recipe reconcile
+  %%> - `php artisan task-vms:build-recipe` (also `--retry`, `--rebuild`), `task-vms:build-image 13`, or the per-minute recipe reconcile
   %%> Requirements:
   %%> - Node 13 is an active task VM host in `settings.task_vms`, and its recipe is the desired one
   %%> - the agent pin matches the Gateway delivery, else the build refuses before any step

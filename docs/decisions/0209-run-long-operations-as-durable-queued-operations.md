@@ -23,7 +23,7 @@ Today the Gateway runs a deploy inside the HTTP request. `InstanceDeploymentsCon
 - **MCP holds a request open.** `instance-deploy` waits for the whole deploy and returns its events at the end. One MCP request has one 570-second deadline, so a long deploy and a batch of other tool calls compete for it.
 - **Recovery is inferred per domain.** Instance creation, Instance removal, Route removal, and interrupted Activity each have their own way to find and finish work that a killed request left behind: `InstanceCreationRecovery`, `InstanceRemovalMember`, `RouteRemovalResidue`, and `orbit:activity-finalize-interrupted`.
 
-The Gateway now has a Redis queue with Laravel Horizon. Gateway releases already follow the target pattern: a request queues a record and answers 202, a separate process runs it, and the caller shows the record until it finishes ([Deploy a release](/reference/gateway-recovery#deploy-a-release)).
+The Gateway has a Redis queue with Laravel Horizon. Gateway releases admit a Swamp run and answer 202. Swamp executes the release, and the caller follows the record until it finishes ([Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run)).
 
 ## Decision
 

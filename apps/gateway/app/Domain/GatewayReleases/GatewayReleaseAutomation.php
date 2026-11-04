@@ -131,7 +131,6 @@ final readonly class GatewayReleaseAutomation
     /** Ends a pause without a resume point, because a release went live. */
     public function clearPause(): void
     {
-        GatewayReleaseHold::assertNone();
         if ($this->settings->get($this->scope(), self::PauseKey) !== null) {
             $this->settings->delete($this->scope(), self::PauseKey);
         }

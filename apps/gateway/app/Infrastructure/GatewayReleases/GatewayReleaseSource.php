@@ -7,26 +7,27 @@ namespace App\Infrastructure\GatewayReleases;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GitHub\GitHubRepository;
+use Illuminate\Support\Facades\Process;
 
 /**
- * Where automatic releases come from: the GitHub repository of the shared release repository's
- * `origin`, the branch, and the name of the check run that must pass
- * ([Automatic releases](/reference/gateway-recovery#automatic-releases)).
+ * Where releases come from: the GitHub repository of the shared release repository's `origin`, the branch, and the
+ * name of the check run that must pass ([Automatic releases](/reference/gateway-recovery#automatic-releases)). The
+ * Gateway reads the origin from the shared repository on its own host.
  */
 final readonly class GatewayReleaseSource
 {
     public function __construct(
-        private GatewayReleaseCommands $commands,
         public string $branch,
         public string $checkName,
         private ?GatewayReleaseLayout $layout = null,
     ) {}
 
-    /** @throws GatewayReleaseException when the layout is invalid or the shared repository has no GitHub origin */
+    /** @throws GatewayReleaseException when the shared repository has no GitHub origin */
     public function repository(): GitHubRepository
     {
         $layout = $this->layout ?? GatewayReleaseLayout::fromConfig();
-        $repository = GitHubRepository::fromOrigin($this->commands->origin($layout));
+        $origin = Process::timeout(10)->run(['git', '--git-dir', $layout->repositoryPath(), 'config', '--get', 'remote.origin.url']);
+        $repository = $origin->successful() ? GitHubRepository::fromOrigin(trim($origin->output())) : null;
 
         if (! $repository instanceof GitHubRepository) {
             throw new GatewayReleaseException(

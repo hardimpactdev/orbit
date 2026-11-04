@@ -80,7 +80,7 @@ On any mismatch the JSON names the mismatch. For an unmerged pull request, the n
 
 Read the live tip version, `/up`, and gateway status. Pass when `APP_VERSION` equals the given merged SHA, `/up` is up, and gateway status is `ok`. Those are the checks recorded in ops verified-merges. Do not deploy and do not roll back.
 
-Each [Gateway release](/reference/gateway-recovery#deploy-a-release) runs the same checks as its verify step. The command stays a read-only check from outside the Gateway.
+Each [Gateway release](/reference/gateway-recovery#release-as-a-swamp-run) runs the same checks as its verify step. The command stays a read-only check from outside the Gateway.
 
 ```bash
 bin/deploy-verify --sha SHA [--up-url URL] [--status-url URL] [--dry-run] [--fixture FILE]

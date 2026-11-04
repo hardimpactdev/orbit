@@ -4,7 +4,6 @@ description: "Native Project folders, versioned files, editing, private S3 stora
 covers:
   - apps/gateway/extensions/documents/**
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/app/Infrastructure/Gateway/NativeGatewayFpmConverger.php
   - apps/gateway/artisan
   - apps/cli/app/Commands/ProjectDocuments/Concerns/GatesDocumentsExtension.php
   - apps/web/src/{api/documents.ts,extensions/documents/**,pages/ProjectMenu.tsx}
@@ -196,9 +195,9 @@ Status reports `cleanup_state` (`paused` or `running`), `cleanup_generation`, `r
 
 Keep the generation, permit, and stable execution lock under `/run/orbit/project-documents/`, in a mode-0700 directory with mode-0600 files owned by the Gateway service account. Never include them in backups. The permit names the generation and authorized report ID. Missing, malformed, stale, incorrectly owned, symlinked, or permissively readable state is invalid. Every worker reads the current files inside the execution lock rather than caching authorization. A missing runtime directory is paused, not an instruction to recreate an old permit.
 
-Actual Gateway service startup runs the invalidation hook under that same lock before accepting API traffic or starting scheduler and queue consumers. It removes the permit and report association and creates a fresh unpredictable generation atomically. Wire this ordering into the installed service lifecycle for the Gateway PHP-FPM pool and every scheduler/queue entry point, including independently restarted consumers.
+Gateway scheduler startup invalidates the cleanup permit under the same lock. It creates a fresh generation before scheduled cleanup can run. A release waits for that new generation, then reconciles and resumes cleanup.
 
-Documents contributes this hook through the `GatewayServiceStartHook` [plug-in point](/reference/extensions#plug-in-points). The PHP-FPM service drop-in `orbit-document-cleanup.conf` runs `orbit-agent service documents.prepare-cleanup` in `ExecStartPre`. This compiled extension command prepares the stable local state and runs `project-documents:cleanup:invalidate` as the Gateway account. The release handoff also runs that hook before it activates the pool with a reload, because a reload does not run `ExecStartPre`. Core lists the hook in its start hook manifest. A convergence without the Documents contribution removes it. Hook failure prevents activation. The hook does not query the database or contact S3.
+Gateway releases do not install or run a PHP-FPM startup hook for Documents. They leave installed static runtime files unchanged. A follow-up moves those files to Node convergence. The [release cleanup step](/reference/gateway-recovery#release-as-a-swamp-run) uses the retained scheduler gate below.
 
 Artisan invalidates authorization when `schedule:work`, `queue:work`, or `queue:listen` starts. A standalone `schedule:run` also invalidates authorization. Start the Gateway scheduler with `schedule:work`, then reconcile and resume in that startup generation. Laravel launches a fresh `schedule:run` child every minute; these recurring children preserve the generation and permit, rather than treating every tick as a restart. [Laravel Horizon](/reference/gateway-queue) starts with `horizon`, `horizon:supervisor`, and `horizon:work`, not `queue:work`, so its start keeps the generation and permit. It works only the Gateway queue, which holds no document job.
 
@@ -206,7 +205,7 @@ The scheduler daemon holds an exclusive process-lifetime lock on the private `sc
 
 Bare cron or manual `schedule:run` invocations have no live scheduler session and remain fail-closed startup operations; they cannot sustain resumed document cleanup. Use the supervised `schedule:work` daemon for recurring Gateway cleanup. Do not copy or manually set the session token. A daemon restart pauses cleanup and requires a fresh reconcile and resume. Pause still invalidates authorization immediately; ticks in a live session preserve that paused state until the operator resumes.
 
-Do not rely on a first scheduled job, an operator remembering pause, or a boot-only `/run` cleanup. Per-request application boot must not rotate a healthy generation. Hook failure prevents that consumer from starting; a manual consumer without established startup state remains paused. Tests exercise the installed startup wiring and Laravel's recurring `schedule:work` → `schedule:run` path.
+Do not rely on a first scheduled job, an operator remembering pause, or a boot-only `/run` cleanup. Per-request application boot must not rotate a healthy generation. A manual consumer without established startup state remains paused.
 
 ### Private reconciliation reports
 

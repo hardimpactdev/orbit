@@ -8,7 +8,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Gateway\GatewayCommandNode;
@@ -26,7 +25,7 @@ use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
- * Admits one Gateway release, manual or automatic, as the `gateway.release` Swamp run. The Gateway is
+ * Admits one Gateway release, manual, automatic or a rollback, as the `gateway.release` Swamp run. The Gateway is
  * the trust anchor: it verifies the commit's agent pin and selects its web build here, and freezes them in the intent.
  * Swamp builds, migrates, loads and switches on the Gateway Node; the run's terminal result ends the release record.
  */
@@ -45,6 +44,22 @@ final readonly class AdmitSwampGatewayReleaseAction
         private GatewayReleaseLock $lock,
     ) {}
 
+    /**
+     * A rollback is a forced release of a retained release's commit: the build reuses the sealed release, and the
+     * load brings back that commit's workflows. Migrations are expand and contract, so it runs on the current schema.
+     */
+    public function rollback(string $release): GatewayRelease
+    {
+        $id = GatewayReleaseCommit::assertId($release);
+        $sha = $this->layout->preparedCommit($id)
+            ?? throw new GatewayReleaseException('rollback', 'gateway.release_not_prepared', "Release [{$id}] is not a retained release.", 422);
+        if ($this->layout->currentReleaseId() === $id) {
+            throw new GatewayReleaseException('rollback', 'gateway.release_already_current', "Release [{$id}] is already current.", 422);
+        }
+
+        return $this->execute($sha, force: true, trigger: 'rollback');
+    }
+
     public function execute(string $commit, bool $force = false, string $trigger = 'deploy'): GatewayRelease
     {
         if (! GatewayReleaseCommit::isSha($commit)) {
@@ -54,7 +69,6 @@ final readonly class AdmitSwampGatewayReleaseAction
         if ($previous === null) {
             throw new GatewayReleaseException('deploy', 'gateway.release_not_adopted', 'The Gateway is not running from a release. Run gateway:release:adopt first.');
         }
-        GatewayReleaseHold::assertNone();
         $gateway = GatewayCommandNode::find() ?? throw new GatewayReleaseException('deploy', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists.', 500);
         $delivery = $this->agent->fetch($commit, $gateway);
         $web = $this->web->select($commit);

@@ -13,7 +13,7 @@ The Gateway scheduler dispatches most of its work. Each scheduled command that d
 
 ## Connection
 
-The queue connection `gateway` uses the Redis driver. Its Redis server is reached through a [Redis Database connection](/reference/database-connections), such as `gateway-queue` for the Valkey on the `services` Node. Set these keys in `/home/orbit/shared/gateway.env`, then run a release. The release caches them and creates the [`horizon` Process](#horizon). Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler would then dispatch to the queue before Horizon runs.
+The queue connection `gateway` uses the Redis driver. Its Redis server is reached through a [Redis Database connection](/reference/database-connections), such as `gateway-queue` for Valkey on `services`. Configure the Gateway's [`horizon` Process](#horizon) before enabling the queue. Set these keys in `/home/orbit/shared/gateway.env`, then run a release to cache them and restart Horizon. A release starts an existing Horizon Process; it does not create one. Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler could dispatch work before Horizon runs.
 
 | Key | Default | Effect |
 | --- | --- | --- |
@@ -51,6 +51,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | --- | --- | --- | --- |
 | `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
+| `gateway:release:auto` | minute | `tasks` | 120 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
 | `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
@@ -92,17 +93,9 @@ Operations need the queue too. An Instance deploy or rollback request answers `5
 
 Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
 
-The serving phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) records the fixed Horizon Process and admits `process.horizon_handoff` on the Gateway Node. The handoff records `horizon=submitted` and `horizon_operation_id`; this is admission, not a readiness claim. Horizon admission uses the same bounded release recovery as Caddy. The switch already stopped the old consumers, so a start that can't reach serve would leave the Gateway without Horizon. After a refused or unavailable start, the runner waits for Swamp's health and submits once more. An uncertain start is never repeated. A persistent failure follows the existing release pause and recovery rules.
+The [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains the existing Horizon Process before it switches code, then starts it on the selected release. It does not create or converge the Process or its unit. Manage that state through [Processes](/reference/processes-and-schedules).
 
-The native run receives the complete non-secret intent as workflow inputs. Placed `command/shell` steps inspect, stage, validate, publish and reload the unit, then enable and hand it over. Scripts are inline in each step. No step reads intent or reports results to the Gateway; the shared terminal-run adapter projects the bounded final output.
-
-The handoff uses Swamp core's command execution, guards and dependencies with their defaults. The official `@swamp/cfgmgmt/systemd` extension also manages units over SSH; this run already executes on the Gateway Node, so the local core steps need no second connection or transport. Horizon's `horizon:terminate` remains a separate action so active jobs can finish.
-
-An active unit receives `horizon:terminate` without a restart, so running jobs can finish. A stopped or missing unit starts with its desired state running. Typed native results update the Process and Operation; the Gateway executes no Process command or Artisan termination. Verify the handoff Operation as well as the release after changing this path.
-
-A successful graceful termination records `terminated` with runtime state `unknown`: the master can exit before systemd starts its replacement. Only the explicit-start branch verifies an active unit immediately. Systemd owns the restart; the workflow adds no waiting loop.
-
-Horizon uses cached application configuration. This parent adds no private-material field, and refuses managed environment overrides instead of exposing them in the public unit. The Gateway never removes the Process. After emptying `ORBIT_GATEWAY_QUEUE_CONNECTION`, destroy it with `orbit process:destroy <id>`.
+Horizon uses cached application configuration. After clearing `ORBIT_GATEWAY_QUEUE_CONNECTION`, apply the env change and destroy the Process with `orbit process:destroy <id>`.
 
 ### Reservation metadata failures
 
@@ -116,29 +109,25 @@ Open `https://gateway.orbit/horizon` in a browser on a machine that is a WireGua
 
 The dashboard can retry, cancel, and clear jobs, and pause queues, so anyone with Gateway access can change the queue. The Gateway keeps no browser session, so the dashboard has no CSRF token. Laravel's request forgery check runs in origin-only mode instead: a request that changes something passes only when the browser sends `Sec-Fetch-Site: same-origin`. Any other such request gets 403. Bulk actions run as jobs on the `tasks` queue.
 
-Each release publishes the dashboard's compiled assets during `composer install` in [prepare](/reference/gateway-recovery#prepare-a-release), with `php artisan horizon-new-dawn:assets`. The first release with the dashboard runs its migration, which adds the table `horizon_new_dawn_batch_metadata`. Swamp records Horizon metrics every five minutes for the dashboard.
+Each release publishes the dashboard's compiled assets during `composer install` in the [Swamp build step](/reference/gateway-recovery#build-and-seal-a-release), with `php artisan horizon-new-dawn:assets`. The first release with the dashboard runs its migration, which adds the table `horizon_new_dawn_batch_metadata`. Swamp records Horizon metrics every five minutes for the dashboard.
 
 The Redis server needs `maxmemory-policy noeviction`, so that it never drops a queued job to free memory. `services-valkey` has it. It has no `maxmemory`, so it can use the memory of `services`; a limit for the Gateway's use is a follow-up.
 
 ## Releases
 
-A release drains Horizon before switching the serving link and admits its native handoff during the serving phase. The Operation records the actual `created`, `started`, or `terminated` outcome; an empty queue connection records `none` without starting a run. A failed native handoff retains the Process definition with a failed state for diagnosis.
+The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. It applies a temporary systemd stop policy: SIGTERM reaches the master, the stop has no systemd timeout, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step waits for the unit's control group to empty. A missing Horizon Process needs no drain.
 
-Before changing the serving release link, the release runner drains the Gateway's Horizon Process through `gateway.drain-horizon`. This applies to deployment, rollback and switch-back. The agent installs a temporary systemd stop policy: SIGTERM reaches only the master, the stop has no systemd timeout, and systemd never escalates to SIGKILL. It submits a stop and waits for both an inactive unit and an empty control group. Running jobs finish against the source release. The stopped unit cannot restart automatically. A missing Horizon Process needs no drain.
+The drain deadline is the longest supervisor job timeout plus 30 seconds. A failed drain prevents the switch. The step removes its temporary policy when it ends. Inspect the Process journal and let running jobs finish before retrying. If the run ends after draining, Horizon can stay stopped; inspect the run before starting it again.
 
-The drain has a deadline of the longest supervisor job timeout plus 30 seconds. A timeout or unreadable observation refuses the release switch. The safe stop policy stays installed while a stop is incomplete. Do not force a restart; inspect the Process journal and let its jobs finish, then repeat the release. A completed drain removes its temporary policy. If the runner exits after draining, Horizon stays stopped; repeat the release or run the serving release's runtime handoff to start it.
+After switching both release links, the child starts Horizon on the selected release and verifies the Gateway. A failed health check runs the local rollback script to switch back. Other requests can queue jobs during the drain; their jobs wait in Redis. Job IDs, attempts, delays and chains do not change.
 
-After the switch, the serving handoff starts the stopped Horizon Process on the selected release before recipe image reconciliation. Thus an old worker cannot reserve a job produced by the new release or read its recipe through the serving link. A switch failure leaves Horizon stopped on the source; run its runtime handoff before resuming normal work. Other Gateway requests can queue during the drain; their jobs wait in Redis. Job IDs, attempts, delays and chains are unchanged.
-
-For the first rollout of this drain code, prepare the reviewed commit and invoke deployment from that prepared release's Artisan entry point as `orbit`, with the normal shared configuration and stable release-layout paths. A runner already started from older code cannot acquire the new barrier. Later releases enter it from the serving release in the normal way.
-
-The scheduler phase restarts every other Gateway Process in the Gateway application with systemd, but never the `horizon` Process.
+The switch also restarts other running services whose working directory is under the Gateway application, including the scheduler and agent-view.
 
 Do not restart Horizon with `orbit process:restart`, and do not stop it with `orbit process:stop` while a job runs. Both stop its unit, and systemd kills a job that still runs 90 seconds after the stop, such as a build. To restart Horizon, run `php artisan horizon:terminate`.
 
 ### Switch back to an older release
 
-A release from before Horizon has no `horizon` command. After a switch back to it, the older release's handoff restarts the `horizon` Process, which then fails at each start until systemd gives up. The Process shows the failure in `orbit process:list`. Stop it with `orbit process:stop <id>`. The older release's scheduler runs its own workers on the database queues meanwhile, and jobs left in Redis wait. The next release with Horizon starts the Process again, and Horizon works the jobs left in Redis.
+A release from before Horizon has no `horizon` command. If the rollback script restarts Horizon on that release, the Process fails at each start until systemd gives up. The Process shows the failure in `orbit process:list`. Stop it with `orbit process:stop <id>`. The older release's scheduler runs its own workers on the database queues meanwhile, and jobs left in Redis wait. The next release with Horizon starts the Process again, and Horizon works the jobs left in Redis.
 
 A job left in Redis keeps its unique lock in the Gateway cache. The older release then queues no second copy of that job, for example no second destroy of the same VM, until the lock expires; a lock without an expiry stays. To let the older release queue it again, remove the lock as `orbit` in `/home/orbit/orbit/apps/gateway`:
 
@@ -215,13 +204,13 @@ Last, as `orbit` on the Gateway, set this key in `/home/orbit/shared/gateway.env
 ORBIT_GATEWAY_QUEUE_CONNECTION=gateway-queue
 ```
 
-Then [run a release](/reference/gateway-recovery#deploy-a-release) of the current commit, as [Connection](#connection) requires. Read the commit as `release_sha` from `orbit gateway:status --json`:
+Then [run a release](/reference/gateway-recovery#release-as-a-swamp-run) of the current commit, as [Connection](#connection) requires. Read the commit as `release_sha` from `orbit gateway:status --json`:
 
 ```bash
 orbit gateway:release:deploy <SHA>
 ```
 
-The command follows the release, which must end `verified`. Its handoff runs `horizon:terminate`, so Horizon starts again as `gateway-queue` after its running jobs end ([Releases](#releases)). Both users reach the queue's keys, so no job is lost. When a newer commit passed CI meanwhile, or GitHub does not answer, the manual deploy [pauses automatic releases](/reference/gateway-recovery#pause) with `manual_deploy`. Then run [`orbit gateway:release:auto:resume`](/cli/gateway/release-auto-resume).
+The command follows the release, which must end `verified`. The run drains Horizon, then starts it as `gateway-queue` after the switch ([Releases](#releases)). Both users reach the queue's keys, so no job is lost. When a newer commit passed CI meanwhile, or GitHub does not answer, the manual deploy [pauses automatic releases](/reference/gateway-recovery#pause) with `manual_deploy`. Then run [`orbit gateway:release:auto:resume`](/cli/gateway/release-auto-resume).
 
 ### Check the queue user
 
