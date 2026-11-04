@@ -111,8 +111,10 @@ if ($argv[1] === 'seed') {
     $gateway->forceFill(['agent_secret_hash' => $input['gateway_agent_secret_hash']])->saveQuietly();
     // swamp.orbit as the operator records it on 209: a private custom proxy Route to serve on loopback (ADR 0243, version 17).
     $swamp = Route::query()->forceCreate(['kind' => RouteKind::CustomProxy, 'node_id' => $gateway->id, 'domain' => 'swamp.orbit',
-        'provenance' => RouteProvenance::Explicit, 'publication' => 'private', 'status' => RouteStatus::Active, 'sites_published' => true]);
+        'provenance' => RouteProvenance::Explicit, 'publication' => 'private', 'status' => RouteStatus::Pending]);
     $swamp->customProxy()->create(['node_id' => $gateway->id, 'upstream' => 'http://127.0.0.1:9418']);
+    // A Route is recorded pending and becomes active once its site is published.
+    $swamp->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     app(GatewayServingHost::class)->remember($gateway);
     // The private network is this topology's, so Caddy listeners and peer checks use it (version 12).
     app(VpnSettings::class)->configure(subnet: $input['subnet']);
