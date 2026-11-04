@@ -15,5 +15,7 @@ $hub->roles()->delete();
 $hub->roles()->create(['role' => 'vpn', 'status' => 'active']);
 $hub->update(['wireguard_ip' => '10.232.0.1', 'wireguard_public_key' => $argv[1]]);
 app(VpnSettings::class)->configure(subnet: '10.232.0.0/24', endpoint: '10.231.0.10:51820');
-Node::query()->whereHas('roles', fn ($query) => $query->where('role', 'gateway'))->update(['wireguard_ip' => '10.232.0.2']);
+Node::query()->whereHas('roles', fn ($query) => $query->where('role', 'gateway'))->update(['wireguard_ip' => '10.232.0.2', 'wireguard_public_key' => null]);
+// The caller and Gateway use the routed proof bridge; neither owns a tunnel peer.
+Node::query()->where('name', 'operator')->update(['wireguard_public_key' => null]);
 Node::query()->where('name', 'metrics')->sole()->delete();

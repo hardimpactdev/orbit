@@ -26,6 +26,14 @@ The orchestrator enables read-token requests for one Services peer during deploy
 
 Deploy Gateway first. Verify Services with `orbit node:show 17 --json`. On Gateway as `orbit`, back up `/home/orbit/shared/gateway.env` with mode `0600`, then set its single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry without changing other settings. Run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`; never run `config:cache` in a release. From Services, verify `POST /api/v1/projects/20/dependency-read-token` succeeds without printing its token, then deploy Services. Follow the [release-safe env procedure](/reference/gateway-recovery#apply-an-env-change) and the exact backup/route-check commands in the [GitHub App](/reference/github-app#services-dependency-credentials) page. The orchestrator applies this setting during deployment; a merge does not enable it.
 
+## Required Swamp SSH identity
+
+Every deployment must set `ORBIT_SWAMP_SSH_PUBLIC_KEY`. It is the public half of the swamp role worker's SSH identity. Without a valid key, every `identity()` and `forNode()` caller refuses with HTTP 503 and `swamp.ssh_identity_unavailable`.
+
+| Variable | Meaning |
+| --- | --- |
+| `ORBIT_SWAMP_SSH_PUBLIC_KEY` | Required OpenSSH public key for the swamp role worker identity. Set it from `ssh-keygen -y -f /etc/orbit/node-proxy/id_ed25519` on the swamp Node, the source the role installs as `/etc/orbit/swamp-role-worker/ssh-identity`. Update it when rotating that identity. |
+
 ## Swamp task output
 
 The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with these optional deployment settings. Without a reader token, the task panel shows unavailable.

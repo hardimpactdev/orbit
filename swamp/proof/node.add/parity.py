@@ -5,7 +5,8 @@ import os
 import subprocess
 import sys
 
-operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
+with open(os.environ['PROOF_OPERATION_FILE']) as stream:
+    operation = json.load(stream)
 
 
 def run(*argv):
@@ -20,6 +21,7 @@ def check(ok, message):
 check(operation['status'] == 'succeeded', 'Node enrollment succeeded')
 check(operation['result'].get('enrolled') is True, 'native end check was projected')
 intent = operation['input']['intent']
+check(intent['agent']['environment_group'] == 'orbit-env', 'Gateway stages the observer group for the later consumer')
 check(run('systemctl', 'is-active', 'orbit-agent.service') == 'active', 'observer is active')
 check(run('stat', '-c', '%a', '/etc/orbit/agent/secret') == '600', 'observer secret is private')
 check(hashlib.sha256(run('cat', '/etc/orbit/agent/secret').encode()).hexdigest()

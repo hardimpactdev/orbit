@@ -144,6 +144,8 @@ Success leaves the group `running` and its workspace `source_resolved`. The task
 
 ##### Public provision identity
 
+Task VM provisioning authorizes the swamp worker key configured by `ORBIT_SWAMP_SSH_PUBLIC_KEY`; set it to the public half of the role's identity before provisioning a VM. See [Gateway environment](/reference/gateway-environment).
+
 `analysis_base` is null when the pin is unavailable, otherwise exactly `{base, instance_id, repository, branch}`. `base` is a full lowercase 40- or 64-hex Git commit object ID. `instance_id` is a positive integer equal to result `instance_id`; `repository` is the recorded Project repository identity and `branch` is the recorded workspace branch, both nonempty strings.
 
 Validate the repository with the existing Git-origin rules (no HTTPS credentials, SSH password, query, or fragment) and the branch with the existing Git-branch rules. An unsafe identity recorded by provision makes the entire public pin unavailable; never publish credentials or redact a secret into a different supposedly exact identity. These are the identities used by [analysis admission](#fixed-execution-and-complete-report), not new caller inputs. Existing result `node_id` identifies the provisioned Node; it is not a moving location lookup.

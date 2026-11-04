@@ -45,7 +45,7 @@ jobs:
     labels:
       role: swamp
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-host-key-"+string(inputs.node_id) }}', methodName: collect-host-public-key, globalArgs: {name: '${{
-          "node-add-bootstrap-"+string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port }}', identityContent: '${{
+          "node-add-bootstrap-"+string(inputs.node_id) }}', transport: {kind: ssh, hostKeyPolicy: insecure, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port }}', identityContent: '${{
             vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host }}'}]}, inputs: {
         hosts: 'name:target', timeoutSec: 30}}
 - name: phase_1
@@ -135,6 +135,7 @@ jobs:
     forEach:
       item: linux
       in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+    # A true guard skips an already authorized key; grep exit 1 must append it.
     guard: ${{ steps["Read bootstrap keys-0"].outputs.exitCode == 0 }}
   dependsOn:
   - {job: phase_4, condition: {type: succeeded}}

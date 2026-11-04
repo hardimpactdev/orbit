@@ -57,7 +57,7 @@ final readonly class NativeNodeEnrollmentInput
                 'user' => $bootstrapUser, 'fingerprint' => $spec['fingerprint']],
             'identity' => $identity, 'control_ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209)),
             'packages' => [], 'sudo' => ['path' => '', 'candidate' => '', 'content' => ''],
-            'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'files' => []],
+            'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'environment_group' => NodeAgentSshExecutor::EnvGroup, 'files' => []],
             'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
             'public_ssh_argv' => [], 'roles' => [], 'dns' => [], 'private_dns' => [], 'cli' => null,
@@ -104,7 +104,7 @@ final readonly class NativeNodeEnrollmentInput
             if (! is_string($url) || ! str_starts_with($url, 'https://')) {
                 throw new ResourceOperationException('node.agent_delivery_unavailable', 'Native enrollment requires the pinned agent HTTPS artifact.', 503);
             }
-            $intent['agent'] = ['url' => $url, 'sha256' => $delivery['sha256'], 'unit' => $agent['unit'],
+            $intent['agent'] = ['url' => $url, 'sha256' => $delivery['sha256'], 'unit' => $agent['unit'], 'environment_group' => NodeAgentSshExecutor::EnvGroup,
                 'files' => [['path' => NodeAgentFootprint::ConfigurationPath, 'content' => $agent['configuration']],
                     ['path' => NodeAgentFootprint::CertificatePath, 'content' => $agent['certificate']]]];
             $recovery = app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node);

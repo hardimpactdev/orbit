@@ -78,6 +78,7 @@ sequenceDiagram
   %%> - the CLI follows the task with `operation:show`
   %% Every Swamp lane label is an actual step in operation-node-add.
   SW->>N: Read the host key<br/>SSH argv
+  %%> - first contact ignores worker known_hosts; no machine change runs before fingerprint approval
   SW->>SW: Require approved host key<br/>native assert
   SW->>N: Read the platform<br/>SSH argv
   %%> Linux by default:
@@ -88,6 +89,7 @@ sequenceDiagram
   SW->>SW: Bind the Node identity<br/>public resource binding
   SW->>N: Read bootstrap keys<br/>SSH argv
   SW->>N: Authorize the control key<br/>SSH argv
+  %%> - append the configured worker public key only when absent; a true guard skips existing keys
   SW->>SW: Remove an old host pin<br/>control Node SSH argv
   SW->>SW: Pin the bootstrap host<br/>control Node SSH argv
   SW->>N: Refresh base packages<br/>cfgmgmt apt
