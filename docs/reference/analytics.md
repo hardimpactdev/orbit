@@ -32,7 +32,7 @@ Publish unmanaged PostgreSQL's container port 5432 and ClickHouse's HTTP port 81
 
 For unmanaged storage, Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` (default `postgres`) and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user. Plausible connects to PostgreSQL as that Process's own user, so give analytics its own PostgreSQL Process. Plan about 2 GB of memory for the three services, and disk that grows with traffic.
 
-For managed PostgreSQL 18, create exactly one canonical `plausible-db` connection on the server before assigning its Process to analytics. The role resolves that database owner's encrypted credentials from the connection. A missing or ambiguous owner is refused; the server admin is never used. `database:update` protects managed identity and credentials, and `database:destroy` refuses removal of the analytics owner connection. [The migration runbook](/reference/postgresql-migration#move-analytics-last) gives the required disposable Plausible rehearsal and rollback to PostgreSQL 16.
+For managed PostgreSQL 18, create exactly one canonical `plausible-db` connection on the server before assigning its Process to analytics. The role resolves that database owner's encrypted credentials from the connection. A missing or ambiguous owner is refused; the server admin is never used. `database:update` protects managed identity and credentials, and `database:destroy` refuses removal of the analytics owner connection.
 
 ## Assign the role
 

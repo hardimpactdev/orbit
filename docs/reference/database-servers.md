@@ -90,7 +90,7 @@ A PostgreSQL database belongs to its LOGIN owner role. The role has no superuser
 
 Create application objects as the managed owner. Orbit-managed databases use only Orbit-managed grants, without hand-written GRANT/REVOKE SQL or bespoke roles. Managed grants cover schema `public`; custom schemas are unsupported. A PostgreSQL database owned by an Instance includes a fixed pool of [test databases](/reference/database-connections#test-databases). The managed owner keeps `NOCREATEDB`.
 
-[Move PostgreSQL databases](/reference/postgresql-migration) gives the dump, restore, verification and rollback procedure. Creating a server does not adopt or upgrade any existing Process.
+To move a database onto a managed PostgreSQL server, dump it with a `pg_dump -Fc` client of the server's version and restore it with `pg_restore --exit-on-error --no-owner --no-acl --role=<owner>`, so the managed application role owns the objects. Creating a server does not adopt or upgrade any existing Process.
 
 ### Private publication
 
