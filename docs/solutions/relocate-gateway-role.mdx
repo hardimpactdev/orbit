@@ -1,6 +1,6 @@
 ---
 title: "Relocate the gateway role"
-description: "Move the Gateway to another Node while vpn and private DNS stay on the original Node."
+description: "Move the Gateway to another Node while vpn and private DNS stay on the original Node, and what the move leaves behind."
 covers:
   - apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php
   - apps/gateway/app/Actions/Nodes/GrantGatewayRoleAccessAction.php
@@ -12,69 +12,44 @@ covers:
 
 ## Problem
 
-Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay where they are. [`node:role:relocate`](/cli/node/role-relocate) moves `websocket` and `metrics` with the same command. It refuses `swamp` with `node.role_relocate_swamp_held`, because serve on that Node runs the relocation.
-
-A `websocket` move preserves every [Reverb app](/reference/websocket-apps) in the Gateway database. It copies only the server's Laravel `APP_KEY` when the target lacks one. The target converge renders all apps, so each Project keeps its app credentials after the move.
+Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay put. [`node:role:relocate`](/cli/node/role-relocate) does the move, and [native role relocation](/reference/node-provisioning#native-role-relocation) lists its steps. The move leaves several things for you to do by hand.
 
 ## Cause
 
-`vpn` never moves. `gateway` is a singleton. Removing it and adding it again would drop the only active Gateway assignment, so the next request would lose its Gateway authority and `gateway.orbit` would leave private DNS. Relocate keeps one active assignment for the whole move.
+`vpn` never moves. `gateway` is a singleton, so removing it and adding it again would drop the only active Gateway assignment: the next request would lose its Gateway authority and `gateway.orbit` would leave private DNS. Relocate keeps one active assignment for the whole move. It moves no files, so the new machine must already hold a copy of the Gateway.
 
 ## Solution
 
-One native run on Node 209 moves the role; [native role relocation](/reference/node-provisioning#native-role-relocation) lists its steps. Both Nodes need recorded SSH management.
-
-Adding a new Gateway assignment uses the native role-add workflow and still grants access to the VPN and Metrics Nodes. Its resolver policy lives in `orbit-gateway-dns.service`. Native role removal disables and removes that unit, together with the WireGuard drop-in from earlier releases. Role add remains subject to the singleton rule; it cannot replace a relocation.
-
-Adding or converging a role holds the Node until its Operation ends. A competing add or converge admission fails with `operation.target_busy` before it changes the assignment.
-
-Use explicit convergence to repair an existing assignment on its current Node. Use relocation to move the assignment to another Node.
-
-### Rename first
-
-A Node name is a unique identifier. It is not the WireGuard key or address. When the old Node is named `gateway` and the new machine must use that name, rename the old Node first:
+**Rename first.** A Node name is a unique identifier, not the WireGuard key or address. When the old Node is named `gateway` and the new machine must use that name, free it first. `node:add` finds an existing record by name.
 
 ```bash
 orbit node:update gateway --name=vpn
 orbit node:add gateway <new-host>
 ```
 
-`node:add` finds an existing record by name, so the rename avoids a collision.
+**Prepare the target.** It must not hold `app-dev`, `app-prod`, `database`, `analytics`, or `ingress`, which conflict with `gateway`. Install PHP-FPM and Caddy. Copy the Gateway checkout, `ORBIT_HOME` with the Orbit CA and Gateway SSH keys, and the Gateway `.env`. Both Nodes need recorded SSH management.
 
-### Prepare the target
-
-The target must not hold `app-dev`, `app-prod`, `database`, `analytics`, or `ingress`, because they conflict with `gateway`. Install PHP-FPM and Caddy there. Copy the Gateway checkout, `ORBIT_HOME` with the Orbit CA and Gateway SSH keys, and the Gateway `.env`.
-
-### Move the assignment
+**Move the assignment.**
 
 ```bash
 orbit node:role:relocate gateway gateway --force
 ```
 
-Relocate opens `orbit:gateway-https` on the target and moves the assignment. It grants the new Gateway access to the `vpn` Node and the `metrics` Node, when they are other Nodes. It publishes private DNS on the `vpn` Node, so `gateway.orbit` answers with the target's WireGuard address. It adds the [private DNS route](/reference/private-dns#the-gateway-machine) on the target, so the new Gateway resolves names such as `reverb.orbit`. Then it removes that route and the firewall rule from the source.
+A failed private DNS route on the target does not stop the move, and `follow_up` names the retry command. A failed removal on the source leaves the move incomplete; rerun the command with `--from`. Caddy and PHP-FPM keep serving on the source, so the old address works during the cutover. Adding or converging a role holds the Node until its Operation ends, and a competing admission fails with `operation.target_busy`.
 
-A failed route on the target does not stop the move, and `follow_up` names the retry command. A failed removal on the source leaves the move incomplete; rerun the command with `--from` to finish it.
+**After the move:**
 
-Relocate moves no files. It does not stop Caddy or PHP-FPM on the source, so the old address keeps working during the cutover.
+1. Relocate wrote the new assignment to the SQLite database on the machine that ran it. Copy that database to the target, then start Caddy and PHP-FPM there.
+2. `gateway.serving_node_id` still names the old Node, so that Node keeps Gateway authority. Only a Gateway bootstrap records a new serving Node.
+3. Run `orbit node:converge <node>` on each Node, so its [Node agent](/reference/node-agent#how-it-connects) learns the new Gateway address. Role convergence leaves the observer configuration alone.
+4. Point CLI profiles that name the old WireGuard address at the new one.
+5. Stop Caddy and PHP-FPM on the old Node once the new `/up` answers.
 
-After the assignment moves, Swamp removes the Gateway role's recorded firewall rules from the source, using each rule's recorded direction. Rules for other roles and operator rules stay in place. Caddy and PHP-FPM keep serving while clients move to the target.
-
-### After the move
-
-1. Confirm that `orbit node:role:list gateway` shows `gateway` and `orbit node:role:list vpn` still shows `vpn`.
-2. Confirm that `orbit node:show gateway` lists access to the `vpn` Node and, when Metrics exists, the Metrics Node.
-3. Relocate wrote the new assignment to the SQLite database on the machine that ran it. Copy that database to the target, then start Caddy and PHP-FPM there.
-4. From a peer that trusts the Orbit CA, run `curl https://<new-wireguard-ip>/up`, then `curl https://gateway.orbit/up`.
-5. Point CLI profiles that name the old WireGuard address at the new one.
-6. The `gateway.serving_node_id` setting still names the old Node, so that Node keeps Gateway authority. Only a Gateway bootstrap records a new serving Node.
-7. Run `orbit node:converge <node>` on each Node, so its [Node agent](/reference/node-agent#how-it-connects) learns the new Gateway address. Role convergence applies only the role's resources and leaves the observer configuration to Node convergence.
-8. Stop Caddy and PHP-FPM on the old Node once the new `/up` answers.
-
-After the split, private DNS publication runs over SSH on the `vpn` Node. Inspect the catalog and the listener there, not on the Gateway. The publication installs the listener release from the Gateway's own code, so the `vpn` Node needs no Orbit checkout. The WireGuard hub keys stay on the `vpn` Node in `/etc/wireguard/orbit.conf`. A Metrics converge that fails while it publishes DNS keeps Grafana, Prometheus, and `/etc/orbit/metrics` in place.
+Private DNS publication now runs over SSH on the `vpn` Node. Inspect the catalog and the listener there, not on the Gateway. The `vpn` Node needs no Orbit checkout, and the WireGuard hub keys stay in `/etc/wireguard/orbit.conf` there.
 
 ## Limits
 
-Relocate does not install Laravel on the target and does not copy the SQLite database or the Orbit CA. This page does not cover pointing public clients at a new machine.
+Relocate does not install Laravel on the target and does not copy the SQLite database or the Orbit CA. It refuses `swamp` with `node.role_relocate_swamp_held`, because serve on that Node runs the relocation. This page does not cover pointing public clients at a new machine.
 
 ## Verification
 
@@ -85,4 +60,4 @@ orbit doctor --node=<new-node-id>
 curl --fail https://gateway.orbit/up
 ```
 
-After relocate, `orbit node:show` on the new Gateway must list access to the `vpn` Node. To prove the split DNS path, converge a Route or Metrics from the new Gateway and confirm that `/var/lib/orbit/private-dns/catalog.json` changes on the `vpn` Node, not on the Gateway.
+`node:role:list` shows `gateway` on the new Node and `vpn` still on the old one. `orbit node:show` on the new Gateway lists access to the `vpn` Node and, when Metrics exists, the Metrics Node. Run `curl https://<new-wireguard-ip>/up` from a peer that trusts the Orbit CA. To prove the split DNS path, converge a Route or Metrics from the new Gateway and confirm that `/var/lib/orbit/private-dns/catalog.json` changes on the `vpn` Node, not on the Gateway.

@@ -14,7 +14,7 @@ In progress.
 
 Principle: [One way, one name](/mission#principles). One local gate, one integration gate, one definition of the checks, one cache transport, and one rule for the process count. It also serves [Lean](/mission#principles): about 17 hours of main-merge gates in five days, and the implementer's duplicate run, are deleted. No principle exception is proposed.
 
-Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) owns the resulting rule. The [declaration-data audit](/solutions/test-impact-declaration-data) found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/hardimpactdev/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/hardimpactdev/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
+Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) owns the resulting rule. An audit of declaration data found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/hardimpactdev/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/hardimpactdev/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
 
 Nick amended this decision again on 2026-10-20:
 
@@ -311,7 +311,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 
 ## Rejected alternatives
 
-- **A declaration-data selector.** Runtime coverage cannot reliably link all consumers of enum cases, constants, property or parameter defaults and attribute arguments. The [audit fixture](/solutions/test-impact-declaration-data) passed TIA while the full suite had four failures. Widening declaration changes would affect 496 of 580 Gateway app changes (85.5%, about 86%) in the measured main first-parent window. Full PR suites provide the merge gate while the task loop keeps fast feedback.
+- **A declaration-data selector.** Runtime coverage cannot reliably link all consumers of enum cases, constants, property or parameter defaults and attribute arguments. The audit fixture passed TIA while the full suite had four failures. Widening declaration changes would affect 496 of 580 Gateway app changes (85.5%, about 86%) in the measured main first-parent window. Full PR suites provide the merge gate while the task loop keeps fast feedback.
 
 - **Keep the main-merge gate, with a test base.** It still repeats CI on a slower machine, after CI already tests the same merged tree on four runners. The parent classification and the repair and retry states stay.
 - **Keep the implementer's full gate and skip Orbit's.** Orbit cannot trust an agent's report of its own run. The deterministic check must run where Orbit records it.
