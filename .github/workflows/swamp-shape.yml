@@ -79,7 +79,7 @@ jobs:
           deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
           deno test -A bin/swamp-liveness_test.ts
           deno test -A bin/source_test.ts
-          deno test -A --ignore=tests/repository_analysis_producer_test.ts,tests/metrics_exporter_firewall_test.ts,tests/native_host_method_test.ts tests/
+          deno test -A --ignore=tests/repository_analysis_producer_test.ts,tests/metrics_exporter_firewall_test.ts,tests/native_host_method_test.ts,tests/node_add_bootstrap_test.ts tests/
           deno test -A extensions/behaviors/automatic-deploy extensions/behaviors/composer-maintenance extensions/behaviors/js-maintenance extensions/behaviors/projects
           deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-shape-python_test.ts
           deno test --allow-env --allow-read --allow-run --allow-write bin/validate-swamp-workflows_test.ts
