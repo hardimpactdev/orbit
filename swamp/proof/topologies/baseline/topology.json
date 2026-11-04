@@ -1,0 +1,28 @@
+{
+  "name": "baseline",
+  "version": 1,
+  "gateway": "task-vm",
+  "websocket": true,
+  "network": {"name": "oeproof", "gateway": "10.231.0.1", "prefix": 24},
+  "operator": {"address": "10.231.0.2"},
+  "nodes": [
+    {
+      "key": "app-dev",
+      "address": "10.231.0.10",
+      "memory": "2GiB",
+      "roles": ["app-dev"],
+      "provision_roles": true,
+      "settings": {"apps": {"path": "/home/orbit/apps"}},
+      "agent": true
+    },
+    {
+      "key": "app-prod",
+      "address": "10.231.0.11",
+      "memory": "2GiB",
+      "roles": ["app-prod"],
+      "provision_roles": true,
+      "settings": {"apps": {"path": "/home/orbit/apps"}},
+      "agent": true
+    }
+  ]
+}

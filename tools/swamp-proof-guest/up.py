@@ -181,7 +181,7 @@ def prepare(node, network):
     run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'install -d -m 0700 /etc/orbit/agent && umask 077 && cat > /etc/orbit/agent/secret'],
         input=secret)
     return {'key': node['key'], 'address': node['address'], 'host_key_type': host_key[0], 'host_key': host_key[1],
-            'roles': node.get('roles', []), 'settings': node.get('settings', {}),
+            'roles': [] if node.get('provision_roles') else node.get('roles', []), 'settings': node.get('settings', {}),
             'agent_secret_hash': hashlib.sha256(secret.encode()).hexdigest()}
 
 
@@ -531,6 +531,15 @@ def realtime(ids):
         run(['incus', 'exec', node['key'], '--', 'systemctl', 'is-active', '--quiet', 'orbit-agent'])
 
 
+@step('roles')
+def provision_roles(ids):
+    """Apply declared roles through Orbit after the observers and control plane are ready."""
+    for node in TOPOLOGY['nodes']:
+        if node.get('provision_roles'):
+            for role in node.get('roles', []):
+                request(f'nodes/{ids[node["key"]]}/roles', {'role': role}, seconds=1800)
+
+
 def main():
     if os.geteuid() != 0:
         raise RuntimeError('run as root')
@@ -538,6 +547,7 @@ def main():
     swamp()
     seeded = gateway(nodes)
     realtime(seeded['nodes'])
+    provision_roles(seeded['nodes'])
     facts = {'ready': True, 'commit': run(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], user=ACCOUNT).strip(),
              'topology': TOPOLOGY['name'], 'topology_version': TOPOLOGY['version'], 'nodes': seeded['nodes'],
              'operator_address': TOPOLOGY['operator']['address'], 'target': nodes[0], 'targets': nodes, 'timings': timings}
