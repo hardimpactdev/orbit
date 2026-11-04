@@ -12,7 +12,7 @@ final readonly class DocsImpact
     /** The machine software recipe; a change to its pins alone needs no prose. */
     private const string MACHINE_RECIPE = 'apps/gateway/resources/machine-software/recipe.json';
 
-    /** The recipe values the nightly snapshot and artifact flows bump: no page lists them. */
+    /** The recipe pin values: no page lists them. */
     private const array RECIPE_PIN_KEYS = ['snapshot', 'version', 'url', 'sha256'];
 
     private const array CLI_FAMILIES = [
@@ -94,7 +94,7 @@ final readonly class DocsImpact
             if ($this->extractGeneratedArtifact($path, $surfaces, $impacts, $generators) || str_starts_with($path, 'docs/')) {
                 continue;
             }
-            // The nightly recipe PRs change only pinned values; the page documents the recipe's shape and rules.
+            // The page documents the recipe's shape and rules, not its pinned values.
             if ($path === self::MACHINE_RECIPE && $base !== null && $this->recipePinsOnly($base)) {
                 continue;
             }

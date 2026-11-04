@@ -11,7 +11,6 @@ use App\Domain\Releases\ReleaseAlertSubject;
 use App\Domain\Releases\ReleaseIncident;
 use App\Models\TaskVmImageBuild;
 use App\Models\UpCloudTaskVmImageBuild;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
@@ -38,23 +37,6 @@ final readonly class RecipeMaintenanceAlerts
         ))->toArray();
     }
 
-    public static function repositoryIncident(string $fault): ReleaseIncident
-    {
-        return new ReleaseIncident('recipe-repository:'.str_replace('/', ':', FleetRolloutAlerts::repository()), 'nightly:'.now()->utc()->format('Ymd'), $fault);
-    }
-
-    public function haltedOnce(string $summary, ReleaseIncident $incident): void
-    {
-        if (Cache::add('machine-recipe:alert:'.$incident->key(ReleaseAlertKind::RolloutHalted), true, 86400)) {
-            $this->halted($summary, incident: $incident);
-        }
-    }
-
-    public static function pullIncident(int $number, string $head, string $fault): ReleaseIncident
-    {
-        return new ReleaseIncident('recipe-pr:'.$number, $head, $fault);
-    }
-
     public static function imageIncident(TaskVmImageBuild $build): ReleaseIncident
     {
         return new ReleaseIncident(self::ImageIncidentPrefix.$build->id, (string) $build->attempt, 'build_failed');
@@ -65,11 +47,6 @@ final readonly class RecipeMaintenanceAlerts
         return str_starts_with($resource, self::ImageIncidentPrefix)
             ? (int) substr($resource, strlen(self::ImageIncidentPrefix))
             : null;
-    }
-
-    public static function jobIncident(string $type, string $uuid): ReleaseIncident
-    {
-        return new ReleaseIncident('recipe-maintenance:'.$type, $uuid, 'job_failed');
     }
 
     private function buildIncident(string $target, ?int $buildId): ReleaseIncident

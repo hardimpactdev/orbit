@@ -5,7 +5,7 @@ covers:
   - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Domain/Fleet/RecipePrProjection.php,app/Actions/Fleet/AdmitRecipePrAction.php,app/Actions/Fleet/RecipePrPlanAction.php,app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
@@ -90,7 +90,7 @@ Exact Git pins block automatic Ubuntu and PPA security updates. Orbit owns the d
 
 Review each notice even when its Ubuntu version differs from the PPA build; the check does not claim that Ubuntu version ordering proves a PPA fix. Close the issue only after reviewing the fixes and rolling out the pin. Advance `git.usn_since` explicitly after reviewing the covered notices.
 
-Git bumps stay separate from the nightly snapshot and artifact pull requests. The snapshot flow changes its date and Ubuntu pins together; the artifact bump authenticates Sury and Zabbly indexes and updates their package sets. No automated flow verifies Launchpad's signed indexes, so a maintainer bumps Git by hand. To bump Git, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64, download and hash both files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
+A maintainer bumps Git by hand. To bump Git, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64, download and hash both files, and validate the recipe. After merge, the mirror workflow retains the files.
 
 The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. The recipe must record a concrete version, including for an Ubuntu floor: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
@@ -289,11 +289,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 `bin/recipe-artifacts bump` makes that change. It downloads Sury's signing key and refuses it unless it matches the pinned SHA-256 digest. It verifies the signed `InRelease` file of the recipe's Ubuntu release with `gpgv`, and checks each package index against it. For every architecture, it then moves each pin of every PHP set, `php-common` and `libgd3` included, to the newest version in the index, with its URL and digest. It stops without writing when Sury is between builds, so that two core pins of one version differ. `--dry-run` prints the changes and writes nothing.
 
-[Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, with the snapshot pull request. One `nightly/artifacts-<digest>` pull request holds all authenticated Sury and Incus pin changes. The digest names those pins; later nights reuse the PR, and a closed PR is never reopened.
-
-Swamp verifies the App’s signed single commit, the exact recipe-only change, the branch digest, and an authenticated update from the parent recipe using signed indexes only. Native workflow history and recovery own execution; the Gateway keeps no execution proof or retry cache. A newer authenticated fingerprint closes a superseded PR, even when its runner check is red. Any other edit blocks automatic merge.
-
-The Swamp control worker needs `gpg` and `gpgv`; the standalone recipe CLI also uses `python3`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. A red self-hosted runner check holds this shared PR, including its Incus pins, until an operator updates the runners from the PR branch. The Gateway App then merges on green Required checks, under the same rule as Ubuntu snapshot PRs. ADR 0213 will automate runner PHP updates later. After merge:
+The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. Recipe pins change only through reviewed manual edits. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
 2. Each task VM host [builds a new base image](#build-the-base-image).
@@ -345,15 +341,13 @@ The command exits zero only for a successful requested operation and nonzero for
 
 ### Why it works this way
 
-A closed, versioned JSON document is reviewable without executing code. A content hash names all role sets together without a manually maintained counter. Separate structural and online checks distinguish malformed intent from unavailable inputs. Explicit artifact hashes cover software that Ubuntu's snapshot cannot freeze. One catalog prevents misspelled tools or roles from silently changing an image. The [image build fence](#build-the-base-image) and [nightly recipe maintenance](#nightly-recipe-maintenance) own publication and Git updates; the validator checks recipe inputs.
+A closed, versioned JSON document is reviewable without executing code. A content hash names all role sets together without a manually maintained counter. Separate structural and online checks distinguish malformed intent from unavailable inputs. Explicit artifact hashes cover software that Ubuntu's snapshot cannot freeze. One catalog prevents misspelled tools or roles from silently changing an image. The [image build fence](#build-the-base-image) owns publication; the validator checks recipe inputs.
 
-One recipe connects development images to production maintenance. A changed recipe rebuilds the whole base from stock on each host. Partial builds and incremental images were rejected because previous image history would become another input. A fixed nightly rebuild without a versioned recipe would not identify the intended software or connect it to production.
+One recipe identifies the software in task VM images. A changed recipe rebuilds the whole base from stock on each host. Partial builds and incremental images were rejected because previous image history would become another input. A fixed nightly rebuild without a versioned recipe would not identify the intended software or connect it to production.
 
 Trusted Gateway jobs build images and fill package caches. Agents have root inside task VMs, so letting them publish either shared result would allow one Project to affect another. The cache inventory records which Projects use each package for incident investigation.
 
 Every workspace clones and runs Project setup. Per-Project snapshots would keep setup coupled to image builds, invalidation, and retention. Package and CI caches speed setup without a saved workspace. Fresh VMs also avoid capacity held by idle pre-enrolled guests and their refill lifecycle, at the cost of boot time.
-
-Nightly convergence checks one Node before advancing to the next. This limits failure spread but permits a mixed-recipe fleet and a partly changed Node. Automatic rollback of a Node's convergence was rejected: the operator investigates and selects a reviewed recipe for recovery. The PHP build is the exception: its installer keeps the previous build as files and [restores it at once](/reference/php-runtime#one-installer-with-a-rollback).
 
 #### One PHP build
 
@@ -364,8 +358,6 @@ A pin for each environment was rejected. CI, Nodes, and images would each keep a
 The Gateway's package cache cannot hold the mirror. That cache lives on each task VM host and serves no other machine, and GitHub-hosted runners cannot reach the Gateway. A release in Orbit's repository serves Nodes, images, and every CI runner.
 
 Purging extra PHP packages on every Node could break a client site that uses an extension an operator installed. Convergence refuses instead. Only the container installer uses the `ci-runner` profile to purge, because each container runs only CI jobs. A host with that role can share other workloads and always refuses extras.
-
-A separate scheduled GitHub workflow for the bump would duplicate the nightly recipe pull request flow and its GitHub App. Also, a pull request that `GITHUB_TOKEN` opens starts no CI.
 
 The `ci-runner` role selects the CI host recipe and replaces the recorded-profile exception. Roleless operator Nodes do not gain workload or maintenance status from old profile settings.
 
@@ -861,9 +853,9 @@ Create starts a VM that exists but is stopped, and fails with the `incus start` 
 
 Incus uses Zabbly's signed `lts-7.0` repository for Ubuntu 26.04. Each artifact records its exact Debian `version`, because architecture build timestamps differ. The tool `version` names their shared 7.0.x point release. The recipe pins `incus`, `incus-base`, and `incus-client` for amd64. Zabbly bundles QEMU, qemu-img, virtiofsd, firmware, and the agent. Hosts remove the obsolete separate Ubuntu `incus-agent` package. Rebuilt images start from stock; their stock agent unit runs `/run/incus_agent/incus-agent`, supplied by the outer host. The installer does not replace that unit.
 
-`bin/recipe-artifacts bump` authenticates Sury and Zabbly indexes and updates their complete package sets together. It verifies the pinned signing key digests, `InRelease` signatures, package index hashes, and Incus Debian file digests. The nightly job opens one artifact bump PR under the [shared artifact update policy](#bump-the-php-build). Only changed Incus artifacts are downloaded; merge verification reads signed indexes without downloading Debian files. The existing [artifact mirror](#the-recipe-artifact-mirror) retains the same content-addressed Debian files used by Git and Sury. Managed machines have no rolling Zabbly APT source. Review the [7.0 release notes](https://discuss.linuxcontainers.org/t/incus-7-0-lts-has-been-released/26641) and [7.0.1 fixes](https://discuss.linuxcontainers.org/t/incus-7-0-1-lts-has-been-released/26942) for new requirements. The 7.0 line is supported until June 2031.
+`bin/recipe-artifacts bump` authenticates Sury and Zabbly indexes and updates their complete package sets together. It verifies the pinned signing key digests, `InRelease` signatures, package index hashes, and Incus Debian file digests. Only changed Incus artifacts are downloaded; merge verification reads signed indexes without downloading Debian files. The existing [artifact mirror](#the-recipe-artifact-mirror) retains the same content-addressed Debian files used by Git and Sury. Managed machines have no rolling Zabbly APT source. Review the [7.0 release notes](https://discuss.linuxcontainers.org/t/incus-7-0-lts-has-been-released/26641) and [7.0.1 fixes](https://discuss.linuxcontainers.org/t/incus-7-0-1-lts-has-been-released/26942) for new requirements. The 7.0 line is supported until June 2031.
 
-The bump tests own fixed Incus versions and fake indexes, with distinct builds per architecture. Nightly artifact and snapshot updates therefore change no expected test result. Tests that decode or send the recipe compare with the document under test.
+The bump tests own fixed Incus versions and fake indexes, with distinct builds per architecture. Artifact and snapshot updates therefore change no expected test result. Tests that decode or send the recipe compare with the document under test.
 
 The `ci-runner` role selects the complete Incus package set. Configured task VM hosts also add that set to their role-selected recipe tools. Other roles do not select Incus merely because it is installed; inventory those hosts separately before planning an upgrade.
 
@@ -1092,7 +1084,7 @@ A failed candidate leaves the promoted image in service. A newer promoted build 
 
 A recipe revert builds the selected identity from stock. Swamp retains completed steps within each native run; an explicit Gateway retry records a new stock attempt. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
-Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot and Ubuntu pin PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
+Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
 Each Incus image attempt starts one native Swamp workflow, `operation-task-vm-image-build`. Every step runs on a 209 worker with `labels: {role: swamp}`; the build host needs no Swamp worker. The Gateway passes the full admitted intent as workflow inputs and checks at the run start that the attempt owns its build and that its recipe is still current. Steps make no Gateway calls. A recipe that changes during the run does not stop it; the next reconcile builds the new recipe.
 
@@ -1136,7 +1128,7 @@ The native service writes bounded diagnostics to its private phase log. Observat
 
 Every image package command, including assessment and the shared PHP installer, inherits the same snapshot configuration through `APT_CONFIG`. Verification checks the PHP build and loaded modules without installing or repairing it. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies. Image origin checks use only the selected snapshot's retained indexes and never fetch indexes from another snapshot.
 
-Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. The nightly snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
+Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. A snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
 
 The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes. Failure to prepare that temporary configuration reports the `verify` stage and stops before software checks. Git and Composer must report the same nonempty version output as root and as the guest account. This accepts a newer Ubuntu package that passed origin checks while refusing a broken guest executable.
 
@@ -1176,54 +1168,6 @@ After promotion, the final chain step prunes old recipe images on that host. It 
 Pruning deletes a base image's topology seed, and a seed under construction, right before the image, so a kept base keeps its seed. When VMs still use clones of a deleted seed, Incus moves the seed's dataset to its `deleted` path and destroys it with the last clone, so Orbit tracks no references.
 
 Pruning also removes the unused gateway, app-dev, app-prod, and operator aliases for host-local build records, including current and previous recipes. Images and aliases used by existing VMs stay until unused. Otherwise aliased or retained base images stay; only their unused role aliases are removed. Pruning failures resume without rebuilding. The base-only chain has 15 jobs, including the topology seed, promotion, and pruning.
-
-### Nightly recipe maintenance
-
-#### Nightly Ubuntu rollout policy
-
-Every Ubuntu pin follows the named snapshot, including `resolute-updates`. Swamp auto-merges these PRs on green Required checks. The fleet rollout converges every eligible Linux Node, including `app-prod`, in its configured window. A failed Node halts convergence and raises an alert; later Nodes stay untouched.
-
-Signed indexes and digests authenticate the inputs. CI verifies every Ubuntu pin, and the merge accepts only the regenerated bump on the checked head. Verified images gate rollout. Ordered Node inventory, health, and Doctor checks stop a faulty rollout. These checks make automation safe without promising that an upstream package cannot regress.
-
-At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), Swamp requests a recipe PR Operation. The Gateway captures its public intent and starts `operation-fleet-recipe-pr` on 209. At run start the Gateway mints one token with `contents: write`, `pull_requests: write` and `checks: read` for `hardimpactdev/orbit` and puts it in the vault as `fleet-recipe-pr-<task>`.
-
-The first step prepares the candidate. One step then runs the chosen action: open (branch, recipe file, PR), refresh (tree, commit, expected-head reference update), merge on green, or close. Each write carries its expected head, so a rerun repeats it safely. A cleanup job revokes the token. A failed run revokes its token too, so a retry is a new task.
-
-Each GitHub step uses the exact mint-only primitive for the fixed `hardimpactdev/orbit` repository, keeps its short-lived token in memory and attempts revocation before returning public data. The App key stays in the Gateway. Native outputs retain the first prepared candidate; failed writes stop the run for inspection. No step reads intent or projects results through a Gateway callback.
-
-Swamp reads main and advances `ubuntu.snapshot` to the current date at UTC midnight. The same bump resolves every `source: ubuntu` pin to the newest Debian version across the snapshot's release, updates, and security pockets. It verifies signed metadata and index digests and requires the same versions on every recipe architecture. Missing packages or differing architecture versions stop the bump without writing. Artifact versions, URLs, and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR.
-
-The Swamp maintenance workflow checks every five minutes from 03:00 through the end of the Amsterdam date. Each date, variant and serving recipe revision admits one open Operation; repeated requests reuse that intent. If main has recipe definitions other than the snapshot date that the serving release does not carry, the Operation fails with `fleet.recipe_pending_deployment` before any GitHub write. A new serving recipe revision permits a new intent. A date branch makes repeated submissions reuse the same PR. The same workflow opens the authenticated [artifact update](#bump-the-php-build) pull request for newer Sury PHP or Incus LTS builds.
-
-Before its first GitHub write, the action saves the authenticated candidate in native step output. Native resume keeps completed steps and that candidate. It checks the branch, file, PR and expected head before repeating an uncertain write. An already merged exact PR/head completes without another merge.
-
-The Gateway projects a failed native root as a terminal failed Operation. That ends its mint authority and cannot be reopened by native resume. After this projection, an operator must inspect the uncertain effect and explicitly admit a fresh Operation with a new idempotency key. Scheduled duplicate requests keep returning their original Operation. A fresh Operation captures current authenticated candidates and rechecks GitHub state; it does not replay the old root.
-
-Refresh and merge use one rule to end a nightly PR: close an App `nightly/recipe-*` PR once main’s snapshot has reached its date or a newer-date App PR is open. This runs before Required checks, evidence resolution, or merge attempts, whatever kept the PR open. It covers failed checks, rejected evidence, and refused merges.
-
-Swamp closes first, then posts a best-effort comment with the reason. An uncertain GitHub write fails the native run for inspection before recovery; the Gateway adds no retry timer. Other PRs can proceed because main’s snapshot also proves supersession after a replacement merges.
-
-For today’s date, Refresh rebuilds a remaining failed PR only if main advanced beyond its commit’s parent. It creates one fresh Gateway App commit on current main, using an expected-head force update so a concurrent push cannot be overwritten.
-
-Recovery is one-shot per PR: any previous force push or close/reopen blocks it. Before writing, it verifies App authorship, the single authenticated snapshot-and-Ubuntu-pin commit, the PR timeline, and body edit history, then rechecks the PR head. Refresh leaves green, pending, or closed PRs unchanged, as well as PRs modified by a person. The shared closing rule still applies to superseded App PRs. Other bots' reviews and edits also block recovery; only cross-references are ignored.
-
-A short recovery comment is best-effort. An uncertain GitHub recovery write fails the native run for inspection. Other admitted Operations can proceed.
-
-A cross-reference from another issue or PR is not a modification and does not block refresh; unknown or truncated history still blocks it.
-
-Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The shared closing rule avoids keeping a superseded PR open beside tonight’s replacement.
-
-Swamp requests retire, refresh and merge Operations for each candidate on rotating five-minute ticks. Each action runs at most every fifteen minutes.
-
-Unchanged evidence reuses the same Gateway intent and starts no new native run. Retirement wakes when the recipe or candidate set changes; refresh wakes when main or the required-check observation changes; merge wakes when its required-check observation changes, plus the recipe revision for artifact candidates. These actions also wake when a candidate leaves draft, changes its base, or changes its source repository. Ordinary main commits do not wake retirement. Daily opens use the serving recipe revision separately.
-
-The Gateway exposes these read-only revisions without a retry cache, timer or execution receipt. The native action rechecks all write policy before an effect.
-
-Swamp checks retirement first on every merge request. A stale candidate is closed before check inspection; a failed retirement defers the merge. It performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author stops the native run; the merge uses the expected head SHA.
-
-Each admitted merge regenerates its evidence and checks the live PR target, author, head, and draft state. There is no Gateway evidence cache, blocked-head record, retry timer or per-PR execution receipt. GitHub, network, snapshot download and uncertain write failures remain native failures for inspection and recovery. Native recovery retains completed steps and checks an uncertain branch, file or PR write before another effect.
-
-The shared closing rule applies even to a green PR whose merge was refused. Superseded PRs need no further index downloads or merge attempts. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
 The Incus image build path alerts once per failed attempt that needs operator recovery and names `task-vms:build-recipe --retry` as recovery. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`.
 

@@ -33,7 +33,7 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
-| `builds` | 2 | Admission for [base image Operations and refreshes](/reference/compute-drivers#build-the-base-image), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
+| `builds` | 2 | Admission for [base image Operations and refreshes](/reference/compute-drivers#build-the-base-image) and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
 | `builds-optional` | Shares the 2 build workers | The [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) |
 | `operations` | 1 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation, one at a time |
 
@@ -62,7 +62,7 @@ The job runs the command in its own PHP process, as the scheduler did, so a comm
 
 The last five commands are Gateway self-maintenance. They keep the Gateway's own tables and Horizon metrics, touch no Node, and start no Swamp work. PLAN decision 9 (2026-11-01) keeps them in the Gateway: housekeeping of the Gateway's own tables is not orchestration. [Interrupted Activity finalization](/cli/activity#interrupted-requests) ends at most 500 records per run. `horizon:snapshot` records Horizon's dashboard metrics and runs only while the Gateway queue is set. `queue:prune-failed`, `activitylog:clean`, and `queue:prune-batches` delete records older than the [disk retention](/reference/gateway-recovery#disk-retention) cutoffs. Failed-job pruning and Activity cleaning also run while Tasks is disabled; batch pruning runs only while Tasks is enabled.
 
-The [task VM jobs](/reference/compute-drivers#jobs) that the scheduler queues, the host sweep, image reconciliation, and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance), go to the same connection.
+The [task VM jobs](/reference/compute-drivers#jobs) that the scheduler queues, the host sweep, and image reconciliation go to the same connection.
 
 These commands stay in the scheduler and never go to the queue, also while it is set:
 
