@@ -2,7 +2,7 @@
   "kind": "node.role_add.refuse-inactive",
   "workflow": "operation-node-role-add",
   "topology": "minimal",
-  "clean": false,
+  "clean": true,
   "budget_seconds": 30,
   "queue_timeout_seconds": 30,
   "before_gateway": [
@@ -16,28 +16,10 @@
       "fixture",
       "{\"node_updates\": [{\"id\": \"${node.peer}\", \"attributes\": {\"status\": \"failed\"}}]}"
     ],
-    [
-      "runuser",
-      "-u",
-      "orbit",
-      "--",
-      "php",
-      "swamp/proof/node.role_add/prepare.php",
-      "0",
-      "snapshot"
-    ]
+    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "0", "snapshot"]
   ],
-  "request": {
-    "method": "POST",
-    "path": "nodes/${node.peer}/roles",
-    "body": {
-      "role": "ci-runner"
-    }
-  },
-  "expect": {
-    "http_status": 422,
-    "error_code": "operation.kind_unavailable"
-  },
+  "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "ci-runner"}},
+  "expect": {"http_status": 422, "error_code": "operation.kind_unavailable"},
   "phases": [],
   "parity": "swamp/proof/node.role_add/refusal.py"
 }

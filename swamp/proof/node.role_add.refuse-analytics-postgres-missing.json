@@ -5,31 +5,9 @@
   "clean": false,
   "budget_seconds": 30,
   "queue_timeout_seconds": 30,
-  "before_gateway": [
-    [
-      "runuser",
-      "-u",
-      "orbit",
-      "--",
-      "php",
-      "swamp/proof/node.role_add/prepare.php",
-      "0",
-      "snapshot"
-    ]
-  ],
-  "request": {
-    "method": "POST",
-    "path": "nodes/${node.peer}/roles",
-    "body": {
-      "role": "analytics",
-      "postgres_process_id": 999999,
-      "clickhouse_process_id": 999998
-    }
-  },
-  "expect": {
-    "http_status": 422,
-    "error_code": "analytics.postgres_process_missing"
-  },
+  "before_gateway": [["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "0", "snapshot"]],
+  "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "analytics", "postgres_process_id": 999999, "clickhouse_process_id": 999998}},
+  "expect": {"http_status": 422, "error_code": "analytics.postgres_process_missing"},
   "phases": [],
   "parity": "swamp/proof/node.role_add/refusal.py"
 }

@@ -5,20 +5,9 @@
   "clean": false,
   "budget_seconds": 30,
   "queue_timeout_seconds": 30,
-  "before_gateway": [
-    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "0", "snapshot"]
-  ],
-  "request": {
-    "method": "POST",
-    "path": "nodes/${node.target}/roles",
-    "body": {
-      "role": "app-prod"
-    }
-  },
-  "expect": {
-    "http_status": 422,
-    "error_code": "validation.failed"
-  },
+  "before_gateway": [["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "0", "snapshot"]],
+  "request": {"method": "POST", "path": "nodes/${node.target}/roles", "body": {"role": "app-prod"}},
+  "expect": {"http_status": 422, "error_code": "validation.failed"},
   "phases": [],
   "parity": "swamp/proof/node.role_add/refusal.py"
 }
