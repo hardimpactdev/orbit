@@ -54,6 +54,8 @@ The `node.role_add` flow provides these shared parts:
 - Open Docker-to-host Analytics storage ports before running `createdb` or migrations. Keep publication ports after readiness.
 - Keep the readiness wait after the step that starts a service. Analytics starts in a native child after the Node phase; a readiness phase after that child waits before publication.
 
+- UFW skips an existing rule even when its position is wrong. Compare the public rule shape and numbered order, remove only changed owned rules, then insert the specific allow before its isolation deny and broad peer trust. Remove a replaced broad tuple only when its complete old shape matches.
+
 ## Prove it
 
 1. Start a proof topology (`bin/swamp-proof up`) and admit the command once, so you have a real intent.
