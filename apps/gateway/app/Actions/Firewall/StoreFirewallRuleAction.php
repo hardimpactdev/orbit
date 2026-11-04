@@ -60,6 +60,9 @@ final readonly class StoreFirewallRuleAction
                     throw new ResourceOperationException('firewall.rule_conflict',
                         "Node [{$node->name}] already has a {$rule->action->value} rule for {$rule->identity()}.", 409);
                 }
+                if ($rule->status === LifecycleStatus::Failed) {
+                    return $rule;
+                }
                 throw new ResourceOperationException('firewall.rule_exists',
                     "Node [{$node->name}] already has a firewall rule for {$rule->identity()}.", 409);
             }

@@ -28,6 +28,8 @@ A running Operation keeps its Node firewall target and returns `operation.target
 
 Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
 
+If an Operation fails, fix its cause and run the command again with a new idempotency key. Orbit reuses the failed rule record and starts a new Operation. Rules already applied on the Node remain in place, and the new run completes the required state. An identical active rule is still refused as `firewall.rule_exists`.
+
 ## How it works
 
 <div className="flow-at" data-chart="firewall/allow"></div>
