@@ -179,21 +179,7 @@
       loop_control: { label: "{{ item.name }}" }
     - name: Apply Gateway DNS policy
       when: rt.gateway_dns is not none
-      block:
-        - name: Write Gateway DNS unit
-          ansible.builtin.copy:
-            dest: /etc/systemd/system/orbit-gateway-dns.service
-            content: "{{ rt.gateway_dns.unit }}"
-            owner: root
-            group: root
-            mode: "0644"
-          register: dns_unit
-        - name: Start Gateway DNS policy
-          ansible.builtin.systemd:
-            name: orbit-gateway-dns.service
-            enabled: true
-            state: "{{ 'restarted' if dns_unit is changed else 'started' }}"
-            daemon_reload: "{{ dns_unit is changed }}"
+      ansible.builtin.import_tasks: tasks/gateway-dns.yml
     - name: Apply CI host resources
       when: rt.ci_host
       ansible.builtin.import_tasks: tasks/ci.yml
@@ -206,6 +192,11 @@
       when: rt.metrics is not none
       ansible.builtin.uri: { url: "{{ item.url }}" }
       loop: "{{ rt.probes }}"
+      register: runtime_endpoint
+      until: runtime_endpoint is succeeded
+      # Only initial Analytics admission starts its Process after the Node phase.
+      retries: "{{ 60 if rt.analytics is not none and rt.analytics.initialize | length > 0 else 0 }}"
+      delay: 1
       register: metrics_ready
       until: metrics_ready is succeeded
       retries: 60
@@ -384,6 +375,11 @@
     - name: Check runtime endpoints
       ansible.builtin.uri: { url: "{{ item.url }}", status_code: "{{ [200] if item.require_success else range(100, 600) | list }}" }
       loop: "{{ rt.probes }}"
+      register: runtime_endpoint
+      until: runtime_endpoint is succeeded
+      # Only initial Analytics admission starts its Process after the Node phase.
+      retries: "{{ 60 if rt.analytics is not none and rt.analytics.initialize | length > 0 else 0 }}"
+      delay: 1
     - name: Check Metrics containers and volumes
       when: rt.metrics is not none
       ansible.builtin.import_tasks: tasks/metrics.yml

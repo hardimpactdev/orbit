@@ -38,31 +38,204 @@
   "remaining_proof": [
     "Rerun all paths after topology fixes with role/firewall Doctor checks on every participant.",
     "Prove the production PHP exporter pool and a zero-change rerun after native production clone is available.",
-    "Finish remaining role and admission branches, including Analytics success, before opening the PR."
+    "Finish remaining role and admission branches, including Analytics success, before opening the PR.",
+    "Run the committed Analytics, app-prod, Ingress, Gateway and additional admission fixtures once provisioning is available.",
+    "Attribute the Metrics12.44s trial delta on one topology before opening the PR."
   ],
   "cases": [
-    {"case": "node.role_add", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add/20261103T235704Z-minimal.json", "commit": "b9f008154f01c5bc4e66a80a9fcb04e06c9025e5", "proof_pass": true, "operation_status": "succeeded", "seconds": 127.65},
-    {"case": "node.role_add.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.no-drift/20261104T001019Z-minimal.json", "commit": "80529248645d05c5621dc16e4d10a9e3824822e0", "proof_pass": false, "operation_status": "succeeded", "seconds": 121.99, "ansible_changed_zero": true},
-    {"case": "node.role_add.metrics", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics/20261104T000419Z-minimal.json", "commit": "8c404a7c10bb79650776ad456267d8e041302550", "proof_pass": false, "operation_status": "succeeded", "seconds": 147.44},
-    {"case": "node.role_add.metrics.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.no-drift/20261104T000813Z-minimal.json", "commit": "80529248645d05c5621dc16e4d10a9e3824822e0", "proof_pass": false, "operation_status": "succeeded", "seconds": 61.24, "ansible_changed_zero": true},
-    {"case": "node.role_add.refuse-protected", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-protected/20261104T001756Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": null, "seconds": null, "refusal": "validation.failed"},
-    {"case": "node.role_add.metrics.repair-restart", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-restart/20261104T000550Z-minimal.json", "commit": "8c404a7c10bb79650776ad456267d8e041302550", "proof_pass": false, "operation_status": "succeeded", "seconds": 61.28},
-    {"case": "node.role_add.metrics.repair-missing-config", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-missing-config/20261104T000657Z-minimal.json", "commit": "8c404a7c10bb79650776ad456267d8e041302550", "proof_pass": false, "operation_status": "succeeded", "seconds": 63.08},
-    {"case": "node.role_add.database", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database/20261104T001142Z-minimal.json", "commit": "80529248645d05c5621dc16e4d10a9e3824822e0", "proof_pass": false, "operation_status": "succeeded", "seconds": 34.94},
-    {"case": "node.role_add.database.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database.no-drift/20261104T001220Z-minimal.json", "commit": "80529248645d05c5621dc16e4d10a9e3824822e0", "proof_pass": false, "operation_status": "succeeded", "seconds": 34.91, "ansible_changed_zero": true},
-    {"case": "node.role_add.ci", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci/20261104T002212Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": false, "operation_status": "succeeded", "seconds": 44.73, "failure": "Doctor has unverifiable observations"},
-    {"case": "node.role_add.ci.repair-acl-selector", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci.repair-acl-selector/20261104T002245Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": "succeeded", "seconds": 28.72},
-    {"case": "node.role_add.ci.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci.no-drift/20261104T002319Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": "succeeded", "seconds": 30.75, "ansible_changed_zero": true},
-    {"case": "node.role_add.refuse-unknown", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-unknown/20261104T002321Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": null, "seconds": null, "refusal": "validation.failed"},
-    {"case": "node.role_add.refuse-already-assigned", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-already-assigned/20261104T002323Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": null, "seconds": null, "refusal": "validation.failed"},
-    {"case": "node.role_add.refuse-singleton", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-singleton/20261104T002325Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": null, "seconds": null, "refusal": "validation.failed"},
-    {"case": "node.role_add.refuse-conflict", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-conflict/20261104T002430Z-minimal.json", "commit": "fba003837a51db6b838a054adb5b74b0a51228a0", "proof_pass": true, "operation_status": null, "seconds": null, "refusal": "validation.failed"},
-    {"case": "node.role_add.refuse-analytics-missing-postgres", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-postgres/20261104T002329Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": null, "seconds": null, "refusal": "validation.failed"},
-    {"case": "node.role_add.refuse-analytics-missing-clickhouse", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-clickhouse/20261104T002331Z-minimal.json", "commit": "0aa16c2547700fa676512880e7b446337990f44a", "proof_pass": true, "operation_status": null, "seconds": null, "refusal": "validation.failed"},
-    {"case": "node.role_add.metrics.instance", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance/20261104T003959Z-minimal.json", "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a", "proof_pass": false, "operation_status": null, "seconds": null, "preparation_error": "prepare failed"},
-    {"case": "node.role_add.websocket", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket/20261104T004109Z-minimal.json", "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a", "proof_pass": false, "operation_status": "succeeded", "seconds": 52.86, "failure": "Doctor has unverifiable observations"},
-    {"case": "node.role_add.websocket.no-drift", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket.no-drift/20261104T004151Z-minimal.json", "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a", "proof_pass": true, "operation_status": "succeeded", "seconds": 38.83, "ansible_changed_zero": true},
-    {"case": "node.role_add.swamp-bootstrap", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.swamp-bootstrap/20261104T004247Z-minimal.json", "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a", "proof_pass": false, "operation_status": "failed", "seconds": 52.81, "ansible_core_installed": "2.20.11", "failure": "Retained Swamp identity source missing"}
+    {
+      "case": "node.role_add",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add/20261103T235704Z-minimal.json",
+      "commit": "b9f008154f01c5bc4e66a80a9fcb04e06c9025e5",
+      "proof_pass": true,
+      "operation_status": "succeeded",
+      "seconds": 127.65
+    },
+    {
+      "case": "node.role_add.no-drift",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.no-drift/20261104T001019Z-minimal.json",
+      "commit": "80529248645d05c5621dc16e4d10a9e3824822e0",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 121.99,
+      "ansible_changed_zero": true
+    },
+    {
+      "case": "node.role_add.metrics",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics/20261104T000419Z-minimal.json",
+      "commit": "8c404a7c10bb79650776ad456267d8e041302550",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 147.44
+    },
+    {
+      "case": "node.role_add.metrics.no-drift",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.no-drift/20261104T000813Z-minimal.json",
+      "commit": "80529248645d05c5621dc16e4d10a9e3824822e0",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 61.24,
+      "ansible_changed_zero": true
+    },
+    {
+      "case": "node.role_add.refuse-protected",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-protected/20261104T001756Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": null,
+      "seconds": null,
+      "refusal": "validation.failed"
+    },
+    {
+      "case": "node.role_add.metrics.repair-restart",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-restart/20261104T000550Z-minimal.json",
+      "commit": "8c404a7c10bb79650776ad456267d8e041302550",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 61.28
+    },
+    {
+      "case": "node.role_add.metrics.repair-missing-config",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.repair-missing-config/20261104T000657Z-minimal.json",
+      "commit": "8c404a7c10bb79650776ad456267d8e041302550",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 63.08
+    },
+    {
+      "case": "node.role_add.database",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database/20261104T001142Z-minimal.json",
+      "commit": "80529248645d05c5621dc16e4d10a9e3824822e0",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 34.94
+    },
+    {
+      "case": "node.role_add.database.no-drift",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.database.no-drift/20261104T001220Z-minimal.json",
+      "commit": "80529248645d05c5621dc16e4d10a9e3824822e0",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 34.91,
+      "ansible_changed_zero": true
+    },
+    {
+      "case": "node.role_add.ci",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci/20261104T002212Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 44.73,
+      "failure": "Doctor has unverifiable observations"
+    },
+    {
+      "case": "node.role_add.ci.repair-acl-selector",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci.repair-acl-selector/20261104T002245Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": "succeeded",
+      "seconds": 28.72
+    },
+    {
+      "case": "node.role_add.ci.no-drift",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.ci.no-drift/20261104T002319Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": "succeeded",
+      "seconds": 30.75,
+      "ansible_changed_zero": true
+    },
+    {
+      "case": "node.role_add.refuse-unknown",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-unknown/20261104T002321Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": null,
+      "seconds": null,
+      "refusal": "validation.failed"
+    },
+    {
+      "case": "node.role_add.refuse-already-assigned",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-already-assigned/20261104T002323Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": null,
+      "seconds": null,
+      "refusal": "validation.failed"
+    },
+    {
+      "case": "node.role_add.refuse-singleton",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-singleton/20261104T002325Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": null,
+      "seconds": null,
+      "refusal": "validation.failed"
+    },
+    {
+      "case": "node.role_add.refuse-conflict",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-conflict/20261104T002430Z-minimal.json",
+      "commit": "fba003837a51db6b838a054adb5b74b0a51228a0",
+      "proof_pass": true,
+      "operation_status": null,
+      "seconds": null,
+      "refusal": "validation.failed"
+    },
+    {
+      "case": "node.role_add.refuse-analytics-missing-postgres",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-postgres/20261104T002329Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": null,
+      "seconds": null,
+      "refusal": "validation.failed"
+    },
+    {
+      "case": "node.role_add.refuse-analytics-missing-clickhouse",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.refuse-analytics-missing-clickhouse/20261104T002331Z-minimal.json",
+      "commit": "0aa16c2547700fa676512880e7b446337990f44a",
+      "proof_pass": true,
+      "operation_status": null,
+      "seconds": null,
+      "refusal": "validation.failed"
+    },
+    {
+      "case": "node.role_add.metrics.instance",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics.instance/20261104T003959Z-minimal.json",
+      "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a",
+      "proof_pass": false,
+      "operation_status": null,
+      "seconds": null,
+      "preparation_error": "prepare failed"
+    },
+    {
+      "case": "node.role_add.websocket",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket/20261104T004109Z-minimal.json",
+      "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a",
+      "proof_pass": false,
+      "operation_status": "succeeded",
+      "seconds": 52.86,
+      "failure": "Doctor has unverifiable observations"
+    },
+    {
+      "case": "node.role_add.websocket.no-drift",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.websocket.no-drift/20261104T004151Z-minimal.json",
+      "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a",
+      "proof_pass": true,
+      "operation_status": "succeeded",
+      "seconds": 38.83,
+      "ansible_changed_zero": true
+    },
+    {
+      "case": "node.role_add.swamp-bootstrap",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_add.swamp-bootstrap/20261104T004247Z-minimal.json",
+      "commit": "8d5aea7ae85cc9550aef025a2797abd4745d250a",
+      "proof_pass": false,
+      "operation_status": "failed",
+      "seconds": 52.81,
+      "ansible_core_installed": "2.20.11",
+      "failure": "Retained Swamp identity source missing"
+    }
   ],
   "growth": {
     "orbit": {
@@ -110,24 +283,26 @@
   },
   "checks": {
     "operation_deno_tests": "652 passed",
-    "input_builder_tests": "2 passed",
+    "input_builder_tests": "2 passed again at cd30ba6f10",
     "input_behavior_tests": "2 passed",
     "changed_gateway_tests": "70 passed",
     "gateway_composer_check": "passed",
     "gateway_full_tests": "254 failures; seven role admission failures also reproduce with the main catalog preloaded",
-    "ansible_lint": "passed",
+    "ansible_lint": "passed again at cd30ba6f10;9 files",
     "ruff": "passed",
     "shape_placement_names": "passed",
     "docs_build_lint_impact": "passed",
-    "native_validation": "Latest all-workflow validation blocked by the local CLI account gate; real VM runs executed the changed workflow."
+    "native_validation": "Latest all-workflow validation blocked by the local CLI account gate; real VM runs executed the changed workflow.",
+    "new_fixture_python_lint": "Ruff passed; Analytics canonical map contains4 files"
   },
   "independent_review": {
-    "reviewed_commit": "b9f008154f01c5bc4e66a80a9fcb04e06c9025e5",
+    "reviewed_commit": "cd30ba6f10ccce0d0ecc579291f0771753253228",
     "findings": [
-      "Full CI ACL selector comparison",
-      "Missing Prometheus config and container bind repair"
+      "Restore60s initial Analytics readiness wait",
+      "Apply the Gateway DNS oneshot only on resolver drift",
+      "Doctor checks for Processes, all participants and actual refused target"
     ],
-    "resolution": "Both fixed; CI selector damage and zero-change rerun pass full proof. Prometheus missing-file repair completes; Doctor 209 remains blocked."
+    "resolution": "Code corrected; new runtime cases are committed. Required VM reproof remains pending; both new provisioning attempts failed before topology setup."
   },
   "limitations": [
     "Initial fresh app-dev receipt used role-only Doctor; later stricter participant checks fail on missing controller observations.",
@@ -179,6 +354,64 @@
     "firewall": 120,
     "exporters": 900,
     "prometheus": 180,
-    "check": 60
+    "check": 120
+  },
+  "timing_analysis": {
+    "source": "Native steps in the recorded fresh receipts; trial source under evidence/ansible-trial-phase.",
+    "app_dev": {
+      "trial_seconds": 87,
+      "current_seconds": 127.65,
+      "difference_seconds": 40.65,
+      "tool_manager_children_seconds": [
+        49.795,
+        17.832
+      ],
+      "ansible_phases_seconds": 53.278,
+      "other_native_steps_seconds": 4.484,
+      "admission_scheduling_projection_seconds": 2.261,
+      "explanation": "The trial applies Tool Manager resources in Ansible using precomputed manager-plans.json. This implementation calls the existing native Tool Manager child twice (67.627s); each child computes and checks its pinned plan. The remaining phase/native work takes58.023s. This boundary explains the main app-dev cost. No new Gateway intent field was added."
+    },
+    "metrics": {
+      "trial_seconds": 135,
+      "current_seconds": 147.44,
+      "difference_seconds": 12.44,
+      "node_seconds": 49.684,
+      "exporters_seconds": 44.02,
+      "other_ansible_phases_seconds": 34.204,
+      "other_native_steps_seconds": 15.131,
+      "admission_scheduling_projection_seconds": 4.401,
+      "explanation": "Node/container work and multi-Node exporter installation account for93.704s. The finished code checks complete Docker settings, file state and exporter service state that the trial does not cover. Images/package downloads also contribute to these fresh phases. The supplied trial folder has source but no phase-time receipt, so the12.44s delta cannot yet be allocated exactly; a same-topology comparison remains required before PR."
+    },
+    "trial_limit": "Trial manager plans were generated in advance; copying that static file would add a stale source of authority. Keep canonical admitted inputs."
+  },
+  "provision_attempts": [
+    {
+      "operation_id": 9897,
+      "task_group_id": 3135,
+      "task_vm_id": 528,
+      "status": "failed",
+      "step": "bootstrap-observer-download",
+      "reason": "curl exit28; GitHub observer artifact connection timed out after120002ms",
+      "destroyed": true,
+      "independent_check": "incus info --project orbit-tasks tvm-528: Instance not found"
+    },
+    {
+      "operation_id": 9906,
+      "task_group_id": 3139,
+      "task_vm_id": 530,
+      "status": "failed",
+      "step": "bootstrap-account",
+      "reason": "Shared @swamp/ssh vm-first host behavior lock held by orbit@swamp pid3634319 timed out after60001ms",
+      "destroyed": true,
+      "independent_check": "incus info --project orbit-tasks tvm-530: Instance not found"
+    }
+  ],
+  "readiness_wait": {
+    "initial_analytics": {
+      "retries": 60,
+      "delay_seconds": 1,
+      "phase_budget_seconds": 120
+    },
+    "existing_analytics": "A single health check; no migration or Process recreation."
   }
 }

@@ -147,5 +147,11 @@ print('parity: private inputs removed; original admission replayed')
 # Evaluate every participant before failing, so a missing observer cannot hide another Node's drift.
 participants = {intent['node_id'], *(item['node_id'] for item in intent['publications']),
                 *(item['exporter_node_id'] for item in intent['exporters'])}
-reports = [doctor(node) for node in sorted(participants)]
+if intent['prometheus']:
+    participants.add(intent['prometheus']['node_id'])
+if intent['runtime']['analytics']:
+    participants.add(intent['runtime']['analytics']['clickhouse_node_id'])
+families = ['role', 'firewall', *(['process'] if role == 'analytics' else []),
+            *(['instance', 'route', 'database_connection'] if 'instance' in sys.argv[3:] else [])]
+reports = [doctor(node, families) for node in sorted(participants)]
 check(all(reports), 'Doctor requires zero drift and no unverifiable records')

@@ -167,6 +167,7 @@ sequenceDiagram
     SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
   end
   SW->>N: Check the role<br/>Ansible phase: check
+  %%> - after initial Analytics startup, wait up to 60 seconds for its health endpoint
   %%> Role boundary:
   %%> - node:converge owns the Node observer and Orbit CLI
   %%> - each phase is idempotent; a second run reports zero changes

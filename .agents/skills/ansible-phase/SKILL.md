@@ -50,6 +50,9 @@ The `node.role_add` flow provides these shared parts:
 - `get_url` needs the algorithm in a checksum: add `sha256:` to a bare digest.
 - `regex_search` with a `'\1'` group argument fails. Use `regex_findall`.
 
+- A successful `Type=oneshot` service without `RemainAfterExit` is inactive. `state: started` reruns it every time. Compare the live state it owns and apply only on drift, keeping its unit conditions.
+- Keep the readiness wait after the step that starts a service. Analytics starts in a native child after the Node phase; its final check owns the bounded initial-start wait.
+
 ## Prove it
 
 1. Start a proof topology (`bin/swamp-proof up`) and admit the command once, so you have a real intent.

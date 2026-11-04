@@ -17,8 +17,9 @@ def gateway(method, path, body=None, key=None):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def doctor(node):
-    report = gateway('POST', 'doctor', {'node_id': node, 'families': ['role', 'firewall']})['response']['data']
+def doctor(node, families=None):
+    families = families or ['role', 'firewall']
+    report = gateway('POST', 'doctor', {'node_id': node, 'families': families})['response']['data']
     summary = report['summary']
-    print(f'Doctor Node {node}: role/firewall drift={summary["drift"]}, unverifiable={summary["unverifiable"]}')
+    print(f'Doctor Node {node}: {'/'.join(families)} drift={summary["drift"]}, unverifiable={summary["unverifiable"]}')
     return summary['drift'] == 0 and summary['unverifiable'] == 0
