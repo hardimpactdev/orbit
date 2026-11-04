@@ -352,7 +352,7 @@ jobs:
   - name: Open Analytics storage
     labels: {role: swamp}
     writes: true
-    guard: ${{ inputs.intent.runtime.analytics == null }}
+    guard: ${{ inputs.intent.runtime.analytics == null || inputs.intent.firewall.desired.filter(rule, "docker0" in rule).size() == 0 }}
     task:
       type: behavior
       behaviorType: command/shell

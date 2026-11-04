@@ -98,6 +98,7 @@ sequenceDiagram
   SW->>N: Apply the role on the Node<br/>Ansible phase: node
   opt Analytics uses local storage
     SW->>N: Open Analytics storage<br/>Ansible phase: storage-firewall
+  %%> - for local Analytics storage, retire its previous owned port before applying the admitted port
   end
   opt Analytics needs initialization
     SW->>N: Pull the Analytics image<br/>cfgmgmt docker_image
@@ -164,7 +165,6 @@ sequenceDiagram
   end
   SW->>N: Publish role sites<br/>Ansible phase: publication
   SW->>N: Open the firewall<br/>Ansible phase: firewall
-  %%> - for local Analytics storage, retire its previous owned port before applying the admitted port
   opt role changes DNS
     SW->>N: Publish private DNS<br/>native delta publication
   end
