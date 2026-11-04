@@ -35,7 +35,7 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **The Gateway never executes work.** It checks the request, records the intent as a task (ADR 0244; today an Operation), and takes a lock per target. It passes the full intent as Swamp workflow inputs and records state only from the terminal result (R2).
 
-**Node work follows one shape (R4).** The Gateway starts one Swamp run on Node 209 and replies 202. Swamp reaches Nodes over `@swamp/ssh`, with official `@swamp/cfgmgmt/*` behaviors where they fit, or runs an Ansible phase for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A check step confirms the end state. There are no per-Node workers.
+**Node work follows one shape (R4).** The Gateway starts one Swamp run and replies 202. A Swamp worker reaches Nodes over `@swamp/ssh`, with official `@swamp/cfgmgmt/*` behaviors where they fit, or runs an Ansible phase for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A check step confirms the end state. There are no per-Node workers.
 
 **Steps never call the Gateway**, except for certificate signing. GitHub tokens are minted at admission. Secrets go Gateway → vault → step as vault key names, never values (R3).
 
@@ -54,6 +54,8 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 **A chart is minimal.** It shows the real flow steps and the true exceptions, nothing else. A step explanation says only what the label and detail line do not: why it must happen, when it runs, what happens on failure. Do not restate the label, and do not list what the command covers, which options mean or what a flag changes: those belong in the description and the option table of the command's docs page. A flag that adds no steps and only changes a check, such as `--force`, gets no `opt` block and no note in the chart.
 
 **A chart is caller-agnostic.** The caller is the CLI, MCP or API. A specific client that calls the command, such as Conn, is not drawn in its chart; that client's own steps belong in its own flow.
+
+**A chart applies to any Orbit installation.** Use role names and placeholders such as `PORT`, `NODE` and `TASK`. Do not use concrete Node or task IDs, deployment hostnames or fixed execution hosts. Keep lifecycle states and implementation details in the step panel when they do not name the action. Concrete usage examples belong on the command's documentation page.
 
 **Prefer the gentle action.** Reload over restart. Wait briefly for a busy lock within the time budget. Clean up harmless leftovers on a best-effort basis.
 
@@ -75,7 +77,7 @@ For Schedules:
 
 Step labels become the progress names, so keep them stable and meaningful.
 
-Still open for Nick: live `node:role:relocate`. Production smoke is removed for now; `instance.smoke.mmd` holds its future design. There is no DNS hold: Swamp on 209 reaches every Node, the VPN Node included. Chart these with a `Note` that says "open: Nick decides", and list them in your report.
+Still open for Nick: live `node:role:relocate`. Production smoke is removed for now; `instance.smoke.mmd` holds its future design. There is no DNS hold: Swamp reaches every Node, the VPN Node included. Chart these with a `Note` that says "open: Nick decides", and list them in your report.
 
 The migration's `DECISIONS.md` (on mini: `~/migration-dashboard/flows/DECISIONS.md`) holds the orchestrator's decisions. Where it differs from this page, `DECISIONS.md` wins. The proving order is in `~/migration-dashboard/data/proof-order.json` on mini.
 
@@ -112,7 +114,7 @@ Each lane is one `participant` line. A `%% lane <ID> icon=<terminal|gateway|work
 
 - `CLI as CLI / MCP<br/>orbit · MCP tools`
 - `GW as Gateway<br/>Laravel API`
-- `SW as Swamp<br/>serve on Node 209`
+- `SW as Swamp<br/>workflow execution`
 - `N as Target Node<br/>reached over ssh`
 - For a read-only command that depends on Node facts, a Node agent lane may show how the Gateway's state stays current: title `Node agent`, subtitle `orbit-agent`, `icon=server pill=observer tone=amber`.
 
@@ -135,11 +137,11 @@ Every step has `%%>` lines directly under it, which the step-detail panel shows.
 
 ### Content
 
-Step 1 is the real CLI call from the command page. The command and its argument go on the main line, the flags on the detail line. Its explanation starts with a `Command:` block: one full example, then `syntax: …`. Never write a JSON-like `{node: 7}`.
+Step 1 is the real CLI call from the command page, with placeholders for installation-specific values. The command and its argument go on the main line, the flags on the detail line. Its explanation starts with a `Command:` block: the full command with placeholders, then `syntax: …`. Never write a JSON-like `{node: 7}`.
 
 Show the whole flow: the CLI request, the Gateway check, run start, the 202, every Swamp and Node step, the result, the main failure in one `alt`/`else`, and the `operation:show` polling loop when the kind is asynchronous. Never leave out common steps. Use 8–14 numbered steps.
 
-Use the Orbit glossary in `docs/concepts.md`: access grant, Placement, Node agent, Instance, Route, Process, Schedule, Tool, Tool Manager, Database server. Write "your Node has an access grant to Node 12", never "you may use the Node". Use example ids (Node 12, task #5140), keep them consistent within a chart, and never show secrets.
+Use the Orbit glossary in `docs/concepts.md`: access grant, Placement, Node agent, Instance, Route, Process, Schedule, Tool, Tool Manager, Database server. Write "the calling Node has an access grant to the target Node", never "you may use the Node". Use consistent role names and placeholders throughout the chart, and never show secrets.
 
 ## Checks
 

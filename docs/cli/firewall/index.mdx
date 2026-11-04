@@ -106,9 +106,11 @@ If authorized overlap narrowing occurred, restore the exact previous operator re
 
 A rule's identity on a Node is its port, protocol, and source ([ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source)). An omitted `--protocol` means both `tcp` and `udp`; an omitted `--from` means `any`. Admission refuses:
 
-- a second rule with the same identity and action: `firewall.rule_exists`;
+- a second active or in-progress deny rule with the same identity: `firewall.rule_exists`;
 - an allow and a deny with the same identity: `firewall.rule_conflict`;
 - a rule for both protocols beside a `tcp` or `udp` rule on the same port and source: `firewall.rule_overlap`.
+
+Repeating `firewall:allow` reuses the rule record and checks the Node. Correct entries are skipped; missing or misplaced entries are repaired. If the whole rule is already correct, the command succeeds with skip reason `firewall.rule_exists`. A failed rule can be retried with the same identity and action. A running firewall change still excludes another change on the same Node.
 
 The port is one number from 1 through 65535, such as `25`, or an ordered range, such as `8000:8100`. Service names are not accepted. The CLI checks the port, source, and protocol before it sends a request.
 
@@ -131,7 +133,7 @@ orbit firewall:allow 25 --node=7                                      # everyone
 orbit firewall:deny 25 --node=7 --from=203.0.113.9                    # except this host
 ```
 
-Swamp reads `ufw status numbered` over SSH. A typed step on Node 209 plans the ufw commands, one line per protocol and address family, with each insert position counted as the rows will be. Each command then runs as one `ufw` argument list over SSH, one at a time; no script reaches the Node. A second read and the check step verify the order as well as the lines. If another writer changes UFW between the read and the insert, the check fails and a rerun repairs the order. A removal leaves the other lines in order.
+Swamp checks the rules and their order after each change. If a concurrent change causes verification to fail, fix the cause and retry. A removal leaves the other lines in order.
 
 ### Change rules without an exposure window
 
@@ -147,7 +149,7 @@ Every command accepts `--json` and requires `--node` with a numeric Node ID. All
 
 ## Error codes
 
-The CLI validates the port, source, and protocol before it sends a request. The Gateway returns admission errors. Native diagnostic reasons appear in Swamp history. If execution stops before the result step, the final Operation reports `operation.native_failed`.
+The CLI validates the port, source, and protocol before it sends a request. The Gateway returns admission errors. Native diagnostic reasons appear in Swamp history. If execution stops before the final check, the final Operation reports `operation.native_failed`.
 
 | Error code | Meaning |
 | --- | --- |
@@ -155,7 +157,7 @@ The CLI validates the port, source, and protocol before it sends a request. The 
 | `firewall.source_invalid` | The source is not `any`, an IP address, or a valid CIDR. |
 | `firewall.protocol_invalid` | The protocol is not `tcp` or `udp`. |
 | `firewall.port_invalid` | The port is outside 1 through 65535 or the range is not ordered. |
-| `firewall.rule_exists` | A rule with the same port, protocol, source, and action exists on the Node. |
+| `firewall.rule_exists` | Successful skip reason for an already-correct allow rule; a refusal for an existing active or in-progress deny rule. |
 | `firewall.rule_conflict` | An allow and a deny would have the same port, protocol, and source. |
 | `firewall.rule_overlap` | A rule for both protocols overlaps a `tcp` or `udp` rule on the same port and source. |
 | `firewall.rule_not_found` | No rule matches the removal. |
@@ -169,7 +171,9 @@ The CLI validates the port, source, and protocol before it sends a request. The 
 
 ## Execution and ownership
 
-The workflow `operation-firewall-direct` runs three steps on Node 209: it resolves the shipped rule script, runs it on the Node over official SSH with the admitted host key and `sudo`, and asserts its exit code. The script holds the host firewall lock, reads `ufw status numbered`, writes or deletes the rule's lines, and prints the public result or a public `error_code`. The official firewall model was not used: it cannot write a comment, both protocols, or a position. Native steps never fetch intent or post progress to the Gateway.
+Allow, deny and remove share `operation-firewall-direct`, with inputs that define the change. The Gateway validates and records the request, holds one firewall lock per Node, and starts the workflow with the full intent. Swamp reads the rules, plans the change, runs each UFW command over SSH, then reads and checks the result. The Gateway records the terminal result; Swamp does not call back to report progress.
+
+The planner accounts for earlier changes when choosing each insert position. Native SSH steps use the admitted host keys and `sudo`; no script is copied to the Node. The official firewall behavior cannot express the required insert positions and port ranges.
 
 ## Why it works this way
 

@@ -634,6 +634,8 @@ The turn checks only that `deliverables` maps each ID to text. It does not compa
 
 The keyed check operation verifies file changes and command evidence against the recorded workspace base. It records invalid deliverables as check evidence. A contract correction can update its stored deliverables where the API allows it. It never resumes an agent automatically. Swamp decides when to request another turn or check.
 
+The Gateway passes default command options explicitly to Swamp: `fails_on_base: false` and `paths: []`.
+
 ## Prepare a task in Backlog
 
 Prepare a task in Backlog before any agent runs. A Backlog task has no workspace.

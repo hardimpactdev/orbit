@@ -53,6 +53,7 @@ sequenceDiagram
     %%> How:
     %%> - `diff`: `git diff-tree -r --no-renames --name-status -z <base> <tree>` for file deliverables
     %%> - a `fails_on_base` command first runs on its start commit: `git archive`, `tar -x`, a copy of installed `vendor` and `node_modules`, the declared test paths, then the command
+    %%> - other command deliverables run only on the candidate; omitted `fails_on_base` and `paths` are passed to Swamp as `false` and `[]`
     %%> Refuses:
     %%> - a missing overlay file or directory: `tasks.deliverable_invalid`
   end
