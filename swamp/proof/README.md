@@ -1,4 +1,24 @@
-# Swamp proof topology
+# Swamp proof
+
+## Current path: reset a fleet, run cases
+
+[`reset/`](reset/README.md) is the proof path for new work. From the task VM, `bin/proof-fleet reset GROUP` builds a nested fleet inside that VM: a Gateway that also runs Swamp, `app-dev` and `app-prod`. The fleet has a real WireGuard network, `10.45.0.0/24`, with the hub on the nested Gateway. The outer task VM is the operator: its Orbit CLI talks to the nested Gateway as the WireGuard member `10.45.0.10`, as an operator machine does in the fleet. `bin/proof-fleet verify GROUP CASE` runs one case against that ready generation. `bin/proof-fleet release GROUP` removes it. The outer VM, its observer and its checkout stay as they were.
+
+The boot fixes that keep a reset near 50 s (agent after the tunnel, cloud-init off, the hosts line, Swamp serve and worker at boot, a wait for the checkout mount, 2 vCPUs for the Gateway, dev-safe opcache and no Laravel caches) are code in [`tools/swamp-proof-guest/boot.py`](../../tools/swamp-proof-guest/boot.py). A fresh build writes them; nobody edits a VM by hand.
+
+Cases live under `swamp/proof/<family>/cases/`. A case calls the real candidate CLI, checks the real effect and exits 0 (pass), 1 (fail) or 2 (unrun). The first one is [`firewall/cases/allow-fresh-ipv4-tcp.sh`](firewall/cases/allow-fresh-ipv4-tcp.sh): a real `firewall:allow` opens real traffic.
+
+## Superseded paths
+
+These paths stay until each kind has a case under the current path. Removal is a later milestone.
+
+- `bin/swamp-proof` and `tools/swamp_proof.py`: provision their own Project 62 VM.
+- `tools/swamp-proof-guest/up.py` and `run.py`: the older `up` and fixture runner. The shared helpers they call (`fixture.py`, `gateway.php`) are current.
+- [`topologies/minimal`](topologies/minimal/topology.json) and the `<kind>.json` fixtures in this folder, with their per-kind folders.
+
+The rest of this page describes those paths.
+
+# Swamp proof topology (superseded)
 
 `bin/swamp-proof` proves a Swamp kind against a real Gateway, real Swamp and a real Node on one disposable VM on Beast or Shark. The topology is minimal (Nick, 2026-11-01): grow it only when a kind needs more.
 

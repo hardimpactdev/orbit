@@ -15,6 +15,28 @@ changes the outer observer. Provision a missing task runtime through the existin
 `tasks.provision` / `task-vm-provision` path instead. Prepare the attached seed
 once with `sudo bin/e2e-topology-host-setup`.
 
+## Network and operator
+
+The nested fleet has a real WireGuard network, `10.45.0.0/24`. The nested Gateway is the hub (`10.45.0.1`), `app-dev` is `10.45.0.2` and `app-prod` is `10.45.0.3`. The outer VM joins as the roleless member `operator` (`10.45.0.10`) on its own interface, `wg-nested`. That interface never touches the real fleet's `orbit` interface or `10.44.0.0/24`. The outer VM runs the candidate CLI with one profile, `nested`, that names the Gateway by address. The Gateway recognises the outer VM as a WireGuard member, so a command arrives as it does from an operator machine. Keys live on the outer VM, so every reset agrees with them.
+
+## Boot behaviour
+
+A reset boots three VMs. [`tools/swamp-proof-guest/boot.py`](../../../tools/swamp-proof-guest/boot.py) writes the boot fixes during the build, so a fresh generation boots as a ready copy does:
+
+- `orbit-agent` starts after `wg-quick@orbit`, and an `ExecStartPre` waits until `/api/v1/agent/realtime` returns a URL;
+- `cloud-init.disabled`;
+- an `orbit-hosts.path` unit restores the Orbit names in `/etc/hosts` after the Incus agent rewrites it;
+- Swamp serve and the worker are enabled and ordered at boot;
+- the Gateway services that use the checkout wait for the mount and use `WorkingDirectory=-`;
+- the Gateway VM has 2 vCPUs;
+- PHP uses `opcache.validate_timestamps=1`, and no Laravel config, route or event cache exists.
+
+`tests/test_boot.py` pins each file. Measured on ready copies built with these fixes, the whole fleet is Doctor-clean about 50 s after `incus start`; before them it took 95-99 s.
+
+## Source and the live checkout
+
+The guests mount the generation's private source copy, not the outer VM's live checkout. The Gateway bootstrap writes into the source it runs from: it replaces `apps/gateway/.env`, runs `key:generate` and `package:discover`, and writes `storage` and `bootstrap/cache`. Against the live checkout that would overwrite the task's own `.env`, change its caches and break the preservation assertions below. A live edit would also change code under a pinned candidate identity. The copy uses reflinks and the candidate's installed dependencies, so it is cheap.
+
 ## Ownership and results
 
 The entrypoint runs its whole transaction inside the stable `proof-owner`
