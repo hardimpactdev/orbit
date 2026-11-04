@@ -55,6 +55,7 @@ The `node.role_add` flow provides these shared parts:
 - Keep the readiness wait after the step that starts a service. Analytics starts in a native child after the Node phase; a readiness phase after that child waits before publication.
 
 - UFW skips an existing rule even when its position is wrong. Compare the public rule shape and numbered order, remove only changed owned rules, then insert the specific allow before its isolation deny and broad peer trust. Remove a replaced broad tuple only when its complete old shape matches.
+- Ansible templates preserve regex backslashes. Use folded YAML scalars with one backslash per regex escape; doubling them can silently match nothing. Exercise damaged state through Ansible itself, including the indices used for removal.
 
 - A dedicated FPM pool is a fragment: its process-manager settings can live in the master’s local include. Validate a candidate full master with the candidate pool and the live local settings before replacing the pool. Stage candidates only on drift and remove them in an `always` block, so an unchanged phase reports zero changes.
 
