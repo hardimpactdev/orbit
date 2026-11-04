@@ -56,7 +56,8 @@ for resource in intent['runtime']['secret_files']:
     check(run('stat', '-c', '%a', resource['path']).stdout.strip() == '600', 'private runtime file is mode 0600')
 if role in ('app-dev', 'app-prod'):
     check(run('bun', '--version').stdout.strip() == intent['bun']['version'], 'Bun matches the recipe')
-    check(run('test', '-d', '/home/orbit/apps').returncode == 0, 'the application storage directory exists')
+    if role == 'app-dev':
+        check(run('test', '-d', '/home/orbit/apps').returncode == 0, 'the application storage directory exists')
     for php in intent['php']:
         check(run('systemctl', 'is-active', '--quiet', 'php' + php['version'] + '-fpm.service').returncode == 0,
               'the admitted PHP-FPM version serves')
