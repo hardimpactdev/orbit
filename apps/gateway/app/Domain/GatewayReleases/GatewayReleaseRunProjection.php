@@ -30,8 +30,11 @@ use Throwable;
  */
 final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowInput
 {
-    /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. */
+    /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. A child's step
+     * is named before its parent step, because the earliest failed step names the failure. */
     public const array Steps = [
+        'Switch the release' => ['switch', 'gateway.release_switch_failed', true],
+        'Verify the Gateway' => ['verify', 'gateway.release_verify_failed', true],
         'Build the release' => ['prepare', 'gateway.release_prepare_failed', false],
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Snapshot the database' => ['snapshot', 'gateway.release_snapshot_failed', false],
@@ -107,16 +110,22 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         }
         // The fleet rollout plans from a verified record whose verify version is the commit.
         $phases[$phase] = [...($phases[$phase] ?? []), ...($code === null ? ['outcome' => 'passed', 'status' => 'ok', 'version' => $sha] : ['outcome' => 'failed', 'error_code' => $code])];
+        // The run put the previous release back after a failed switch or check; it runs on the new, expanded schema.
+        $previous = ValidatedData::string($operation->input['previous']);
+        $back = $code !== null && is_string(ValidatedData::object($data['result'] ?? [])['switched_back'] ?? null);
+        if ($back) {
+            $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous];
+        }
         $recorder = app(GatewayReleaseRecorder::class);
         $recorder->write(new DeployedGatewayRelease(
             id: GatewayReleaseCommit::id($sha),
             sha: $sha,
-            outcome: $code === null ? 'verified' : ($migrated ? 'paused' : 'failed'),
+            outcome: $code === null ? 'verified' : ($back ? 'switched_back' : ($migrated ? 'paused' : 'failed')),
             trigger: $record->trigger,
             migrationsRan: $migrated,
-            previousId: ValidatedData::string($operation->input['previous']),
+            previousId: $previous,
             // A pause names the copy from before this attempt's migration, or the clean one an earlier pause named.
-            snapshotPath: $migrated ? ($recorder->pausedSnapshot($sha) ?? $snapshot) : $snapshot,
+            snapshotPath: $migrated && ! $back ? ($recorder->pausedSnapshot($sha) ?? $snapshot) : $snapshot,
             cleanupPaused: false,
             retryable: $code !== null && ! $migrated && app(GatewayReleaseRetry::class)->retryable($code, $sha, $record->id),
             durationMs: $record->created_at === null ? 0 : (int) $record->created_at->diffInMilliseconds(now()),

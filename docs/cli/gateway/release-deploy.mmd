@@ -1,8 +1,8 @@
 sequenceDiagram
-  %% Target design: owner decision 2026-11-03, one Swamp workflow per Gateway release (R1, beside the release unit).
-  %% A forward release never switches back: the migration ran, so a later failure pauses. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
+  %% Target design: docs/reference/feature-flow.md section 6, one Swamp workflow per Gateway release, manual or automatic.
+  %% A failed switch or check switches back; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
   %% status: reviewed
-  %% command: gateway:release:deploy --swamp
+  %% command: gateway:release:deploy
   %% kind: gateway.release
   %% behavior name: gateway-release-<step>-209 (fixed)
   autonumber
@@ -16,9 +16,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant AC as Activate run<br/>child · new commit
   participant GN as Gateway Node<br/>Node 14
-  TR->>GW: gateway:release:deploy<br/>a1b2c3d --swamp
+  TR->>GW: gateway:release:deploy<br/>full sha
   %%> Command:
-  %%> - `orbit gateway:release:deploy <full sha> --swamp`
+  %%> - `orbit gateway:release:deploy <full sha>`; the automatic tick admits the newest green commit the same way
   Note over GW: Admit the release<br/>verify agent pin · web build
   %%> Requirements:
   %%> - the full commit; no other release queued or running; no staged hold
@@ -38,7 +38,7 @@ sequenceDiagram
   SW->>GN: Snapshot the database<br/>VACUUM INTO
   SW->>GN: Migrate<br/>artisan migrate --isolated
   %%> On failure:
-  %%> - from here, the release pauses with the old release live
+  %%> - from here until the switch, the release pauses with the old release live
   Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
   %%> What it does:
   %%> - the load child: checkout, grants the new release rendered, serve reload
@@ -50,6 +50,9 @@ sequenceDiagram
   %%> Why:
   %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
   AC->>GN: Verify the Gateway<br/>/up · status version
+  opt the switch or the check failed
+    AC->>GN: Switch back<br/>gateway-rollback previous
+  end
   AC->>GN: Resume document cleanup<br/>best effort
   %%> Why:
   %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
@@ -60,7 +63,10 @@ sequenceDiagram
   else a step before Migrate fails
     SW--xGW: Run failed<br/>failed step
     Note over GW: Mark failed<br/>nothing changed · rerun safe
-  else Migrate or a later step fails
+  else the switch or the check failed, switched back
+    SW--xGW: Run failed<br/>failed step
+    Note over GW: Record switched back<br/>alert · next commit releases
+  else another step from Migrate on fails
     SW--xGW: Run failed<br/>failed step
     Note over GW: Pause automatic releases<br/>snapshot named · alert
   end

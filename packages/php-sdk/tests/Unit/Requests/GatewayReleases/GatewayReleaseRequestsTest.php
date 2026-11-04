@@ -45,8 +45,7 @@ describe('Gateway release requests', function (): void {
         'list' => [new ListGatewayReleasesRequest, Method::GET, '/api/v1/gateway/releases', null],
         'show record' => [new ShowGatewayReleaseRequest('42'), Method::GET, '/api/v1/gateway/releases/42', null],
         'show commit' => [new ShowGatewayReleaseRequest('fedcba9'), Method::GET, '/api/v1/gateway/releases/fedcba9', null],
-        'deploy' => [new DeployGatewayReleaseRequest('fedcba9'), Method::POST, '/api/v1/gateway/releases', ['commit' => 'fedcba9']],
-        'Swamp deploy' => [new DeployGatewayReleaseRequest(str_repeat('fedcba98', 5), swamp: true), Method::POST, '/api/v1/gateway/releases', ['commit' => str_repeat('fedcba98', 5), 'swamp' => true]],
+        'deploy' => [new DeployGatewayReleaseRequest(str_repeat('fedcba98', 5)), Method::POST, '/api/v1/gateway/releases', ['commit' => str_repeat('fedcba98', 5)]],
         'rollback' => [new RollbackGatewayReleaseRequest('fedcba987654'), Method::POST, '/api/v1/gateway/releases/fedcba987654/rollback', null],
         'status' => [new ShowGatewayReleaseAutomationRequest, Method::GET, '/api/v1/gateway/release-automation', null],
         'enable' => [new EnableGatewayReleaseAutomationRequest, Method::POST, '/api/v1/gateway/release-automation/enable', null],
@@ -58,7 +57,7 @@ describe('Gateway release requests', function (): void {
         expect($request)->toThrow(InvalidArgumentException::class);
     })->with([
         'branch deploy' => [static fn () => new DeployGatewayReleaseRequest('main')],
-        'short deploy' => [static fn () => new DeployGatewayReleaseRequest('abc12')],
+        'short deploy' => [static fn () => new DeployGatewayReleaseRequest('fedcba9')],
         'path show' => [static fn () => new ShowGatewayReleaseRequest('../status')],
         'short rollback' => [static fn () => new RollbackGatewayReleaseRequest('fedcba9')],
     ]);

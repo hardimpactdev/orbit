@@ -20,7 +20,6 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
-use LogicException;
 use Throwable;
 
 /**
@@ -65,7 +64,7 @@ final readonly class RunAutomaticGatewayReleaseAction
         private GatewayReleaseLayout $layout,
         private GatewayReleaseSource $source,
         private GreenCommitResolver $resolver,
-        private DeployGatewayReleaseAction $deploy,
+        private AdmitSwampGatewayReleaseAction $admit,
         private GatewayReleaseAlerts $alerts,
         private BranchHeadReader $heads,
         private GatewayReleaseRecorder $recorder,
@@ -167,28 +166,25 @@ final readonly class RunAutomaticGatewayReleaseAction
         return $this->release($green->sha, $deployed);
     }
 
-    /** @return Tick */
+    /**
+     * Admits the newest green commit as the `gateway.release` Swamp run; its native terminal ends the record. Until the
+     * commit's agent delivery is published, the tick waits; the command checks again every
+     * {@see self::PublicationCheckSeconds} seconds.
+     *
+     * @return Tick
+     */
     private function release(string $sha, string $deployed): array
     {
         try {
-            $this->deploy->execute($sha, trigger: 'auto');
+            $record = $this->admit->execute($sha, trigger: 'auto');
         } catch (GatewayReleaseException $exception) {
-            if ($exception->errorCode === 'gateway.release_in_progress') {
-                return $this->stalled($deployed, 'busy', null, $exception->errorCode, $exception->getMessage(), $sha);
-            }
+            $result = match ($exception->errorCode) {
+                'gateway.release_in_progress' => 'busy',
+                'gateway.release_agent_delivery_unavailable' => 'waiting_for_agent_delivery',
+                default => 'failed',
+            };
 
-            $record = $this->record($sha);
-            if ($exception->errorCode === 'gateway.release_agent_delivery_unavailable' && $record?->awaitingPublication()) {
-                return $this->waitingForPublication($record, $deployed, $exception);
-            }
-
-            if ($record instanceof GatewayRelease && ! $record->retryable) {
-                $this->automation->clearStall();
-
-                return $this->automation->recordTick($record->outcome === 'paused' ? 'paused' : 'failed', $sha, $record->id, $exception->errorCode, $exception->getMessage());
-            }
-
-            return $this->stalled($deployed, 'failed', $record?->id, $exception->errorCode, $exception->getMessage(), $sha);
+            return $this->stalled($deployed, $result, $this->record($sha)?->id, $exception->errorCode, $exception->getMessage(), $sha);
         } catch (Throwable $exception) {
             report($exception);
 
@@ -197,25 +193,7 @@ final readonly class RunAutomaticGatewayReleaseAction
 
         $this->automation->clearStall();
 
-        return $this->automation->recordTick('released', $sha, $this->record($sha)?->id);
-    }
-
-    /** @return Tick */
-    private function waitingForPublication(GatewayRelease $record, string $deployed, GatewayReleaseException $exception): array
-    {
-        $publication = $record->publicationPhase() ?? throw new LogicException('The queued release has no publication wait.');
-        $publication['checked_at'] = CarbonImmutable::now('UTC')->toIso8601String();
-        if (! $publication['alerted'] && CarbonImmutable::parse($publication['since'])->lte(CarbonImmutable::now()->subMinutes(self::PublicationWaitMinutes))) {
-            $this->alerts->stalled($deployed, sprintf(
-                'Release %s has waited for published agent delivery since %s: %s',
-                $record->requested, $publication['since'], $exception->getMessage(),
-            ), 'publication:'.$record->requested, $exception->errorCode);
-            $publication['alerted'] = true;
-        }
-        $record->forceFill(['phases' => ['publication' => $publication], 'message' => $exception->getMessage()])->save();
-        $this->automation->clearStall();
-
-        return $this->automation->recordTick('waiting_for_agent_delivery', $record->requested, $record->id, message: $exception->getMessage());
+        return $this->automation->recordTick('started', $sha, $record->id);
     }
 
     /**

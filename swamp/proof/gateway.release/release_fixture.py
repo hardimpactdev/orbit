@@ -1,13 +1,16 @@
 """The production Gateway release layout on the proof VM, a target commit and a disposable GitHub for it.
 
-setup <gateway node id>: as root, before the Gateway request.
+setup <gateway node id> [broken|automatic]: as root, before the Gateway request.
   - The proof Gateway moves into the release layout production runs: /home/orbit/orbit links to releases/<id> of the
     staged commit, a worktree of shared/orbit.git with the shared env and storage, and the web directory beside it.
-  - A target commit, one empty commit on the staged one, exists only at the disposable origin.
+  - A target commit, one commit on the staged one, exists only at the disposable origin. It is empty, or with
+    `broken` its index.php answers 503, so the check fails and the run switches back.
+  - With `automatic`, the disposable GitHub also lists the branch, its required checks and the comparison, so the
+    automatic tick resolves the target as the newest green commit.
   - The disposable GitHub, behind the proof CA, serves that origin over Git HTTP, its CI web build and the real
     published agent release of the frozen pin (downloaded once from github.com), so the Sigstore check stays real.
 serve: the GitHub server process.
-parity: checks the switched layout and the Gateway's own version through Caddy, with PROOF_OPERATION_FILE.
+parity [switch-back|automatic]: checks the layout and the Gateway's own version through Caddy, with PROOF_OPERATION_FILE.
 """
 import base64
 import hashlib
@@ -156,7 +159,7 @@ def layout(gateway_node):
     return staged
 
 
-def setup(gateway_node):
+def setup(gateway_node, case=None):
     STATE.mkdir(parents=True, mode=0o700, exist_ok=True)
     # The orbit account builds the target commit and its origin; this root fixture reads them.
     os.chown(STATE, account.pw_uid, account.pw_gid)
@@ -179,6 +182,9 @@ def setup(gateway_node):
     work = STATE / 'work'
     shutil.rmtree(work, ignore_errors=True)
     orbit('git', 'clone', '--quiet', str(SOURCE), str(work))
+    if case == 'broken':
+        (work / 'apps/gateway/public/index.php').write_text("<?php\nhttp_response_code(503);\n")
+        orbit('git', '-C', str(work), 'add', 'apps/gateway/public/index.php')
     orbit('git', '-C', str(work), '-c', 'user.name=Proof', '-c', 'user.email=proof@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'Proof release')
     target = orbit('git', '-C', str(work), 'rev-parse', 'HEAD')
     shutil.rmtree(STATE / 'git', ignore_errors=True)
@@ -196,7 +202,7 @@ def setup(gateway_node):
     command(['openssl', 'x509', '-req', '-in', str(tls / 'request.pem'), '-CA', str(ca / 'root.pem'), '-CAkey', str(ca / 'root.key'), '-CAcreateserial', '-days', '1',
              '-extfile', str(tls / 'extensions'), '-out', str(tls / 'cert.pem')])
     hosts.write_text(hosts.read_text() + f'{LISTEN} github.com api.github.com\n')
-    DATA.write_text(json.dumps({'staged': staged, 'target': target, 'tag': tag, 'digest': digest, 'size': size, 'token': None, 'calls': [], 'minted': []}))
+    DATA.write_text(json.dumps({'case': case, 'staged': staged, 'target': target, 'tag': tag, 'digest': digest, 'size': size, 'token': None, 'calls': [], 'minted': []}))
     DATA.chmod(0o600)
     (STATE / 'ready').unlink(missing_ok=True)
     with (STATE / 'server.log').open('w') as log:
@@ -292,6 +298,15 @@ def serve():
                         'workflow_run': {'id': RUN, 'repository_id': 1, 'head_repository_id': 1, 'head_branch': 'main', 'head_sha': data['target']}}]})
                 if path.path == f'{repository}/actions/runs/{RUN}':
                     return self.respond(run)
+                checks = {'name': '', 'status': 'completed', 'conclusion': 'success', 'app': {'slug': 'github-actions'}, 'id': 1, 'check_suite': {'id': 1}}
+                if path.path == repository + '/commits' and data['case'] == 'automatic':
+                    return self.respond([{'sha': data['target'], 'parents': [{'sha': data['staged']}]}, {'sha': data['staged'], 'parents': []}])
+                if path.path.startswith(repository + '/commits/') and path.path.endswith('/check-runs') and data['case'] == 'automatic':
+                    name = parse_qs(path.query).get('check_name', [''])[0]
+                    sha = path.path[len(repository + '/commits/'):-len('/check-runs')]
+                    return self.respond({'total_count': 1, 'check_runs': [{**checks, 'name': name, 'head_sha': sha}]})
+                if path.path == f"{repository}/compare/{data['staged']}...{data['target']}" and data['case'] == 'automatic':
+                    return self.respond({'status': 'ahead', 'base_commit': {'sha': data['staged']}, 'merge_base_commit': {'sha': data['staged']}})
                 if path.path == f'{repository}/actions/artifacts/{ARTIFACT}/zip':
                     return self.send((STATE / 'web.zip').read_bytes(), 200, 'application/zip')
                 return self.respond({'message': 'Unexpected proof request ' + path.path}, 404)
@@ -322,6 +337,21 @@ def release_github():
     subprocess.run(['pkill', '-HUP', 'dnsmasq'], check=False)
 
 
+def parity_switch_back():
+    release_github()
+    data = json.loads(DATA.read_text())
+    operation = json.loads(Path(os.environ['PROOF_OPERATION_FILE']).read_text())
+    staged = data['staged'][:12]
+    assert operation['status'] == 'failed', operation
+    assert os.readlink(HOME / 'orbit') == 'releases/' + staged
+    status = json.loads(command(['curl', '-fsS', '--cacert', str(HOME / '.orbit/ca/root.pem'), 'https://gateway.orbit/api/v1/gateway/status']))
+    assert (status.get('data') or status)['version'] == data['staged'], status
+    record = json.loads(orbit('php', str(SOURCE / 'swamp/proof/gateway.release/record.php'), str(operation['target_id'])).splitlines()[-1])
+    assert record['outcome'] == 'switched_back' and record['error_code'] == 'gateway.release_verify_failed', record
+    assert record['phases']['switch_back'] == {'outcome': 'switched_back', 'to': staged}, record
+    print(f'The check of {data["target"][:12]} failed; the run switched back to {staged}, which serves; the record is switched_back.')
+
+
 def parity():
     release_github()
     data = json.loads(DATA.read_text())
@@ -346,6 +376,10 @@ def parity():
     minted = data['minted']
     assert {'actions': 'read'} in minted and {'contents': 'read', 'actions': 'read'} in minted, minted
     assert minted.index({'actions': 'read'}) < minted.index({'contents': 'read', 'actions': 'read'}), minted
+    if data['case'] == 'automatic':
+        # The tick read the branch and its checks before it admitted the run.
+        assert minted.index({'checks': 'read'}) < minted.index({'actions': 'read'}), minted
+        assert any(call[2] == '/repos/hardimpactdev/orbit/commits' for call in data['calls']), data['calls']
     fetched = [call for call in data['calls'] if call[1] == 'github.com' and 'git-upload-pack' in call[2]]
     downloaded = [call for call in data['calls'] if call[2].endswith(f'/actions/artifacts/{ARTIFACT}/zip')]
     assert fetched and downloaded, data['calls']
@@ -353,4 +387,5 @@ def parity():
 
 
 if __name__ == '__main__':
-    {'setup': lambda: setup(int(sys.argv[2])), 'serve': serve, 'parity': parity}[sys.argv[1]]()
+    {'setup': lambda: setup(int(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else None), 'serve': serve,
+     'parity': lambda: parity_switch_back() if sys.argv[2:] == ['switch-back'] else parity()}[sys.argv[1]]()
