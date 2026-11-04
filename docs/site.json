@@ -1046,6 +1046,10 @@
       "destination": "/reference/compute-drivers#the-topology-seed"
     },
     {
+      "source": "/decisions/0224-give-each-task-group-one-holder-and-one-sender",
+      "destination": "/reference/tasks#workspace-lease"
+    },
+    {
       "source": "/decisions/0228-serve-several-reverb-apps-on-the-websocket-role",
       "destination": "/reference/websocket-apps#why-it-works-this-way"
     },
