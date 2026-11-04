@@ -133,4 +133,5 @@ print('parity: private inputs removed; original admission replayed')
 # Evaluate every participant before failing, so a missing observer cannot hide another Node's drift.
 participants = {intent['node_id'], *(item['node_id'] for item in intent['publications']),
                 *(item['exporter_node_id'] for item in intent['exporters'])}
-check(all([doctor(node) for node in sorted(participants)]), 'Doctor requires zero drift and no unverifiable records')
+reports = [doctor(node) for node in sorted(participants)]
+check(all(reports), 'Doctor requires zero drift and no unverifiable records')
