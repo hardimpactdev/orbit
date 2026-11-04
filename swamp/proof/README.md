@@ -41,7 +41,7 @@ Always finish with `down`. Proof VMs do not outlive the proof. The scheduled rea
 
 ## Baseline topology
 
-`bin/swamp-proof --session baseline up --topology baseline` builds Gateway with Swamp, app-dev and app-prod at the committed source revision. It uses a separate allocation from the minimal proof sessions. Nodes with `provision_roles: true` start with no recorded roles; after the control plane and observers start, Orbit applies each declared role through the normal API. A failed role operation fails setup.
+The `baseline` definition builds Gateway with Swamp, app-dev and app-prod at the committed source revision. Its standalone Gateway has no outer task-VM observer. The guest setup runs inside a local Incus VM with its own cloned topology seed. Nodes with `provision_roles: true` start with no recorded roles; after the control plane and observers start, Orbit applies each declared role through the normal API. A failed role operation fails setup.
 
 Setup alone does not establish a verified template. Check services and Doctor before taking snapshots. Record the source revision and image identities with the snapshot evidence. The baseline shares the minimal harness's network and release-path limitations; it does not yet provide automatic template refresh or distribution.
 

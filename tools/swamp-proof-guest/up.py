@@ -407,7 +407,8 @@ def observe(node_id):
     run([*manager, 'daemon-reload'])
     run([*manager, 'enable', 'orbit-agent'])
     run([*manager, 'restart', 'orbit-agent'])
-    run(['systemctl', 'is-active', '--quiet', 'orbit-agent'])
+    if TOPOLOGY['gateway'] == 'task-vm':
+        run(['systemctl', 'is-active', '--quiet', 'orbit-agent'])
     deadline = time.monotonic() + 120
     while subprocess.run([*manager, 'is-active', '--quiet', 'orbit-agent'], check=False).returncode:
         if time.monotonic() > deadline:

@@ -1,7 +1,7 @@
 {
   "name": "baseline",
   "version": 1,
-  "gateway": "task-vm",
+  "gateway": "standalone",
   "websocket": true,
   "network": {"name": "oeproof", "gateway": "10.231.0.1", "prefix": 24},
   "operator": {"address": "10.231.0.2"},
