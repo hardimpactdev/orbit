@@ -12,6 +12,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
@@ -249,8 +250,20 @@ final readonly class MetricsFleetCapture
         $rules = array_map(static fn (int $port, bool $selected): array => [...$host, 'port' => $port, 'source' => $metrics->wireguard_ip,
             'action' => 'allow', 'ensure' => $selected ? 'present' : 'absent'], [9100, 9102, 9114, 9103], [$enabled, $enabled, $state['active'], $node->caddy]);
 
+        $catalog = app(NodeFirewallRuleCatalog::class);
+        $firewall = [];
+        foreach ([$catalog->metricsExporter($target, $metrics), $catalog->metricsCadvisor($target, $metrics)] as $rule) {
+            $firewall[] = $enabled ? ['ufw', ...array_slice($rule->arguments, 2)] : $rule->removalArguments();
+        }
+        foreach (['caddy' => $node->caddy, 'fpm' => $state['active']] as $kind => $selected) {
+            foreach ([false, true] as $allow) {
+                $rule = $catalog->metricsService($target, $metrics, $kind, $allow);
+                $firewall[] = $selected ? ['ufw', 'insert', '1', ...array_slice($rule->arguments, 2)] : $rule->removalArguments();
+            }
+        }
+
         return [
-            'connection' => $host, 'rules' => $rules,
+            'connection' => $host, 'rules' => $rules, 'firewall_commands' => $firewall,
             'files' => array_map(static fn (array $file): array => [...$host, 'owner' => 'root', 'group' => 'root', 'mode' => '0644', ...$file], $files),
             'downloads' => array_map(static fn (array $file): array => [...$host, 'owner' => 'root', 'group' => 'root', 'mode' => '0755', ...$file], $downloads),
             'units' => array_map(static fn (array $unit): array => [...$host, 'ensure' => $unit['enabled'] ? 'running' : 'stopped', ...$unit], $units),
