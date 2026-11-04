@@ -1,12 +1,11 @@
 """Fast mechanics regressions. Live resets are separate acceptance evidence."""
-import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -64,6 +63,12 @@ class CandidateTests(unittest.TestCase):
 
 
 class OwnershipTests(unittest.TestCase):
+    def setUp(self):
+        # Release stops the outer VM's tunnel; these tests must never reach systemctl.
+        patcher = patch.object(phases, 'stop_operator_tunnel')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_generation_paths_reject_foreign_owner_and_symlinks(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -283,6 +288,62 @@ class NativeObservationTests(unittest.TestCase):
             self.assertEqual(original, (root / 'observer-facts-failure.json').read_bytes())
             self.assertIn('cleanup refused', (root / 'failure-cleanup-failure.json').read_text())
             self.assertEqual(request['generation'], phases.active_generation(request))
+
+
+class OperatorTests(unittest.TestCase):
+    def test_a_foreign_cli_profile_is_never_replaced(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            (home / 'config.json').write_text(json.dumps({'gateways': {'fleet': {}, 'nested': {}}}))
+            with patch.dict(phases.CLI_ENV, {'ORBIT_HOME': str(home)}), patch.object(phases, 'prepared', return_value={'construction': {}}), \
+                    patch.object(phases, 'install_cli') as install, patch.object(phases, 'local_cli') as cli:
+                with self.assertRaisesRegex(RuntimeError, 'fleet'):
+                    phases.operator({})
+            install.assert_not_called()
+            cli.assert_not_called()
+
+    def test_the_wrapper_has_its_own_name_and_leaves_the_real_orbit_alone(self):
+        with patch.object(phases, 'privileged') as privileged:
+            phases.install_cli({'candidate': '/home/orbit/apps/orbit/workspace'})
+        argv = privileged.call_args.args[0]
+        self.assertEqual('/usr/local/bin/orbit-nested', argv[-1])
+        self.assertNotIn('/usr/local/bin/orbit"', argv[2])
+        self.assertIn(b'/home/orbit/apps/orbit/workspace/apps/cli/orbit', privileged.call_args.kwargs['data'])
+
+    def test_release_stops_and_disables_the_operator_tunnel(self):
+        with patch.object(phases, 'privileged') as privileged:
+            phases.stop_operator_tunnel()
+        privileged.assert_called_once_with(['systemctl', 'disable', '--now', 'wg-quick@wg-nested'])
+        with patch.object(phases, 'privileged', side_effect=RuntimeError('Failed to disable unit: Unit file wg-quick@wg-nested.service does not exist.')):
+            phases.stop_operator_tunnel()  # nothing to stop
+        with patch.object(phases, 'privileged', side_effect=RuntimeError('sudo: a password is required')), self.assertRaises(RuntimeError):
+            phases.stop_operator_tunnel()
+
+    def test_every_release_path_stops_the_tunnel(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(phases, 'stop_operator_tunnel') as stop:
+            phases.release({'evidence': temporary, 'root': temporary}, None, 'cleanup')
+        stop.assert_called_once_with()
+
+    def test_boot_files_reach_each_app_node_before_its_agent_starts(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools/swamp-proof-guest'))
+        import boot
+        import fixture
+        order = []
+        topology = {'nodes': {'gateway': {'instance': 'g', 'incus_address': '10.232.1.10'},
+                              'app-dev': {'instance': 'd', 'incus_address': '10.232.1.11'}, 'operator': {}}}
+        reply = json.dumps({'baseline_commands': {}, 'agents': {'gateway': {}, 'app-dev': {'unit': 'u'}}}).encode()
+
+        def incus(args, **kwargs):
+            if 'python3' in args:
+                return reply
+            return b'secret' if args[-1] == '/etc/orbit/agent/secret' else b''
+        request = {'candidate': str(Path(__file__).resolve().parents[4]), 'group': '3187', 'generation': 'a' * 32}
+        with patch.object(phases, 'prepared', return_value={'construction': topology}), patch.object(phases, 'source_for'), \
+                patch.object(phases, 'wireguard', return_value={'nodes': {'gateway': {'ip': '10.45.0.1'}}}), patch.object(phases, 'incus', side_effect=incus), \
+                patch.object(boot, 'apply', side_effect=lambda *args, **kwargs: order.append(('boot', args[1:]))), \
+                patch.object(fixture, 'install_agent', side_effect=lambda *args, **kwargs: order.append(('agent',))):
+            phases.guest(request, 'gateway-runtime')
+        self.assertEqual([('boot', ('node', '10.45.0.1')), ('agent',)], order)
 
 
 if __name__ == '__main__':

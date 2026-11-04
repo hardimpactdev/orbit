@@ -10,12 +10,11 @@ import subprocess
 result = json.loads(Path(os.environ['PROOF_RESULT']).read_text())
 nodes = result['topology']['construction']['nodes']
 evidence = Path(os.environ['PROOF_EVIDENCE'])
-# The outer VM is the operator: its CLI profile points at the nested Gateway over wg-nested.
-orbit = Path(os.environ['PROOF_SOURCE']) / 'apps/cli/orbit'
+# The outer VM is the operator: orbit-nested is the candidate CLI with its one profile for the nested Gateway over wg-nested.
 environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 
 def cli(label, *args):
-    run = subprocess.run([str(orbit), *args, '--json'], capture_output=True, timeout=180, env=environment, cwd='/')
+    run = subprocess.run(['/usr/local/bin/orbit-nested', *args, '--json'], capture_output=True, timeout=180, env=environment, cwd='/')
     (evidence / ('smoke-' + label + '.json')).write_bytes(run.stdout)
     if run.returncode:
         raise RuntimeError(label + ' failed: ' + run.stdout.decode() + run.stderr.decode())

@@ -147,6 +147,6 @@ def apply(execute, role, address, *, checkout=CHECKOUT):
     if role == 'gateway':
         execute(['systemctl', 'enable', *GATEWAY_SERVICES])
         # `opcache.validate_timestamps=1` takes effect when FPM starts again.
-        execute(['systemctl', 'try-restart', *(f'php{version}-fpm' for version in PHP_VERSIONS)])
+        execute(['sh', '-c', 'for v; do if [ -d "/etc/php/$v/fpm" ]; then systemctl try-restart "php$v-fpm"; fi; done', 'sh', *PHP_VERSIONS])
         caches = ' '.join(f'"$1"/bootstrap/cache/{name}' for name in LARAVEL_CACHES)
         execute(['sh', '-c', f'rm -f {caches}', 'sh', str(PurePosixPath(checkout) / 'apps/gateway')])

@@ -38,6 +38,8 @@ WG_ADDRESSES = {'gateway': '10.45.0.1', 'app-dev': '10.45.0.2', 'app-prod': '10.
 WG_PORT = 51820
 WG_OUTER_PORT = 51821
 WG_OUTER = 'wg-nested'
+NESTED_CLI = '/usr/local/bin/orbit-nested'
+NESTED_PROFILE = 'nested'
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 
 
@@ -234,8 +236,18 @@ def release(request, generation, label):
             result = {'generation': generation, 'resources': harness(request, 'release', source), 'status': 'released'}
         if active_generation(request) == generation:
             (Path(request['root']) / 'active.json').unlink()
+    stop_operator_tunnel()
     write_json(Path(request['evidence']) / (label + '.json'), result)
     return result
+
+
+def stop_operator_tunnel():
+    """The outer VM's second interface leaves with its fleet; a later reset enables it again."""
+    try:
+        privileged(['systemctl', 'disable', '--now', f'wg-quick@{WG_OUTER}'])
+    except RuntimeError as error:
+        if 'does not exist' not in str(error) and 'not loaded' not in str(error):
+            raise
 
 
 def snapshot(request):
@@ -313,6 +325,7 @@ def guest(request, action):
         sys.path.insert(0, str(Path(request['candidate']) / 'tools/swamp-proof-guest'))
         import boot
         import fixture
+        address = network['nodes']['gateway']['ip']
         # Canonical product baseline, plus one unmanaged fixture-transport rule.
         for key, commands in result['baseline_commands'].items():
             instance = topology['nodes'][key]['instance']
@@ -327,30 +340,37 @@ def guest(request, action):
             if key == 'gateway':
                 continue  # Shared gateway bootstrap already starts its observer.
             instance = topology['nodes'][key]['instance']
+
+            def execute(argv, *, input=None, instance=instance):
+                return incus(['exec', instance, '--', *argv], data=None if input is None else input.encode())
+            # The boot files come first: the agent must start with its tunnel wait and the Orbit names in /etc/hosts.
+            boot.apply(execute, 'node', address)
             secret = incus(['exec', instance, '--', 'cat', '/etc/orbit/agent/secret']).decode()
-            def execute(argv, *, input=None):
-                return incus(['exec', instance, '--', *argv], data=input.encode() if input else None)
             fixture.install_agent(None, rendered, secret, execute=execute)
-        certificate = incus(['exec', gateway, '--', 'cat', '/home/orbit/.orbit/ca/root.pem'])
-        address = network['nodes']['gateway']['ip']
-        for key, node in topology['nodes'].items():
-            if key in ('gateway', 'operator'):
-                continue
-            # Boot behaviour (cloud-init off, hosts line, agent after the tunnel) as the ready copies carry it.
-            boot.apply(lambda argv, *, input=None, instance=node['instance']: incus(
-                ['exec', instance, '--', *argv], data=None if input is None else input.encode()), 'node', address)
-        # The outer VM is the operator: its CLI profile names the Gateway by address only, never gateway.orbit.
-        pinned = orbit_home() / 'nested-ca.pem'
-        pinned.write_bytes(certificate)
-        pinned.chmod(0o644)
-        install_cli(request)
-        local_cli(request, 'gateway:add', 'https://' + address, '--name=nested', '--use', '--accept-ca-change', '--ca=' + str(pinned), '--json')
-        profiles = json.loads((Path(CLI_ENV['ORBIT_HOME']) / 'config.json').read_text()).get('gateways', {})
-        if list(profiles) != ['nested']:
-            raise RuntimeError('The outer VM CLI must have exactly one profile, nested; found ' + ', '.join(profiles))
-    if action == 'gateway-runtime':
         return {'agents_installed': list(result['agents'])}
     return result
+
+
+def cli_profiles():
+    config = Path(CLI_ENV['ORBIT_HOME']) / 'config.json'
+    return list(json.loads(config.read_text()).get('gateways', {})) if config.is_file() else []
+
+
+def operator(request):
+    """The outer VM is the operator: its CLI profile names the nested Gateway by address only, never gateway.orbit."""
+    topology = prepared(request)['construction']
+    foreign = [name for name in cli_profiles() if name != NESTED_PROFILE]
+    if foreign:
+        raise RuntimeError('The outer VM CLI already has profile ' + ', '.join(foreign) + '; refusing to switch its default Gateway.')
+    address = wireguard(topology)['nodes']['gateway']['ip']
+    pinned = orbit_home() / 'nested-ca.pem'
+    pinned.write_bytes(incus(['exec', topology['nodes']['gateway']['instance'], '--', 'cat', '/home/orbit/.orbit/ca/root.pem']))
+    pinned.chmod(0o644)
+    install_cli(request)
+    local_cli(request, 'gateway:add', 'https://' + address, '--name=' + NESTED_PROFILE, '--use', '--accept-ca-change', '--ca=' + str(pinned), '--json')
+    if cli_profiles() != [NESTED_PROFILE]:
+        raise RuntimeError('The outer VM CLI must have exactly one profile, nested; found ' + ', '.join(cli_profiles()))
+    return {'cli': NESTED_CLI, 'profile': NESTED_PROFILE, 'gateway': address}
 
 
 def gateway_state(request):
@@ -372,9 +392,9 @@ def local_cli(request, *args, allow_failure=False):
 
 
 def install_cli(request):
-    """`orbit` on the outer VM's PATH, for the candidate checkout."""
+    """The candidate CLI on the outer VM's PATH under its own name; the real `orbit` there is never replaced."""
     wrapper = f"#!/bin/sh\nexec {Path(request['candidate']) / 'apps/cli/orbit'} \"$@\"\n".encode()
-    privileged(['sh', '-c', 'umask 022; cat > /usr/local/bin/orbit; chmod 0755 /usr/local/bin/orbit'], data=wrapper)
+    privileged(['sh', '-c', 'umask 022; cat > "$1"; chmod 0755 "$1"', 'sh', NESTED_CLI], data=wrapper)
 
 
 def fresh_facts(state, managed_ids, since):
@@ -497,6 +517,8 @@ def execute(request, action):
         return value
     if action in ('gateway-db', 'swamp-state', 'gateway-runtime'):
         return guest(request, action)
+    if action == 'operator':
+        return operator(request)
     if action == 'transport-readiness':
         return transport_readiness(request)
     if action == 'observer-facts':

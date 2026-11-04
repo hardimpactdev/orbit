@@ -10,13 +10,15 @@ import hashlib
 import ipaddress
 import json
 import os
-import pwd
-import re
 import secrets
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+# `python3 -I` drops the script directory from sys.path, so name it for the sibling module.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fixture  # noqa: E402
 
 SOURCE = Path(sys.argv[1]).resolve()
 TOPOLOGY = json.loads((SOURCE / 'swamp/proof/topologies' / (sys.argv[2] if len(sys.argv) > 2 else 'minimal') / 'topology.json').read_text())
@@ -35,7 +37,6 @@ ROLE_CREDENTIALS = Path('/etc/orbit/swamp-role-worker')
 AGENT = STATE / 'agent'
 IDENTITY = HOME / '.orbit/ssh/proof_worker_ed25519'
 BOOTSTRAP = HOME / '.orbit/ssh/id_ed25519'
-import fixture
 FIXTURE = fixture.context(SOURCE, TOPOLOGY)
 timings = []
 

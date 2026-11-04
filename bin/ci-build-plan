@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-JOBS = ('php', 'gateway-static', 'cli', 'docs', 'api-reference', 'web', 'swamp')
+JOBS = ('php', 'gateway-static', 'cli', 'docs', 'api-reference', 'web', 'swamp', 'proof')
 
 
 def select(paths, main=False):
@@ -22,6 +22,9 @@ def select(paths, main=False):
             jobs['swamp'] = True
         if path.startswith('swamp/'):
             jobs['swamp'] = True
+            # The proof harness has its own unit tests, lint and native workflow validation.
+            if path.startswith('swamp/proof/'):
+                jobs['proof'] = True
             if path == 'swamp/config/gateway-workflow-grants.json':
                 jobs['api-reference'] = True
             # bin/check-flows compares migrated charts with their workflow step names.

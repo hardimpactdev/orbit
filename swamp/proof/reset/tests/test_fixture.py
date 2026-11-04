@@ -1,15 +1,15 @@
 """Shared bootstrap contracts. These tests never configure the test host."""
 import importlib.util
 import json
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(SOURCE / 'tools/swamp-proof-guest'))
-import fixture
+import fixture  # noqa: E402
 
 
 class SharedFixtureTests(unittest.TestCase):

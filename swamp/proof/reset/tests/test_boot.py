@@ -1,11 +1,11 @@
 """Boot behaviour of the nested VMs, as code. These tests never touch a VM."""
-from pathlib import Path
 import sys
 import unittest
+from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(SOURCE / 'tools/swamp-proof-guest'))
-import boot
+import boot  # noqa: E402
 
 ADDRESS = '10.45.0.1'
 UNITS = '/etc/systemd/system/'
@@ -76,7 +76,7 @@ class BootApplyTests(unittest.TestCase):
         written = {argv[-1]: contents for argv, contents in calls if argv[0] == 'sh' and contents is not None}
         self.assertEqual(boot.files('gateway', ADDRESS), written)
         order = [argv[:2] for argv, _ in calls if argv[0] == 'systemctl']
-        self.assertEqual(['daemon-reload', 'enable', 'start', 'enable', 'try-restart'], [a[1] for a in order])
+        self.assertEqual(['daemon-reload', 'enable', 'start', 'enable'], [a[1] for a in order])
         enabled = next(argv for argv, _ in calls if argv[:2] == ['systemctl', 'enable'] and 'orbit-swamp-serve' in argv)
         self.assertEqual(['orbit-swamp-serve', 'orbit-node-worker', 'orbit-proof-agent-view', 'orbit-proof-operations'], enabled[2:])
 
@@ -91,6 +91,13 @@ class BootApplyTests(unittest.TestCase):
         for argv in php:
             self.assertIn('[ -d "$(dirname "$1")" ] || exit 0', argv[2])
             self.assertNotIn('mkdir', argv[2])
+
+    def test_only_installed_php_fpm_units_are_restarted(self):
+        calls = self.run_apply('gateway')
+        self.assertFalse([argv for argv, _ in calls if argv[:2] == ['systemctl', 'try-restart']], 'a missing unit would fail the build')
+        restart = next(argv for argv, _ in calls if len(argv) > 2 and 'try-restart' in argv[2])
+        self.assertIn('[ -d "/etc/php/$v/fpm" ]', restart[2])
+        self.assertEqual(['sh', *boot.PHP_VERSIONS], restart[3:])
 
     def test_laravel_caches_are_removed_and_never_built(self):
         text = repr(self.run_apply('gateway'))

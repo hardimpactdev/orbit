@@ -15,7 +15,6 @@ CASE = 'allow-fresh-ipv4-tcp'
 STARTED = time.time()
 CASE_DIR = Path(__file__).resolve().parent
 SOURCE = Path(os.environ.get('PROOF_SOURCE') or CASE_DIR.parents[3])
-ORBIT = SOURCE / 'apps/cli/orbit'
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 UTC = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 GROUP = os.environ.get('PROOF_GROUP', '3187')
@@ -49,7 +48,7 @@ def sh(instance, command, timeout=60, stdin_text=None):
 
 def cli(label, *args, timeout=240):
     t0 = now()
-    completed = subprocess.run(['php', str(ORBIT), *args, '--json'], capture_output=True, text=True, timeout=timeout,
+    completed = subprocess.run(['/usr/local/bin/orbit-nested', *args, '--json'], capture_output=True, text=True, timeout=timeout,
                                env=CLI_ENV, cwd='/', stdin=subprocess.DEVNULL)
     (RECEIPT / ('cli-' + label + '.json')).write_text(completed.stdout)
     (RECEIPT / ('cli-' + label + '.stderr')).write_text(completed.stderr)
@@ -313,7 +312,7 @@ def finish(topology, phases, exit_reason=None):
                     'cleanup_clean': neg['cleanup'].get('clean')}
     receipt = {'case': CASE, 'verdict': verdict, 'negative_check': negative, 'commit': commit[0] if commit else None,
                'tree': commit[1] if len(commit) > 1 else None, 'source_dirty': dirty, 'topology_label': os.environ.get('PROOF_TOPOLOGY', 'ready3'),
-               'generation': os.environ.get('PROOF_GENERATION'), 'topology': topology, 'cli': str(ORBIT), 'phases': phases,
+               'generation': os.environ.get('PROOF_GENERATION'), 'topology': topology, 'cli': '/usr/local/bin/orbit-nested', 'phases': phases,
                'started_utc': UTC, 'total_secs': round(now() - STARTED, 1), 'exit_reason': exit_reason}
     (RECEIPT / 'receipt.json').write_text(json.dumps(receipt, indent=2, default=str))
     lines = [f'{CASE} {verdict}  receipt={RECEIPT}']

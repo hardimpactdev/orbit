@@ -259,6 +259,40 @@ jobs:
           if [ "$MAIN" = true ]; then args+=(--main); fi
           python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --swamp-base --github-output "$GITHUB_OUTPUT"
 
+  proof:
+    name: Proof harness
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: proof
+      - name: Unit tests of the reset and its guest programs
+        if: steps.scope.outputs.selected == 'true'
+        run: python3 -m unittest discover -s swamp/proof/reset/tests
+      - name: Lint the proof programs
+        if: steps.scope.outputs.selected == 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/proof-tools"
+          "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
+          "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/reset swamp/proof/firewall tools/swamp-proof-guest tools/swamp_proof.py
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          path: ~/.cache/orbit-shape-runtime
+          key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
+      - name: Native validation of the proof workflows
+        if: steps.scope.outputs.selected == 'true'
+        working-directory: swamp
+        env:
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+        run: python3 bin/validate-swamp-workflows.py --workflows-from proof/reset --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/proof-workflow-validation.json"
+
   swamp:
     name: Swamp
     permissions:
@@ -283,7 +317,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, docs, api-reference, web, swamp, gateway-release, changes]
+    needs: [php, gateway-static, cli, docs, api-reference, web, swamp, proof, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks

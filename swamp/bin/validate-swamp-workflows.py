@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import urllib.request
@@ -59,7 +60,12 @@ def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--workflows-from", type=Path,
+                        help="Validate the workflow-*.yaml files of this folder in a fresh repository instead of the tracked workflows")
     args = parser.parse_args()
+    files = sorted(args.workflows_from.resolve().glob("workflow-*.yaml")) if args.workflows_from else []
+    if args.workflows_from and not files:
+        raise SystemExit("No workflow files to validate")
     args.report.unlink(missing_ok=True)
     binary, version = pinned_runtime(args.cache, Path.cwd())
     # Validation must never use the developer/runner account or its credential files.
@@ -68,7 +74,15 @@ def main():
         actual = subprocess.run([str(binary), "--version"], capture_output=True, text=True, env=env, check=True)
         if version not in actual.stdout:
             raise SystemExit("Installed runtime version mismatch")
-        result = subprocess.run([str(binary), "workflow", "validate", "--json"], capture_output=True, text=True, env=env, check=False)
+        repository = None
+        if files:
+            repository = Path(config) / "controller"
+            subprocess.run([str(binary), "init", str(repository), "--tool", "none", "--no-vault", "--no-telemetry"],
+                           capture_output=True, text=True, env=env, check=True)
+            (repository / "workflows").mkdir(exist_ok=True)
+            for file in files:
+                shutil.copyfile(file, repository / "workflows" / file.name)
+        result = subprocess.run([str(binary), "workflow", "validate", "--json"], capture_output=True, text=True, env=env, cwd=repository, check=False)
     if result.returncode:
         try:
             error = json.loads(result.stderr)
@@ -86,7 +100,7 @@ def main():
         raise SystemExit("Native validation returned no workflow report")
     report = json.loads(result.stdout[start:])
     tracked = subprocess.run(["git", "ls-files", "-z", "workflows"], capture_output=True, text=True, check=True).stdout.split("\0")
-    expected = sum(p.endswith((".yaml", ".yml")) for p in tracked)
+    expected = len(files) or sum(p.endswith((".yaml", ".yml")) for p in tracked)
     rows = report.get("workflows", [])
     passed = sum(row.get("passed") is True for row in rows)
     args.report.write_text(json.dumps({"schema_version": 1, "runtime": version, "status": "validated", "validation_ran": True, "workflows_total": expected, "workflows_validated": len(rows), "workflows_passing": passed}, indent=2) + "\n")
