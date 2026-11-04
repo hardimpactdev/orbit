@@ -113,7 +113,7 @@ Operation Deno unit tests, shape and workflow validation run on every CI change.
 
 Required checks target five minutes. Project checks are removed from CI for now; Nick decides which checks return. Their local commands remain available. Orbit keeps fast TypeScript unit tests and no native workflow suite or custom runtime harness. Workflow validation and pinned `serve check-config` remain required. No nightly workflow replaces removed checks.
 
-Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. Test fixtures serve unit tests; they do not start Swamp or pull extensions.
+Tests of bin scripts live beside their script. The shape job names the liveness and Node 209 source suites explicitly. It also runs every unit test in `swamp/tests` and in the automatic-deploy, Composer and JS maintenance and Project extension folders. Three files in `swamp/tests` stay out: `repository_analysis_producer_test.ts` and `metrics_exporter_firewall_test.ts` until they pass, and `native_host_method_test.ts`, which needs systemd and passwordless sudo, so it runs on a host. Test fixtures serve unit tests; they do not start Swamp or pull extensions.
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 

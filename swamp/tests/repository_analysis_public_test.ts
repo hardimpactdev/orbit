@@ -95,7 +95,10 @@ function harness(
   return { args, deps, calls, op, get: () => job };
 }
 
-Deno.test("public fixtures are byte-identical to the delivered SDK fixtures at the pinned native object", async () => {
+const sdkCheckout = "/fast/apps/orbit/default";
+const hasSdkCheckout = await Deno.stat(sdkCheckout).then(() => true, () => false);
+
+Deno.test({ ignore: !hasSdkCheckout, name: "public fixtures are byte-identical to the delivered SDK fixtures at the pinned native object" }, async () => {
   const manifest = await read("source.json");
   assertEquals(manifest.sha, "0364765d6d41794f3f89d702e0f72cc54e954b07");
   for (
@@ -108,7 +111,7 @@ Deno.test("public fixtures are byte-identical to the delivered SDK fixtures at t
     const result = await new Deno.Command("git", {
       args: [
         "-C",
-        "/fast/apps/orbit/default",
+        sdkCheckout,
         "show",
         `${manifest.sha}:${entry.source}`,
       ],

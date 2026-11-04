@@ -63,13 +63,7 @@ Deno.test("PR lookup failure retains last success/value, missing group fields ar
   };
   const ctx = {
     definition: { name: "orbit-gateway" },
-    queryData: recordQuery((q: string) =>
-      Promise.resolve(
-        q.includes('startsWith("package-')
-          ? [{ workItem: "tg-10", targets: [] }]
-          : [],
-      )
-    ),
+    queryData: recordQuery(() => Promise.resolve([])),
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
     invokeModel: () => Promise.resolve({ ok: true }),
   };
@@ -77,7 +71,12 @@ Deno.test("PR lookup failure retains last success/value, missing group fields ar
     project,
     previous,
     ctx,
-    [{ id: 10, project_id: 20, status: "running" }],
+    [{
+      id: 10,
+      project_id: 20,
+      status: "running",
+      maintenance: { mode: "package", targets: [], run_id: "batch" },
+    }],
   );
   assertEquals(e.pr.status, "unknown");
   assertEquals(e.pr.value, value);
@@ -96,15 +95,7 @@ Deno.test("PR observation verifies exact URL/head/native run, including a still-
     calls: string[] = [];
   const ctx = {
     definition: { name: "orbit-gateway" },
-    queryData: recordQuery((q: string) =>
-      Promise.resolve(
-        q.includes('startsWith("package-')
-          ? [{ workItem: "tg-2195", targets: [] }]
-          : q.includes('name == "owner"')
-          ? [{ runId: "native-batch-run" }]
-          : [{ state: "succeeded", artifacts: { "pull-request": { url } } }],
-      )
-    ),
+    queryData: recordQuery(() => Promise.resolve([])),
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
     invokeModel: () => Promise.resolve({ ok: true }),
   };
@@ -114,6 +105,7 @@ Deno.test("PR observation verifies exact URL/head/native run, including a still-
     status: "failed",
     pr_url: url,
     watched_pr_url: url,
+    maintenance: { mode: "package", targets: [], run_id: "native-batch-run" },
   }];
   const e = await batchEvidence(project, null, ctx, groups, (value) => {
     calls.push(value);
@@ -169,15 +161,7 @@ Deno.test("PR refresh projects real immutable batch targets into its publication
   };
   const ctx = {
     definition: { name: "orbit-gateway" },
-    queryData: recordQuery((q: string) =>
-      Promise.resolve(
-        q.includes('startsWith("package-')
-          ? [{ workItem: "tg-2195", targets: [target] }]
-          : q.includes('name == "owner"')
-          ? [{ runId: "batch-run" }]
-          : [],
-      )
-    ),
+    queryData: recordQuery(() => Promise.resolve([])),
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
     invokeModel: () => Promise.resolve({ ok: true }),
   };
@@ -191,6 +175,7 @@ Deno.test("PR refresh projects real immutable batch targets into its publication
       status: "running",
       pr_url: null,
       watched_pr_url: null,
+      maintenance: { mode: "package", targets: [target], run_id: "batch-run" },
     }],
   );
   assertEquals(evidence.pr.status, "absent");
