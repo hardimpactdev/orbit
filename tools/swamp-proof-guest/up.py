@@ -236,6 +236,7 @@ def swamp():
         run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', str(folder)])
         private(folder / 'server.token', native('access', 'token', 'reveal', f'{name}-server', '--yes')['token'])
         private(folder / 'enrollment.token', native('worker', 'token', 'create', name, '--duration', '24h')['token'])
+        run(['chown', 'root:root', str(folder / 'server.token'), str(folder / 'enrollment.token')])
     # A local CA the vault fixtures sign their own sites with; serve itself has no TLS (version 17).
     tls = STATE / 'tls'
     tls.mkdir(exist_ok=True, mode=0o700)
