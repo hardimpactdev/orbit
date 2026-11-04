@@ -4,7 +4,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -166,6 +165,6 @@ families = ['role', 'firewall', *(['process'] if role == 'analytics' else []),
 # This proof-only observation window is outside the Operation's terminal_seconds.
 if 'no-drift' not in sys.argv[3:]:
     print('Observer facts: allow 60 s collection plus 5 s delivery', flush=True)
-    time.sleep(65)
+    subprocess.run(['sleep', '65'], check=True, timeout=70)
 reports = [doctor(node, families) for node in sorted(participants)]
 check(all(reports), 'Doctor requires zero drift and no unverifiable records')
