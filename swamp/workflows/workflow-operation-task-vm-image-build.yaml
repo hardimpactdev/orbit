@@ -1058,10 +1058,70 @@ jobs:
         argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
           '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, enable, --now, ssh.service]
         timeoutSec: 90
-  - name: clean-marker
+  # The task VM image carries the slot identity unit. A VM with no identity volume skips it; see docs/reference/compute-drivers.md#task-vm-slots.
+  - name: slot-identity-unit
     labels: {role: swamp}
     dependsOn:
     - {step: ssh-enable, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --mode, '0644', --uid, '0', --gid, '0', --,
+          '-', '${{ inputs.intent.name + "/etc/systemd/system/orbit-slot-identity.service" }}']
+        timeoutSec: 90
+        stdin: |
+          [Unit]
+          Description=Install the Orbit slot identity
+          DefaultDependencies=no
+          After=local-fs.target
+          Before=sysinit.target sshd-keygen.service ssh.service wg-quick@orbit.service orbit-agent.service pi-server.service shutdown.target
+          Conflicts=shutdown.target
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          TimeoutStartSec=30
+          UMask=0077
+          ExecCondition=/usr/bin/grep -qrsx incus_identity /sys/fs/virtiofs
+          ExecStartPre=/usr/bin/mkdir -m 0700 -p /run/orbit-slot
+          ExecStart=/usr/bin/mount -t virtiofs -o ro incus_identity /run/orbit-slot
+          ExecStart=/usr/bin/install -d -m 0700 -o root -g root /etc/wireguard /etc/orbit /etc/orbit/agent
+          ExecStart=/usr/bin/install -m 0600 -o root -g root -t /etc/wireguard /run/orbit-slot/etc/wireguard/orbit.key /run/orbit-slot/etc/wireguard/orbit.conf
+          ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/wireguard /run/orbit-slot/etc/wireguard/orbit.dns-link
+          ExecStart=/usr/bin/install -m 0600 -o root -g root -t /etc/ssh /run/orbit-slot/etc/ssh/ssh_host_ed25519_key /run/orbit-slot/etc/ssh/ssh_host_ecdsa_key /run/orbit-slot/etc/ssh/ssh_host_rsa_key
+          ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/ssh /run/orbit-slot/etc/ssh/ssh_host_ed25519_key.pub /run/orbit-slot/etc/ssh/ssh_host_ecdsa_key.pub /run/orbit-slot/etc/ssh/ssh_host_rsa_key.pub
+          ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/cloud/cloud.cfg.d /run/orbit-slot/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg
+          ExecStart=/usr/bin/install -m 0600 -o root -g root -t /etc/orbit/agent /run/orbit-slot/etc/orbit/agent/secret
+          ExecStart=/usr/bin/install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent
+          ExecStart=/usr/bin/install -m 0600 -o orbit -g orbit -t /home/orbit/.pi/agent /run/orbit-slot/home/orbit/.pi/agent/orbit-token /run/orbit-slot/home/orbit/.pi/agent/models.json
+          ExecStart=/usr/bin/umount /run/orbit-slot
+
+          [Install]
+          WantedBy=sysinit.target
+  - name: slot-identity-enable
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-identity-unit, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, enable, orbit-slot-identity.service]
+        timeoutSec: 90
+  - name: clean-marker
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-identity-enable, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1423,10 +1483,26 @@ jobs:
         argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
           '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/bin/systemctl, is-active, ssh.service]
         timeoutSec: 90
-  - name: seed
+  # The published image must carry the enabled unit; the smoke VM has no identity volume, so the unit stays skipped.
+  - name: smoke-slot-identity
     labels: {role: swamp}
     dependsOn:
     - {step: ssh-smoke, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/bin/systemctl, is-enabled, orbit-slot-identity.service]
+        timeoutSec: 90
+  - name: seed
+    labels: {role: swamp}
+    dependsOn:
+    - {step: smoke-slot-identity, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
