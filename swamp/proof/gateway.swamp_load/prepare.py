@@ -37,16 +37,7 @@ link(Path('/home/orbit/.local/bin/swamp'), Path('/usr/local/bin/swamp'))
 link(Path('/home/orbit/.swamp'), state / 'home')
 link(Path('/home/orbit/.config/swamp/api-key'), Path('/home/orbit/.config/swamp/club-api-key'))
 link(Path('/home/orbit/.config/swamp/serve-driver-token'), state / 'credentials/operator')
-# Production's load uses the loopback plaintext listener behind its TLS edge. The proof serve terminates TLS itself.
-# A local Caddy listener forwards to that actual serve and rewrites Host; no Swamp command or response is mocked.
-caddy = Path('/etc/caddy/Caddyfile')
-trust = Path('/etc/caddy/swamp-load-ca.pem')
-shutil.copyfile(state / 'tls/ca.pem', trust)
-trust.chmod(0o644)
-site = '\nhttp://127.0.0.1:9418 {\n reverse_proxy https://swamp.orbit:443 {\n  header_up Host swamp.orbit\n  transport http {\n   tls_trust_pool file ' + str(trust) + '\n  }\n }\n}\n'
-if 'http://127.0.0.1:9418' not in caddy.read_text():
-    caddy.write_text(caddy.read_text() + site)
-    run(['caddy', 'reload', '--config', str(caddy), '--adapter', 'caddyfile'])
+# Production's load uses serve's loopback plaintext listener, which the topology runs as the swamp role does (v17).
 # Prepare the target release's immutable manifest files as the real release builder does.
 sha = run(['runuser', '-u', 'orbit', '--', 'git', 'rev-parse', 'HEAD'])
 release = source.parent / 'releases' / sha[:12]
