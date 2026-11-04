@@ -494,10 +494,9 @@ def baseline_network():
         return
     directory = Path('/etc/systemd/system/caddy.service.d')
     directory.mkdir(parents=True, exist_ok=True)
-    # Override the recipe's WireGuard dependency: the proof network has no WireGuard interface.
+    # Incus finishes bringing up its managed networks before its service is ready.
     (directory / 'zz-orbit-proof-network.conf').write_text(
-        '[Unit]\nAfter=\nAfter=network-online.target incus.service\n'
-        'Wants=\nRequires=network-online.target incus.service\n')
+        '[Unit]\nAfter=incus.service\nRequires=incus.service\n')
     run(['systemctl', 'daemon-reload'])
 
 
