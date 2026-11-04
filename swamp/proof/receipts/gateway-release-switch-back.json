@@ -3,50 +3,50 @@
   "proof_pass": true,
   "topology": "minimal",
   "topology_version": 19,
-  "commit": "ddba735d87f05b2732a161c66729d6251e18091c",
+  "commit": "bdd7c8b16c345656f09269d6c08d2ddda3c6643f",
   "vm": {
-    "group_id": 3197,
-    "provision_operation_id": 10250,
-    "task_vm_id": 558,
-    "node_id": 586,
-    "name": "tvm-558",
+    "group_id": 3199,
+    "provision_operation_id": 10274,
+    "task_vm_id": 559,
+    "node_id": 587,
+    "name": "tvm-559",
     "host_node_id": 9,
     "seed": "c1c2cf4051fbb2e7f879131384eee7f12b83521ed441f42e2a6ea7e925af8179",
-    "provisioned_at": "2026-11-04T17:22:45Z"
+    "provisioned_at": "2026-11-04T18:15:54Z"
   },
   "refreshed": [],
   "timings": {
     "up_steps": [
       {
         "step": "clean restage",
-        "seconds": 6.7
+        "seconds": 7.7
       },
       {
         "step": "target",
-        "seconds": 123.1
+        "seconds": 130.8
       },
       {
         "step": "swamp",
-        "seconds": 53.3
+        "seconds": 55.6
       },
       {
         "step": "gateway",
-        "seconds": 6.7
+        "seconds": 7.0
       },
       {
         "step": "realtime",
-        "seconds": 48.6
+        "seconds": 54.8
       }
     ],
-    "up_seconds": 238.6,
-    "run_seconds": 71.5,
-    "up_to_receipt_seconds": 310.6,
-    "since_first_provision_seconds": 875.4
+    "up_seconds": 256.1,
+    "run_seconds": 73.7,
+    "up_to_receipt_seconds": 330.3,
+    "since_first_provision_seconds": 1216.6
   },
-  "up_started_at": "2026-11-04T17:18:38Z",
-  "written_at": "2026-11-04T17:33:14Z",
+  "up_started_at": "2026-11-04T18:12:07Z",
+  "written_at": "2026-11-04T18:32:23Z",
   "workflow": "operation-gateway-release",
-  "run": "643a09fb-1487-46c9-8569-4717558d76fc",
+  "run": "dd0efb6f-2d8f-4090-a551-401a25c89532",
   "budget_seconds": 3000,
   "prepare": [
     {
@@ -64,16 +64,16 @@
     "status": "failed",
     "error_code": "operation.native_failed",
     "input": {
-      "sha": "31a81eec4034020abdc44f935cd37d4ce9ffa7b7",
-      "id": "31a81eec4034",
+      "sha": "d247ed121bbf9098b6bf1ece6897b5558dd92a7b",
+      "id": "d247ed121bbf",
       "force": false,
-      "previous": "ddba735d87f0",
+      "previous": "bdd7c8b16c34",
       "repository": "hardimpactdev/orbit",
       "manifest": "{\n  \"commit\": \"a19ef2a8f9d49ea483ffa39680a17611d4c5eb3c\",\n  \"version\": \"0.11.0\",\n  \"artifacts\": {\n    \"linux-x86_64\": {\n      \"path\": \"orbit-agent-linux-x86_64\",\n      \"sha256\": \"fdd720a2375226c40560e91a200c781348b20c732e6930c9b457bdd65cd16dca\",\n      \"url\": \"https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9128.0/orbit-agent-linux-x86_64\"\n    },\n    \"macos-aarch64\": {\n      \"path\": \"orbit-agent-macos-aarch64\",\n      \"sha256\": \"0c267338a16e9e6307b67d01d88b6635f3d26100499a84943caf75d2f59cecfe\",\n      \"url\": \"https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9128.0/orbit-agent-macos-aarch64\"\n    },\n    \"macos-x86_64\": {\n      \"path\": \"orbit-agent-macos-x86_64\",\n      \"sha256\": \"d7bae271937a6aa931bcf63b27d561b6c37255a938a48914e9f1f9cce1093fe6\",\n      \"url\": \"https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9128.0/orbit-agent-macos-x86_64\"\n    }\n  }\n}\n",
       "web": {
         "artifact_id": 4242,
         "size": 323,
-        "digest": "sha256:54b3fec65ce6a1309f2365c99ea1bc95b0807fc601a49473398d0b620beaecbb"
+        "digest": "sha256:64e653127cd2787143fcf925c7cec85390ef34a16c6b2b63e79ad96825f21daa"
       },
       "horizon_unit": "",
       "horizon_drain_seconds": 1730,
@@ -88,7 +88,7 @@
           "user": "orbit",
           "port": 22,
           "host_keys": [
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMeaKbaeZapiHcWEBsEYwZswRJgu7oBxH90qS2/iP28O"
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHIK3RaTxusOt4+3aK8SigM7xW+wlnh6SGJgYNfmibwd"
           ]
         }
       },
@@ -102,62 +102,62 @@
           "user": "orbit",
           "port": 22,
           "host_keys": [
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMeaKbaeZapiHcWEBsEYwZswRJgu7oBxH90qS2/iP28O"
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHIK3RaTxusOt4+3aK8SigM7xW+wlnh6SGJgYNfmibwd"
           ]
         }
       }
     },
     "result": [],
-    "swamp_run_id": "fb08f6e9-aed2-41bb-83bc-ce7d4045f8db"
+    "swamp_run_id": "80fd5a82-2620-4436-b200-636ad1c3603a"
   },
-  "admit_seconds": 0.14,
-  "total_seconds": 52.87,
+  "admit_seconds": 0.13,
+  "total_seconds": 54.66,
   "job_errors": {},
   "native": {
-    "run_id": "fb08f6e9-aed2-41bb-83bc-ce7d4045f8db",
+    "run_id": "80fd5a82-2620-4436-b200-636ad1c3603a",
     "status": "failed",
     "steps": [
       {
         "job": "release",
         "step": "Build the release",
         "status": "succeeded",
-        "seconds": 12.63,
+        "seconds": 13.008,
         "error": null
       },
       {
         "job": "release",
         "step": "Install the web build",
         "status": "succeeded",
-        "seconds": 0.796,
+        "seconds": 0.753,
         "error": null
       },
       {
         "job": "release",
         "step": "Snapshot the database",
         "status": "succeeded",
-        "seconds": 1.185,
+        "seconds": 1.103,
         "error": null
       },
       {
         "job": "release",
         "step": "Migrate",
         "status": "succeeded",
-        "seconds": 0.953,
+        "seconds": 0.898,
         "error": null
       },
       {
         "job": "release",
         "step": "Load Swamp on Node 209",
         "status": "succeeded",
-        "seconds": 11.566,
+        "seconds": 11.923,
         "error": null
       },
       {
         "job": "release",
         "step": "Hand over the release",
         "status": "failed",
-        "seconds": 24.482,
-        "error": "exec failed on 1/1 host(s): target (exit 1: gateway-rollback: /home/orbit/orbit -> releases/ddba735d87f0\ngateway-rollback: /home/orbit/web/current -> releases/ddba735d87f0\ngateway-rollback: reloaded php8.5-fpm\ngateway-rollback: restarted orbit-process-1-schedule-work.service\ngateway.release_switched_back: the check failed; release ddba735d87f0 is current again)"
+        "seconds": 26.324,
+        "error": "exec failed on 1/1 host(s): target (exit 1: gateway-rollback: /home/orbit/orbit -> releases/bdd7c8b16c34\ngateway-rollback: /home/orbit/web/current -> releases/bdd7c8b16c34\ngateway-rollback: reloaded php8.5-fpm\ngateway-rollback: restarted orbit-process-1-schedule-work.service\ngateway.release_switched_back: the check failed; release bdd7c8b16c34 is current again)"
       }
     ]
   },
@@ -167,7 +167,7 @@
       "job": "release",
       "step": "Build the release",
       "budget_seconds": 900,
-      "seconds": 12.63,
+      "seconds": 13.008,
       "status": "succeeded",
       "passed": true
     },
@@ -176,7 +176,7 @@
       "job": "release",
       "step": "Install the web build",
       "budget_seconds": 120,
-      "seconds": 0.796,
+      "seconds": 0.753,
       "status": "succeeded",
       "passed": true
     },
@@ -185,7 +185,7 @@
       "job": "release",
       "step": "Snapshot the database",
       "budget_seconds": 120,
-      "seconds": 1.185,
+      "seconds": 1.103,
       "status": "succeeded",
       "passed": true
     },
@@ -194,7 +194,7 @@
       "job": "release",
       "step": "Migrate",
       "budget_seconds": 300,
-      "seconds": 0.953,
+      "seconds": 0.898,
       "status": "succeeded",
       "passed": true
     },
@@ -203,7 +203,7 @@
       "job": "release",
       "step": "Load Swamp on Node 209",
       "budget_seconds": 300,
-      "seconds": 11.566,
+      "seconds": 11.923,
       "status": "succeeded",
       "passed": true
     },
@@ -212,13 +212,13 @@
       "job": "release",
       "step": "Hand over the release",
       "budget_seconds": 900,
-      "seconds": 24.482,
+      "seconds": 26.324,
       "status": "failed",
       "passed": true
     }
   ],
   "parity": {
     "exit": 0,
-    "output": "The check of 31a81eec4034 failed; the run switched back to ddba735d87f0, which serves; the record is switched_back.\n"
+    "output": "The check of d247ed121bbf failed; the run switched back to bdd7c8b16c34, which serves; the record is switched_back.\n"
   }
 }
