@@ -38,6 +38,7 @@ Follow [flow-tighten](../flow-tighten/SKILL.md) and the rules in `docs/cli/READM
 Follow [writing-documentation](../writing-documentation/SKILL.md). Use the fewest words that stay correct.
 
 - Order: description, usage, how it works, errors.
+- Usage and the option table show every option the command accepts, `--json` included, even though every command has it.
 - State the rerun behavior. A request that is already applied succeeds as skipped, with the reason code, for example `firewall.rule_exists`.
 - Do not tell the reader what an error already says, such as "fix it and run again".
 - Handle mechanics like idempotency keys under the hood; document them only where a user must act.
