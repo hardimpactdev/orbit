@@ -374,9 +374,9 @@ def leaf(directory, name, hosts):
 def observe(node_id):
     """Node 209's own agent, beside the task VM's observer (version 17).
 
-    The task VM's orbit-agent reports this VM to the fleet. A second unit runs the same binary with the files
-    node:converge renders for Node 209, bound over /etc/orbit/agent in its own mount namespace, so Doctor reads
-    209's role and firewall facts from the proof Gateway and the outer observer keeps its own configuration.
+    The task VM's orbit-agent reports this VM to the fleet. Root's user manager runs a second orbit-agent.service with
+    the files node:converge renders for Node 209, bound over /etc/orbit/agent in its own mount namespace, so Doctor
+    reads 209's role and firewall facts from the proof Gateway and the outer observer keeps its own configuration.
     """
     rendered = json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'agent'], user=ACCOUNT, cwd=GATEWAY,
                               input=json.dumps({'node': node_id})).strip().splitlines()[-1])
@@ -387,15 +387,28 @@ def observe(node_id):
     delivery = SOURCE.parent / 'agent-delivery/orbit-agent-linux-x86_64'
     binary = '/usr/local/bin/orbit-proof-agent'
     run(['install', '-m', '0755', str(delivery if delivery.is_file() else Path('/usr/local/bin/orbit-agent')), binary])
-    unit = rendered['unit'].replace('Description=Orbit Node agent', 'Description=Orbit proof agent for Node 209')
+    # The agent starts only in a cgroup named orbit-agent.service, and the task VM's observer holds that system unit.
+    # Root's own user manager is a separate systemd, so the same unit runs there under its own name; a user unit
+    # takes no User= or Group= and starts with the default target.
+    unit = '\n'.join(line for line in rendered['unit'].splitlines() if not line.startswith(('User=', 'Group=')))
+    unit = unit.replace('Description=Orbit Node agent', 'Description=Orbit proof agent for Node 209')
     unit = unit.replace('ExecStart=/usr/local/bin/orbit-agent', f'ExecStart={binary}\nBindPaths={AGENT}:/etc/orbit/agent')
-    Path('/etc/systemd/system/orbit-proof-agent.service').write_text(unit)
-    run(['systemctl', 'daemon-reload'])
-    run(['systemctl', 'enable', 'orbit-proof-agent'])
-    run(['systemctl', 'restart', 'orbit-proof-agent'])
+    unit = unit.replace('WantedBy=multi-user.target', 'WantedBy=default.target') + '\n'
+    Path('/etc/systemd/user').mkdir(parents=True, exist_ok=True)
+    Path('/etc/systemd/user/orbit-agent.service').write_text(unit)
+    run(['loginctl', 'enable-linger', 'root'])
+    manager = ['systemctl', '--user', '-M', 'root@']
+    deadline = time.monotonic() + 60
+    while subprocess.run([*manager, 'is-system-running'], capture_output=True, check=False).returncode not in (0, 1):
+        if time.monotonic() > deadline:
+            raise RuntimeError("root's user manager did not start")
+        time.sleep(1)
+    run([*manager, 'daemon-reload'])
+    run([*manager, 'enable', 'orbit-agent'])
+    run([*manager, 'restart', 'orbit-agent'])
     run(['systemctl', 'is-active', '--quiet', 'orbit-agent'])
     deadline = time.monotonic() + 120
-    while subprocess.run(['systemctl', 'is-active', '--quiet', 'orbit-proof-agent'], check=False).returncode:
+    while subprocess.run([*manager, 'is-active', '--quiet', 'orbit-agent'], check=False).returncode:
         if time.monotonic() > deadline:
             raise RuntimeError('the Node 209 proof agent did not start')
         time.sleep(2)
