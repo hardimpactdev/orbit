@@ -33,7 +33,7 @@
       "orbit_user": "orbit",
       "wireguard_ip": "10.232.0.11",
       "host_key_fingerprint": "${secret.enrollment_fingerprint}",
-      "tld": "stock.orbit"
+      "tld": "stock.test"
     }
   },
   "expect": {
