@@ -119,6 +119,11 @@
     },
     {
       "method": "POST",
+      "path": "nodes/${node.peer}/converge",
+      "body": {}
+    },
+    {
+      "method": "POST",
       "path": "nodes/${node.peer}/roles",
       "body": {
         "role": "app-prod"
@@ -182,7 +187,6 @@
     {
       "method": "POST",
       "path": "instances/${instance.id}/clone",
-      "bind": "production",
       "body": {
         "node_id": "${node.peer}",
         "name": "production",
