@@ -1,0 +1,111 @@
+sequenceDiagram
+  %% Target design: B6 slot design (migration-dashboard/drafts/task-vm-slots.md, M1), docs/reference/compute-drivers.md (Task VM slots), docs/reference/task-vm-native-provision.md, DECISIONS R1-R4.
+  %% Tightened: flow-tighten rules 1, 2, 3, 6, 9, 14, 15, 16, 20, 22 (enrolment, hub peer, keys and model key are gone from the claim; the VM steps are native argvs; one ready check that waits for the identity unit; the nested topology is one call to a shared workflow).
+  %% status: reviewed
+  %% command: none · task VM claim for a task
+  %% kind: task_vm.slot_claim
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane VM icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant H as Task VM host<br/>over ssh
+  participant VM as Slot VM<br/>task image
+  Note over GW: Validate, take a free slot
+  %%> Started by:
+  %%> - the `tasks:provision` flow, as its first step
+  %%> - there is no CLI command of its own
+  %%> Requirements:
+  %%> - an active task VM host has a `free` slot
+  %%> - the task has no other slot
+  %%> - one SQLite transaction takes the slot, so two claims never get the same one
+  %%> Chooses:
+  %%> - the host with the most free slots, then its lowest-numbered free slot
+  %%> - the current task image, or the one-day fallback image
+  %%> Result:
+  %%> - the slot becomes `provisioning` and records the task, `claimed_at` and the image
+  %%> - no Node, address, token or key is made: the slot already has them
+  %%> - a task is recorded with the full intent
+  %%> When it waits:
+  %%> - no host has a free slot: the task waits (`capacity`) and starts when a slot is released
+  GW->>SW: Start run, full intent<br/>operation-task-vm-slot-claim
+  %%> Inputs:
+  %%> - the slot name, host, project and pool
+  %%> - the image fingerprint, the seed volume names and the resource limits
+  %%> - the static bridge address and the fixed MAC
+  %%> - the pinned observer and Pi digests
+  %%> - the task branch and its commit
+  %%> Secrets:
+  %%> - none travel in this run; the identity volume on the host holds them
+  SW->>H: Clone the seed<br/>ssh exec · incus volume copy
+  %%> How:
+  %%> - one argv: copy the image's topology seed to `HOST-tvm-N-topology-seed`
+  %%> - the seed holds the three stopped nested VMs (gateway, app-dev, app-prod)
+  %%> - an existing clone is kept
+  SW->>H: Create the VM<br/>ssh exec · incus init
+  %%> What it does:
+  %%> - one argv with the instance config on stdin
+  %%> - the task image, the seed clone, the identity volume as a read-only disk at `/opt/orbit-slot`
+  %%> - the static address, the fixed MAC, the limits and the user data for the account
+  %%> Why one step:
+  %%> - the account metadata and the devices are part of the create (rule 6)
+  SW->>H: Start the VM<br/>ssh exec · incus start
+  %%> How:
+  %%> - one argv; the next step waits for the boot
+  SW->>VM: Check the slot VM<br/>ssh exec · pinned host key
+  %%> What it does:
+  %%> - waits until `orbit-slot-identity.service` has finished (`systemctl is-active`), within the boot allowance, then runs one command
+  %%> - the observer and Pi binaries match their pinned digests
+  %%> - the observer answers, and Pi answers its capabilities probe
+  %%> Why:
+  %%> - the unit installs the identity before ssh, WireGuard, the observer and Pi start
+  %%> - the Incus agent answers about 4 s earlier, so it is not the signal
+  %%> - there is no repair: the task image is refreshed after every release, so a digest that differs fails the step
+  VM-->>GW: First host report<br/>orbit-agent · host fact
+  %%> Why:
+  %%> - the Gateway keeps the latest fact per Node, kind and subject
+  %%> - the release removed the old facts, so a newer `host` fact proves the new VM reports
+  SW->>VM: Fetch the task branch<br/>ssh exec · git fetch
+  %%> What it does:
+  %%> - fetches the task's branch onto the checkout baked into the task image
+  %%> - only the new commits travel
+  %%> Credential:
+  %%> - the Gateway mints a short-lived GitHub token when it admits the task
+  %%> - it passes the token through the vault as a key name, never as a value
+  %%> - the fetch uses the token once and does not keep it on disk
+  SW->>VM: Reset the nested topology<br/>workflow · task-vm-nested-reset
+  %%> What it does:
+  %%> - runs on the slot VM's own nested Incus, as `ssh exec` argvs
+  %%> - copies the three ready VMs (gateway, app-dev, app-prod) from the stopped originals in the seed clone (btrfs copy, seconds)
+  %%> - starts them
+  %%> - applies the candidate code: migrations, then a Swamp reload
+  %%> - one readiness check: fresh agent facts from the nested Nodes, and the nested Gateway answers on `10.45.0.1`
+  %%> Why one call:
+  %%> - one shared workflow keeps the claim short
+  %%> - it touches only the three nested VMs
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result
+    %%> Result:
+    %%> - the slot becomes `ready` once a `host` fact newer than `claimed_at` has arrived
+    %%> - the task succeeds, with the nested topology up on the candidate code
+    %%> Next:
+    %%> - the `tasks:provision` flow sets up the workspace on the slot's Node
+  else a step fails
+    H--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - a host command, the ready check, the boot allowance, the fetch or the nested reset fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Mark the slot failed
+    %%> Result:
+    %%> - the slot is `failed`, so no claim can take it, and an alert fires
+    %%> - the task fails and the group asks for assistance
+    %%> On the host:
+    %%> - the VM (with its nested VMs) and the seed clone stay until the release runs; there is no rollback
+    %%> Retry:
+    %%> - cancel the group; `task_vm.slot_release` deletes the VM and frees the slot, and a new claim starts a new task
+  end
