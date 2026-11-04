@@ -15,7 +15,7 @@ orbit firewall:list --node=ID [--json]
 
 The list shows what Orbit has recorded for the Node. It does not read the Node, so it works while the Node is unreachable, and it does not show a rule added on the Node by hand. Orbit's own `orbit:` rules are not in it; [the managed and live reads](/cli/firewall#read-the-managed-and-live-rules) show those.
 
-Rules are listed in the order UFW checks them, so the first matching row wins. A narrower rule comes before a broader one, as [rule ordering](/cli/firewall#order-on-the-node) describes. Other rules are in the order they were created. A rule for both protocols shows `any`. The table has the columns PORT, PROTOCOL, SOURCE, ACTION, LABEL and STATUS. An empty result says `No firewall rules.`. Long values wrap inside their cells; below the minimum width, each rule shows as labeled fields.
+Rules are listed in the order UFW checks them, so the first matching row wins. A narrower rule comes before a broader one, as [rule ordering](/cli/firewall#order-on-the-node) describes. Other rules are in the order they were created. A rule for both protocols shows `any`. The table has the columns PORT, PROTOCOL, SOURCE, ACTION, LABEL and STATUS. A rule without a label shows `—`. An empty result says `No firewall rules.`. Long values wrap inside their cells; below the minimum width, each rule shows as labeled fields.
 
 A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a failed rule also has `failed_step` and `error_code`; repeat the command that created it once the cause is fixed.
 

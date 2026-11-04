@@ -27,7 +27,7 @@ orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --yes
 
 The port, and `--from` and `--protocol` when given, must match exactly one rule. No match is refused with `firewall.rule_not_found`. Several matches are refused with `firewall.rule_ambiguous`, and the error lists each match; add `--from` or `--protocol` to pick one.
 
-The CLI asks `Remove firewall rule [443/tcp from any] from Node #ID?` with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--yes`, a command that cannot prompt exits 1 with `input.confirmation_required`. `--json` never implies consent. A declined removal sends no request.
+The CLI asks `Remove firewall rule [443/tcp from any] from Node beast?`, naming the Node, with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--yes`, a command that cannot prompt exits 1 with `input.confirmation_required`. `--json` never implies consent. A declined removal sends no request.
 
 Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`.
 

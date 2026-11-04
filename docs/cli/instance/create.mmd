@@ -1,9 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + full intent as inputs, single Swamp Node, DECISIONS 1 (token minted at admission, vault.get), Gateway renders .env from the Project env template (orbit-gateway-renders-create-env; Nick 2026-11-01), budget rule swamp-operation-time-budgets (<10 s, 60 s).
-  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (rule 22: cfgmgmt file/systemd, 0600 credential file for the private fetch); 2026-11-03, rule 25 (minimal chart).
-  %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, rendered by the Gateway and written by the same file step.
-  %% Decided: Nick 2026-11-03, a web-serving Project gets its derived Route on the main path (requiresRoute); --domain overrides the domain; the Route reuses the route:create child.
-  %% status: draft
+  %% Target design: ADR 0244 task + full intent as inputs, token minted at admission (vault.get), Gateway renders .env from the Project env template, run budget per swamp-operation-time-budgets.
+  %% Tightened: flow-tighten, rules 1-28 (rule 22: cfgmgmt file, 0600 credential file for the private fetch).
+  %% status: reviewed
   %% command: instance:create
   %% kind: instance.create
   autonumber
@@ -13,53 +11,113 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>reached over ssh
-  CLI->>GW: instance:create 7 12 blog
-  opt --database-server
-    Note over GW: Plan the owned database
-  end
-  Note over GW: Validate, render .env<br/>reserve Instance, Route · #5121
-  %%> Why the Route first:
-  %%> - the Route changes the Process units, so the Gateway reserves it before it captures the Processes
-  GW->>SW: Push token and .env<br/>vault: github-token, env-5121
-  %%> Why:
-  %%> - secrets reach the run only through the vault; no step calls the Gateway back (decision 1)
-  GW->>SW: Start run, full intent<br/>operation-instance-create · 60 s
-  GW-->>CLI: 202 Accepted<br/>operation #5121
+  CLI->>GW: instance:create<br/>PROJECT NODE NAME
+  %%> Command:
+  %%> - `orbit instance:create PROJECT NODE NAME`
+  %%> - syntax: `<project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG]`
+  %%> Input:
+  %%> - the Project, the Node, and the Instance name
+  %%> - a name equal to the Project's default branch creates the `default` Instance
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, reserve Instance<br/>render .env
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the target Node
+  %%> - the target is an active `app-dev` Node and not a task VM; a production Node is refused (`instance.candidate_required`)
+  %%> - the checkout path is free, and no other change runs on the Instance; the Gateway holds one lock per Instance
+  %%> Allowed:
+  %%> - repeat the command for an Instance that failed or never finished: it resumes (see the failure branch)
+  %%> Result:
+  %%> - the Instance is reserved, with its Route when the Project serves web pages
+  %%> - `.env` is rendered here from the Project's env template: `APP_URL`, a new `APP_KEY` and the database keys
+  %%> - a read token for this one repository is minted, valid one hour
+  %%> - a task is recorded with the full intent; nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-instance-create
+  %%> Why the vault:
+  %%> - the token and `.env` reach the run only through the vault; no step calls the Gateway back
+  %%> Budget:
+  %%> - 60 s, plus the Project's setup step timeouts, plus 30 s for the Processes, plus 180 s each for the Route and for a database copy; fixed at admission
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> What you get:
+  %%> - the task ID, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
   SW->>N: Clone, check out branch<br/>file 0600 cred · git clone
   %%> Why the file:
-  %%> - git reads the token from it, so the token never enters argv
+  %%> - git reads the token from it, so the token never enters argv; the file is removed after the clone, success or failure
+  %%> Branch:
+  %%> - the requested origin branch, else the existing local branch, else a new branch from the default branch
   SW->>N: Write .env<br/>cfgmgmt/file · 0640 orbit-env
-  SW->>N: Copy the default database<br/>child instance-clone-database-*
-  %%> When:
-  %%> - only when the default Instance has a SQLite database under DB; the copy lands before setup migrates it
-  opt --database-server
+  %%> Why 0640 orbit-env:
+  %%> - the Node agent can report the key names and never the values
+  %%> - `.env.testing` is written the same way, only for an owned MySQL or PostgreSQL database
+  opt default Instance has a SQLite database
+    SW->>N: Copy the default database<br/>child instance-clone-database
+    %%> Why before setup:
+    %%> - the copy lands first, so the setup steps migrate a copy, not an empty file
+  end
+  opt database on a Database server
     SW->>N: Create owner and databases<br/>child operation-database-create
     %%> When:
-    %%> - also without the option, when the default Instance's database is MySQL on a server; its dump is then copied in
+    %%> - `--database-server` is given, or the default Instance's database is MySQL on a server; that dump is then copied in
   end
   SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
+  %%> As whom:
+  %%> - the steps run as the Node's configured user, one after another; the first failure stops the run
   SW->>N: Create, start Processes<br/>child operation-process-create
   %%> Why after setup:
   %%> - Processes need the installed dependencies
-  SW->>N: Create the Route<br/>child operation-route-create
-  %%> When:
-  %%> - only for a web-serving Project
-  %%> Why it marks the Instance awake:
-  %%> - so the first request reaches the app, not the wake page; only when this run starts every Process
+  opt web-serving Project
+    SW->>N: Create the Route<br/>child operation-route-create
+    %%> What it adds:
+    %%> - the same steps as `route:create`, then a TLS probe of the site
+    %%> Why it marks the Instance awake:
+    %%> - so the first request reaches the app, not the wake page; only when this run starts every Process
+  end
   alt all steps pass in budget
     N-->>SW: Site answers<br/>Processes running
-    SW-->>GW: Run succeeded<br/>terminal event · finish-result
-    Note over GW: Record result<br/>commit · Instance 42 → active
-  else a step fails or 60 s ends
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result
+    %%> Result:
+    %%> - the Instance and its Route become active
+    %%> - a successful create means every setup step succeeded; an empty list counts as success
+  else Instance already created
+    Note over GW: Skipped — already created<br/>instance.exists
+    %%> Result:
+    %%> - the Instance is active and its first setup finished, so no step runs
+    %%> - the skip reason is part of the successful result in human and machine output, not an error
+  else a step fails or the budget ends
     N--xSW: exit ≠ 0 or timeout
-    SW--xGW: Run failed<br/>failed_step, error_code
-    Note over GW: Keep Instance, mark failed<br/>task → failed · retry is new task
-    %%> On failure:
-    %%> - the Instance stays so you can see what happened; the Gateway never re-runs work by itself
+    %%> When:
+    %%> - a command exits non-zero, a Process or the site does not come up, or the budget ends
+    SW->>N: Remove what the run made<br/>same steps as instance:destroy
+    %%> What it does:
+    %%> - withdraws the Route, runs the Project teardown steps, then removes the Processes, the database the run created and the checkout
+    %%> - removes only what this run made; other Instances, the Database server and the default Instance's database stay
+    %%> Why remove:
+    %%> - the failed step and its output are in the task, so nothing on the Node is needed to see what failed
+    SW--xGW: Run failed<br/>failed step, error_code
+    %%> The Gateway reads:
+    %%> - which step failed and its error code; a missing setup command is `instance.setup_step_unavailable`, any other setup failure `instance.setup_step_failed`
+    %%> - the original error code is kept, whether or not cleanup finished
+    Note over GW: Record the failure
+    %%> Result:
+    %%> - the task fails with the failed step; when cleanup finished, the Instance and its Route no longer exist
+    %%> If cleanup did not finish:
+    %%> - the Instance stays marked failed with `cleanup = incomplete`; the incomplete cleanup stays visible, and a crash is never taken as proof that cleanup ran
+    %%> Retry:
+    %%> - run the same command again: it finishes an incomplete cleanup first, then creates; a changed `--root` or `--branch` is refused until then (`instance.placement_conflict`)
+    %%> - `instance:destroy` also finishes the cleanup
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5121
+    CLI->>GW: operation:show TASK
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end

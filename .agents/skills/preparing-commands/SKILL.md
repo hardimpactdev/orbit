@@ -37,6 +37,7 @@ Follow [flow-tighten](../flow-tighten/SKILL.md) and the rules in `docs/cli/READM
 
 Follow [writing-documentation](../writing-documentation/SKILL.md). Use the fewest words that stay correct.
 
+- Use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI design standard](../../../docs/reference/cli-ux.md) as the default for what the page promises: prompts for omitted input, related records named in human output, a progress tree for slow work, and consent for a destructive action. Inputs stay numeric IDs, to match the API and MCP. The standard has grown one feature at a time; when a rule looks outdated or wrong for the command, follow the command's own contract and say so in your message.
 - Order: description, usage, how it works, errors.
 - Usage and the option table show every option the command accepts, `--json` included, even though every command has it.
 - State the rerun behavior. A request that is already applied succeeds as skipped, with the reason code, for example `firewall.rule_exists`.
@@ -50,7 +51,7 @@ Follow "Define the cases" in [verifying-commands](../verifying-commands/SKILL.md
 | Case | Setup and action | Required observations |
 | --- | --- | --- |
 
-Cover the call with required arguments only, each optional flag, each error on the chart, a repeat of the same request, and a failure after a partial change. Each row names:
+Cover the call with required arguments only, a call that omits a required input (prompted in a terminal, refused when noninteractive, per [CLI UX](../../../docs/reference/cli-ux.md)), each optional flag, each error on the chart, a repeat of the same request, and a failure after a partial change. Each row names:
 
 - the starting state that matters, including the Nodes involved;
 - the command, run through the real CLI;
@@ -64,11 +65,12 @@ Derive every expectation from the chart and the page, never from the current cod
 
 Do this before you show Nick anything. He should only have to say "proceed". Fix every item you can settle yourself, and decide the rest with the rules and Recall decisions, stating the choice in one line so he can overrule it. Ask only about a choice that no rule or decision settles.
 
-1. Read the code each claim relies on (planner, controller, CLI) and correct any claim it contradicts. Mark "fails today" from the code, never "unverified".
+1. Read the code each claim relies on (planner, controller, CLI) and correct any claim it contradicts. Mark "fails today" from the code, never "unverified". Search the rest of the docs and Recall for the behavior you describe, especially failure, retry and removal, and settle any conflict between a page, a decision and the code before you show the draft.
 2. Run the rules once more: no implementation names on the page (Swamp, workflow, planner), placeholders only (no Node ids, task ids, hosts), minimal chart (rule 25), failure and retry (rule 28), the visible skip with its reason code, no names or dates.
 3. Walk the cases against the page: every error code, flag, repeat and refusal has a case, and every example on the page passes its own refusals.
-4. Compare with the approved sibling and apply any difference to both commands and the family page.
-5. Open the preview yourself, run `bin/check-flows`, `composer docs-build` and `composer docs-lint`, and confirm the cases file is linked in your message.
+4. Check the page and cases against the CLI design standard, one section at a time: input, consent, results, progress. Report a rule that looks outdated instead of copying it.
+5. Open the approved sibling's page beside yours and compare the usage line, option tables, section order and wording. Apply any difference to both commands and the family page.
+6. Open the preview yourself, run `bin/check-flows`, `composer docs-build` and `composer docs-lint`, and confirm the cases file is linked in your message.
 
 ## 6. Review with Nick
 
@@ -84,4 +86,4 @@ When a correction is a rule for every command, add it to the skill that owns it 
 
 ## Report
 
-Name the command, the PR, the corrections Nick made, the cases marked "fails today", and any skill you changed.
+Name the command, the PR, the corrections Nick made, the cases marked "fails today", and any skill you changed. For each correction, name the skill line it changed, or say why it is specific to this command. Do this after every correction, not only at the end.
