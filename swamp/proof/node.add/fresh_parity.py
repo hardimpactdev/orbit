@@ -3,7 +3,8 @@ import json
 import os
 import subprocess
 
-operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
+with open(os.environ['PROOF_OPERATION_FILE']) as stream:
+    operation = json.load(stream)
 intent = operation['input']['intent']
 assert intent['bootstrap']['user'] == 'root'
 key = intent['identity']['public_key'].split()[:2]
