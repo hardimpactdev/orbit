@@ -3,7 +3,6 @@ title: "SQLite WAL default"
 description: "Why Orbit-owned SQLite connections use WAL, and how to confirm that a Laravel app opens new databases in that mode."
 covers:
   - apps/gateway/config/database.php
-  - apps/gateway/tests/Unit/Configuration/SqliteJournalModeTest.php
 ---
 
 # SQLite WAL default
@@ -37,4 +36,4 @@ WAL writes `-wal` and `-shm` files next to the database. Copy, backup, and recov
 
 ## Verification
 
-`config('database.connections.sqlite.journal_mode')` is `WAL`, and `PRAGMA journal_mode` on an open connection returns `wal`. For the Gateway, `apps/gateway/tests/Unit/Configuration/SqliteJournalModeTest.php` checks both.
+`config('database.connections.sqlite.journal_mode')` is `WAL`, and `PRAGMA journal_mode` on an open connection returns `wal`.
