@@ -44,7 +44,7 @@
     "peer": [
       [
         "dpkg",
-        "--remove",
+        "--purge",
         "--force-depends",
         "git",
         "git-man"
