@@ -37,7 +37,7 @@ sequenceDiagram
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   %%> - `node:converge` runs the same role steps for each active role, but only for parts whose digest changed
-  Note over GW: Validate, claim the role<br/>role: provisioning · task #5171
+  Note over GW: Validate, claim the Node<br/>role: stays active · task #5171
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
   %%> - Node 12 is an active, managed Linux Node and has the `app-dev` role
@@ -48,7 +48,9 @@ sequenceDiagram
   %%> - the complete role plan, with one digest per part
   %%> - the current Metrics fleet change for Node 12, when there is one
   %%> Result:
-  %%> - the role marked provisioning, and task #5171 recorded with the full intent
+  %%> - an `active` role stays `active`; a `failed` or stale-claimed role is marked provisioning
+  %%> - the Node's Operation lock is the claim, so no other add or converge runs on the Node; a role such as `gateway` keeps serving during the run
+  %%> - task #5171 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-node-role-add
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
@@ -194,9 +196,11 @@ sequenceDiagram
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
-    Note over GW: Mark the role failed<br/>converge:STEP · rerun after a fix
+    Note over GW: Record the failure<br/>role: stays active · task failed
     %%> Result:
-    %%> - the role is marked failed at `converge:STEP`, with the step's own error code
+    %%> - an `active` role stays `active`: a failed converge never takes a role out of service, so a failed `gateway` converge cannot lock the Gateway out of its own access checks
+    %%> - the failed step and its error code stay on task #5171, and `doctor` shows the drift
+    %%> - a role that was `failed` at `converge:STEP` or had a stale claim stays `failed` with the new step's error code
     %%> - task #5171 fails
     %%> On the Node:
     %%> - finished steps stay; there is no rollback

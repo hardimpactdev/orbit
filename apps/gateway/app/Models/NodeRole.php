@@ -110,6 +110,12 @@ final class NodeRole extends Model
      */
     public function claimConvergence(): void
     {
+        // An active role stays active while it converges. The Node's Operation lock is the claim, and an
+        // active Gateway role is what the Gateway resolves its own serving Node from.
+        if ($this->status === LifecycleStatus::Active) {
+            return;
+        }
+
         $this->claimAs(LifecycleStatus::Provisioning);
     }
 
@@ -151,8 +157,18 @@ final class NodeRole extends Model
         ]);
     }
 
+    /**
+     * Records a failed first add, or a failed convergence of a role that was not active. A failed
+     * convergence never demotes an active role: the failure stays on its Operation and `doctor` shows
+     * the drift. A failed `gateway` convergence that demoted the role locked the Gateway out of its
+     * own access checks.
+     */
     public function markConvergenceFailed(string $step, string $errorCode): void
     {
+        if ($this->status === LifecycleStatus::Active) {
+            return;
+        }
+
         $this->update([
             'status' => LifecycleStatus::Failed,
             'failed_step' => "converge:{$step}",
