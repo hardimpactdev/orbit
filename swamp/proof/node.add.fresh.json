@@ -29,10 +29,11 @@
     "path": "nodes",
     "body": {
       "name": "enroll-${proof.run}",
-      "public_ssh_host": "10.231.0.11",
+      "public_ssh_host": "${fixture.stock_address}",
       "orbit_user": "orbit",
       "wireguard_ip": "10.232.0.11",
-      "host_key_fingerprint": "${secret.enrollment_fingerprint}"
+      "host_key_fingerprint": "${secret.enrollment_fingerprint}",
+      "tld": "stock.orbit"
     }
   },
   "expect": {

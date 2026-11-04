@@ -59,3 +59,7 @@ A scheduled producer with no Operation uses `scheduled_run` instead of `request`
 
 - No WireGuard, Router, ingress, Reverb, Horizon or Caddy. Reverb drives the subscriber and Horizon works the queue in production; here `gateway.php` does both, paced below serve's per-IP WebSocket burst limit.
 - The Gateway runs from source with `composer install --no-dev --no-scripts`; the release runner is not exercised.
+
+### Stock Node enrollment
+
+`node.add.fresh` launches a separate VM from `images:ubuntu/26.04/cloud` inside the owned proof VM. Its hook installs only `openssh-server` and authorizes the Gateway bootstrap public key for root. It records the real DHCP address, approved host fingerprint, package inventory and absent managed account before enrollment. The fixture runs the same enrollment parity checks as `node.add`. Run `node.role_add.fresh` next to add `app-dev` to that enrolled machine. Neither fixture changes the shared topology. `down` destroys the outer VM and its nested stock VM.

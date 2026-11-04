@@ -1,0 +1,37 @@
+{
+  "kind": "node.role_add",
+  "workflow": "operation-node-role-add",
+  "topology": "minimal",
+  "clean": false,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "python3",
+      "swamp/proof/node.add/role_prepare.py"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${fixture.stock_node}/roles",
+    "body": {
+      "role": "app-dev"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Check the role",
+      "job": "role",
+      "step": "Check the role",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "node-add-stock",
+    "app-dev"
+  ]
+}
