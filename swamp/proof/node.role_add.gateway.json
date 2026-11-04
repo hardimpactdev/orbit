@@ -3,14 +3,65 @@
   "defaults": "node-role-add-defaults.json",
   "clean": true,
   "before_gateway": [
-    ["apt-get", "update"],
-    ["apt-get", "install", "--yes", "python3-venv"],
-    ["python3", "-m", "venv", "/opt/orbit/ansible/venv"],
-    ["/opt/orbit/ansible/venv/bin/pip", "install", "--disable-pip-version-check", "-r", "swamp/ansible/requirements.txt"],
-    ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
-    ["runuser", "-u", "orbit", "--", "php", "swamp/proof/node.role_add/prepare.php", "${node.gateway}", "gateway"]
+    [
+      "sh",
+      "-c",
+      "set -eu; d=/etc/systemd/system; printf '[Unit]\\nDescription=Orbit Gateway automatic release\\n[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > $d/orbit-gateway-release.service; printf '[Unit]\\nDescription=Orbit Gateway release %%i\\n[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > $d/orbit-gateway-release-run@.service; printf '[Unit]\\nDescription=Orbit Gateway automatic release timer\\n[Timer]\\nOnCalendar=*-*-* *:*:00\\nUnit=orbit-gateway-release.service\\n[Install]\\nWantedBy=timers.target\\n' > $d/orbit-gateway-release.timer; systemctl daemon-reload; systemctl enable --now orbit-gateway-release.timer"
+    ],
+    [
+      "apt-get",
+      "update"
+    ],
+    [
+      "apt-get",
+      "install",
+      "--yes",
+      "python3-venv"
+    ],
+    [
+      "python3",
+      "-m",
+      "venv",
+      "/opt/orbit/ansible/venv"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/pip",
+      "install",
+      "--disable-pip-version-check",
+      "-r",
+      "swamp/ansible/requirements.txt"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/ansible-galaxy",
+      "collection",
+      "install",
+      "-r",
+      "swamp/ansible/requirements.yml",
+      "-p",
+      "/opt/orbit/ansible/collections"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.gateway}",
+      "gateway"
+    ]
   ],
-  "request": {"method": "POST", "path": "nodes/${node.gateway}/roles", "body": {"role": "gateway"}},
-  "parity": ["swamp/proof/node.role_add/parity.py", "gateway", "gateway"],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.gateway}/roles",
+    "body": {
+      "role": "gateway"
+    }
+  },
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "gateway",
+    "gateway"
+  ],
   "prepare": []
 }
