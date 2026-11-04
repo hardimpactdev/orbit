@@ -14,7 +14,7 @@ In progress.
 
 The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. The shared waiting status, delayed step reads, and stop hooks are built; [Operations](/reference/operations#a-waiting-step) owns their contract and reasons. The first task operation, `tasks.provision`, uses them to wait for VM capacity and readiness. `tasks.check` is also built: [Check an external group](/reference/tasks#check-an-external-group) owns its contract and reasons. The turn operation, `tasks.turn`, records one Pi turn without choosing the next step. `tasks.publish` is built: [Publish an external group](/reference/tasks#publish-an-external-group) owns its contract and cancellation rule.
 
-Nick decided this on 2026-10-22. On the same day he decided that every step of a task runs in the group's task VM, and that Pi stays inside the VM on the Pi Durable harness. He then decided that an external group bypasses the tick, so step 1 does not wait for ADR 0224.
+Nick decided this on 2026-10-22. On the same day he decided that every step of a task runs in the group's task VM, and that Pi stays inside the VM on the Pi Durable harness. He then decided that an external group bypasses the tick.
 
 Principle: [Lean](/mission#principles). Orbit stops owning a hand-rolled workflow engine. A general orchestrator holds the lifecycle as data, and Orbit keeps only the effects that it alone can perform. It also serves [Deterministic first](/mission#principles), because stages, gates, and budgets become declared data with typed records. Exceptions to [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles): while this ADR is being built, task work has two modes, the tick and an external orchestrator, and Orbit keeps the tick's engine until its replacement works. Both exceptions end when step 3 removes the state machine from `tasks:tick`.
 
@@ -46,7 +46,7 @@ An evaluation of the Pi Durable harness (`@earendil-works/pi-durable`) ran besid
 
 [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) makes long commands durable operations. Today only `instance.deploy` and `instance.rollback` are operations. One job runs a whole operation and holds its target, an operation runs at most 1,600 seconds, and the `operations` queue has one worker ([Operations](/reference/operations#how-an-operation-runs)). [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) names a kind after its CLI command and keeps only the newest 50 finished operations of each target.
 
-[ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) gives each group one workspace holder and makes `tasks:tick` the only place that starts an actor or sends a turn, from one turn-request record. It binds a review to the tree recorded at handoff, and it keeps detached supervision for checks and topologies. [Node commands](/reference/node-agent#commands) states that this supervision is not a generic command runner. ADR 0224's build has not started. It waits for the remaining steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge), and many of its build steps rework the tick's engine.
+[Node commands](/reference/node-agent#commands) states that detached supervision of checks and topologies is not a generic command runner.
 
 ### People need to see the work
 
@@ -61,7 +61,7 @@ The orchestrator decides what happens next, and the Gateway does it on the group
 - The orchestrator owns the lifecycle, every state change, and every time budget.
 - The Gateway owns every effect. A key starts each operation once, and a step that cannot run again safely never runs twice.
 - Tasks owns the visible record: board states, task records, assistance, and agent sessions.
-- The operation that holds an external group is its one holder and its one sender. It starts the group's checks or fixed read-only analysis and sends its turns. Only `tasks.turn` sends to Pi; `tasks.analyze` starts no agent and has no lifecycle authority. `tasks:tick` sends nothing for an external group, so ADR 0224's rule of one sender per group still holds. [What the tick keeps](#what-the-tick-keeps) lists its remaining work.
+- The operation that holds an external group is its one holder and its one sender. It starts the group's checks or fixed read-only analysis and sends its turns. Only `tasks.turn` sends to Pi; `tasks.analyze` starts no agent and has no lifecycle authority. `tasks:tick` sends nothing for an external group, so each group keeps one sender. [What the tick keeps](#what-the-tick-keeps) lists its remaining work.
 - The operations are orchestrator-neutral. Any caller with Gateway access can use them.
 - An orchestrator never runs a command, an agent, or a Git push itself.
 
@@ -91,7 +91,7 @@ An orchestrator derives the key from its work item, stage, and cycle, such as `l
 
 ### Step 1: externally orchestrated groups
 
-A task group gains `orchestration`: `tick`, the default, or `external`. Create sets it, and it never changes. Step 1 does not wait for ADR 0224. An operation takes the workspace lease for its step, as the operator's baseline retry does today. A busy lease keeps the step `waiting`; it is not a failure.
+A task group gains `orchestration`: `tick`, the default, or `external`. Create sets it, and it never changes. An operation takes the workspace lease for its step, as the operator's baseline retry does today. A busy lease keeps the step `waiting`; it is not a failure.
 
 In step 1, create refuses an `external` group with `422 tasks.orchestration_unsupported` in two cases: a subtask declares a [topology](/reference/compute-drivers#size-of-a-task-vm), or the Project uses [review and merge](/reference/tasks#review-and-merge). Each case needs its own amendment.
 
@@ -270,8 +270,7 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 ## Rejected alternatives
 
 - **The orchestrator above whole task groups.** One work item would be one task group, and `tasks:tick` would keep the inner loop. That keeps the hand-rolled engine, so Orbit's scope does not shrink.
-- **The orchestrator as a second sender.** It would call Pi or the task drivers directly. That breaks the one-sender rule of [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender).
-- **Step 1 after ADR 0224.** The first external run would wait for ADR 0223's remaining steps and all of ADR 0224, and much of ADR 0224 reworks the tick engine that step 3 removes.
+- **The orchestrator as a second sender.** It would call Pi or the task drivers directly. That breaks the rule of one sender per group.
 - **A development Instance as the workspace for steps without an agent.** It is a second path outside the VM. A commit would move between the Instance and the VM, and the step would not run unchanged on UpCloud overflow.
 - **A generic command operation.** Checks, one fixed read-only repository analysis profile, and agent turns cover this slice. Analysis accepts typed data, not caller shell, environment, path, or model selection; it grants no generator-write authority. Extending existing supervision for this named profile does not make it a generic command runner. Other deterministic mutations still need [named agent commands](/reference/node-agent#commands) or a separately reviewed fixed contract; hiding source in data or adding a Gateway script is not an alternative.
 - **Publish of any commit.** With a raw SHA, a caller would skip the check. Publish takes an eligible checked candidate, so it pushes only the commit that the check recorded, with passed hosted CI from its owning operation when required. The orchestrator owns the review gate.
@@ -287,7 +286,6 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 - The board and agent sessions stay, so a person still sees what is happening.
 - Retries become one rule for every operation: the key.
 - Until step 3, task work has two modes, as the Principle line states.
-- Step 1 does not wait for ADR 0224. ADR 0224 continues for tick groups, Orbit's among them, until step 3. Its "One resume" build step no longer includes Pi restart resume or provider retries after #1464.
 - Topology subtasks and review-and-merge Projects, Orbit itself among them, stay on the tick until an amendment covers them.
 - An update that an agent turn makes is ordinary feature work, so a dependency-update group runs as an external group. Fixed read-only analysis is now the narrow deterministic profile above. Other deterministic steps, including write-mode generators, still require a separately reviewed mutation contract and do not inherit its authority.
 - The orchestrator becomes a dependency for task work. Its availability, licensing, and storage are outside Orbit.
@@ -295,6 +293,6 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web, apps/docs
-- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), which gains the waiting step and its cancel rule; [0218](/decisions/0218-take-long-commands-off-the-request-path), whose retention spares keyed operations; [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender), whose one sender per group is the tick for a tick group and the holding operation for an external group. When ADR 0224 is built, a `tasks.*` operation can set the group holder, `TaskTurnDispatcher` gains `tasks.turn` as a caller beside the tick, and the holder dispatches the status job. Sender inventory remains the tick for tick groups and the holding turn operation for external groups; fixed analysis only starts its supervised run and never sends to Pi. Its "One resume" step shrinks with step 2
+- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), which gains the waiting step and its cancel rule; [0218](/decisions/0218-take-long-commands-off-the-request-path), whose retention spares keyed operations.
 - Detail: [Operations](/reference/operations) for the idempotency key and the waiting status; [Tasks](/reference/tasks) for `orchestration`, the five operations, the commit at handoff, assistance on external groups, and the removals of steps 2 and 3; [Pi server](/reference/pi-server) and `apps/pi-server` for step 2
 - Verify: Gateway feature tests for each operation, its idempotency conflict, and each refusal; an Incus E2E that runs an external group from provision to a pull request, kills the Gateway worker during a waiting check, and reads the same result after recovery

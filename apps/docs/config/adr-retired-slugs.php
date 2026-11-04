@@ -215,6 +215,7 @@ return [
     '0217' => ['0217-deploy-production-instances-automatically-by-polling'],
     '0220' => ['0220-serialize-task-workspaces-with-one-lease'],
     '0222' => ['0222-give-task-vms-a-cloned-topology-seed'],
+    '0224' => ['0224-give-each-task-group-one-holder-and-one-sender'],
     '0225' => ['0225-make-node-changes-through-agent-commands'],
     '0227' => ['0227-manage-postgresql-and-private-database-endpoints'],
     '0228' => ['0228-serve-several-reverb-apps-on-the-websocket-role'],
