@@ -46,11 +46,13 @@ sequenceDiagram
   %%> Why:
   %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
   AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
-  AC->>GN: Switch the release<br/>one rename of the link
-  AC->>GN: Publish runtime files<br/>handoff --phase=serve
+  AC->>GN: Switch the release<br/>gateway-rollback · Horizon
+  %%> Why:
+  %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
   AC->>GN: Verify the Gateway<br/>/up · status version
-  AC->>GN: Move the scheduler<br/>handoff --phase=schedule
-  AC->>GN: Switch the web build<br/>one rename of the link
+  AC->>GN: Resume document cleanup<br/>best effort
+  %%> Why:
+  %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
   AC->>GN: Prune old releases<br/>best effort
   alt every step succeeded
     SW-->>GW: Run succeeded<br/>terminal result

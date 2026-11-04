@@ -336,6 +336,11 @@ def parity():
     assert Path(operation['result']['snapshot']).is_file()
     status = json.loads(command(['curl', '-fsS', '--cacert', str(HOME / '.orbit/ca/root.pem'), 'https://gateway.orbit/api/v1/gateway/status']))
     assert (status.get('data') or status)['version'] == target, status
+    # The switch restarted the scheduler Process, so it runs from the new release.
+    units = command(['systemctl', 'list-units', '--type=service', '--state=active', '--plain', '--no-legend', 'orbit-process-*-schedule-work.service']).split()
+    assert units, 'the scheduler Process is not running'
+    pid = command(['systemctl', 'show', '-p', 'MainPID', '--value', units[0]])
+    assert os.path.realpath(f'/proc/{pid}/cwd') == str(HOME / 'releases' / target[:12] / 'apps/gateway'), os.path.realpath(f'/proc/{pid}/cwd')
     # An Actions-only token selected the web build, then the run's own token read contents and Actions. The manual
     # deploy's newer-green check mints its own contents token afterwards.
     minted = data['minted']
@@ -344,7 +349,7 @@ def parity():
     fetched = [call for call in data['calls'] if call[1] == 'github.com' and 'git-upload-pack' in call[2]]
     downloaded = [call for call in data['calls'] if call[2].endswith(f'/actions/artifacts/{ARTIFACT}/zip')]
     assert fetched and downloaded, data['calls']
-    print(f'Release {target[:12]} is current; status reports it; the run fetched the commit and the web build with its own token.')
+    print(f'Release {target[:12]} is current; status reports it; the scheduler runs from it; the run fetched the commit and the web build with its own token.')
 
 
 if __name__ == '__main__':
