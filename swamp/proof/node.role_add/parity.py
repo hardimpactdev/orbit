@@ -119,14 +119,17 @@ if 'instance' in sys.argv[3:]:
         expected = runtime['configuration']['pool' if current else 'initial_pool']
         check(on('cat', '/etc/orbit/php-fpm/' + runtime['user'] + '/generated/pool.conf').stdout == expected,
               'the admitted exporter status pool is installed')
-    checkout = '/home/orbit/apps/proof-role-' + os.environ['PROOF_RUN'] + '/default'
+    projects = gateway('GET', 'projects')['response']['data']
+    project = next(item for item in projects if item['name'] == 'Role phase web proof')
+    instance_run = project['slug'].removeprefix('proof-role-')
+    checkout = '/home/orbit/apps/' + project['slug'] + '/default'
     check(subprocess.run(['incus', 'exec', 'target', '--', 'test', '-f', checkout + '/.git/orbit-proof-setup'],
                          check=False).returncode == 0, 'Laravel setup ran')
     database = subprocess.run(['incus', 'exec', 'target', '--', 'python3', '-c',
                                'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from migrations").fetchone()[0])',
                                checkout + '/database/database.sqlite'], capture_output=True, text=True, check=False)
     check(database.returncode == 0 and int(database.stdout) > 0, 'Laravel migrations ran on the attached database')
-    domain = 'role-' + os.environ['PROOF_RUN'] + '.proof.test'
+    domain = 'role-' + instance_run + '.proof.test'
     route = subprocess.run(['curl', '--max-time', '15', '--fail', '--silent', '--show-error',
                             '--cacert', '/home/orbit/.orbit/ca/root.pem', '--resolve',
                             domain + ':443:10.231.0.10', 'https://' + domain + '/up'],
