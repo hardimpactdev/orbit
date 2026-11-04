@@ -96,6 +96,9 @@ sequenceDiagram
     SW->>N: Set up Tool Managers<br/>native child workflow
   end
   SW->>N: Apply the role on the Node<br/>Ansible phase: node
+  opt Analytics uses local storage
+    SW->>N: Open Analytics storage<br/>Ansible phase: storage-firewall
+  end
   opt Analytics needs initialization
     SW->>N: Pull the Analytics image<br/>cfgmgmt docker_image
     SW->>N: Create Analytics database<br/>native SSH argv

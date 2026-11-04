@@ -99,6 +99,9 @@ sequenceDiagram
     SW->>N: Set up Tool Managers<br/>native child workflow
   end
   SW->>N: Apply the role on the Node<br/>Ansible phase: node
+  opt Analytics uses local storage
+    SW->>N: Open Analytics storage<br/>Ansible phase: storage-firewall
+  end
   %%> - Gateway DNS applies only when its unit or live resolver policy changed
   opt role plan needs this action
   SW->>N: Install Swamp<br/>cfgmgmt fetch

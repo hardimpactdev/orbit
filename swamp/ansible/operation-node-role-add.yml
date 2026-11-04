@@ -273,13 +273,12 @@
       loop: "{{ publications | rejectattr('after.caddy', 'none') | list }}"
       loop_control: { label: "{{ item.after.caddy.version }}" }
       notify: Reload Caddy
-- name: Role firewall
+- name: Analytics local storage firewall
   hosts: role_node
-  tags:
-    - firewall
+  tags: [storage-firewall]
   become: true
   vars:
-    local_storage_rules: "{{ intent.firewall.desired | select('contains', 'docker0') | list if intent.role == 'analytics' else [] }}"
+    local_storage_rules: "{{ intent.firewall.desired | select('contains', 'docker0') | list }}"
   tasks:
     - name: Read Analytics local storage rules
       when: local_storage_rules | length > 0
@@ -290,9 +289,21 @@
       ansible.builtin.include_tasks: tasks/firewall-port.yml
       loop: "{{ local_storage_rules }}"
       loop_control: { loop_var: rule, label: "{{ rule[-1] }}" }
+    - name: Open Analytics local storage ports
+      ansible.builtin.command: { argv: "{{ item }}" }
+      loop: "{{ local_storage_rules }}"
+      register: local_ufw
+      changed_when: local_ufw.stdout is not search('Skipping')
+- name: Role firewall
+  hosts: role_node
+  tags: [firewall]
+  become: true
+  tasks:
     - name: Open role ports and close retired ones
       ansible.builtin.command: { argv: "{{ item }}" }
-      loop: "{{ intent.firewall.desired + intent.firewall.remove }}"
+      loop: >-
+        {{ (intent.firewall.desired | reject('contains', 'docker0') | list
+        if intent.role == 'analytics' else intent.firewall.desired) + intent.firewall.remove }}
       loop_control: { label: "{{ item | join(' ') }}" }
       register: ufw
       changed_when: ufw.stdout is not search('Skipping|non-existent')

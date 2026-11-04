@@ -345,6 +345,22 @@ jobs:
   dependsOn:
   - job: phase_13
     condition: {type: succeeded}
+- name: analytics_storage
+  labels: {role: swamp}
+  dependsOn: [{job: node, condition: {type: succeeded}}]
+  steps:
+  - name: Open Analytics storage
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.runtime.analytics == null }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-storage-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags storage-firewall "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: phase_46
   labels: {role: swamp}
   steps:
@@ -365,7 +381,7 @@ jobs:
           }}', ensure: present}
       inputs: {}
   dependsOn:
-  - job: node
+  - job: analytics_storage
     condition: {type: succeeded}
 - name: phase_47
   labels: {role: swamp}
@@ -889,6 +905,7 @@ jobs:
   - {job: "prerequisites", condition: *settled}
   - {job: "phase_13", condition: *settled}
   - {job: "node", condition: *settled}
+  - {job: "analytics_storage", condition: *settled}
   - {job: "phase_46", condition: *settled}
   - {job: "phase_47", condition: *settled}
   - {job: "analytics_migrate", condition: *settled}

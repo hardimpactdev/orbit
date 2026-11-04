@@ -53,5 +53,13 @@
       "orbit:analytics-postgres-local"
     ],
     ["incus", "exec", "metrics", "--", "ufw", "allow", "55432/tcp", "comment", "proof-kept-other-rule"]
+  ],
+  "phases": [
+    {"name": "Apply role prerequisites", "job": "prerequisites", "step": "Apply role prerequisites", "budget_seconds": 900},
+    {"name": "Apply the role on the Node", "job": "node", "step": "Apply the role on the Node", "budget_seconds": 900},
+    {"name": "Publish role sites", "job": "publication", "step": "Publish role sites", "budget_seconds": 180},
+    {"name": "Open the firewall", "job": "firewall", "step": "Open the firewall", "budget_seconds": 120},
+    {"name": "Check the role", "job": "role", "step": "Check the role", "budget_seconds": 60},
+    {"name": "Open Analytics storage", "job": "analytics_storage", "step": "Open Analytics storage", "budget_seconds": 120}
   ]
 }
