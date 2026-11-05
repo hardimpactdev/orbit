@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-slot-enroll,workflow-task-vm-slot-identity,workflow-task-vm-slot-boot}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-slot-enroll,workflow-task-vm-slot-identity,workflow-task-vm-slot-boot,workflow-task-vm-slot-claim,workflow-task-vm-nested-reset}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -427,7 +427,7 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### Task VM slots
 
-This section describes the target design. Built so far: the [identity unit](#the-identity-volume) and the [slot units](#the-slot-units) in the task image, and the [enrol](#enrol-once). The claim, the release and the slot count per host are not: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
+This section describes the target design. Built so far: the [identity unit](#the-identity-volume) and the [slot units](#the-slot-units) in the task image, the [enrol](#enrol-once) and the [claim](#claim). The claim is off until you list a host in `task_vms.slot_claim_hosts`. The release and the slot count per host are not built: until a host claims slots, every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
 
 A task VM host has a fixed number of slots. Each slot is a task VM identity that Orbit enrols once. A task takes a free slot. It does not enrol a new Node.
 
@@ -546,9 +546,36 @@ A failed enrolment makes the slot `failed`. No claim can take it. The proof VM a
 
 #### Claim
 
-The `task_vm.slot_claim` kind takes the lowest-numbered free slot on the host with the most free slots, in one Gateway transaction. It clones the topology seed, creates the VM from the task image with the identity volume, starts it, and checks it. It makes no Node, no WireGuard key, no token and no model key. The target for the whole claim is 20 seconds. Most of that time is the VM boot, about 16 seconds. The claims still use the current task image and its fallback rule.
+A task claims a slot only on a host that `task_vms.slot_claim_hosts` lists and that has at least one slot. No host is listed by default, so every task enrols a new VM as before. A listed host stops creating VMs of its own, so list it after its slots are enrolled. A listed host with no slot is served as an unlisted one. A host that is not listed serves the task only when no listed host has a free slot. The [UpCloud overflow](#upcloud-overflow) still applies when all listed hosts are full, if it is configured for the Project.
 
-When all slots of all hosts are taken, the task waits with `Task VM: no capacity.` as before.
+The claim has two parts. The Gateway takes the lowest-numbered free slot on the listed host with the most free slots, in the placement transaction of `tasks:provision`. A second claim for the same slot waits. 
+
+A slot has one size, so a group whose size is not normal (a medium or large Project, or a declared topology) never claims a slot: it takes a host that creates its own VMs, or waits. A slot claim uses only the promoted image of the current recipe, never the one-day fallback image, because only that image holds the slot units.
+
+The slot records the task, `claimed_at` and the image. It makes no Node, no WireGuard key, no token and no model key. It removes the slot Node's old agent facts, because an agent never rewrites a report that has not changed.
+
+Then Swamp runs the child workflow `task-vm-slot-claim` in the task's own `tasks.provision` run, in place of `task-vm-provision`. Its steps are:
+
+1. `Boot the VM` runs `task-vm-slot-boot`, the boot of an enrolment's proof VM.
+   It clones the topology seed and creates the VM from the task image with the identity volume.
+   Then it starts the VM and waits for the guest.
+2. `Check the slot VM` connects over WireGuard to the host key that the slot recorded.
+   It runs `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`: the start returns when the identity, observer and Pi units are up, and the check proves the target stayed up.
+   It checks that the observer and Pi binaries match their pins and that Pi answers, which it retries while Pi binds.
+3. `Fetch the task branch` fetches the start commit of the task onto the checkout at the workspace path.
+   It does this only when the image holds a checkout and the repository needs a credential.
+   It uses the token that the Gateway minted for the task, from the vault, with the same GitHub URL rewrites as the workspace clone.
+4. `Reset the nested topology` runs `task-vm-nested-reset`, which lands with B3 and B4.
+   The step is skipped while `task_vms.nested_reset` is off, which is the default.
+   While the setting is on, the claim is refused at admission, so no slot is taken; a placeholder workflow would fail the run otherwise.
+
+The slot becomes `ready` when the run succeeded and the slot Node has reported a `host` fact since `claimed_at`. If the run succeeded and no report arrived, the task fails with `task_vm.slot_not_reporting`. A failed step leaves the slot `failed`: no claim can take it, the VM and its seed clone stay on the host, and the group asks for assistance.
+
+Enrolling the slot again clears the task from it. Cancelling a task, or cleaning up after its merge, cannot destroy a slot. It detaches the slot instead, with no host work: the slot becomes `failed` with no task, and the [release](#release), which is not built yet, will free it. The task ends, and its workspace records stay on the slot Node until then. Approved work that is not published must be published first. Until the release is built, do not list a host for real tasks.
+
+The target for the whole claim is 20 seconds. Most of that time is the VM boot, about 16 seconds. The claims still use the current task image and its fallback rule.
+
+When all slots of all listed hosts are taken, and no other host has room, the task waits with `Task VM: no capacity.` as before.
 
 #### Release
 
@@ -1421,6 +1448,8 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
 | `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#size-of-a-task-vm) when no subtask declares a topology. Default `[]` |
 | `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | A JSON list of Project IDs whose groups get a [large VM](#size-of-a-task-vm) when no subtask declares a topology. Takes precedence over `medium_projects`. Default `[]` |
+| `task_vms.slot_claim_hosts` | `ORBIT_TASK_VMS_SLOT_CLAIM_HOSTS` | A JSON list of task VM host Node IDs whose tasks [claim a free slot](#claim) instead of enrolling a new VM. Default `[]` |
+| `task_vms.nested_reset` | `ORBIT_TASK_VMS_NESTED_RESET` | Whether a slot claim runs the `task-vm-nested-reset` workflow, which lands with B3 and B4. While on, a slot claim is refused. Default off |
 | `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need a [declared topology](#prove-work-on-a-topology). Default `{}` |
 
 Each task VM stores `ai_router_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.

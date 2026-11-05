@@ -20,11 +20,15 @@ use Illuminate\Support\Arr;
 /** Immutable allocation intent. Provider and guest work belongs to the native root. */
 final readonly class TaskVmProvisionIntent
 {
-    public function __construct(private TaskVmSettings $settings, private TaskVmEnrollmentIntent $enrollment, private TaskVmEnrollmentWorkflowInput $workflow, private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private UpCloudApi $upcloud, private UpCloudGuest $cloudGuest) {}
+    public function __construct(private TaskVmSettings $settings, private TaskVmEnrollmentIntent $enrollment, private TaskVmEnrollmentWorkflowInput $workflow, private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private UpCloudApi $upcloud, private UpCloudGuest $cloudGuest, private TaskVmSlotClaim $claim) {}
 
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array
     {
+        // A claimed slot has its Node, address, keys and tokens already: no enrolment input.
+        if ($vm->slot !== null) {
+            return $this->claim->capture($vm);
+        }
         if ($vm->state !== TaskVmState::Provisioning || $vm->name !== 'tvm-'.$vm->id
             || $vm->image_fingerprint === null || $vm->recipe_identity === null) {
             throw new ResourceOperationException('task_vm.provision_refused', 'Provision requires an allocated VM with its recorded recipe image.', 409);
@@ -38,7 +42,7 @@ final readonly class TaskVmProvisionIntent
         $enrollment = $this->enrollment->capture($vm);
         $guest = $vm->node ?? throw new ResourceOperationException('task_vm.provision_refused', 'Provision requires its reserved guest Node.', 409);
         $enrollment = $this->workflow->fromCaptured($vm, $enrollment);
-        $input = [...$enrollment, 'task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $vm->host_node_id,
+        $input = [...$enrollment, 'placement' => 'vm', 'task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $vm->host_node_id,
             'guest_node_id' => $guest->id, 'enrollment' => Arr::except($enrollment, ['execution_secrets']), 'name' => $vm->name,
             'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'wireguard_ip' => $vm->wireguard_ip,
             'image_fingerprint' => $vm->image_fingerprint, 'recipe_identity' => $vm->recipe_identity,

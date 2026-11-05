@@ -94,6 +94,10 @@ final readonly class TaskVmDestroyIntent
     /** @return array<string,mixed> */
     private function captureCleanup(TaskVm $vm, ?Instance $workspace = null, ?string $pushing = null): array
     {
+        // A slot outlives its task: destroying it would remove its Node and keys. Its release is `task_vm.slot_release` (M5).
+        if ($vm->slot !== null) {
+            throw new ResourceOperationException('task_vm.slot_release_unavailable', 'A task VM slot is released by task_vm.slot_release, which is not built yet.', 409);
+        }
         $this->preserved($vm, $pushing);
         $this->available($vm, $workspace);
         $host = $this->executor($vm);

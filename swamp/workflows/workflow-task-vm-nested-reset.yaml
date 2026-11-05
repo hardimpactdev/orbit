@@ -1,0 +1,25 @@
+id: 2904230c-ed9f-403d-9659-5a4475dc1403
+name: task-vm-nested-reset
+description: Reset the nested topology of a task VM slot to the candidate code. Not built yet; it lands with B3/B4. A slot claim runs it only while the Gateway setting nested_reset is on, so it fails loudly if that is turned on early.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: reset
+  labels: {role: swamp}
+  steps:
+  - name: Not built yet
+    labels: {role: swamp}
+    task:
+      type: assert
+      expr: 'false'
+      severity: high
+      message: task-vm-nested-reset is not built yet (B3/B4); leave ORBIT_TASK_VMS_NESTED_RESET off.
