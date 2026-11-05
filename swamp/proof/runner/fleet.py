@@ -1,9 +1,14 @@
 """The nested fleet as the runner sees it: shell on a Node and the real `orbit` CLI. Tests replace this class."""
 import json
 import os
+import select
 import subprocess
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import terminal
 
 ORBIT = '/usr/local/bin/orbit-nested'
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
@@ -29,16 +34,48 @@ class Fleet:
         except subprocess.TimeoutExpired as error:
             return subprocess.CompletedProcess(['incus', 'exec', node], 124, error.stdout or '', 'timeout')
 
-    def cli(self, args, timeout=240):
+    def cli(self, args, timeout=240, form='json'):
+        """Run the CLI without a terminal. The human form leaves out `--json`."""
         started = time.time()
-        completed = subprocess.run([ORBIT, *args, '--json'], capture_output=True, text=True, timeout=timeout, env=CLI_ENV, cwd='/',
+        words = [*args, '--json'] if form == 'json' else list(args)
+        completed = subprocess.run([ORBIT, *words], capture_output=True, text=True, timeout=timeout, env=CLI_ENV, cwd='/',
                                    stdin=subprocess.DEVNULL)
         try:
-            parsed = json.loads(completed.stdout)
+            parsed = json.loads(completed.stdout) if form == 'json' else None
         except ValueError:
             parsed = None
         return {'rc': completed.returncode, 'json': parsed, 'stdout': completed.stdout, 'stderr': completed.stderr,
-                'secs': round(time.time() - started, 2), 'args': ['orbit', *args, '--json']}
+                'secs': round(time.time() - started, 2), 'args': ['orbit', *words]}
+
+    def cli_background(self, args):
+        """Start the CLI in its own session and return a handle. The Gateway keeps the Operation when the handle stops the CLI."""
+        process = subprocess.Popen([ORBIT, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                   env=CLI_ENV, cwd='/', start_new_session=True)
+        return Background(process)
+
+    def cli_tty(self, args, script, timeout=120):
+        """Run the CLI in a terminal and answer its prompts (see terminal.py)."""
+        started = time.time()
+        done = terminal.drive([ORBIT, *args], script, {**CLI_ENV, 'TERM': 'xterm-256color'}, timeout)
+        return {'rc': done['rc'], 'json': None, 'stdout': done['text'], 'stderr': '', 'secs': round(time.time() - started, 2), 'args': ['orbit', *args]}
+
+
+class Background:
+    """A CLI call that runs while a case goes on. `started` waits for its first line: the CLI prints it when the Gateway has admitted the
+    request, so the Operation exists and holds its target."""
+
+    def __init__(self, process):
+        self.process = process
+
+    def started(self, seconds):
+        ready, _, _ = select.select([self.process.stdout], [], [], seconds)
+        return bool(ready) and bool(self.process.stdout.readline())
+
+    def stop(self):
+        if self.process.poll() is None:
+            self.process.terminate()
+        self.process.wait()
+        self.process.stdout.close()
 
 
 def incus_guests():

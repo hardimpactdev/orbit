@@ -28,12 +28,19 @@ class Run:
         self.fleet, self.spec, self.evidence = fleet, spec, Path(evidence)
         self.names, self.rules, self.baseline, self.sources = {}, {}, {}, {}
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
+        self.shimmed, self.background = set(), []
         self.evidence.mkdir(parents=True, exist_ok=True)
 
-    def cli(self, args):
-        result = self.fleet.cli(args)
+    def cli(self, args, form='json'):
+        result = self.fleet.cli(args, form=form)
+        return self.keep(result, 'json' if form == 'json' else 'txt')
+
+    def cli_tty(self, args, script):
+        return self.keep(self.fleet.cli_tty(args, script), 'txt')
+
+    def keep(self, result, suffix):
         self.calls += 1
-        (self.evidence / f'cli-{self.calls}.json').write_text(result['stdout'])
+        (self.evidence / f'cli-{self.calls}.{suffix}').write_text(result['stdout'])
         (self.evidence / f'cli-{self.calls}.stderr').write_text(result['stderr'])
         return result
 
@@ -54,16 +61,17 @@ class Run:
         node, kind = found[1], found[2]
         if kind == 'id':
             return self.fleet.nodes[node]['node_id']
-        if kind == 'src6':
-            raise steps.NotBuilt('IPv6 is not built')
-        if node not in self.sources:
-            self.sources[node] = self.source_of(node)
-        return self.sources[node]
+        key = (node, 6 if kind == 'src6' else 4)
+        if key not in self.sources:
+            self.sources[key] = self.source_of(*key)
+        return self.sources[key]
 
-    def source_of(self, node):
+    def source_of(self, node, family):
         """The address `node` really uses to reach the target, from the kernel route."""
-        target = self.fleet.nodes[self.spec.target]['bridge']
-        words = self.fleet.sh(node, 'ip -4 route get ' + target).stdout.split()
+        target = self.fleet.nodes[self.spec.target].get('bridge6' if family == 6 else 'bridge')
+        if target is None:
+            raise steps.Infra(f'${{{node}.src6}}: {self.spec.target} has no IPv6 address; the batch needs ipv6_addresses')
+        words = self.fleet.sh(node, f'ip -{family} route get ' + target).stdout.split()
         if 'src' not in words:
             raise steps.Infra(f'no source address from {node} to {self.spec.target}')
         return words[words.index('src') + 1]
@@ -104,7 +112,7 @@ def _run_steps(run, items, section, failures, deadline):
             results = [steps.FUNCTIONS[step.name](run, args) for args in expanded]
         for found in results:
             run.log.append({'step': f'{section}[{index}] {step.name}', 'ok': not found, 'failed': found, 'secs': round(time.time() - started, 2)})
-            if found and section == 'setup':
+            if found and section in ('setup', 'batch'):
                 raise steps.Unrun(found[0])
             failures.extend(f'{section}[{index}] {message}' for message in found)
 
@@ -119,6 +127,7 @@ def execute(case, fleet, spec, evidence, negative=False):
     try:
         if negative and (not case.negative or len(case.stages) > 1):
             raise steps.NotBuilt('negative needs a case with a negative key and one stage')
+        run_steps(run, spec.batch_setup.get(case.batch, []), 'batch', failures, deadline)
         run_steps(run, case.setup, 'setup', failures, deadline)
         for number, stage in enumerate(case.stages):
             steps.take_baseline(run, stage.expect)
@@ -141,13 +150,17 @@ def execute(case, fleet, spec, evidence, negative=False):
         verdict, cause, failures = 'unrun', 'precondition', [f'setup: {error}']
     except Exception as error:  # a step that could not run is a failed case, never a pass
         verdict, cause, failures = 'failed', 'infrastructure', failures + [f'{type(error).__name__}: {error}']
+    try:
+        steps.cleanup(run)
+    except Exception as error:  # the next restore removes what is left
+        failures.append(f'cleanup: {error}')
     result = {'id': case.id, 'verdict': verdict, 'secs': round(time.time() - started, 1)}
     if negative:
         result['negative'] = True
     if cause:
         result['cause'] = cause
         result['failed'] = failures
-    receipt = {**result, 'summary': case.summary, 'steps': run.log, 'phase_secs': run.timings, 'names': run.names, 'sources': run.sources, 'failed': failures}
+    receipt = {**result, 'summary': case.summary, 'steps': run.log, 'phase_secs': run.timings, 'names': run.names, 'sources': {f'{node}/v{family}': address for (node, family), address in run.sources.items()}, 'failed': failures}
     return result, receipt
 
 
