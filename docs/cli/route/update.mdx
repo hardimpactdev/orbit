@@ -5,14 +5,19 @@ description: "Change the domain or the publication of an explicit Project Route,
 ---
 
 ```bash
-orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT] [--web-root=PATH] [--idempotency-key=KEY]
+orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT] [--web-root=PATH] [--json]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--domain=DOMAIN` | The new domain. |
-| `--publication=INTENT` | The new publication, `private` or `public`. |
-| `--web-root=PATH` | The new web root. `--web-root=` clears it, so the Route serves the Instance's effective root. |
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--domain=DOMAIN` | unchanged | The new domain. |
+| `--publication=INTENT` | unchanged | The new publication, `private` or `public`. |
+| `--web-root=PATH` | unchanged | The new web root. `--web-root=` clears it, so the Route serves the Instance's effective root. It cannot be combined with another option. |
+| `--json` | off | Print the final Operation as JSON. |
 
 ```bash
 orbit route:update 9 --domain=shop.example.com
@@ -20,14 +25,16 @@ orbit route:update 9 --publication=public
 orbit route:update 14 --web-root=apps/admin/public
 ```
 
-A domain change creates a replacement Route and returns its ID. The current Route stays authoritative until cutover. A publication-only change keeps the Route ID. See [Change an explicit domain](/reference/routes#change-an-explicit-domain) and [Publish the public edge](/reference/routes#publish-the-public-edge).
+The command needs at least one option. In a terminal, an omitted Route is chosen from an interactive list; a noninteractive or `--json` call without it is refused with `route.id_invalid` and sends no request.
 
-Your caller needs access to every target Node. Public publication needs production targets and a serving Ingress. Orbit waits up to 30 seconds for a busy projection lock before returning `app-dev.projection_busy`.
+A domain change creates a replacement Route and returns its ID. An identical request, or a request on a Route that is not yet published, ends at once with no run: an identical request reports `Skipped — nothing to change (route.update_unchanged)`. The current Route stays authoritative until cutover. A publication-only change keeps the Route ID. See [Change an explicit domain](/reference/routes#change-an-explicit-domain) and [Publish the public edge](/reference/routes#publish-the-public-edge).
 
-Orbit uses official cfgmgmt resources and pinned SSH commands for Node changes. It publishes and probes the replacement before moving private DNS and withdrawing the old site. The probe verifies the hostname and Orbit CA from 209; an application HTTP error does not fail it. Caddy reloads after validation. A failed validation leaves the candidate file and stops the reload; there is no rollback. Outside the TLD, the old DNS answer has 31 seconds to expire before withdrawal.
+The caller needs an access grant to the Route's Node, or to any member Node for a Cluster-scoped Route. Public publication needs production targets, and the Route activates once an Ingress serves it. Orbit waits up to 30 seconds for a busy projection lock before returning `app-dev.projection_busy`. `--domain` and `--publication` can be combined: the replacement Route takes the new publication.
+
+Orbit publishes and probes the replacement before moving private DNS and withdrawing the old site. The probe verifies the hostname and the Orbit CA; an application HTTP error does not fail it. Caddy reloads after validation. A failed validation leaves the candidate file and stops the reload; there is no rollback. A failure before the cutover leaves the old Route authoritative and the replacement `failed`. A failure in the DNS grace or in the withdrawal of the old site leaves the replacement authoritative and the old Route `retiring`, and a rerun finishes the withdrawal. Outside the TLD, the old DNS answer has 31 seconds to expire before withdrawal. The CLI follows the Operation and prints the final result with the request ID.
 
 <Note>
-During a domain change, `route:show` shows both Routes, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A different domain or publication request changes nothing.
+During a domain change, `route:show` shows both Routes, `replacement_step`, `failed_step`, and `error_code`; a publication-only or web-root change has one Route. Repeat the same request to resume. A different domain or publication request changes nothing.
 </Note>
 
 ## How it works
@@ -38,15 +45,25 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 
 | Error code | Meaning |
 | --- | --- |
-| `route.update_required` | No option was given. |
+| `route.id_invalid` | The Route is missing or is not a positive integer, and the CLI cannot prompt. |
+| `route.update_required` | No option was given. Refused by the CLI before the request. |
+| `validation.failed` | The publication, domain or web root is not valid. Nothing changes. |
+| `route.publication_invalid` | `--publication=` is empty. Refused by the CLI. |
 | `route.kind_unsupported` | The Route is a custom proxy or analytics tracking Route. |
-| `route.domain_immutable` | The Route is generated. Only an explicit domain can change. |
+| `route.domain_immutable` | A domain change was requested for a generated Route. Only an explicit domain can change; a generated Route can still change its publication or web root. |
 | `route.domain_conflict` | Another Route owns the new domain, or it is a reserved name. |
 | `route.domain_change_conflict` | Another domain change is in progress. |
 | `route.web_root_domain_immutable` | A Route with a web root keeps its domain. Create a new Route and remove the old one. |
 | `route.web_root_update_separate` | `--web-root` was combined with another option. |
-| `route.web_root_unsupported` | The Route is not an active app Route with one active target. |
+| `route.web_root_unsupported` | The Route is not an active app Route with one active target, or a domain change is in progress. |
+| `route.web_root_unsafe` | The web root does not fit a production layout. |
+| `route.target_web_root_unsupported` | Clearing the web root would leave the Instance without a supported web root. |
+| `websocket.route_in_use` | The Route has public Reverb attachments. |
 | `route.web_root_conflict` | The Route is the only Route without a web root of a `laravel-app` or `symfony-app` Instance, or of a production Instance. |
 | `route.target_conflict` | A cleared web root would give the Instance a second Route without a web root. |
 | `route.reconciliation_required` | The Route or its targets do not allow this change, for example a public domain for development Instances. |
-| `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see the [no-legacy-support rule](/reference/projects#one-public-name-without-compatibility). |
+| `app-dev.projection_busy` | The projection lock stayed busy for 30 seconds. Nothing changes. |
+| `http.404` | The Route is unknown. |
+| `node_access.required` | The caller has no access grant to the Route's Node, or to any member Node for a Cluster-scoped Route. |
+| `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.ingress_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | A step of the run failed. The change is `failed` as above, and the same request resumes it. |
+| `instance.source_profile_missing` | A target has no recorded source profile (domain change only). Orbit does not recover missing profiles on older Instances; see the [no-legacy-support rule](/reference/projects#one-public-name-without-compatibility). |

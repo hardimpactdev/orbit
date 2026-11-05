@@ -497,7 +497,7 @@ The same command removes an Ingress whose convergence failed. A failed step leav
 A Route change never changes Instance source, Nodes, Clusters, or checkouts. Changes that move a Route between placements or domains follow these rules:
 
 - The Gateway verifies the new Caddy sites, certificates, firewall rules, and Laravel URL before it publishes the new domain or scope.
-- A failure before publication restores the previous state.
+- A failure before publication leaves the old Route authoritative and the replacement `failed`; nothing is rolled back.
 - A failure after cutover recovers forward, so a Route never has two authoritative domains or scopes.
 - Each failure records `failed_step` and `error_code`. A retry with the same request checks the finished steps and resumes at the first unverified step.
 - A conflicting request is refused.
