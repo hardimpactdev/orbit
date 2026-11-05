@@ -20,7 +20,7 @@ sequenceDiagram
   %%> - the cases file (`swamp/proof/FAMILY/COMMAND.cases.yaml`) names the batch of each case; `swamp/proof/batches.yaml` defines the shared batches and their order; nothing is picked at run time
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
   %%> Not built:
-  %%> - the command `orbit proof COMMAND`; today `proof:run` is the only way in
+  %%> - the command `orbit proof COMMAND`; today `proof:run` is the only way in from the Gateway. Its parent workflow `operation-proof-run` also runs on an existing task VM: with `intent.existing` it neither provisions nor destroys a VM, and the author's own VM works that way
   %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below
   Note over GW: Authorize<br/>mint tokens
   GW->>SW: Start the proof<br/>cases file · this VM

@@ -40,15 +40,17 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 ## The run
 
-Orbit creates a task group on the Orbit Project and provisions it with the same `tasks.provision` operation as any task. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the provision waits as it does for a task.
+Orbit creates a task group on the Orbit Project and records every input of the run: the provision of its VM, the cancel that destroys it and the commands to prove. It then starts one Swamp run, `operation-proof-run`, on Node 209, and records the result once, when that run ends. No Gateway step runs in between.
 
-Orbit then runs `bin/proof-fleet reset GROUP --from-ready` in the VM as a `tasks.script` operation. It builds a fresh test fleet from the ready snapshot (a Gateway, an `app-dev` Node and an `app-prod` Node) and takes the memory snapshot `base`. This is the interim: the target is that Orbit's own Swamp runs the reset directly over SSH, with no `bin/proof-fleet` and no second Swamp in the VM.
+The run starts with the same provision as any task: `operation-task-provision` as a child workflow. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the provision waits as it does for a task.
 
-Orbit then starts the operation `proof.verify` for each selected command, one after another. It runs the Swamp workflow `proof-fleet-verify` on Node 209, which reaches the VM over SSH like every other step. The runner reads the cases file of the command, `swamp/proof/<family>/<command>.cases.yaml`, at the tested commit and runs its cases with the CLI built from the commit. When the run ends, Orbit cancels the group whatever the cases did.
+Next the run resets the nested fleet from the ready copies of the VM, `proof-fleet-prepare`. Orbit's own Swamp runs `request.py` and then each phase of `phases.py` over official SSH in the VM: a Gateway, an `app-dev` Node and an `app-prod` Node from the ready copies, the commit synced into them, and the memory snapshot `base`. The VM has no Swamp of its own for this.
+
+Then the run starts `proof-fleet-verify` for each selected command, one after another. It runs on Node 209 and reaches the VM over SSH like every other step. The runner reads the cases file of the command, `swamp/proof/<family>/<command>.cases.yaml`, at the tested commit and runs its cases with the CLI built from the commit. The second and later command start with a restore of `base`. At the end, whatever the cases did, the run destroys the VM with the child `operation-task-cancel`. At most 8 commands run in one proof.
 
 The cases run in batches. The first batch starts on the fresh fleet; each later batch restores `base` first and then applies its declared start state. Inside a batch the cases run one at a time. Each case asserts the promised effect, the recorded state and the Node state, on its own resources, and undoes nothing. A case that did not pass triggers a restore of `base` before the next case. A restore that fails or is not healthy within 45 seconds stops the run: the cases that did not run end `unrun` with cause `infrastructure`, and the verdicts already reached stay. Orbit retries nothing. [Verification cases](/reference/verification-cases#the-run) describes the workflow.
 
-Each case has its own timeout, 180 seconds unless the case sets another. The operation `proof.verify` has a budget of 45 minutes.
+Each case has its own timeout, 180 seconds unless the case sets another. The operation `proof.run` has a budget of 50 minutes.
 
 ## The execution switch
 
@@ -68,7 +70,7 @@ The result names the commit, each case with its verdict and duration, the uncove
 | You pressed Ctrl-C. | `130`. |
 | The process received SIGTERM. | `143`. |
 
-Ctrl-C, or `operation:cancel` on the run, ends the run at once and cancels its group, which destroys the VM. A case that was running stops with the VM. The group is always cancelled when the run ends.
+Ctrl-C, or `operation:cancel` on the run, stops the Swamp run, and the Gateway then cancels the group the normal way, which destroys the VM. A case that was running stops with the VM. The group is always cancelled when the run ends.
 
 ## After the run
 
