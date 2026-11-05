@@ -1,11 +1,49 @@
 ---
 title: "orbit instance:deploy:automatic:resolve"
 sidebarTitle: "instance:deploy:automatic:resolve"
-description: "Resolve a lost automatic admission without starting a deploy. If the key has no receipt, the Gateway records a terminal cancelled operation that fences late requests. If admission exists, it returns that operation unchanged. This command requires Gateway access."
+description: "Resolve a lost automatic deploy admission without starting a deploy."
 ---
 
 ```bash
-orbit instance:deploy:automatic:resolve 17 auto.17.4 <full-commit-sha> --caller-node=8
+orbit instance:deploy:automatic:resolve <instance> <request-key> <commit> [--caller-node=ID] [--json]
 ```
 
-The `instance` argument is the numeric Instance ID. Pass the original `request_key`; `commit` is the original full commit SHA. `--caller-node` identifies the original caller when you resolve for another Node; omit it for your own keys. Human output shows the operation ID, status, error, and request ID. `--json` returns the receipt with `request_key`, `found`, `operation`, `deployment`, and `request_id`. Activity records the acting and original Nodes. See [hold resolution](/reference/deployments#clear-an-unresolved-admission-hold).
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID of the production Instance the automatic deploy was for. |
+| `request-key` | yes | The original request key of the automatic deploy: 1 to 128 letters, digits, dots, underscores, colons or hyphens. |
+| `commit` | yes | The original commit: a full lowercase SHA of 40 or 64 characters. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--caller-node=ID` | your own Node | Numeric ID of the original caller, when you resolve for another Node. |
+| `--json` | off | Print the receipt as JSON. |
+
+```bash
+orbit instance:deploy:automatic:resolve 17 auto.17.4 3f2a9c1d4b7e8a5f6c0d1e2f3a4b5c6d7e8f9a0b --caller-node=8
+```
+
+The command needs Gateway access and is not prompted, because a key or a commit has no list to choose from: a missing argument is refused with `instance.id_invalid`, `operation.request_key_required` or `deployment.commit_required`, and an invalid or empty `--caller-node` with `node.id_invalid`; none of them sends a request. `--caller-node` must be the original caller: a fence recorded under another Node binds that Node, and the real caller's delayed request is then refused with `operation.idempotency_conflict`.
+
+Use it when an automatic deploy request may have been lost, so that its outcome is unknown. First pause new decisions with `orbit instance:auto-deploy:disable`, and never send the automatic request again to discover its outcome. The command reads the exact receipt for the original caller, Instance, commit and key, and it never starts a deploy:
+
+- If no admission exists, the Gateway records a retained operation that is already `cancelled`, with the code `operation.admission_fenced`, no attempts, no deployment and no hold on the Instance, and returns it. The record fences a delayed request: every later request with that key returns the cancelled receipt. Repeating the command returns the same receipt.
+- If an admission exists, the command returns its receipt without cancelling or rewriting it. Follow an active operation until it ends. After a fenced receipt the automatic check may use a fresh key on its next run. Other holds clear only from terminal effect evidence.
+- A terminal receipt from a lost worker without effect evidence still needs investigation: stop the old host writer, inspect the live release, then reconcile through a manual deploy or rollback before you enable automatic deployment again. A missing receipt alone never permits a resume or a new request key.
+
+The automatic check may resolve its own stale keys, so use this command when a hold stays. After you reconcile, resume with `orbit instance:auto-deploy:enable <instance>`; the rollback block remains. A different caller, Instance or commit for the same key is refused with `operation.idempotency_conflict`. See [Clear an unresolved admission hold](/reference/deployments#clear-an-unresolved-admission-hold).
+
+The human output is `Operation <id>: <status> (<error code>)` for the receipt, then the request ID. `found` is always true: a fence is recorded before the receipt is read again. With `--json`, stdout holds the receipt with `request_key`, `found`, `operation`, `deployment` and `request_id`. Activity records the acting Node and the original caller.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer. |
+| `operation.request_key_required` | The request key is missing. |
+| `deployment.commit_required` | The commit is missing. |
+| `node.id_invalid` | `--caller-node` is not a positive integer. |
+| `validation.failed` | The request key or the commit has the wrong form, or `--caller-node` names no Node. |
+| `operation.idempotency_conflict` | The key belongs to another caller, command, Instance or commit. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no Gateway access. |
