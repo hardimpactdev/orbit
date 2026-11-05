@@ -46,6 +46,18 @@ def sh(instance, command, timeout=60, stdin_text=None):
         return subprocess.CompletedProcess(['incus', 'exec', instance], 124, error.stdout or '', 'timeout')
 
 
+def doctor_after_report(label, node_id, bound=75):
+    """Doctor reads the Node's last UFW report. The agent reports a change at its next host tick, at most 60 s later,
+    so a drift seen right after the command is polled until the report arrives or the bound passes."""
+    deadline = time.monotonic() + bound
+    while True:
+        result = cli(label, 'doctor', '--node=' + str(node_id))
+        settled = result['rc'] == 0 and ((result['json'] or {}).get('summary') or {}).get('drift') == 0
+        if settled or time.monotonic() >= deadline:
+            return result
+        time.sleep(5)
+
+
 def cli(label, *args, timeout=240):
     t0 = now()
     completed = subprocess.run(['/usr/local/bin/orbit-nested', *args, '--json'], capture_output=True, text=True, timeout=timeout,
@@ -236,7 +248,7 @@ def run_phase(topology, negative):
         base_set = sorted((m[2].strip(), m[3], m[4].strip(), (m[5] or '').strip()) for m in base_rows if m)
         now_set = sorted((r['to'], r['action'], r['from'], r['comment']) for r in unrelated)
         check('unrelated UFW entries unchanged', now_set == base_set, {'before': base_set, 'now': now_set}, 'same unrelated entries as the baseline')
-        doctor = cli('doctor-after', 'doctor', '--node=' + str(dev['node_id']))
+        doctor = cli('doctor-after', 'doctor', '--node=' + str(dev['node_id'])) if negative else doctor_after_report('doctor-after', dev['node_id'])
         summary = (doctor['json'] or {}).get('summary') or {}
         check('doctor --node reports drift 0', doctor['rc'] == 0 and summary.get('drift') == 0, {'rc': doctor['rc'], 'summary': summary}, 'drift 0')
         log = sh(dev['instance'], f'cat /tmp/proof-listen-{port}.log').stdout.split()
