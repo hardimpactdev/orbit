@@ -621,15 +621,13 @@ A separate hostname for each service replaces ADR 0231, which published a Proces
 
 `route:destroy` removes a Route and its projections. The Gateway refuses an app Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. The one exception is a [replacement that never activated](#remove-a-replacement-that-never-activated).
 
-Removal clears the site publication flag and sets the Route `retiring`. Then it runs these steps in order: remove DNS records, withdraw the Caddy sites, converge PHP-FPM on the Node of each development target, remove the certificates, remove firewall rules, and delete the record. A failure keeps the Route `failed` with `failed_step` and `error_code`. Repeat the same command to retry. The retry runs every step again from the start, and clears the failure once the failed step passes.
+Removal runs these steps in order: remove DNS records, withdraw the Caddy sites, converge PHP-FPM on the Node of each development target, remove the certificates, remove firewall rules, and delete the record. A failure leaves the Route as it was, because a Route marked failed would render no site and withdraw sites the run did not reach. The task records the failed step and its error code. Repeat the same command to retry. The retry runs every step again from the start.
 
-Removal releases the domain at once. The Node's shared runtime and Caddy service stay. `operation-route-removal` runs only for `route.destroy`; a withdrawal that keeps the Route has no kind of its own. Instance destroy and Route update withdraw sites inside their own runs.
+Removal releases the domain when the task succeeds. The Node's shared runtime and Caddy service stay. `operation-route-removal` runs only for `route.destroy`; a withdrawal that keeps the Route has no kind of its own. Instance destroy and Route update withdraw sites inside their own runs.
 
 A targeted Route can be removed only when none of its Instances is active and the Route is not `active`. It runs the same steps, so a `pending` Route that already published its sites leaves nothing live on its Nodes. A task workspace whose source resolved is an example. The Caddy and firewall steps include every target Node.
 
 The PHP-FPM step converges each Node of a development target, right after its site leaves. It converges every pool on the Node, so a PHP-FPM problem unrelated to the Route also stops the removal; fix it and retry. A pool skipped only because its working directory is missing does not stop it, as in [Instance removal](/reference/instance-removal). A production target keeps its dedicated PHP-FPM service, and every target keeps its Instance certificate, until [Instance removal](/reference/instance-removal). The Instances stay without a Route.
-
-A targeted removal records its failed step with the prefix `targeted:`, for example `targeted:caddy`. A retry of the same removal resumes it. A Route whose untargeted removal failed and that has gained a target since then is refused with `env.owner_changed`.
 
 ### Remove a replacement that never activated
 
@@ -649,7 +647,7 @@ orbit route:destroy 199
 
 ### Remove a Route from an unreachable Node
 
-The Caddy, PHP-FPM, certificate, and firewall steps change Nodes over SSH. When one of those Nodes does not answer, the step fails. The Gateway then probes the Nodes of that step and, for a Node that is not `active` or does not answer, returns `route.node_unreachable` instead of the step's error. The message names the Node and the `--offline` option, and `details` keeps the step and the original error code. The Route stays `failed` at that step.
+The Caddy, PHP-FPM, certificate, and firewall steps change Nodes over SSH. When one of those Nodes does not answer, the step fails with its own error code and the Route is unchanged. Retry with `--offline` to skip the Node.
 
 `route:destroy --offline` checks each Node before it changes anything. It skips a Node that is not `active`, or that the [reachability probe](/reference/node-provisioning#remove-a-node) finds unreachable. A Node that answers keeps every step, and a failure on it still stops the removal. The Gateway runs the other steps, deletes the Route, and records a residue for each skipped Node in the same transaction. The response lists them under `retained_on_nodes`, each with `node_id`, `node`, and the `steps` the Node still needs.
 

@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Target design: Nick 2026-11-03, single-swamp-node, rules 14-25.
-  %% status: draft
+  %% Target design: ADR 0244 task, one Swamp run, official cfgmgmt behaviors and SSH argv commands. docs/reference/routes.md#remove-a-route.
+  %% status: reviewed
   %% command: route:destroy
   %% kind: route.destroy
   autonumber
@@ -11,37 +11,46 @@ sequenceDiagram
   %% lane V icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:destroy 14
-  Note over GW: Guard, capture placements<br/>Route 14 retiring · task #5130
+  CLI->>GW: route:destroy ROUTE
+  Note over GW: Guard, capture placements<br/>Route unchanged
+  %%> Replacement that never activated:
+  %%> - the run also restores the old domain's URL and DNS; the replaced Route stays
   GW->>SW: Start run, full intent<br/>operation-route-removal
-  GW-->>CLI: 202 Accepted<br/>task #5130
+  GW-->>CLI: 202 Accepted<br/>task ID
   opt --offline
     SW->>N: Check each Node answers<br/>@swamp/ssh · true
-    %%> An unreachable Node keeps residue for node:converge. The VPN Node is always required.
+    %%> When:
+    %%> - a Node that does not answer is skipped and keeps its residue for `node:converge`; the VPN Node is never skipped
   end
   opt domain outside the TLD
-  SW->>V: Remove private DNS<br/>records + catalog, then reload
-  Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
+    SW->>V: Remove private DNS<br/>records + catalog, then reload
+    SW->>SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
   end
   SW->>N: Withdraw site, remove cert<br/>@swamp/cfgmgmt/file absent
   opt development targets
     SW->>N: Converge PHP-FPM pools<br/>php-fpm -t, then reload
   end
   opt Cluster-scoped or public
-  SW->>N: Remove unused LAN rules<br/>@swamp/cfgmgmt/firewall absent
+    SW->>N: Remove unused LAN rules<br/>@swamp/cfgmgmt/firewall absent
   end
   SW->>N: Check nothing is left<br/>cfgmgmt check · native assert
   alt every step succeeds
     SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Delete the Route record<br/>task succeeded · residues kept
+    Note over GW: Delete the Route record<br/>residue per skipped Node
   else a step fails
     SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the Route failed<br/>record kept · rerun after a fix
+    Note over GW: Record the failure<br/>Route unchanged
+    %%> Result:
+    %%> - the task carries the failed step; the Route stays as it was, because a failed Route would render no site
+    %%> On the Nodes:
+    %%> - finished steps stay; there is no rollback
+    %%> Retry:
+    %%> - run the same command again after the fix; every step runs again from the start
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5130
+    CLI->>GW: operation:show TASK
     GW-->>CLI: status + result
   end

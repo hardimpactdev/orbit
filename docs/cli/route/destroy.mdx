@@ -1,30 +1,67 @@
 ---
 title: "orbit route:destroy"
 sidebarTitle: "route:destroy"
+description: "Remove a Route with its DNS records, sites, certificates, and firewall rules."
 ---
 
-Remove a Route and its DNS records, Caddy sites, certificates, and firewall rules. For a Route whose Instances are not active, also withdraw the PHP-FPM pools of its development Instances. See [Remove a Route](/reference/routes#remove-a-route). On a `pending` or `failed` replacement Route that never activated, it abandons the domain change and keeps the Route it would replace. See [Remove a replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated).
-
 ```bash
-orbit route:destroy <route> [--yes] [--offline] [--idempotency-key=KEY] [--json]
+orbit route:destroy <route> [--yes] [--offline] [--json]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--yes` | Confirm removal without prompting. |
-| `--offline` | Swamp probes each Node once from 209 and skips unreachable Nodes. Each Node that answers keeps every step. |
-| `--json` | Return machine-readable JSON. |
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
 
-When a Node the removal changes does not answer, the Gateway returns `route.node_unreachable`. The message names the Node and `--offline`. With `--offline`, the response lists each skipped Node and its remaining steps under `retained_on_nodes`. Run `orbit node:converge NODE` once that Node answers. See [Remove a Route from an unreachable Node](/reference/routes#remove-a-route-from-an-unreachable-node).
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--yes` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--offline` | off | Skip each Node that is not active or does not answer, and remove the rest. |
+| `--json` | off | Print the final task as JSON. |
+
+```bash
+orbit route:destroy 199 --yes
+orbit route:destroy 199 --yes --offline
+```
+
+The command removes the Route and its DNS records, Caddy sites, certificates, and firewall rules. For a Route whose Instances are not active, it also withdraws the PHP-FPM pools of its development Instances. It releases the domain when the task succeeds. See [Remove a Route](/reference/routes#remove-a-route).
+
+In a terminal, an omitted Route is chosen from an interactive list, and the CLI asks to confirm with the Route's domain and the effect, with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled` and starts no removal. Without a terminal, a missing Route is refused with `route.id_invalid`, and a call without `--yes` with `input.confirmation_required`. The CLI shows one progress indicator while the task runs, then prints the Route by its domain and the task and request IDs.
+
+Private DNS outside the TLD is removed first, followed by a 31-second grace for the old answer to expire. The site and certificate are withdrawn together; shared LAN and public firewall rules stay while another Route needs them. The final check requires the captured files, certificate scopes and firewall rules to match the removal. Drift fails the task and keeps the Route record for a retry.
+
+A failed step leaves the Route as it was and records the failed step and its error code on the task; `operation:show` shows them. Finished steps stay; there is no rollback. Run the same command again after the fix: every step runs again from the start.
+
+When a Node the removal changes does not answer, the step that reaches it fails. With `--offline`, the removal first tries each Node once and skips the ones that do not answer; the result lists each skipped Node and its remaining steps under `retained_on_nodes`. A Node that answers keeps every step, and a failure on it still stops the removal. Run `orbit node:converge NODE` once a skipped Node answers. See [Remove a Route from an unreachable Node](/reference/routes#remove-a-route-from-an-unreachable-node). The VPN Node cannot be skipped.
+
+On a `pending` or `failed` replacement Route that never activated, the command abandons the domain change and keeps the Route it would replace. See [Remove a replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated).
 
 <Warning>
-The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. A replacement that never activated is the exception, because its Instance keeps the Route it replaces. Remove the Instance with `instance:destroy` instead. That removal deletes the Route when it removes the last target. The Gateway also refuses direct removal of analytics tracking Routes with `route.tracking_managed`; disable analytics on the Instance instead. A Route kind that cannot be destroyed returns `route.kind_invalid`.
+The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead; that removal deletes the Route with its last target. Two Routes are the exception: a replacement that never activated, because its Instance keeps the Route it replaces, and an additional web-root site, which leaves the Instance serving; `APP_URL` passes to the Instance's own Route. The Gateway also refuses direct removal of analytics tracking Routes with `route.tracking_managed`; disable analytics on the Instance instead.
 </Warning>
-
-`route:destroy` and `route:target:unset` resolve the Route and then ask for confirmation, with No selected. Pass `--yes` for automation, also with `--json`. Declining, Ctrl-C, or end of input returns `input.cancelled` and sends nothing. A call without a terminal and without `--yes` returns `input.confirmation_required`.
-
-Private DNS outside the TLD is removed first, followed by a 31-second grace for the old answer to expire. The site and certificate are withdrawn together; shared LAN and public firewall rules stay while another Route needs them. Unreachable VPN Nodes cannot be skipped. The final official resource checks and native assertion require the captured files, certificate scopes and firewall rules to match the removal. Drift fails the run and keeps the Route record for a retry.
 
 ## How it works
 
 <div className="flow-at" data-chart="route/destroy"></div>
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `route.id_invalid` | The Route is missing or is not a positive integer, and the CLI cannot prompt. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
+| `route.target_conflict` | An active Instance depends on the Route, or a replacement has cut over. |
+| `route.reconciliation_required` | The Route is active and its public edge is live, or it is in a replacement pair. |
+| `route.tracking_managed` | The Route belongs to analytics tracking. |
+| `instance.transfer_incomplete` | An open Instance transfer owns the Route. Retry the identical transfer request first. |
+| `private_dns.publication_failed` | Removing the private DNS records failed. |
+| `route.dns_grace_failed` | The wait for the old DNS answer to expire failed. |
+| `route.withdraw_failed` | Withdrawing the site or removing the certificate failed. |
+| `route.pool_converge_failed` | Converging the PHP-FPM pools failed. |
+| `route.lan_firewall_failed` | Removing the LAN rules failed. |
+| `route.removal_check_failed` | Files, certificate scopes or firewall rules remain after the removal. |
+| `route.withdrawal_failed` | The removal failed outside the steps above. |
+| `route.coordinator_required` | No active Gateway Node can coordinate the removal. |
+| `operation.target_busy` | Another task holds the Route. |
+| `http.404` | The Route is unknown. |
+| `node_access.required` | The caller has no access grant to the Node the Route is scoped to, or, for a Cluster-scoped Route, to any member Node; for a public custom proxy Route, to its Ingress and Process Nodes. |
