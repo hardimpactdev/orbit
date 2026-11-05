@@ -20,9 +20,9 @@ flowchart TD
   readiness -. after a build-ready run .-> makeReady
 
   subgraph ready[Ready copies, about 75 s to a checked fleet; the boot is about 50 s of it]
-    makeReady[Make ready copies: copy the shared source onto the Gateway and app-dev disks, stop the 3 guests, copy each to fleet-ready-ROLE, drop the generation labels and NIC, record MAC, IP, subnet and Node ids, start the originals] --> readyCheck[Same readiness steps as a build]
+    makeReady[Make ready copies: copy the shared source onto the Gateway and app-dev disks, stop the 3 guests, make them stateful while stopped, copy each without snapshots to fleet-ready-ROLE, drop the generation labels and NIC, record MAC, IP, subnet and Node ids, start the originals] --> readyCheck[Same readiness steps as a build]
     fastInventory[Pin candidate and inventory] --> fastSnapshot[Export pinned source to a new generation; carry the lease and the Gateway runtime state from the previous one; activate last]
-    fastSnapshot --> restore[Per guest: delete, copy from ready copy, label for this attempt, add NIC with saved MAC and IP; start all. No source share: each guest keeps its own checkout]
+    fastSnapshot --> restore[Per guest: delete, copy from ready copy without snapshots, make it stateful if the copy is not yet, label for this attempt, add NIC with saved MAC and IP; start all. No source share: each guest keeps its own checkout]
     restore --> sync[Sync the exported source into the checkout of the Gateway and app-dev by rsync, in parallel; leave out .git, vendor, node_modules, .env, storage, bootstrap/cache]
     sync --> lock{composer.lock changed?}
     lock -->|yes| composer[composer install where it changed]
@@ -31,11 +31,30 @@ flowchart TD
     candidate --> wait[Blocking commands: incus wait agent, systemctl start of the units; tunnel handshake]
     wait --> fastOperator[Native step: operator, pins the restored CA]
     fastOperator --> fastTransport[One readiness check: every Node agent online, Swamp worker enrolled, Gateway knows the operator, Doctor has no finding, record the case baseline]
+    fastTransport --> takeBase
+    readyCheck --> takeBase[Take base: incus snapshot create base --stateful --reuse on the 3 guests in parallel, about 19 s; the guests keep running; a guest that is not stateful fails here]
   end
 
+  subgraph baseRestore[Restore base, workflow proof-fleet-base-restore, one 30 s limit]
+    restoreBase[Restore base on the 3 guests in parallel: incus snapshot restore base --stateful, about 9 s] --> baseAgent[Per guest in parallel: incus wait agent, then set the guest clock from the outer VM, because a restore puts it back to snapshot time]
+    restoreBase --> baseTunnel[Beside that: one blocking ping to the nested Gateway; the outer VM tunnel has no valid session, so WireGuard starts a new handshake 15 s after the first unanswered packet]
+    baseAgent --> baseStatus[Gateway status is ok]
+    baseTunnel --> baseStatus
+    baseStatus --> baseAgents[Read node:list until every Node agent is online: the Gateway counts a heartbeat of the last 15 s and they come every 5 s]
+    baseAgents --> baseDoctor[Doctor is healthy: it runs last because a silent agent is drift]
+    baseDoctor --> baseResult[Healthy, about 20 s, about 26 s after an idle period]
+    restoreBase -. error or past 30 s .-> baseFail[Infrastructure error, no retry]
+    baseAgent -. error or past 30 s .-> baseFail
+    baseTunnel -. error or past 30 s .-> baseFail
+    baseStatus -. error or past 30 s .-> baseFail
+    baseAgents -. error or past 30 s .-> baseFail
+    baseDoctor -. error or past 30 s .-> baseFail
+  end
+
+  takeBase -.-> restoreBase
   readiness --> result[Publish generation, readiness and preservation evidence]
-  fastTransport --> result
-  readyCheck --> receipt
+  takeBase --> result
+  takeBase -. after make-ready .-> receipt
   result --> cases{Verification run?}
   result -. in parallel .-> prune[Keep the active and the previous generation source; delete the others]
   cases -->|yes| commands[Run each case program in order against the one fleet within the case budget; scoped case cleanup]
@@ -54,5 +73,6 @@ flowchart TD
   sync -. failure .-> diagnose
   candidate -. failure .-> diagnose
   fastTransport -. failure .-> diagnose
+  takeBase -. failure .-> diagnose
   diagnose --> ownedCleanup[Release only this generation; preserve failure; ready copies stay but are unusable until the next build]
   ownedCleanup --> receipt

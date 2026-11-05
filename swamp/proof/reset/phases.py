@@ -57,7 +57,13 @@ SYNC_EXCLUDE_ARGS = tuple(f'--exclude={pattern}' for pattern in SYNC_EXCLUDES)
 ACL_DIRECTORIES = ('.', 'apps', 'apps/gateway', 'apps/gateway/public')
 # A boot is not an observation: the guests need about 50 s from `incus start` to a healthy fleet. The bound is fixed.
 READY_WAIT_SECONDS = 150
-ACTIONS = ('inventory', 'release-previous', 'snapshot', 'snapshot-ready', 'prepare', 'swamp-state', 'gateway-db',
+# The Incus memory snapshot of the three nested VMs, and the one bound for putting it back and checking the fleet.
+BASE = 'base'
+BASE_TAKE_SECONDS = 120
+BASE_RESTORE_SECONDS = 30
+# Most reads of the Node list while the agents come back; the 30 s bound ends the reads long before this many.
+AGENT_READS = 200
+ACTIONS = ('base-take', 'base-restore','inventory', 'release-previous', 'snapshot', 'snapshot-ready', 'prepare', 'swamp-state', 'gateway-db',
            'gateway-runtime', 'restore-ready', 'ready-wait', 'agents-online', 'candidate', 'operator', 'transport-readiness',
            'observer-facts', 'readiness', 'ready-check', 'ready-make', 'ready-complete', 'ready-discard', 'ready-drop', 'publish', 'prune-generations', 'failure-cleanup',
            'release-active', 'cases')
@@ -462,13 +468,13 @@ def gateway_state(request):
         'cd /home/orbit/orbit/apps/gateway; exec sudo -u orbit php /home/orbit/orbit/tools/swamp-proof-guest/gateway.php proof-state'], data=b'{}'))
 
 
-def local_cli(request, *args, allow_failure=False):
+def local_cli(request, *args, allow_failure=False, timeout=120):
     """The candidate CLI on the outer VM as user orbit, with its one profile for the nested Gateway."""
     cli = str(Path(request['candidate']) / 'apps/cli/orbit')
     if os.geteuid() == 0:
-        completed = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', cli, *args], env=CLI_ENV, cwd='/', capture_output=True, timeout=120)
+        completed = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', cli, *args], env=CLI_ENV, cwd='/', capture_output=True, timeout=timeout)
     else:
-        completed = subprocess.run(['php', cli, *args], env=CLI_ENV, cwd='/', capture_output=True, timeout=120)
+        completed = subprocess.run(['php', cli, *args], env=CLI_ENV, cwd='/', capture_output=True, timeout=timeout)
     if completed.returncode and not allow_failure:
         raise RuntimeError('Authenticated candidate CLI failed: ' + completed.stdout.decode()[-4000:] + completed.stderr.decode()[-1000:])
     return completed.returncode, json.loads(completed.stdout) if completed.stdout.strip() else None
@@ -887,6 +893,119 @@ def ready_complete(request):
     return {'set': identity, 'complete': True}
 
 
+def base_guests(request):
+    """Role to instance name for the three nested VMs of the active generation."""
+    nodes = prepared(request)['construction']['nodes']
+    return {role: nodes[role]['instance'] for role in ready.ROLES}
+
+
+def base_take(request):
+    """Take the memory snapshot `base` of the three nested VMs, in parallel. The VMs keep running.
+
+    The VMs are stateful from the ready copies (`ready.make_stateful`, set while they were stopped). A VM that is not
+    stateful fails here: Incus cannot change that on a running VM. `--reuse` replaces the previous `base`.
+    """
+    guests = base_guests(request)
+    for instance in guests.values():
+        details = json.loads(incus(['query', '/1.0/instances/' + instance]))
+        memory = (details.get('expanded_config') or {}).get('limits.memory')
+        root = (details.get('expanded_devices') or {}).get('root', {})
+        if details['config'].get(ready.STATEFUL) != 'true' or not memory or root.get('size.state') != memory:
+            raise RuntimeError(f'{instance} is not stateful; reset from ready copies so that its memory can be snapshotted.')
+    seconds = {}
+
+    def one(role):
+        started = time.monotonic()
+        incus(['snapshot', 'create', guests[role], BASE, '--stateful', '--reuse'], timeout=BASE_TAKE_SECONDS)
+        seconds[role] = round(time.monotonic() - started, 1)
+
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=len(guests)) as pool:
+        for future in [pool.submit(one, role) for role in guests]:
+            future.result()
+    return {'snapshot': BASE, 'guests': list(guests.values()), 'seconds': round(time.monotonic() - started, 1), 'per_guest': seconds}
+
+
+def tunnel_up(address, seconds):
+    """One ping that blocks until the first reply or until `seconds` pass. True when the tunnel answers."""
+    return subprocess.run(['ping', '-c', '1', '-w', str(max(1, int(seconds))), address], capture_output=True,
+                          timeout=seconds + 5, check=False).returncode == 0
+
+
+class InfrastructureError(RuntimeError):
+    """The fleet could not be put back: a test infrastructure fault, never a verdict about a command."""
+
+
+def base_restore(request):
+    """Put the three nested VMs back to `base` and check the fleet, all inside BASE_RESTORE_SECONDS. No retry.
+
+    The three VMs are restored in parallel. Then, per VM in parallel, wait for the guest agent and set the guest clock
+    from the outer VM (a restore puts the clocks back to the snapshot time); beside that, one blocking ping brings the
+    outer VM's tunnel back. Then the fleet must be healthy: the Gateway answers, every Node agent is online, Doctor has no finding. The Gateway marks an
+    agent online only for a heartbeat in the last 15 s; heartbeats come every 5 s, so the agents come online up to 5 s
+    after the clocks are right. They are read until they are online, then Doctor (which flags a silent agent) runs.
+    Any error, or the end of the bound, fails the phase with an InfrastructureError. Nothing is retried.
+    """
+    started = time.monotonic()
+
+    def left():
+        remaining = BASE_RESTORE_SECONDS - (time.monotonic() - started)
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired('base-restore', BASE_RESTORE_SECONDS)
+        return remaining
+
+    def restore(instance):
+        incus(['snapshot', 'restore', instance, BASE, '--stateful'], timeout=left())
+
+    def settle(instance):
+        incus(['wait', instance, 'agent', '--timeout', str(max(1, int(left())))], timeout=left())
+        incus(['exec', instance, '--', 'date', '-u', '-s', f'@{time.time():.6f}'], data=b'', timeout=left())
+
+    timings = {}
+    try:
+        guests = base_guests(request)
+        address = wireguard(prepared(request)['construction'])['nodes']['gateway']['ip']
+        with ThreadPoolExecutor(max_workers=len(guests) + 1) as pool:
+            for future in [pool.submit(restore, instance) for instance in guests.values()]:
+                future.result()
+            timings['restored'] = round(time.monotonic() - started, 1)
+            # The outer VM's tunnel to the restored Gateway has no valid session until its next handshake, which WireGuard
+            # starts 15 s after the first packet that gets no answer. The ping sends that packet as soon as the guests
+            # are back and blocks until the first reply, as `force_handshake` does; it runs beside the agent waits.
+            tunnel = pool.submit(tunnel_up, address, left())
+            for future in [pool.submit(settle, instance) for instance in guests.values()]:
+                future.result()
+            timings['clocks'] = round(time.monotonic() - started, 1)
+            if not tunnel.result():
+                raise RuntimeError('The tunnel to the nested Gateway did not come back.')
+        timings['tunnel'] = round(time.monotonic() - started, 1)
+        _, reply = local_cli(request, 'gateway:status', '--json', timeout=left())
+        if reply is None or (reply.get('data', reply)).get('status') != 'ok':
+            raise RuntimeError('The nested Gateway does not answer ok.')
+        # No command blocks on a heartbeat, and the restore leaves each agent's last one at snapshot time, so the
+        # agents are read until all are online. This is a wait inside the one bound, not a retry of anything: the
+        # reads stop at the first answer that shows all online, and `left()` ends them at the bound.
+        silent = list(ready.ROLES)
+        for _ in range(AGENT_READS):
+            _, listed = local_cli(request, 'node:list', '--json', timeout=left())
+            agents = {node['name']: (node.get('agent') or {}).get('state') for node in listed['nodes']}
+            silent = [role for role in ready.ROLES if agents.get(role) != 'online']
+            if not silent:
+                break
+            left()
+        if silent:
+            raise RuntimeError('The Node agents are not online: ' + ', '.join(silent))
+        # Doctor reports a silent agent as drift, so it runs after the agents are known to be online.
+        _, report = local_cli(request, 'doctor', '--json', timeout=left())
+        if report is None or report.get('healthy') is not True:
+            raise RuntimeError('Doctor is not healthy after the restore.')
+        timings['healthy'] = round(time.monotonic() - started, 1)
+    except (RuntimeError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+        timeout = f' (the bound is {BASE_RESTORE_SECONDS} s)' if isinstance(error, subprocess.TimeoutExpired) else ''
+        raise InfrastructureError(f'Infrastructure error: the fleet did not return to {BASE} in {round(time.monotonic() - started, 1)} s{timeout}: {error}') from error
+    return {'snapshot': BASE, 'guests': list(guests.values()), 'seconds': timings}
+
+
 def prune_generations(request):
     """Keep the active generation and the previous one; delete the other generation source directories of this group.
 
@@ -1085,6 +1204,10 @@ def execute(request, action):
         return ready_make(request)
     if action == 'ready-complete':
         return ready_complete(request)
+    if action == 'base-take':
+        return base_take(request)
+    if action == 'base-restore':
+        return base_restore(request)
     if action == 'ready-discard':
         return {'removed': ready.discard_incomplete()}
     if action == 'ready-drop':

@@ -69,9 +69,9 @@ minted less than 20 h ago, counted from `user.ready.minted` (the Swamp tokens th
    (`.e2e`), its runtime state (the Gateway `.env`, caches, logs, the agent manifest) and the ACL on the directories that
    lead Caddy to `public`. It becomes the active generation last, so an earlier failure leaves the previous one active
    and releasable. A later release removes the same guests and network, because the lease names them.
-3. `restore` deletes the three guests, copies each ready copy back under the generation's name, labels it for the
-   attempt, adds a NIC on the generation's network with the saved MAC and IP and starts all three. It adds no source
-   share. It records the time just before the start.
+3. `restore` deletes the three guests, copies each ready copy back under the generation's name (without snapshots),
+   makes it stateful if the copy is not yet, labels it for the attempt, adds a NIC on the generation's network with the
+   saved MAC and IP and starts all three. It adds no source share. It records the time just before the start.
 4. `candidate` waits for the guest agents (`incus wait agent`), then syncs the generation's source into `/home/orbit/orbit`
    of the Gateway and app-dev, in parallel. The sync is plain `rsync -a --checksum --delete`, with `incus exec` as the transport (a fresh export has new file times, so rsync compares content). It
    leaves out `.git`, `vendor`, `node_modules`, `.env`, `storage`, `bootstrap/cache`, `.e2e` and the agent manifest, which the
@@ -88,6 +88,7 @@ minted less than 20 h ago, counted from `user.ready.minted` (the Swamp tokens th
 7. `readiness` is the one readiness check, made once: every Node agent is online by the Gateway's presence heartbeat, the
    recorded facts exist, the Swamp worker is enrolled in serve, the Gateway answers the outer VM as a WireGuard member, scoped Doctor is
    healthy for each Node, and the firewall baseline for the cases is recorded.
+   `base` (step `base`, phase `base-take`) follows: the memory snapshot of the three guests, see [The base snapshot](#the-base-snapshot).
 8. `publish` records the receipt and the fleet record. `prune` runs beside it, in every reset: it keeps the active
    generation and the previous one and deletes the other source directories of this candidate and group that no guest
    mounts (the guests wrote some of it as root, so it uses sudo).
@@ -101,6 +102,25 @@ stay, but with no fleet they are unusable until the next build. The launcher the
 
 `status.json` of a run records `mode` (`full`, `ready`, `ready-make` or `build-ready`), the run's seconds and the seconds of
 every job. `mode.json` records the workflow chosen and why.
+
+## The base snapshot
+
+With no source share, Incus can take a memory (stateful) snapshot of the three nested VMs. The snapshot is named `base`. It is the way to put the fleet back to a known state in seconds, with its processes and memory, instead of booting it.
+
+**Stateful guests.** A snapshot with memory needs `migration.stateful=true` and a root disk `size.state` equal to `limits.memory`. Incus changes both only on a stopped VM, so `ready.make_stateful` sets them where the reset already has the VMs stopped: `ready` sets them on the stopped originals before it copies them, and a restore sets them on each restored guest before it starts it (this also covers a set made before the guests were stateful). The copies and restores use `incus copy --instance-only`, so a copy never carries an old `base`. A full build never stops its guests, so it has no `base`; `reset --from-ready` builds, makes copies and then takes `base`.
+
+**Taking `base`.** The phase `base-take` runs `incus snapshot create VM base --stateful --reuse` on the three guests at once; `--reuse` replaces the previous `base`. The VMs keep running. A guest that is not stateful fails the phase before any snapshot. Measured on a task VM: 16.5 s for the three. The workflows `proof-fleet-reset-ready` (after `readiness`) and `proof-fleet-ready` (after `complete`) call it, so a fleet that is handed over has a `base`. `base` holds the proof Swamp Club key, on the Gateway's disk and in the memory of Swamp serve. That is accepted: `base` belongs to one task VM and is destroyed with it. Ready copies stay key-free.
+
+**Restoring `base`.** The phase `base-restore` (workflow `proof-fleet-base-restore`) has one limit of 30 s for everything, and no retry. Past the limit, or on any error, it fails with an `Infrastructure error`: a fault of the test infrastructure, not a verdict about a command.
+
+1. `incus snapshot restore VM base --stateful` on the three guests at once (about 9 s).
+2. Per guest, at once: `incus wait VM agent`, then set the guest clock from the outer VM (`date -u -s @TIME`). A restore puts the clocks back to the snapshot time.
+3. Beside step 2, one blocking `ping -c 1 -w N` to the nested Gateway. The outer VM's WireGuard session to the restored Gateway is not valid any more, and WireGuard starts a new handshake 15 s after the first packet that gets no answer. The ping sends that packet as soon as the guests are back and returns at the first reply. No peer is reset or changed.
+4. `gateway:status` is `ok`.
+5. Every Node agent is `online` in `node:list`. The Gateway counts an agent online for a heartbeat in the last 15 s, and the restore leaves the last heartbeat at snapshot time, so the agents come online up to 5 s after the clocks are right. The phase reads the list until all three are online, inside the 30 s limit.
+6. `doctor` is healthy. It runs last because it reports a silent agent as drift.
+
+The receipt records the seconds at `restored`, `clocks`, `tunnel` and `healthy`. Measured on a task VM with a change in the fleet (a firewall rule that the restore removed each time): healthy after 19.8 and 20.9 s when the restore follows `base` at once, and after 26.3 and 25.1 s when the fleet ran for 60 and 120 s first. The restore itself takes 9 s; the tunnel handshake is the long part after an idle period.
 
 ## Boot behaviour
 

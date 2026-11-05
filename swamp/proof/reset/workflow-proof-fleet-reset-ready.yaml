@@ -124,6 +124,22 @@ jobs:
           - step: operator
             condition:
               type: succeeded
+      - name: base
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-base-take
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" base-take'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: readiness
+            condition:
+              type: succeeded
   - name: publish
     dependsOn:
       - job: reset
