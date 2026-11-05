@@ -32,11 +32,18 @@ final readonly class StoreFirewallRuleAction
             if ($data->action === FirewallAction::Deny) {
                 app(FirewallProtectedPorts::class)->guard($node, $data->port);
             }
-            $rule = $this->identity($node, $data);
             app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
+            // R1: an allow that only repeats the access Orbit gives already needs no record and no Node work.
+            if ($data->action === FirewallAction::Allow && app(FirewallProtectedPorts::class)->repeats($node, $data->port, $data->source)) {
+                return $this->operations->record('firewall.allow', 'node_firewall', $node->id, $node->id, [
+                    'action' => 'allow', 'source' => $data->source, 'protocol' => $data->protocol, 'port' => $data->port,
+                    'node_id' => $node->id, 'caller_node_id' => $caller?->id,
+                ], ['backend' => 'active', 'skipped' => 'firewall.rule_exists'], 'operator', $requestId, lockKey: OperationStore::lockKey('node_firewall', $node->id));
+            }
+            $rule = $this->identity($node, $data);
             $rule->fill([
                 'action' => $data->action, 'source' => $data->source,
-                'protocol' => $data->protocol, 'port' => $data->port, 'label' => $data->label,
+                'protocol' => $data->protocol, 'port' => $data->port, 'label' => $data->label ?? $rule->label,
                 'status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null,
             ])->save();
             $rule->setRelation('node', $node);
@@ -50,7 +57,7 @@ final readonly class StoreFirewallRuleAction
         });
     }
 
-    /** A Node holds one rule per (port, protocol, source); the opposite action on it conflicts. */
+    /** A Node holds one rule per (port, protocol, source); a repeat reuses its record and the opposite action conflicts. */
     private function identity(Node $node, StoreFirewallRuleData $data): FirewallRule
     {
         $same = FirewallRule::query()->where('node_id', $node->id)->where('port', $data->port)->where('source', $data->source)->get();
@@ -60,8 +67,8 @@ final readonly class StoreFirewallRuleAction
                     throw new ResourceOperationException('firewall.rule_conflict',
                         "Node [{$node->name}] already has a {$rule->action->value} rule for {$rule->identity()}.", 409);
                 }
-                throw new ResourceOperationException('firewall.rule_exists',
-                    "Node [{$node->name}] already has a firewall rule for {$rule->identity()}.", 409);
+
+                return $rule;
             }
             if ($rule->protocol === 'any' || $data->protocol === 'any') {
                 throw new ResourceOperationException('firewall.rule_overlap',

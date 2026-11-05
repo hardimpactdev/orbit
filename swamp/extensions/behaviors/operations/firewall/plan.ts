@@ -276,8 +276,12 @@ export function plan(intent: unknown, stdout: string): string[][] {
     return commands;
 }
 
-/** The public result read back from ufw after the changes. */
-export function check(intent: unknown, stdout: string): { backend: string } {
+/** The public result read back from ufw after the changes; a rule that needed none is skipped as already applied. */
+export function check(
+    intent: unknown,
+    stdout: string,
+    changes = 1,
+): { backend: string; skipped?: string } {
     const { rule, ensure } = validated(intent);
     const wanted = new Set(
         rule.protocols.flatMap((protocol) =>
@@ -295,7 +299,9 @@ export function check(intent: unknown, stdout: string): { backend: string } {
     if (present !== wanted.size || !ordered(rows, wanted)) {
         throw new Refusal("firewall.verify_failed");
     }
-    return { backend: "active" };
+    return changes === 0
+        ? { backend: "active", skipped: "firewall.rule_exists" }
+        : { backend: "active" };
 }
 
 function outcome<T>(compute: () => T): T | { error_code: string } {
@@ -318,7 +324,7 @@ const Result = z.object({
 
 export const behavior = {
     type: "@nckrtl/firewall-plan",
-    version: "2026.11.03.1",
+    version: "2026.11.05.1",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },
@@ -353,14 +359,20 @@ export const behavior = {
                 intent: z.record(z.string(), z.unknown()),
                 stdout: z.string(),
                 refusal: z.string(),
+                changes: z.number().int().min(0),
             }),
             execute: async (
-                args: { intent: unknown; stdout: string; refusal: string },
+                args: {
+                    intent: unknown;
+                    stdout: string;
+                    refusal: string;
+                    changes: number;
+                },
                 ctx: Context,
             ) => {
                 const result = args.refusal
                     ? JSON.parse(args.refusal)
-                    : outcome(() => check(args.intent, args.stdout));
+                    : outcome(() => check(args.intent, args.stdout, args.changes));
                 const value = {
                     stdout: JSON.stringify(result),
                     ok: !("error_code" in result),

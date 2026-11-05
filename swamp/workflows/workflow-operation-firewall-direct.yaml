@@ -106,6 +106,7 @@ jobs:
         intent: '${{ inputs.intent }}'
         stdout: '${{ steps["Read the result"].outputs.stdout }}'
         refusal: '${{ steps["Plan the changes"].outputs.stdout }}'
+        changes: '${{ size(steps["Plan the changes"].outputs.commands) }}'
   - name: accepted
     labels: {role: swamp}
     dependsOn: [{step: Check the rules, condition: {type: succeeded}}]
