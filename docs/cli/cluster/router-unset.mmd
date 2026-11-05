@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R2-R4, same shape as cluster.router_set. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
   %% Tightened: flow-tighten 2026-11-02, rules 1, 22 (no empty DNS note step; cfgmgmt file for the sites).
-  %% status: draft
+  %% status: reviewed
   %% command: cluster:router:unset
   %% kind: cluster.router_unset
   autonumber
@@ -12,56 +12,52 @@ sequenceDiagram
   %% lane M icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as Node 7<br/>current Router
+  participant SW as Swamp<br/>workflow execution
+  participant N as Current Router<br/>member Node
   participant M as Member Nodes<br/>workloads
-  CLI->>GW: cluster:router:unset 3
+  CLI->>GW: cluster:router:unset<br/>CLUSTER
   %%> Command:
-  %%> - `orbit cluster:router:unset 3`
-  %%> - syntax: `<cluster> [--force] [--idempotency-key=KEY] [--json]`
-  %%> Options:
-  %%> - `--idempotency-key`: reuses the same Operation admission for a retry with the same key
-  %%> - `--json`: waits for the terminal Operation and renders it as JSON
+  %%> - `orbit cluster:router:unset CLUSTER`
+  %%> - syntax: `<cluster> [--force] [--json]`
   %%> Confirmation:
-  %%> - without `--force`, the CLI asks first; the default is No
-  %%> - without a terminal, or with `--json`, `--force` is required
+  %%> - without `--force`, the CLI asks first; the default is No; without a terminal, or with `--json`, `--force` is required
   Note over CLI: Inspect Cluster, confirm
   %%> What it does:
-  %%> - reads Cluster 3 and asks for confirmation; the default is No
-  Note over GW: Validate, plan the cleanup<br/>task #5161 · Cluster lock
+  %%> - reads the Cluster and asks for confirmation; the default is No
+  Note over GW: Validate, plan the cleanup<br/>Cluster lock
   %%> Requirements:
-  %%> - your Node has an access grant to Node 7
-  %%> - Cluster 3 is inactive or has no TLD (`cluster.active_router_required`)
-  %%> - Cluster 3 owns no Route (`cluster.routes_require_router`)
-  %%> - no other Router change runs for Cluster 3; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
+  %%> - the calling Node has an access grant to a member Node of the Cluster
+  %%> - the Cluster is inactive or has no TLD (`cluster.active_router_required`)
+  %%> - the Cluster owns no Route (`cluster.routes_require_router`, or `route.reconciliation_required` for an active Route)
+  %%> - no other Router change runs for the Cluster; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
   %%> Builds:
   %%> - the Router state to remove: Router sites and certificates, and the LAN rules only the Router needed
   %%> Result:
-  %%> - Node 7's `router` assignment recorded as retiring
-  %%> - task #5161 recorded with the full intent
+  %%> - the Router's `router` assignment is recorded as retiring
+  %%> - a task is recorded with the full intent
   %%> Decides:
   %%> - whether any Node holds Router state: a Router site, a Router certificate, or a LAN rule only the Router needed
   alt no Node holds Router state
     Note over GW: Clear the Router<br/>R1: no run
     %%> Result:
-    %%> - Node 7's `router` assignment is deleted and task #5161 succeeds at once; no Swamp run starts (R1)
-    GW-->>CLI: Router cleared<br/>task #5161 succeeded
+    %%> - the `router` assignment is deleted and the task succeeds at once; no Swamp run starts (R1)
+    GW-->>CLI: Router cleared<br/>task succeeded
     %%> What you get:
     %%> - the final result at once; there is nothing to follow
   else Router state on a Node
   GW->>SW: Start run, full intent<br/>operation-cluster-router
   %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
+  %%> - starts one Swamp run
   %%> Inputs:
-  %%> - the state to remove, and the addresses and SSH host keys of Node 7 and the members
-  GW-->>CLI: 202 Accepted<br/>task #5161
+  %%> - the state to remove, and the addresses and SSH host keys of the Router and the members
+  GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
-  %%> - the task number, at once
+  %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   SW->>N: Withdraw the Router sites<br/>@swamp/cfgmgmt/file · reload
   %%> How:
-  %%> - over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt/file`; `caddy validate`, then a reload
+  %%> - over SSH with `@swamp/ssh` and `@swamp/cfgmgmt/file`; `caddy validate`, then a reload
   %%> No DNS change:
   %%> - an inactive Cluster, or one without a TLD and Routes, gets no Router answers from private DNS
   %%> What it does:
@@ -69,8 +65,8 @@ sequenceDiagram
   %%> - Caddy and the packages stay, as for every role removal that keeps shared packages
   SW->>M: Remove the LAN rules<br/>@swamp/cfgmgmt/firewall apply
   %%> What it does:
-  %%> - on Node 7: removes the 443 and 53 allows for member LAN addresses
-  %%> - on each member: removes the allows for Node 7's LAN address that no other Route needs
+  %%> - on the Router: removes the 443 and 53 allows for member LAN addresses
+  %%> - on each member: removes the allows for the Router's LAN address that no other Route needs
   %%> - never removes WireGuard baseline rules
   SW->>M: Check the rules are gone<br/>@swamp/cfgmgmt/firewall check
   %%> What it does:
@@ -82,10 +78,10 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Clear the Router<br/>assignment gone · task succeeded
+    Note over GW: Clear the Router<br/>assignment gone
     %%> Result:
-    %%> - Node 7's `router` assignment is deleted; Cluster 3 has no Router
-    %%> - task #5161 succeeds
+    %%> - the `router` assignment is deleted; the Cluster has no Router
+    %%> - the task succeeds
   else a step fails
     M--xSW: exit ≠ 0 or line remains
     %%> When:
@@ -95,15 +91,15 @@ sequenceDiagram
     %%> - which step failed and its error code
     Note over GW: Keep the assignment<br/>failed · rerun after a fix
     %%> Result:
-    %%> - Node 7's `router` assignment stays, marked failed
-    %%> - task #5161 fails
+    %%> - the `router` assignment stays, marked failed
+    %%> - the task fails
     %%> On the Node:
     %%> - steps that finished stay done; there is no rollback, because the Cluster serves no traffic through the Router
     %%> Retry:
     %%> - run the same command again; it skips what is already removed
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5161
+    CLI->>GW: operation:show TASK
     %%> What it does:
     %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
