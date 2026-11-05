@@ -36,7 +36,7 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-enroll
   %%> Inputs:
   %%> - the slot name, host, project, pool and addresses
-  %%> - the hub peer and the files of the identity tree, as text without secrets
+  %%> - the hub peer and the files of the identity tree, as text without secrets: the WireGuard config, the observer configuration and CA, the Pi unit with the name of the slot's Pi Process, and `models.json`
   %%> - the identity revision, and the pinned observer and Pi digests
   SW->>SW: Issue the model key<br/>workflow · task-vm-model-issue
   %%> What it does:

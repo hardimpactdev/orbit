@@ -33,7 +33,6 @@ Deno.test("the unit orders before ssh and the key generator, never before ssh.so
       "ssh.service",
       "wg-quick@orbit.service",
       "orbit-agent.service",
-      "pi-server.service",
     ]
   ) assert(before.includes(name), `Before= lacks ${name}`);
   // Before=ssh.socket with default dependencies is an ordering cycle that deletes the socket job.
@@ -66,6 +65,8 @@ Deno.test("the unit installs the slot tree with owners and modes and shows no co
       "/etc/ssh/ssh_host_rsa_key",
       "/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg",
       "/etc/orbit/agent/secret",
+      "/etc/orbit/agent/config.toml",
+      "/etc/orbit/agent/ca.pem",
       "/home/orbit/.pi/agent/orbit-token",
       "/home/orbit/.pi/agent/models.json",
     ]
@@ -97,8 +98,13 @@ Deno.test("the build pushes and enables the unit before the image is cleaned, an
     "enable",
     "orbit-slot-identity.service",
   ]);
+  // The slot units follow (task_vm_image_slot_units_test.ts); the clean step comes after the last of them.
+  assertEquals(
+    steps.get("slot-units-group")!.dependsOn?.map((d) => d.step),
+    ["slot-identity-enable"],
+  );
   assertEquals(steps.get("clean-marker")!.dependsOn?.map((d) => d.step), [
-    "slot-identity-enable",
+    "slot-units-enable",
   ]);
   const smoke = steps.get("smoke-slot-identity")!;
   assertEquals(smoke.dependsOn?.map((d) => d.step), ["ssh-smoke"]);
@@ -106,7 +112,10 @@ Deno.test("the build pushes and enables the unit before the image is cleaned, an
     "is-enabled",
     "orbit-slot-identity.service",
   ]);
-  assertEquals(steps.get("seed")!.dependsOn?.map((d) => d.step), [
+  assertEquals(steps.get("smoke-slot-units")!.dependsOn?.map((d) => d.step), [
     "smoke-slot-identity",
+  ]);
+  assertEquals(steps.get("seed")!.dependsOn?.map((d) => d.step), [
+    "smoke-slot-units",
   ]);
 });

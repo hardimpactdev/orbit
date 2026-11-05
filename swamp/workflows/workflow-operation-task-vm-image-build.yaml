@@ -1079,7 +1079,7 @@ jobs:
           Description=Install the Orbit slot identity
           DefaultDependencies=no
           After=local-fs.target
-          Before=sysinit.target sshd-keygen.service ssh.service wg-quick@orbit.service orbit-agent.service pi-server.service shutdown.target
+          Before=sysinit.target sshd-keygen.service ssh.service wg-quick@orbit.service orbit-agent.service shutdown.target
           Conflicts=shutdown.target
 
           [Service]
@@ -1097,9 +1097,13 @@ jobs:
           ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/ssh /run/orbit-slot/etc/ssh/ssh_host_ed25519_key.pub /run/orbit-slot/etc/ssh/ssh_host_ecdsa_key.pub /run/orbit-slot/etc/ssh/ssh_host_rsa_key.pub
           ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/cloud/cloud.cfg.d /run/orbit-slot/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg
           ExecStart=/usr/bin/install -m 0600 -o root -g root -t /etc/orbit/agent /run/orbit-slot/etc/orbit/agent/secret
+          ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/orbit/agent /run/orbit-slot/etc/orbit/agent/config.toml /run/orbit-slot/etc/orbit/agent/ca.pem
           ExecStart=/usr/bin/install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent
           ExecStart=/usr/bin/install -m 0600 -o orbit -g orbit -t /home/orbit/.pi/agent /run/orbit-slot/home/orbit/.pi/agent/orbit-token /run/orbit-slot/home/orbit/.pi/agent/models.json
+          ExecStart=/usr/bin/cp -rT --preserve=mode /run/orbit-slot/etc/systemd/system /etc/systemd/system
           ExecStart=/usr/bin/umount /run/orbit-slot
+          ExecStart=/usr/bin/systemctl daemon-reload
+          ExecStart=/usr/bin/systemctl --no-block start orbit-slot.target
 
           [Install]
           WantedBy=sysinit.target
@@ -1118,10 +1122,147 @@ jobs:
         argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
           '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, enable, orbit-slot-identity.service]
         timeoutSec: 90
-  - name: clean-marker
+  # The slot units are the same for every slot. Each one starts only when the identity tree holds its files, so a VM with no
+  # identity volume starts none of them; see docs/reference/compute-drivers.md#task-vm-slots.
+  # The observer unit names this group in SupplementaryGroups, and a unit that names a missing group does not start.
+  - name: slot-units-group
     labels: {role: swamp}
     dependsOn:
     - {step: slot-identity-enable, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/sbin/groupadd, -f, --system, orbit-env]
+        timeoutSec: 90
+  - name: slot-units-agent
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-units-group, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --create-dirs, --mode, '0644', --uid, '0', --gid, '0', --,
+          '-', '${{ inputs.intent.name + "/etc/systemd/system/orbit-agent.service" }}']
+        timeoutSec: 90
+        stdin: |
+          # Managed by Orbit: agent
+          [Unit]
+          Description=Orbit Node agent
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          ExecStart=/usr/local/bin/orbit-agent
+          Restart=always
+          RestartSec=2
+          User=root
+          Group=root
+          SupplementaryGroups=orbit-env
+          CapabilityBoundingSet=
+          NoNewPrivileges=yes
+          ProtectSystem=strict
+          ProtectHome=yes
+          PrivateTmp=yes
+          MemoryMax=128M
+          RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+          [Install]
+          WantedBy=multi-user.target
+  - name: slot-units-agent-dropin
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-units-agent, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --create-dirs, --mode, '0644', --uid, '0', --gid, '0', --,
+          '-', '${{ inputs.intent.name + "/etc/systemd/system/orbit-agent.service.d/10-slot.conf" }}']
+        timeoutSec: 90
+        stdin: |
+          [Unit]
+          After=wg-quick@orbit.service
+          ConditionPathExists=/etc/orbit/agent/secret
+          ConditionPathExists=/etc/orbit/agent/config.toml
+          ConditionPathExists=/etc/orbit/agent/ca.pem
+  - name: slot-units-wireguard-dropin
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-units-agent-dropin, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --create-dirs, --mode, '0644', --uid, '0', --gid, '0', --,
+          '-', '${{ inputs.intent.name + "/etc/systemd/system/wg-quick@orbit.service.d/10-slot.conf" }}']
+        timeoutSec: 90
+        stdin: |
+          [Unit]
+          ConditionPathExists=/etc/wireguard/orbit.conf
+  - name: slot-units-target
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-units-wireguard-dropin, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --create-dirs, --mode, '0644', --uid, '0', --gid, '0', --,
+          '-', '${{ inputs.intent.name + "/etc/systemd/system/orbit-slot.target" }}']
+        timeoutSec: 90
+        stdin: |
+          [Unit]
+          Description=Orbit task VM slot services
+          After=orbit-slot-identity.service wg-quick@orbit.service orbit-agent.service
+          Before=multi-user.target
+          BindsTo=wg-quick@orbit.service
+          Wants=orbit-agent.service
+          ConditionPathExists=/etc/systemd/system/orbit-slot.target.d/10-pi.conf
+
+          [Install]
+          WantedBy=multi-user.target
+  - name: slot-units-enable
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-units-target, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, enable, orbit-slot.target]
+        timeoutSec: 90
+  - name: clean-marker
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-units-enable, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1499,10 +1640,26 @@ jobs:
         argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
           '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/bin/systemctl, is-enabled, orbit-slot-identity.service]
         timeoutSec: 90
-  - name: seed
+  # The smoke VM has no identity volume, so the slot units verify, the target is enabled and nothing it pulls in runs.
+  - name: smoke-slot-units
     labels: {role: swamp}
     dependsOn:
     - {step: smoke-slot-identity, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /bin/sh, -c, 'systemd-analyze verify orbit-slot.target orbit-agent.service orbit-slot-identity.service && getent group orbit-env >/dev/null && systemctl is-enabled --quiet orbit-slot.target && ! systemctl is-active --quiet orbit-slot.target orbit-agent.service wg-quick@orbit.service']
+        timeoutSec: 90
+  - name: seed
+    labels: {role: swamp}
+    dependsOn:
+    - {step: smoke-slot-units, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

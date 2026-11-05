@@ -61,6 +61,12 @@ class SlotIdentityPhaseTest(unittest.TestCase):
             'etc/wireguard/orbit.conf': '[Interface]\nPostUp = wg set %i private-key /etc/wireguard/orbit.key\n',
             'etc/wireguard/orbit.dns-link': 'orbit\n10.44.0.1\n',
             'etc/cloud/cloud.cfg.d/99-orbit-slot.cfg': 'ssh_deletekeys: false\n',
+            'etc/orbit/agent/config.toml': 'gateway_url = "https://gateway.orbit"\ngateway_address = "10.44.0.2"\n',
+            'etc/orbit/agent/ca.pem': '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n',
+            # The Pi unit is named after the Pi Process id, so the phase finds these by their folder.
+            'etc/systemd/system/orbit-process-42-pi-server.service': '[Unit]\nDescription=Orbit process pi-server\n',
+            'etc/systemd/system/orbit-process-42-pi-server.service.d/10-slot.conf': '[Unit]\nAfter=wg-quick@orbit.service\n',
+            'etc/systemd/system/orbit-slot.target.d/10-pi.conf': '[Unit]\nWants=orbit-process-42-pi-server.service\n',
             'home/orbit/.pi/agent/models.json': '{"apiKey": "@MODEL_KEY@", "note": "{{ literal }}"}\n',
         }
         identity = {'project': 'orbit-tasks', 'pool': 'orbit-tasks', 'volume': VOLUME, 'files': files, 'revision': 'b' * 64, 'model_key_mark': '@MODEL_KEY@'}
@@ -90,9 +96,16 @@ class SlotIdentityPhaseTest(unittest.TestCase):
     def test_second_run_changes_nothing_and_keeps_every_key(self):
         self.assertGreater(self.run_phase(), 0)
         first = self.tree()
-        self.assertEqual(len(first), 14)
+        self.assertEqual(len(first), 19)
         self.assertEqual(first['REVISION'], (b'b' * 64, 0o644))
         self.assertEqual(first['etc/orbit/agent/secret'][1], 0o600)
+        # The observer and Pi files hold no key: the Gateway's text arrives as it is, readable by the unit that installs it.
+        self.assertEqual(first['etc/systemd/system/orbit-process-42-pi-server.service'], (b'[Unit]\nDescription=Orbit process pi-server\n', 0o644))
+        self.assertEqual(first['etc/systemd/system/orbit-process-42-pi-server.service.d/10-slot.conf'][1], 0o644)
+        self.assertEqual(first['etc/systemd/system/orbit-slot.target.d/10-pi.conf'][1], 0o644)
+        self.assertEqual(first['etc/orbit/agent/config.toml'][1], 0o644)
+        self.assertEqual(first['etc/orbit/agent/ca.pem'][1], 0o644)
+        self.assertIn(b'gateway_address = "10.44.0.2"', first['etc/orbit/agent/config.toml'][0])
         self.assertEqual(first['etc/ssh/ssh_host_ed25519_key'][1], 0o600)
         self.assertEqual(first['home/orbit/.pi/agent/orbit-token'], (b'p' * 64, 0o600))
         models = first['home/orbit/.pi/agent/models.json'][0].decode()

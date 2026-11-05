@@ -427,7 +427,7 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### Task VM slots
 
-This section describes the target design. Built so far: the [identity unit](#the-identity-volume) in the task image and the [enrol](#enrol-once). The claim, the release and the slot count per host are not: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
+This section describes the target design. Built so far: the [identity unit](#the-identity-volume) and the [slot units](#the-slot-units) in the task image, and the [enrol](#enrol-once). The claim, the release and the slot count per host are not: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
 
 A task VM host has a fixed number of slots. Each slot is a task VM identity that Orbit enrols once. A task takes a free slot. It does not enrol a new Node.
 
@@ -459,7 +459,7 @@ A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, 
 
 #### The identity volume
 
-Each slot has one small Incus custom volume, `<node-slug>-tvm-<n>-identity`. The VM gets it as a read-only filesystem device named `identity` at `/opt/orbit-slot`. The volume holds the keys, the WireGuard config, the Pi token, `models.json` and a `REVISION` file. The host enforces the read-only flag. Root in the guest cannot write to the volume, so a task cannot change the identity of the slot for the next task.
+Each slot has one small Incus custom volume, `<node-slug>-tvm-<n>-identity`. The VM gets it as a read-only filesystem device named `identity` at `/opt/orbit-slot`. The volume holds the keys, the WireGuard config, the observer files, the Pi unit, the Pi token, `models.json` and a `REVISION` file. The host enforces the read-only flag. Root in the guest cannot write to the volume, so a task cannot change the identity of the slot for the next task.
 
 The volume holds this tree. The unit installs every file in it, so a missing file fails the unit:
 
@@ -467,29 +467,76 @@ The volume holds this tree. The unit installs every file in it, so a missing fil
 etc/wireguard/{orbit.key,orbit.conf,orbit.dns-link}
 etc/ssh/ssh_host_{ed25519,ecdsa,rsa}_key{,.pub}
 etc/cloud/cloud.cfg.d/99-orbit-slot.cfg
-etc/orbit/agent/secret
+etc/orbit/agent/{secret,config.toml,ca.pem}
+etc/systemd/system/orbit-process-<pi_process_id>-pi-server.service
+etc/systemd/system/orbit-process-<pi_process_id>-pi-server.service.d/10-slot.conf
+etc/systemd/system/orbit-slot.target.d/10-pi.conf
 home/orbit/.pi/agent/{orbit-token,models.json}
 REVISION
 ```
 
-Built: the task image holds `orbit-slot-identity.service`, enabled in `sysinit.target`. The [image build](#build-the-base-image) installs it. At boot it checks that the kernel exposes the virtiofs tag `incus_identity`, mounts the tag read-only at `/run/orbit-slot`, and copies the files to the root disk with these owners and modes. Then it unmounts. It runs before `sshd-keygen.service`, ssh, WireGuard, the observer and Pi, so ssh uses the slot host keys. It does not wait for the Incus agent, which mounts `/opt/orbit-slot` later. The unit never logs file contents. The image holds no key and no secret.
+Built: the task image holds `orbit-slot-identity.service`, enabled in `sysinit.target`. The [image build](#build-the-base-image) installs it. At boot it checks that the kernel exposes the virtiofs tag `incus_identity`, mounts the tag read-only at `/run/orbit-slot`, and copies the files to the root disk with these owners and modes. It copies the `etc/systemd/system` folder as a whole, because the names of the Pi files hold the Process id, which the image cannot know. Then it unmounts, reloads systemd and starts `orbit-slot.target` again, so that the target pulls in the new Pi unit (see [The slot units](#the-slot-units)).
+
+The unit runs before `sshd-keygen.service`, ssh, WireGuard and the observer, so ssh uses the slot host keys. It does not wait for the Incus agent, which mounts `/opt/orbit-slot` later. The unit never logs file contents. The image holds no key and no secret.
 
 | Files | Owner and mode |
 | --- | --- |
 | `/etc/wireguard/orbit.key`, `orbit.conf` | `root:root` `0600` |
 | `/etc/wireguard/orbit.dns-link`, `/etc/ssh/ssh_host_*_key.pub`, `/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg` | `root:root` `0644` |
+| `/etc/orbit/agent/config.toml`, `ca.pem`, and the files under `/etc/systemd/system` | `root:root` `0644` |
 | `/etc/ssh/ssh_host_*_key`, `/etc/orbit/agent/secret` | `root:root` `0600` |
 | `/home/orbit/.pi/agent/orbit-token`, `models.json` | `orbit:orbit` `0600` |
 
 The file `99-orbit-slot.cfg` is the single line `ssh_deletekeys: false`. Without it, cloud-init deletes the host keys on the first boot of every clone and makes new ones, and the slot would not keep its host key. The enrol writes this file into the volume with the keys.
 
-A VM with no volume stays quiet. The unit has no matching virtiofs tag, so its start check skips it. It installs nothing and starts no WireGuard and no observer, and today's enrolment is unchanged.
+The files that hold no key are text that the Gateway renders, and the enrol writes them into the volume:
+
+| File | Content |
+| --- | --- |
+| `etc/orbit/agent/config.toml` | The observer configuration: `gateway_url` and `gateway_address`. It is the same for every slot. |
+| `etc/orbit/agent/ca.pem` | The Orbit root CA that the observer trusts for the Gateway. The image already trusts the same root in its system store, which is what Pi uses. |
+| `etc/systemd/system/orbit-process-<pi_process_id>-pi-server.service` | The unit of the slot's `pi-server` Process, exactly as the Gateway renders it: the WireGuard address and the Pi port are in its `ExecStart`. |
+| `…-pi-server.service.d/10-slot.conf` | Start Pi after WireGuard, because Pi listens on the WireGuard address. |
+| `etc/systemd/system/orbit-slot.target.d/10-pi.conf` | Binds `orbit-slot.target` to the Pi unit and orders it after Pi. It is also the marker that the VM is a slot. |
+
+These files sit in the volume, not in the image. A change of the Gateway address, the CA, the Pi port or the Pi Process then needs a new `identity_revision` and a volume sync, not a new task image.
+
+The image also holds the system group `orbit-env`, because the observer unit names it in `SupplementaryGroups` and a unit that names a missing group does not start. Today's enrolment creates the same group with `groupadd -f`, so it is the same on a VM that is not a slot.
+
+A VM with no volume stays quiet. The unit has no matching virtiofs tag, so its start check skips it. It installs nothing and starts no WireGuard, no observer and no Pi, and today's enrolment is unchanged.
+
+#### The slot units
+
+Built: the task image also holds the units that start a slot. They are the same for every slot, so the image bakes them. The files in the identity tree are what differ per slot.
+
+| File in the image | Content |
+| --- | --- |
+| `/etc/systemd/system/orbit-slot.target` | Enabled in `multi-user.target`. It is bound to WireGuard, wants the observer, and is ordered after both. It starts only when the tree holds `orbit-slot.target.d/10-pi.conf`. |
+| `/etc/systemd/system/orbit-agent.service` | The observer unit as the Gateway renders it for a new Node. It is not enabled. |
+| `/etc/systemd/system/orbit-agent.service.d/10-slot.conf` | A drop-in: start after WireGuard, and only when `/etc/orbit/agent/{secret,config.toml,ca.pem}` exist. |
+| `/etc/systemd/system/wg-quick@orbit.service.d/10-slot.conf` | A drop-in: start only when `/etc/wireguard/orbit.conf` exists. |
+
+Only the target is enabled. The target means that the slot is up: it is bound to WireGuard and, through its drop-in from the tree, to the Pi unit. A WireGuard or Pi unit that fails to start, or is skipped, fails the start of the target. A WireGuard or Pi unit that stops later takes the target down with it. The observer is only wanted, because it retries by itself when the Gateway is out of reach. A claim therefore checks `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`. The target stays inactive on a VM with no slot identity.
+
+The target uses `BindsTo=`, not `Requires=`. In the proof, a Pi unit that exited right after its start left a `Requires=` target active, and a Pi unit whose condition failed did too. With `BindsTo=` the first leaves the target inactive and the second fails `systemctl start`. A Pi that crashes and restarts on its own does not bring the target back up. The next claim check starts it again.
+
+The image holds no Pi unit, no address and no key. Pi comes with the tree, as the unit that the Gateway renders for the slot's `pi-server` Process. The Gateway reads that Process as the unit `orbit-process-<id>-pi-server.service`, in its status, its observer facts and its log reads, and the Process id is different for each slot. The Gateway keeps the Process record of the slot, so the unit has that name.
+
+A systemd alias to a baked `pi-server.service` is not enough: `systemctl status` follows it, but the observer reads logs with `journalctl --unit`, which does not, and would find no entries.
+
+A new unit name is unknown to systemd until it reloads, and the boot transaction has already expanded the target. So the identity unit reloads systemd and starts `orbit-slot.target` again, and the target, with its drop-in from the tree, is bound to the Pi unit and starts it.
+
+Each unit starts only when the files of its slot are there, so a VM with no identity volume starts none of them. The smoke VM of the [image build](#build-the-base-image) checks that, and checks that the target is enabled.
+
+A VM that is not a slot behaves as before. Today's enrolment writes `orbit-agent.service` at the same path, with the same text, and enables it. Its files make the conditions of the drop-in true. Pi runs there as the same Process unit, which today's enrolment installs. Two traces of the target remain on such a VM: the unit `orbit-slot.target` is loaded and inactive, and the slice `system-wg\x2dquick.slice` is active, because systemd creates the slice when it skips the WireGuard unit. A later converge of the Node rewrites `orbit-agent.service` from the Gateway's text. The drop-in stays.
+
+A slot that was enrolled before this image has no unit, no drop-in and no files of the new tree in its volume. Run `task-vms:enroll-slot` for it again before the image is promoted. No slot is live yet, so this is only a note.
 
 The Gateway computes `identity_revision` from the fleet-wide inputs, such as the model list and the CA. The volume keeps the same value in `REVISION`. A claim compares them. If they differ, the claim rewrites the volume before it clones the VM.
 
 #### Enrol once
 
-The `task_vm.slot_enroll` kind creates the slot. It makes the identity volume and the keys on the host. The private keys never leave the host. It adds the hub peer, issues the model key, and boots a proof VM that must reach the observer and Pi. The slot becomes `free` only after the proof passes. A rerun keeps the keys that exist.
+The `task_vm.slot_enroll` kind creates the slot. It makes the identity volume and the keys on the host, and writes the observer configuration, the observer CA and the Pi unit into the volume. The private keys never leave the host. It adds the hub peer, issues the model key, and boots a proof VM that must reach the observer and Pi. The slot becomes `free` only after the proof passes. A rerun keeps the keys that exist.
 
 There is no CLI command of its own. An operator runs `php artisan task-vms:enroll-slot <host> <n>` on the Gateway, one slot at a time. The Gateway records the slot as a `task_vms` row in the state `provisioning`, with its Node, the `pi-server` Process, its WireGuard address, its static bridge address and its fixed MAC. It makes the Pi token and the model key once, keeps both encrypted on the row, and pushes both to the vault. 
 
