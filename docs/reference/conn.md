@@ -242,8 +242,6 @@ A lost T3 response leaves issuance uncertain. There is no automatic retry, fallb
 
 Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations/{operation}` and cancel them at `POST /api/v1/conn/operations/{operation}/cancel`. These endpoints check the original requester, including when a revocation names another Node. They expose no other Operation or Gateway authority.
 
-Conn owner-checked Operation reads expose the generic [executor health](/reference/operations#executor-health) assistance. The Gateway checks all Swamp work every minute, even while Conn is disabled; this observation never runs or cancels a pairing effect.
-
 A failed session-list read ends the revocation Operation with its safe `conn.*` error code before any revoke call. Native pairing revocation reports `conn.revocation_failed`; its native report identifies the failed action. The retained legacy kinds use `conn.response_invalid` for invalid JSON. No failed read proves an empty session list or successful cleanup. The registration revision stays pending until a new registration or an explicit operator cleanup retry.
 
 ## Direct Swamp writer
