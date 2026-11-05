@@ -351,6 +351,8 @@ it('renders the full public intent of an enrolment and sends only vault names fo
     expect($input['hub']['section'])->toContain('PublicKey = @KEY@')->toContain('AllowedIPs = '.$vm->wireguard_ip.'/32');
     expect($input['vm'])->toMatchArray(['fingerprint' => 'c1c2cf4051fb0123', 'seed_source' => 'orbit-topology-seed-c1c2cf4051fb', 'seed_clone' => 'beast-tvm-1-topology-seed']);
     expect(json_decode($input['vm']['config_json'], true, flags: JSON_THROW_ON_ERROR)['devices']['identity']['readonly'])->toBe('true');
+    // Incus parses the user data as YAML; go-yaml rejects the `\/` escape.
+    expect(json_decode($input['vm']['config_json'], true, flags: JSON_THROW_ON_ERROR)['config']['cloud-init.user-data'])->toContain('/bin/bash')->not->toContain('\\/');
     expect($input['guest'])->toMatchArray(['user' => 'orbit', 'address' => $vm->wireguard_ip, 'pi_sha256' => str_repeat('a', 64)]);
     expect($input['guest']['agent_sha256'])->toMatch('/\A[a-f0-9]{64}\z/D');
 

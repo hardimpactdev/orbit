@@ -18,7 +18,8 @@ final readonly class TaskVmSlotBoot
         return json_encode([
             'config' => [
                 'limits.cpu' => (string) $host->cpus, 'limits.memory' => $host->memory,
-                'cloud-init.user-data' => "#cloud-config\n".json_encode(['users' => [$user]], JSON_THROW_ON_ERROR)."\n",
+                // Incus parses the user data as YAML, and go-yaml rejects the `\/` escape that json_encode writes for a slash.
+                'cloud-init.user-data' => "#cloud-config\n".json_encode(['users' => [$user]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
                 'raw.qemu.conf' => "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n",
             ],
             'devices' => [
