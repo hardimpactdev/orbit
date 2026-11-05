@@ -8,7 +8,7 @@ covers:
 
 A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. `database:server` runs a MySQL, PostgreSQL or Valkey server as a Docker Node Process and keeps its admin password in the Gateway. [Database servers](/reference/database-servers) describes the servers.
 
-[Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance/database-add). Attachment commands require `--instance=SELECTOR`. An omitted or empty selector returns `database.instance_required` before the CLI sends a request.
+[Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance/database-add). Attachment commands take `--instance=SELECTOR`. A terminal asks for an omitted selector, and a noninteractive call without it returns `database.instance_required` before the CLI sends a request.
 
 Server create, close and destroy, managed database create and destroy, user create, and SQL writes start Operations. Their CLI commands follow the steps to completion. Use `--idempotency-key=KEY` to repeat the same start after a lost response. Registry create, update and destroy, and all reads, keep their record responses.
 
