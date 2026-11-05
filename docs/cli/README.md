@@ -16,6 +16,8 @@ A chart sits beside its command page, with the same name: `route/create.mmd` bes
 
 To find a kind's chart, run `grep -rl '%% kind: route.create' docs/cli`.
 
+The [command pipeline](/reference/command-pipeline) places its seven stage charts, `docs/reference/pipeline/<n>-<stage>.mmd`, with `<div className="flow-at" data-chart="reference/pipeline/<n>-<stage>"></div>`. They follow the same rules and `bin/check-flows` checks them. Charts of internal kinds with no page, such as `tasks/vm-*.mmd`, are linked from the pages that use them.
+
 ## Edit, render and preview
 
 **Edit.** A chart is the `.mmd` file next to its page: `docs/cli/<family>/<command>.mdx` and `<command>.mmd`. Change the chart first, then the code. The page places it under `## How it works` with `<div className="flow-at" data-chart="<family>/<command>"></div>`.

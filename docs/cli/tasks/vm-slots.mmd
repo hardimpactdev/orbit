@@ -1,0 +1,33 @@
+sequenceDiagram
+  %% Target design: simple task VM slots (2026-11-05 redesign). A slot is a normal task VM, enrolled ahead of time by today's tasks:provision and kept stopped. Claim = start a ready one. Release = destroy it. The pool refills by enrolling a new one. No snapshots, no identity volume, no baked slot units, no new state machine.
+  %% status: draft
+  %% command: none · task VM slots (enrol, claim, release, refill)
+  %% kind: task_vm.slots
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane VM icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant H as Task VM host<br/>Incus over ssh
+  participant VM as Slot VM<br/>normal task VM
+  Note over GW,VM: Enrol (5 ready per host)
+  GW->>SW: Enrol a slot<br/>today's tasks:provision, no task
+  %%> Exactly today's path: clone the current task image, boot, enrol (keys, WireGuard, observer), model key, Pi. Runs in the background whenever the pool is below 5.
+  SW->>H: Stop the VM<br/>incus stop
+  %%> A stopped VM costs disk, not memory. The Gateway records it as a ready slot.
+  Note over GW,VM: Claim (a task starts)
+  GW->>SW: Claim a ready slot<br/>task intent
+  SW->>H: Start the VM<br/>incus start
+  %%> Seconds: the VM is already enrolled.
+  SW->>VM: Fetch the task branch<br/>git fetch · task token
+  SW->>VM: Reset the nested topology<br/>from the seed's ready copies
+  %%> Only for tasks that need the topology.
+  SW-->>GW: Slot claimed<br/>terminal event
+  Note over GW,VM: Release (the task ends)
+  GW->>SW: Destroy the VM<br/>today's task VM destroy
+  %%> Exactly today's destroy. The Gateway then enrols a new slot to refill the pool.
+  Note over GW,VM: After a release of Orbit
+  GW->>SW: Replace ready slots<br/>enrol from the new task image
+  %%> Ready slots made from the old image are destroyed and enrolled again, one at a time, so a slot is always ready.

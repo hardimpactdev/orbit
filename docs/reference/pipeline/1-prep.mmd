@@ -1,0 +1,74 @@
+sequenceDiagram
+  %% Target design: stage 1 of the command pipeline (docs/reference/command-pipeline.md). An agent drafts the chart, page and cases; a read-only sub-agent reviews; the docs-only PR auto-merges. No code changes in this stage.
+  %% status: draft
+  %% command: pipeline stage 1 · prep a command
+  %% kind: pipeline.1-prep
+  autonumber
+  %% lane AG icon=terminal pill=drafts tone=gray
+  %% lane RV icon=workflow pill=reviews tone=green
+  %% lane GH icon=server pill=merges tone=blue
+  %% lane NK icon=terminal pill=owner tone=amber
+  participant AG as Prep agent<br/>Claude · Codex
+  participant RV as Review agent<br/>read-only
+  participant GH as GitHub<br/>PR · merge queue
+  participant NK as Nick<br/>owner
+  Note over AG: Read first<br/>Recall · page · chart · code
+  %%> What it does:
+  %%> - Recall `resolve` for the command and its family, and `decisions` for the family; current decisions override older text
+  %%> - reads the existing page, chart and old fixture; reads the code only to learn what exists, never as the target
+  %%> - for a sibling of an approved command, starts from the sibling's chart, page and cases
+  %%> Result:
+  %%> - nothing changes yet; preparation changes no code
+  Note over AG: Draft the chart<br/>flow-tighten rules
+  %%> What it does:
+  %%> - writes `docs/cli/FAMILY/COMMAND.mmd`, the ideal flow, even where the code differs
+  %%> - the main path uses required parameters only; each optional flag gets its own `opt` block
+  %%> - uses role names and placeholders, never Node ids, task ids or hostnames
+  %%> - shows the failure and cleanup contract: what a failure leaves behind, what a rerun does
+  Note over AG: Draft the docs page<br/>description · usage · errors
+  %%> What it does:
+  %%> - writes `docs/cli/FAMILY/COMMAND.mdx` in this order: description, usage, how it works, errors
+  %%> - states the rerun behavior, with the reason code of a skip
+  Note over AG: Draft the cases<br/>one row per case
+  %%> What it does:
+  %%> - writes `swamp/proof/FAMILY/COMMAND.cases.md` from the chart and the page, never from the code
+  %%> - covers required arguments only, each flag, each error on the chart, a repeat, and a failure after a partial change
+  %%> - marks a case that the code fails today; never weakens a case to fit the code
+  Note over AG: Check the draft<br/>bin/check-flows · docs lint
+  %%> What it does:
+  %%> - runs `bin/check-flows`, `composer docs-build` and `composer docs-lint`
+  %%> - walks every error code, flag and repeat of the page against the cases
+  loop until the review has no findings
+    AG->>RV: Ask for a review<br/>chart · page · cases
+    %%> Target:
+    %%> - one independent read-only sub-agent (Sonnet, high effort) reviews against the skills and the CLI standard
+    %%> - this review replaces Nick's per-item approval
+    %%> Built or not:
+    %%> - the skill already asks for this review when no one else reviews the draft
+    %%> - not built: making it the only gate; the skill still says Nick approves each of the three items
+    RV-->>AG: Findings<br/>or none
+    %%> Result:
+    %%> - the agent fixes every finding it can settle with the rules and Recall decisions
+  end
+  opt a choice no rule or decision settles
+    AG->>NK: Ask one plain question<br/>context first
+    %%> Why:
+    %%> - one question at a time, with the context explained first, in plain text
+    NK-->>AG: Answer
+    %%> Result:
+    %%> - the agent applies the answer to the chart, page and cases, and to any sibling command in the same PR
+  end
+  AG->>GH: Open one docs-only PR<br/>chart · page · cases
+  %%> What it does:
+  %%> - marks the chart `%% status: reviewed`
+  %%> - the PR holds the chart, page and cases of one command and nothing else
+  Note over GH: Docs checks only<br/>no VM job
+  %%> Why:
+  %%> - a documentation-only change runs fast CI and never a VM job
+  AG->>GH: Turn on auto-merge<br/>gh pr merge --auto
+  %%> What it does:
+  %%> - the author runs it as `nckrtl`; the merge queue lands the PR when `Required checks` pass
+  Note over AG,GH: The command is ready<br/>recorded on the dashboard
+  %%> Result:
+  %%> - chart, page and cases are merged; the orchestrator records the command as ready
+  %%> - building starts only now, with stage 2 onward

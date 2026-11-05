@@ -1,112 +1,42 @@
 sequenceDiagram
-  %% Target design: VM CI (verifying-commands skill, "Run the same proof in development and CI"), docs/reference/feature-flow.md "The VM job", swamp/proof/reset/README.md, DECISIONS R1-R4.
-  %% status: draft
+  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; one parent workflow runs provision, verify, cancel as children; Gateway projects once.
+  %% status: reviewed
   %% command: proof:run
   %% kind: proof.run
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane S icon=server pill=target tone=amber
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  %% lane VM icon=server pill=target tone=amber
+  participant CLI as CI job / CLI<br/>orbit proof:run
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>workflow execution
-  participant S as Proof VM<br/>task VM over ssh
+  participant SW as Swamp<br/>parent workflow
+  participant VM as Proof task VM<br/>nested topology
   CLI->>GW: proof:run COMMIT
-  %%> Command:
-  %%> - `orbit proof:run COMMIT`
-  %%> - syntax: `<commit> [--all] [--idempotency-key=KEY] [--json]`
-  %%> Input:
-  %%> - the full commit SHA and nothing else; Orbit selects the cases itself
-  Note over GW: Check the commit<br/>branch head or approved PR
-  %%> Requirements:
-  %%> - the calling Node has an access grant to the Gateway Node
-  %%> - the SHA is a full lowercase SHA that the Orbit repository has
-  %%> - the commit is the head of a branch of the Orbit repository
-  %%> - or it is the head of an open pull request from elsewhere that carries the label `run-proofs` and has an approving review of exactly that commit from a maintainer
-  %%> Why:
-  %%> - a pull request from outside can carry any code; Orbit runs it only after a maintainer approved that exact commit
-  %%> - the Gateway reads GitHub with its App token and fetches no code here
-  Note over GW: Select the cases<br/>diff · selection list
-  %%> What it does:
-  %%> - lists the files that differ between the commit and its merge base with `main`
-  %%> - maps each path with the selection list of the commit; the last matching line wins
-  %%> - selects every case when the selection list changed or the file list is incomplete
-  %%> Result:
-  %%> - the selected case programs, and the paths that no case covers
-  alt refused
-    GW--xCLI: Refused<br/>proof.commit_untrusted
-    %%> When:
-    %%> - the commit is not trusted (`proof.commit_untrusted`) or unknown (`proof.commit_not_found`)
-    %%> - a changed path matches no line of the selection list (`proof.path_unmapped`)
-    %%> - the calling Node has no access grant (`node_access.required`)
-    %%> - GitHub cannot be read, so the commit or its diff cannot be checked (`proof.github_unavailable`)
-    %%> - the selection list is malformed (`proof.selection_invalid`)
-    %%> - cases are selected and proof execution is switched off (`proof.execution_disabled`): the error holds the selected cases and the uncovered paths
-    %%> Result:
-    %%> - nothing is recorded and nothing starts
-  else nothing to prove
-    GW-->>CLI: Skipped — nothing to prove<br/>proof.nothing_to_prove
-    %%> Result:
-    %%> - only paths that need no proof changed, such as documentation and charts
-    %%> - no group is created and nothing runs
-    %%> - the task is recorded as succeeded, with no run
-    %%> - paths marked as having no case yet are listed in the result
-  else cases selected
-    Note over GW: Open the proof group<br/>Project 46 · tasks:create
-    %%> What it does:
-    %%> - creates a task group on the Orbit Project with one review subtask, as `tasks:create` does
-    %%> Requirements:
-    %%> - proof execution is switched on (`ORBIT_PROOF_RUN_EXECUTION`)
-    Note over GW: Provision at the commit<br/>tasks.provision
-    %%> What it does:
-    %%> - admits `tasks.provision` for the group; its workspace starts exactly at the commit, not at the newest green commit
-    %%> - the VM is the regular task VM of today, with the Pi token and model key that every task VM carries
-    %%> When it waits:
-    %%> - no host has room: the provision waits (`capacity`), as for any task
-    %%> On failure:
-    %%> - the group is cancelled and the command is refused with the error of the provision
-    Note over GW: Record the task<br/>proof.run · running
-    %%> Result:
-    %%> - a task is recorded with the full intent and the group; the Gateway closes it when the group has ended
-    GW-->>CLI: 202 Accepted<br/>task ID
-    GW->>SW: Provision the VM<br/>operation-task-provision
-    %%> Inputs:
-    %%> - the full provision intent of the group, as for `tasks:provision`
-    SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Admit the cases<br/>tasks.script
-    %%> What it does:
-    %%> - when the provision succeeded, admits `tasks.script` for the group
-    %%> - on any other end of the provision, skips to the cancel; every case ends `unrun`
-    GW->>SW: Run the cases<br/>operation-task-script
-    SW->>S: Verify<br/>bin/proof-fleet verify
-    %%> What it does:
-    %%> - one blocking ssh command in the VM: resets the nested test fleet, runs each selected case in order and prints one JSON line with a verdict for each
-    %%> - a case exits 0 (passed), 1 (failed) or 2 (unrun) and removes what it created
-    %%> - the case phase has a budget of 30 minutes; the reset comes on top of it
-    SW-->>GW: Run succeeded<br/>output tail
-    Note over GW: Record the verdicts<br/>last line of the output
-    %%> Result:
-    %%> - each case is `passed`, `failed` or `unrun`; no usable line leaves every case `unrun`
-    %%> - the evidence directory in the VM is kept in the result
-    Note over GW: Cancel the group<br/>tasks.cancel
-    %%> What it does:
-    %%> - always admits `tasks.cancel`, whatever the cases did; it destroys the VM and its workspace
-    GW->>SW: Destroy the VM<br/>operation-task-cancel
-    SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Close the task<br/>verdicts
-    alt every case passes
-      %%> Result:
-      %%> - the task succeeds; the result lists each case and the uncovered paths
-    else a case fails or the cases did not run
-      %%> Result:
-      %%> - `proof.cases_failed` when the cases ran and a case failed or did not run
-      %%> - `proof.run_failed` when they never ran, such as when the provision failed: every selected case is `unrun`
-      %%> Retry:
-      %%> - run the command again after the fix; it is a new run
-    end
+  %%> The CI job on a beast or shark runner, or a person, passes only the commit SHA.
+  Note over GW: Check the commit<br/>orbit branch or approved PR
+  %%> Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
+  Note over GW: Select the cases<br/>diff · selection.txt
+  %%> Docs-only changes end here: skipped, nothing to prove.
+  Note over GW: Record intent<br/>proof group + full inputs
+  %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
+  GW-->>CLI: 202 Accepted<br/>task ID
+  GW->>SW: Start one run<br/>operation-proof-run
+  SW->>VM: Provision the task VM<br/>child workflow · task provision
+  %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
+  SW->>VM: Run the proof<br/>child flow · proof-fleet verify
+  %%> Inside the VM: reset the nested topology from the ready copies, then run each selected case (for example the firewall:allow traffic case). One verdict per case.
+  SW->>VM: Destroy the task VM<br/>child workflow · always
+  %%> Runs after success or failure, so no proof VM is left behind.
+  alt every case passes
+    SW-->>GW: Run succeeded<br/>verdicts + receipt
+    Note over GW: Record the result once<br/>PASS
+  else a case fails or did not run
+    SW--xGW: Run failed<br/>failed case
+    Note over GW: Record the result once<br/>FAIL
   end
-  loop every 2 s until terminal
+  loop until the run ends
     CLI->>GW: operation:show TASK
-    GW-->>CLI: status + result
+    GW-->>CLI: status + verdicts
   end
+  %%> The CI job passes or fails on the verdict; the merge queue requires it.
