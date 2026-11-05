@@ -31,12 +31,16 @@ Deno.test("required validation only receives event-scoped credentials", () => {
     assertStringIncludes(validate, "github.ref == 'refs/heads/main'");
 });
 Deno.test("serve grant validation and coverage regressions remain required", async () => {
+    assertStringIncludes(validate, "bin/shape-gate.py --only validate --strict");
+    const gate = await Deno.readTextFile(
+        new URL("./shape-gate.py", import.meta.url),
+    );
     for (
         const required of [
-            "python3 bin/check-grant-patterns.py --cache",
+            "'python3', 'bin/check-grant-patterns.py', '--cache'",
             "grant-validation.json",
         ]
-    ) assertStringIncludes(validate, required);
+    ) assertStringIncludes(gate, required);
     assert(
         (await Deno.stat(
             new URL(

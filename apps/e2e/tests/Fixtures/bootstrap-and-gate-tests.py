@@ -186,9 +186,9 @@ class ReviewGateTest(RepositoryFixture):
         processes.write_bytes((BIN / 'check-processes').read_bytes())
         processes.chmod(0o755)
         (self.root / 'bin/ci-build-plan').write_bytes((BIN / 'ci-build-plan').read_bytes())
-        # A root file selects every CI job, Swamp included; its workflow validation passes here.
+        # A root file selects every CI job, Swamp included; its shape gate and workflow validation pass here.
         (self.root / 'swamp/bin').mkdir(parents=True)
-        (self.root / 'swamp/bin/validate-swamp-workflows.py').write_text('')
+        (self.root / 'swamp/bin/shape-gate.py').write_text('')
         docs_impact = self.root / 'bin/docs-impact'
         docs_impact.write_text("""#!/bin/sh
 printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
