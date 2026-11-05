@@ -44,9 +44,13 @@ here touches them.
 **What a ready copy carries.** Nothing that belongs to one generation, so it never blocks release or cleanup. It has no
 `user.orbit.e2e.*` label, so the inventory and the harness release see only the guests of an attempt. It has no `eth0`
 device: a stopped NIC would keep the network in use, and Incus refuses a second VM that holds the same static MAC or
-IP. It has no `orbit-source` device, which names one generation's source directory. The MAC, the IP, the subnet, the
-mount path, the Gateway's Node ids, the creation time and one set identity are `user.ready.*` keys; `user.ready.complete`
-is written last on all three, so a half made set is never used.
+IP. The MAC, the IP, the subnet, the Gateway's Node ids, the creation time and one set identity are `user.ready.*` keys;
+`user.ready.complete` is written last on all three, so a half made set is never used.
+
+A copy keeps its own checkout at `/home/orbit/orbit` on its disk, with its dependencies. No guest shares a directory with
+the outer VM. A build still shares the generation's source while it runs; `ready` copies that source onto the disk of the
+Gateway and app-dev (a bind mount of `/` shows the disk below the share, and `rsync` fills it, without `.git`) before it
+stops the guests, then drops the share device from the copies.
 
 **No secret in a copy.** `ready` deletes the proof Swamp Club key from the running Gateway, scans its files for the key, fails with the paths if any holds it, and trims the disk (`fstrim -av`) so the deleted key's blocks are discarded; it also fails unless all three guests report `Stopped` before the copy. A restore (and the end of `ready`) pushes the key back in once the Gateway agent is up, then restarts Swamp serve and the worker. The contract for other tools is in [`swamp/proof/README.md`](../README.md#ready-copies-the-contract).
 
@@ -66,14 +70,17 @@ minted less than 20 h ago, counted from `user.ready.minted` (the Swamp tokens th
    lead Caddy to `public`. It becomes the active generation last, so an earlier failure leaves the previous one active
    and releasable. A later release removes the same guests and network, because the lease names them.
 3. `restore` deletes the three guests, copies each ready copy back under the generation's name, labels it for the
-   attempt, adds a NIC on the generation's network with the saved MAC and IP, adds the new source mount and starts all
-   three. It records the time just before the start.
-4. `candidate` applies the candidate inside the Gateway as soon as it has mounted the new source, while the Nodes still
-   boot. It blocks on `incus wait agent`, then on the start of `orbit-proof-operations`, whose start condition waits for
-   the mount. Then: Caddy access, `package:discover`, migrations, the Swamp repository (serve hot-reloads the workflows;
-   its `.swamp.yaml`, which holds the datastore the build set up, stays), the extensions whose pin changed, and a restart
-   of the queue worker and the agent-view subscriber. The Gateway mounts the generation's private source copy; mounting
-   the live checkout is a later change.
+   attempt, adds a NIC on the generation's network with the saved MAC and IP and starts all three. It adds no source
+   share. It records the time just before the start.
+4. `candidate` waits for the guest agents (`incus wait agent`), then syncs the generation's source into `/home/orbit/orbit`
+   of the Gateway and app-dev, in parallel. The sync is plain `rsync -a --checksum --delete`, with `incus exec` as the transport (a fresh export has new file times, so rsync compares content). It
+   leaves out `.git`, `vendor`, `node_modules`, `.env`, `storage`, `bootstrap/cache`, `.e2e` and the agent manifest, which the
+   guests keep. `composer install` runs in a directory only when rsync wrote that directory's `composer.lock`; it takes
+   about 10 s even when nothing changed, so it never runs otherwise. Then the guest program applies the candidate in the
+   Gateway while the Nodes still boot: Caddy access, `package:discover`, migrations, the Swamp repository (serve
+   hot-reloads the workflows; its `.swamp.yaml`, which holds the datastore the build set up, stays), the extensions
+   whose pin changed, and a restart of the two proof services (the queue worker and the agent-view subscriber). The
+   receipt records the seconds of each rsync and each composer run.
 5. `wait` blocks. Each wait is one command with a fixed bound of 150 s: `incus wait agent` for every guest and
    `systemctl start` for the Gateway units and the Node agents, which returns when the start jobs end (the agent unit's
    start waits for the Gateway). There is no loop and no sleep. It ends with a fresh WireGuard handshake.
@@ -103,7 +110,7 @@ A reset boots three VMs. [`tools/swamp-proof-guest/boot.py`](../../../tools/swam
 - `cloud-init.disabled`;
 - an `orbit-hosts.path` unit restores the Orbit names in `/etc/hosts` after the Incus agent rewrites it;
 - Swamp serve and the worker are enabled and ordered at boot;
-- the Gateway services that use the checkout wait for the mount and use `WorkingDirectory=-`;
+- the Gateway services that use the checkout use `WorkingDirectory=-` and wait for nothing: the checkout is on the guest's disk;
 - the Gateway VM has 2 vCPUs;
 - PHP uses `opcache.validate_timestamps=1`, and no Laravel config, route or event cache exists.
 
@@ -111,7 +118,7 @@ A reset boots three VMs. [`tools/swamp-proof-guest/boot.py`](../../../tools/swam
 
 ## Source and the live checkout
 
-The guests mount the generation's private source copy, not the outer VM's live checkout. The Gateway bootstrap writes into the source it runs from: it replaces `apps/gateway/.env`, runs `key:generate` and `package:discover`, and writes `storage` and `bootstrap/cache`. Against the live checkout that would overwrite the task's own `.env`, change its caches and break the preservation assertions below. A live edit would also change code under a pinned candidate identity. The copy uses reflinks and the candidate's installed dependencies, so it is cheap.
+A build mounts the generation's private source copy, not the outer VM's live checkout; a reset from ready copies syncs that copy into each guest's own checkout. The Gateway bootstrap writes into the source it runs from: it replaces `apps/gateway/.env`, runs `key:generate` and `package:discover`, and writes `storage` and `bootstrap/cache`. Against the live checkout that would overwrite the task's own `.env`, change its caches and break the preservation assertions below. A live edit would also change code under a pinned candidate identity. The copy uses reflinks and the candidate's installed dependencies, so it is cheap.
 
 ## Ownership and results
 

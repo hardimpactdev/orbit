@@ -20,10 +20,14 @@ flowchart TD
   readiness -. after a build-ready run .-> makeReady
 
   subgraph ready[Ready copies, about 75 s to a checked fleet; the boot is about 50 s of it]
-    makeReady[Make ready copies: stop the 3 guests, copy each to fleet-ready-ROLE, drop the generation labels, NIC and source mount, record MAC, IP, subnet and Node ids, start the originals] --> readyCheck[Same readiness steps as a build]
+    makeReady[Make ready copies: copy the shared source onto the Gateway and app-dev disks, stop the 3 guests, copy each to fleet-ready-ROLE, drop the generation labels and NIC, record MAC, IP, subnet and Node ids, start the originals] --> readyCheck[Same readiness steps as a build]
     fastInventory[Pin candidate and inventory] --> fastSnapshot[Export pinned source to a new generation; carry the lease and the Gateway runtime state from the previous one; activate last]
-    fastSnapshot --> restore[Per guest: delete, copy from ready copy, label for this attempt, add NIC with saved MAC and IP, add the new source mount; start all]
-    restore --> candidate[Candidate overlay in the Gateway as soon as it mounts the new source: Caddy access, migrations, Swamp repository, restart queue workers]
+    fastSnapshot --> restore[Per guest: delete, copy from ready copy, label for this attempt, add NIC with saved MAC and IP; start all. No source share: each guest keeps its own checkout]
+    restore --> sync[Sync the exported source into the checkout of the Gateway and app-dev by rsync, in parallel; leave out .git, vendor, node_modules, .env, storage, bootstrap/cache]
+    sync --> lock{composer.lock changed?}
+    lock -->|yes| composer[composer install where it changed]
+    lock -->|no| candidate
+    composer --> candidate[Candidate overlay in the Gateway: Caddy access, package discovery, migrations, Swamp repository, restart the 2 proof services]
     candidate --> wait[Blocking commands: incus wait agent, systemctl start of the units; tunnel handshake]
     wait --> fastOperator[Native step: operator, pins the restored CA]
     fastOperator --> fastTransport[One readiness check: every Node agent online, Swamp worker enrolled, Gateway knows the operator, Doctor has no finding, record the case baseline]
@@ -47,6 +51,7 @@ flowchart TD
   readiness -. failure .-> diagnose
   restore -. failure .-> diagnose
   wait -. failure .-> diagnose
+  sync -. failure .-> diagnose
   candidate -. failure .-> diagnose
   fastTransport -. failure .-> diagnose
   diagnose --> ownedCleanup[Release only this generation; preserve failure; ready copies stay but are unusable until the next build]

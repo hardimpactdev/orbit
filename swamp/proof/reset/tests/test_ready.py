@@ -38,8 +38,7 @@ def copy_row(role, **overrides):
     config = {'user.ready.set': 'set1', 'user.ready.complete': 'set1', 'user.ready.role': role,
               'user.ready.made': '2026-11-05T10:00:00Z', 'user.ready.minted': '2026-11-05T09:00:00Z', 'user.ready.attempt': 'a' * 32,
               'user.ready.inputs': 'digest1', 'user.ready.hwaddr': MACS[role], 'user.ready.ipv4': ADDRESSES[role],
-              'user.ready.subnet': '10.232.2.1/24', 'user.ready.nodes': json.dumps({'gateway': 209, 'app-dev': 211}),
-              'user.ready.mounts': json.dumps({} if role == 'app-prod' else {'orbit-source': '/home/orbit/orbit'})}
+              'user.ready.subnet': '10.232.2.1/24', 'user.ready.nodes': json.dumps({'gateway': 209, 'app-dev': 211})}
     row = {'name': ready.name(role), 'status': 'Stopped', 'config': config, 'devices': {'root': {'type': 'disk', 'path': '/'}}}
     row.update(overrides)
     return row
@@ -109,7 +108,7 @@ class MakeTests(unittest.TestCase):
         self.assertEqual(['start', *GUESTS.values()], calls[-1])
         self.assertEqual({'set', 'made', 'subnet', 'copies', 'started_at'}, set(result))
 
-    def test_the_mac_the_ip_the_subnet_and_the_mounts_are_recorded_on_the_copies(self):
+    def test_the_mac_the_ip_and_the_subnet_are_recorded_on_the_copies_and_no_mounts(self):
         incus = FakeIncus([guest_row(role) for role in ready.ROLES])
         self.make(incus)
         recorded = {call[2]: call[3:] for call in incus.calls if call[:2] == ['config', 'set'] and any(item.startswith('user.ready.role=') for item in call)}
@@ -117,11 +116,30 @@ class MakeTests(unittest.TestCase):
         self.assertIn('user.ready.hwaddr=' + MACS['gateway'], gateway)
         self.assertIn('user.ready.ipv4=10.232.2.10', gateway)
         self.assertIn('user.ready.subnet=10.232.2.1/24', gateway)
-        self.assertIn('user.ready.mounts=' + json.dumps({'orbit-source': '/home/orbit/orbit'}), gateway)
         self.assertTrue(any(item.startswith('user.ready.nodes=') for item in gateway))
+        self.assertFalse(any(item.startswith('user.ready.mounts') for items in recorded.values() for item in items))
         prod = recorded[ready.name('app-prod')]
-        self.assertIn('user.ready.mounts={}', prod)
         self.assertFalse(any(item.startswith('user.ready.nodes=') for item in prod))
+
+    def test_a_shared_source_is_copied_onto_the_guest_disk_before_the_guests_stop(self):
+        incus = FakeIncus([guest_row(role) for role in ready.ROLES])
+        self.make(incus)
+        kept = [i for i, call in enumerate(incus.calls) if call[:2] == ['exec', GUESTS['gateway']] or call[:2] == ['exec', GUESTS['app-dev']]]
+        self.assertEqual(2, len(kept))
+        self.assertFalse(any(call[:2] == ['exec', GUESTS['app-prod']] for call in incus.calls))
+        stop = next(i for i, call in enumerate(incus.calls) if call[0] == 'stop')
+        self.assertTrue(all(i < stop for i in kept))
+        script = incus.calls[kept[0]][-1]
+        self.assertIn('mount --bind / /run/rootfs', script)
+        self.assertIn('rsync -a --delete --exclude=/.git /home/orbit/orbit/ /run/rootfs/home/orbit/orbit/', script)
+
+    def test_a_guest_without_a_share_keeps_its_own_checkout_untouched(self):
+        rows = [guest_row(role) for role in ready.ROLES]
+        for row in rows:
+            row['devices'].pop('orbit-source', None)
+        incus = FakeIncus(rows)
+        self.make(incus)
+        self.assertFalse(any(call[0] == 'exec' for call in incus.calls))
 
     def test_an_earlier_set_is_replaced_but_old_ready_names_are_never_touched(self):
         rows = [guest_row(role) for role in ready.ROLES] + list(complete_set().values())
@@ -180,7 +198,7 @@ class RestoreTests(unittest.TestCase):
     def restore(self, rows):
         incus = FakeIncus(rows)
         with patch.object(ready, 'incus', incus), patch.object(ready, 'inspect', return_value=ready.inspect({row['name']: row for row in complete_set().values()}, now=NOW)):
-            return incus, ready.restore(GUESTS, 'oe-new', '/new/source', self.LABELS)
+            return incus, ready.restore(GUESTS, 'oe-new', self.LABELS)
 
     def test_guests_are_deleted_first_then_copied_labelled_attached_and_started(self):
         incus, result = self.restore([guest_row(role) for role in ready.ROLES] + list(complete_set().values()))
@@ -191,8 +209,8 @@ class RestoreTests(unittest.TestCase):
             self.assertIn(['copy', ready.name(role), target], calls)
             self.assertIn(['config', 'set', target, *(f'user.orbit.e2e.{k}={v}' for k, v in self.LABELS.items())], calls)
             self.assertIn(['config', 'device', 'add', target, 'eth0', 'nic', 'network=oe-new', 'hwaddr=' + MACS[role], 'ipv4.address=' + ADDRESSES[role]], calls)
-            mount = ['config', 'device', 'add', target, 'orbit-source', 'disk', 'source=/new/source', 'path=/home/orbit/orbit']
-            self.assertEqual(role != 'app-prod', mount in calls)
+            # No guest shares a source directory with the outer VM.
+            self.assertFalse(any(call[:4] == ['config', 'device', 'add', target] and call[4] != 'eth0' for call in calls))
         # A copy needs the original's name and address free, so every delete precedes every copy.
         self.assertLess(max(i for i, c in enumerate(calls) if c[0] == 'delete'), min(i for i, c in enumerate(calls) if c[0] == 'copy'))
         self.assertEqual(['start', *GUESTS.values()], calls[-1])
@@ -206,7 +224,7 @@ class RestoreTests(unittest.TestCase):
         incus = FakeIncus([guest_row(role) for role in ready.ROLES])
         with patch.object(ready, 'incus', incus), patch.object(ready, 'inspect', return_value={'usable': False, 'reason': 'nothing'}):
             with self.assertRaisesRegex(RuntimeError, 'not usable: nothing'):
-                ready.restore(GUESTS, 'oe-new', '/new/source', self.LABELS)
+                ready.restore(GUESTS, 'oe-new', self.LABELS)
         self.assertEqual([], [call for call in incus.calls if call[0] in ('delete', 'copy', 'start')])
 
 
@@ -433,7 +451,7 @@ class SnapshotReadyTests(unittest.TestCase):
             acls.assert_called_once()
             record = json.loads(phases.fleet_path(request, new).read_text())
             self.assertEqual({'gateway': 209, 'app-dev': 211}, record['nodes'])
-            self.assertEqual(str(source), record['prepare']['mounts']['gateway']['source'])
+            self.assertEqual({}, record['prepare']['mounts'])
             self.assertEqual({'generation': new}, json.loads((root / 'active.json').read_text()))
             self.assertEqual({'carried_from': previous, 'ready_set': 'set1'}, {k: result[k] for k in ('carried_from', 'ready_set')})
 
@@ -588,14 +606,41 @@ class ReadyWaitTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'no recorded start'):
                     phases.ready_wait(self.request(temporary, started=False))
 
-    def test_the_candidate_waits_for_the_agent_then_the_mount_and_never_loops(self):
-        with patch.object(phases, 'prepared', return_value={'construction': {'nodes': {'gateway': {'instance': 'gw'}}}}), \
-                patch.object(phases, 'incus', return_value=b'') as incus, patch.object(phases, 'guest', return_value={'migrated': True}) as guest:
-            phases.apply_candidate({'key_file': '/k'})
-        calls = [' '.join(map(str, call.args[0])) for call in incus.call_args_list]
-        self.assertEqual(['wait gw agent --timeout 150', 'exec gw -- systemctl start orbit-proof-operations',
-                          'exec gw -- test -f /home/orbit/orbit/apps/gateway/artisan'], [calls[0], calls[3], calls[4]])
-        guest.assert_called_once_with({'key_file': '/k'}, 'candidate')
+    def test_the_candidate_waits_for_the_agents_syncs_the_code_then_applies_it(self):
+        nodes = {'gateway': {'instance': 'gw'}, 'app-dev': {'instance': 'dev'}, 'app-prod': {'instance': 'prod'}}
+        order = []
+        with patch.object(phases, 'prepared', return_value={'construction': {'nodes': nodes}}), \
+                patch.object(phases, 'incus', side_effect=lambda args, **kw: order.append(' '.join(map(str, args))) or b''), \
+                patch.object(phases, 'deliver_key', side_effect=lambda request, gateway: order.append('key ' + gateway)), \
+                patch.object(phases, 'sync_candidate', side_effect=lambda request, instances: order.append('sync ' + ','.join(sorted(instances.values()))) or {}), \
+                patch.object(phases, 'guest', side_effect=lambda request, action: order.append(action) or {'migrated': True}):
+            result = phases.apply_candidate({'key_file': '/k'})
+        self.assertEqual(['wait gw agent --timeout 150', 'wait dev agent --timeout 150', 'key gw', 'sync dev,gw', 'candidate'], order)
+        self.assertTrue(result['migrated'])
+        self.assertNotIn('prod', ' '.join(order))
+
+    def test_the_sync_reports_the_directories_whose_lock_file_changed(self):
+        listing = (b'<fcst...... apps/gateway/composer.lock\n<f+++++++++ apps/gateway/app/New.php\n'
+                   b'.d..t...... apps/cli\n<fcst...... apps/cli/composer.json\n<fc.t...... packages/php-sdk/composer.lock\n'
+                   b'.f..t...... apps/e2e/composer.lock\n')
+        with patch.object(phases.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, listing, b'')) as run:
+            changed = phases.sync_checkout(Path('/src'), 'gw', Path('/tmp/wrap'))
+        self.assertEqual(['apps/gateway', 'packages/php-sdk'], changed)
+        command = run.call_args.args[0]
+        self.assertEqual(['rsync', '-a', '--checksum', '--delete', '--itemize-changes', '--chown=orbit:orbit', '-e', '/tmp/wrap'], command[:8])
+        for excluded in ('/.git', 'vendor', 'node_modules', '.env', '/apps/*/storage', '/apps/*/bootstrap/cache'):
+            self.assertIn('--exclude=' + excluded, command)
+        self.assertEqual(['/src/', 'gw:/home/orbit/orbit/'], command[-2:])
+
+    def test_composer_runs_only_where_a_lock_file_changed(self):
+        with patch.object(phases, 'incus') as incus:
+            phases.install_locked('gw', [])
+            incus.assert_not_called()
+            phases.install_locked('gw', ['apps/gateway'])
+        args = incus.call_args.args[0]
+        self.assertEqual(['exec', 'gw', '--user', '1000'], args[:4])
+        self.assertIn('/home/orbit/orbit/apps/gateway', args)
+        self.assertEqual(['composer', 'install', '--no-interaction', '--no-progress'], args[-4:])
 
     def test_facts_after_a_start_from_ready_copies_need_only_exist(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -783,13 +828,15 @@ class ClubKeyTests(unittest.TestCase):
         self.assertIn('systemctl restart orbit-swamp-serve orbit-node-worker', calls[2])
 
     def test_the_fast_reset_delivers_the_key_first(self):
-        with patch.object(phases, 'prepared', return_value={'construction': {'nodes': {'gateway': {'instance': 'gw'}}}}), \
-                patch.object(phases, 'incus', return_value=b'') as incus, patch.object(phases, 'guest', return_value={}):
+        nodes = {'gateway': {'instance': 'gw'}, 'app-dev': {'instance': 'dev'}}
+        with patch.object(phases, 'prepared', return_value={'construction': {'nodes': nodes}}), \
+                patch.object(phases, 'incus', return_value=b'') as incus, patch.object(phases, 'sync_candidate', return_value={}), \
+                patch.object(phases, 'guest', return_value={}):
             phases.apply_candidate({'key_file': '/k'})
         calls = [' '.join(map(str, call.args[0])) for call in incus.call_args_list]
         push = 'file push /k gw' + phases.CLUB_KEY + ' --mode=0600 --uid=1000 --gid=1000'
-        self.assertEqual(['wait gw agent --timeout 150', push], calls[:2])
-        self.assertLess(calls.index(push), calls.index('exec gw -- systemctl start orbit-proof-operations'))
+        self.assertEqual(['wait gw agent --timeout 150', 'wait dev agent --timeout 150'], calls[:2])
+        self.assertIn(push, calls)
 
 
 class ReadyCheckTests(unittest.TestCase):

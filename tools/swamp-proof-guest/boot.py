@@ -76,14 +76,13 @@ ExecStartPre=/usr/bin/bash -c 'end=$((SECONDS+60)); while [ $SECONDS -lt $end ];
 WantedBy=multi-user.target
 '''
 
-# RequiresMountsFor alone does not hold the unit back: the virtiofs source is mounted after the unit file exists.
-# A Gateway service waits (at most 60 s) for the real checkout, and `WorkingDirectory=-` lets it start before then.
+# The checkout is on the guest's own disk, so a Gateway service needs no wait for it. A build still shares the source
+# while it runs; `WorkingDirectory=-` lets a service start before that share is there.
 CHECKOUT_MOUNT = r'''[Unit]
 RequiresMountsFor=@CHECKOUT@
 
 [Service]
 WorkingDirectory=-@CHECKOUT@/apps/gateway
-ExecStartPre=/usr/bin/bash -c 'end=$((SECONDS+60)); while [ $SECONDS -lt $end ]; do mountpoint -q @CHECKOUT@ && [ -f @CHECKOUT@/apps/gateway/artisan ] && exit 0; sleep 0.2; done; exit 0'
 '''
 
 # PHP reads the checkout as it is: no stale opcode after an edit, and no Laravel config, route or event cache.

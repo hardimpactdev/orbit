@@ -50,6 +50,8 @@ CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT
 # What the guests write into the generation's source directory while the Gateway is built (`.env`, caches, logs, the
 # agent manifest) and the attempt lease. A reset from ready copies carries these into the next generation's fresh export.
 CARRIED_STATE = ('.e2e', 'apps/agent/delivery', 'apps/gateway/.env', 'apps/gateway/bootstrap/cache', 'apps/gateway/storage')
+# What a sync leaves out of the guests' checkouts: the history, the dependencies, and what the guests wrote themselves.
+SYNC_EXCLUDES = ('/.git', '/.e2e', '/apps/agent/delivery', 'vendor', 'node_modules', '.env', '/apps/*/storage', '/apps/*/bootstrap/cache')
 # The directories Caddy in the Gateway guest traverses to reach the public directory; the build gave them an ACL for it.
 ACL_DIRECTORIES = ('.', 'apps', 'apps/gateway', 'apps/gateway/public')
 # A boot is not an observation: the guests need about 50 s from `incus start` to a healthy fleet. The bound is fixed.
@@ -626,9 +628,9 @@ def snapshot_ready(request):
     source = Path(result['source'])
     carry_state(origin, source)
     carry_acls(origin, source)
-    mounts = {role: {**mount, 'source': str(source)} for role, mount in record['prepare'].get('mounts', {}).items()}
+    # The restored guests share no directory with the outer VM, so the new generation has no mounts.
     write_json(fleet_path(request, request['generation']),
-               {'prepare': {**record['prepare'], 'mounts': mounts}, 'nodes': state['nodes']})
+               {'prepare': {**record['prepare'], 'mounts': {}}, 'nodes': state['nodes']})
     write_json(Path(request['root']) / 'active.json', {'generation': request['generation']})
     return {**result, 'carried_from': previous, 'ready_set': state['set']}
 
@@ -641,7 +643,7 @@ def restore_ready(request):
     construction = record['prepare']['construction']
     labels = {'owner': 'orbit-e2e', 'issue': construction['issue'], 'attempt': construction['attempt_id'],
               'operation': record['prepare']['source']['operation_id']}
-    return ready.restore(state['guests'], state['network'], source_for(request, request['generation']), labels)
+    return ready.restore(state['guests'], state['network'], labels)
 
 
 CLUB_KEY = '/home/orbit/.config/swamp/club-api-key'
@@ -706,14 +708,66 @@ def start_units(instance, units):
     incus(['exec', instance, '--', 'systemctl', 'start', *units], timeout=READY_WAIT_SECONDS + 30)
 
 
+def sync_checkout(source, instance, wrapper):
+    """rsync the source into the checkout of one guest. Returns the directories whose composer.lock changed.
+
+    The itemized list tells which files rsync wrote: a lock file that changed needs `composer install`. A fresh export
+    has new file times, so rsync compares content (`--checksum`); the list then names only files whose content differs.
+    The guest's own vendor directories, caches, storage and `.env` stay as they are.
+    """
+    command = ['rsync', '-a', '--checksum', '--delete', '--itemize-changes', '--chown=orbit:orbit', '-e', str(wrapper),
+               *(f'--exclude={pattern}' for pattern in SYNC_EXCLUDES), f'{source}/', f'{instance}:{ready.CHECKOUT}/']
+    listing = checked(subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, timeout=600), 'rsync').decode()
+    changed = []
+    for line in listing.splitlines():
+        flags, _, path = line.partition(' ')
+        # `<f` is a file sent to the guest; `.f` is a file that only had its time set.
+        if flags.startswith('<f') and path.endswith('composer.lock'):
+            changed.append(str(Path(path).parent))
+    return changed
+
+
+def install_locked(instance, directories):
+    """composer install where a lock file changed; it takes about 10 s even when there is nothing to install."""
+    for directory in directories:
+        incus(['exec', instance, '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', f'{ready.CHECKOUT}/{directory}', '--',
+               'composer', 'install', '--no-interaction', '--no-progress'], timeout=900, data=b'')
+
+
+def sync_candidate(request, instances):
+    """Put the generation's source into the checkout of the Gateway and app-dev, in parallel. Returns the timings."""
+    source = source_for(request, request['generation'])
+    timings = {}
+    with tempfile.TemporaryDirectory() as temporary:
+        wrapper = Path(temporary) / 'incus-exec'
+        wrapper.write_text('#!/bin/sh\nh=$1; shift; exec incus exec "$h" -- "$@"\n')
+        wrapper.chmod(0o755)
+
+        def one(role):
+            started = time.time()
+            changed = sync_checkout(source, instances[role], wrapper)
+            synced = time.time()
+            install_locked(instances[role], changed)
+            timings[role] = {'rsync_seconds': round(synced - started, 1), 'composer': changed,
+                             'composer_seconds': round(time.time() - synced, 1)}
+
+        with ThreadPoolExecutor(max_workers=len(ready.CHECKOUT_ROLES)) as pool:
+            for future in [pool.submit(one, role) for role in ready.CHECKOUT_ROLES]:
+                future.result()
+    return timings
+
+
 def apply_candidate(request):
-    """Apply the candidate in the restored Gateway as soon as it has mounted the new source, while the Nodes still boot."""
-    gateway = prepared(request)['construction']['nodes']['gateway']['instance']
-    deliver_key(request, gateway)
-    # This unit's start waits (at most 60 s) for the new source mount, so the job ends when the mount is there.
-    start_units(gateway, ['orbit-proof-operations'])
-    incus(['exec', gateway, '--', 'test', '-f', '/home/orbit/orbit/apps/gateway/artisan'], timeout=10)
-    return guest(request, 'candidate')
+    """Sync the candidate into the restored guests, then apply it in the Gateway while the Nodes still boot."""
+    nodes = prepared(request)['construction']['nodes']
+    instances = {role: nodes[role]['instance'] for role in ready.CHECKOUT_ROLES}
+    for instance in instances.values():
+        incus(['wait', instance, 'agent', '--timeout', str(READY_WAIT_SECONDS)], timeout=READY_WAIT_SECONDS + 30)
+    deliver_key(request, instances['gateway'])
+    synced = sync_candidate(request, instances)
+    started = time.time()
+    applied = guest(request, 'candidate')
+    return {**applied, 'sync': synced, 'apply_seconds': round(time.time() - started, 1)}
 
 
 def ready_wait(request):

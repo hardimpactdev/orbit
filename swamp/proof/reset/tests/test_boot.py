@@ -38,14 +38,14 @@ class BootFilesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             boot.files('router', ADDRESS)
 
-    def test_checkout_consumers_wait_for_the_mount_and_start_without_it(self):
+    def test_checkout_consumers_start_at_once_and_wait_for_no_mount(self):
         files = boot.files('gateway', ADDRESS)
         for service in ('orbit-proof-agent-view', 'orbit-proof-operations'):
             unit = files[f'{UNITS}{service}.service.d/10-checkout-mount.conf']
             self.assertIn('RequiresMountsFor=/home/orbit/orbit\n', unit)
             self.assertIn('WorkingDirectory=-/home/orbit/orbit/apps/gateway', unit)
-            self.assertIn('mountpoint -q /home/orbit/orbit', unit)
-            self.assertIn('[ -f /home/orbit/orbit/apps/gateway/artisan ]', unit)
+            self.assertNotIn('ExecStartPre', unit)
+            self.assertNotIn('mountpoint', unit)
 
     def test_swamp_serve_and_worker_start_at_boot_in_order(self):
         files = boot.files('gateway', ADDRESS)
