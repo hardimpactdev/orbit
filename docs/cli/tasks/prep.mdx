@@ -1,0 +1,27 @@
+---
+title: "orbit tasks:prep"
+sidebarTitle: "tasks:prep"
+---
+
+Prepare one command for the [command development pipeline](/reference/command-development-pipeline#1-prep). An author agent drafts the chart, the docs page and the cases in a task VM, a review agent checks them, and Swamp opens a draft pull request as the Orbit App with the spec as its first commit. See [Prepare a command](/reference/tasks#prepare-a-command).
+
+```bash
+orbit tasks:prep 42 --command=firewall:deny
+```
+
+The optional `group` argument is the numeric ID of a `todo` task group with no VM. `--command` names the command as `family:command` and is required. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`. Ctrl-C stops following, not the run. A rerun with the same key follows the same run.
+
+## How it works
+
+<div className="flow-at" data-chart="tasks/prep"></div>
+
+## Errors
+
+| Code | When |
+| --- | --- |
+| `tasks.prep_command_invalid` | `--command` is not `family:command` in lower case |
+| `tasks.not_todo`, `tasks.group_closed`, `tasks.already_claimed` | the group is not an open `todo` group with no VM |
+| `tasks.capacity_unavailable` | no task VM host has room; the group is unchanged |
+| `tasks.prep_not_committed` | the draft left HEAD where it was |
+| `tasks.prep_review_unresolved` | a finding is left after the last review round; nothing is published |
+| `tasks.head_moved`, `tasks.not_fast_forward`, `tasks.push_failed`, `tasks.publish_failed` | publication failed; see [publish](/reference/tasks#publish-an-external-group) |

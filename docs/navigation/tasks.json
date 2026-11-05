@@ -42,7 +42,8 @@
             "cli/tasks/publish",
             "cli/tasks/pr-ready",
             "cli/tasks/pr-merge",
-            "cli/tasks/park"
+            "cli/tasks/park",
+            "cli/tasks/prep"
           ]
         }
       ]
