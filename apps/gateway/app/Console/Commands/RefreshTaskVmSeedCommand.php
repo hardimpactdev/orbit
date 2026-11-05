@@ -24,14 +24,8 @@ final class RefreshTaskVmSeedCommand extends Command
 
     public function handle(StartTaskVmSeedRefreshAction $refresh): int
     {
-        $host = $this->argument('host');
-        if (! is_string($host)) {
-            $this->error('A task VM host is required.');
-
-            return self::FAILURE;
-        }
         try {
-            $operation = $refresh->execute($this->activeNode($host));
+            $operation = $refresh->execute($this->activeNode($this->argument('host')));
         } catch (ResourceOperationException $exception) {
             $this->error($exception->errorCode.': '.$exception->getMessage());
 
