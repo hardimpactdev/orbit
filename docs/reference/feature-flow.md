@@ -177,7 +177,7 @@ docs/**                                       skip
 **/*.md                                       skip
 apps/web/**                                   skip
 swamp/workflows/workflow-firewall-*.yaml      firewall:allow firewall:deny firewall:remove
-swamp/proof/firewall/cases/**                 firewall:allow firewall:deny firewall:remove
+swamp/proof/firewall/allow.cases.yaml         firewall:allow
 swamp/proof/reset/**                          *
 bin/proof-fleet                               *
 swamp/workflows/workflow-vault-sync.yaml      none: no case yet
@@ -186,11 +186,11 @@ swamp/workflows/workflow-vault-sync.yaml      none: no case yet
 | Value | Meaning |
 | --- | --- |
 | `skip` | The path needs no proof: documentation, charts, case descriptions, the web app. |
-| `<family>:<command>` | The cases of each listed command run. Without a case program, the command is listed as uncovered. |
+| `<family>:<command>` | The cases file of each listed command runs. Without a cases file, the command is listed as uncovered. |
 | `*` | Every case runs. Use it for shared code that every command consumes. |
 | `none: <reason>` | The path has no case yet. It is listed as uncovered and does not fail the run. |
 
-The case programs of a command are `swamp/proof/<family>/cases/<command>-*.sh`. Further colons of the command name become `-`. A program whose name has no `-`, such as the harness check `swamp/proof/reset/cases/smoke.sh`, belongs to no command and never runs as a case.
+The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Further colons of the command name become `-`, so `instance:deploy-step:create` has `swamp/proof/instance/deploy-step-create.cases.yaml`. A command without that file is listed as uncovered with the reason `no cases file for COMMAND`. When every case runs, each cases file of the commit is one command, labelled by its family and file name.
 
 - The last matching line wins.
 - A path that matches no line is refused with `proof.path_unmapped`, so the author must classify every path.
@@ -199,7 +199,7 @@ The case programs of a command are `swamp/proof/<family>/cases/<command>-*.sh`. 
 - List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
 - List a helper that several commands share with every one of them.
 - The PR of a command change maps the Gateway Action and CLI files of the command. Until then, they stay `skip`.
-- Case programs are code and select their command. Charts, pages and `*.cases.md` files are `skip`.
+- A cases file selects its own command. Charts, pages and `*.cases.md` tables are `skip`.
 
 A malformed line is refused with `proof.selection_invalid`. A commit without a selection list selects every case.
 

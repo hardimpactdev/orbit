@@ -13,7 +13,7 @@ covers:
 
 Check this page before you build on something. An item here is old: a newer path replaced it, or will replace it. Each item has one verdict.
 
-- **DELETE** means replaced, with no live caller. It was removed in the change that added this page.
+- **DELETE** means replaced, with no live caller. It was removed in the change that lists it.
 - **MARK** means scheduled for replacement but still used or read. Keep it and do not extend it. The file or its folder README says so.
 - **KEEP** means it looked old and is not. The reason is given.
 
@@ -54,23 +54,18 @@ Delete the reaper and the Project 62 branch when no Project 62 group is open.
 
 ## Firewall proof cases
 
-The `firewall:allow` change owns `swamp/proof/firewall/**`, so no note is added to those files. All items here are MARK.
+`proof:run` selects a command and runs the cases file `swamp/proof/<family>/<command>.cases.yaml` of that command. A selected command without that file is listed as uncovered (`no cases file for COMMAND`). The case programs are deleted.
 
-| Item | Replaced by |
-| --- | --- |
-| `cases/allow-fresh-ipv4-tcp.sh`, `cases/allow_fresh_ipv4_tcp.py` | `allow.cases.yaml` and the runner |
-| `cases/listener.py` | `swamp/proof/runner/listener.py`, which also handles UDP and IPv6 |
-| `allow`, `deny`, `list`, `remove` `.cases.md` | `allow.cases.yaml` and `list.cases.yaml`; `deny` and `remove` have none yet |
-| `swamp/proof/firewall.*.json`, `firewall/check.py`, `firewall/peer.py` | The cases files above |
+| Item | Verdict | Replaced by |
+| --- | --- | --- |
+| `firewall/cases/allow-fresh-ipv4-tcp.sh`, `firewall/cases/allow_fresh_ipv4_tcp.py` | DELETE | `allow.cases.yaml` and the runner |
+| `firewall/cases/listener.py` | DELETE | `swamp/proof/runner/listener.py`, which also handles UDP and IPv6 |
+| `firewall/allow.cases.md`, `firewall/list.cases.md` | DELETE | `allow.cases.yaml`, `list.cases.yaml` |
+| `swamp/proof/firewall.*.json`, `firewall/check.py`, `firewall/peer.py` | DELETE | The cases files above |
+| `firewall/deny.cases.md`, `firewall/remove.cases.md` | MARK | Nothing yet. They are the only record of those cases. Convert each to yaml, then delete the table. |
+| Program-based selection in `ProofSelection`, `ProofSelectionResult`, `ProofRunIntent`, `ProofRunContinuation` and their tests | DELETE | Selection by command and cases file |
 
-Before the programs can go, these must change:
-
-- `swamp/proof/selection.txt` maps `swamp/proof/firewall/**` to the firewall commands.
-- The `proof:run` code, tests and samples still name the `.sh` program. The samples are `RunProofCommandTest.php`, `apps/cli/tests/Expected/proof/proof-run/*`, `packages/php-sdk/fixtures/proof/proof-run/*`, the Gateway proof tests and `tools/test_ci_build_plan.py`.
-- The yaml cases must pass in `proof:run` first. Then the selection result drops the programs.
-- `cases/listener.py` is a smaller copy that only `allow_fresh_ipv4_tcp.py` reads. Delete it with that program.
-- Only the old `firewall.*.json` fixtures call `check.py` and `peer.py`.
-- `allow.cases.yaml` converts `allow.cases.md`. Convert `deny` and `remove` before you delete their tables.
+A row of a `proof:run` result is `command`, `file`, `case`, `verdict` and `seconds`. The key `program` is gone.
 
 ## Cases tables
 
@@ -78,7 +73,7 @@ A cases table cannot be checked by a tool, so the cases file is now yaml ([verif
 
 | Item | Verdict | Replaced by |
 | --- | --- | --- |
-| `swamp/proof/<family>/<command>.cases.md`, 78 files | MARK | `<command>.cases.yaml` |
+| `swamp/proof/<family>/<command>.cases.md`, 76 files | MARK | `<command>.cases.yaml` |
 
 Only `firewall:allow` and `firewall:list` have a yaml file. For every other command the table is still the only cases record. Convert a table when you work on its command, and add no rows.
 

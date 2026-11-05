@@ -46,10 +46,10 @@ function proofSource(): object
 
         public bool $complete = true;
 
-        public ?string $list = "docs/**  skip\nswamp/workflows/workflow-firewall-*.yaml  firewall:allow\nswamp/proof/firewall/cases/**  firewall:allow\nswamp/workflows/workflow-vault-sync.yaml  none: no case yet\n";
+        public ?string $list = "docs/**  skip\nswamp/workflows/workflow-firewall-*.yaml  firewall:allow\nswamp/proof/firewall/*.cases.yaml  firewall:allow\nswamp/workflows/workflow-vault-sync.yaml  none: no case yet\n";
 
         /** @var list<string> */
-        public array $paths = ['swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh'];
+        public array $paths = ['swamp/proof/firewall/allow.cases.yaml'];
 
         public bool $down = false;
 
@@ -221,7 +221,7 @@ describe('proof:run admission', function (): void {
 
         expect(config('proof.execution'))->toBeFalse()
             ->and($refusal->errorCode)->toBe('proof.execution_disabled')
-            ->and($refusal->details['cases'])->toBe(['swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh'])
+            ->and($refusal->details['cases'])->toBe(['swamp/proof/firewall/allow.cases.yaml'])
             ->and(Operation::query()->count())->toBe(0);
     });
 

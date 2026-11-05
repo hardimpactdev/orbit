@@ -11,7 +11,7 @@ Use this with [developing-commands](../developing-commands/SKILL.md). The target
 
 ## Define the cases
 
-A command change has one PR. The cases file (`swamp/proof/<family>/<command>.cases.yaml`, [format](../../../docs/reference/verification-cases.mdx)) is part of the spec in the first commit of the draft PR, with the chart and the page, and is reviewed there. The shared runner (`swamp/proof/runner/`) runs it, so write no case program. The older hand-written programs (`swamp/proof/<family>/cases/*.sh`) and tables (`<command>.cases.md`) are an old path: convert, do not extend ([old paths](../../../docs/reference/old-paths.md)). Proof CI runs on every push. Do not open a separate docs-only PR for cases.
+A command change has one PR. The cases file (`swamp/proof/<family>/<command>.cases.yaml`, [format](../../../docs/reference/verification-cases.mdx)) is part of the spec in the first commit of the draft PR, with the chart and the page, and is reviewed there. The shared runner (`swamp/proof/runner/`) runs it, so write no case program: `proof:run` selects a command and runs its cases file. The tables (`<command>.cases.md`) are an old path: convert, do not extend ([old paths](../../../docs/reference/old-paths.md)). Proof CI runs on every push. Do not open a separate docs-only PR for cases.
 
 Review the command's page, chart and verification together. Cover the call with required arguments only, each optional flag, error paths and interactions that can change the outcome. Update cases when behavior changes; for behavior-preserving changes, review the existing cases without a mandatory file edit. For a bug, add a regression that fails before the fix. Do not weaken an expectation to match a bug.
 

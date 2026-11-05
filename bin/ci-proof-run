@@ -37,7 +37,7 @@ def evaluate(code, output):
         return False, [f'The proof printed no result (exit status {code}).']
     cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
     lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
-    lines += [f"| {case.get('command', '')} | {os.path.basename(str(case.get('program', '')))} | {case.get('verdict', '')} |"
+    lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file', '')))} | {case.get('verdict', '')} |"
               for case in cases]
     if not cases:
         lines.append('No case ran.')

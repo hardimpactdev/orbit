@@ -104,11 +104,12 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         $rows = [];
 
         foreach (self::entries($result['cases'] ?? null) as $case) {
-            $program = self::text($case['program'] ?? null);
+            $name = self::text($case['case'] ?? null);
+            $file = self::text($case['file'] ?? null);
             $seconds = $case['seconds'] ?? null;
             $rows[] = [
                 self::text($case['command'] ?? null),
-                $program === '' ? '' : basename($program),
+                $name !== '' ? $name : ($file === '' ? '' : basename($file)),
                 self::text($case['verdict'] ?? null),
                 is_int($seconds) || is_float($seconds) ? number_format((float) $seconds, 1).' s' : '',
             ];

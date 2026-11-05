@@ -33,7 +33,8 @@ swamp/**                                         none: no case yet
 swamp/workflows/workflow-operation-firewall-direct.yaml    firewall:allow firewall:deny firewall:remove
 swamp/extensions/behaviors/operations/firewall/**          firewall:allow firewall:deny firewall:remove
 swamp/ansible/tasks/firewall*.yml                          firewall:allow firewall:deny firewall:remove
-swamp/proof/firewall/**                                    firewall:allow firewall:deny firewall:list firewall:remove
+swamp/proof/firewall/allow.cases.yaml                      firewall:allow
+swamp/proof/firewall/list.cases.yaml                       firewall:list
 swamp/proof/firewall/*.md                                  skip
 # The Gateway and CLI code of the firewall commands. The cases of the other commands read firewall:list (`record`).
 apps/cli/app/Commands/Firewall/**                          firewall:allow firewall:deny firewall:list firewall:remove

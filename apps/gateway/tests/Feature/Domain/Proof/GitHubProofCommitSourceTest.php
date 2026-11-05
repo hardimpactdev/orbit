@@ -137,10 +137,10 @@ it('walks swamp then proof and lists the blobs of the proof tree', function (): 
         'api.github.com/repos/hardimpactdev/orbit/git/trees/'.SOURCE_SHA => Http::response(['tree' => [['path' => 'apps', 'type' => 'tree', 'sha' => 'a1'], ['path' => 'swamp', 'type' => 'tree', 'sha' => 's1']]]),
         'api.github.com/repos/hardimpactdev/orbit/git/trees/s1' => Http::response(['tree' => [['path' => 'proof', 'type' => 'tree', 'sha' => 'p1'], ['path' => 'bin', 'type' => 'tree', 'sha' => 'b1']]]),
         'api.github.com/repos/hardimpactdev/orbit/git/trees/p1*' => Http::response(['truncated' => false, 'tree' => [
-            ['path' => 'firewall', 'type' => 'tree', 'sha' => 'f1'], ['path' => 'firewall/cases/allow-a.sh', 'type' => 'blob'], ['path' => 'selection.txt', 'type' => 'blob']]]),
+            ['path' => 'firewall', 'type' => 'tree', 'sha' => 'f1'], ['path' => 'firewall/allow.cases.yaml', 'type' => 'blob'], ['path' => 'selection.txt', 'type' => 'blob']]]),
     ]);
 
-    expect(githubSource()->proofPaths(SOURCE_SHA))->toBe(['swamp/proof/firewall/cases/allow-a.sh', 'swamp/proof/selection.txt']);
+    expect(githubSource()->proofPaths(SOURCE_SHA))->toBe(['swamp/proof/firewall/allow.cases.yaml', 'swamp/proof/selection.txt']);
 });
 
 it('refuses a truncated proof tree, because a missing case would pass unproven', function (): void {

@@ -54,7 +54,7 @@ final readonly class ProofRunIntent
         }
         if (! $this->settings->executionEnabled()) {
             throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409,
-                details: ['commit' => $commit, 'cases' => $selection->programs(), 'uncovered' => array_column($selection->uncovered, 'path')]);
+                details: ['commit' => $commit, 'cases' => $selection->files(), 'uncovered' => array_column($selection->uncovered, 'path')]);
         }
         $group = app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof '.substr($commit, 0, 12),
             'Prove commit '.$commit.' with the selected cases.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
@@ -79,11 +79,11 @@ final readonly class ProofRunIntent
         try {
             $changes = $this->source->changes($commit);
             $list = $this->source->file($commit, ProofSelectionList::Path);
-            $programs = ProofSelection::programs($this->source->proofPaths($commit));
+            $casesFiles = ProofSelection::casesFiles($this->source->proofPaths($commit));
         } catch (GitHubApiException) {
             throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the cases cannot be selected.', 503);
         }
 
-        return ProofSelection::select($list, $changes, $all, $programs);
+        return ProofSelection::select($list, $changes, $all, $casesFiles);
     }
 }

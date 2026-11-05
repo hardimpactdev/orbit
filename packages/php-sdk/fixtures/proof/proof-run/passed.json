@@ -23,14 +23,16 @@
                 "outcome": "passed",
                 "cases": [
                     {
-                        "program": "swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh",
                         "command": "firewall:allow",
+                        "file": "swamp/proof/firewall/allow.cases.yaml",
+                        "case": "new-restricted-allow",
                         "verdict": "passed",
                         "seconds": 12.4
                     },
                     {
-                        "program": "swamp/proof/firewall/cases/remove-existing-rule.sh",
                         "command": "firewall:remove",
+                        "file": "swamp/proof/firewall/remove.cases.yaml",
+                        "case": "remove-existing-rule",
                         "verdict": "passed",
                         "seconds": 8.7
                     }

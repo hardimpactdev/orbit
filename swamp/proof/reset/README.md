@@ -7,7 +7,7 @@ an existing Project check hook on the allocated task VM:
 bin/proof-fleet reset 3187                # build from scratch, about 230 s
 bin/proof-fleet ready 3187                # copy the healthy fleet to ready copies
 bin/proof-fleet reset 3187 --from-ready   # restore from ready copies, about 75 s; build and copy when there are none
-bin/proof-fleet verify 3187 swamp/proof/reset/cases/smoke.sh swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh   # fast when the copies are usable
+bin/proof-fleet verify 3187 swamp/proof/reset/cases/smoke.sh # fast when the copies are usable
 bin/proof-fleet release 3187
 ```
 

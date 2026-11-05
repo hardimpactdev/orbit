@@ -23,8 +23,9 @@
                 "outcome": "failed",
                 "cases": [
                     {
-                        "program": "swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh",
                         "command": "firewall:allow",
+                        "file": "swamp/proof/firewall/allow.cases.yaml",
+                        "case": "new-restricted-allow",
                         "verdict": "unrun",
                         "seconds": 0.1
                     }
