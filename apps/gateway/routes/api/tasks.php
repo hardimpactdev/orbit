@@ -66,6 +66,8 @@ Route::middleware([
         Route::post('proof/run', [ProofRunsController::class, 'store'])->name('proof:run');
         Route::post('task-groups/{group}/park', [TaskGroupsController::class, 'park'])
             ->whereNumber('group')->name('tasks:park');
+        Route::post('task-groups/{group}/prep', [TaskGroupsController::class, 'prep'])
+            ->whereNumber('group')->name('tasks:prep');
         Route::post('task-groups/{group}/dependency-merge', [DependencyBatchMergeController::class, 'store'])
             ->whereNumber('group')->name('tasks:dependency-merge');
         Route::post('task-groups/{group}/pr-ready', [TaskPullRequestController::class, 'ready'])

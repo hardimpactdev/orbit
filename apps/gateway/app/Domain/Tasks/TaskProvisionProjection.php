@@ -22,6 +22,7 @@ use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -69,48 +70,65 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, $result);
             }
-            $vm = $this->vms->owned($operation, lock: true);
-            $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
-            $instance = Instance::query()->where('task_workspace_owner_id', $group->id)
-                ->where('node_id', $vm->node_id)->where('project_id', $group->project_id)->findOrFail(ValidatedData::integer($operation->input['instance_id']));
-            $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            $this->recordRuntime($operation, $result, $data['error_code'] ?? null);
-            $intent = ValidatedData::object($operation->input['enrollment']);
-            if (in_array($data['status'], ['succeeded', 'failed', 'interrupted', 'cancelled'], true) && ($result['ready'] ?? false) === true) {
-                $provider = ValidatedData::object($result['provider'] ?? []);
-                if (($result['task_vm_id'] ?? null) !== $vm->id || ($result['guest_node_id'] ?? null) !== $vm->node_id
-                    || ($provider['image_fingerprint'] ?? null) !== $vm->image_fingerprint
-                    || ($provider['running'] ?? null) !== true || ($provider['settled'] ?? null) !== true) {
-                    throw new ResourceOperationException('operation.invalid_result', 'The Tasks result does not confirm its admitted VM and image.', 422);
-                }
-                $vm->update(Arr::only($provider, ['provider_id', 'address']));
-                $this->enrollment->record($vm, $intent, ValidatedData::object($result['enrollment']));
-                $vm->refresh();
-            }
-            if ($data['status'] === 'succeeded') {
-                if (($result['ready'] ?? null) !== true) {
-                    throw new ResourceOperationException('operation.invalid_result', 'Tasks provision requires confirmed VM readiness.', 422);
-                }
-                $source = ValidatedData::object($result['source']);
-                $instance->update(['branch' => $source['branch'], 'starting_commit' => $source['commit'],
-                    'selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel'],
-                    'status' => InstanceState::SourceResolved, 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
-                $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(),
-                    'reserved_at' => null, 'capacity_wait_reason' => null]);
-            } elseif (in_array($data['status'], ['failed', 'interrupted'], true)) {
-                if ($vm->state === TaskVmState::Provisioning) {
-                    $vm->update(['state' => TaskVmState::Failed, 'error_code' => $data['error_code'], 'error_message' => 'Native task provisioning failed.']);
-                }
-                $instance->update(['failed_step' => $result['failed_step'] ?? 'provision', 'error_code' => $data['error_code']]);
-                $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
-            } elseif ($data['status'] === 'cancelled') {
-                $group->update(['status' => TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
-            }
+            $projected = $this->record($operation, $data, $result, static fn (): Operation => app(DirectOperation::class)->project($operation, $data, $result));
 
             app(TaskMaintenanceContinuation::class)->apply($projected);
 
             return $projected;
         });
+    }
+
+    /**
+     * Records the VM, the workspace Instance, its Route and Processes and the group from a provision receipt. `$record`
+     * writes the Operation between the lookups and the writes. A kind that provisions as one step of a larger run
+     * passes a closure that returns its own Operation and gets the same records; `$operation` then holds the
+     * provision intent as its input.
+     *
+     * @param  array<string,mixed>  $data
+     * @param  array<string,mixed>  $result
+     * @param  Closure(): Operation  $record
+     */
+    public function record(Operation $operation, array $data, array $result, Closure $record): Operation
+    {
+        $vm = $this->vms->owned($operation, lock: true);
+        $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
+        $instance = Instance::query()->where('task_workspace_owner_id', $group->id)
+            ->where('node_id', $vm->node_id)->where('project_id', $group->project_id)->findOrFail(ValidatedData::integer($operation->input['instance_id']));
+        $projected = $record();
+        $this->recordRuntime($operation, $result, $data['error_code'] ?? null);
+        $intent = ValidatedData::object($operation->input['enrollment']);
+        if (in_array($data['status'], ['succeeded', 'failed', 'interrupted', 'cancelled'], true) && ($result['ready'] ?? false) === true) {
+            $provider = ValidatedData::object($result['provider'] ?? []);
+            if (($result['task_vm_id'] ?? null) !== $vm->id || ($result['guest_node_id'] ?? null) !== $vm->node_id
+                || ($provider['image_fingerprint'] ?? null) !== $vm->image_fingerprint
+                || ($provider['running'] ?? null) !== true || ($provider['settled'] ?? null) !== true) {
+                throw new ResourceOperationException('operation.invalid_result', 'The Tasks result does not confirm its admitted VM and image.', 422);
+            }
+            $vm->update(Arr::only($provider, ['provider_id', 'address']));
+            $this->enrollment->record($vm, $intent, ValidatedData::object($result['enrollment']));
+            $vm->refresh();
+        }
+        if ($data['status'] === 'succeeded') {
+            if (($result['ready'] ?? null) !== true) {
+                throw new ResourceOperationException('operation.invalid_result', 'Tasks provision requires confirmed VM readiness.', 422);
+            }
+            $source = ValidatedData::object($result['source']);
+            $instance->update(['branch' => $source['branch'], 'starting_commit' => $source['commit'],
+                'selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel'],
+                'status' => InstanceState::SourceResolved, 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
+            $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(),
+                'reserved_at' => null, 'capacity_wait_reason' => null]);
+        } elseif (in_array($data['status'], ['failed', 'interrupted'], true)) {
+            if ($vm->state === TaskVmState::Provisioning) {
+                $vm->update(['state' => TaskVmState::Failed, 'error_code' => $data['error_code'], 'error_message' => 'Native task provisioning failed.']);
+            }
+            $instance->update(['failed_step' => $result['failed_step'] ?? 'provision', 'error_code' => $data['error_code']]);
+            $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
+        } elseif ($data['status'] === 'cancelled') {
+            $group->update(['status' => TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
+        }
+
+        return $projected;
     }
 
     /**

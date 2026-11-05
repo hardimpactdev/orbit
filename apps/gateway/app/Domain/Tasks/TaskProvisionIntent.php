@@ -33,7 +33,9 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -50,7 +52,20 @@ final readonly class TaskProvisionIntent
     /** A proof starts its group at the commit it proves; any other group starts at the newest green commit of the default branch. */
     public function start(Task $group, string $caller, ?string $request, ?string $commit = null): Operation
     {
-        if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
+        return $this->admit($group, $commit, 'tasks.provision', static fn (array $input): array => $input, $caller, $request);
+    }
+
+    /**
+     * Captures the provision intent in one admission transaction and records it as the Operation of `$kind`. A kind
+     * that runs provision as one step of a larger run, such as `tasks.prep`, adds its own intent through `$extend`,
+     * which receives the provision intent, the group, its workspace Instance and its VM, and returns the whole input of
+     * the Operation; the node of the Operation stays the VM host of the provision intent.
+     *
+     * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
+     */
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request): Operation
+    {
+        if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
         // A group that cannot be provisioned is refused before any GitHub read; the locked recheck below stays.
@@ -58,9 +73,9 @@ final readonly class TaskProvisionIntent
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit): Operation {
+        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit, $kind, $extend): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
-            if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
+            if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
             }
             $this->assertProvisionable($group);
@@ -130,7 +145,7 @@ final readonly class TaskProvisionIntent
             $group->taskable()->associate($instance);
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 
-            return $this->start->execute('tasks.provision', 'task_group', $group->id, ValidatedData::integer($input['node_id']), $input, $caller, $request);
+            return $this->start->execute($kind, 'task_group', $group->id, ValidatedData::integer($input['node_id']), $extend($input, $group, $instance, $vm), $caller, $request);
         }));
     }
 

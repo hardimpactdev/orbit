@@ -94,6 +94,10 @@ final class OperationRunBudgets
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
+        // No run yet. The pull request token is minted at admission and lives one hour, so the run must end before it:
+        // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each, rounded down to 55 min.
+        // Replace with the 14-day p95 after the first success.
+        'tasks.prep' => 3300,
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the

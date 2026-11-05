@@ -14,6 +14,7 @@ use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskParkAction;
+use App\Actions\Tasks\StartTaskPrepAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
@@ -41,6 +42,7 @@ use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
+use App\Http\Requests\Tasks\StartTaskPrepRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskScriptRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
@@ -103,6 +105,17 @@ final class TaskGroupsController extends Controller
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    /** Prepare the spec of one command and open its draft pull request in one run. */
+    #[StartsOperation(OperationKinds::TasksPrep, requiresKey: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function prep(StartTaskPrepRequest $request, Task $group, StartTaskPrepAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
