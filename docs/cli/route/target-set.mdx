@@ -1,11 +1,11 @@
 ---
 title: "orbit route:target:set"
 sidebarTitle: "route:target:set"
-description: "Set the Instance target, or send a complete production target set."
+description: "Set the target of a Route, or the complete target set of a production pool."
 ---
 
 ```bash
-orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]... [--idempotency-key=KEY]
+orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]... [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -13,20 +13,49 @@ orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE].
 | `route` | yes | Numeric Route ID. |
 | `target` | yes | Numeric Instance ID, or the first ID of a production target set. |
 
-| Option | Meaning |
-| --- | --- |
-| `--targets=ID` | The next Instance ID of the ordered target set. Repeat it for each ID. |
-| `--reassign=ID:ROUTE` | A detached Instance ID and its destination Route ID. Repeat it for each Instance. |
-| `--remove=ID` | A detached Instance ID that you allow Orbit to remove. Repeat it for each Instance. |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--targets=ID` | none | The next Instance ID of the ordered target set. Repeat it for each ID. |
+| `--reassign=ID:ROUTE` | none | A detached Instance ID and its destination Route ID. Repeat it for each Instance. |
+| `--remove=ID` | none | A detached Instance ID that you allow Orbit to remove. Repeat it for each Instance. Refused today with `route.target_cleanup_unavailable`. |
+| `--json` | off | Print the final Operation as JSON. |
 
 ```bash
 orbit route:target:set 9 12
 orbit route:target:set 9 12 --targets=15 --reassign=18:4 --remove=19
 ```
 
-Without pool options, the command sets one target. With them, it sends the complete target set and a disposition for each detached Instance. [Change a production target set](/reference/routes#change-a-production-target-set) lists the rules and error codes. A single-target request that would take an Instance from another Route, or detach an active Instance from its only Route, returns `route.target_conflict` and changes nothing. A production target set can take an Instance from another Route in the same Cluster.
+In a terminal, an omitted Route is chosen from an interactive list, and an omitted target from the Instances that can take it. A noninteractive or `--json` call that omits one is refused with `route.id_invalid` or `route.target_id_invalid` and sends no request, and so is a malformed `--targets`, `--remove` or `--reassign` value (`route.target_id_invalid`, or `route.target_disposition_invalid` for `--reassign`).
 
-An unpublished development Route changes only its Gateway record. A published development Route also moves its site to the new checkout. For a production pool, Orbit stages and probes the workloads before switching the Router, then restores each workload's final configuration and retires detached targets. Probes use pinned SSH from 209 and verify the Route's hostname and Orbit CA; application HTTP errors do not fail the TLS check. A failed probe leaves the Router pool unchanged. Node changes use official cfgmgmt resources and single SSH argv commands, with no rollback.
+Without pool options, the command sets one target. With them, it sends the complete target set and a disposition for each detached Instance. [Change a production target set](/reference/routes#change-a-production-target-set) lists the rules. A single-target request that would take an Instance from another Route, or detach an active Instance from its only Route, returns `route.target_conflict` and changes nothing. A production target set can take an Instance from another Route in the same Cluster. A change that detaches an Instance names it in `--reassign` or `--remove`, also when the Instance is not active.
+
+An unpublished development Route changes only Orbit's record, and the Operation has already succeeded when the command returns. Setting the current target again is skipped with `Skipped — target already set (route.target_unchanged)`; so is an identical completed pool request. A single-target change stores the association before the run, and a published development Route also moves its site to the new checkout. If that fails (`route.publish_failed`), the new target stays set and you run the same request again. A production pool is staged and probed first. For a production pool, Orbit stages each added target's runtime, certificates, Caddy site and `.env`, probes it over TLS, then switches the Router pool and retires detached targets. A probe verifies the Route's hostname and the Orbit CA, and application HTTP errors do not fail it. A failed probe leaves the Router pool unchanged. When the change runs, the CLI follows the Operation and prints the final result with the request ID.
+
+For a production pool, a failure before the Router switch keeps the original associations, and the staged sites serve no traffic. A failure after the switch writes the new associations, because the new pool serves, and keeps the recorded set and the failed step. Nothing is rolled back. Run the same request again; a different request is refused with `route.target_set_conflict` until the change completes. A request with dispositions can then be refused with `route.target_disposition_required`, because the detached Instances are already gone.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `route.id_invalid`, `route.target_id_invalid` | The Route or target, or a `--targets` or `--remove` value, is missing or is not a positive integer, and the CLI cannot prompt. |
+| `route.kind_unsupported` | The Route is a custom proxy Route. |
+| `route.tld_required` | A generated Route has no effective TLD. |
+| `route.publish_failed` | Publishing the site failed. The new target stays set. |
+| `route.target_cleanup_unavailable` | `--remove` was given. Refused today with HTTP 503. |
+| `route.pool_unsupported` | The Route or a target cannot own or join a production pool, such as a generated Route or an `app-dev` target. |
+| `route.target_conflict` | The set holds a duplicate Instance or two targets on one Node, takes an Instance from another Route, or detaches an active Instance from its only Route. |
+| `route.target_app_conflict` | A target or reassignment destination belongs to another Project. |
+| `route.target_scope_conflict` | A target or destination is outside the Route's Cluster or not on an active `app-prod` Node. |
+| `route.target_inactive` | A target Instance is missing or not active. |
+| `route.target_web_root_unsupported` | A target Instance has no supported relative web root. |
+| `route.target_disposition_required` | A detached active Instance has no disposition. |
+| `route.target_disposition_invalid` | A disposition names an invalid destination or both reassigns and removes, or a `--reassign` value is malformed. |
+| `route.target_set_conflict` | Another target-set change is recorded on the Route. |
+| `route.web_root_unsupported` | The Route has a web root. It keeps one target. |
+| `route.reconciliation_required` | A single-target change of an `active` Route. |
+| `app-dev.projection_busy` | Another operation holds the projection lock. Nothing changes. |
+| `http.404` | The Route or Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Route's Nodes. |
 
 ## How it works
 

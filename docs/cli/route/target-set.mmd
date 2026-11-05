@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Target design: Nick 2026-11-03, single-swamp-node, rules 14-25.
-  %% status: draft
+  %% Target design: ADR 0244 task, one Swamp run, certificate signing is the one step-to-Gateway call. docs/reference/routes.md#change-the-target-of-a-route.
+  %% status: reviewed
   %% command: route:target:set
   %% kind: route.target_set
   autonumber
@@ -11,25 +11,58 @@ sequenceDiagram
   %% lane V icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:target:set 9 12
-  Note over GW: Guard, lock, record intent<br/>targets unchanged · task #5140
+  CLI->>GW: route:target:set<br/>ROUTE TARGET
+  %%> Command:
+  %%> - `orbit route:target:set ROUTE TARGET`
+  %%> - syntax: `<route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]... [--json]`
+  %%> Input:
+  %%> - the Route and its target Instance; the options send the complete target set of a production pool and a disposition for each detached Instance
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Guard, lock, record intent<br/>targets unchanged
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the Route's Nodes
+  %%> - the target is an active Instance of the Route's Project; a production pool is a Cluster-scoped explicit Route with active production Instances on distinct active `app-prod` Nodes
+  %%> - the change does not take an Instance from another Route, or detach an active Instance from its only Route (`route.target_conflict`); a detached Instance has a disposition (`route.target_disposition_required`)
+  %%> - no other target-set change is recorded on the Route (`route.target_set_conflict`) and no other operation holds the projection (`app-dev.projection_busy`)
+  %%> Result:
+  %%> - a single-target change stores the association before the run; a production pool records the requested set and keeps the associations unchanged until the run's result
+  %%> - an `active` Route refuses a single-target change (`route.reconciliation_required`)
+  %%> - `--remove` is refused today (`route.target_cleanup_unavailable`, 503)
   alt unpublished development Route
-    Note over GW: Record the target<br/>R1: no run · Route 9 → 12
-    GW-->>CLI: Target set<br/>task #5140 succeeded
+    Note over GW: Record the target<br/>R1: no run
+    %%> What it does:
+    %%> - changes only Orbit's record; no Node changes and no run starts
+    %%> Repeat:
+    %%> - setting the current target again is skipped: `Skipped — target already set (route.target_unchanged)`
+    GW-->>CLI: Target set<br/>task succeeded
   else published Route
     GW->>SW: Start run, full intent<br/>operation-route-target-set
-    GW-->>CLI: 202 Accepted<br/>task #5140
+    GW-->>CLI: 202 Accepted<br/>task ID
+    %%> What you get:
+    %%> - the task ID, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
     SW->>N: Make CSRs on new Nodes<br/>openssl req · key stays on Node
     SW->>GW: Sign the CSRs<br/>operation:direct:certificate-sign
+    %%> Why a call to the Gateway:
+    %%> - certificate signing is the one allowed step-to-Gateway call; the Orbit CA stays in the Gateway
     GW-->>SW: Signed certificates<br/>Orbit CA key stays in Gateway
-    SW->>N: Install cert, publish site<br/>route:create's publish step
-    opt --targets, --reassign or --remove
+    opt published development Route
+      SW->>N: Install cert, publish site<br/>route:create's publish step
+      %%> What it does:
+      %%> - moves the site to the new checkout; the target stays set if this fails (`route.publish_failed`), and the request is run again
+    end
+    opt production pool
       SW->>N: Stage the new targets<br/>@swamp/cfgmgmt/file · firewall
+      %%> What it does:
+      %%> - stages each added target's runtime, certificates, Caddy site and `.env`
       SW->>N: Probe each new target<br/>@swamp/ssh exec · SNI domain
-      %%> Runs from 209. A failed target probe stops the Router switch.
+      %%> Why:
+      %%> - the probe verifies the Route's hostname and the Orbit CA over TLS; application HTTP errors do not fail it, and a failed probe stops the switch
       SW->>N: Switch the Router pool<br/>Router Caddy · reload
       SW->>N: Retire detached targets<br/>@swamp/cfgmgmt · absent
     end
@@ -37,14 +70,25 @@ sequenceDiagram
       SW->>V: Move private DNS<br/>records + catalog, then reload
     end
     alt every step succeeds
-      SW-->>GW: Run succeeded<br/>Swamp's run data
-      Note over GW: Write the new targets<br/>from result · task succeeded
+      SW-->>GW: Run succeeded<br/>terminal event
+      Note over GW: Write the new targets<br/>from result
+      %%> Result:
+      %%> - the new associations are written, and a destination Route that received a reassigned Instance becomes `active`
     else a step fails
       SW--xGW: Run failed<br/>error_code, failed step
       Note over GW: Mark the change failed<br/>targets from failed step
+      %%> Result for a published development Route:
+      %%> - the new target stays set and the failed step is `Install cert, publish site`; run the same request again
+      %%> Result for a production pool:
+      %%> - before the Router switch, the original associations stay and the staged sites serve no traffic
+      %%> - after the switch, the new associations are written, because the new pool serves, and the recorded set and `failed_step` stay
+      %%> On the Nodes:
+      %%> - finished steps stay; there is no rollback
+      %%> Retry:
+      %%> - run the same request again; a different request is refused until the change completes (`route.target_set_conflict`); a request with dispositions can be refused with `route.target_disposition_required` once the detached Instances are gone
     end
     loop every 2 s until terminal
-      CLI->>GW: operation:show #5140
+      CLI->>GW: operation:show TASK
       GW-->>CLI: status + result
     end
   end
