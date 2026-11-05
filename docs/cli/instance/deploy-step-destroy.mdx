@@ -1,9 +1,42 @@
 ---
 title: "orbit instance:deploy-step:destroy"
 sidebarTitle: "instance:deploy-step:destroy"
-description: "Remove one named deploy step. Remaining steps keep their relative order. Confirm the named target at a default-No prompt, or pass `--yes`. JSON and noninteractive calls require `--yes`."
+description: "Remove one deploy step from a production Instance."
 ---
 
 ```bash
 orbit instance:deploy-step:destroy <instance> <name> [--yes] [--json]
 ```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID of a production Instance. |
+| `name` | yes | Name of the step to remove. A terminal asks for it when it is omitted. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--yes` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the removed step as JSON. |
+
+```bash
+orbit instance:deploy-step:destroy 15 warm-cache --yes
+```
+
+In a terminal, an omitted Instance is chosen from an interactive list, and an omitted name from the Instance's deploy steps. The CLI first checks that the step exists, then asks to confirm with the step's name, the Instance by name and the effect, that the step leaves the list and does not run at the next deploy, with No selected. An unknown step is refused with `deploy_step.not_found` before any prompt, also in a noninteractive call without `--yes`. Declining, Ctrl-C or end of input ends with `input.cancelled` and removes nothing. A noninteractive or `--json` call without the Instance or the name is refused with `instance.id_invalid` or `deploy_step.name_required`, and one without `--yes` with `input.confirmation_required`; neither removes anything. The lookup of the step comes first, so an unknown Instance, step or grant is reported before the confirmation.
+
+The command removes the step from the Instance's list. The other steps keep their order, and the removed step's timeout leaves the total. It runs nothing and writes nothing to a release; earlier deployments keep what the step did. A change locks the Instance row, so a competing change waits for it. A step that does not exist is refused, so a repeat after a success is refused too. See [Production deploy steps](/reference/deployments#production-deploy-steps).
+
+The command prints a detail titled `Removed deploy step: <name>` with Phase, Command, Timeout (seconds) and the request ID. With `--json`, stdout holds the removed step with `name`, `phase`, `command`, `timeout_seconds` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `deploy_step.name_required` | The name is missing in a call that cannot prompt. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, the input ended, or you cancelled a list. |
+| `deploy_step.not_found` | The Instance has no deploy step of that name. |
+| `deployment_config.unavailable` | The Instance is not a production Instance that is source-resolved or active with a valid branch. |
+| `http.404` | The Instance is unknown, or, with `--yes`, the name is not a valid step name. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
