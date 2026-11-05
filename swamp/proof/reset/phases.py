@@ -52,6 +52,7 @@ CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT
 CARRIED_STATE = ('.e2e', 'apps/agent/delivery', 'apps/gateway/.env', 'apps/gateway/bootstrap/cache', 'apps/gateway/storage')
 # What a sync leaves out of the guests' checkouts: the history, the dependencies, and what the guests wrote themselves.
 SYNC_EXCLUDES = ('/.git', '/.e2e', '/apps/agent/delivery', 'vendor', 'node_modules', '.env', '/apps/*/storage', '/apps/*/bootstrap/cache')
+SYNC_EXCLUDE_ARGS = tuple(f'--exclude={pattern}' for pattern in SYNC_EXCLUDES)
 # The directories Caddy in the Gateway guest traverses to reach the public directory; the build gave them an ACL for it.
 ACL_DIRECTORIES = ('.', 'apps', 'apps/gateway', 'apps/gateway/public')
 # A boot is not an observation: the guests need about 50 s from `incus start` to a healthy fleet. The bound is fixed.
@@ -715,9 +716,10 @@ def sync_checkout(source, instance, wrapper):
     has new file times, so rsync compares content (`--checksum`); the list then names only files whose content differs.
     The guest's own vendor directories, caches, storage and `.env` stay as they are.
     """
-    command = ['rsync', '-a', '--checksum', '--delete', '--itemize-changes', '--chown=orbit:orbit', '-e', str(wrapper),
-               *(f'--exclude={pattern}' for pattern in SYNC_EXCLUDES), f'{source}/', f'{instance}:{ready.CHECKOUT}/']
-    listing = checked(subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, timeout=600), 'rsync').decode()
+    # The argv stays literal in the call, so the Swamp-shape check can see that it is rsync and not orbit-agent.
+    listing = checked(subprocess.run(['rsync', '-a', '--checksum', '--delete', '--itemize-changes', '--chown=orbit:orbit',
+                                      '-e', str(wrapper), *SYNC_EXCLUDE_ARGS, f'{source}/', f'{instance}:{ready.CHECKOUT}/'],
+                                     stdin=subprocess.DEVNULL, capture_output=True, timeout=600), 'rsync').decode()
     changed = []
     for line in listing.splitlines():
         flags, _, path = line.partition(' ')
