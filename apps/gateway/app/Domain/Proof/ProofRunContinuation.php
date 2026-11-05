@@ -148,20 +148,13 @@ final readonly class ProofRunContinuation
     }
 
     /**
-     * Each command of the selection once, with the cases file that the runner reads. The selection names a command by its case programs.
+     * The command of each selected cases file, in order: the selection holds each command once with the file that the runner reads.
      *
      * @return list<array{command:string,file:string}>
      */
     private function commands(Operation $proof): array
     {
-        $commands = [];
-        foreach ($this->cases($proof) as $case) {
-            $command = ValidatedData::string($case['command']);
-            [$family, $name] = explode(':', $command, 2) + [1 => ''];
-            $commands[$command] ??= ['command' => $command, 'file' => 'swamp/proof/'.$family.'/'.str_replace(':', '-', $name).'.cases.yaml'];
-        }
-
-        return array_values($commands);
+        return array_map(static fn (array $case): array => ['command' => ValidatedData::string($case['command']), 'file' => ValidatedData::string($case['file'])], $this->cases($proof));
     }
 
     /**
@@ -175,7 +168,7 @@ final readonly class ProofRunContinuation
         $rows = [];
         foreach ((array) ($verify->result['lines'] ?? []) as $line) {
             $line = ValidatedData::object($line);
-            $rows[] = ['program' => $file.'#'.ValidatedData::string($line['id']), 'command' => $verify->input['command'], 'case' => $line['id'], ...array_diff_key($line, ['id' => 0])];
+            $rows[] = ['command' => $verify->input['command'], 'file' => $file, 'case' => $line['id'], ...array_diff_key($line, ['id' => 0])];
         }
 
         return $rows;
@@ -192,7 +185,7 @@ final readonly class ProofRunContinuation
         $cases = [];
         foreach ($this->commands($proof) as $command) {
             $rows = array_values(array_filter($recorded, static fn (array $row): bool => $row['command'] === $command['command']));
-            $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $command['file'], 'command' => $command['command'], 'verdict' => 'unrun', 'seconds' => 0]])];
+            $cases = [...$cases, ...($rows !== [] ? $rows : [['command' => $command['command'], 'file' => $command['file'], 'verdict' => 'unrun', 'seconds' => 0]])];
         }
 
         return ['ran' => array_any($recorded, static fn (array $row): bool => $row['verdict'] !== 'unrun'), 'evidence' => is_string($proof->state['evidence'] ?? null) ? $proof->state['evidence'] : null, 'cases' => $cases];

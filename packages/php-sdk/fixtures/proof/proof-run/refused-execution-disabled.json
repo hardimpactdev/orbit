@@ -10,7 +10,7 @@
             "details": {
                 "commit": "0123456789abcdef0123456789abcdef01234567",
                 "cases": [
-                    "swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh"
+                    "swamp/proof/firewall/allow.cases.yaml"
                 ],
                 "uncovered": [
                     "swamp/workflows/workflow-vault-sync.yaml"

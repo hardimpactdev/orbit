@@ -45,7 +45,7 @@ Work through it in order. Each item ends with evidence in the PR.
 3. **Code is minimal.** Delete unused CLI and Gateway paths for this command, including old execution code and agent command calls it no longer needs. Report net lines.
 4. **The workflow matches the chart** step for step; Swamp lane labels equal step names. Build with [swamp-flow](../swamp-flow/SKILL.md) and the phases with [ansible-phase](../ansible-phase/SKILL.md).
 5. **Tests.**
-   - Use [verifying-commands](../verifying-commands/SKILL.md) to maintain and run the affected proof, including its reset boundary. Update cases for behavior changes; review existing cases for behavior-preserving changes. The runnable proof cases (`swamp/proof/<family>/cases/<command>-*.sh`) go into the same PR as the code and the spec. The same cases and assertions run during development and in CI.
+   - Use [verifying-commands](../verifying-commands/SKILL.md) to maintain and run the affected proof, including its reset boundary. Update cases for behavior changes; review existing cases for behavior-preserving changes. The cases file (`swamp/proof/<family>/<command>.cases.yaml`) goes into the same PR as the code and the spec, and `swamp/proof/selection.txt` maps the code of the command to it. The same cases and assertions run during development and in CI.
    - Gateway Pest tests only for what this command's Gateway code needs: admission, refusals, intent rendering, projection. The old suite was deleted; for how things were set up, read git history at tag `pest-before-rewrite`. Keep them fast.
 6. **Proof.** Run the cases on the shared proof topology. Record fresh and no-drift times against the old workflow.
 7. **The whole release flow.** The command is not done until it has gone through all of it:

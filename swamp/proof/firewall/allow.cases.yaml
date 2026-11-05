@@ -1,5 +1,5 @@
-# DRAFT. The cases of firewall:allow in the proposed case format. Nothing reads this file yet.
-# It converts swamp/proof/firewall/allow.cases.md (11 rows; 14 cases and 16 verdicts here) and leaves that file unchanged.
+# DRAFT. The cases of firewall:allow in the proposed case format. `orbit proof:run` selects the command and runs this file.
+# It converted the deleted allow.cases.md (11 rows; 14 cases and 16 verdicts here).
 # Format and step vocabulary: docs/reference/verification-cases.
 
 command: firewall:allow

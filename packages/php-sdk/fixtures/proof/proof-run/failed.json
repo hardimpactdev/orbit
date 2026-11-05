@@ -23,20 +23,23 @@
                 "outcome": "failed",
                 "cases": [
                     {
-                        "program": "swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh",
                         "command": "firewall:allow",
+                        "file": "swamp/proof/firewall/allow.cases.yaml",
+                        "case": "new-restricted-allow",
                         "verdict": "passed",
                         "seconds": 12.4
                     },
                     {
-                        "program": "swamp/proof/firewall/cases/deny-leaves-rule.sh",
                         "command": "firewall:deny",
+                        "file": "swamp/proof/firewall/deny.cases.yaml",
+                        "case": "deny-leaves-rule",
                         "verdict": "failed",
                         "seconds": 9.1
                     },
                     {
-                        "program": "swamp/proof/firewall/cases/remove-needs-clean-fleet.sh",
                         "command": "firewall:remove",
+                        "file": "swamp/proof/firewall/remove.cases.yaml",
+                        "case": "remove-needs-clean-fleet",
                         "verdict": "unrun",
                         "seconds": 0.3
                     }

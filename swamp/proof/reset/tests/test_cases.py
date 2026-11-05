@@ -214,7 +214,7 @@ class SummaryTests(unittest.TestCase):
 
     def test_forty_failing_cases_keep_the_line_under_the_swamp_output_cut(self):
         note = 'exited 3; left residue in firewall database records, UFW rules on app-dev, UFW rules on app-prod'
-        cases = [{'program': f'swamp/proof/firewall/cases/some-long-case-name-{n}.sh', 'verdict': 'failed', 'exit_code': 3,
+        cases = [{'program': f'swamp/proof/node/cases/some-long-case-name-{n}.sh', 'verdict': 'failed', 'exit_code': 3,
                   'seconds': 123.456, 'note': note} for n in range(40)]
         status = {'status': 'failed', 'summary': launcher.summary(cases), 'exit': 1, 'cases_ran': True, 'cases': cases}
         line = launcher.final_line(status, 'a' * 32, '/home/orbit/work/orbit/.orbit-artifacts/3187/reset/' + 'a' * 32)
@@ -247,7 +247,7 @@ class CaseResultTests(unittest.TestCase):
 
     def verify(self, group, bodies):
         """Launcher to cases phase, with the fake Swamp running the phase in place of the workflow."""
-        programs = ['bin/proof-fleet', 'swamp/proof/reset/cases/smoke.sh', 'swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh'][:len(bodies)]
+        programs = ['bin/proof-fleet', 'swamp/proof/reset/cases/smoke.sh', 'bin/ci-proof-run'][:len(bodies)]
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary) / 'home'
             source = Path(temporary) / 'source'

@@ -30,7 +30,7 @@ function proofRunning(): Operation
 
     return Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'proof', 'target_id' => $group->id, 'node_id' => $node->id,
         'input' => ['commit' => str_repeat('a', 40), 'uncovered' => [], 'group_id' => $group->id, 'cases' => [
-            ['program' => 'swamp/proof/a/cases/one.sh', 'command' => 'a:one'], ['program' => 'swamp/proof/b/cases/two.sh', 'command' => 'b:two']]],
+            ['command' => 'a:one', 'file' => 'swamp/proof/a/one.cases.yaml'], ['command' => 'b:two', 'file' => 'swamp/proof/b/two.cases.yaml']]],
         'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
 }
 
@@ -64,17 +64,17 @@ it('records the rows of the case lines of a verify, with the cases file and the 
     $state = $proof->refresh()->state;
     expect($state['stage'])->toBe(1)->and($state['evidence'])->toBe('/home/orbit/work/.orbit-artifacts/'.$proof->target_id.'/verify')
         ->and($state['rows'])->toBe([
-            ['program' => 'swamp/proof/a/one.cases.yaml#first', 'command' => 'a:one', 'case' => 'first', 'verdict' => 'passed', 'seconds' => 12.4],
-            ['program' => 'swamp/proof/a/one.cases.yaml#second', 'command' => 'a:one', 'case' => 'second', 'verdict' => 'failed', 'seconds' => 3.1, 'cause' => 'assertion', 'failed' => ['expect[0] probe: x']]]);
+            ['command' => 'a:one', 'file' => 'swamp/proof/a/one.cases.yaml', 'case' => 'first', 'verdict' => 'passed', 'seconds' => 12.4],
+            ['command' => 'a:one', 'file' => 'swamp/proof/a/one.cases.yaml', 'case' => 'second', 'verdict' => 'failed', 'seconds' => 3.1, 'cause' => 'assertion', 'failed' => ['expect[0] probe: x']]]);
 });
 
-it('derives the cases file of a command from its family and name', function (): void {
+it('verifies the cases file that the selection names for a command', function (): void {
     $proof = proofRunning();
-    $proof->update(['input' => [...$proof->input, 'cases' => [['program' => 'swamp/proof/node/cases/role-add-x.sh', 'command' => 'node:role:add']]]]);
+    $proof->update(['input' => [...$proof->input, 'cases' => [['command' => 'node:role:add', 'file' => 'swamp/proof/node/role-add.cases.yaml']]]]);
 
     proofStep($proof, 'tasks.cancel');
 
-    expect($proof->refresh()->result['cases'])->toBe([['program' => 'swamp/proof/node/role-add.cases.yaml', 'command' => 'node:role:add', 'verdict' => 'unrun', 'seconds' => 0]]);
+    expect($proof->refresh()->result['cases'])->toBe([['command' => 'node:role:add', 'file' => 'swamp/proof/node/role-add.cases.yaml', 'verdict' => 'unrun', 'seconds' => 0]]);
 });
 
 it('leaves the cases of a verify that printed no line unrun', function (): void {
@@ -90,8 +90,8 @@ it('leaves the cases of a verify that printed no line unrun', function (): void 
 it('closes the proof as passed once the group is cancelled and every case passed', function (): void {
     $proof = proofRunning();
     $proof->update(['state' => ['stage' => 2, 'evidence' => '/e', 'rows' => [
-        ['program' => 'swamp/proof/a/one.cases.yaml#x', 'command' => 'a:one', 'case' => 'x', 'verdict' => 'passed', 'seconds' => 1],
-        ['program' => 'swamp/proof/b/two.cases.yaml#y', 'command' => 'b:two', 'case' => 'y', 'verdict' => 'passed', 'seconds' => 2]]]]);
+        ['command' => 'a:one', 'file' => 'swamp/proof/a/one.cases.yaml', 'case' => 'x', 'verdict' => 'passed', 'seconds' => 1],
+        ['command' => 'b:two', 'file' => 'swamp/proof/b/two.cases.yaml', 'case' => 'y', 'verdict' => 'passed', 'seconds' => 2]]]]);
 
     proofStep($proof, 'tasks.cancel');
 
@@ -111,12 +111,12 @@ it('closes the proof as failed with every case unrun when no verify ran', functi
 it('closes the proof as cases_failed when a case ran and failed, and a later command is unrun', function (): void {
     $proof = proofRunning();
     $proof->update(['state' => ['stage' => 1, 'rows' => [
-        ['program' => 'swamp/proof/a/one.cases.yaml#x', 'command' => 'a:one', 'case' => 'x', 'verdict' => 'failed', 'seconds' => 1]]]]);
+        ['command' => 'a:one', 'file' => 'swamp/proof/a/one.cases.yaml', 'case' => 'x', 'verdict' => 'failed', 'seconds' => 1]]]]);
 
     proofStep($proof, 'tasks.cancel');
 
     expect($proof->refresh()->error_code)->toBe('proof.cases_failed')->and(array_column($proof->result['cases'], 'verdict'))->toBe(['failed', 'unrun'])
-        ->and($proof->result['cases'][1])->toBe(['program' => 'swamp/proof/b/two.cases.yaml', 'command' => 'b:two', 'verdict' => 'unrun', 'seconds' => 0]);
+        ->and($proof->result['cases'][1])->toBe(['command' => 'b:two', 'file' => 'swamp/proof/b/two.cases.yaml', 'verdict' => 'unrun', 'seconds' => 0]);
 });
 
 it('does not continue to the next command once cancel is requested', function (): void {

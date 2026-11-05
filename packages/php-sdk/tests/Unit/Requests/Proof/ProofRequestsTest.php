@@ -121,7 +121,7 @@ describe('proof responses from recorded Gateway fixtures', function (): void {
         'unmapped' => ['refused-unmapped', 'proof.path_unmapped', ['path' => 'apps/cli/app/Commands/Proof/NewKind.php']],
         'execution off' => ['refused-execution-disabled', 'proof.execution_disabled', [
             'commit' => PROOF_COMMIT,
-            'cases' => ['swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh'],
+            'cases' => ['swamp/proof/firewall/allow.cases.yaml'],
             'uncovered' => ['swamp/workflows/workflow-vault-sync.yaml'],
         ]],
         'extension off' => ['refused-extension-disabled', 'extension.disabled', []],

@@ -1,5 +1,5 @@
-# The cases of firewall:list in the case format of docs/reference/verification-cases. Nothing reads this file yet.
-# It replaces the rows of swamp/proof/firewall/list.cases.md that the chart changed (Orbit rules, live match, all Nodes).
+# The cases of firewall:list in the case format of docs/reference/verification-cases. `orbit proof:run` selects the command and runs this file.
+# It replaced the rows of the deleted list.cases.md that the chart changed (Orbit rules, live match, all Nodes).
 # Format and step vocabulary: docs/reference/verification-cases.
 #
 # The list reads Gateway state only. Every case starts the CLI as `gateway` unless it says `as`.

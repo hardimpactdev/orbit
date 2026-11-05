@@ -19,7 +19,7 @@ SHA = 'a' * 40
 
 
 def document(*verdicts, wrapper=None):
-    result = {'outcome': 'passed', 'cases': [{'command': 'firewall:allow', 'program': f'swamp/proof/firewall/cases/allow-{i}.sh',
+    result = {'outcome': 'passed', 'cases': [{'command': 'firewall:allow', 'file': 'swamp/proof/firewall/allow.cases.yaml', 'case': f'case-{i}',
                                               'verdict': verdict} for i, verdict in enumerate(verdicts)]}
     return json.dumps({wrapper: {'result': result}} if wrapper else {'result': result})
 
@@ -30,7 +30,7 @@ class EvaluateTest(unittest.TestCase):
             with self.subTest(wrapper=wrapper):
                 passed, lines = proof.evaluate(0, document('passed', 'passed', wrapper=wrapper))
                 self.assertTrue(passed)
-                self.assertIn('| firewall:allow | allow-0.sh | passed |', lines)
+                self.assertIn('| firewall:allow | case-0 | passed |', lines)
 
     def test_any_other_verdict_fails(self):
         for verdict in ('failed', 'unrun', 'skipped', ''):

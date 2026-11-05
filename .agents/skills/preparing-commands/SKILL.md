@@ -26,7 +26,7 @@ Prepare one command at a time. Take the next command from the review queue on th
 ## 1. Read first
 
 1. Call Recall `resolve` for the command and its family, and `decisions` for the family. Current decisions override older text.
-2. Read the existing page, chart, any old table `swamp/proof/<family>/<command>.cases.md` and any old fixture `swamp/proof/<family>.<command>*.json`. Both are reading material only ([old paths](../../../docs/reference/old-paths.md)). Read the code only to learn what exists, never as the target.
+2. Read the existing page, chart, any old table `swamp/proof/<family>/<command>.cases.md` and any old fixture `swamp/proof/<kind>.json` that still exists (the firewall fixtures are deleted). Both are reading material only ([old paths](../../../docs/reference/old-paths.md)). Read the code only to learn what exists, never as the target.
 
 3. For a command that mirrors an approved sibling, such as `firewall:deny` after `firewall:allow`, start from the sibling's chart, page and cases and show Nick the diff. Then settle the edge cases that differ (protected resources, repeats, conflicts) and apply the answer to both commands and the family page in the same PR.
 

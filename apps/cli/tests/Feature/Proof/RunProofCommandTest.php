@@ -56,7 +56,7 @@ describe('proof:run', function (): void {
             expect(substr_count(trim($output), "\n"))->toBe(0)
                 ->and($payload['status'])->toBe('succeeded')
                 ->and($payload['result']['commit'])->toBe(PROOF_RUN_SHA)
-                ->and($payload['result']['cases'][0])->toBe(['program' => 'swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh', 'command' => 'firewall:allow', 'verdict' => 'passed', 'seconds' => 12.4])
+                ->and($payload['result']['cases'][0])->toBe(['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'case' => 'new-restricted-allow', 'verdict' => 'passed', 'seconds' => 12.4])
                 ->and($payload['result']['uncovered'][0]['path'])->toBe('swamp/workflows/workflow-vault-sync.yaml')
                 ->and($payload['result']['vm'])->toBe('tvm-17')
                 ->and($payload['result']['receipt_url'])->toBe('https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846');
@@ -65,7 +65,7 @@ describe('proof:run', function (): void {
                 'Prove commit 0123456789ab',
                 'Proof passed.',
                 'firewall:allow',
-                'allow-fresh-ipv4-tcp.sh',
+                'new-restricted-allow',
                 '12.4 s',
                 'Uncovered: swamp/workflows/workflow-vault-sync.yaml (none: no case yet)',
                 'VM: tvm-17',
@@ -88,8 +88,8 @@ describe('proof:run', function (): void {
         } else {
             expect(Artisan::output())->toContain(
                 'Proof failed.',
-                'deny-leaves-rule.sh',
-                'remove-needs-clean-fleet.sh',
+                'deny-leaves-rule',
+                'remove-needs-clean-fleet',
                 'failed',
                 'unrun',
                 'Error code: proof.cases_failed',
@@ -209,7 +209,7 @@ describe('proof:run', function (): void {
         'unmapped' => ['refused-unmapped', 'proof.path_unmapped', ['path' => 'apps/cli/app/Commands/Proof/NewKind.php']],
         'execution switched off' => ['refused-execution-disabled', 'proof.execution_disabled', [
             'commit' => PROOF_RUN_SHA,
-            'cases' => ['swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh'],
+            'cases' => ['swamp/proof/firewall/allow.cases.yaml'],
             'uncovered' => ['swamp/workflows/workflow-vault-sync.yaml'],
         ]],
         'extension off' => ['refused-extension-disabled', 'extension.disabled', []],

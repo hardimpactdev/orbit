@@ -7,7 +7,7 @@ namespace App\Domain\Proof;
 /**
  * The cases a commit selects and the paths no case covers.
  *
- * @phpstan-type Case array{program: string, command: string}
+ * @phpstan-type Case array{command: string, file: string}
  * @phpstan-type Uncovered array{path: string, reason: string}
  */
 final readonly class ProofSelectionResult
@@ -24,8 +24,8 @@ final readonly class ProofSelectionResult
     }
 
     /** @return list<string> */
-    public function programs(): array
+    public function files(): array
     {
-        return array_column($this->cases, 'program');
+        return array_column($this->cases, 'file');
     }
 }

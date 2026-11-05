@@ -6,12 +6,12 @@ Proof running...
 │
 └  Proof passed.
 
- ┌─────────────────┬─────────────────────────┬─────────┬──────────┐
- │ COMMAND         │ CASE                    │ VERDICT │ DURATION │
- ├─────────────────┼─────────────────────────┼─────────┼──────────┤
- │ firewall:allow  │ allow-fresh-ipv4-tcp.sh │ passed  │ 12.4 s   │
- │ firewall:remove │ remove-existing-rule.sh │ passed  │ 8.7 s    │
- └─────────────────┴─────────────────────────┴─────────┴──────────┘
+ ┌─────────────────┬──────────────────────┬─────────┬──────────┐
+ │ COMMAND         │ CASE                 │ VERDICT │ DURATION │
+ ├─────────────────┼──────────────────────┼─────────┼──────────┤
+ │ firewall:allow  │ new-restricted-allow │ passed  │ 12.4 s   │
+ │ firewall:remove │ remove-existing-rule │ passed  │ 8.7 s    │
+ └─────────────────┴──────────────────────┴─────────┴──────────┘
 Uncovered: swamp/workflows/workflow-vault-sync.yaml (none: no case yet)
 VM: tvm-17
 Receipt: https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846

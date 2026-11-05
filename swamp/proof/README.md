@@ -10,7 +10,7 @@ A reset from ready copies ends with an Incus memory snapshot `base` of the three
 
 The boot fixes that keep a reset near 50 s (agent after the tunnel, cloud-init off, the hosts line, Swamp serve and worker at boot, 2 vCPUs for the Gateway, dev-safe opcache and no Laravel caches) are code in [`tools/swamp-proof-guest/boot.py`](../../tools/swamp-proof-guest/boot.py). A fresh build writes them; nobody edits a VM by hand.
 
-Cases are written in `swamp/proof/<family>/<command>.cases.yaml` and run by the shared runner in [`runner/`](runner/runner.py) ([format](../../docs/reference/verification-cases.mdx)). A case calls the real candidate CLI, checks the real effect and prints a verdict. The first file is [`firewall/allow.cases.yaml`](firewall/allow.cases.yaml): a real `firewall:allow` opens real traffic. The older hand-written programs under `<family>/cases/` (`firewall/cases/allow-fresh-ipv4-tcp.sh`) are an old path until the `firewall:allow` switch lands ([old paths](../../docs/reference/old-paths.md)).
+Cases are written in `swamp/proof/<family>/<command>.cases.yaml` and run by the shared runner in [`runner/`](runner/runner.py) ([format](../../docs/reference/verification-cases.mdx)). A case calls the real candidate CLI, checks the real effect and prints a verdict. The first file is [`firewall/allow.cases.yaml`](firewall/allow.cases.yaml): a real `firewall:allow` opens real traffic. `orbit proof:run` selects a command with [`selection.txt`](selection.txt) and runs its cases file; a command without one is uncovered. The firewall case programs and fixtures are deleted ([old paths](../../docs/reference/old-paths.md)).
 
 ## Ready copies: the contract
 

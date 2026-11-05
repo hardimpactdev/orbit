@@ -18,7 +18,7 @@ The design has four aims:
 
 ## The case file
 
-Each command has one file, `swamp/proof/<family>/<command>.cases.yaml`. It replaces `<command>.cases.md`. The draft for `firewall:allow` is [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml); it converts every case of `allow.cases.md`.
+Each command has one file, `swamp/proof/<family>/<command>.cases.yaml`. It replaces `<command>.cases.md`. The draft for `firewall:allow` is [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml); it converted every case of the deleted `allow.cases.md`. `orbit proof:run` selects a command with the [selection list](/reference/feature-flow#choose-the-cases) and runs this file; a selected command without it is uncovered (`no cases file for COMMAND`).
 
 YAML, because:
 
@@ -287,7 +287,7 @@ The Swamp workflow restores `base` and runs `runner case ID --negative`, which r
 
 ## What exists and what is new
 
-The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py`, the fleet access `fleet.py`, the programs that run on a Node (`listener.py`, `probe.py`) and the tests. The terminal driver `terminal.py` and the `ufw` shim `ufw-shim.sh` loop by nature, so they live in `tools/swamp-proof-guest/`, outside the Swamp-shape rules for step code. On the nested fleet of a task VM all 16 verdicts of `allow.cases.yaml` run. 9 are `passed`: `new-restricted-allow`, `partial-application`, `conflict`, `busy-target`, `protocols[tcp]`, `protocols[udp]`, `protocols[both]`, `port-range` and `missing-input-noninteractive`. The other 7 are `failed` with the cause `assertion`, and each one fails on what the command does, not on a step. `runner.py case ID --negative` proves that a case can fail. The old case script `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh` stays until `proof:run` stops selecting a command through its case programs. `proof:run` still selects a command through them but runs the cases file of the command, so that script is only the selection key today. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
+The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py`, the fleet access `fleet.py`, the programs that run on a Node (`listener.py`, `probe.py`) and the tests. The terminal driver `terminal.py` and the `ufw` shim `ufw-shim.sh` loop by nature, so they live in `tools/swamp-proof-guest/`, outside the Swamp-shape rules for step code. On the nested fleet of a task VM all 16 verdicts of `allow.cases.yaml` run. 9 are `passed`: `new-restricted-allow`, `partial-application`, `conflict`, `busy-target`, `protocols[tcp]`, `protocols[udp]`, `protocols[both]`, `port-range` and `missing-input-noninteractive`. The other 7 are `failed` with the cause `assertion`, and each one fails on what the command does, not on a step. `runner.py case ID --negative` proves that a case can fail. `proof:run` selects a command and runs its cases file; the old case script `allow-fresh-ipv4-tcp.sh` and its helpers are deleted. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
 
 | Piece | State |
 | --- | --- |

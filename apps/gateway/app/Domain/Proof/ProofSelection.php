@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Proof;
 
 use App\Domain\Shared\ResourceOperationException;
-use LogicException;
 
 /**
  * Chooses the cases of a commit from its changed paths and its selection list
@@ -13,27 +12,27 @@ use LogicException;
  */
 final readonly class ProofSelection
 {
-    private const string ProgramPattern = '~\Aswamp/proof/([a-z][a-z0-9_]*)/cases/([A-Za-z0-9_]+-[A-Za-z0-9_.-]*)\.sh\z~D';
+    private const string CasesFilePattern = '~\Aswamp/proof/([a-z][a-z0-9_]*)/([a-z][a-z0-9_-]*)\.cases\.yaml\z~D';
 
     /**
      * @param  list<string>  $treePaths  every path of the commit's tree under `swamp/proof`
-     * @return list<string> the case programs, sorted
+     * @return list<string> the cases files, sorted
      */
-    public static function programs(array $treePaths): array
+    public static function casesFiles(array $treePaths): array
     {
-        $programs = array_values(array_filter($treePaths, static fn (string $path): bool => preg_match(self::ProgramPattern, $path) === 1));
-        sort($programs);
+        $files = array_values(array_filter($treePaths, static fn (string $path): bool => preg_match(self::CasesFilePattern, $path) === 1));
+        sort($files);
 
-        return $programs;
+        return $files;
     }
 
     /**
      * @param  string|null  $list  the selection list of the commit, null when the commit has none
-     * @param  list<string>  $programs  every case program of the commit
+     * @param  list<string>  $casesFiles  every cases file of the commit
      *
      * @throws ResourceOperationException proof.selection_invalid, proof.path_unmapped
      */
-    public static function select(?string $list, ProofChangedFiles $changes, bool $all, array $programs): ProofSelectionResult
+    public static function select(?string $list, ProofChangedFiles $changes, bool $all, array $casesFiles): ProofSelectionResult
     {
         $paths = $changes->paths();
         $everything = match (true) {
@@ -71,48 +70,44 @@ final readonly class ProofSelection
         }
 
         return $everything !== null
-            ? new ProofSelectionResult(array_map(static fn (string $program): array => ['program' => $program, 'command' => self::commandOf($program)], $programs), $uncovered, $everything)
-            : self::byCommand($commands, $uncovered, $programs);
+            ? new ProofSelectionResult(array_map(static fn (string $file): array => ['command' => self::labelOf($file), 'file' => $file], $casesFiles), $uncovered, $everything)
+            : self::byCommand($commands, $uncovered, $casesFiles);
+    }
+
+    /** The cases file of `family:a:b` is `swamp/proof/family/a-b.cases.yaml`: further colons of the name become `-`. */
+    public static function fileOf(string $command): string
+    {
+        [$family, $name] = explode(':', $command, 2);
+
+        return 'swamp/proof/'.$family.'/'.str_replace(':', '-', $name).'.cases.yaml';
     }
 
     /**
      * @param  array<string,string>  $commands  each selected command with the first path that selected it
      * @param  list<array{path:string,reason:string}>  $uncovered
-     * @param  list<string>  $programs
+     * @param  list<string>  $casesFiles
      */
-    private static function byCommand(array $commands, array $uncovered, array $programs): ProofSelectionResult
+    private static function byCommand(array $commands, array $uncovered, array $casesFiles): ProofSelectionResult
     {
         ksort($commands);
         $cases = [];
         foreach ($commands as $command => $path) {
-            $found = array_values(array_filter($programs, static fn (string $program): bool => self::programOf($command, $program)));
-            if ($found === []) {
-                $uncovered[] = ['path' => $path, 'reason' => 'no case program for '.$command];
-            }
-            foreach ($found as $program) {
-                $cases[$program] = ['program' => $program, 'command' => $command];
+            $file = self::fileOf($command);
+            if (in_array($file, $casesFiles, true)) {
+                $cases[] = ['command' => $command, 'file' => $file];
+            } else {
+                $uncovered[] = ['path' => $path, 'reason' => 'no cases file for '.$command];
             }
         }
-        ksort($cases);
 
-        return new ProofSelectionResult(array_values($cases), $uncovered, null);
+        return new ProofSelectionResult($cases, $uncovered, null);
     }
 
-    /** The case programs of `family:a:b` are `swamp/proof/family/cases/a-b-*.sh`. */
-    private static function programOf(string $command, string $program): bool
+    /** The label of a file that a wildcard selected: its family and its name. A file name cannot tell a `-` from a `:`, so the name keeps its dashes. */
+    private static function labelOf(string $file): string
     {
-        [$family, $name] = explode(':', $command, 2);
+        [$family, $name] = explode('/', substr($file, strlen('swamp/proof/')), 2);
 
-        return str_starts_with($program, 'swamp/proof/'.$family.'/cases/'.str_replace(':', '-', $name).'-');
-    }
-
-    /** The label of a program that a wildcard selected: its family and the first word of its file name. */
-    private static function commandOf(string $program): string
-    {
-        if (preg_match(self::ProgramPattern, $program, $match) !== 1) {
-            throw new LogicException('Not a case program: '.$program);
-        }
-
-        return $match[1].':'.explode('-', $match[2])[0];
+        return $family.':'.substr($name, 0, -strlen('.cases.yaml'));
     }
 }
