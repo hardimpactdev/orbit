@@ -68,7 +68,7 @@ The result names the commit, each case with its verdict and duration, the uncove
 | You pressed Ctrl-C. | `130`. |
 | The process received SIGTERM. | `143`. |
 
-Ctrl-C asks the run to stop. Before the cases start, none runs and every case ends `unrun`. Once they run, they finish first. The group is always cancelled when the run ends.
+Ctrl-C, or `operation:cancel` on the run, ends the run at once and cancels its group, which destroys the VM. A case that was running stops with the VM. The group is always cancelled when the run ends.
 
 ## After the run
 

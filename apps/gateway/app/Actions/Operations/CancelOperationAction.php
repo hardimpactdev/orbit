@@ -6,8 +6,10 @@ namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeOperationProjection;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Proof\ProofRunContinuation;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +37,10 @@ final readonly class CancelOperationAction
         });
 
         $operation->refresh();
+        // A proof owns a task group with a VM; cancelling the proof without the group would leave the VM running.
+        if ($operation->kind === OperationKinds::ProofRun && $operation->status === OperationStatus::Cancelled) {
+            app(ProofRunContinuation::class)->cancelled($operation);
+        }
         if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
             $projection = app(DirectOperation::class)->projection($operation);
             if ($projection instanceof NativeOperationProjection && $projection->native($operation)) {

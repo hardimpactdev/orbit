@@ -15,6 +15,14 @@ final class OperationRunBudgets
 
     private const int AdmissionSeconds = 600;
 
+    /**
+     * The proof reset `bin/proof-fleet reset GROUP --from-ready`: the history of short scripts gave 120 s, which timed out the
+     * first real reset (op 10861). Basis: the measured parts on a fresh VM, the restore from the ready copies, the rsync sync,
+     * `composer install` where lock files differ from the seed (31 to 35 s for five) and the memory snapshot `base` (about 19 s),
+     * plus margin; 360 s. Replace with the 14-day p95 after the first passing runs. Other scripts keep the history-derived budget.
+     */
+    private const int ProofResetSeconds = 360;
+
     /** @var array<string,int>|null One observer pass, never a cross-request cache. */
     private static ?array $history = null;
 
@@ -83,10 +91,6 @@ final class OperationRunBudgets
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
-        // The history of short scripts gave 120 s, which timed out the proof reset twice (ops 10861, 10872) and stalled both proofs.
-        // Basis: `bin/proof-fleet reset --from-ready` takes about 75 s from ready copies and about 230 s when it builds; x 1.5, rounded up
-        // to 1,800 s with the other repository scripts, which the SSH exec bounds at 3,600 s. Replace with the 14-day p95.
-        'tasks.script' => 1800,
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
@@ -101,10 +105,24 @@ final class OperationRunBudgets
         'tool.update' => 1500,
     ];
 
+    /**
+     * The budget that the admission of a `tasks.script` captures in `input.run_budget_seconds`, or null for a script with no explicit budget.
+     *
+     * @param  list<string>  $args
+     */
+    public static function scriptSeconds(string $script, array $args): ?int
+    {
+        return $script === 'bin/proof-fleet' && ($args[0] ?? null) === 'reset' ? self::ProofResetSeconds : null;
+    }
+
     public static function seconds(Operation $operation): int
     {
         if (! isset($operation->state['swamp_run_id']) && $operation->attempts === 0) {
             return self::AdmissionSeconds;
+        }
+        $captured = $operation->input['run_budget_seconds'] ?? null;
+        if ($operation->kind === OperationKinds::TasksScript && is_int($captured) && $captured > 0) {
+            return $captured;
         }
         $budget = self::SecondsByKind[$operation->kind] ?? null;
         if (is_int($budget)) {

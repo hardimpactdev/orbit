@@ -94,7 +94,9 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `gateway.release` has a provisional 3,000 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A first success replaces it with a p95.
 
-`tasks.script` has a provisional 1,800 seconds. The history of short scripts had set 120 seconds, which timed out `bin/proof-fleet reset` twice. The reset takes about 75 seconds from ready copies and about 230 seconds when it builds. Replace it with the 14-day p95. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
+A `tasks.script` has the budget of its history, like any kind without a fixed budget, unless its admission captures one in `input.run_budget_seconds`. Only the proof reset `bin/proof-fleet reset GROUP --from-ready` captures one: 360 seconds. The history of short scripts had set 120 seconds, which timed out the first real reset twice.
+
+The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, `composer install` where lock files differ from the seed (31 to 35 seconds for five) and the memory snapshot `base` (about 19 seconds); 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
 `proof.verify` has a provisional 2,700 seconds. It has no run yet. A run executes the cases of one command in the task VM through the workflow `proof-fleet-verify`. Basis: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; with 1.5 times margin and rounded up to five minutes it is 2,700. Replace it with the 14-day p95 after the first success.
 

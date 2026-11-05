@@ -12,7 +12,9 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Jobs\Proof\AdvanceProofRun;
+use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
@@ -94,6 +96,32 @@ final readonly class ProofRunContinuation
         $subtask = $group->tasks()->orderBy('position')->firstOrFail();
         $this->admit($group, 'tasks.script', fn () => app(StartTaskScriptAction::class)->execute($group,
             new StartTaskScriptData($subtask->id, 'bin/proof-fleet', ['reset', (string) $group->id, '--from-ready']), 'proof-run', null), $stage);
+    }
+
+    /** The proof operation was cancelled: its group must go too, or the VM keeps running. One job admits the cancel, away from the locks of the cancel request. */
+    public function cancelled(Operation $proof): void
+    {
+        DB::afterCommit(static fn () => CancelProofGroup::dispatch($proof->id));
+    }
+
+    /**
+     * Cancels the group of a cancelled proof through the same keyed admission as the end of a run, so a group that the run already cancelled keeps its one cancel.
+     *
+     * @throws ResourceOperationException when the group is busy for a moment, such as while a step still holds it; the job tries again
+     */
+    public function cancelGroup(Operation $proof): void
+    {
+        $group = Task::topLevel()->find($proof->target_id);
+        if ($group === null || $group->status === TaskGroupStatus::Cancelled) {
+            return;
+        }
+        try {
+            $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, 'proof-run', null));
+        } catch (ResourceOperationException $exception) {
+            if (! in_array($exception->errorCode, ['tasks.not_cancellable', 'tasks.group_closed'], true)) {
+                throw $exception;
+            }
+        }
     }
 
     /** The job gave up: cancel the group once more and close the proof with what it has. */
