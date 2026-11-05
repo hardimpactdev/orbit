@@ -1,9 +1,41 @@
 ---
 title: "orbit instance:teardown-step:destroy"
 sidebarTitle: "instance:teardown-step:destroy"
-description: "Remove one teardown step. Interactive confirmation defaults to No. JSON and noninteractive calls require `--yes`."
+description: "Remove one teardown step from a Project."
 ---
 
 ```bash
-orbit instance:teardown-step:destroy <name> --project=<id> [--yes] [--json]
+orbit instance:teardown-step:destroy <name> --project=ID [--yes] [--json]
 ```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Name of the step to remove. A terminal asks for it when it is omitted. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | prompt | Numeric Project ID. |
+| `--yes` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the removed step as JSON. |
+
+```bash
+orbit instance:teardown-step:destroy dump-data --project=4 --yes
+```
+
+In a terminal, an omitted Project is chosen from an interactive list, and an omitted name from the Project's teardown steps. The CLI first checks that the step exists, then asks to confirm with the step's name and the Project and the effect, that the step leaves the list and does not run at `instance:destroy`, with No selected. An unknown step is refused with `teardown_step.not_found` before any prompt; a noninteractive call without `--yes` for an unknown step gets `input.confirmation_required`. Declining, Ctrl-C or end of input ends with `input.cancelled` and removes nothing. A noninteractive or `--json` call without the Project or the name is refused with `project.id_invalid` or `lifecycle_step.name_required`, and one without `--yes` with `input.confirmation_required`; neither sends a request.
+
+The command removes the step from the Project's list. The other steps keep their order, and the removed step's timeout leaves the list total. It writes nothing to a checkout and runs nothing. Instances already removed are unaffected. A step that does not exist is refused with `teardown_step.not_found`, so a repeat after a success is refused too. See [Instance setup and teardown](/reference/instance-setup).
+
+The command prints a detail titled `Removed teardown step: <name>` with the Project by name, Timeout and Command, and the request ID. With `--json`, stdout holds the removed step with `name`, `command`, `timeout_seconds` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `project.id_invalid` | The Project is missing in a call that cannot prompt, or is not a positive integer. |
+| `lifecycle_step.name_required` | The name is missing in a call that cannot prompt. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, the input ended, or you cancelled a list. |
+| `teardown_step.not_found` | The Project has no teardown step of that name. A name that is not a valid step name gives `http.404` instead. |
+| `http.404` | The Project is unknown. |
+| `node_access.required` | The caller has no access grant to any Node that holds an Instance of the Project, or to the Gateway Node when it has none. |
