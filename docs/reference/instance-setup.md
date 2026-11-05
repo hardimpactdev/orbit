@@ -157,7 +157,7 @@ Native create and destroy return after admission. Each command uses its admitted
 
 A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
 
-A step cut short by the list budget, or with no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
+A step that runs past its timeout, is cut short by the list budget, or has no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
 
 ## Run teardown
 
@@ -283,12 +283,12 @@ These codes name the step that failed. The sections above say whether the Instan
 
 | Code | Cause |
 | --- | --- |
-| `instance.setup_step_failed` | A setup command failed or timed out. |
+| `instance.setup_step_failed` | A setup command exited with an error. |
 | `instance.teardown_step_failed` | A teardown command failed or timed out during `instance:destroy`. |
 | `instance.setup_step_unavailable` | A setup command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.teardown_step_unavailable` | A teardown command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.setup_unavailable` | `instance:setup` targets an Instance that is not an active development Instance. |
-| `command.deadline_exceeded` | The list budget stopped a step. |
+| `command.deadline_exceeded` | A step ran past its timeout, or the list budget stopped it. |
 
 ## Why it works this way
 
