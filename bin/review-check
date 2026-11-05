@@ -42,10 +42,10 @@ API_ARTIFACT_COMMANDS = (('bin/docs-openapi', '--check'), ('bin/mcp-tools', '--c
 API_FIXTURE_TRIGGERS = ('docs/openapi.json', 'packages/php-sdk/fixtures/', 'apps/web/fixtures/',
                         'bin/api-fixtures', 'bin/review-check')
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
-# Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN, never the
-# developer's login; without them the script exits 78 and the gate reports the check as skipped. CI always validates.
-SWAMP_VALIDATE = ('python3', 'bin/validate-swamp-workflows.py', '--cache', str(Path.home() / '.cache/orbit-shape-runtime'),
-                  '--report', str(Path(tempfile.gettempdir()) / f'orbit-swamp-validate-{os.getpid()}.json'))
+# CI's Swamp shape gate and workflow validation are one script, bin/swamp-shape-gate. Validation needs a Swamp account
+# and reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN, never the developer's login; without them the script exits 78
+# and the gate reports the validation as skipped. CI always validates.
+SWAMP_GATE = ('python3', str(Path(__file__).resolve().parent / 'swamp-shape-gate'))
 SWAMP_AUTH_UNAVAILABLE = 78
 BASES = ('origin/main', 'main')
 # Reports older than this are removed by the next run of the user that wrote them.
@@ -123,7 +123,7 @@ def candidate_paths(root, head, committed, base_override=None):
     return None, []
 
 
-def selected_projects(paths, root):
+def selected_projects(paths, root, base=None):
     """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
     selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS]
     if any(path.startswith(API_ARTIFACT_TRIGGERS) for path in paths):
@@ -143,7 +143,8 @@ def selected_projects(paths, root):
     if any(path.startswith('apps/pi-server/') for path in paths):
         selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
     if ci_select(paths)['jobs']['swamp']:
-        selected.append(('swamp', (SWAMP_VALIDATE,)))
+        shape = (*SWAMP_GATE, '--only', 'shape', *(('--base', base) if base else ()))
+        selected.append(('swamp', (shape, (*SWAMP_GATE, '--only', 'validate'))))
     return selected
 
 
@@ -257,7 +258,7 @@ def main(argv=None):
         if result.returncode:
             print(log.read_text(), flush=True)
     lane_checks = []
-    groups = lanes(selected_projects(paths, root))
+    groups = lanes(selected_projects(paths, root, base))
     weights = {lane_key(entries): sum(lane_weight(root, project) for _order, project, _commands in entries) for entries in groups}
     groups = shard_lanes(groups, weights, shard_index, shard_count)
     # The heaviest lane starts first, so it never waits for a free lane.
@@ -285,7 +286,7 @@ def main(argv=None):
                     output.write(f'{missing}: required tool not found\n')
                     result = subprocess.CompletedProcess(command, 127)
             budget.release(lane)
-            skipped = command == SWAMP_VALIDATE and result.returncode == SWAMP_AUTH_UNAVAILABLE
+            skipped = command[:2] == SWAMP_GATE and result.returncode == SWAMP_AUTH_UNAVAILABLE
             check = {'project': project, 'command': list(command), 'exit_code': 0 if skipped else result.returncode,
                      'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
             if skipped:

@@ -125,7 +125,7 @@ class ScopeActionTest(unittest.TestCase):
         shape = source.split('  shape:', 1)[1].split('  validate:', 1)[0]
         self.assertIn('fetch-depth: 0', shape)
         self.assertIn('steps.scope.outputs.swamp-base-ref', shape)
-        self.assertIn('check-swamp-base-policy.py --base "$base"', shape)
+        self.assertIn('bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE"', shape)
 
 
 if __name__ == '__main__':

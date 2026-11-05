@@ -1,0 +1,142 @@
+"""CI and local runs share one Swamp shape gate script, so they cannot drift."""
+import io
+import re
+import runpy
+import subprocess
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
+gate = runpy.run_path(str(ROOT / 'bin/swamp-shape-gate'))
+review = runpy.run_path(str(ROOT / 'bin/review-check'))
+BASE = 'a' * 40
+
+
+def steps(only=None):
+    return [step for step in gate['plan'](BASE, Path('/reports'), Path('/cache'), Path('/collections')) if only in (None, step.group)]
+
+
+class WorkflowCallsTheScriptTest(unittest.TestCase):
+    def test_both_jobs_call_the_script_and_keep_no_inline_steps(self):
+        shape = WORKFLOW.split('  shape:', 1)[1].split('  validate:', 1)[0]
+        validate = WORKFLOW.split('  validate:', 1)[1].split('  tests:', 1)[0]
+        self.assertIn('python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"', shape)
+        self.assertIn('python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only validate --strict', validate)
+        for inline in ('pip install', 'ansible-lint', 'check-swamp-shape.ts', 'check-swamp-base-policy.py', 'deno test',
+                       'check-frozen-agent-commands', 'validate-swamp-workflows.py', 'check-grant-patterns.py'):
+            self.assertNotIn(inline, shape + validate)
+
+    def test_the_artifacts_and_the_credential_scope_stay(self):
+        self.assertIn('name: Swamp shape gate', WORKFLOW)
+        self.assertIn('name: Swamp workflow validate', WORKFLOW)
+        self.assertIn('${{ runner.temp }}/shape.json', WORKFLOW)
+        for report in ('workflow-validation.json', 'grant-validation.json'):
+            self.assertIn('${{ runner.temp }}/' + report, WORKFLOW)
+
+    def test_the_linter_pins_live_only_in_the_requirements_file(self):
+        pins = (ROOT / 'bin/swamp-shape-gate-requirements.txt').read_text()
+        for pin in ('ruff==', 'shellcheck-py==', 'shfmt-py==', 'ansible-lint=='):
+            self.assertIn(pin, pins)
+            self.assertNotIn(pin, WORKFLOW)
+            self.assertNotIn(pin, (ROOT / 'bin/swamp-shape-gate').read_text())
+        self.assertIn('-r ../swamp/ansible/requirements.txt', pins)
+
+
+class PlanTest(unittest.TestCase):
+    def test_the_shape_group_runs_ci_s_checks_in_ci_s_order(self):
+        names = [step.name for step in steps('shape')]
+        self.assertEqual(names[:2], ['ansible collections', 'ansible-lint'])
+        self.assertEqual(names[-4:], ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
+        self.assertEqual(len([name for name in names if name.startswith('deno test')]), 9)
+        for step in steps('shape')[-4:-1]:
+            self.assertEqual(step.argv[step.argv.index('--base') + 1], BASE)
+        self.assertIn('/reports/shape.json', steps('shape')[-4].argv)
+
+    def test_the_validation_group_needs_credentials_where_ci_does(self):
+        needs = {step.name: step.needs for step in steps('validate')}
+        self.assertEqual(needs['validate-swamp-workflows'], ('credentials',))
+        self.assertEqual(needs['node enrollment trust'], ('credentials',))
+        self.assertEqual(needs['check-grant-patterns'], ('credentials', 'php'))
+        self.assertEqual(needs['workflow placement'], ())
+
+    def test_credentials_decide_the_skip(self):
+        validate = next(step for step in steps('validate') if step.name == 'validate-swamp-workflows')
+        self.assertIn('no Swamp credential', gate['skip_reason'](validate, {'PATH': ''}))
+        self.assertIsNone(gate['skip_reason'](validate, {'PATH': '', 'SWAMP_API_KEY': 'x', 'SWAMP_SIGNIN_TOKEN': 'y'}))
+
+
+class BaseTest(unittest.TestCase):
+    def test_a_given_base_is_used_and_an_empty_or_zero_base_means_the_previous_commit(self):
+        self.assertEqual(gate['resolve_base'](BASE), BASE)
+        previous = subprocess.CompletedProcess([], 0, stdout=f'{"b" * 40}\n')
+        for empty in ('', '0' * 40):
+            with patch.dict(gate['resolve_base'].__globals__, {'git': lambda *args: previous}):
+                self.assertEqual(gate['resolve_base'](empty), 'b' * 40)
+
+    def test_the_default_is_the_merge_base_with_origin_main(self):
+        calls = []
+
+        def git(*args):
+            calls.append(args)
+            return subprocess.CompletedProcess([], 0, stdout='c' * 40 + '\n')
+
+        with patch.dict(gate['resolve_base'].__globals__, {'git': git}):
+            self.assertEqual(gate['resolve_base'](None), 'c' * 40)
+        self.assertEqual(calls, [('merge-base', 'HEAD', 'origin/main')])
+
+
+class ExitCodeTest(unittest.TestCase):
+    def run_gate(self, argv, results, environment=None):
+        """Run main with every step replaced by a result: 0 passes, anything else fails."""
+        outcomes = iter(results)
+        scope = gate['main'].__globals__
+        calls = []
+
+        def run(argv_, **_options):
+            calls.append(argv_)
+            return subprocess.CompletedProcess(argv_, next(outcomes, 0))
+
+        with tempfile.TemporaryDirectory() as scratch, patch.dict(scope['os'].environ, environment or {}, clear=True), \
+                patch.dict(scope, {'tool_path': lambda tools: Path(scratch)}), \
+                patch.object(scope['subprocess'], 'run', run), redirect_stdout(io.StringIO()) as output:
+            scope['os'].environ['PATH'] = '/usr/bin'
+            code = gate['main'](['--reports', scratch, '--tools', scratch, *argv])
+        return code, calls, output.getvalue()
+
+    def test_a_failed_step_fails_the_run_and_the_other_steps_still_run(self):
+        code, calls, output = self.run_gate(['--only', 'shape', '--base', BASE], [0, 1])
+        self.assertEqual(code, 1)
+        self.assertEqual(len(calls), len(steps('shape')))
+        self.assertIn('FAILED: ansible-lint', output)
+
+    def test_validation_without_credentials_is_skipped_and_the_validation_run_exits_78(self):
+        code, _calls, output = self.run_gate(['--only', 'validate'], [])
+        self.assertEqual(code, 78)
+        self.assertIn('skipped', output)
+        code, _calls, _output = self.run_gate(['--only', 'shape', '--base', BASE], [])
+        self.assertEqual(code, 0)
+
+    def test_strict_runs_the_steps_that_need_credentials(self):
+        _code, calls, _output = self.run_gate(['--only', 'validate', '--strict'], [])
+        self.assertEqual(len(calls), len(steps('validate')))
+
+
+class ReviewCheckTest(unittest.TestCase):
+    def test_the_review_check_runs_the_script_when_the_change_selects_swamp(self):
+        selected = dict(review['selected_projects'](['swamp/workflows/x.yaml'], ROOT, BASE))
+        commands = selected['swamp']
+        self.assertEqual([command[2:4] for command in commands], [('--only', 'shape'), ('--only', 'validate')])
+        self.assertEqual(commands[0][-2:], ('--base', BASE))
+        self.assertEqual(Path(commands[0][1]), ROOT / 'bin/swamp-shape-gate')
+
+    def test_the_review_check_skips_the_script_without_swamp_inputs(self):
+        projects = [project for project, _commands in review['selected_projects'](['apps/web/src/a.ts'], ROOT, BASE)]
+        self.assertNotIn('swamp', projects)
+
+
+if __name__ == '__main__':
+    unittest.main()

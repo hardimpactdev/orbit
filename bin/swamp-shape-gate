@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Run the Swamp shape gate and the Swamp workflow validation, the same steps CI runs.
+
+CI's "Swamp shape gate" and "Swamp workflow validate" jobs call this script, and bin/review-check
+(root `composer check`) calls it when a change selects the Swamp checks. Run it from any directory
+before you push; commit first, because the checkers compare committed HEAD with the base.
+
+--base REF         compare with REF (default: the merge base with origin/main)
+--only shape       run only the shape group; --only validate runs only the validation group
+--reports DIR      write the JSON reports here (default: a per-user directory in the temp directory)
+--cache DIR        Swamp runtime cache for the validation (default: ~/.cache/orbit-shape-runtime)
+--tools DIR        cache of the pinned tool venvs (default: ~/.cache/orbit-shape-gate)
+--strict           fail instead of skipping a step that needs a credential or a tool
+
+The linters are pinned in bin/swamp-shape-gate-requirements.txt, the only place that names them.
+Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN.
+Without them it is skipped and reported as skipped, not passed. `--only validate` then exits 78."""
+import argparse
+import fcntl
+import hashlib
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SWAMP = ROOT / 'swamp'
+REQUIREMENTS = ROOT / 'bin/swamp-shape-gate-requirements.txt'
+COLLECTIONS = SWAMP / 'ansible/requirements.yml'
+CREDENTIALS = ('SWAMP_API_KEY', 'SWAMP_SIGNIN_TOKEN')
+CREDENTIALS_MISSING = 78
+BASES = ('origin/main', 'main')
+
+ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py')
+DENO_UNIT_TESTS = (
+    ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-shape_test.ts'),
+    ('--allow-read', '--allow-run', 'bin/lint-behavior-names_test.ts'),
+    ('-A', 'bin/swamp-liveness_test.ts'),
+    ('-A', 'bin/source_test.ts'),
+    ('-A', '--ignore=tests/metrics_exporter_firewall_test.ts,tests/native_host_method_test.ts,tests/node_add_bootstrap_test.ts', 'tests/'),
+    ('-A', 'extensions/behaviors/automatic-deploy', 'extensions/behaviors/composer-maintenance',
+     'extensions/behaviors/js-maintenance', 'extensions/behaviors/projects'),
+    ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/swamp-shape-python_test.ts'),
+    ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/validate-swamp-workflows_test.ts'),
+    ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-base-policy_test.ts'),
+)
+
+
+class Step:
+    """One command of the gate. `needs` names what a missing prerequisite skips: credentials or a tool."""
+
+    def __init__(self, group, name, argv, needs=(), env=None):
+        self.group, self.name, self.argv, self.needs, self.env = group, name, list(argv), needs, env or {}
+
+
+def plan(base, reports, cache, collections):
+    """The steps in CI's order, with CI's arguments."""
+    shape_report = reports / 'shape.json'
+    ansible_env = {'ANSIBLE_COLLECTIONS_PATH': str(collections)}
+    steps = [
+        Step('shape', 'ansible collections', ['ansible-galaxy', 'collection', 'install', '-r', 'ansible/requirements.yml', '-p', str(collections)],
+             env=ansible_env),
+        Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-node-role-add.yml'], env=ansible_env),
+    ]
+    steps += [Step('shape', test, ['python3', '-I', test]) for test in ANSIBLE_TESTS]
+    steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py',
+                                        *ANSIBLE_TESTS]))
+    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments]) for arguments in DENO_UNIT_TESTS]
+    steps += [
+        Step('shape', 'check-swamp-shape', ['deno', 'run', '--allow-env', '--allow-read', f'--allow-write={shape_report}', '--allow-run',
+                                            'bin/check-swamp-shape.ts', '--base', base, '--report', str(shape_report)]),
+        Step('shape', 'check-swamp-base-policy', ['python3', 'bin/check-swamp-base-policy.py', '--base', base]),
+        Step('shape', 'lint-behavior-names', ['deno', 'run', '--allow-read', '--allow-run', 'bin/lint-behavior-names.ts', '--base', base]),
+        Step('shape', 'frozen agent commands', [str(ROOT / 'bin/check-frozen-agent-commands'), '--root', str(ROOT)]),
+        Step('validate', 'validate-swamp-workflows', ['python3', 'bin/validate-swamp-workflows.py', '--cache', str(cache),
+                                                      '--report', str(reports / 'workflow-validation.json')], needs=('credentials',)),
+        # It imports the extensions that the workflow validation pulls, so it needs the same credential.
+        Step('validate', 'node enrollment trust', ['deno', 'test', '-A', 'tests/node_add_bootstrap_test.ts'], needs=('credentials',)),
+        Step('validate', 'check-grant-patterns', ['python3', 'bin/check-grant-patterns.py', '--cache', str(cache),
+                                                  '--report', str(reports / 'grant-validation.json')], needs=('credentials', 'php')),
+        Step('validate', 'workflow placement', ['deno', 'run', '--allow-read', 'bin/lint-workflow-placement.ts']),
+    ]
+    return steps
+
+
+def git(*args):
+    return subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True, text=True)
+
+
+def resolve_base(base):
+    """CI passes the event's base commit. An empty or all-zero one (a new branch) means the previous commit."""
+    if base is not None and base.strip() and not re.fullmatch(r'0+', base.strip()):
+        return base.strip()
+    if base is not None:
+        return git('rev-parse', 'HEAD^').stdout.strip()
+    for ref in BASES:
+        result = git('merge-base', 'HEAD', ref)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    raise SystemExit('No merge base with origin/main. Fetch it, or pass --base REF.')
+
+
+def tool_path(tools):
+    """The bin directory of the pinned venv, built once per pin set under a lock."""
+    pins = REQUIREMENTS.read_text() + (SWAMP / 'ansible/requirements.txt').read_text() + sys.version
+    venv = tools / f'venv-{hashlib.sha256(pins.encode()).hexdigest()[:16]}'
+    tools.mkdir(parents=True, exist_ok=True)
+    with (tools / 'lock').open('w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not (venv / '.complete').exists():
+            shutil.rmtree(venv, ignore_errors=True)
+            print(f'Installing the pinned shape tools into {venv}', flush=True)
+            subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True)
+            subprocess.run([str(venv / 'bin/pip'), 'install', '--disable-pip-version-check', '-q', '-r', str(REQUIREMENTS)], check=True)
+            (venv / '.complete').write_text('')
+    return venv / 'bin'
+
+
+def skip_reason(step, environment):
+    if 'credentials' in step.needs and not all(environment.get(name) for name in CREDENTIALS):
+        return 'no Swamp credential: set ' + ' and '.join(CREDENTIALS)
+    if 'php' in step.needs and not shutil.which('php', path=environment['PATH']):
+        return 'php not found'
+    return None
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--base')
+    parser.add_argument('--only', choices=('shape', 'validate'))
+    parser.add_argument('--reports', type=Path, default=Path(tempfile.gettempdir()) / f'orbit-shape-gate-{os.getuid()}')
+    parser.add_argument('--cache', type=Path, default=Path.home() / '.cache/orbit-shape-runtime')
+    parser.add_argument('--tools', type=Path, default=Path.home() / '.cache/orbit-shape-gate')
+    parser.add_argument('--strict', action='store_true')
+    args = parser.parse_args(argv)
+    # CI's umask; a looser one changes file modes that the Ansible artifact tests compare.
+    os.umask(0o022)
+    # The validation group needs neither the base nor the pinned linters, so its CI job can check out one commit.
+    base = resolve_base(args.base) if args.only != 'validate' else ''
+    args.reports.mkdir(parents=True, exist_ok=True)
+    environment = {**os.environ}
+    if args.only != 'validate':
+        environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
+    collections = args.tools / f'collections-{hashlib.sha256(COLLECTIONS.read_bytes()).hexdigest()[:16]}'
+    steps = [step for step in plan(base, args.reports, args.cache, collections) if args.only in (None, step.group)]
+    print('Swamp shape gate' + (f' against {base[:12]}' if base else '') + f'; reports in {args.reports}', flush=True)
+    results = []
+    for step in steps:
+        reason = skip_reason(step, environment)
+        if reason and not args.strict:
+            results.append((step, 'skipped', 0.0, reason))
+            print(f'==> {step.name}: skipped, {reason}', flush=True)
+            continue
+        print(f'==> {step.name}', flush=True)
+        started = time.monotonic()
+        try:
+            code = subprocess.run(step.argv, cwd=SWAMP, env={**environment, **step.env}).returncode
+        except FileNotFoundError as error:
+            print(f'{error.filename or step.argv[0]}: required tool not found', file=sys.stderr, flush=True)
+            code = 127
+        results.append((step, 'passed' if code == 0 else 'FAILED', time.monotonic() - started, f'exit {code}'))
+    print('\nSwamp shape gate summary', flush=True)
+    for step, outcome, seconds, detail in results:
+        print(f'  {outcome:<7} {step.name} ({seconds:.1f}s{"; " + detail if outcome != "passed" else ""})', flush=True)
+    failed = [step.name for step, outcome, _seconds, _detail in results if outcome == 'FAILED']
+    skipped = [step.name for step, outcome, _seconds, _detail in results if outcome == 'skipped']
+    if failed:
+        print(f'FAILED: {", ".join(failed)}', flush=True)
+        return 1
+    if skipped:
+        print(f'PASSED with skipped steps: {", ".join(skipped)}. CI runs them.', flush=True)
+        return CREDENTIALS_MISSING if args.only == 'validate' else 0
+    print('PASSED', flush=True)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

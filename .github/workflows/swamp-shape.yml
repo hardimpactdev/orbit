@@ -52,48 +52,13 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           python-version: "3.13"
-      - name: Install pinned script linters
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        run: |
-          python3 -m venv "$RUNNER_TEMP/shape-tools"
-          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1 shfmt-py==4.2.0 ansible-lint==26.10.1 -r ansible/requirements.txt
-          echo "$RUNNER_TEMP/shape-tools/bin" >> "$GITHUB_PATH"
-      - name: Check Ansible phases
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        env:
-          ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/ansible-collections
-        run: |
-          ansible-galaxy collection install -r ansible/requirements.yml -p "$ANSIBLE_COLLECTIONS_PATH"
-          ansible-lint ansible/operation-node-role-add.yml
-          python3 -I tests/ansible_artifact_test.py
-          python3 -I tests/ansible_inputs_test.py
-          python3 -I tests/ansible_firewall_test.py
-          ruff check ansible/build_vars.py ansible/library/orbit_artifact.py tests/ansible_artifact_test.py tests/ansible_inputs_test.py tests/ansible_firewall_test.py
-      - name: Check shape regression fixtures
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        run: |
-          deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-shape_test.ts
-          deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
-          deno test -A bin/swamp-liveness_test.ts
-          deno test -A bin/source_test.ts
-          deno test -A --ignore=tests/metrics_exporter_firewall_test.ts,tests/native_host_method_test.ts,tests/node_add_bootstrap_test.ts tests/
-          deno test -A extensions/behaviors/automatic-deploy extensions/behaviors/composer-maintenance extensions/behaviors/js-maintenance extensions/behaviors/projects
-          deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-shape-python_test.ts
-          deno test --allow-env --allow-read --allow-run --allow-write bin/validate-swamp-workflows_test.ts
-          deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-base-policy_test.ts
-      - name: Reject new violations with current and base rules
+      # One script holds the steps, their order and the pinned linters (bin/swamp-shape-gate-requirements.txt),
+      # so a local run before a push checks what this job checks.
+      - name: Run the shape gate
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
           SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          base="$SHAPE_BASE"
-          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
-          deno run --allow-env --allow-read --allow-write="$RUNNER_TEMP/shape.json" --allow-run bin/check-swamp-shape.ts --base "$base" --report "$RUNNER_TEMP/shape.json"
-          python3 bin/check-swamp-base-policy.py --base "$base"
-          deno run --allow-read --allow-run bin/lint-behavior-names.ts --base "$base"
-      - name: Check frozen agent command references
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        run: '"$GITHUB_WORKSPACE/bin/check-frozen-agent-commands" --root "$GITHUB_WORKSPACE"'
+        run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         with:
@@ -127,30 +92,19 @@ jobs:
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
-      - name: Native workflow validation with dedicated registry-read credentials
-        if: steps.scope.outputs.selected == 'true'
-        env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
-        run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
-      - name: Check first-contact Node enrollment trust
-        if: steps.scope.outputs.selected == 'true'
-        run: deno test -A tests/node_add_bootstrap_test.ts
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         if: steps.scope.outputs.selected == 'true'
         with:
           php-version: "8.5"
           coverage: none
-      - name: Validate release grants with pinned serve check-config
+      # Validates every workflow, the first-contact enrollment trust, the Gateway-rendered release grants with the pinned
+      # serve check-config, and placement. Local runs skip the steps that need a Swamp credential; this job never does.
+      - name: Run the Swamp workflow validation
         if: steps.scope.outputs.selected == 'true'
         env:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
-        run: |
-          python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
-      - name: Check placement on every step
-        if: ${{ always() && steps.scope.outputs.selected == 'true' }}
-        run: deno run --allow-read bin/lint-workflow-placement.ts
+        run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only validate --strict --cache "$HOME/.cache/orbit-shape-runtime" --reports "$RUNNER_TEMP"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ always() && steps.scope.outputs.selected == 'true' }}
         with:
