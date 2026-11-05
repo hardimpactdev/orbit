@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
@@ -31,7 +32,7 @@ final readonly class TaskVmSlotEnrollIntent
 {
     public function __construct(private TaskVmSettings $settings, private TaskVmEnrollmentIntent $enrollment, private ModelKeyIssuer $keys,
         private TaskVmModelKeyInputs $models, private WireGuardAddressAllocator $addresses, private SwampSshExecutionInput $ssh,
-        private SwampCommandStep $shared, private AgentDelivery $delivery, private PiConnection $pi, private NodeNetworkInput $network) {}
+        private SwampCommandStep $shared, private AgentDelivery $delivery, private PiConnection $pi, private NodeNetworkInput $network, private NodeAgentSshExecutor $agents) {}
 
     /**
      * The slot's row, its Node, its `app-dev` role and its `pi-server` Process. A slot that is still enrolling, or
@@ -92,7 +93,8 @@ final readonly class TaskVmSlotEnrollIntent
         $network = $this->network->capturePublic($guest);
         $hub = Node::query()->findOrFail(ValidatedData::integer($network['hub_id']));
         $files = TaskVmSlotIdentity::files(NodeNetworkConvergeInput::peerFiles(ValidatedData::object($network['peer'])),
-            ValidatedData::string($model['intent']['model_origin']), $this->settings->piModels);
+            ValidatedData::string($model['intent']['model_origin']), $this->settings->piModels,
+            $this->agents->configurationForRoot($guest, null), ValidatedData::string($vm->wireguard_ip), $this->pi->port());
         $image = $this->image($host, $location);
         $identity = $this->ssh->identity();
 

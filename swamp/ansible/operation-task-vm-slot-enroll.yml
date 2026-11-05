@@ -23,6 +23,9 @@
       - {path: etc/ssh/ssh_host_rsa_key.pub, mode: "0644"}
       - {path: etc/cloud/cloud.cfg.d/99-orbit-slot.cfg, mode: "0644"}
       - {path: etc/orbit/agent/secret, mode: "0600"}
+      - {path: etc/orbit/agent/config.toml, mode: "0644"}
+      - {path: etc/orbit/agent/ca.pem, mode: "0644"}
+      - {path: etc/orbit/pi.env, mode: "0644"}
       - {path: home/orbit/.pi/agent/orbit-token, mode: "0600"}
       - {path: home/orbit/.pi/agent/models.json, mode: "0600"}
       - {path: REVISION, mode: "0644"}

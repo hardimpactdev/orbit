@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\StartTaskVmSlotEnrollAction;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Doctor\FactDoctor;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
@@ -303,6 +304,14 @@ function enrollmentWorld(): array
     $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', ...$keys]));
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    // The observer configuration of the identity tree holds the public root CA.
+    app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+    {
+        public function rootCertificate(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\nroot-fixture\n-----END CERTIFICATE-----\n";
+        }
+    });
     @mkdir(config('orbit.home').'/wireguard', 0o700, true);
     file_put_contents(config('orbit.home').'/wireguard/public.key', str_repeat('K', 43)."=\n");
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
@@ -322,7 +331,11 @@ it('renders the full public intent of an enrolment and sends only vault names fo
     expect($input)->toMatchArray(['task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $host->id, 'slot' => 1, 'name' => 'beast-tvm-1',
         'bridge_address' => '10.251.77.254', 'gateway_node_id' => $gateway->id, 'model_router_node_id' => 3, 'model_origin' => 'http://10.44.0.3:8317']);
     expect($input['identity'])->toMatchArray(['project' => 'orbit-tasks', 'pool' => 'orbit-tasks', 'volume' => 'beast-tvm-1-identity', 'model_key_mark' => '@MODEL_KEY@']);
-    expect(array_keys($input['identity']['files']))->toBe(['etc/wireguard/orbit.conf', 'etc/wireguard/orbit.dns-link', 'etc/cloud/cloud.cfg.d/99-orbit-slot.cfg', 'home/orbit/.pi/agent/models.json']);
+    expect(array_keys($input['identity']['files']))->toBe(['etc/wireguard/orbit.conf', 'etc/wireguard/orbit.dns-link', 'etc/orbit/agent/config.toml', 'etc/orbit/agent/ca.pem', 'etc/orbit/pi.env',
+        'etc/cloud/cloud.cfg.d/99-orbit-slot.cfg', 'home/orbit/.pi/agent/models.json']);
+    expect($input['identity']['files']['etc/orbit/pi.env'])->toBe('PI_HOST='.$vm->wireguard_ip."\nPI_PORT=3774\n");
+    expect($input['identity']['files']['etc/orbit/agent/config.toml'])->toContain('gateway_address = "10.44.0.2"');
+    expect($input['identity']['files']['etc/orbit/agent/ca.pem'])->toContain('root-fixture');
     expect($input['identity']['files']['etc/wireguard/orbit.conf'])->toContain('PostUp = wg set %i private-key /etc/wireguard/orbit.key');
     expect($input['identity']['revision'])->toMatch('/\A[a-f0-9]{64}\z/D');
     expect($input['hub'])->toMatchArray(['hub_id' => $hub->id, 'file' => '/etc/wireguard/orbit-peers.d/'.$vm->node_id.'.conf']);
