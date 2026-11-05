@@ -42,18 +42,6 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual([step['step'] for step in receipt['steps'] if not step['ok']], [])
         self.assertTrue(any('firewall:allow' in call for call in map(' '.join, self.fleet.cli_calls)))
 
-    def test_the_setup_of_the_batch_runs_before_the_setup_of_the_case(self):
-        result, receipt = self.execute('family-ipv6')
-        self.assertEqual(sorted(self.fleet.ipv6), ['app-dev', 'app-prod', 'gateway'])
-        self.assertEqual(receipt['steps'][0]['step'], 'batch[0] ipv6_addresses')
-        self.assertNotIn('batch', result.get('failed', [''])[0])
-
-    def test_a_failed_setup_of_the_batch_makes_the_case_unrun(self):
-        self.fleet.ipv6_reaches = False
-        result, _ = self.execute('family-ipv6')
-        self.assertEqual((result['verdict'], result['cause']), ('unrun', 'precondition'))
-        self.assertIn('does not reach', result['failed'][0])
-
     def test_what_a_case_started_on_a_node_ends_with_the_case(self):
         self.spec.case(CASE).setup.append(spec.Step('busy_node', {'on': 'app-dev'}))
         result, _ = self.execute()

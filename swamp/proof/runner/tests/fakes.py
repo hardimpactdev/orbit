@@ -19,7 +19,7 @@ class FakeBackground:
     def started(self, seconds):
         return self.starts
 
-    def stop(self):
+    def finish(self, seconds):
         self.running = False
 
 
@@ -79,7 +79,9 @@ class FakeFleet:
             word, count = re.search(r"SEEN=0\\n' (\S+) (\d+) >", command).groups()
             self.fault[node] = {'word': word, 'after': int(count), 'seen': 0}
             return completed()
-        if command.startswith('pkill -f'):
+        if command.startswith('kill -- -'):
+            return completed()
+        if command.startswith('rm -rf /var/tmp/proof-ufw'):
             self.shim.discard(node)
             self.fault.pop(node, None)
             self.stalled.discard(node)

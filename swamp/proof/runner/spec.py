@@ -75,7 +75,6 @@ class Spec:
     baseline: list
     cases: list
     batches: dict = field(default_factory=dict)
-    batch_setup: dict = field(default_factory=dict)
 
     def case(self, case_id):
         for case in self.cases:
@@ -320,8 +319,7 @@ def load(cases_file, batches_file):
                 raise SpecError(f'case {case.id} appears twice')
             seen.add(case.id)
             cases.append(case)
-    setups = {name: expand_steps(definition.get('setup') or [], 'setup', f'batch {name} setup', {}, {}, static) for name, definition in batches.items()}
-    return Spec(data['command'], data['chart'], data['target'], list(data['sources']), data.get('baseline') or [], cases, batches, setups)
+    return Spec(data['command'], data['chart'], data['target'], list(data['sources']), data.get('baseline') or [], cases, batches)
 
 
 def plan(spec):

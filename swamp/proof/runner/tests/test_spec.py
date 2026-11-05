@@ -42,11 +42,6 @@ class RealFileTest(unittest.TestCase):
         self.assertIn('new-restricted-allow', ids)
         self.assertEqual(ids[6:9], ['protocols[tcp]', 'protocols[udp]', 'protocols[both]'])
 
-    def test_the_setup_steps_of_a_batch_are_loaded_and_checked(self):
-        self.assertEqual([step.name for step in self.spec.batch_setup['dual-stack']], ['ipv6_addresses'])
-        self.assertEqual(self.spec.batch_setup['dual-stack'][0].args, {'nodes': ['gateway', 'app-dev', 'app-prod']})
-        self.assertEqual(self.spec.batch_setup['fresh-fleet'], [])
-
     def test_batches_run_in_the_order_of_the_batch_file(self):
         plan = spec.plan(self.spec)
         self.assertEqual([item['batch'] for item in plan], ['fresh-fleet', 'dual-stack'])

@@ -20,6 +20,7 @@ PROBE_SECONDS = 3
 SHIM_DIR = '/var/tmp/proof-ufw'
 IPV6_PREFIX = 'fd42:232:2::'   # a ULA /64 for the proof bridge; the host part is the last octet of the IPv4 address
 BUSY_SECONDS = 120
+CLEANUP_SECONDS = 60
 # The agent reports the firewall at a host tick every 60 s, in a phase the runner cannot know after a restore of the base snapshot.
 # A report that follows the change needs at most one tick plus the time to deliver it: wait until this long after `act`.
 REPORT_SECONDS = 65
@@ -450,9 +451,15 @@ def install_shim(run, node):
     run.shimmed.add(node)
 
 
+def release_lock(run, node):
+    """End the lock that `busy_node` holds (its holder leads its own process group): the stalled writes go on."""
+    run.fleet.sh(node, f'kill -- -$(cat {SHIM_DIR}/holder.pid) 2>/dev/null; true')
+
+
 def remove_shim(run, node):
     """Release the lock, drop the state and put the real ufw back."""
-    run.fleet.sh(node, f'pkill -f "flock -x {SHIM_DIR}/stall"; rm -rf {SHIM_DIR}; [ -e /usr/sbin/ufw.real ] && mv -f /usr/sbin/ufw.real /usr/sbin/ufw; true')
+    release_lock(run, node)
+    run.fleet.sh(node, f'rm -rf {SHIM_DIR}; [ -e /usr/sbin/ufw.real ] && mv -f /usr/sbin/ufw.real /usr/sbin/ufw; true')
     run.shimmed.discard(node)
 
 
@@ -485,7 +492,7 @@ def busy_node(run, args):
         raise NotBuilt(f'busy_node of {command} is not built')
     seconds = int(args.get('seconds', BUSY_SECONDS))
     install_shim(run, node)
-    holder = f'setsid nohup flock -x {SHIM_DIR}/stall sleep {seconds} >/dev/null 2>&1 </dev/null &'
+    holder = f'setsid nohup flock -x {SHIM_DIR}/stall sleep {seconds} >/dev/null 2>&1 </dev/null & echo $! > {SHIM_DIR}/holder.pid'
     run.fleet.sh(node, f'touch {SHIM_DIR}/stall; {holder}')
     port = free_run(run.fleet.sh(node, 'ss -Htlun').stdout, {int(value) for value in run.names.values() if str(value).isdigit()}, 1)
     process = run.fleet.cli_background([command, str(port), '--node=' + str(run.fleet.nodes[node]['node_id']), '--protocol=tcp', '--label=proof-busy'])
@@ -496,9 +503,12 @@ def busy_node(run, args):
 
 
 def cleanup(run):
-    """End what a case started on its own: the held write and the shim. A failed case also gets a restore of `base`."""
+    """End what a case started on its own. The held write goes on when its lock ends, and the next case must not meet its Operation:
+    wait for the CLI of the held write to end, then put the real ufw back. A failed case also gets a restore of `base`."""
+    for node in sorted(run.shimmed):
+        release_lock(run, node)
     for process in run.background:
-        process.stop()
+        process.finish(CLEANUP_SECONDS)
     run.background.clear()
     for node in sorted(run.shimmed):
         remove_shim(run, node)

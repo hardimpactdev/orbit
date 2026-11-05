@@ -112,7 +112,7 @@ def _run_steps(run, items, section, failures, deadline):
             results = [steps.FUNCTIONS[step.name](run, args) for args in expanded]
         for found in results:
             run.log.append({'step': f'{section}[{index}] {step.name}', 'ok': not found, 'failed': found, 'secs': round(time.time() - started, 2)})
-            if found and section in ('setup', 'batch'):
+            if found and section == 'setup':
                 raise steps.Unrun(found[0])
             failures.extend(f'{section}[{index}] {message}' for message in found)
 
@@ -127,7 +127,6 @@ def execute(case, fleet, spec, evidence, negative=False):
     try:
         if negative and (not case.negative or len(case.stages) > 1):
             raise steps.NotBuilt('negative needs a case with a negative key and one stage')
-        run_steps(run, spec.batch_setup.get(case.batch, []), 'batch', failures, deadline)
         run_steps(run, case.setup, 'setup', failures, deadline)
         for number, stage in enumerate(case.stages):
             steps.take_baseline(run, stage.expect)

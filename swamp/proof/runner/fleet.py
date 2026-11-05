@@ -71,10 +71,13 @@ class Background:
         ready, _, _ = select.select([self.process.stdout], [], [], seconds)
         return bool(ready) and bool(self.process.stdout.readline())
 
-    def stop(self):
-        if self.process.poll() is None:
+    def finish(self, seconds):
+        """Wait for the CLI to end on its own; stop it if it does not end in time."""
+        try:
+            self.process.wait(seconds)
+        except subprocess.TimeoutExpired:
             self.process.terminate()
-        self.process.wait()
+            self.process.wait()
         self.process.stdout.close()
 
 
@@ -85,12 +88,12 @@ def incus_guests():
     return json.loads(listed.stdout)
 
 
-def bridge_address(guest):
+def bridge_address(guest, family='inet'):
     for name, interface in ((guest.get('state') or {}).get('network') or {}).items():
         if name in SKIPPED_INTERFACES:
             continue
         for address in interface.get('addresses', []):
-            if address.get('family') == 'inet' and address.get('scope') == 'global':
+            if address.get('family') == family and address.get('scope') == 'global':
                 return address['address']
     return None
 
@@ -115,6 +118,8 @@ def discover(prefix=None, guests=None, node_ids=None):
         if bridge is None:
             raise FleetError(f'{role}: no bridge address')
         nodes[role] = {'instance': guest['name'], 'node_id': ids[role], 'bridge': bridge}
+        if bridge6 := bridge_address(guest, 'inet6'):  # set by the batch setup `ipv6_addresses`, which runs in another process
+            nodes[role]['bridge6'] = bridge6
     return Fleet(nodes)
 
 
