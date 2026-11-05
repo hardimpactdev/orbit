@@ -186,7 +186,7 @@ cases:
       - probe: {from: gateway, to: app-dev, family: 6, port: "${port}", expect: connect}
       - probe: {from: app-prod, to: app-dev, family: 6, port: "${port}", expect: blocked}
       - record: {list: firewall:list, node: app-dev, where: {port: "${port}", source: "${gateway.src6}", status: active}, count: 1}
-      - ufw: {on: app-dev, family: 6, rows: [{to: "${port}/tcp (v6)", action: ALLOW, from: "${gateway.src6}"}, {ref: deny}]}
+      - ufw: {on: app-dev, family: 6, rows: [{to: "${port}/tcp", action: ALLOW, from: "${gateway.src6}"}, {ref: deny}]}
 
   # Row "Port range".
   - id: port-range

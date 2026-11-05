@@ -150,13 +150,14 @@ function lines(rule: Valid, protocol: string): [string, Row][] {
             row("::/0", " (v6)", "Anywhere (v6)"),
         ];
     }
-    return [
-        row(rule.source, network(rule.source).six ? " (v6)" : "", rule.source),
-    ];
+    // ufw marks only a line for anywhere with `(v6)`; a line from one IPv6 address shows the address alone.
+    return [row(rule.source, "", rule.source)];
 }
 
 const key = (row: Row) => `${row.to}\0${row.action}\0${row.source}`;
-const v6 = (row: Row) => row.to.includes("(v6)") || row.source.includes("(v6)");
+const v6 = (row: Row) =>
+    row.to.includes("(v6)") || row.source.includes("(v6)") ||
+    row.source.includes(":");
 const managed = (row: Row) => row.comment.startsWith("orbit:");
 
 function ports(to: string): [number, number, string | null] | null {

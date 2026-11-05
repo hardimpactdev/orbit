@@ -1,4 +1,4 @@
-/** A ufw double: numbered status, add, insert and delete; `from any` has IPv4 and IPv6 lines. */
+/** A ufw double: numbered status, add, insert and delete; `from any` has IPv4 and IPv6 lines, and a line from one IPv6 address shows the address alone. */
 import type { Row } from "./plan.ts";
 
 export const Trust: Row = {
@@ -63,7 +63,7 @@ export class UfwDouble {
             const anywhere = ["any", "0.0.0.0/0", "::/0"].includes(source);
             const shown = anywhere ? "Anywhere" : source;
             const row = {
-                to: `${port}/${protocol}${six ? " (v6)" : ""}`,
+                to: `${port}/${protocol}${six && anywhere ? " (v6)" : ""}`,
                 action,
                 source: shown + (six && anywhere ? " (v6)" : ""),
                 comment,
@@ -80,7 +80,8 @@ export class UfwDouble {
                 Object.assign(same[0], { action, comment });
             } else {
                 const first6 = this.rows.findIndex((old) =>
-                    (old.to + old.source).includes("(v6)")
+                    (old.to + old.source).includes("(v6)") ||
+                    old.source.includes(":")
                 );
                 this.rows.splice(
                     line

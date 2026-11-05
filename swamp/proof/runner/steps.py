@@ -57,10 +57,11 @@ def ufw_rows(run, node):
 
 
 def family_rows(rows, family):
-    """Rows of one family; the rows of IPv6 carry the `(v6)` mark. Without a family all rows stay."""
+    """Rows of one family; the rows of IPv6 carry the `(v6)` mark or an IPv6 source. Without a family all rows stay."""
     if family is None:
         return rows
-    marked = [row for row in rows if '(v6)' in row['to'] or '(v6)' in row['from']]
+    # ufw marks a line for anywhere with `(v6)`; a line from one IPv6 address shows the address alone.
+    marked = [row for row in rows if '(v6)' in row['to'] or '(v6)' in row['from'] or ':' in row['from']]
     return marked if int(family) == 6 else [row for row in rows if row not in marked]
 
 

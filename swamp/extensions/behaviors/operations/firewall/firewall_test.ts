@@ -215,3 +215,25 @@ Deno.test("an inactive firewall, a lost removal and invalid input refuse", () =>
         );
     }
 });
+
+Deno.test("a line from one IPv6 address sits above the IPv6 deny and is found again", () => {
+    const ufw = new UfwDouble();
+    converge(ufw, { action: "deny", port: "80", source: "any" });
+    const first = converge(ufw, { port: "80", source: "fd42::10" });
+    assertEquals(first.result, { backend: "active" });
+    const rows = ufw.tuples("80");
+    assert(
+        rows.findIndex(([, action, from]) =>
+            action === "allow" && from === "fd42::10"
+        ) <
+            rows.findIndex(([to, action]) =>
+                action === "deny" && to.endsWith("(v6)")
+            ),
+    );
+    const repeat = converge(ufw, { port: "80", source: "fd42::10" });
+    assertEquals(repeat.commands, []);
+    assertEquals(repeat.result, {
+        backend: "active",
+        skipped: "firewall.rule_exists",
+    });
+});
