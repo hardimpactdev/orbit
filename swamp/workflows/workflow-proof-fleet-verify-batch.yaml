@@ -1,0 +1,148 @@
+id: 8e4d2b71-3c59-4a0e-b6d8-7f1a93c05e22
+name: proof-fleet-verify-batch
+description: One batch of proof cases on the task VM. The first batch starts on the fresh base; each later batch restores base first. Then the batch setup, then its cases one at a time, then one report of the verdict lines.
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    ssh_execution:
+      type: object
+    checkout_path:
+      type: string
+    group_id:
+      type: integer
+      minimum: 1
+    file:
+      type: string
+    batch:
+      type: string
+    first:
+      type: boolean
+    setup:
+      type: boolean
+    cases:
+      type: array
+      items:
+        type: string
+      minItems: 1
+  required:
+  - ssh_execution
+  - checkout_path
+  - group_id
+  - file
+  - batch
+  - first
+  - setup
+  - cases
+  additionalProperties: false
+jobs:
+- name: start
+  labels: {role: swamp}
+  steps:
+  # A restore that fails or is not healthy within 45 s prints a failed line; the cases of the batch do not run. No retry.
+  - name: restore
+    labels: {role: swamp}
+    guard: '${{ inputs.first == true }}'
+    allowFailure: true
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &ssh_args
+        name: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 60
+        argv:
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
+        - restore
+        - --group
+        - ${{ string(inputs.group_id) }}
+  - name: setup
+    labels: {role: swamp}
+    dependsOn:
+    - step: restore
+      condition: {type: completed}
+    guard: '${{ !inputs.setup || steps.?restore.?outputs.?stdout.orValue("").contains("\"restore\": \"failed\"") }}'
+    allowFailure: true
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 180
+        argv:
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
+        - setup
+        - ${{ inputs.batch }}
+        - --file
+        - ${{ inputs.checkout_path + "/" + inputs.file }}
+        - --evidence
+        - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
+- name: cases
+  labels: {role: swamp}
+  concurrency: 1
+  dependsOn:
+  - job: start
+    condition: {type: completed}
+  steps:
+  # One child per case, one at a time, in file order. A failed restore or setup (this batch's start, or after an earlier case) stops the rest.
+  - name: case-${{ self._index }}
+    labels: {role: swamp}
+    forEach:
+      item: case
+      in: ${{ inputs.cases }}
+    guard: '${{ steps.?restore.?outputs.?stdout.orValue("").contains("\"restore\": \"failed\"") || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") || steps.exists(k, k.startsWith("case-") && (steps[k].?outputs.?restore.?stdout.orValue("").contains("\"restore\": \"failed\"") || steps[k].?outputs.?setup.?stdout.orValue("").contains("\"setup\": \"failed\""))) }}'
+    allowFailure: true
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-verify-case
+      inputs:
+        ssh_execution: ${{ inputs.ssh_execution }}
+        checkout_path: ${{ inputs.checkout_path }}
+        group_id: ${{ inputs.group_id }}
+        file: ${{ inputs.file }}
+        batch: ${{ inputs.batch }}
+        case: ${{ self.case }}
+        setup: ${{ inputs.setup }}
+        last: ${{ self._index == size(inputs.cases) - 1 }}
+- name: report
+  labels: {role: swamp}
+  dependsOn:
+  - job: cases
+    condition: {type: completed}
+  steps:
+  # The verdict lines of the batch, in order. A case that did not run, or printed no verdict, gets a line of its own, so every case has one.
+  - name: report
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: proof-verify-batch-report
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$LINES"
+        env:
+          LINES: '${{ [steps.filter(k, k.startsWith("case-")).map(k, [steps[k].?outputs.?case.?stdout.orValue("")].map(o, o.contains("\"verdict\"") ? o.trim() : "{\"id\": \"" + inputs.cases[int(k.substring(5))] + "\", \"verdict\": \"failed\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"the case printed no verdict\"]}")[0])].map(x, (x + [x.join("\n")].map(e, inputs.cases.filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: a restore or the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'

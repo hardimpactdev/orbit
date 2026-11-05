@@ -1,0 +1,109 @@
+id: c3f7a915-2d84-4e1b-8a60-b5d9e4f18a33
+name: proof-fleet-verify
+description: Run the proof cases of one command on the task VM, in batches, from Orbit's own Swamp over official SSH. One child per batch, one child per case, one report of the verdict lines.
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum: [proof.verify]
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: plan
+  labels: {role: swamp}
+  steps:
+  # `runner plan --lines` prints one line a batch: `BATCH SETUP CASE...`. The forEach below reads it.
+  - name: plan
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - python3
+        - ${{ inputs.intent.checkout_path + "/swamp/proof/runner/runner.py" }}
+        - plan
+        - --lines
+        - --file
+        - ${{ inputs.intent.checkout_path + "/" + inputs.intent.file }}
+- name: batches
+  labels: {role: swamp}
+  concurrency: 1
+  dependsOn:
+  - job: plan
+    condition: {type: succeeded}
+  steps:
+  # One child per batch, one at a time, in plan order. A batch that stopped on a restore or its setup stops the run.
+  - name: batch-${{ self._index }}
+    labels: {role: swamp}
+    forEach:
+      item: batch
+      in: '${{ steps.plan.outputs.stdout.trim().split("\n").map(l, {"batch": l.split(" ", 3)[0], "setup": l.split(" ", 3)[1] == "1", "cases": l.split(" ", 3)[2].split(" ")}) }}'
+    guard: '${{ steps.exists(k, k.startsWith("batch-") && steps[k].?outputs.?report.?stdout.orValue("").contains("run stopped")) }}'
+    allowFailure: true
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-verify-batch
+      inputs:
+        ssh_execution: ${{ inputs.intent.ssh_execution }}
+        checkout_path: ${{ inputs.intent.checkout_path }}
+        group_id: ${{ inputs.intent.group_id }}
+        file: ${{ inputs.intent.file }}
+        batch: ${{ self.batch.batch }}
+        first: ${{ self._index == 0 }}
+        setup: ${{ self.batch.setup }}
+        cases: ${{ self.batch.cases }}
+- name: report
+  labels: {role: swamp}
+  dependsOn:
+  - job: batches
+    condition: {type: completed}
+  steps:
+  # The Gateway reads this step once, at the end of the run. Every planned case has a line: a case of a batch that did not run is unrun, cause infrastructure.
+  - name: report
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: proof-verify-report
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$LINES"
+        env:
+          LINES: '${{ [steps.filter(k, k.startsWith("batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("").trim()).filter(x, x != "")].map(x, (x + [x.join("\n")].map(e, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: a restore or the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'

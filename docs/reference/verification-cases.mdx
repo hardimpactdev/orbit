@@ -5,7 +5,7 @@ description: "How the cases that prove an Orbit command are written, checked and
 
 # Verification cases
 
-**Design draft.** This page describes the target. The runner and the first case, `new-restricted-allow`, are built; [what is built](#what-exists-and-what-is-new) is listed at the end.
+**Design draft.** This page describes the target. The runner, the first case, `new-restricted-allow`, and the Swamp workflows that run the batches are built; [what is built](#what-exists-and-what-is-new) is listed at the end.
 
 A verification case proves one behavior of one command on the nested test fleet of [stage 3](/reference/command-development-pipeline#3-proof). A case is a specification, not code: a short YAML block built from a fixed set of steps. One shared runner executes every case. Code is written only for a new kind of check, and then once, as a new step.
 
@@ -202,12 +202,15 @@ A batch costs a restore, so keep few. `firewall:allow` needs two:
 
 Orbit's own Swamp runs the runner over SSH in the task VM. The runner is part of the "Run the proof" child of [`proof:run`](/cli/proof/run#how-it-works). There is no `bin/proof-fleet` and no second Swamp in the VM.
 
-The workflow `proof-fleet-verify` has the shape below. The build settles the syntax against the Swamp manual.
+The workflow `proof-fleet-verify` is built, in `swamp/workflows/`. The Gateway starts it as the operation `proof.verify` with the full intent as inputs: the SSH target of the task VM, the checkout path and the cases file. Every step is an official `@swamp/ssh` exec of the runner on the task VM, placed on Orbit's own Swamp, with `okExitCodes: any`: a verdict of `failed` or `unrun` is an exit code of the runner, not a fault of the step.
 
-- A `plan` step runs `runner plan` and prints the ordered batches.
-- A `forEach` over the batches, one at a time, runs one child workflow per batch. It restores `base`, guarded so the first batch skips it, then sets up the batch.
-- A `forEach` over the cases of the batch, one at a time, runs one child workflow per case. It has two steps: `runner case ID` as an `@swamp/ssh` exec step on the task VM, and a restore of `base` that a verdict other than `passed` triggers through `guard`. The cases step uses `allowFailure`, so a failed case does not stop its batch.
-- A `report` step joins the verdicts, and the run ends. The Gateway reads the terminal event and records the verdicts once.
+- A `plan` step runs `runner plan --lines`, which prints one line a batch, `BATCH SETUP CASE...`, in the order of the batch file.
+- A `forEach` over the batches, one at a time, runs one child workflow, `proof-fleet-verify-batch`, per batch.
+- The batch child runs `runner restore --group N`, guarded so the first batch skips it. It is the phase `base-restore` with its own 45 s limit and no retry. Then it runs `runner setup BATCH` when the batch declares setup steps. Then a `forEach` over its cases, one at a time, runs one child workflow, `proof-fleet-verify-case`, per case. Last, a `report` step joins the verdict lines of the batch.
+- The case child runs `runner case ID` with `allowFailure`, so a failed case does not stop its batch. A verdict other than `passed` triggers `runner restore` and the batch setup through `guard`. The last case of a batch skips them, because the next batch restores anyway.
+- A `report` step of the parent joins the reports of the batches. Every case of the plan has one line: a case that printed no line is `failed` with cause `infrastructure`, and a case that did not run is `unrun` with cause `infrastructure`. The Gateway reads this step once, when the run ends, and records the verdicts. No step calls back to the Gateway.
+
+Swamp drops the outputs of a failed child workflow, and a guarded step leaves no entry in `steps`. So no step fails on purpose to stop the run. The restore and the setup print one line (`{"restore": "failed", ...}` or `{"setup": "failed", ...}`) and exit with any code; every later `guard` and the reports read that line. A restore or a setup that failed makes the rest of the batch, and every later batch, `unrun`. The dual-stack batch declares `ipv6_addresses`, which is not built, so today its setup fails and its cases are `unrun`.
 
 A case is one step because its steps share state: its ports and the state that `unchanged` compares. That is one action group in the sense of the [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Batches, resets, order and failure handling are native Swamp controls, not a loop inside the runner. The runner is a Python file that ships with the workflow, linted with the other scripts.
 
@@ -271,7 +274,7 @@ The Swamp workflow restores `base` and runs `runner case ID --negative`, which r
 
 ## What exists and what is new
 
-The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py` and the fleet access `fleet.py`. It runs `new-restricted-allow` of `allow.cases.yaml` on the nested fleet of a task VM and ends with `passed`: about 85 seconds after a restore of `base`, 65 of them the wait for Doctor. `runner.py case ID --negative` proves that the case can fail. The old case script `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh` stays until the other cases are in the runner. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
+The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py` and the fleet access `fleet.py`. It runs `new-restricted-allow` of `allow.cases.yaml` on the nested fleet of a task VM and ends with `passed`: about 85 seconds after a restore of `base`, 65 of them the wait for Doctor. `runner.py case ID --negative` proves that the case can fail. The old case script `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh` stays until the other cases are in the runner. `proof:run` still selects a command through its case programs but runs the cases file of the command, so that script is only the selection key today. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
 
 | Piece | State |
 | --- | --- |
@@ -294,8 +297,9 @@ The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`
 | `busy_node` | New. Needs a spike to hold the lock without a long write. |
 | `ipv6_addresses` | New. The nested fleet has no IPv6 today. Needs a spike. |
 | A step that is new fails the case with cause `infrastructure` and the message `... is not built` | Built. |
-| Restore of `base` per batch and after a case that did not pass | New. Measured on tvm-554 with stock Incus: about 15 seconds until healthy. The Gateway of the restored fleet answers `node:list` about 15 seconds later, so the restore step must wait for that; the runner does not retry. |
+| `runner.py plan --lines`, `restore --group N` and `setup BATCH` | Built. `restore` runs the phase `base-restore` for the newest reset of the group; `setup` runs the setup steps of a batch. |
+| Restore of `base` per batch and after a case that did not pass | Built, as the `restore` step of the batch and the case child. Measured on tvm-554 with stock Incus: about 15 seconds until healthy. The Gateway of the restored fleet answers `node:list` about 15 seconds later, so the restore waits for that; nothing retries. |
 | `bin/check-cases` and the `check-flows` marker rule | New. |
-| Workflows `proof-fleet-verify` and the per-batch and per-case children | New. `proof-command-verification` and the reset workflows exist. |
+| Workflows `proof-fleet-verify` and the per-batch and per-case children | Built, with the operation `proof.verify` that starts them. `proof:run` resets the fleet through `bin/proof-fleet reset`, then runs them for each selected command. `proof-command-verification` and the reset workflows still build the fleet. |
 
-Still to build, to be removed once built: `bin/check-cases` about 150 lines, the terminal driver, the other steps in the table, and the workflows about 150 lines of YAML. The runner and its steps are about 700 lines, and its tests about 640. After that a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.
+Still to build, to be removed once built: `bin/check-cases` about 150 lines, the terminal driver and the other steps in the table. The runner and its steps are about 700 lines, and its tests about 640. After that a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.

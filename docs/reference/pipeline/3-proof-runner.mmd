@@ -23,12 +23,14 @@ sequenceDiagram
   %%> - refuses a case with an unknown step, an unknown chart path or no batch
   %%> - lists the chart paths, options and codes that no case covers
   %%> - groups the cases by batch, in the order of `swamp/proof/batches.yaml`; inside a batch, in file order
+  %%> - `runner plan --lines` prints one line a batch, `BATCH SETUP CASE...`, which the workflow reads; the workflow `proof-fleet-verify` is built
   VM-->>SW: Ordered plan<br/>batches · cases
   loop each batch, one at a time
     SW->>NT: Restore base<br/>memory snapshot · about 16 s
     %%> What it does:
     %%> - restores the task's stateful snapshot `base` of the three nested VMs; skipped when the fleet is still at `base`, as for the first batch
     %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
+    %%> - `runner restore --group N` prints one line, `{"restore": "failed", ...}` on a failure; Swamp drops the outputs of a failed child, so no step fails on purpose: every guard and the report read that line
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>batch setup steps
       %%> What it does:
@@ -60,6 +62,7 @@ sequenceDiagram
         SW->>NT: Restore base<br/>then the batch start state
         %%> Why:
         %%> - a failed case can leave anything behind; the next case starts clean
+        %%> - the last case of a batch skips it, because the next batch restores anyway
       end
     end
   end

@@ -59,6 +59,10 @@ final class OperationRunBudgets
         // 300 s allowed), the fleet release (600 s) and a margin, rounded up to five minutes. Replace with the 14-day p95
         // after the first success.
         'proof.run' => 3000,
+        // No run yet. Basis: the runner cases of firewall:allow, 16 cases, each about 85 s with its restore (65 s of it the wait for Doctor in
+        // the main case only) and at most 180 s; 14 cases x 120 s plus 2 batch restores is about 1,800 s, x 1.5, rounded up to five minutes.
+        // Replace with the 14-day p95 after the first success.
+        'proof.verify' => 2700,
         'node.converge' => 3900,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.
