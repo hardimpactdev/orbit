@@ -747,12 +747,12 @@
         },
         "pi": {
             "source": "internal",
-            "version": "e5933d4c8696",
-            "source_commit": "e5933d4c8696",
+            "version": "23e7198f7c98",
+            "source_commit": "23e7198f7c98",
             "artifacts": {
                 "amd64": {
-                    "filename": "pi-server-e5933d4c8696-linux-x64",
-                    "sha256": "286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c"
+                    "filename": "pi-server-23e7198f7c98-linux-x64",
+                    "sha256": "df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438"
                 }
             }
         },
