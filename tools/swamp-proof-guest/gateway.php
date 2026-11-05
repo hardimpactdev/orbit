@@ -106,7 +106,11 @@ if ($argv[1] === 'proof-state') {
         }
         $commands[$node->name] = array_map(static fn ($rule): array => $rule->arguments, $managed);
     }
-    echo json_encode(['facts' => $facts, 'expected_firewall' => $rules, 'baseline_commands' => $commands,
+    // The presence heartbeat the agent view subscriber receives: the Gateway's own answer to "is this agent online".
+    $agents = Node::query()->where('name', '!=', 'operator')->get()->mapWithKeys(
+        static fn (Node $node): array => [$node->id => app(\App\Domain\NodeFacts\NodeAgentLiveness::class)->for($node)?->state->value],
+    )->all();
+    echo json_encode(['facts' => $facts, 'agents' => $agents, 'expected_firewall' => $rules, 'baseline_commands' => $commands,
         'firewall_records' => \App\Models\FirewallRule::query()->orderBy('id')->get()->toArray()]), PHP_EOL;
     exit(0);
 }

@@ -234,6 +234,15 @@ def route_leaf(ctx, route_id, hosts):
     leaf(ctx, directory, 'cert', hosts)
     (directory / 'cert.key').rename(directory / 'key.pem')
 
+def caddy_access(ctx):
+    """Caddy can reach the Gateway's public directory through the directories that lead to it."""
+    path = ctx.HOME
+    for part in ctx.GATEWAY.relative_to(ctx.HOME).parts:
+        run(ctx, ['setfacl', '-m', 'u:caddy:x', str(path)])
+        path = path / part
+    run(ctx, ['setfacl', '-m', 'u:caddy:x', str(ctx.GATEWAY)])
+    run(ctx, ['setfacl', '-m', 'u:caddy:rx', str(ctx.GATEWAY / 'public')])
+
 def serve_gateway(ctx, node_id, swamp_route):
     """The Gateway on Node 209 as production runs it (version 12).
 
@@ -269,12 +278,7 @@ def serve_gateway(ctx, node_id, swamp_route):
         network = ctx.TOPOLOGY['network']
         run(ctx, ['ufw', 'allow', 'in', 'on', network['name'], 'from', str(ipaddress.ip_network(f'{address}/{network["prefix"]}', strict=False)), 'to', address, 'comment', 'proof-network'])
         run(ctx, ['ufw', '--force', 'delete', 'allow', 'in', 'on', network['name'], 'to', address, 'port', '443', 'proto', 'tcp', 'comment', 'orbit-proof gateway'])
-    path = ctx.HOME
-    for part in ctx.GATEWAY.relative_to(ctx.HOME).parts:
-        run(ctx, ['setfacl', '-m', 'u:caddy:x', str(path)])
-        path = path / part
-    run(ctx, ['setfacl', '-m', 'u:caddy:x', str(ctx.GATEWAY)])
-    run(ctx, ['setfacl', '-m', 'u:caddy:rx', str(ctx.GATEWAY / 'public')])
+    caddy_access(ctx)
     run(ctx, ['systemctl', 'enable', 'php8.5-fpm', 'caddy'])
     run(ctx, ['systemctl', 'restart', 'php8.5-fpm'])
     publish_caddy(ctx, node_id)

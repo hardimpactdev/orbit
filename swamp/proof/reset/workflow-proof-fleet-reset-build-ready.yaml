@@ -1,0 +1,38 @@
+id: a6c8f436-9476-433c-b77a-0a6fe7e78eb7
+name: proof-fleet-reset-build-ready
+description: Task-local disposable proof fleet; never touches the outer control plane.
+version: 1
+inputs:
+  type: object
+  properties:
+    request:
+      type: string
+      description: Absolute path to the owned nonsecret execution request.
+    candidate:
+      type: string
+      description: Candidate repository owning the bounded phase programs.
+  required: [request, candidate]
+  additionalProperties: false
+jobs:
+  - name: build
+    steps:
+      - name: reset
+        task:
+          type: workflow
+          workflowIdOrName: proof-fleet-reset
+          inputs:
+            request: "${{ inputs.request }}"
+            candidate: "${{ inputs.candidate }}"
+  - name: ready
+    dependsOn:
+      - job: build
+        condition:
+          type: succeeded
+    steps:
+      - name: ready
+        task:
+          type: workflow
+          workflowIdOrName: proof-fleet-ready
+          inputs:
+            request: "${{ inputs.request }}"
+            candidate: "${{ inputs.candidate }}"

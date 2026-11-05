@@ -289,14 +289,14 @@ class CaseResultTests(unittest.TestCase):
     def test_the_final_json_line_holds_the_verdicts_and_exit_1_for_any_case_that_did_not_pass(self):
         code, final, programs = self.verify('999998', ['exit 0', 'exit 1', 'exit 2'])
         self.assertEqual(1, code)
-        self.assertEqual({'status', 'summary', 'exit', 'cases_ran', 'generation', 'evidence'}, set(final))
+        self.assertEqual({'status', 'summary', 'exit', 'mode', 'seconds', 'cases_ran', 'generation', 'evidence'}, set(final))
         self.assertEqual(('failed', 1, True), (final['status'], final['exit'], final['cases_ran']))
         self.assertEqual(programs, [case['program'] for case in self.status['cases']])
         self.assertEqual(['passed', 'failed', 'unrun'], [case['verdict'] for case in self.status['cases']])
 
     def test_the_summary_comes_first_in_compact_form_and_survives_a_truncated_tail(self):
         _, final, _ = self.verify('999995', ['exit 0', 'exit 1', 'exit 2'])
-        self.assertEqual(['status', 'summary', 'exit', 'cases_ran', 'generation', 'evidence'], list(final))
+        self.assertEqual(['status', 'summary', 'exit', 'mode', 'seconds', 'cases_ran', 'generation', 'evidence'], list(final))
         self.assertEqual([['p', self.status['cases'][0]['seconds']], ['f', self.status['cases'][1]['seconds']], ['u', 0]], final['summary'])
         self.assertTrue(self.line.startswith('{"status":"failed","summary":[["p",'), self.line[:80])
         self.assertNotIn(', ', self.line)
