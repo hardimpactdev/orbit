@@ -8,41 +8,62 @@ covers:
 ---
 
 ```bash
-orbit instance:register --project=ID [--idempotency-key=KEY] [options]
+orbit instance:register --project=ID [--path=PATH] [--name=NAME] [--root=PATH] [--domain=HOST] [--setup] [--yes] [--include-worktrees] [--json]
 ```
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--path=PATH` | the current directory | Checkout already at `<apps-root>/<project-slug>/<name>`. |
-| `--project=ID` | required | Existing numeric Project ID. |
-| `--name=NAME` | directory name | Instance name; an explicit Project default branch name becomes `default`. |
+| `--project=ID` | prompt | Numeric ID of an existing Project. |
+| `--path=PATH` | the current directory | A checkout that already sits directly under `<apps-root>/<project-slug>/`. |
+| `--name=NAME` | directory name | Instance name, a lowercase DNS label of at most 63 characters; it need not equal the directory name, but a directory name that is not a valid label needs `--name`. The Project's default branch name becomes `default`, also when it is the directory name. |
 | `--root=PATH` | the Project root | Valid relative root override. |
-| `--yes` | off | Confirm source ownership transfer without prompting. |
-| `--include-worktrees` | off | Reserved for adopting every worktree; unavailable. A single linked worktree needs no flag. |
-| `--domain=HOST` | none | Create a Route in the Node TLD after registration. |
+| `--domain=HOST` | none | Create a Route for this domain, which must sit below the Node's TLD. A Cluster TLD does not apply. |
 | `--setup` | off | Run the Project setup steps, then create and start its development Processes. |
-
-The CLI refuses a directory outside Git and an origin with credentials before sending a request. The Gateway checks the [Node agent's fresh checkout report](/reference/node-agent#checkouts): the source must belong to the Node account and the Project repository. A plain checkout and a linked worktree of that repository are accepted. A branch renamed after the worktree was created is recorded as reported; registration changes no Git metadata.
-
-With a private or absent `.env` and no opt-in work, registration answers HTTP 201 with the active Instance. It starts no Operation and reads nothing on the Node. The Gateway records the observed branch, commit, PHP version and Laravel marker.
-
-`--setup`, `--domain`, or a publicly readable `.env` starts one native Operation and answers HTTP 202. Its guarded steps protect an existing public `.env` as `0640 orbit-env`, run the Project setup steps in order, start its development Processes, and create the Route through the same child workflow as `route:create`. Each step runs only when requested or needed. The Route must answer over TLS before the Instance becomes active.
-
-An unfinished registration marks its prepared development runtime awake after publication, so the first request can use it. Retrying a completed registration without `--setup` preserves its current awake state. With `--setup`, the run checks and starts all Project-defined Processes before it can mark the runtime awake. Existing containers start in place.
-
-Setup uses a private umask for new files. If setup has no steps or Process definitions and no other Node work is needed, registration returns HTTP 201 without a run. Registration preserves the user's `.env`; setup follows the Project's commands, and Route creation may set its `APP_URL`.
-
-A failed step keeps the checkout and the Instance reserved with failure details. Fix the cause and repeat the request. Completed work stays in place. With a silent agent, missing checkout metadata or mismatched ownership or origin, the Gateway refuses before reservation with `instance.source_invalid` or the specific source error.
-
-Registration requires an existing Project and an in-place source under its configured apps directory. Project inference, source relocation and adopting every worktree remain unavailable. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
-
-In a terminal, the CLI asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`.
+| `--yes` | prompt | Confirm the source ownership transfer without prompting. Required without a terminal and with `--json`. |
+| `--include-worktrees` | off | Reserved for adopting every worktree; unavailable. A single linked worktree needs no flag. |
+| `--json` | off | Print the Instance, or the final task, as JSON. |
 
 ```bash
 cd /fast/apps/acme/feature
 orbit instance:register --project=12 --name=feature --yes --json
 ```
 
+Run the command on the `app-dev` Node that holds the source. In a terminal, an omitted Project is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `project.id_invalid` and sends no request, and so is a value that is not a positive integer.
+
+The CLI inspects the path first. It refuses a directory outside Git, and an origin that is empty, a local path or `git://`, carries credentials or a password, or has a query or fragment, with `instance.source_invalid` before it sends a request. `--include-worktrees` is refused with `operation.kind_unavailable` before any prompt. In a terminal the CLI then asks, with No selected, to transfer the source to Orbit ownership, naming the path and the effect: Orbit may relocate and later remove it. Declining ends with `instance.registration_cancelled`. A noninteractive or `--json` call without `--yes` is refused with `input.confirmation_required`.
+
+The Gateway checks the [Node agent's fresh checkout report](/reference/node-agent#checkouts), which must exist for the path and come from an online agent. The source must belong to the Node account and the Project repository, sit directly under `<apps-root>/<project-slug>/`, have a commit, have a `.env` that is absent or a regular file owned by the Node account, and not overlap another managed checkout. A plain checkout and a linked worktree of that repository are accepted. A branch renamed after the worktree was created is recorded as reported; registration changes no Git metadata. Project inference, source relocation and adopting every worktree stay unavailable; a request without a Project, or for a source outside the apps directory, is refused with `operation.kind_unavailable`. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
+
+With an absent `.env`, or one that only the Node account can read, and no opt-in work, registration answers at once with the active Instance. It starts no task, and the Gateway reads nothing on the Node: it records the observed branch, commit, PHP version and Laravel marker from the agent's report. `--setup`, `--domain`, or a `.env` with any group or other permission bit starts one task; a `.env` already protected as `0640` therefore starts a task on every repeat, which skips the finished step. Its guarded steps protect an existing public `.env` as `0640 orbit-env`, run the Project setup steps in order, start its development Processes, and create the Route as `route:create` does. Each step runs only when requested or needed. The Route must answer over TLS before the Instance becomes active. Registration preserves your `.env`; setup follows the Project's commands, and Route creation may set `APP_URL`. If setup has no steps or Process definitions and no other Node work is needed, registration answers at once.
+
+With `--domain`, an unfinished registration marks its prepared development runtime awake after the Route is published, so the first request can use it. A retry of a completed registration without `--setup` keeps its current awake state. With `--setup`, the run checks and starts all Project-defined Processes before it marks the runtime awake.
+
+The CLI shows one progress display while it inspects the source. A record-only result prints `Instance registered: <name>` with ID, Selected branch and Request ID; a task shows the follow display and its final result. A failed step keeps the checkout and leaves the Instance `reserved` with the failed step and its error code; `operation:show` shows them. Completed work stays in place. Fix the cause and run the same command again: it repairs the Instance, and a different Project, name, root or domain for the same checkout is refused with `instance.registration_conflict`.
+
 ## How it works
 
 <div className="flow-at" data-chart="instance/register"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `project.id_invalid` | The Project is missing in a call that cannot prompt, or is not a positive integer. |
+| `input.cancelled` | You cancelled the Project list. |
+| `instance.source_invalid` | The path is not a supported Git checkout or worktree, its origin is unsafe, the agent is offline, has no report for the path or reports another application directory, the checkout has no commit, or its `.env` is a link or not a regular file. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `instance.registration_cancelled` | You declined the ownership transfer. |
+| `validation.failed` | `--root` is not a normalized relative web path or is rejected for the Project type, the domain is not a valid domain, the name is over 63 characters, or the Project does not exist. |
+| `instance.caller_not_app_dev` | The caller is not an active Linux Node with the `app-dev` role. |
+| `operation.kind_unavailable` | `--include-worktrees`, a missing Project, or a source outside `<apps-root>/<project-slug>`. |
+| `instance.name_invalid` | The name is not a lowercase DNS label. |
+| `project.root_invalid` | The Project's stored root is not valid for its type. |
+| `instance.source_owner_invalid` | The Node account is `root` or not a valid account name, or the checkout or its `.env` is owned by another account. |
+| `app-dev.source_metadata_unsafe` | The checkout's Git metadata is unsafe to adopt. |
+| `instance.source_identity_invalid` | The checkout's origin is not the Project's repository. |
+| `instance.source_conflict` | The checkout overlaps another managed checkout. |
+| `instance.registration_conflict` | The checkout already belongs to another Instance intent or Route domain, is not in a state that can be registered, was made by `instance:create`, or is not a checkout of its reported shared repository. |
+| `route.domain_invalid` | The domain is not below the Node's TLD, or the Node has no TLD. |
+| `route.domain_conflict` | Another Route owns the domain. |
+
+The run's steps can also fail with the codes of [`route:create`](/cli/route/create) and of the Project setup steps.
