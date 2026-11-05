@@ -2,9 +2,11 @@
 
 The flow is stages 2 and 3 of the [command development pipeline](../../docs/reference/command-development-pipeline.mdx); the stage charts own the steps. This page documents the code that runs them today.
 
-## Current path: reset a fleet, run cases
+## What runs today
 
-[`reset/`](reset/README.md) is the proof path for new work. From the task VM, `bin/proof-fleet reset GROUP` builds a nested fleet inside that VM: a Gateway that also runs Swamp, `app-dev` and `app-prod`. The fleet has a real WireGuard network, `10.45.0.0/24`, with the hub on the nested Gateway. The outer task VM is the operator: its candidate CLI (`/usr/local/bin/orbit-nested`) talks to the nested Gateway as the WireGuard member `10.45.0.10`, as an operator machine does in the fleet. `bin/proof-fleet verify GROUP CASE...` runs one or more cases in order against that ready generation and prints a verdict for each. [`selection.txt`](selection.txt) maps changed paths to the commands whose cases a commit needs; [`orbit proof:run`](../../docs/cli/proof/run.mdx) reads it. `bin/proof-fleet release GROUP` removes it. The outer VM, its observer and its checkout stay as they were.
+**Interim code. Never run `bin/proof-fleet` by hand.** Today only two callers use it: `proof:run` (through `tasks.script`) and the seed refresh of stage 6. The [stage 2](../../docs/reference/pipeline/2-development-environment.mmd) and [stage 3](../../docs/reference/pipeline/3-proof.mmd) Swamp flows replace it ([old paths](../../docs/reference/old-paths.md)). To prove a command, follow [verifying-commands](../../.agents/skills/verifying-commands/SKILL.md).
+
+The nested fleet inside a task VM is a Gateway that also runs Swamp, `app-dev` and `app-prod`, on a real WireGuard network `10.45.0.0/24` with the hub on the nested Gateway. The outer task VM is the operator: its CLI `orbit-nested` talks to the nested Gateway as the WireGuard member `10.45.0.10`, and syncs the candidate code into the nested VMs before each call. [`selection.txt`](selection.txt) maps changed paths to the commands whose cases a commit needs; [`orbit proof:run`](../../docs/cli/proof/run.mdx) reads it.
 
 A build takes about 230 s. Ready copies make the next reset about 75 s, of which the boot is about 50 s: `bin/proof-fleet ready GROUP` copies a healthy fleet to stopped `fleet-ready-*` copies, and `bin/proof-fleet reset GROUP --from-ready` replaces the three guests with them, applies the candidate and checks readiness. `verify` uses the copies by itself when they can replace the active fleet, and builds as before when they cannot. If `reset --from-ready` finds no usable copies it builds, then makes them. See [Ready copies](reset/README.md#ready-copies-and-the-fast-reset).
 
@@ -12,7 +14,7 @@ A reset from ready copies ends with an Incus memory snapshot `base` of the three
 
 The boot fixes that keep a reset near 50 s (agent after the tunnel, cloud-init off, the hosts line, Swamp serve and worker at boot, 2 vCPUs for the Gateway, dev-safe opcache and no Laravel caches) are code in [`tools/swamp-proof-guest/boot.py`](../../tools/swamp-proof-guest/boot.py). A fresh build writes them; nobody edits a VM by hand.
 
-Cases are written in `swamp/proof/<family>/<command>.cases.yaml` and run by the shared runner in [`runner/`](runner/runner.py) ([format](../../docs/reference/verification-cases.mdx)). A case calls the real candidate CLI, checks the real effect and prints a verdict. The first file is [`firewall/allow.cases.yaml`](firewall/allow.cases.yaml): a real `firewall:allow` opens real traffic. `orbit proof:run` selects a command with [`selection.txt`](selection.txt) and runs its cases file; a command without one is uncovered. The firewall case programs and fixtures are deleted ([old paths](../../docs/reference/old-paths.md)).
+Cases are written in `swamp/proof/<family>/<command>.cases.yaml` and run by the shared runner in [`runner/`](runner/runner.py) ([format](../../docs/reference/verification-cases.mdx)). A case calls the real candidate CLI, checks the real effect and prints a verdict. The first file is [`firewall/allow.cases.yaml`](firewall/allow.cases.yaml): a real `firewall:allow` opens real traffic. `orbit proof:run` selects a command with [`selection.txt`](selection.txt) and runs its cases file; a command without one is uncovered.
 
 ## Ready copies: the contract
 

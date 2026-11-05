@@ -4,7 +4,7 @@ version: 2026.11.02.1
 visibility: private
 license: MIT
 description: npm, Bun, Vite+, and Expo updates, advisory detection, and dependency PR descriptions.
-repository: https://github.com/hardimpactdev/orbit-swamp
+repository: https://github.com/hardimpactdev/orbit
 behaviors:
   - js-maintenance/mod.ts
 include:

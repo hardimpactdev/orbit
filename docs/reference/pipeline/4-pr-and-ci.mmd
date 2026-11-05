@@ -112,7 +112,7 @@ sequenceDiagram
     %%> Built:
     %%> - the operation `tasks:pr-merge`, with its chart; no flow calls it yet
     %%> Not built:
-    %%> - a flow that calls it; today the author runs `gh pr merge --auto --squash` as `nckrtl` (the interim)
+    %%> - a flow that calls it; today the author runs `gh pr merge N --squash` as `nckrtl` (the interim)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one
