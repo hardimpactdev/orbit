@@ -1,0 +1,18 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 8,
+      "pages": [
+        {
+          "group": "proof",
+          "pages": [
+            "cli/proof/index",
+            "cli/proof/run"
+          ]
+        }
+      ]
+    }
+  ]
+}

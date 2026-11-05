@@ -41,9 +41,9 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 **Tests.**
 
 - Each chart path has one case, kept in `docs/cli/<family>/<command>.cases.yaml`: the main path, each `--flag`, and the error paths. `bin/check-flows` fails when an `opt` block has no case.
-- `test:run <commit>` clones the topology templates (Gateway with Swamp, app-dev, app-prod) on the template host with copy-on-write. It converges the clones to the commit and runs the cases.
+- `proof:run <commit>` takes a task VM slot, builds its nested test fleet (Gateway with Swamp, app-dev, app-prod) from the ready snapshot, applies the commit and runs the cases. [`proof:run`](/cli/proof/run) owns the contract.
 - A case passes when Doctor finds no drift on the records it touched and a second run changes nothing. An error case passes when the command refuses and changes nothing.
-- Orbit's GitHub App starts `test:run` for every pull request and reports a required check. A commit that changes `recipe.json` runs every case.
+- A CI job calls `proof:run` for every pull request that changes command code, and its result is the required check `Proofs`. A commit that changes `recipe.json` runs every case.
 
 **Rollout.**
 
@@ -102,7 +102,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
   - Converge: `node:converge` took 25 seconds on version 17 and 57 seconds on version 14, for one Node.
   - Release onto an existing topology with two Nodes: about 2 to 3 minutes, estimated from the runs above.
   - Stock Ubuntu 26.04 to `app-dev`: neither step succeeded. `node:add` ran every phase in 70 seconds, and then failed its final check because of a key workaround that only the proof needs. The `app-dev` role then ran for 4 minutes 17 seconds and failed at a Tool Manager download (HTTP 404). Most of that time went to prerequisites (45 seconds), PHP packages (62 seconds) and Tool Managers (69 seconds). The failed attempts took 5 minutes 27 seconds combined. A complete successful run remains unmeasured.
-  - Estimate: `test:run` adds about 2 to 3 minutes before its cases run. The time of a full nightly build is still unverified.
+  - Estimate: `proof:run` adds about 2 to 3 minutes before its cases run. The time of a full nightly build is still unverified.
 
 ## Affects
 
