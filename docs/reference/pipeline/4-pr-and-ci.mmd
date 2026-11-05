@@ -68,7 +68,8 @@ sequenceDiagram
     %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
     %%> - a draft PR whose CI result is green on its head: the Gateway admits the ready step below
     %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
-    %%> - in automatic mode the Gateway admits the self-review run first, then the merge step
+    %%> - a PR out of draft in automatic mode, with no review round recorded for that head: the Gateway admits the review round below
+    %%> - a PR out of draft in automatic mode, whose round on that exact head passed: the Gateway admits the merge step below
     %%> Why:
     %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the green CI and the approval
     %%> - Swamp steps make no Gateway calls; each admission starts its own Swamp run with the full intent
@@ -79,7 +80,7 @@ sequenceDiagram
     %%> Built:
     %%> - the check for manual mode, as the scheduled command `tasks:pr-gate`
     %%> Not built:
-    %%> - the check for automatic mode, because the self-review run does not exist
+    %%> - the two automatic-mode rules above
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
     %%> - authorizes the step and mints a short-lived App token
@@ -94,7 +95,7 @@ sequenceDiagram
     %%> Built:
     %%> - the operation `tasks:pr-ready`, with its chart, called by the gate check in manual mode
     %%> Not built:
-    %%> - the call in automatic mode
+    %%> - the call in automatic mode; there it requests no review, unless the group fell back to manual
     alt manual mode
       GW->>GH: Read the PR reviews<br/>short poll · approval on head
       %%> What it does:
@@ -106,14 +107,30 @@ sequenceDiagram
       %%> - the read, as the gate of the operation `tasks:pr-merge`, polled every minute by the gate check
       GH-->>GW: Approval on the head
     else automatic mode
-      SW->>AG: Final self-review<br/>fresh review agent
+      GW->>SW: Admit a review round<br/>group · head · round N
       %%> What it does:
-      %%> - a new review agent, which took no part in the spec, the code or the earlier reviews, reads the whole PR head and the CI result
-      %%> Result:
-      %%> - findings go back to the author agent, which fixes them; the new head gets a new CI run and a new review
-      %%> - at most 3 review rounds; after the third with findings, the PR switches to manual mode, Swamp requests Nick's review, and it waits for his approval
+      %%> - one Swamp run per round, admitted by the gate check, keyed by group and head; the Gateway records the round number on the group
+      %%> - the mode is set per Task group when it is created (`tasks:create --review=automatic`); the default is manual
+      %%> Not built
+      SW->>AG: Review the PR head<br/>fresh reviewer turn
+      %%> What it does:
+      %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds
+      %%> - it runs in the task VM, which the run resumes if it was parked; it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the same review rules as Nick
+      %%> - the verdict is pass, or findings with file and reason; it is posted as a PR comment by the App so Nick can read it
+      %%> Why:
+      %%> - the App opened the PR, and GitHub does not let an author approve its own PR, so the pass is recorded by the Gateway, not as a GitHub approval
       AG-->>SW: Pass<br/>or findings
-    end
+      opt findings
+        SW->>AG: Fix the findings<br/>author turn · push
+        %%> What it does:
+        %%> - a child run of the turn workflow with the role `implementer`, in the author's thread, with the findings as its prompt
+        %%> - then the handoff check and a push to the same branch, as the publish step does; the new head gets a new CI run, and the gate check admits the next round once it is green
+      end
+      SW-->>GW: Round result<br/>terminal event
+      %%> Result:
+      %%> - the Gateway records pass or findings for that head and round
+      %%> - a pass on the head lets the gate check admit the merge step
+      %%> - after round 3 with findings, the Gateway switches the group to manual mode; the ready step's review request goes to Nick, and the PR waits for his approval
     GW->>SW: Admit the merge step<br/>fresh token key name
     %%> Why:
     %%> - a token lives one hour and an approval can take longer, so the Gateway mints a new one for this step
@@ -127,7 +144,7 @@ sequenceDiagram
     %%> Built:
     %%> - the operation `tasks:pr-merge`, with its chart, called by the gate check in manual mode
     %%> Not built:
-    %%> - the call in automatic mode; a PR that is not in a Task group still merges with `gh pr merge N --squash` as `nckrtl` (the interim)
+    %%> - the call in automatic mode, after a passed round on the head; a PR that is not in a Task group still merges with `gh pr merge N --squash` as `nckrtl` (the interim)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one
