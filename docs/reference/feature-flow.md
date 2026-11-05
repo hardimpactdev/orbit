@@ -68,11 +68,11 @@ The author prepares the PR for the merge queue.
 
 1. Push the branch.
 2. Swamp opens the PR as the Orbit App.
-3. After a manual or automatic gate, Swamp turns on auto-merge, so the PR joins the merge queue once CI passes.
+3. Swamp adds the PR to the merge queue.
 
-Swamp uses an App token that the Gateway mints, through GitHub's `enablePullRequestAutoMerge`. The Gateway only admits the request and mints the token. GitHub ignores auto-merge turned on with the built-in Actions token, so #2550 removed that workflow. An App token is different.
+This happens after a manual or automatic gate, once the PR's CI is green. The merge queue then runs CI on the merge group and merges. The Orbit App, through a Swamp step, decides whether a PR may merge. Swamp uses an App token that the Gateway mints and calls GitHub's `enqueuePullRequest` GraphQL mutation. The Gateway only admits the request and mints the token. GitHub auto-merge is not used.
 
-Not built yet: PRs opened by the App, and Swamp turning on auto-merge. App-enabled auto-merge still has to be proven to join the queue. Until then, the author opens the PR and runs `gh pr merge <n> --auto` as `nckrtl`.
+Not built yet: PRs opened by the App, and Swamp adding PRs to the merge queue. The repository's auto-merge setting is switched off once Swamp enqueues PRs. Until then, the author opens the PR and runs `gh pr merge <n> --auto` as `nckrtl` (the interim).
 
 ## 4. CI
 
@@ -300,6 +300,6 @@ These choices remain open.
 - Parallel rollout: dev Nodes first, or all Nodes at once.
 - The `node:converge` flag names for the release scope (footprint, changed roles).
 - The first content of `swamp/proof/selection.txt`: which Gateway and CLI files map to which command.
-- How Pi's PRs merge: check App-token auto-merge through the queue after task-VM development restarts.
+- How Pi's PRs merge: check that Swamp can add them to the merge queue with an App token after task-VM development restarts.
 - Speed of nested VMs inside a task VM, for the nightly build.
 - The agent becomes an observer only after the task image build stops using the agent and the remaining Gateway calls to agent commands are gone.

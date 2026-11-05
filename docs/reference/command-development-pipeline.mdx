@@ -18,7 +18,7 @@ The command development pipeline is the stages every command goes through during
 
 ## 1. Prep
 
-**Partly built.** A command is ready when its chart, docs page and verification cases are merged; preparation changes no code. Swamp owns the whole flow and its state and the Gateway only authorizes it: an author agent drafts in a task VM, a separate review agent checks, and Swamp opens the PR as the Orbit App. Then one of two modes, set per flow, turns on auto-merge. In manual mode, Nick's approving review on the exact PR head is the gate, after an optional review in a development Instance on the PR branch; in automatic mode, CI and a final self-review by a fresh review agent are the gate. Not built: the Swamp prep flow, PRs opened by the App, the approval-triggered continuation, and App-enabled auto-merge into the merge queue.
+**Partly built.** A command is ready when its chart, docs page and verification cases are merged; preparation changes no code. Swamp owns the whole flow and its state and the Gateway only authorizes it: an author agent drafts in a task VM, a separate review agent checks, and Swamp opens the PR as the Orbit App. Then one of two modes, set per flow, decides when Swamp adds the PR to the merge queue. In manual mode, Nick's approving review on the exact PR head is the gate, after an optional review in a development Instance on the PR branch; in automatic mode, CI and a final self-review by a fresh review agent are the gate. Not built: the Swamp prep flow, PRs opened by the App, the approval-triggered continuation, and Swamp adding the PR to the merge queue.
 
 <div className="flow-at" data-chart="reference/pipeline/1-prep"></div>
 
@@ -51,7 +51,7 @@ The command development pipeline is the stages every command goes through during
 
 ## 4. PR and CI
 
-**Partly built.** There is one CI: the fast checks plus, for command code, the proof CI (`proof:run` for the affected commands). The merge queue requires that one result. Swamp opens the PR as the Orbit App and, after a manual or automatic gate, turns on auto-merge with a Gateway-minted App token through GitHub's `enablePullRequestAutoMerge`. Not built: PRs opened by the App, Swamp turning on auto-merge (it still has to be proven to join the merge queue), and the proof CI job. Today the author opens the PR and turns on auto-merge as `nckrtl`.
+**Partly built.** There is one CI: the fast checks plus, for command code, the proof CI (`proof:run` for the affected commands). The merge queue requires that one result. Swamp opens the PR as the Orbit App and, after a manual or automatic gate, and once the PR's CI is green, adds the PR to the merge queue with a Gateway-minted App token through GitHub's `enqueuePullRequest` GraphQL mutation. The merge queue then runs CI on the merge group and merges. GitHub auto-merge is not used. Not built: PRs opened by the App, Swamp adding the PR to the merge queue, and the proof CI job. The repository's auto-merge setting is switched off once Swamp enqueues PRs. Until then, the author opens the PR and runs `gh pr merge --auto` as `nckrtl` (the interim).
 
 <div className="flow-at" data-chart="reference/pipeline/4-pr-and-ci"></div>
 

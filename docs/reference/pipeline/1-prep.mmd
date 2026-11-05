@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 1 of the command development pipeline (docs/reference/command-development-pipeline.mdx). Swamp owns the whole prep flow and its state; the Gateway only authorizes it: it admits each request, mints short-lived GitHub App tokens, passes them by vault key name, and records outcomes. An author agent drafts, a separate review agent checks, Swamp opens the PR as the Orbit App, and one of two modes (manual or automatic) decides when auto-merge goes on. No code changes in this stage.
+  %% Target design: stage 1 of the command development pipeline (docs/reference/command-development-pipeline.mdx). Swamp owns the whole prep flow and its state; the Gateway only authorizes it: it admits each request, mints short-lived GitHub App tokens, passes them by vault key name, and records outcomes. An author agent drafts, a separate review agent checks, Swamp opens the PR as the Orbit App, and one of two modes (manual or automatic) decides when Swamp adds the PR to the merge queue. GitHub auto-merge is not used. No code changes in this stage.
   %% status: draft
   %% command: development pipeline stage 1 · prep a command
   %% kind: pipeline.1-prep
@@ -115,15 +115,18 @@ sequenceDiagram
   %%> When:
   %%> - manual mode: after the Gateway sees the approval on the exact head
   %%> - automatic mode: after the final self-review passes
+  %%> - in both modes the PR's CI is green
   %%> Why:
   %%> - a token lives one hour and an approval can take longer, so the Gateway mints a new one for this step
-  SW->>GH: Turn on auto-merge<br/>as the Orbit App
+  SW->>GH: Add to the merge queue<br/>enqueuePullRequest (App token)
   %%> What it does:
-  %%> - Swamp turns on auto-merge through GitHub's `enablePullRequestAutoMerge`, with the Gateway-minted App token passed by vault key name
+  %%> - Swamp adds the PR to the merge queue through GitHub's `enqueuePullRequest` GraphQL mutation, with the Gateway-minted App token passed by vault key name
+  %%> - the Orbit App, through this Swamp step, decides whether the PR may merge; the merge queue then runs CI on the merge group and merges
   %%> History:
-  %%> - GitHub ignores auto-merge turned on with the built-in Actions token, so #2550 removed that workflow; an App token is different
+  %%> - GitHub auto-merge is no longer used
   %%> Not built:
-  %%> - Swamp turning on auto-merge; App-enabled auto-merge still has to be proven to join the queue; today the author runs `gh pr merge --auto` as `nckrtl`
+  %%> - Swamp adding the PR to the merge queue; today the author runs `gh pr merge --auto` as `nckrtl` (the interim)
+  %%> - the repository's auto-merge setting is switched off once Swamp enqueues PRs
   Note over GH: The queue and CI decide<br/>Required checks
   %%> What it does:
   %%> - the merge queue lands the PR when `Required checks` pass
