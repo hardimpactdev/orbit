@@ -404,8 +404,6 @@ Once the worker reconnects, verify its exact `orbit-node-<id>` target and matchi
 
 Missing or damaged protected files require their approved recovery procedure and retained backup. A missing or mismatched agent secret deliberately refuses direct configuration without writing a replacement. The [owner-checked rekey command](/reference/node-agent#recover-a-lost-agent-secret-reply) applies only to its retained uncertain `footprint-agent` contract; a direct root Operation is not that contract. Keep the original outcome uncertain and coordinate with the enrollment or credential owner. Do not remint worker credentials or rotate an agent secret as an automatic retry.
 
-The [executor health alert](/reference/operations#executor-health) reports a queued direct converge after five minutes, including one whose target worker is offline. It reports the problem without claiming, dispatching or retrying the intent.
-
 | Code | HTTP | Meaning |
 | --- | --- | --- |
 | `node.converge_unsupported` | 422 | The Node is not an active, managed Linux Node |
