@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Target design: Nick 2026-11-03, single-swamp-node, rules 14-25.
-  %% status: draft
+  %% Target design: ADR 0244 task, one Swamp run, certificate signing is the one step-to-Gateway call. docs/reference/routes.md#change-an-explicit-domain.
+  %% status: reviewed
   %% command: route:update
   %% kind: route.update
   autonumber
@@ -11,45 +11,91 @@ sequenceDiagram
   %% lane V icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:update 14<br/>at least one option
-  Note over GW: Validate, lock, record<br/>Route 15 pending · task #5160
-  GW->>SW: Start run, full intent<br/>operation-route-update
-  GW-->>CLI: 202 Accepted<br/>task #5160
-  opt --domain
-    SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
-    SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
-    GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
-  end
-  SW->>N: Install cert, publish site<br/>@swamp/cfgmgmt/file · reload
-  %%> A validation error stops the reload; the written candidate stays for convergence.
-  opt --domain
-    opt Laravel target
-      SW->>N: Write the new APP_URL<br/>@swamp/cfgmgmt/line
+  CLI->>GW: route:update ROUTE<br/>at least one option
+  %%> Command:
+  %%> - `orbit route:update ROUTE --domain=DOMAIN`
+  %%> - syntax: `<route> [--domain=DOMAIN] [--publication=private|public] [--web-root=PATH] [--json]`
+  %%> Input:
+  %%> - the Route and at least one change; `--web-root` is separate from the others
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, lock, record<br/>replacement pending
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the Route's Node, or to any member Node for a Cluster-scoped Route
+  %%> - the Route is an app Route (`route.kind_unsupported`); a generated Route cannot change its domain (`route.domain_immutable`); a Route with a web root keeps its domain (`route.web_root_domain_immutable`)
+  %%> - the new domain is free and not reserved (`route.domain_conflict`), and no other domain change runs (`route.domain_change_conflict`)
+  %%> - public publication needs production targets (`route.reconciliation_required`)
+  %%> - no other operation holds the projection lock; Orbit waits up to 30 seconds, then refuses with `app-dev.projection_busy`
+  %%> Result:
+  %%> - a domain change records a replacement Route as `pending`; the current Route stays authoritative until the cutover
+  alt Node work needed
+    GW->>SW: Start run, full intent<br/>operation-route-update
+    GW-->>CLI: 202 Accepted<br/>task ID
+    %%> What you get:
+    %%> - the task ID, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    opt --domain
+      SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
+      SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
+      %%> Why a call to the Gateway:
+      %%> - certificate signing is the one allowed step-to-Gateway call; the Orbit CA stays in the Gateway
+      GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
     end
-  end
-  SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI domain
-  %%> Runs from 209; an HTTP error does not fail the TLS check.
-  opt --publication
-    SW->>N: Open or close the edge<br/>Ingress Caddy · ufw 80/443
-  end
-  opt --domain
-    opt domain outside the TLD
-    SW->>V: Move private DNS<br/>records + catalog, then reload
-    Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
+    SW->>N: Install cert, publish site<br/>@swamp/cfgmgmt/file · reload
+    %%> What it does:
+    %%> - publishes the replacement site beside the old one; Caddy reloads after validation
+    %%> - for `--web-root`, prepares the workload for the new root (Caddy access, PHP pool) and publishes with it
+    opt --domain
+      opt Laravel target
+        SW->>N: Write the new APP_URL<br/>@swamp/cfgmgmt/line
+      end
     end
-    SW->>N: Withdraw the old site<br/>@swamp/cfgmgmt/file absent
-  end
-  alt every step succeeds
-    SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Record result<br/>Route 15 active · 14 deleted
-  else a step fails
-    SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the change failed<br/>old state kept · rerun resumes
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5160
-    GW-->>CLI: status + result
+    SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI domain
+    %%> Why:
+    %%> - the probe verifies the hostname and the Orbit CA; an application HTTP error does not fail it, and a failed probe stops the cutover
+    opt --publication, or a domain change on a public Route
+      SW->>N: Open or close the edge<br/>Ingress Caddy · ufw 80/443
+    end
+    opt --domain outside the TLD
+      SW->>V: Move private DNS<br/>records + catalog, then reload
+      Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
+      %%> Why:
+      %%> - the old DNS answer has 31 seconds to expire before the old site is withdrawn
+    end
+    opt a lasting site is replaced
+      SW->>N: Withdraw the old site<br/>@swamp/cfgmgmt/file absent
+    end
+    alt every step succeeds
+      SW-->>GW: Run succeeded<br/>terminal event + outputs
+      Note over GW: Record result<br/>replacement active
+      %%> Result:
+      %%> - a domain change makes the replacement Route active and deletes the old one; a publication-only or web-root change keeps the Route ID
+    else a step fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      Note over GW: Mark the change failed<br/>rerun resumes
+      %%> Result before the cutover:
+      %%> - the old Route stays authoritative and the replacement is `failed`; a failed Caddy validation leaves the candidate file and stops the reload
+      %%> Result after the cutover:
+      %%> - a failure in the DNS grace or the old site's withdrawal leaves the replacement authoritative and the old Route `retiring`; a rerun finishes the withdrawal
+      %%> What `route:show` shows:
+      %%> - for a domain change, both Routes with `replacement_step`, `failed_step` and `error_code`; otherwise the one Route with `failed_step` and `error_code`
+      %%> On the Nodes:
+      %%> - finished steps stay; there is no rollback
+      %%> Retry:
+      %%> - run the same request again to resume; a different domain or publication request changes nothing
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
+  else nothing to do on a Node
+    GW-->>CLI: 200 OK<br/>nothing to change
+    %%> When:
+    %%> - the domain, publication or web root already has the requested value, or the Route is not yet published, so the replacement is created at once
+    %%> Skipped:
+    %%> - an identical request is reported as `Skipped — nothing to change (route.update_unchanged)`; no run starts
   end

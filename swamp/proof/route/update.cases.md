@@ -1,0 +1,30 @@
+# route:update verification cases
+
+The proof runs the built CLI against a fresh nested topology with a Gateway, a Router, a VPN Node, production and development Instances, and explicit Routes, and checks the Gateway record, Caddy, DNS and real HTTPS requests. See [verifying-commands](../../../.agents/skills/verifying-commands/SKILL.md).
+
+| Case | Setup and action | Required observations |
+| --- | --- | --- |
+| Change the domain | An explicit app Route that serves traffic. Change `--domain` to a name outside the TLD. | A replacement Route is created and its ID is returned. Requests to the old domain keep succeeding until the cutover. The replacement answers over TLS with a valid Orbit certificate. Private DNS moves, the old answer is given 31 seconds to expire, then the old site is withdrawn. The old Route is deleted and the replacement is `active`. |
+| Laravel target | A Laravel Instance target. | The new `APP_URL` is written. |
+| Domain inside the TLD | A domain inside the TLD. | No DNS move and no DNS grace. |
+| Publication | Change `--publication` to `public` for a production target, then back to `private`. | The Route ID stays. The edge opens and closes: Ingress Caddy and `ufw` 80/443 match, and public requests succeed or stop. |
+| Web root | Set `--web-root`, then clear it with `--web-root=`. | The Route serves the new root, then the Instance's effective root. The domain does not change. |
+| Probe fails | Make the replacement fail the TLS probe. | The change fails with `route.probe_failed` and the old Route stays authoritative, with the replacement `failed`. `route:show` shows both Routes with `replacement_step`, `failed_step` and `error_code`. |
+| After the cutover | Make the DNS grace or the withdrawal of the old site fail. | The replacement is authoritative and `active`, the old Route is `retiring`, and `failed_step` and `error_code` are set. A rerun finishes the withdrawal and deletes the old Route. |
+| Combined options | Change `--domain` and `--publication` together. | The replacement Route takes the new domain and publication. |
+| Nothing to change | Repeat a finished request, and update a Route that is not yet published. | The identical request is skipped with `route.update_unchanged`; the unpublished Route's replacement is created at once. No run starts. Fails today: the update ends with no reason code. |
+| Step failure codes | Make each of these steps fail in turn: the publish, the `APP_URL` write, the edge firewall, the private DNS publication, the DNS grace and the withdrawal of the old site. | `route.publish_failed`, `route.app_url_failed`, `route.ingress_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed` and `route.withdraw_failed`. The change is `failed` as for the probe, and the same request resumes it. |
+| Caddy validation fails | Make Caddy refuse the candidate file. | The reload stops and the candidate file stays. The old site keeps serving. |
+| Resume | Fix the cause and repeat the same request. | The change resumes and completes without a second replacement. A different domain or publication request changes nothing. |
+| Interrupt | Cancel a run, let one time out, and stop the worker mid-run. | Each ends like a failed step. The old Route stays authoritative and the same request resumes. |
+| Refusals | A custom proxy Route, an analytics tracking Route, a domain another Route owns, a reserved name, another domain change in progress, and a Route with a web root changing its domain. | `route.kind_unsupported` (twice), `route.domain_conflict` (twice), `route.domain_change_conflict` and `route.web_root_domain_immutable`. Nothing changes. |
+| Web root refusals | `--web-root` combined with another option, on a Route that is not an active app Route with one active target, and where a second Route without a web root would result. | `route.web_root_update_separate`, `route.web_root_unsupported`, `route.web_root_conflict` and `route.target_conflict`. Nothing changes. |
+| Public refusals | A public publication for development Instances, and a domain change on a target without a recorded source profile. | `route.reconciliation_required` and `instance.source_profile_missing`. Nothing changes. |
+| Other refusals | A bad publication, domain or web root, an empty `--publication=`, an unsafe web root, a cleared web root without a supported root, and a Route with public Reverb attachments. | `validation.failed`, `route.publication_invalid`, `route.web_root_unsafe`, `route.target_web_root_unsupported` and `websocket.route_in_use`. Nothing changes. |
+| Generated Route | A generated Route changes `--domain`, then its publication and web root. | `route.domain_immutable` for the first, success for the others. |
+| No option | Run with no option. | `route.update_required`. Nothing changes. |
+| Busy | Hold the projection lock for more than 30 seconds. | `app-dev.projection_busy`. Nothing changes. Fails today: update admission takes no projection lock. |
+| Missing input | In a terminal, run the command with no arguments. Then run it noninteractively and with `--json` without the Route. | The terminal asks for the Route from an interactive list. Ctrl-C ends with `input.cancelled` and no request. The noninteractive calls are refused with `route.id_invalid`, with no request. Fails today: the argument is required and nothing prompts. |
+| Dropped inputs and lost response | Run with `--idempotency-key`, then lose the response to the start and repeat the command. | The option is refused as unknown, and exactly one Operation exists. Fails today: the CLI offers `--idempotency-key`. |
+| Access | A caller with no access grant to a target Node, and an unknown Route. | `node_access.required` and `http.404`. Nothing changes. |
+| Output forms | A wide and a narrow terminal, output piped to a file, and `--json`. | One progress indicator, then the final result with the Operation and request IDs. The piped output has no animation or escape codes. With `--json`, stdout holds only the final Operation. |
