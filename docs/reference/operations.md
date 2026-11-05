@@ -356,7 +356,7 @@ Admission records the intent, the idempotency key and the target hold in one tra
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. A lost or stuck run shows up in [Executor health](#executor-health); the Gateway never reruns a step itself.
 
-The WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) are the one exception. The Gateway runs or closes them itself, with no Swamp run.
+the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) and `proof.run` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when the task operations of its proof group have ended.
 
 ### One operation per target
 

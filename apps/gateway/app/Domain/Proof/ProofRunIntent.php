@@ -4,27 +4,32 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
-use App\Actions\Operations\StartOperationAction;
+use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Actions\Tasks\CreateTaskGroupAction;
+use App\Actions\Tasks\StartTaskProvisionAction;
+use App\Data\Tasks\CreateTaskGroupData;
+use App\Data\Tasks\TaskInputData;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Node;
 use App\Models\Operation;
-use Throwable;
 
 /**
  * Admits `proof:run`: it checks that the commit is trusted, selects the cases from the diff and the selection list of
- * the commit, and records the intent. The Gateway reads GitHub and fetches no code; Swamp does the work. See
+ * the commit, and records the intent. The Gateway reads GitHub and fetches no code; the task operations of a proof group do the work. See
  * docs/cli/proof/run.mmd.
  */
 final readonly class ProofRunIntent
 {
     public function __construct(private ProofCommitTrust $trust, private ProofCommitSource $source, private ProofSettings $settings,
-        private StartOperationAction $start, private OperationIdempotency $idempotency, private ProofVmClaim $vms, private SwampSshExecutionInput $ssh) {}
+        private OperationIdempotency $idempotency, private OperationStore $store, private ProofRunContinuation $chain) {}
 
     public function start(string $commit, bool $all, string $caller, ?string $requestId): Operation
     {
@@ -39,30 +44,31 @@ final readonly class ProofRunIntent
         $intent = ['commit' => $commit, 'all' => $all, 'everything_because' => $selection->everythingBecause,
             'cases' => $selection->cases, 'uncovered' => $selection->uncovered];
         if ($selection->nothingToProve()) {
-            return $this->start->record(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, $intent, [
+            $operation = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, $intent, $caller, $requestId);
+            $this->store->change($operation, ['status' => OperationStatus::Succeeded, 'started_at' => now(), 'finished_at' => now(), 'result' => [
                 'commit' => $commit, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
-                'uncovered' => $selection->uncovered, 'vm' => null, 'receipt_url' => null,
-            ], $caller, $requestId);
+                'uncovered' => $selection->uncovered, 'receipt_url' => null,
+            ]]);
+
+            return $operation;
         }
         if (! $this->settings->executionEnabled()) {
             throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409,
                 details: ['commit' => $commit, 'cases' => $selection->programs(), 'uncovered' => array_column($selection->uncovered, 'path')]);
         }
-        $vm = $this->vms->claim();
+        $group = app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof '.substr($commit, 0, 12),
+            'Prove commit '.$commit.' with the selected cases.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
+                'bin/proof-fleet verify runs the selected cases in the task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
         try {
-            $operation = $this->start->execute(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, [...$intent,
-                'vm' => ['name' => $vm->name, 'checkout_path' => $vm->checkout],
-                'ssh_execution' => $this->ssh->forNode(Node::query()->findOrFail($vm->nodeId)),
-            ], $caller, $requestId);
-        } catch (Throwable $exception) {
-            $this->vms->release($vm->name);
+            $this->chain->admit($group, 'tasks.provision', fn () => app(StartTaskProvisionAction::class)->execute($group, 'proof-run', null, $commit));
+        } catch (ResourceOperationException $exception) {
+            app(CancelTaskGroupAction::class)->execute($group);
 
             throw $exception;
         }
-        // A request that raced an earlier one with the same key got that run back; its VM is the one that counts.
-        if (! $operation->wasRecentlyCreated) {
-            $this->vms->release($vm->name);
-        }
+        // The group's own operations carry the run; this Operation closes with the verdicts after the group is cancelled.
+        $operation = $this->store->create(OperationKinds::ProofRun, 'task_group', $group->id, $swamp->id, [...$intent, 'group_id' => $group->id], $caller, $requestId);
+        $this->store->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()]);
 
         return $operation;
     }

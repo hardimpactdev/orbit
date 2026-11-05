@@ -9,12 +9,13 @@ namespace App\Domain\Operations;
  */
 final readonly class OperationKinds
 {
-    /** Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks. */
+    /** Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks and the proof run, which the task operations of its group carry. */
     private const array GatewayJobs = [
         'websocket.sync' => ['executor' => 'gateway'],
         'websocket.app_create' => ['executor' => 'gateway'],
         'websocket.app_destroy' => ['executor' => 'gateway'],
         'websocket.app_rotate' => ['executor' => 'gateway'],
+        'proof.run' => ['executor' => 'gateway'],
     ];
 
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */

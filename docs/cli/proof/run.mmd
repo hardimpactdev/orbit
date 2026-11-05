@@ -49,86 +49,59 @@ sequenceDiagram
     GW-->>CLI: Skipped — nothing to prove<br/>proof.nothing_to_prove
     %%> Result:
     %%> - only paths that need no proof changed, such as documentation and charts
-    %%> - no VM is taken and nothing runs
+    %%> - no group is created and nothing runs
     %%> - the task is recorded as succeeded, with no run
     %%> - paths marked as having no case yet are listed in the result
   else cases selected
-    Note over GW: Record the task<br/>queue for a proof VM
-    %%> Result:
-    %%> - a task is recorded with the full intent
-    GW-->>CLI: 202 Accepted<br/>task ID
-    Note over GW: Take a proof VM<br/>wait up to 10 min
+    Note over GW: Open the proof group<br/>Project 46 · tasks:create
+    %%> What it does:
+    %%> - creates a task group on the Orbit Project with one review subtask, as `tasks:create` does
     %%> Requirements:
-    %%> - a VM is free for the proof; one SQLite transaction takes it, so two runs never get the same one
+    %%> - proof execution is switched on (`ORBIT_PROOF_RUN_EXECUTION`)
+    Note over GW: Provision at the commit<br/>tasks.provision
+    %%> What it does:
+    %%> - admits `tasks.provision` for the group; its workspace starts exactly at the commit, not at the newest green commit
+    %%> - the VM is the regular task VM of today, with the Pi token and model key that every task VM carries
     %%> When it waits:
-    %%> - no VM is free: the task waits (`capacity`) and starts when a VM is released
-    %%> - after the wait the task fails with `proof.no_vm`; nothing has started
-    %%> Credential:
-    %%> - the Gateway mints a short-lived, read-only GitHub token and pushes it to the vault under a key name
-    GW->>SW: Start run, full intent<br/>operation-proof-run
-    %%> Inputs:
-    %%> - the commit, the selected case programs and the paths no case covers
-    %%> - the VM name, host and image fingerprint
-    %%> - the vault key name of the token, never its value
-    SW->>S: Claim the VM<br/>child workflow · proof mode
-    %%> What it does:
-    %%> - the shared claim phases: clone the topology seed, create the VM, start it, check it
-    %%> Proof mode:
-    %%> - the VM gets no Pi token, no model key and no real-fleet key
-    %%> - the VM has no route to the real Gateway or to other Nodes
-    SW->>S: Send the commit<br/>git bundle · ssh
-    %%> What it does:
-    %%> - Swamp fetches the commit with the vault token and sends only the new commits to the checkout in the VM
-    %%> - the checkout ends clean at the exact commit
-    %%> Why:
-    %%> - the VM holds code, never a token
-    SW->>S: Reset the test fleet<br/>proof-fleet-reset
-    %%> What it does:
-    %%> - boots the three ready nested VMs (Gateway with Swamp, `app-dev`, `app-prod`) from the snapshot
-    %%> - applies the commit, joins the VM as the operator, and waits for fresh agent facts
+    %%> - no host has room: the provision waits (`capacity`), as for any task
     %%> On failure:
-    %%> - no case runs; all selected cases end `unrun`
-    SW->>S: Run the cases<br/>proof-command-verification
+    %%> - the group is cancelled and the command is refused with the error of the provision
+    Note over GW: Record the task<br/>proof.run · running
+    %%> Result:
+    %%> - a task is recorded with the full intent and the group; the Gateway closes it when the group has ended
+    GW-->>CLI: 202 Accepted<br/>task ID
+    GW->>SW: Provision the VM<br/>operation-task-provision
+    %%> Inputs:
+    %%> - the full provision intent of the group, as for `tasks:provision`
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Admit the cases<br/>tasks.script
     %%> What it does:
-    %%> - runs each selected case program in order against the fleet, with the real CLI built from the commit
+    %%> - when the provision succeeded, admits `tasks.script` for the group
+    %%> - on any other end of the provision, skips to the cancel; every case ends `unrun`
+    GW->>SW: Run the cases<br/>operation-task-script
+    SW->>S: Verify<br/>bin/proof-fleet verify
+    %%> What it does:
+    %%> - one blocking ssh command in the VM: resets the nested test fleet, runs each selected case in order and prints one JSON line with a verdict for each
     %%> - a case exits 0 (passed), 1 (failed) or 2 (unrun) and removes what it created
-    %%> - compares the state each case touched with its state before the case; leftovers fail the case
-    %%> - a case that needs a clean fleet gets a new reset
-    %%> Not included:
-    %%> - a command without a case program runs nothing and is listed as uncovered
-    SW->>S: Copy the receipt<br/>ssh · evidence
+    %%> - the case phase has a budget of 30 minutes; the reset comes on top of it
+    SW-->>GW: Run succeeded<br/>output tail
+    Note over GW: Record the verdicts<br/>last line of the output
+    %%> Result:
+    %%> - each case is `passed`, `failed` or `unrun`; no usable line leaves every case `unrun`
+    %%> - the evidence directory in the VM is kept in the result
+    Note over GW: Cancel the group<br/>tasks.cancel
     %%> What it does:
-    %%> - copies case results, observations, Doctor findings, timings and run references to the receipt store, without secrets
-    %%> When:
-    %%> - always, also after a failure
-    SW->>S: Release the VM<br/>child workflow
-    %%> What it does:
-    %%> - releases the nested fleet, deletes the VM and its seed clone
-    %%> When:
-    %%> - always, after the receipt is copied
-    Note over SW: Check the verdicts<br/>assert
-    %%> End check:
-    %%> - every selected case has a verdict `passed`
+    %%> - always admits `tasks.cancel`, whatever the cases did; it destroys the VM and its workspace
+    GW->>SW: Destroy the VM<br/>operation-task-cancel
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Close the task<br/>verdicts
     alt every case passes
-      SW-->>GW: Run succeeded<br/>terminal event
-      %%> How the Gateway learns it:
-      %%> - its run reader sees the terminal event; Swamp never calls the Gateway
-      Note over GW: Record result<br/>verdicts · receipt link
       %%> Result:
-      %%> - the task succeeds
-      %%> - the result lists each case, the uncovered paths and the receipt link
-    else a case fails or the fleet is not ready
-      S--xSW: case fails or exit ≠ 0
-      SW--xGW: Run failed<br/>error_code, verdicts
-      Note over GW: Record the verdicts<br/>task fails
+      %%> - the task succeeds; the result lists each case and the uncovered paths
+    else a case fails or the cases did not run
       %%> Result:
-      %%> - `proof.cases_failed` when a case failed or did not run
-      %%> - `proof.run_failed` when the fleet never became ready: every selected case is `unrun`
-      %%> - each case is `passed`, `failed` or `unrun`; the receipt keeps the failed assertion and the command output
-      %%> On the VM:
-      %%> - the fleet and the VM are released also after a failure; only the receipt remains
-      %%> - if the release fails, the failure shows in the operation
-      %%> - the verdicts stay as they are
+      %%> - `proof.cases_failed` when the cases ran and a case failed or did not run
+      %%> - `proof.run_failed` when they never ran, such as when the provision failed: every selected case is `unrun`
       %%> Retry:
       %%> - run the command again after the fix; it is a new run
     end

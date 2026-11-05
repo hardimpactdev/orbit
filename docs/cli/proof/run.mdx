@@ -1,7 +1,7 @@
 ---
 title: "orbit proof:run"
 sidebarTitle: "proof:run"
-description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in a disposable test fleet on a VM, and reports a verdict for each case."
+description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in a disposable test fleet inside a task VM, and reports a verdict for each case."
 ---
 
 ```bash
@@ -26,7 +26,7 @@ In a terminal, an omitted commit is asked for with a text prompt. A noninteracti
 
 The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the VM job](/reference/feature-flow#the-vm-job).
 
-Built so far: the trust check, the case selection, and the verdict of each case that `bin/proof-fleet verify` reports. Not built yet: the proof VM claim, the transfer of the commit into the VM, the receipt store and the CI job. Until they are, execution stays off, as [the switch](#the-execution-switch) describes.
+Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. Not built yet: the receipt store and the CI job.
 
 ## Which commits Orbit proves
 
@@ -36,13 +36,13 @@ Orbit proves only code that it can trust. The commit must be the head of a branc
 
 Orbit lists the files that differ between the commit and its merge base with `main`, and maps each path to commands with the selection list in the commit. The cases of those commands run. `--all` runs every case. A change to the selection list, or a file list that GitHub returns incomplete, also runs every case. [Choose the cases](/reference/feature-flow#choose-the-cases) holds the mapping rule.
 
-When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It takes no VM and starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a case program, are listed as uncovered in the result and do not fail the run.
+When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a case program, are listed as uncovered in the result and do not fail the run.
 
 ## The run
 
-Orbit takes one VM for the run. When no VM is free, the run waits up to 10 minutes and then fails with `proof.no_vm`.
+Orbit creates a task group on the Orbit Project and provisions it with the same `tasks.provision` operation as any task. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. If no host has room, the provision waits as it does for a task.
 
-The VM gets the commit and no credential. It has no Pi token, no model key, no GitHub token and no key of the real fleet, and it has no route to the real Gateway or to other Nodes.
+Orbit then runs `bin/proof-fleet verify` in the VM as a `tasks.script` operation, and cancels the group whatever the cases did.
 
 Orbit builds a fresh test fleet in the VM from the ready snapshot: a Gateway, an `app-dev` Node and an `app-prod` Node. It runs the selected cases one after another with the CLI built from the commit. Each case asserts the command's promised effect, the recorded state and the Node state, and removes what it created. After each case, Orbit compares the state that the case touched with its state before the case. A leftover fails the case. A case that needs a clean fleet gets a new one.
 
@@ -50,29 +50,27 @@ The cases have a budget of 30 minutes after the test fleet is ready. The reset a
 
 ## The execution switch
 
-`proof:run` works in two stages. Admission checks the commit and selects the cases. Execution takes a VM and runs them. Execution is off by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `false`. While it is off, a commit that selects cases is refused with `proof.execution_disabled`, and the error details name the selected cases and the uncovered paths. The command then works as a dry run: it takes no VM and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
-
-With execution on, a run is refused with `proof.no_vm` until the proof VM claim exists, because no VM can be taken without it.
+`proof:run` works in two stages. Admission checks the commit and selects the cases. Execution creates the group and runs them. Execution is off by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `false`. While it is off, a commit that selects cases is refused with `proof.execution_disabled`, and the error details name the selected cases and the uncovered paths. The command then works as a dry run: it creates no group and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
 
 ## Verdicts
 
 Each selected case ends `passed`, `failed` or `unrun`. A case that exceeds the budget is `failed`. A case is `unrun` when its setup could not start or the run stopped before it. Neither `failed` nor `unrun` counts as a pass. If the fleet never becomes ready, every selected case is `unrun`.
 
-The result names the commit, each case with its verdict and duration, the uncovered paths, the VM, and a receipt link. The receipt keeps for 14 days each case's result and observations, the Doctor findings, the timings, and, for a failure, the failed assertion and the command output. Secrets are removed. Opening the link needs access to the private network.
+The result names the commit, each case with its verdict and duration, the uncovered paths and the evidence directory in the VM. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |
 | Every selected case passed, or nothing needed a proof. | `0` |
 | A selected case failed or did not run. | Nonzero. The command names each such case and the receipt link. |
 | Orbit refused the request. | Nonzero, with the one-line error envelope. |
-| You pressed Ctrl-C. | `130`. The run is cancelled. |
-| The process received SIGTERM. | `143`. The run is cancelled. |
+| You pressed Ctrl-C. | `130`. |
+| The process received SIGTERM. | `143`. |
 
-Unlike most commands, Ctrl-C and SIGTERM cancel the run, because a proof that nobody waits for only holds a VM. Cancelling during the VM wait starts nothing. Cancelling later ends the cases still to run as `unrun` and releases the VM. A process that is killed without a signal cannot cancel; its run ends at the budget.
+Ctrl-C asks the run to stop. Before the cases start, none runs and every case ends `unrun`. Once they run, they finish first. The group is always cancelled when the run ends.
 
 ## After the run
 
-Orbit releases the test fleet and deletes the VM after success and after failure. Only the receipt remains. If the release fails, the failure shows in the operation and the verdicts stay as they are.
+Orbit cancels the group after success and after failure, which destroys the VM. The verdicts stay as they are. If the cancel fails, the group stays for another `tasks:cancel`.
 
 A repeat starts a new run, because a proof checks the commit as it is now. The same `--idempotency-key` returns the original run instead of starting another.
 
@@ -88,9 +86,8 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 | `proof.commit_not_found` | The Orbit repository has no such commit. |
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |
 | `proof.path_unmapped` | A changed path matches no line of the selection list. The details name the path. |
-| `proof.no_vm` | No VM became free within 10 minutes, or the proof VM claim is not built yet. |
 | `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
-| `proof.run_failed` | The test fleet did not become ready. Every selected case is `unrun`; the details name the failed step. |
+| `proof.run_failed` | The VM or the test fleet did not become ready, or the cases printed no verdict. Every selected case is `unrun`. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The details hold the commit, the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The details name the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |
