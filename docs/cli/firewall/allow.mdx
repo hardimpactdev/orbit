@@ -25,9 +25,11 @@ orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --label="of
 orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 ```
 
+In a terminal, a missing port and a missing `--node` are prompted for. Ctrl-C at a prompt exits 1 with `input.cancelled` and sends no request. Without a terminal, or with `--json`, a missing value is refused with `firewall.port_invalid` or `firewall.node_id_invalid`.
+
 Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`. To change an active rule, remove it and create it again. The CLI follows progress and reports the result with the Operation and request IDs.
 
-Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow on a protected port succeeds as skipped (`firewall.rule_exists`) when it only repeats that access. Narrower rules take precedence, so an allow for one source can override a broader deny. See [rule ordering](/cli/firewall#order-on-the-node).
+Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow on a protected port succeeds as skipped (`firewall.rule_exists`) when its ports lie inside a port Orbit already opens and its source is one that port already admits. The Gateway records the skip at once: no rule, no change on the Node. A range that reaches past a protected port is a normal allow. Narrower rules take precedence, so an allow for one source can override a broader deny. See [rule ordering](/cli/firewall#order-on-the-node).
 
 Repeating the command skips entries already in the correct position and applies any missing changes. If the whole rule is already correct, the command succeeds with `Skipped — already applied (firewall.rule_exists)`. A failed command does not undo changes already applied on the Node.
 

@@ -70,14 +70,7 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
 
         try {
             if ($needsPort) {
-                $this->input->setArgument('port', $this->commandPrompts()->run(static fn (): TextPrompt => new TextPrompt(
-                    'Destination port or range',
-                    placeholder: '8000:8100',
-                    required: true,
-                    validate: static fn (string $value): ?string => preg_match('/\A(\d{1,5})(?::(\d{1,5}))?\z/D', $value, $parts) === 1
-                        && (int) $parts[1] >= 1 && (int) ($parts[2] ?? $parts[1]) <= 65_535 && (int) $parts[1] <= (int) ($parts[2] ?? $parts[1])
-                        ? null : 'Firewall port must be from 1 to 65535 or an ordered range.',
-                )));
+                $this->input->setArgument('port', $this->askForPort());
             }
 
             if ($needsNode) {
@@ -96,6 +89,21 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
         }
 
         return true;
+    }
+
+    /** An invalid answer is explained and asked again with an empty field. */
+    private function askForPort(): string
+    {
+        while (true) {
+            $port = $this->commandPrompts()->run(static fn (): TextPrompt => new TextPrompt('Destination port or range', placeholder: '8000:8100', required: true));
+
+            if (is_string($port) && preg_match('/\A(\d{1,5})(?::(\d{1,5}))?\z/D', $port, $parts) === 1
+                && (int) $parts[1] >= 1 && (int) $parts[1] <= (int) ($parts[2] ?? $parts[1]) && (int) ($parts[2] ?? $parts[1]) <= 65_535) {
+                return $port;
+            }
+
+            $this->writeHumanMessage('Firewall port must be from 1 to 65535 or an ordered range.');
+        }
     }
 
     private function askForNode(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): ?int
