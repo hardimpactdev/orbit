@@ -46,15 +46,23 @@ function steps() {
         type: "behavior",
         behaviorType: "@nckrtl/network-command",
         // Named with its type: fixed names such as `result` recur across behavior types.
-        behaviorName: expr(JSON.stringify(name.toLowerCase().replaceAll(" ", "-") + "-net-") + " + string(inputs.node_id)"),
+        behaviorName: expr(
+            JSON.stringify(name.toLowerCase().replaceAll(" ", "-") + "-net-") +
+                " + string(inputs.node_id)",
+        ),
         methodName: method,
         inputs,
     }, guard);
     // The hub keeps the name the hub publication child gives it; the peer is named after its SSH address.
     const target = (connection: string) =>
-        expr(dotless(connection === "inputs.intent.hub.ssh"
-            ? '"wireguard-hub-" + string(inputs.intent.hub_id)'
-            : '"network-peer-" + string(' + connection + ".target.host)"));
+        expr(
+            dotless(
+                connection === "inputs.intent.hub.ssh"
+                    ? '"wireguard-hub-" + string(inputs.intent.hub_id)'
+                    : '"network-peer-" + string(' + connection +
+                        ".target.host)",
+            ),
+        );
     const ssh = (
         name: string,
         connection: string,
@@ -117,7 +125,12 @@ function steps() {
         method === "apply",
     );
     const peerName = (family: string) =>
-        expr(dotless(JSON.stringify(family + "-") + " + string(inputs.intent.ssh.target.host)"));
+        expr(
+            dotless(
+                JSON.stringify(family + "-") +
+                    " + string(inputs.intent.ssh.target.host)",
+            ),
+        );
     const read = (name: string, argv: unknown) =>
         ssh(name, "inputs.intent.ssh", "exec", { argv }, undefined, false);
     const execStep = (name: string, argv: unknown, guard?: string) =>
@@ -127,28 +140,52 @@ function steps() {
 const KEY_STEP = 'steps["Check the key"]';
 const DECISION = 'steps["Decide the DNS change"]';
 const POLICY = expr(
-    '{"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":' + KEY_STEP + '.outputs.public_key}',
+    '{"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":' +
+        KEY_STEP + ".outputs.public_key}",
 );
 /** The hook brings the policy back when the tunnel starts; the marker names the link, server and domains. Both are idempotent. */
-function persistDns(s: ReturnType<typeof steps>, server: string, domains: string, guard?: string) {
-    s.cfg("Keep the DNS hook", "line", s.peerName("network-dns-hook"), "inputs.intent.ssh", {
-        path: CONF,
-        regexp: "^PostUp\\s*=\\s*resolvectl dns %i ",
-        line: expr("inputs.intent.dns_hook"),
-        insertAfter: "^\\[Interface\\]",
-        createFile: false,
-    }, guard);
-    s.cfg("Write the DNS marker", "file", s.peerName("network-dns-link"), "inputs.intent.ssh", {
-        path: "/etc/wireguard/orbit.dns-link",
-        ensure: "present",
-        content: expr('"orbit\\n" + ' + server + ' + "\\n" + ' + domains + '.join("\\n") + "\\n"'),
-        owner: "root",
-        group: "root",
-        mode: "0600",
-    }, guard);
+function persistDns(
+    s: ReturnType<typeof steps>,
+    server: string,
+    domains: string,
+    guard?: string,
+) {
+    s.cfg(
+        "Keep the DNS hook",
+        "line",
+        s.peerName("network-dns-hook"),
+        "inputs.intent.ssh",
+        {
+            path: CONF,
+            regexp: "^PostUp\\s*=\\s*resolvectl dns %i ",
+            line: expr("inputs.intent.dns_hook"),
+            insertAfter: "^\\[Interface\\]",
+            createFile: false,
+        },
+        guard,
+    );
+    s.cfg(
+        "Write the DNS marker",
+        "file",
+        s.peerName("network-dns-link"),
+        "inputs.intent.ssh",
+        {
+            path: "/etc/wireguard/orbit.dns-link",
+            ensure: "present",
+            content: expr(
+                '"orbit\\n" + ' + server + ' + "\\n" + ' + domains +
+                    '.join("\\n") + "\\n"',
+            ),
+            owner: "root",
+            group: "root",
+            mode: "0600",
+        },
+        guard,
+    );
 }
 /** One `orbit` link setting, trimmed: `Link 7 (orbit): no` reads `no`. */
-const live = (setting: string) => "\"$(resolvectl " + setting + " orbit | cut -d: -f2- | xargs)\"";
+const live = (setting: string) =>
+    '"$(resolvectl ' + setting + ' orbit | cut -d: -f2- | xargs)"';
 /** Private names resolve on `orbit` and public names elsewhere; prints nothing, fails with one stderr line. */
 const RESOLVE = [
     'p=$(resolvectl query --cache=no "$1") || { echo "dns.private_unresolved: $1" >&2; exit 3; }',
@@ -162,20 +199,43 @@ function peerDnsActions(s: ReturnType<typeof steps>) {
     persistDns(s, server, domains);
     const wanted = domains + '.map(d,"~"+d).join(" ")';
     // The match is the guard: notIf skips the command when the live policy already equals the admitted one.
-    s.cfg("Set the DNS policy", "exec", s.peerName("network-dns-policy"), "inputs.intent.ssh", {
-        // Each routing domain is quoted: unquoted, the shell expands `~orbit` to the orbit user's home directory.
-        command: expr('"resolvectl dns orbit " + ' + server + ' + " && resolvectl domain orbit " + ' + domains + '.map(d,"\'~"+d+"\'").join(" ") + " && resolvectl default-route orbit no"'),
-        notIf: expr(
-            JSON.stringify("test " + live("dns") + " = ") + " + " + server + " + " + JSON.stringify(" && test " + live("domain") + " = '") + " + " + wanted +
-                " + " + JSON.stringify("' && test " + live("default-route") + " = no"),
-        ),
-    });
+    s.cfg(
+        "Set the DNS policy",
+        "exec",
+        s.peerName("network-dns-policy"),
+        "inputs.intent.ssh",
+        {
+            // Each routing domain is quoted: unquoted, the shell expands `~orbit` to the orbit user's home directory.
+            command: expr(
+                '"resolvectl dns orbit " + ' + server +
+                    ' + " && resolvectl domain orbit " + ' + domains +
+                    '.map(d,"\'~"+d+"\'").join(" ") + " && resolvectl default-route orbit no"',
+            ),
+            notIf: expr(
+                JSON.stringify("test " + live("dns") + " = ") + " + " + server +
+                    " + " +
+                    JSON.stringify(" && test " + live("domain") + " = '") +
+                    " + " + wanted +
+                    " + " +
+                    JSON.stringify(
+                        "' && test " + live("default-route") + " = no",
+                    ),
+            ),
+        },
+    );
     // The Gateway names the private probe; example.com is reserved and always public (RFC 2606).
-    s.read("Check resolution", expr('["timeout","20","sh","-c",' + JSON.stringify(RESOLVE) + ',"sh",inputs.intent.probe,"example.com"]'));
+    s.read(
+        "Check resolution",
+        expr(
+            '["timeout","20","sh","-c",' + JSON.stringify(RESOLVE) +
+                ',"sh",inputs.intent.probe,"example.com"]',
+        ),
+    );
 }
 /** Peer network child: read, decide, then persist and set only when the policy changed. */
 function dnsActions(s: ReturnType<typeof steps>) {
-    const server = "inputs.intent.peer.dns_server", domains = "inputs.intent.peer.domains";
+    const server = "inputs.intent.peer.dns_server",
+        domains = "inputs.intent.peer.domains";
     s.read("Read the DNS policy", ["sh", "-c", INSPECT]);
     s.typed("Decide the DNS change", "decideDns", {
         stdout: expr('steps["Read the DNS policy"].outputs.stdout'),
@@ -200,7 +260,10 @@ function dnsActions(s: ReturnType<typeof steps>) {
             '["bash","-c","resolvectl dns \\"$1\\" \\"\\" && resolvectl domain \\"$1\\" \\"\\" && resolvectl default-route \\"$1\\" yes && networkctl reconfigure \\"$1\\"","bash",' +
                 DECISION + ".outputs.old_link]",
         ),
-        expr("!" + DECISION + '.outputs.changed || ' + DECISION + '.outputs.old_link == "orbit"'),
+        expr(
+            "!" + DECISION + ".outputs.changed || " + DECISION +
+                '.outputs.old_link == "orbit"',
+        ),
     );
     s.read("Read the DNS policy again", ["sh", "-c", INSPECT]);
 }
@@ -216,13 +279,14 @@ export function workflow(network: boolean) {
             group: "root",
             mode: "0600",
         });
-        const section =
-            'inputs.intent.hub.section.split("@KEY@").join(' + KEY_STEP + ".outputs.public_key)";
+        const section = 'inputs.intent.hub.section.split("@KEY@").join(' +
+            KEY_STEP + ".outputs.public_key)";
         // The Node makes its key once and prints only the public key; the private key stays in its 0600 key file.
         s.execStep("Prepare the key", [
             "sh",
             "-c",
-            "umask 077 && { test -s " + KEY + " || wg genkey > " + KEY + "; } && wg pubkey < " + KEY,
+            "umask 077 && { test -s " + KEY + " || wg genkey > " + KEY +
+            "; } && wg pubkey < " + KEY,
         ]);
         s.typed("Check the key", "key", {
             stdout: expr('steps["Prepare the key"].outputs.stdout'),
@@ -232,22 +296,72 @@ export function workflow(network: boolean) {
             ),
         });
         // Only this Node's peer file changes on the hub, so runs that overlap never drop each other's peers.
-        s.cfg("Write the hub peer file", "file", expr(dotless('"wireguard-hub-peer-" + string(inputs.intent.hub_id) + "-" + string(inputs.node_id)')), hub, {
-            ...file("", section),
-            path: expr("inputs.intent.hub.file"),
+        s.cfg(
+            "Write the hub peer file",
+            "file",
+            expr(
+                dotless(
+                    '"wireguard-hub-peer-" + string(inputs.intent.hub_id) + "-" + string(inputs.node_id)',
+                ),
+            ),
+            hub,
+            {
+                ...file("", section),
+                path: expr("inputs.intent.hub.file"),
+            },
+        );
+        s.ssh("Load the hub peer", hub, "exec", {
+            argv: expr('["wg", "addconf", "orbit", inputs.intent.hub.file]'),
         });
-        s.ssh("Load the hub peer", hub, "exec", { argv: expr('["wg", "addconf", "orbit", inputs.intent.hub.file]') });
-        s.ssh("Drop the old key", hub, "exec", {
-            argv: expr('["wg", "set", "orbit", "peer", inputs.intent.existing_key, "remove"]'),
-        }, expr("inputs.intent.existing_key == null || inputs.intent.existing_key == " + KEY_STEP + ".outputs.public_key"));
-        s.cfg("Write the peer config", "file", s.peerName("network-config"), peer, file(CONF, "inputs.intent.config"));
-        s.cfg("Write the peer list", "file", s.peerName("network-peers"), peer, file(PEERS, "inputs.intent.peers"));
-        s.cfg("Start the tunnel", "systemd", s.peerName("network-service"), peer, {
-            service: "wg-quick@orbit",
-            ensure: "running",
-            enabled: true,
-        });
-        s.execStep("Load the peer", ["timeout", "30", "bash", "-c", SYNCCONF, "bash", KEY, PEERS]);
+        s.ssh(
+            "Drop the old key",
+            hub,
+            "exec",
+            {
+                argv: expr(
+                    '["wg", "set", "orbit", "peer", inputs.intent.existing_key, "remove"]',
+                ),
+            },
+            expr(
+                "inputs.intent.existing_key == null || inputs.intent.existing_key == " +
+                    KEY_STEP + ".outputs.public_key",
+            ),
+        );
+        s.cfg(
+            "Write the peer config",
+            "file",
+            s.peerName("network-config"),
+            peer,
+            file(CONF, "inputs.intent.config"),
+        );
+        s.cfg(
+            "Write the peer list",
+            "file",
+            s.peerName("network-peers"),
+            peer,
+            file(PEERS, "inputs.intent.peers"),
+        );
+        s.cfg(
+            "Start the tunnel",
+            "systemd",
+            s.peerName("network-service"),
+            peer,
+            {
+                service: "wg-quick@orbit",
+                ensure: "running",
+                enabled: true,
+            },
+        );
+        s.execStep("Load the peer", [
+            "timeout",
+            "30",
+            "bash",
+            "-c",
+            SYNCCONF,
+            "bash",
+            KEY,
+            PEERS,
+        ]);
         s.execStep("Trust WireGuard peers", expr("inputs.intent.trust_argv"));
     }
     if (network) {
@@ -265,9 +379,7 @@ export function workflow(network: boolean) {
         id: network
             ? "3c0eb942-9c7f-438d-8d4c-7c739642c155"
             : "f05d2ee0-5aa7-4271-9924-fda8b65a786d",
-        name: network
-            ? "node-network-peer"
-            : "operation-fleet-peer-dns",
+        name: network ? "node-network-peer" : "operation-fleet-peer-dns",
         description:
             "Pinned official SSH from209; full public input and typed terminal output.",
         vaults: [],

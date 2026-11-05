@@ -37,9 +37,16 @@ Deno.test("enrollment binds the observed host key through every frozen role conn
         private_dns: [],
         cli: null,
     }, context);
-    assertEquals(getWrittenResources().map(({ specName, name, data }) => ({ specName, name, data })), [
-        { specName: "plan", name: "plan", data: result },
-    ]);
+    assertEquals(
+        getWrittenResources().map(({ specName, name, data }) => ({
+            specName,
+            name,
+            data,
+        })),
+        [
+            { specName: "plan", name: "plan", data: result },
+        ],
+    );
     assertEquals(result.roles[0].intent.ssh, {
         target: { host_keys: ["ssh-ed25519 public-key"] },
     });

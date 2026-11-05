@@ -29,7 +29,8 @@ Deno.test("create names the first unfinished phase and the failed setup command"
     assertEquals(failed({ prepare: "failed" }).failed_step, "prepare");
     assertEquals(failed({ fetch: "failed" }).failed_step, "source");
     assertEquals(
-        failed({ source: { status: "failed", outputs: { stdout: "" } } }).failed_step,
+        failed({ source: { status: "failed", outputs: { stdout: "" } } })
+            .failed_step,
         "source",
     );
     assertEquals(failed({ environment: "skipped" }).failed_step, "environment");
@@ -43,9 +44,20 @@ Deno.test("create names the first unfinished phase and the failed setup command"
 });
 Deno.test("a web-serving create needs its Route; a Project without one skips it", () => {
     const routed = { ...intent, route: { route_id: 9 } };
-    assertEquals(JSON.parse(createResult(routed, { ...phases, route: "succeeded" }).stdout).ready, true);
-    const failed = JSON.parse(createResult(routed, { ...phases, route: "failed" }).stdout);
-    assertEquals([failed.ready, failed.failed_step, failed.error_code], [false, "route", "instance.create_route_failed"]);
+    assertEquals(
+        JSON.parse(
+            createResult(routed, { ...phases, route: "succeeded" }).stdout,
+        ).ready,
+        true,
+    );
+    const failed = JSON.parse(
+        createResult(routed, { ...phases, route: "failed" }).stdout,
+    );
+    assertEquals([failed.ready, failed.failed_step, failed.error_code], [
+        false,
+        "route",
+        "instance.create_route_failed",
+    ]);
     assertEquals(JSON.parse(createResult(intent, phases).stdout).ready, true);
 });
 Deno.test("an already active create reports ready without step evidence", () => {
@@ -78,9 +90,25 @@ Deno.test("VP preparation uses stock CLI environment installation and discrete o
     );
 });
 Deno.test("a create that copies the default database needs that copy; others skip it", () => {
-    const copy = { ...intent, database: { sqlite: { target: "/srv/apps/p/blog/database/database.sqlite" } } };
-    const failed = JSON.parse(createResult(copy, { ...phases, database: "failed" }).stdout);
-    assertEquals([failed.ready, failed.failed_step, failed.error_code], [false, "database", "instance.create_database_failed"]);
-    assertEquals(JSON.parse(createResult(copy, { ...phases, database: "succeeded" }).stdout).ready, true);
+    const copy = {
+        ...intent,
+        database: {
+            sqlite: { target: "/srv/apps/p/blog/database/database.sqlite" },
+        },
+    };
+    const failed = JSON.parse(
+        createResult(copy, { ...phases, database: "failed" }).stdout,
+    );
+    assertEquals([failed.ready, failed.failed_step, failed.error_code], [
+        false,
+        "database",
+        "instance.create_database_failed",
+    ]);
+    assertEquals(
+        JSON.parse(
+            createResult(copy, { ...phases, database: "succeeded" }).stdout,
+        ).ready,
+        true,
+    );
     assertEquals(JSON.parse(createResult(intent, phases).stdout).ready, true);
 });

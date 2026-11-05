@@ -5,9 +5,15 @@ import {
     pruneDependencyResults,
     type RetentionContext,
 } from "./_lib/dependency_retention.ts";
-import { FindingsSchema, ScheduleReceiptSchema } from "./_lib/project_schedule.ts";
+import {
+    FindingsSchema,
+    ScheduleReceiptSchema,
+} from "./_lib/project_schedule.ts";
 import { ProjectExtensionsSchema } from "./_lib/project_config.ts";
-import { DependencyProjectSchema, DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
+import {
+    DependencyProjectSchema,
+    DependencyProjectsSchema,
+} from "./_lib/dependency_projects.ts";
 import { IndexSchema, ReportSchema } from "./_lib/dependency_results_schema.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
 // `stage` ensures one Gateway task operation per driver key and never waits:

@@ -11,7 +11,11 @@ const Args = z.object({ passwd: z.string(), group: z.string() }).strict();
 export function account(args: z.infer<typeof Args>): z.infer<typeof Account> {
     const fields = args.passwd.trim().split(":");
     if (fields.length !== 7) throw new Error("account.passwd_invalid");
-    return Account.parse({ user: fields[0], group: args.group.trim(), home: fields[5] });
+    return Account.parse({
+        user: fields[0],
+        group: args.group.trim(),
+        home: fields[5],
+    });
 }
 
 export const behavior = {
@@ -22,7 +26,8 @@ export const behavior = {
     },
     methods: {
         account: {
-            description: "Decode the enrolled account from its passwd and group lines",
+            description:
+                "Decode the enrolled account from its passwd and group lines",
             arguments: Args,
             execute: async (
                 args: z.infer<typeof Args>,

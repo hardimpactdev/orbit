@@ -8,13 +8,29 @@ Deno.test("store scopes private content to the operation and returns only size a
     await Deno.writeTextFile(path, content);
     try {
         const { context, getWrittenResources } = createModelTestContext();
-        const result = await behavior.methods.store.execute({ path, operation: 41 }, context);
-        const sha256 = "1c84ebc52edf0087f0bc52e780e4b1d0ed33f58d073692cd33810b3abf0ca252";
+        const result = await behavior.methods.store.execute({
+            path,
+            operation: 41,
+        }, context);
+        const sha256 =
+            "1c84ebc52edf0087f0bc52e780e4b1d0ed33f58d073692cd33810b3abf0ca252";
         assertEquals(result, { size: content.length, sha256 });
-        assertEquals(getWrittenResources().map(({ specName, name, data }) => ({ specName, name, data })), [{
-            specName: "file", name: "file",
-            data: { size: content.length, sha256, content: { "41": content } },
-        }]);
+        assertEquals(
+            getWrittenResources().map(({ specName, name, data }) => ({
+                specName,
+                name,
+                data,
+            })),
+            [{
+                specName: "file",
+                name: "file",
+                data: {
+                    size: content.length,
+                    sha256,
+                    content: { "41": content },
+                },
+            }],
+        );
         await assertRejects(() => Deno.lstat(path), Deno.errors.NotFound);
     } finally {
         await Deno.remove(path).catch((error) => {

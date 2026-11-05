@@ -19,7 +19,8 @@ export const behavior = {
     },
     methods: {
         decode: {
-            description: "Read the public key the preceding official SSH step printed",
+            description:
+                "Read the public key the preceding official SSH step printed",
             arguments: z.object({ stdout: z.string() }),
             execute: async (args: { stdout: string }, ctx: Context) => {
                 const state = publicKey(args.stdout);

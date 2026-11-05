@@ -55,10 +55,20 @@ export function nativeCliOutcome(
 ): z.infer<typeof CliConvergeResult> {
     const plan = CliConvergePlan.parse(raw), run = CliNativeRun.parse(native);
     if (plan.skip_reason !== null) {
-        return { completed: true, outcome: "skipped", reason: plan.skip_reason, version: null, configured: false };
+        return {
+            completed: true,
+            outcome: "skipped",
+            reason: plan.skip_reason,
+            version: null,
+            configured: false,
+        };
     }
-    if (plan.plan_error !== null) return Refusal.parse({ error_code: plan.plan_error });
-    if (run.status !== "succeeded" || run.result === null) return { error_code: "cli.install_failed" };
+    if (plan.plan_error !== null) {
+        return Refusal.parse({ error_code: plan.plan_error });
+    }
+    if (run.status !== "succeeded" || run.result === null) {
+        return { error_code: "cli.install_failed" };
+    }
     const { installed, configured } = run.result;
     if (installed !== null && installed !== plan.release?.version) {
         throw new Error("The CLI child installed a different version");

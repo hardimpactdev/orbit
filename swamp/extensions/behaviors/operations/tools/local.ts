@@ -46,78 +46,78 @@ if __name__=='__main__':main()
 `;
 
 export type ToolSystemCall = {
-  name: string;
-  input: Record<string, unknown>;
-  node: z.infer<typeof ToolIntentInput>;
+    name: string;
+    input: Record<string, unknown>;
+    node: z.infer<typeof ToolIntentInput>;
 };
 
 /** Run the fixed workflow implementation; never an agent action or caller script. */
 async function nativeSystem(
-  call: ToolSystemCall,
-  signal?: AbortSignal,
+    call: ToolSystemCall,
+    signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  signal?.throwIfAborted();
-  const linux = call.node.platform === "linux";
-  const child = localCommand(linux ? "/usr/bin/sudo" : "/usr/bin/python3", {
-    args: linux
-      ? ["-n", "--", "/usr/bin/python3", "-c", toolProgram]
-      : ["-c", toolProgram],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "null",
-  }).spawn();
-  let finished = false;
-  try {
-    const writer = child.stdin.getWriter();
-    await writer.write(new TextEncoder().encode(JSON.stringify(call)));
-    await writer.close();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    for await (const chunk of child.stdout) {
-      size += chunk.length;
-      if (size > 4 * 1024 * 1024) {
-        throw new Error("Tool output exceeded its bound");
-      }
-      chunks.push(chunk);
+    signal?.throwIfAborted();
+    const linux = call.node.platform === "linux";
+    const child = localCommand(linux ? "/usr/bin/sudo" : "/usr/bin/python3", {
+        args: linux
+            ? ["-n", "--", "/usr/bin/python3", "-c", toolProgram]
+            : ["-c", toolProgram],
+        stdin: "piped",
+        stdout: "piped",
+        stderr: "null",
+    }).spawn();
+    let finished = false;
+    try {
+        const writer = child.stdin.getWriter();
+        await writer.write(new TextEncoder().encode(JSON.stringify(call)));
+        await writer.close();
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        for await (const chunk of child.stdout) {
+            size += chunk.length;
+            if (size > 4 * 1024 * 1024) {
+                throw new Error("Tool output exceeded its bound");
+            }
+            chunks.push(chunk);
+        }
+        const status = await child.status;
+        finished = true;
+        if (!status.success) {
+            throw new Error("Native Tool action outcome is unknown");
+        }
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+            bytes.set(chunk, offset);
+            offset += chunk.length;
+        }
+        const result = z.record(z.string(), z.unknown()).parse(
+            JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+        );
+        if (result.error_code === "tool.action_unknown") {
+            throw new Error("Native Tool action requires reconciliation");
+        }
+        return result;
+    } finally {
+        if (!finished) {
+            try {
+                child.kill("SIGTERM");
+            } catch { /* Already exited. */ }
+            await child.status.catch(() => {});
+        }
     }
-    const status = await child.status;
-    finished = true;
-    if (!status.success) {
-      throw new Error("Native Tool action outcome is unknown");
-    }
-    const bytes = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.length;
-    }
-    const result = z.record(z.string(), z.unknown()).parse(
-      JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
-    );
-    if (result.error_code === "tool.action_unknown") {
-      throw new Error("Native Tool action requires reconciliation");
-    }
-    return result;
-  } finally {
-    if (!finished) {
-      try {
-        child.kill("SIGTERM");
-      } catch { /* Already exited. */ }
-      await child.status.catch(() => {});
-    }
-  }
 }
 
 /** Shared lower adapter for parent DAGs; the admitted account is never replaced by worker HOME. */
 export function toolSystem(invoke = nativeSystem) {
-  return async (
-    name: string,
-    input: Record<string, unknown>,
-    node: z.infer<typeof ToolIntentInput>,
-    signal?: AbortSignal,
-  ): Promise<Record<string, unknown>> => {
-    signal?.throwIfAborted();
-    return await invoke({ name, input, node }, signal);
-  };
+    return async (
+        name: string,
+        input: Record<string, unknown>,
+        node: z.infer<typeof ToolIntentInput>,
+        signal?: AbortSignal,
+    ): Promise<Record<string, unknown>> => {
+        signal?.throwIfAborted();
+        return await invoke({ name, input, node }, signal);
+    };
 }
 export const localTool = toolSystem();

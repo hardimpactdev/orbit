@@ -1,11 +1,11 @@
 /** One seam for local subprocesses and filesystem effects, so unit tests can substitute host tools. */
 export function localCommand(
-  command: string | URL,
-  options?: Deno.CommandOptions,
+    command: string | URL,
+    options?: Deno.CommandOptions,
 ): Deno.Command {
-  return new Deno.Command(command, options);
+    return new Deno.Command(command, options);
 }
 
 export function localFilesystem(): typeof Deno {
-  return Deno;
+    return Deno;
 }

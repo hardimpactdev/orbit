@@ -9,7 +9,10 @@ type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 const Observation = z.object({ stdout: z.string() }).passthrough();
-const Link = z.object({ link: z.string(), directory: z.string().startsWith("/") }).strict();
+const Link = z.object({
+    link: z.string(),
+    directory: z.string().startsWith("/"),
+}).strict();
 const Captured = z.object({
     production: z.boolean().optional(),
     package: z.string(),
@@ -26,51 +29,83 @@ const Captured = z.object({
 const present = (stdout: string) => stdout === "" ? null : stdout;
 function packageJson(stdout: string): Record<string, unknown> {
     const value = JSON.parse(present(stdout) ?? "{}");
-    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("tool.project_invalid");
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("tool.project_invalid");
+    }
     return value;
 }
 function usesVitePlus(pkg: Record<string, unknown>) {
-    const dependencies = { ...(pkg.dependencies as object ?? {}), ...(pkg.devDependencies as object ?? {}) };
+    const dependencies = {
+        ...(pkg.dependencies as object ?? {}),
+        ...(pkg.devDependencies as object ?? {}),
+    };
     return Object.entries(dependencies).some(([name, spec]) =>
-        name === "vite-plus" || (typeof spec === "string" && spec.startsWith("npm:vite-plus@"))
+        name === "vite-plus" ||
+        (typeof spec === "string" && spec.startsWith("npm:vite-plus@"))
     );
 }
 /** The pnpm `link:` targets inside the application that may hold the vite-plus workspace. */
-export function workspaceLinks(application: string, pkg: string, pnpmLock: string) {
+export function workspaceLinks(
+    application: string,
+    pkg: string,
+    pnpmLock: string,
+) {
     if (!usesVitePlus(packageJson(pkg))) return [];
     const root = application.replace(/\/+$/, "");
     const links = new Map<string, string>();
-    for (const [, link] of pnpmLock.matchAll(/version: ["']?link:([^\s"']+)/g)) {
+    for (
+        const [, link] of pnpmLock.matchAll(/version: ["']?link:([^\s"']+)/g)
+    ) {
         const parts: string[] = [];
         for (const part of (root + "/" + link).split("/").slice(1)) {
             if (part === "..") parts.pop();
             else if (part !== "" && part !== ".") parts.push(part);
         }
         const directory = "/" + parts.join("/");
-        if (directory.startsWith(root + "/")) links.set("link:" + link, directory);
+        if (directory.startsWith(root + "/")) {
+            links.set(
+                "link:" + link,
+                directory,
+            );
+        }
     }
     return [...links].map(([link, directory]) => ({ link, directory }));
 }
-const Candidates = ["/opt/orbit/vite-plus", ".vite-plus", ".local/share/vite-plus"];
+const Candidates = [
+    "/opt/orbit/vite-plus",
+    ".vite-plus",
+    ".local/share/vite-plus",
+];
 /** Builds the selection material from the reads; the Node held no staged copy. */
 export function material(raw: z.infer<typeof Captured>) {
     const pkg = packageJson(raw.package);
     const home = z.string().startsWith("/").parse(raw.home.trim());
-    const found = new Set(raw.store.split("\n").map((line) => line.trim()).filter(Boolean));
-    const scopes = Candidates.map((path) => path.startsWith("/") ? path : home + "/" + path);
-    const scope = usesVitePlus(pkg) ? scopes.find((path) => found.has(path + "/bin/vp")) : undefined;
+    const found = new Set(
+        raw.store.split("\n").map((line) => line.trim()).filter(Boolean),
+    );
+    const scopes = Candidates.map((path) =>
+        path.startsWith("/") ? path : home + "/" + path
+    );
+    const scope = usesVitePlus(pkg)
+        ? scopes.find((path) => found.has(path + "/bin/vp"))
+        : undefined;
     const workspaces: Record<string, unknown> = {};
     for (const row of raw.workspaces) {
         const link = raw.links[Number(/-(\d+)$/.exec(row.step)?.[1] ?? NaN)];
         const workspace = packageJson(row.stdout);
-        if (link && workspace.name === "vite-plus") workspaces[link.link] = workspace.version;
+        if (link && workspace.name === "vite-plus") {
+            workspaces[link.link] = workspace.version;
+        }
     }
     return {
         store: scope ?? scopes[2],
         manager_required: scope === undefined,
         package: pkg,
         locks: Object.fromEntries(
-            [["pnpm-lock.yaml", raw.pnpm_lock], ["package-lock.json", raw.npm_lock]].filter(([, text]) => present(text) !== null),
+            [["pnpm-lock.yaml", raw.pnpm_lock], [
+                "package-lock.json",
+                raw.npm_lock,
+            ]].filter(([, text]) => present(text) !== null),
         ),
         workspaces,
         ".node-version": present(raw.node_version),
@@ -98,16 +133,35 @@ export const behavior = {
     },
     methods: {
         links: {
-            description: "Select the linked workspace folders to read for vite-plus",
-            arguments: z.object({ application: z.string().startsWith("/"), package: z.string(), pnpm_lock: z.string() }),
-            execute: async (args: { application: string; package: string; pnpm_lock: string }, ctx: Context) => {
-                const result = { links: workspaceLinks(args.application, args.package, args.pnpm_lock) };
+            description:
+                "Select the linked workspace folders to read for vite-plus",
+            arguments: z.object({
+                application: z.string().startsWith("/"),
+                package: z.string(),
+                pnpm_lock: z.string(),
+            }),
+            execute: async (
+                args: {
+                    application: string;
+                    package: string;
+                    pnpm_lock: string;
+                },
+                ctx: Context,
+            ) => {
+                const result = {
+                    links: workspaceLinks(
+                        args.application,
+                        args.package,
+                        args.pnpm_lock,
+                    ),
+                };
                 await ctx.writeResource("links", "links", result);
                 return result;
             },
         },
         capture: {
-            description: "Select canonical pinned VP requirements from the read manifests",
+            description:
+                "Select canonical pinned VP requirements from the read manifests",
             arguments: Captured,
             execute: async (args: z.infer<typeof Captured>, ctx: Context) => {
                 const raw = material(Captured.parse(args));
@@ -115,7 +169,11 @@ export const behavior = {
                 const result = {
                     ready: true as const,
                     runtime: args.production && selected !== null
-                        ? { ...selected, binary: "/opt/orbit/vite-plus/bin/vp", store: args.home.trim() + "/.local/share/vite-plus" }
+                        ? {
+                            ...selected,
+                            binary: "/opt/orbit/vite-plus/bin/vp",
+                            store: args.home.trim() + "/.local/share/vite-plus",
+                        }
                         : selected,
                     manager_required: raw.manager_required,
                 };
@@ -178,7 +236,10 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 const version = valid(
-                    args.observation.stdout.trim().split(/\r?\n/, 1)[0].replace(/^vp\s+/, ""),
+                    args.observation.stdout.trim().split(/\r?\n/, 1)[0].replace(
+                        /^vp\s+/,
+                        "",
+                    ),
                 );
                 if (
                     version === null || !gte(version, args.runtime.vp_version)

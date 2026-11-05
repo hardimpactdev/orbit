@@ -1,4 +1,8 @@
-import { assertEquals, assertMatch, assertRejects } from "jsr:@std/assert@1.0.19";
+import {
+    assertEquals,
+    assertMatch,
+    assertRejects,
+} from "jsr:@std/assert@1.0.19";
 import { behavior as metadata } from "../extensions/behaviors/operations/project-maintenance/metadata.ts";
 import { fixture, original } from "./_support/project_scheduler.ts";
 
@@ -192,8 +196,16 @@ Deno.test("native schedule selects from full public intent and skips the recorde
         const next = JSON.parse(result.result_json as string);
         assertEquals(next.requests.length, 1);
         assertEquals(next.requests[0].mode, "detect");
-        assertMatch(next.requests[0].key, /^32-detect-\d{4}-\d{2}-\d{2}T\d{2}:00$/);
-        const pending = [{ id: 7, project_id: 32, status: "todo", maintenance: { admission_pending: true } }];
+        assertMatch(
+            next.requests[0].key,
+            /^32-detect-\d{4}-\d{2}-\d{2}T\d{2}:00$/,
+        );
+        const pending = [{
+            id: 7,
+            project_id: 32,
+            status: "todo",
+            maintenance: { admission_pending: true },
+        }];
         await metadata.methods.schedule.execute({
             ...args,
             groups: pending,

@@ -134,11 +134,17 @@ Deno.test("public terminal ledger preserves the 256 KiB transport bound", () => 
 
 Deno.test("teardown plans only exact ledger matches and skips missing or empty ledgers", () => {
     const teardown = { ...intent, wanted: [] };
-    const inventory = [cipher("published"), cipher("copy"), cipher("foreign", null),
+    const inventory = [
+        cipher("published"),
+        cipher("copy"),
+        cipher("foreign", null),
         cipher("changed", "database-user:8"),
         { ...cipher("other-org"), organization_id: "other" },
-        { ...cipher("other-collection"), collection_ids: ["other"] }];
-    assertEquals(planSync(teardown, inventory).deletes.map((row) => row.id), ["published"]);
+        { ...cipher("other-collection"), collection_ids: ["other"] },
+    ];
+    assertEquals(planSync(teardown, inventory).deletes.map((row) => row.id), [
+        "published",
+    ]);
     assertEquals(planSync(teardown, []).deletes, []);
     assertEquals(planSync({ ...teardown, ledger: [] }, inventory).deletes, []);
 });
@@ -146,22 +152,48 @@ Deno.test("teardown plans only exact ledger matches and skips missing or empty l
 Deno.test("failed CLI execution publishes only vault.sync_failed", async () => {
     const { context, getWrittenResources } = createModelTestContext();
     const result = await behavior.methods.result.execute({
-        plan: planSync(intent, []), writes: [], successful: false,
+        plan: planSync(intent, []),
+        writes: [],
+        successful: false,
     }, context);
-    assertEquals(result, { successful: false, stdout: '{"error_code":"vault.sync_failed"}' });
+    assertEquals(result, {
+        successful: false,
+        stdout: '{"error_code":"vault.sync_failed"}',
+    });
     assertEquals(getWrittenResources().map((row) => row.data), [result]);
 });
 
 Deno.test("a changed fingerprint updates the recorded cipher and preserves its identity in the result", () => {
     const plan = planSync(intent, [cipher("published")]);
     assertEquals(plan.writes.map((row) => row.cipher_id), ["published"]);
-    assertEquals(resultSync(plan, [{ source: "database-user:7", cipher_id: "published", revision: "new", fingerprint: "new" }]).data.cipher_ids, ["published"]);
+    assertEquals(
+        resultSync(plan, [{
+            source: "database-user:7",
+            cipher_id: "published",
+            revision: "new",
+            fingerprint: "new",
+        }]).data.cipher_ids,
+        ["published"],
+    );
 });
 
 Deno.test("orphan deletion selects every recorded item and preserves unrecorded copies", () => {
-    const plan = planSync({ ...intent, wanted: [], ledger: [
-        ...intent.ledger, { ...intent.ledger[0], source: "database-user:8", cipher_id: "second" },
-    ] }, [cipher("published"), cipher("second", "database-user:8"), cipher("copy")]);
+    const plan = planSync({
+        ...intent,
+        wanted: [],
+        ledger: [
+            ...intent.ledger,
+            {
+                ...intent.ledger[0],
+                source: "database-user:8",
+                cipher_id: "second",
+            },
+        ],
+    }, [
+        cipher("published"),
+        cipher("second", "database-user:8"),
+        cipher("copy"),
+    ]);
     assertEquals(plan.writes, []);
     assertEquals(plan.deletes.map((row) => row.id), ["published", "second"]);
 });

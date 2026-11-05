@@ -68,7 +68,11 @@ Deno.test("Route update workflows place every step on the swamp role and keep mu
 type Step = Flow["jobs"][number]["steps"][number] & {
     forEach?: unknown;
     dependsOn?: { step: string }[];
-    task: { type: string; workflowIdOrName?: string; inputs?: Record<string, unknown> };
+    task: {
+        type: string;
+        workflowIdOrName?: string;
+        inputs?: Record<string, unknown>;
+    };
 };
 
 async function steps(name: string): Promise<Step[]> {
@@ -84,7 +88,10 @@ Deno.test("the task-cancel withdrawal keeps certificate cleanup visible per scop
     });
     assertEquals(cleanup.task.type, "workflow");
     assertEquals(cleanup.task.workflowIdOrName, "route-certificate-remove");
-    assertEquals(cleanup.task.inputs?.parent_run_id, "${{ inputs.parent_run_id }}");
+    assertEquals(
+        cleanup.task.inputs?.parent_run_id,
+        "${{ inputs.parent_run_id }}",
+    );
     assertEquals(cleanup.task.inputs?.execution_secrets, {});
     const required = cleanup.dependsOn!.map((x) => x.step);
     assert(required.includes("withdraw_withdraw_caddy"));
@@ -94,17 +101,26 @@ Deno.test("the task-cancel withdrawal keeps certificate cleanup visible per scop
 });
 
 Deno.test("restore keeps the observed candidate serving, then withdraws it after DNS grace", async () => {
-    const names = (await steps("route-mutation-restore")).map((step) => step.name);
-    assert(names.indexOf("restore_restore_prepare_caddy") < names.indexOf("restore_dns"));
+    const names = (await steps("route-mutation-restore")).map((step) =>
+        step.name
+    );
+    assert(
+        names.indexOf("restore_restore_prepare_caddy") <
+            names.indexOf("restore_dns"),
+    );
     assert(names.indexOf("restore_dns") < names.indexOf("restore_dns_grace"));
-    assert(names.indexOf("restore_dns_grace") < names.indexOf("restore_restore_caddy"));
+    assert(
+        names.indexOf("restore_dns_grace") <
+            names.indexOf("restore_restore_caddy"),
+    );
     for (const mode of ["forward", "restore", "withdraw"]) {
         const { source, flow } = await read(`route-mutation-${mode}`);
         assertEquals(source.includes("GatewayOperation"), false);
         const children = flow.jobs.flatMap((job) => job.steps) as Step[];
         assert(
             children.some((step) =>
-                step.task.inputs?.parent_run_id === "${{ inputs.parent_run_id }}"
+                step.task.inputs?.parent_run_id ===
+                    "${{ inputs.parent_run_id }}"
             ),
         );
     }

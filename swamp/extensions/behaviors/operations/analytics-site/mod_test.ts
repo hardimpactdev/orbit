@@ -3,7 +3,7 @@ import {
     assertRejects,
     assertThrows,
 } from "jsr:@std/assert@1.0.14";
-import {behavior, site} from "./mod.ts";
+import { behavior, site } from "./mod.ts";
 import { Site } from "../analytics/plausible.ts";
 Deno.test("the site action group refuses unexpected input and non-JSON credentials before any request", async () => {
     const input = {

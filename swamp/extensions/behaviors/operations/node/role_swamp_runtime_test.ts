@@ -19,7 +19,10 @@ Deno.test("Gateway renders the manifest and serve grants without widening native
         await Deno.copyFile(serve, `${repo}/config/serve-grants.json`);
         const result = await new Deno.Command("php", {
             args: [
-                new URL("../../../../../apps/gateway/bin/render-swamp-grants", import.meta.url).pathname,
+                new URL(
+                    "../../../../../apps/gateway/bin/render-swamp-grants",
+                    import.meta.url,
+                ).pathname,
                 repo,
             ],
         }).output();

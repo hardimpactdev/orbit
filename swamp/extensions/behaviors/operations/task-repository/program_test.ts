@@ -389,22 +389,21 @@ Deno.test("analysis movement is changed; a failed run with no movement is analys
     const shape = async (
         exitCode: number,
         after: { head: string; tree: string },
-    ) =>
-        analysisResult({
-            operation_id: 11,
-            intent: analysis,
-            gate: {
-                error_code: "",
-                entrypoint_sha256: "d".repeat(64),
-                before: { head, tree },
-            },
-            execution_id: executionId,
-            steps: {
-                ...snapshots("after", after),
-                execute: ok("", { exitCode }),
-            },
-            local: await downloaded("report", envelope()),
-        });
+    ) => analysisResult({
+        operation_id: 11,
+        intent: analysis,
+        gate: {
+            error_code: "",
+            entrypoint_sha256: "d".repeat(64),
+            before: { head, tree },
+        },
+        execution_id: executionId,
+        steps: {
+            ...snapshots("after", after),
+            execute: ok("", { exitCode }),
+        },
+        local: await downloaded("report", envelope()),
+    });
     assertEquals(
         ((await shape(0, { head, tree: "c".repeat(40) })) as {
             outcome: string;

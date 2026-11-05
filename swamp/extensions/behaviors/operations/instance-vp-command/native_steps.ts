@@ -10,7 +10,12 @@ export function instanceActions(
 ) {
     const steps: Fields[] = [];
     const globals = {
-        name: expression(dotless('"id-' + name.slice(0, 10) + '-" + string(' + ssh + ".target.host)")),
+        name: expression(
+            dotless(
+                '"id-' + name.slice(0, 10) + '-" + string(' + ssh +
+                    ".target.host)",
+            ),
+        ),
         transport: {
             kind: "ssh",
             user: expression(ssh + ".target.user"),
@@ -43,7 +48,10 @@ export function instanceActions(
             const name = String(task.behaviorName);
             // The index goes inside the dot-free wrapper, so the name still starts with a letter.
             task.behaviorName = name.includes(').split(".").join("-")')
-                ? name.replace(').split(".").join("-")', ' + "-" + string(self._index)).split(".").join("-")')
+                ? name.replace(
+                    ').split(".").join("-")',
+                    ' + "-" + string(self._index)).split(".").join("-")',
+                )
                 : name.replace(/ \}\}$/, ' + "-" + string(self._index) }}');
         }
         steps.push(step);
@@ -76,7 +84,10 @@ export function instanceActions(
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expression(
-                dotless('"ids-' + name.slice(0, 6) + "-" + steps.length + '-" + string(' + ssh + ".target.host)"),
+                dotless(
+                    '"ids-' + name.slice(0, 6) + "-" + steps.length +
+                        '-" + string(' + ssh + ".target.host)",
+                ),
             ),
             methodName,
             globalArgs: globals,

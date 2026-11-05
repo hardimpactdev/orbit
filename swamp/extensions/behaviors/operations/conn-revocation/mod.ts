@@ -13,25 +13,41 @@ const Observed = z.array(z.object({
 })).max(4096).refine((rows) =>
     new Set(rows.map((row) => row.sessionId)).size === rows.length
 );
-const Candidate = z.object({ index: z.number().int().min(0), body: z.string() });
-const Selection = z.object({ sessions: z.array(Candidate), links: z.array(Candidate) });
+const Candidate = z.object({
+    index: z.number().int().min(0),
+    body: z.string(),
+});
+const Selection = z.object({
+    sessions: z.array(Candidate),
+    links: z.array(Candidate),
+});
 const Replies = z.object({ valid: z.boolean(), stdout: z.string() });
 const Revoked = z.object({ revoked: z.boolean() });
 const Directory = z.string().regex(/^\/tmp\/orbit-conn-revoke\.[A-Za-z0-9]+$/);
-type Context = { writeResource(spec: string, name: string, data: unknown): Promise<unknown> };
+type Context = {
+    writeResource(spec: string, name: string, data: unknown): Promise<unknown>;
+};
 
 export function selectSessions(stdout: string, labels: string[]): string[] {
     return Observed.parse(JSON.parse(stdout))
-        .filter((row) => !row.current && labels.includes(row.client?.label ?? "\u0000"))
+        .filter((row) =>
+            !row.current && labels.includes(row.client?.label ?? "\u0000")
+        )
         .map((row) => row.sessionId);
 }
 async function read(directory: string, name: string): Promise<string> {
     const file = `${Directory.parse(directory)}/${name}`;
-    if ((await Deno.stat(file)).size > 4194304) throw new Error("conn.revocation_failed");
+    if ((await Deno.stat(file)).size > 4194304) {
+        throw new Error("conn.revocation_failed");
+    }
     return await Deno.readTextFile(file);
 }
 /** Parse private HTTP replies into public completion metadata, including partial effects. */
-export async function readReplies(directory: string, family: string, statuses: string[]) {
+export async function readReplies(
+    directory: string,
+    family: string,
+    statuses: string[],
+) {
     const completed: number[] = [];
     let valid = true;
     let revoked = 0;
@@ -41,7 +57,9 @@ export async function readReplies(directory: string, family: string, statuses: s
             continue;
         }
         try {
-            const reply = Revoked.parse(JSON.parse(await read(directory, `${family}-${index}.json`)));
+            const reply = Revoked.parse(
+                JSON.parse(await read(directory, `${family}-${index}.json`)),
+            );
             completed.push(index);
             revoked += Number(reply.revoked);
         } catch {
@@ -54,21 +72,42 @@ export const behavior = {
     type: "@nckrtl/conn-revocation-plan",
     version: "2026.11.02.2",
     resources: {
-        selection: { schema: Selection, lifetime: "infinite", garbageCollection: 10 },
-        replies: { schema: Replies, lifetime: "infinite", garbageCollection: 10 },
+        selection: {
+            schema: Selection,
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
+        replies: {
+            schema: Replies,
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
     },
     methods: {
         select: {
-            description: "Select admitted non-current sessions from the private T3 reply",
+            description:
+                "Select admitted non-current sessions from the private T3 reply",
             arguments: z.object({ intent: Intent, directory: Directory }),
-            execute: async (args: { intent: z.infer<typeof Intent>; directory: string }, ctx: Context) => {
+            execute: async (
+                args: { intent: z.infer<typeof Intent>; directory: string },
+                ctx: Context,
+            ) => {
                 try {
                     const ids = args.intent.labels.length
-                        ? selectSessions(await read(args.directory, "inventory.json"), args.intent.labels)
+                        ? selectSessions(
+                            await read(args.directory, "inventory.json"),
+                            args.intent.labels,
+                        )
                         : [];
                     const value = {
-                        sessions: ids.map((sessionId, index) => ({ index, body: JSON.stringify({ sessionId }) })),
-                        links: args.intent.links.map((id, index) => ({ index, body: JSON.stringify({ id }) })),
+                        sessions: ids.map((sessionId, index) => ({
+                            index,
+                            body: JSON.stringify({ sessionId }),
+                        })),
+                        links: args.intent.links.map((id, index) => ({
+                            index,
+                            body: JSON.stringify({ id }),
+                        })),
                     };
                     await ctx.writeResource("selection", "selection", value);
                     return value;
@@ -78,10 +117,22 @@ export const behavior = {
             },
         },
         replies: {
-            description: "Read private revoke replies and retain only valid public completions",
-            arguments: z.object({ directory: Directory, family: z.enum(["session", "link"]), statuses: z.array(z.string()).max(4096) }),
-            execute: async (args: { directory: string; family: string; statuses: string[] }, ctx: Context) => {
-                const value = await readReplies(args.directory, args.family, args.statuses);
+            description:
+                "Read private revoke replies and retain only valid public completions",
+            arguments: z.object({
+                directory: Directory,
+                family: z.enum(["session", "link"]),
+                statuses: z.array(z.string()).max(4096),
+            }),
+            execute: async (
+                args: { directory: string; family: string; statuses: string[] },
+                ctx: Context,
+            ) => {
+                const value = await readReplies(
+                    args.directory,
+                    args.family,
+                    args.statuses,
+                );
                 await ctx.writeResource("replies", "replies", value);
                 return value;
             },

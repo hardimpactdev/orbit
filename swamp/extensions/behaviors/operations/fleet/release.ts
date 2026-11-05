@@ -73,12 +73,20 @@ function refused(
     code: string,
     step: z.infer<typeof NodeResult>["step"],
 ): z.infer<typeof NodeResult> {
-    const deferred = ["fleet.window_closed", "node.update_busy", "cli.update_busy"].includes(code);
+    const deferred = [
+        "fleet.window_closed",
+        "node.update_busy",
+        "cli.update_busy",
+    ].includes(code);
     return {
         ...result,
         step,
         error_code: Code.parse(code),
-        outcome: deferred ? "deferred" : code === "operation.cancelled" ? "cancelled" : "failed",
+        outcome: deferred
+            ? "deferred"
+            : code === "operation.cancelled"
+            ? "cancelled"
+            : "failed",
         ok: deferred,
     };
 }
@@ -91,23 +99,38 @@ const observes = (record: z.infer<typeof NodeResult>) =>
  */
 export function observed(
     record: z.infer<typeof NodeResult>,
-    run: { agent: { sha256: string; version: string }; fetch: string; changed: boolean; restart: string; running: string | null },
+    run: {
+        agent: { sha256: string; version: string };
+        fetch: string;
+        changed: boolean;
+        restart: string;
+        running: string | null;
+    },
 ): z.infer<typeof NodeResult> {
-    if (run.fetch !== "succeeded") return refused(record, "agent.download_failed", "agent");
-    if (!["succeeded", "skipped"].includes(run.restart)) return refused(record, "agent.restart_failed", "agent");
+    if (run.fetch !== "succeeded") {
+        return refused(record, "agent.download_failed", "agent");
+    }
+    if (!["succeeded", "skipped"].includes(run.restart)) {
+        return refused(record, "agent.restart_failed", "agent");
+    }
     const [digest, , state] = (run.running ?? "").trim().split(/\s+/);
-    if (digest !== run.agent.sha256 || state !== "active") return refused(record, "agent.observer_unhealthy", "verify");
+    if (digest !== run.agent.sha256 || state !== "active") {
+        return refused(record, "agent.observer_unhealthy", "verify");
+    }
     return {
         ...record,
         agent_version: run.agent.version,
         step: "verify",
-        ...(run.changed || run.restart === "succeeded" ? { outcome: "converged" as const } : {}),
+        ...(run.changed || run.restart === "succeeded"
+            ? { outcome: "converged" as const }
+            : {}),
     };
 }
 /** The final outcome of one fleet-release-node child, or undefined while it is uncertain. */
 function outcome(kind: z.infer<typeof Kind>, raw: unknown) {
     const step = z.object({
-        outputs: z.object({ record: NodeResult, observer: NodeResult }).partial()
+        outputs: z.object({ record: NodeResult, observer: NodeResult })
+            .partial()
             .optional(),
     }).safeParse(raw);
     const record = step.success ? step.data.outputs?.record : undefined;
@@ -242,8 +265,15 @@ export function fleetRelease(
                     // before a later Node can act; an uncertain or refused effect stops the fleet.
                     const index = current.input.nodes.indexOf(node);
                     for (let prior = 0; prior < index; prior++) {
-                        if (!outcome(args.kind, raw.previous[`node-${prior}`])?.ok) {
-                            result = { ...result, outcome: "pending", ok: false };
+                        if (
+                            !outcome(args.kind, raw.previous[`node-${prior}`])
+                                ?.ok
+                        ) {
+                            result = {
+                                ...result,
+                                outcome: "pending",
+                                ok: false,
+                            };
                             break;
                         }
                     }
@@ -252,26 +282,48 @@ export function fleetRelease(
                             terminal(current.status) ||
                             current.cancel_requested || ctx.signal?.aborted
                         ) {
-                            result = refused(result, "operation.cancelled", "admission");
+                            result = refused(
+                                result,
+                                "operation.cancelled",
+                                "admission",
+                            );
                         } else if (node.skip_reason !== null) {
                             result = { ...result, outcome: "skipped" };
                         } else if (node.plan_error !== null) {
-                            result = refused(result, node.plan_error, "admission");
+                            result = refused(
+                                result,
+                                node.plan_error,
+                                "admission",
+                            );
                         } else if (!windowOpen(node.daytime, now())) {
-                            result = refused(result, "fleet.window_closed", "admission");
+                            result = refused(
+                                result,
+                                "fleet.window_closed",
+                                "admission",
+                            );
                         }
                     }
                     if (result.outcome === "unchanged" && node.ssh === null) {
-                        throw new Error("Installing Node has no admitted SSH target");
+                        throw new Error(
+                            "Installing Node has no admitted SSH target",
+                        );
                     }
                     const gate = Gate.parse({
                         install: result.outcome === "unchanged" && result.ok,
                         result,
                         ssh: node.ssh,
-                        cli: { user: node.user, release: node.release, profile: node.profile },
+                        cli: {
+                            user: node.user,
+                            release: node.release,
+                            profile: node.profile,
+                        },
                         agent: node.agent,
                     });
-                    await ctx.writeResource("gate", `gate-${node.node_id}`, gate);
+                    await ctx.writeResource(
+                        "gate",
+                        `gate-${node.node_id}`,
+                        gate,
+                    );
                     return gate;
                 },
             },
@@ -298,19 +350,25 @@ export function fleetRelease(
                     }
                     if (gate.install) {
                         const cli = CliNativeRun.parse(raw.native_cli);
-                        result = cli.status !== "succeeded" || cli.result === null
-                            ? refused(result, "cli.install_failed", "cli")
-                            : {
-                                ...result,
-                                cli_version: cli.result.version,
-                                outcome: cli.result.installed !== null || cli.result.configured
-                                    ? "converged"
-                                    : "unchanged",
-                                step: "cli",
-                            };
+                        result =
+                            cli.status !== "succeeded" || cli.result === null
+                                ? refused(result, "cli.install_failed", "cli")
+                                : {
+                                    ...result,
+                                    cli_version: cli.result.version,
+                                    outcome: cli.result.installed !== null ||
+                                            cli.result.configured
+                                        ? "converged"
+                                        : "unchanged",
+                                    step: "cli",
+                                };
                     }
                     const safe = NodeResult.parse(result);
-                    await ctx.writeResource("node", `record-${safe.node_id}`, safe);
+                    await ctx.writeResource(
+                        "node",
+                        `record-${safe.node_id}`,
+                        safe,
+                    );
                     return safe;
                 },
             },
@@ -330,7 +388,9 @@ export function fleetRelease(
                     raw: z.infer<typeof Args> & {
                         target_node_id: number;
                         record: z.infer<typeof NodeResult>;
-                        agent: NonNullable<z.infer<typeof NodeRelease>["agent"]>;
+                        agent: NonNullable<
+                            z.infer<typeof NodeRelease>["agent"]
+                        >;
                         fetch: string;
                         changed: boolean;
                         restart: string;
@@ -340,11 +400,20 @@ export function fleetRelease(
                 ) => {
                     const args = Args.parse(raw);
                     const result = NodeResult.parse(raw.record);
-                    if (args.kind !== "fleet.rollout" || !observes(result) || result.node_id !== raw.target_node_id) {
-                        throw new Error("Only a rollout Node whose CLI succeeded publishes the observer");
+                    if (
+                        args.kind !== "fleet.rollout" || !observes(result) ||
+                        result.node_id !== raw.target_node_id
+                    ) {
+                        throw new Error(
+                            "Only a rollout Node whose CLI succeeded publishes the observer",
+                        );
                     }
                     const safe = NodeResult.parse(observed(result, raw));
-                    await ctx.writeResource("node", `node-${safe.node_id}`, safe);
+                    await ctx.writeResource(
+                        "node",
+                        `node-${safe.node_id}`,
+                        safe,
+                    );
                     return safe;
                 },
             },
@@ -369,7 +438,10 @@ export function fleetRelease(
                     const { gateway, current } = await read(args, ctx);
                     const nodes: z.infer<typeof NodeResult>[] = [];
                     for (const [index, node] of current.input.nodes.entries()) {
-                        const output = outcome(args.kind, raw.node_results[`node-${index}`]);
+                        const output = outcome(
+                            args.kind,
+                            raw.node_results[`node-${index}`],
+                        );
                         if (output && output.node_id !== node.node_id) {
                             throw new Error(
                                 "Native Node output differs from admitted order",

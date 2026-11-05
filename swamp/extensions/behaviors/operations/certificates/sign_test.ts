@@ -119,7 +119,7 @@ Deno.test("the method writes the PEM pair as its result resource", async () => {
             },
         );
         assertEquals(Object.keys(behavior.resources), ["result"]);
-    assertEquals(out, { dataHandles: ["handle"] });
+        assertEquals(out, { dataHandles: ["handle"] });
         assertEquals(written, [["result", "sign", { stdout: LEAF + ROOT }]]);
     } finally {
         globalThis.fetch = original;

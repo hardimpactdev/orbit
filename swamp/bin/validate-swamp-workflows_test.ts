@@ -1,45 +1,79 @@
-import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
+import {
+    assert,
+    assertEquals,
+    assertStringIncludes,
+} from "jsr:@std/assert@1.0.19";
 import { run, script } from "./gate-test-support.ts";
-const source = await Deno.readTextFile(new URL("../../.github/workflows/swamp-shape.yml", import.meta.url));
+const source = await Deno.readTextFile(
+    new URL("../../.github/workflows/swamp-shape.yml", import.meta.url),
+);
 const validate = source.split("  validate:")[1].split("  tests:")[0];
 Deno.test("validation receives only its registry-read credentials", () => {
-  for (const key of ["API_KEY", "SIGNIN_TOKEN"]) {
-    assertStringIncludes(validate, "secrets.SWAMP_" + key);
-  }
-  assert(!source.includes("  native-tests:"));
-  assert(!source.includes("  native-plan:"));
+    for (const key of ["API_KEY", "SIGNIN_TOKEN"]) {
+        assertStringIncludes(validate, "secrets.SWAMP_" + key);
+    }
+    assert(!source.includes("  native-tests:"));
+    assert(!source.includes("  native-plan:"));
 });
 Deno.test("required validation only receives event-scoped credentials", () => {
-  const shape = source.split("  shape:")[1].split("  validate:")[0], tests = source.split("  tests:")[1];
-  for (const name of ["SWAMP_API_KEY", "SWAMP_SIGNIN_TOKEN"]) {
-    assert(!shape.includes(name));
-    assert(!tests.includes(name));
-    assertStringIncludes(validate, "secrets." + name);
-  }
-  for (const forbidden of ["allow-auth-unavailable", "pull_request_target"]) assert(!source.includes(forbidden));
-  assert(!validate.includes("continue-on-error"));
-  assertStringIncludes(validate, "github.event_name == 'pull_request'");
-  assertStringIncludes(validate, "github.ref == 'refs/heads/main'");
+    const shape = source.split("  shape:")[1].split("  validate:")[0],
+        tests = source.split("  tests:")[1];
+    for (const name of ["SWAMP_API_KEY", "SWAMP_SIGNIN_TOKEN"]) {
+        assert(!shape.includes(name));
+        assert(!tests.includes(name));
+        assertStringIncludes(validate, "secrets." + name);
+    }
+    for (const forbidden of ["allow-auth-unavailable", "pull_request_target"]) {
+        assert(!source.includes(forbidden));
+    }
+    assert(!validate.includes("continue-on-error"));
+    assertStringIncludes(validate, "github.event_name == 'pull_request'");
+    assertStringIncludes(validate, "github.ref == 'refs/heads/main'");
 });
 Deno.test("serve grant validation and coverage regressions remain required", async () => {
-  for (const required of ["python3 bin/check-grant-patterns.py --cache", "grant-validation.json"]) assertStringIncludes(validate, required);
-  assert((await Deno.stat(new URL("../extensions/behaviors/operations/workflow_grant_patterns_test.ts", import.meta.url))).isFile);
-  assert(!source.includes("check-grant-patterns.ts"));
-  assert(!validate.includes("continue-on-error"));
-  const ci = await Deno.readTextFile(new URL("../../.github/workflows/ci.yml", import.meta.url));
-  assertStringIncludes(ci.split("  required:")[1], "web, swamp,");
+    for (
+        const required of [
+            "python3 bin/check-grant-patterns.py --cache",
+            "grant-validation.json",
+        ]
+    ) assertStringIncludes(validate, required);
+    assert(
+        (await Deno.stat(
+            new URL(
+                "../extensions/behaviors/operations/workflow_grant_patterns_test.ts",
+                import.meta.url,
+            ),
+        )).isFile,
+    );
+    assert(!source.includes("check-grant-patterns.ts"));
+    assert(!validate.includes("continue-on-error"));
+    const ci = await Deno.readTextFile(
+        new URL("../../.github/workflows/ci.yml", import.meta.url),
+    );
+    assertStringIncludes(ci.split("  required:")[1], "web, swamp,");
 });
 Deno.test("native environment is explicit and configuration is isolated", async () => {
-  const result = await run("python3", ["-c", `import importlib.util,json,sys
+    const result = await run("python3", [
+        "-c",
+        `import importlib.util,json,sys
 spec=importlib.util.spec_from_file_location('validate',sys.argv[1])
 module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-print(json.dumps([module.native_env('/fixture/fresh', {'HOME':'/ambient','SWAMP_CONFIG_DIR':'/ambient','SWAMP_API_KEY':'synthetic-key','SWAMP_SIGNIN_TOKEN':'synthetic-proof','UNAPPROVED':'synthetic'}), module.native_env('/fresh', {})]))`, script("validate-swamp-workflows.py")]);
-  assertEquals(result.code, 0, result.stderr);
-  const [env, empty] = JSON.parse(result.stdout);
-  for (const name of ["HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "SWAMP_CONFIG_DIR"]) assertEquals(env[name], "/fixture/fresh");
-  assertEquals(env.SWAMP_API_KEY, "synthetic-key");
-  assertEquals(env.SWAMP_SIGNIN_TOKEN, "synthetic-proof");
-  assert(!("UNAPPROVED" in env));
-  assert(!("SWAMP_API_KEY" in empty));
+print(json.dumps([module.native_env('/fixture/fresh', {'HOME':'/ambient','SWAMP_CONFIG_DIR':'/ambient','SWAMP_API_KEY':'synthetic-key','SWAMP_SIGNIN_TOKEN':'synthetic-proof','UNAPPROVED':'synthetic'}), module.native_env('/fresh', {})]))`,
+        script("validate-swamp-workflows.py"),
+    ]);
+    assertEquals(result.code, 0, result.stderr);
+    const [env, empty] = JSON.parse(result.stdout);
+    for (
+        const name of [
+            "HOME",
+            "XDG_CONFIG_HOME",
+            "XDG_CACHE_HOME",
+            "SWAMP_CONFIG_DIR",
+        ]
+    ) assertEquals(env[name], "/fixture/fresh");
+    assertEquals(env.SWAMP_API_KEY, "synthetic-key");
+    assertEquals(env.SWAMP_SIGNIN_TOKEN, "synthetic-proof");
+    assert(!("UNAPPROVED" in env));
+    assert(!("SWAMP_API_KEY" in empty));
 });

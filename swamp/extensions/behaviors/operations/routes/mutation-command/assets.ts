@@ -172,8 +172,7 @@ export const behavior = {
             },
         },
         lanResult: {
-            description:
-                "Verify every official firewall tuple",
+            description: "Verify every official firewall tuple",
             arguments: LanOutcomes,
             execute: async (
                 args: LanOutcomes,

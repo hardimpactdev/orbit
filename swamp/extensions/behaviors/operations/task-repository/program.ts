@@ -21,7 +21,10 @@ const ObjectValue = z.record(z.string(), z.unknown());
 const Kind = z.enum(["tasks.script", "tasks.analyze"]);
 const OUTPUT_BYTES = 16384;
 /** The file on the VM, and its downloaded copy, that holds the program output. */
-export const OUTPUT_FILE = { "tasks.script": "output", "tasks.analyze": "report" };
+export const OUTPUT_FILE = {
+    "tasks.script": "output",
+    "tasks.analyze": "report",
+};
 const encoder = new TextEncoder();
 
 type Context = {

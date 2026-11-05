@@ -10,9 +10,21 @@ const Entries = z.string().max(8 * 1024 * 1024);
  * commit does not have, such as a removed package's node_modules. Everything else stays. Each action is one argv
  * under the checkout's lock; a directory is made writable first, so read-only caches can go.
  */
-export function cleanup(home: string, untracked: string, directories: string): string[][] {
-    const kept = new Set(directories.split("\0").filter((entry) => entry !== ""));
-    const lock = ["/usr/bin/flock", "--nonblock", "--conflict-exit-code", "73", home];
+export function cleanup(
+    home: string,
+    untracked: string,
+    directories: string,
+): string[][] {
+    const kept = new Set(
+        directories.split("\0").filter((entry) => entry !== ""),
+    );
+    const lock = [
+        "/usr/bin/flock",
+        "--nonblock",
+        "--conflict-exit-code",
+        "73",
+        home,
+    ];
     const actions: string[][] = [];
     for (const raw of untracked.split("\0")) {
         const entry = raw.replace(/\/$/, "");
@@ -24,7 +36,13 @@ export function cleanup(home: string, untracked: string, directories: string): s
         const path = home + "/" + entry;
         actions.push(
             ...(raw.endsWith("/")
-                ? [[...lock, "/usr/bin/chmod", "-R", "u+w", "--", path], [...lock, "/usr/bin/rm", "-rf", "--", path]]
+                ? [[...lock, "/usr/bin/chmod", "-R", "u+w", "--", path], [
+                    ...lock,
+                    "/usr/bin/rm",
+                    "-rf",
+                    "--",
+                    path,
+                ]]
                 : [[...lock, "/usr/bin/rm", "-f", "--", path]]),
         );
     }
@@ -43,7 +61,8 @@ export const behavior = {
     },
     methods: {
         cleanup: {
-            description: "Plan the removal of untracked entries in directories the target commit lacks",
+            description:
+                "Plan the removal of untracked entries in directories the target commit lacks",
             arguments: z.object({
                 home: z.string().regex(/^\/[^\0]+$/),
                 untracked: Entries,
@@ -53,7 +72,13 @@ export const behavior = {
                 args: { home: string; untracked: string; directories: string },
                 ctx: Context,
             ) => {
-                const value = { actions: cleanup(args.home, args.untracked, args.directories) };
+                const value = {
+                    actions: cleanup(
+                        args.home,
+                        args.untracked,
+                        args.directories,
+                    ),
+                };
                 await ctx.writeResource("cleanup", "cleanup", value);
                 return value;
             },

@@ -1,971 +1,1054 @@
 import {
-  assert,
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-  assertThrows,
+    assert,
+    assertEquals,
+    assertRejects,
+    assertStringIncludes,
+    assertThrows,
 } from "jsr:@std/assert@1.0.19";
 import { plan as composerPlan } from "../extensions/behaviors/composer-maintenance/_lib/batch.ts";
 import { plan as jsPlan } from "../extensions/behaviors/js-maintenance/_lib/batch.ts";
 import {
-  planBatch,
-  scratch,
-  targetRange,
-  UnwritableTarget,
-  type UpdateTarget,
-  writableReleases,
+    planBatch,
+    scratch,
+    targetRange,
+    UnwritableTarget,
+    type UpdateTarget,
+    writableReleases,
 } from "../extensions/behaviors/_lib/maintenance/batch.ts";
 import { emptyExceptions } from "../extensions/behaviors/_lib/maintenance/exceptions.ts";
 async function fixture(fn: (root: string, log: string) => Promise<void>) {
-  const temp = await Deno.makeTempDir({ prefix: "batch-ecosystem-" }),
-    root = `${temp}/repo`,
-    bin = `${temp}/bin`,
-    log = `${temp}/calls`;
-  await Deno.mkdir(root);
-  await Deno.mkdir(bin);
-  const oldPath = Deno.env.get("PATH"), fetch = globalThis.fetch;
-  try {
-    const archives: Record<string, string> = {};
-    await Deno.mkdir(`${temp}/sdk/package`, { recursive: true });
-    for (const version of ["2.0.0", "3.0.0"]) {
-      await Deno.writeTextFile(
-        `${temp}/sdk/package/bundledNativeModules.json`,
-        JSON.stringify({ react: version }),
-      );
-      archives[version] = `${temp}/expo-${version}.tgz`;
-      assert(
-        (await new Deno.Command("tar", {
-          args: ["-czf", archives[version], "-C", `${temp}/sdk`, "package"],
-          stdout: "null",
-          stderr: "piped",
-        }).output()).success,
-      );
+    const temp = await Deno.makeTempDir({ prefix: "batch-ecosystem-" }),
+        root = `${temp}/repo`,
+        bin = `${temp}/bin`,
+        log = `${temp}/calls`;
+    await Deno.mkdir(root);
+    await Deno.mkdir(bin);
+    const oldPath = Deno.env.get("PATH"), fetch = globalThis.fetch;
+    try {
+        const archives: Record<string, string> = {};
+        await Deno.mkdir(`${temp}/sdk/package`, { recursive: true });
+        for (const version of ["2.0.0", "3.0.0"]) {
+            await Deno.writeTextFile(
+                `${temp}/sdk/package/bundledNativeModules.json`,
+                JSON.stringify({ react: version }),
+            );
+            archives[version] = `${temp}/expo-${version}.tgz`;
+            assert(
+                (await new Deno.Command("tar", {
+                    args: [
+                        "-czf",
+                        archives[version],
+                        "-C",
+                        `${temp}/sdk`,
+                        "package",
+                    ],
+                    stdout: "null",
+                    stderr: "piped",
+                }).output()).success,
+            );
+        }
+        const source = (await Deno.readTextFile(
+            new URL("./fixtures/batch/manager.php", import.meta.url),
+        ))
+            .replaceAll("__LOG__", JSON.stringify(log)).replaceAll(
+                "__EXPO_TARS__",
+                JSON.stringify(archives),
+            );
+        for (const name of ["composer", "npm", "bun"]) {
+            await Deno.writeTextFile(`${bin}/${name}`, source);
+            await Deno.chmod(`${bin}/${name}`, 0o755);
+        }
+        Deno.env.set("PATH", `${bin}:${oldPath}`);
+        globalThis.fetch = () =>
+            Promise.resolve(
+                Response.json({
+                    packages: {
+                        "fixture/one": [
+                            { version: "1.5.0", time: "2020-01-01T00:00:00Z" },
+                            { version: "2.0.0", time: "2020-01-01T00:00:00Z" },
+                        ],
+                        "fixture/two": [{
+                            version: "2.0.0",
+                            time: "2020-01-01T00:00:00Z",
+                        }],
+                    },
+                }),
+            );
+        await Deno.writeTextFile(
+            `${root}/composer.json`,
+            JSON.stringify({
+                require: { "fixture/one": "1.0.0", "fixture/two": "1.0.0" },
+            }),
+        );
+        await Deno.writeTextFile(
+            `${root}/composer.lock`,
+            JSON.stringify({
+                packages: [{ name: "fixture/one", version: "1.0.0" }, {
+                    name: "fixture/two",
+                    version: "1.0.0",
+                }],
+                "packages-dev": [],
+            }),
+        );
+        await Deno.writeTextFile(
+            `${root}/package.json`,
+            JSON.stringify({
+                dependencies: { one: "1.0.0", two: "1.0.0" },
+                packageManager: "npm@11.19.1",
+            }),
+        );
+        await Deno.writeTextFile(
+            `${root}/package-lock.json`,
+            JSON.stringify({
+                lockfileVersion: 3,
+                packages: {
+                    "": { dependencies: { one: "1.0.0", two: "1.0.0" } },
+                    "node_modules/one": { version: "1.0.0" },
+                    "node_modules/two": { version: "1.0.0" },
+                },
+            }),
+        );
+        await Deno.writeTextFile(`${root}/AGENTS.md`, "project instructions\n");
+        await Deno.mkdir(`${root}/.agents/skills`, { recursive: true });
+        await Deno.writeTextFile(
+            `${root}/.agents/skills/example.md`,
+            "skill\n",
+        );
+        await Deno.mkdir(`${root}/.claude`);
+        await Deno.symlink("AGENTS.md", `${root}/CLAUDE.md`);
+        await Deno.symlink("../.agents/skills", `${root}/.claude/skills`);
+        for (
+            const args of [["init"], ["add", "."], [
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=f@e.test",
+                "commit",
+                "-m",
+                "fixture",
+            ]]
+        ) {
+            const out = await new Deno.Command("git", {
+                cwd: root,
+                args,
+                stdout: "null",
+                stderr: "piped",
+            }).output();
+            assert(out.success, new TextDecoder().decode(out.stderr));
+        }
+        await fn(root, log);
+    } finally {
+        globalThis.fetch = fetch;
+        if (oldPath === undefined) Deno.env.delete("PATH");
+        else Deno.env.set("PATH", oldPath);
+        await Deno.remove(temp, { recursive: true });
     }
-    const source = (await Deno.readTextFile(
-      new URL("./fixtures/batch/manager.php", import.meta.url),
-    ))
-      .replaceAll("__LOG__", JSON.stringify(log)).replaceAll(
-        "__EXPO_TARS__",
-        JSON.stringify(archives),
-      );
-    for (const name of ["composer", "npm", "bun"]) {
-      await Deno.writeTextFile(`${bin}/${name}`, source);
-      await Deno.chmod(`${bin}/${name}`, 0o755);
-    }
-    Deno.env.set("PATH", `${bin}:${oldPath}`);
-    globalThis.fetch = () =>
-      Promise.resolve(
-        Response.json({
-          packages: {
-            "fixture/one": [
-              { version: "1.5.0", time: "2020-01-01T00:00:00Z" },
-              { version: "2.0.0", time: "2020-01-01T00:00:00Z" },
-            ],
-            "fixture/two": [{ version: "2.0.0", time: "2020-01-01T00:00:00Z" }],
-          },
-        }),
-      );
-    await Deno.writeTextFile(
-      `${root}/composer.json`,
-      JSON.stringify({
-        require: { "fixture/one": "1.0.0", "fixture/two": "1.0.0" },
-      }),
-    );
-    await Deno.writeTextFile(
-      `${root}/composer.lock`,
-      JSON.stringify({
-        packages: [{ name: "fixture/one", version: "1.0.0" }, {
-          name: "fixture/two",
-          version: "1.0.0",
-        }],
-        "packages-dev": [],
-      }),
-    );
-    await Deno.writeTextFile(
-      `${root}/package.json`,
-      JSON.stringify({
-        dependencies: { one: "1.0.0", two: "1.0.0" },
-        packageManager: "npm@11.19.1",
-      }),
-    );
-    await Deno.writeTextFile(
-      `${root}/package-lock.json`,
-      JSON.stringify({
-        lockfileVersion: 3,
-        packages: {
-          "": { dependencies: { one: "1.0.0", two: "1.0.0" } },
-          "node_modules/one": { version: "1.0.0" },
-          "node_modules/two": { version: "1.0.0" },
-        },
-      }),
-    );
-    await Deno.writeTextFile(`${root}/AGENTS.md`, "project instructions\n");
-    await Deno.mkdir(`${root}/.agents/skills`, { recursive: true });
-    await Deno.writeTextFile(`${root}/.agents/skills/example.md`, "skill\n");
-    await Deno.mkdir(`${root}/.claude`);
-    await Deno.symlink("AGENTS.md", `${root}/CLAUDE.md`);
-    await Deno.symlink("../.agents/skills", `${root}/.claude/skills`);
-    for (
-      const args of [["init"], ["add", "."], [
-        "-c",
-        "user.name=Fixture",
-        "-c",
-        "user.email=f@e.test",
-        "commit",
-        "-m",
-        "fixture",
-      ]]
-    ) {
-      const out = await new Deno.Command("git", {
-        cwd: root,
-        args,
-        stdout: "null",
-        stderr: "piped",
-      }).output();
-      assert(out.success, new TextDecoder().decode(out.stderr));
-    }
-    await fn(root, log);
-  } finally {
-    globalThis.fetch = fetch;
-    if (oldPath === undefined) Deno.env.delete("PATH");
-    else Deno.env.set("PATH", oldPath);
-    await Deno.remove(temp, { recursive: true });
-  }
 }
 
 Deno.test("planning copy preserves file and directory symlinks without copying untracked targets", async () => {
-  await fixture(async (root) => {
-    await Deno.writeTextFile(`${root}/untracked`, "not part of the plan\n");
-    await Deno.symlink("untracked", `${root}/local-link`);
-    assert(
-      (await new Deno.Command("git", {
-        cwd: root,
-        args: ["add", "local-link"],
-      }).output()).success,
-    );
-    const copy = await scratch(root);
-    try {
-      assert((await Deno.lstat(`${copy.root}/CLAUDE.md`)).isSymlink);
-      assert((await Deno.lstat(`${copy.root}/.claude/skills`)).isSymlink);
-      assertEquals(await Deno.readLink(`${copy.root}/local-link`), "untracked");
-      assertEquals(await Deno.readLink(`${copy.root}/CLAUDE.md`), "AGENTS.md");
-      assertEquals(
-        await Deno.readLink(`${copy.root}/.claude/skills`),
-        "../.agents/skills",
-      );
-      assertEquals(
-        await Deno.readTextFile(`${copy.root}/CLAUDE.md`),
-        "project instructions\n",
-      );
-      assertEquals(
-        await Deno.readTextFile(`${copy.root}/.claude/skills/example.md`),
-        "skill\n",
-      );
-      await Deno.writeTextFile(`${copy.root}/CLAUDE.md`, "copy only\n");
-      assertEquals(
-        await Deno.readTextFile(`${root}/AGENTS.md`),
-        "project instructions\n",
-      );
-      for (const excluded of [".git", "untracked", "node_modules", "vendor"]) {
-        await assertRejects(
-          () => Deno.lstat(`${copy.root}/${excluded}`),
-          Deno.errors.NotFound,
+    await fixture(async (root) => {
+        await Deno.writeTextFile(`${root}/untracked`, "not part of the plan\n");
+        await Deno.symlink("untracked", `${root}/local-link`);
+        assert(
+            (await new Deno.Command("git", {
+                cwd: root,
+                args: ["add", "local-link"],
+            }).output()).success,
         );
-      }
-    } finally {
-      await copy.close();
-    }
-    await assertRejects(() => Deno.lstat(copy.root), Deno.errors.NotFound);
-  });
+        const copy = await scratch(root);
+        try {
+            assert((await Deno.lstat(`${copy.root}/CLAUDE.md`)).isSymlink);
+            assert((await Deno.lstat(`${copy.root}/.claude/skills`)).isSymlink);
+            assertEquals(
+                await Deno.readLink(`${copy.root}/local-link`),
+                "untracked",
+            );
+            assertEquals(
+                await Deno.readLink(`${copy.root}/CLAUDE.md`),
+                "AGENTS.md",
+            );
+            assertEquals(
+                await Deno.readLink(`${copy.root}/.claude/skills`),
+                "../.agents/skills",
+            );
+            assertEquals(
+                await Deno.readTextFile(`${copy.root}/CLAUDE.md`),
+                "project instructions\n",
+            );
+            assertEquals(
+                await Deno.readTextFile(
+                    `${copy.root}/.claude/skills/example.md`,
+                ),
+                "skill\n",
+            );
+            await Deno.writeTextFile(`${copy.root}/CLAUDE.md`, "copy only\n");
+            assertEquals(
+                await Deno.readTextFile(`${root}/AGENTS.md`),
+                "project instructions\n",
+            );
+            for (
+                const excluded of [
+                    ".git",
+                    "untracked",
+                    "node_modules",
+                    "vendor",
+                ]
+            ) {
+                await assertRejects(
+                    () => Deno.lstat(`${copy.root}/${excluded}`),
+                    Deno.errors.NotFound,
+                );
+            }
+        } finally {
+            await copy.close();
+        }
+        await assertRejects(() => Deno.lstat(copy.root), Deno.errors.NotFound);
+    });
 });
 
 Deno.test("planning copy relocates internal absolute symlinks and preserves dangling internal links", async () => {
-  await fixture(async (root) => {
-    await Deno.remove(`${root}/CLAUDE.md`);
-    await Deno.symlink(`${root}/AGENTS.md`, `${root}/CLAUDE.md`);
-    await Deno.remove(`${root}/.claude/skills`);
-    await Deno.symlink("../missing/skills", `${root}/.claude/skills`);
-    const copy = await scratch(root);
-    try {
-      assertEquals(
-        await Deno.readLink(`${copy.root}/CLAUDE.md`),
-        "./AGENTS.md",
-      );
-      assertEquals(
-        await Deno.realPath(`${copy.root}/CLAUDE.md`),
-        `${copy.root}/AGENTS.md`,
-      );
-      assertEquals(
-        await Deno.readLink(`${copy.root}/.claude/skills`),
-        "../missing/skills",
-      );
-    } finally {
-      await copy.close();
-    }
-  });
+    await fixture(async (root) => {
+        await Deno.remove(`${root}/CLAUDE.md`);
+        await Deno.symlink(`${root}/AGENTS.md`, `${root}/CLAUDE.md`);
+        await Deno.remove(`${root}/.claude/skills`);
+        await Deno.symlink("../missing/skills", `${root}/.claude/skills`);
+        const copy = await scratch(root);
+        try {
+            assertEquals(
+                await Deno.readLink(`${copy.root}/CLAUDE.md`),
+                "./AGENTS.md",
+            );
+            assertEquals(
+                await Deno.realPath(`${copy.root}/CLAUDE.md`),
+                `${copy.root}/AGENTS.md`,
+            );
+            assertEquals(
+                await Deno.readLink(`${copy.root}/.claude/skills`),
+                "../missing/skills",
+            );
+        } finally {
+            await copy.close();
+        }
+    });
 });
 
 for (
-  const escape of [
-    "relative",
-    "absolute",
-    "chain",
-    "directory-parent",
-    "missing-target",
-  ] as const
+    const escape of [
+        "relative",
+        "absolute",
+        "chain",
+        "directory-parent",
+        "missing-target",
+    ] as const
 ) {
-  Deno.test(`planning copy refuses ${escape} symlink escapes`, async () => {
-    await fixture(async (root) => {
-      const outside = `${root}-outside`;
-      await Deno.mkdir(outside);
-      try {
-        await Deno.writeTextFile(`${outside}/AGENTS.md`, "outside\n");
-        await Deno.remove(`${root}/CLAUDE.md`);
-        let target = `../repo-outside/AGENTS.md`;
-        if (escape === "absolute") target = `${outside}/AGENTS.md`;
-        if (escape === "chain") {
-          await Deno.symlink(`${root}/AGENTS.md`, `${outside}/return`);
-          await Deno.symlink(`${outside}/return`, `${root}/indirect`);
-          target = "indirect";
-        }
-        if (escape === "directory-parent") {
-          await Deno.symlink(outside, `${root}/indirect`);
-          target = "indirect/../repo/AGENTS.md";
-        }
-        if (escape === "missing-target") target = "../repo-outside/missing";
-        await Deno.symlink(target, `${root}/CLAUDE.md`);
-        await assertRejects(
-          () => scratch(root),
-          Error,
-          "symlink escapes checkout",
-        );
-      } finally {
-        await Deno.remove(outside, { recursive: true });
-      }
+    Deno.test(`planning copy refuses ${escape} symlink escapes`, async () => {
+        await fixture(async (root) => {
+            const outside = `${root}-outside`;
+            await Deno.mkdir(outside);
+            try {
+                await Deno.writeTextFile(`${outside}/AGENTS.md`, "outside\n");
+                await Deno.remove(`${root}/CLAUDE.md`);
+                let target = `../repo-outside/AGENTS.md`;
+                if (escape === "absolute") target = `${outside}/AGENTS.md`;
+                if (escape === "chain") {
+                    await Deno.symlink(
+                        `${root}/AGENTS.md`,
+                        `${outside}/return`,
+                    );
+                    await Deno.symlink(`${outside}/return`, `${root}/indirect`);
+                    target = "indirect";
+                }
+                if (escape === "directory-parent") {
+                    await Deno.symlink(outside, `${root}/indirect`);
+                    target = "indirect/../repo/AGENTS.md";
+                }
+                if (escape === "missing-target") {
+                    target = "../repo-outside/missing";
+                }
+                await Deno.symlink(target, `${root}/CLAUDE.md`);
+                await assertRejects(
+                    () => scratch(root),
+                    Error,
+                    "symlink escapes checkout",
+                );
+            } finally {
+                await Deno.remove(outside, { recursive: true });
+            }
+        });
     });
-  });
 }
 
 Deno.test("planning copy still refuses tracked directories and unresolved link cycles", async () => {
-  await fixture(async (root) => {
-    await Deno.remove(`${root}/CLAUDE.md`);
-    await Deno.symlink("CLAUDE.md", `${root}/CLAUDE.md`);
-    await assertRejects(() => scratch(root), Error, "cannot resolve symlink");
-    await Deno.remove(`${root}/CLAUDE.md`);
-    await Deno.mkdir(`${root}/CLAUDE.md`);
-    await assertRejects(
-      () => scratch(root),
-      Error,
-      "cannot copy tracked non-file",
-    );
-  });
+    await fixture(async (root) => {
+        await Deno.remove(`${root}/CLAUDE.md`);
+        await Deno.symlink("CLAUDE.md", `${root}/CLAUDE.md`);
+        await assertRejects(
+            () => scratch(root),
+            Error,
+            "cannot resolve symlink",
+        );
+        await Deno.remove(`${root}/CLAUDE.md`);
+        await Deno.mkdir(`${root}/CLAUDE.md`);
+        await assertRejects(
+            () => scratch(root),
+            Error,
+            "cannot copy tracked non-file",
+        );
+    });
 });
 
 Deno.test("planning copy refuses an untracked internal symlink replacing a tracked parent directory", async () => {
-  await fixture(async (root) => {
-    await Deno.rename(`${root}/.agents`, `${root}/untracked-agents`);
-    await Deno.symlink("untracked-agents", `${root}/.agents`);
-    await assertRejects(
-      () => scratch(root),
-      Error,
-      "cannot copy through symlink ancestor",
-    );
-  });
+    await fixture(async (root) => {
+        await Deno.rename(`${root}/.agents`, `${root}/untracked-agents`);
+        await Deno.symlink("untracked-agents", `${root}/.agents`);
+        await assertRejects(
+            () => scratch(root),
+            Error,
+            "cannot copy through symlink ancestor",
+        );
+    });
 });
 
 Deno.test("planning copy refuses a link that becomes an escape when an untracked target link is omitted", async () => {
-  await fixture(async (root) => {
-    await Deno.mkdir(`${root}/b/c`, { recursive: true });
-    await Deno.writeTextFile(`${root}/b/c/file`, "tracked\n");
-    await Deno.writeTextFile(`${root}/victim`, "inside\n");
-    await Deno.symlink("b/c", `${root}/a`);
-    await Deno.symlink("a/../../victim", `${root}/L`);
-    assert(
-      (await new Deno.Command("git", {
-        cwd: root,
-        args: ["add", "b/c/file", "victim", "L"],
-      }).output()).success,
-    );
-    assertEquals(await Deno.realPath(`${root}/L`), `${root}/victim`);
-    await assertRejects(
-      () => scratch(root),
-      Error,
-      "symlink escapes checkout: L",
-    );
-  });
+    await fixture(async (root) => {
+        await Deno.mkdir(`${root}/b/c`, { recursive: true });
+        await Deno.writeTextFile(`${root}/b/c/file`, "tracked\n");
+        await Deno.writeTextFile(`${root}/victim`, "inside\n");
+        await Deno.symlink("b/c", `${root}/a`);
+        await Deno.symlink("a/../../victim", `${root}/L`);
+        assert(
+            (await new Deno.Command("git", {
+                cwd: root,
+                args: ["add", "b/c/file", "victim", "L"],
+            }).output()).success,
+        );
+        assertEquals(await Deno.realPath(`${root}/L`), `${root}/victim`);
+        await assertRejects(
+            () => scratch(root),
+            Error,
+            "symlink escapes checkout: L",
+        );
+    });
 });
 for (const manager of ["composer", "js"] as const) {
-  Deno.test(`${manager}: planning resolves two targets and leaves the checkout unchanged`, async () => {
-    await fixture(async (root) => {
-      const names = manager === "composer"
-        ? ["fixture/one", "fixture/two"]
-        : ["one", "two"];
-      const targets: UpdateTarget[] = names.map((name, i) => ({
-        path: ".",
-        manager,
-        package: name,
-        version: "2.0.0",
-        purpose: i === 0 ? "security" : "major",
-        advisories: i === 0 ? ["fixture-advisory"] : [],
-        advisoryUrls: i === 0 ? ["https://example.test/advisory"] : [],
-      }));
-      const common = {
-        cwd: root,
-        paths: ["."],
-        policy: { ".": { minimumReleaseAgeDays: 7 } },
-        exceptions: emptyExceptions(),
-      };
-      const before = await new Deno.Command("git", {
-        cwd: root,
-        args: ["status", "--porcelain"],
-        stdout: "piped",
-      }).output();
-      assertEquals(new TextDecoder().decode(before.stdout), "");
-      const plan = await (manager === "composer" ? composerPlan : jsPlan)(
-        common,
-        targets.map((t) => ({
-          ...t,
-          current: "1.0.0",
-          reasons: [t.purpose],
-          advisories: t.advisories.map((id, i) => ({
-            id,
-            url: t.advisoryUrls[i],
-          })),
-        })),
-      );
-      assertEquals(plan.targets.length, 2);
-      const after = await new Deno.Command("git", {
-        cwd: root,
-        args: ["status", "--porcelain"],
-        stdout: "piped",
-      }).output();
-      assertEquals(new TextDecoder().decode(after.stdout), "");
+    Deno.test(`${manager}: planning resolves two targets and leaves the checkout unchanged`, async () => {
+        await fixture(async (root) => {
+            const names = manager === "composer"
+                ? ["fixture/one", "fixture/two"]
+                : ["one", "two"];
+            const targets: UpdateTarget[] = names.map((name, i) => ({
+                path: ".",
+                manager,
+                package: name,
+                version: "2.0.0",
+                purpose: i === 0 ? "security" : "major",
+                advisories: i === 0 ? ["fixture-advisory"] : [],
+                advisoryUrls: i === 0 ? ["https://example.test/advisory"] : [],
+            }));
+            const common = {
+                cwd: root,
+                paths: ["."],
+                policy: { ".": { minimumReleaseAgeDays: 7 } },
+                exceptions: emptyExceptions(),
+            };
+            const before = await new Deno.Command("git", {
+                cwd: root,
+                args: ["status", "--porcelain"],
+                stdout: "piped",
+            }).output();
+            assertEquals(new TextDecoder().decode(before.stdout), "");
+            const plan = await (manager === "composer" ? composerPlan : jsPlan)(
+                common,
+                targets.map((t) => ({
+                    ...t,
+                    current: "1.0.0",
+                    reasons: [t.purpose],
+                    advisories: t.advisories.map((id, i) => ({
+                        id,
+                        url: t.advisoryUrls[i],
+                    })),
+                })),
+            );
+            assertEquals(plan.targets.length, 2);
+            const after = await new Deno.Command("git", {
+                cwd: root,
+                args: ["status", "--porcelain"],
+                stdout: "piped",
+            }).output();
+            assertEquals(new TextDecoder().decode(after.stdout), "");
+        });
     });
-  });
 }
 
 Deno.test("Expo planning admits the SDK and its age-eligible React alignment as one immutable batch", async () => {
-  await fixture(async (root) => {
-    const manifest = JSON.parse(
-      await Deno.readTextFile(`${root}/package.json`),
-    );
-    Object.assign(manifest.dependencies, { expo: "1.0.0", react: "1.0.0" });
-    await Deno.writeTextFile(`${root}/package.json`, JSON.stringify(manifest));
-    const locked = JSON.parse(
-      await Deno.readTextFile(`${root}/package-lock.json`),
-    );
-    Object.assign(locked.packages, {
-      "node_modules/expo": { version: "1.0.0" },
-      "node_modules/react": { version: "1.0.0" },
+    await fixture(async (root) => {
+        const manifest = JSON.parse(
+            await Deno.readTextFile(`${root}/package.json`),
+        );
+        Object.assign(manifest.dependencies, { expo: "1.0.0", react: "1.0.0" });
+        await Deno.writeTextFile(
+            `${root}/package.json`,
+            JSON.stringify(manifest),
+        );
+        const locked = JSON.parse(
+            await Deno.readTextFile(`${root}/package-lock.json`),
+        );
+        Object.assign(locked.packages, {
+            "node_modules/expo": { version: "1.0.0" },
+            "node_modules/react": { version: "1.0.0" },
+        });
+        await Deno.writeTextFile(
+            `${root}/package-lock.json`,
+            JSON.stringify(locked),
+        );
+        const common = {
+            cwd: root,
+            paths: ["."],
+            policy: { ".": { minimumReleaseAgeDays: 7 } },
+            exceptions: emptyExceptions(),
+        };
+        const plan = await jsPlan(common, [{
+            path: ".",
+            manager: "js",
+            package: "expo",
+            current: "1.0.0",
+            latest: "2.0.0",
+            reasons: ["major"],
+            advisories: [],
+        }]);
+        assertEquals(plan.blocked, []);
+        assertEquals(plan.targets.map((t) => t.package), ["expo", "react"]);
     });
-    await Deno.writeTextFile(
-      `${root}/package-lock.json`,
-      JSON.stringify(locked),
-    );
-    const common = {
-      cwd: root,
-      paths: ["."],
-      policy: { ".": { minimumReleaseAgeDays: 7 } },
-      exceptions: emptyExceptions(),
-    };
-    const plan = await jsPlan(common, [{
-      path: ".",
-      manager: "js",
-      package: "expo",
-      current: "1.0.0",
-      latest: "2.0.0",
-      reasons: ["major"],
-      advisories: [],
-    }]);
-    assertEquals(plan.blocked, []);
-    assertEquals(plan.targets.map((t) => t.package), ["expo", "react"]);
-  });
 });
 
 Deno.test("batch declarations retain range styles and security floors", () => {
-  for (
-    const [before, version, purpose, after] of [
-      ["^25.3.0", "25.15.0", "security", "^25.15.0"],
-      ["^1.0", "1.5.0", "security", "^1.5"],
-      ["^1", "2.0.0", "major", "^2"],
-      ["~1.0.0", "1.0.4", "security", "~1.0.4"],
-      ["1.0.0", "1.0.4", "security", "1.0.4"],
-      ["^5.9.3", "7.0.2", "major", "^7.0.2"],
-      ["~1.0.0", "2.0.0", "major", "~2.0.0"],
-      ["v1.0.0", "2.0.0", "major", "v2.0.0"],
-      ["=1.0.0", "2.0.0", "major", "=2.0.0"],
-      ["1.x", "2.0.0", "major", "2.x"],
-      ["1.2.*", "2.4.0", "major", "2.4.*"],
-    ] as const
-  ) {
-    assertEquals(
-      targetRange(before, { version, purpose, manager: "js" }),
-      after,
-    );
-  }
+    for (
+        const [before, version, purpose, after] of [
+            ["^25.3.0", "25.15.0", "security", "^25.15.0"],
+            ["^1.0", "1.5.0", "security", "^1.5"],
+            ["^1", "2.0.0", "major", "^2"],
+            ["~1.0.0", "1.0.4", "security", "~1.0.4"],
+            ["1.0.0", "1.0.4", "security", "1.0.4"],
+            ["^5.9.3", "7.0.2", "major", "^7.0.2"],
+            ["~1.0.0", "2.0.0", "major", "~2.0.0"],
+            ["v1.0.0", "2.0.0", "major", "v2.0.0"],
+            ["=1.0.0", "2.0.0", "major", "=2.0.0"],
+            ["1.x", "2.0.0", "major", "2.x"],
+            ["1.2.*", "2.4.0", "major", "2.4.*"],
+        ] as const
+    ) {
+        assertEquals(
+            targetRange(before, { version, purpose, manager: "js" }),
+            after,
+        );
+    }
 });
 
 for (const manager of ["composer", "js"] as const) {
-  Deno.test(`${manager}: unsupported security ranges block in planning and leave other candidates eligible`, async () => {
-    await fixture(async (root) => {
-      const file = `${root}/${
-        manager === "composer" ? "composer" : "package"
-      }.json`;
-      const section = manager === "composer" ? "require" : "dependencies";
-      const name = manager === "composer" ? "fixture/one" : "one";
-      const manifest = JSON.parse(await Deno.readTextFile(file));
-      const common = {
-        cwd: root,
-        paths: ["."],
-        policy: {},
-        exceptions: emptyExceptions(),
-      };
-      for (
-        const range of ["1.*", "^1.0.0 || ^2.0.0", ">=1.0.0 <3.0.0", "V1.0.0"]
-      ) {
-        manifest[section][name] = range;
-        await Deno.writeTextFile(file, JSON.stringify(manifest));
-        const target: UpdateTarget = {
-          path: ".",
-          manager,
-          package: name,
-          version: "2.0.0",
-          purpose: "security",
-          advisories: ["fixture-advisory"],
-          advisoryUrls: ["https://example.test/advisory"],
-        };
-        const plan = await (manager === "composer" ? composerPlan : jsPlan)(
-          common,
-          [{
-            ...target,
-            reasons: ["security"],
-            advisories: [{
-              id: "fixture-advisory",
-              url: "https://example.test/advisory",
-            }],
-          }, {
-            path: ".",
-            manager,
-            package: manager === "composer" ? "fixture/two" : "two",
-            reasons: ["major"],
-            advisories: [],
-          }],
-        );
-        assert(
-          plan.blocked.some((b) =>
-            b.package === name &&
-            b.reason.includes("Cannot preserve range style")
-          ),
-        );
-        assertEquals(
-          plan.targets.map((t) => t.package),
-          [manager === "composer" ? "fixture/two" : "two"],
-        );
-      }
+    Deno.test(`${manager}: unsupported security ranges block in planning and leave other candidates eligible`, async () => {
+        await fixture(async (root) => {
+            const file = `${root}/${
+                manager === "composer" ? "composer" : "package"
+            }.json`;
+            const section = manager === "composer" ? "require" : "dependencies";
+            const name = manager === "composer" ? "fixture/one" : "one";
+            const manifest = JSON.parse(await Deno.readTextFile(file));
+            const common = {
+                cwd: root,
+                paths: ["."],
+                policy: {},
+                exceptions: emptyExceptions(),
+            };
+            for (
+                const range of [
+                    "1.*",
+                    "^1.0.0 || ^2.0.0",
+                    ">=1.0.0 <3.0.0",
+                    "V1.0.0",
+                ]
+            ) {
+                manifest[section][name] = range;
+                await Deno.writeTextFile(file, JSON.stringify(manifest));
+                const target: UpdateTarget = {
+                    path: ".",
+                    manager,
+                    package: name,
+                    version: "2.0.0",
+                    purpose: "security",
+                    advisories: ["fixture-advisory"],
+                    advisoryUrls: ["https://example.test/advisory"],
+                };
+                const plan =
+                    await (manager === "composer" ? composerPlan : jsPlan)(
+                        common,
+                        [{
+                            ...target,
+                            reasons: ["security"],
+                            advisories: [{
+                                id: "fixture-advisory",
+                                url: "https://example.test/advisory",
+                            }],
+                        }, {
+                            path: ".",
+                            manager,
+                            package: manager === "composer"
+                                ? "fixture/two"
+                                : "two",
+                            reasons: ["major"],
+                            advisories: [],
+                        }],
+                    );
+                assert(
+                    plan.blocked.some((b) =>
+                        b.package === name &&
+                        b.reason.includes("Cannot preserve range style")
+                    ),
+                );
+                assertEquals(
+                    plan.targets.map((t) => t.package),
+                    [manager === "composer" ? "fixture/two" : "two"],
+                );
+            }
+        });
     });
-  });
 }
 
 Deno.test("partial numeric pins must admit the exact target under each manager's semantics", () => {
-  assertThrows(
-    () =>
-      targetRange("1.2", {
-        version: "2.3.4",
-        purpose: "major",
-        manager: "composer",
-      }),
-    Error,
-    "Cannot preserve range style",
-  );
-  assertEquals(
-    targetRange("1.2", { version: "2.3.4", purpose: "major", manager: "js" }),
-    "2.3",
-  );
-  assertEquals(
-    targetRange("1.2", {
-      version: "2.3.0",
-      purpose: "major",
-      manager: "composer",
-    }),
-    "2.3",
-  );
+    assertThrows(
+        () =>
+            targetRange("1.2", {
+                version: "2.3.4",
+                purpose: "major",
+                manager: "composer",
+            }),
+        Error,
+        "Cannot preserve range style",
+    );
+    assertEquals(
+        targetRange("1.2", {
+            version: "2.3.4",
+            purpose: "major",
+            manager: "js",
+        }),
+        "2.3",
+    );
+    assertEquals(
+        targetRange("1.2", {
+            version: "2.3.0",
+            purpose: "major",
+            manager: "composer",
+        }),
+        "2.3",
+    );
 });
 
 Deno.test("major ranges retain admitting declarations and preserve operator precision", () => {
-  for (const manager of ["js", "composer"] as const) {
-    for (
-      const [range, version, expected] of [
-        ["^1.0.0 || ^2.0.0", "2.1.0", "^1.0.0 || ^2.0.0"],
-        [">=1.0.0", "2.1.0", ">=1.0.0"],
-        ["*", "2.1.0", "*"],
-        ["x", "2.1.0", "x"],
-        ["~7.4", "8.0.0", "~8.0"],
-        ["~1", "2.0.0", "~2"],
-        ["^1.2", "2.0.0", "^2.0"],
-        ["^1", "2.0.0", "^2"],
-        ["1.2", "2.0.0", "2.0"],
-        ["1.x.x", "2.0.0", "2.x.x"],
-        ["1.2", "1.2.0", "1.2"],
-        ["^0", "0.5.0", "^0"],
-        ["^0.0", "0.0.5", "^0.0"],
-      ]
-    ) {
-      assertEquals(
-        targetRange(range, { version, purpose: "major", manager }),
-        expected,
-      );
-    }
-    for (
-      const range of [
-        "1.0.0-beta",
-        "^1.0.0+build",
-        "V1.0.0",
-        "^1.0.0 || ^2.0.0",
-      ]
-    ) {
-      assertThrows(
-        () =>
-          targetRange(range, { version: "3.0.0", purpose: "major", manager }),
-        Error,
-        "Cannot preserve range style",
-      );
+    for (const manager of ["js", "composer"] as const) {
+        for (
+            const [range, version, expected] of [
+                ["^1.0.0 || ^2.0.0", "2.1.0", "^1.0.0 || ^2.0.0"],
+                [">=1.0.0", "2.1.0", ">=1.0.0"],
+                ["*", "2.1.0", "*"],
+                ["x", "2.1.0", "x"],
+                ["~7.4", "8.0.0", "~8.0"],
+                ["~1", "2.0.0", "~2"],
+                ["^1.2", "2.0.0", "^2.0"],
+                ["^1", "2.0.0", "^2"],
+                ["1.2", "2.0.0", "2.0"],
+                ["1.x.x", "2.0.0", "2.x.x"],
+                ["1.2", "1.2.0", "1.2"],
+                ["^0", "0.5.0", "^0"],
+                ["^0.0", "0.0.5", "^0.0"],
+            ]
+        ) {
+            assertEquals(
+                targetRange(range, { version, purpose: "major", manager }),
+                expected,
+            );
+        }
+        for (
+            const range of [
+                "1.0.0-beta",
+                "^1.0.0+build",
+                "V1.0.0",
+                "^1.0.0 || ^2.0.0",
+            ]
+        ) {
+            assertThrows(
+                () =>
+                    targetRange(range, {
+                        version: "3.0.0",
+                        purpose: "major",
+                        manager,
+                    }),
+                Error,
+                "Cannot preserve range style",
+            );
+        }
+        assertEquals(
+            targetRange(">=1.0.0", {
+                version: "1.5.3",
+                purpose: "security",
+                manager,
+            }),
+            ">=1.5.3",
+        );
+        assertThrows(
+            () =>
+                targetRange("^1.2", {
+                    version: "1.2.3",
+                    purpose: "security",
+                    manager,
+                }),
+            Error,
+            "Cannot preserve range style",
+        );
     }
     assertEquals(
-      targetRange(">=1.0.0", {
-        version: "1.5.3",
-        purpose: "security",
-        manager,
-      }),
-      ">=1.5.3",
+        targetRange("~7.4", {
+            version: "7.9.0",
+            purpose: "major",
+            manager: "composer",
+        }),
+        "~7.4",
     );
-    assertThrows(
-      () =>
-        targetRange("^1.2", { version: "1.2.3", purpose: "security", manager }),
-      Error,
-      "Cannot preserve range style",
+    assertEquals(
+        targetRange("~7.4", {
+            version: "7.9.0",
+            purpose: "major",
+            manager: "js",
+        }),
+        "~7.9",
     );
-  }
-  assertEquals(
-    targetRange("~7.4", {
-      version: "7.9.0",
-      purpose: "major",
-      manager: "composer",
-    }),
-    "~7.4",
-  );
-  assertEquals(
-    targetRange("~7.4", { version: "7.9.0", purpose: "major", manager: "js" }),
-    "~7.9",
-  );
 });
 
 const batchArgs = (root: string) => ({
-  cwd: root,
-  paths: ["."],
-  policy: {},
-  exceptions: emptyExceptions(),
+    cwd: root,
+    paths: ["."],
+    policy: {},
+    exceptions: emptyExceptions(),
 });
 
 for (const unrelated of [false, true]) {
-  Deno.test(`Expo alignment blocks only its SDK candidate${unrelated ? "; unrelated security stays eligible" : ""}`, async () => {
-    await fixture(async (root, log) => {
-      const manifest = {
-        packageManager: "npm@11.12.0",
-        dependencies: {
-          expo: "1.0.0",
-          react: "^1.0.0 || ^1.5.0",
-          one: "^1.0.0",
-        },
-      };
-      await Deno.writeTextFile(
-        `${root}/package.json`,
-        JSON.stringify(manifest),
-      );
-      const locked = JSON.parse(
-        await Deno.readTextFile(`${root}/package-lock.json`),
-      );
-      Object.assign(locked.packages, {
-        "node_modules/expo": { version: "1.0.0" },
-        "node_modules/react": { version: "1.0.0" },
-      });
-      await Deno.writeTextFile(
-        `${root}/package-lock.json`,
-        JSON.stringify(locked),
-      );
-      const plan = await jsPlan(batchArgs(root), [
-        {
-          path: ".",
-          manager: "js",
-          package: "expo",
-          current: "1.0.0",
-          reasons: ["major"],
-          advisories: [],
-        },
-        ...(unrelated
-          ? [{
-            path: ".",
-            manager: "js" as const,
-            package: "one",
-            reasons: ["security"],
-            advisories: [{
-              id: "fixture-advisory",
-              url: "https://example.test/advisory",
-            }],
-          }]
-          : []),
-      ]);
-      assertEquals(
-        plan.targets.map((t) => t.package),
-        unrelated ? ["one"] : [],
-      );
-      assertEquals(plan.blocked.map((t) => t.package), ["expo"]);
-      assert(
-        plan.blocked.some((b) =>
-          b.reason.includes("Cannot preserve range style")
-        ),
-      );
-      assertEquals(
-        JSON.parse(await Deno.readTextFile(`${root}/package.json`)),
-        manifest,
-      );
-      if (!unrelated) {
-        assertEquals(
-          (await Deno.readTextFile(log)).includes("npm install"),
-          false,
-        );
-      }
+    Deno.test(`Expo alignment blocks only its SDK candidate${unrelated ? "; unrelated security stays eligible" : ""}`, async () => {
+        await fixture(async (root, log) => {
+            const manifest = {
+                packageManager: "npm@11.12.0",
+                dependencies: {
+                    expo: "1.0.0",
+                    react: "^1.0.0 || ^1.5.0",
+                    one: "^1.0.0",
+                },
+            };
+            await Deno.writeTextFile(
+                `${root}/package.json`,
+                JSON.stringify(manifest),
+            );
+            const locked = JSON.parse(
+                await Deno.readTextFile(`${root}/package-lock.json`),
+            );
+            Object.assign(locked.packages, {
+                "node_modules/expo": { version: "1.0.0" },
+                "node_modules/react": { version: "1.0.0" },
+            });
+            await Deno.writeTextFile(
+                `${root}/package-lock.json`,
+                JSON.stringify(locked),
+            );
+            const plan = await jsPlan(batchArgs(root), [
+                {
+                    path: ".",
+                    manager: "js",
+                    package: "expo",
+                    current: "1.0.0",
+                    reasons: ["major"],
+                    advisories: [],
+                },
+                ...(unrelated
+                    ? [{
+                        path: ".",
+                        manager: "js" as const,
+                        package: "one",
+                        reasons: ["security"],
+                        advisories: [{
+                            id: "fixture-advisory",
+                            url: "https://example.test/advisory",
+                        }],
+                    }]
+                    : []),
+            ]);
+            assertEquals(
+                plan.targets.map((t) => t.package),
+                unrelated ? ["one"] : [],
+            );
+            assertEquals(plan.blocked.map((t) => t.package), ["expo"]);
+            assert(
+                plan.blocked.some((b) =>
+                    b.reason.includes("Cannot preserve range style")
+                ),
+            );
+            assertEquals(
+                JSON.parse(await Deno.readTextFile(`${root}/package.json`)),
+                manifest,
+            );
+            if (!unrelated) {
+                assertEquals(
+                    (await Deno.readTextFile(log)).includes("npm install"),
+                    false,
+                );
+            }
+        });
     });
-  });
 }
 
 for (const manager of ["composer", "js"] as const) {
-  Deno.test(`${manager}: the solver only sees security versions with a writable floor`, async () => {
-    await fixture(async (root, log) => {
-      const name = manager === "composer" ? "fixture/one" : "one";
-      const file = `${root}/${
-        manager === "composer" ? "composer.json" : "package.json"
-      }`;
-      const manifest = JSON.parse(await Deno.readTextFile(file));
-      manifest[manager === "composer" ? "require" : "dependencies"][name] =
-        "^1";
-      await Deno.writeTextFile(file, JSON.stringify(manifest));
-      await Deno.writeTextFile(`${root}/prefer-version`, "1.5.0");
-      assert(
-        (await new Deno.Command("git", {
-          cwd: root,
-          args: ["add", "prefer-version"],
-        }).output()).success,
-      );
-      const plan = await (manager === "composer" ? composerPlan : jsPlan)(
-        batchArgs(root),
-        [{
-          path: ".",
-          manager,
-          package: name,
-          reasons: ["security"],
-          advisories: [{
-            id: "fixture-advisory",
-            url: "https://example.test/advisory",
-          }],
-        }],
-      );
-      assertEquals(plan.blocked, []);
-      assertEquals(plan.targets.map((t) => t.version), ["2.0.0"]);
-      assertEquals(
-        (await Deno.readTextFile(log)).includes("2.0.0 || 1.5.0"),
-        false,
-      );
+    Deno.test(`${manager}: the solver only sees security versions with a writable floor`, async () => {
+        await fixture(async (root, log) => {
+            const name = manager === "composer" ? "fixture/one" : "one";
+            const file = `${root}/${
+                manager === "composer" ? "composer.json" : "package.json"
+            }`;
+            const manifest = JSON.parse(await Deno.readTextFile(file));
+            manifest[manager === "composer" ? "require" : "dependencies"][
+                name
+            ] = "^1";
+            await Deno.writeTextFile(file, JSON.stringify(manifest));
+            await Deno.writeTextFile(`${root}/prefer-version`, "1.5.0");
+            assert(
+                (await new Deno.Command("git", {
+                    cwd: root,
+                    args: ["add", "prefer-version"],
+                }).output()).success,
+            );
+            const plan = await (manager === "composer" ? composerPlan : jsPlan)(
+                batchArgs(root),
+                [{
+                    path: ".",
+                    manager,
+                    package: name,
+                    reasons: ["security"],
+                    advisories: [{
+                        id: "fixture-advisory",
+                        url: "https://example.test/advisory",
+                    }],
+                }],
+            );
+            assertEquals(plan.blocked, []);
+            assertEquals(plan.targets.map((t) => t.version), ["2.0.0"]);
+            assertEquals(
+                (await Deno.readTextFile(log)).includes("2.0.0 || 1.5.0"),
+                false,
+            );
+        });
     });
-  });
 }
 
 Deno.test("range validation runs once for each age-eligible major option, excluding minor-only releases", async () => {
-  const checked: string[] = [];
-  const rows = await writableReleases(
-    {
-      path: ".",
-      manager: "js",
-      package: "one",
-      current: "1.0.0",
-      reasons: ["major"],
-      advisories: [],
-    },
-    { ".": { minimumReleaseAgeDays: 7 } },
-    [
-      { version: "1.5.0", publishedAt: "2020-01-01T00:00:00Z" },
-      { version: "2.0.0", publishedAt: new Date().toISOString() },
-      { version: "3.0.0", publishedAt: "2020-01-01T00:00:00Z" },
-    ],
-    (version) => {
-      checked.push(version);
-      if (version !== "3.0.0") throw new Error("ineligible target was checked");
-    },
-  );
-  assertEquals(checked, ["3.0.0"]);
-  assertEquals(rows.map((r) => r.version), ["3.0.0"]);
+    const checked: string[] = [];
+    const rows = await writableReleases(
+        {
+            path: ".",
+            manager: "js",
+            package: "one",
+            current: "1.0.0",
+            reasons: ["major"],
+            advisories: [],
+        },
+        { ".": { minimumReleaseAgeDays: 7 } },
+        [
+            { version: "1.5.0", publishedAt: "2020-01-01T00:00:00Z" },
+            { version: "2.0.0", publishedAt: new Date().toISOString() },
+            { version: "3.0.0", publishedAt: "2020-01-01T00:00:00Z" },
+        ],
+        (version) => {
+            checked.push(version);
+            if (version !== "3.0.0") {
+                throw new Error("ineligible target was checked");
+            }
+        },
+    );
+    assertEquals(checked, ["3.0.0"]);
+    assertEquals(rows.map((r) => r.version), ["3.0.0"]);
 });
 
 import { MaintenanceFailure } from "../extensions/behaviors/_lib/maintenance/io.ts";
 const expoCandidate = {
-  path: ".",
-  manager: "js" as const,
-  package: "expo",
-  reasons: ["major"],
-  advisories: [],
+    path: ".",
+    manager: "js" as const,
+    package: "expo",
+    reasons: ["major"],
+    advisories: [],
 };
 async function expoProject(
-  root: string,
-  range = "^1.0.0",
-  reactVersions = ["2.0.0", "3.0.0"],
+    root: string,
+    range = "^1.0.0",
+    reactVersions = ["2.0.0", "3.0.0"],
 ) {
-  const manifest = {
-    packageManager: "npm@11.19.1",
-    dependencies: { one: "1.0.0", expo: "1.0.0", react: range },
-  };
-  await Deno.writeTextFile(`${root}/package.json`, JSON.stringify(manifest));
-  await Deno.writeTextFile(
-    `${root}/package-lock.json`,
-    JSON.stringify({
-      lockfileVersion: 3,
-      packages: {
-        "": { dependencies: manifest.dependencies },
-        "node_modules/one": { version: "1.0.0" },
-        "node_modules/expo": { version: "1.0.0" },
-        "node_modules/react": { version: "1.0.0" },
-      },
-    }),
-  );
-  const rows = (versions: string[]) => ({
-    versions,
-    time: Object.fromEntries(versions.map((v) => [v, "2020-01-01T00:00:00Z"])),
-  });
-  await Deno.writeTextFile(
-    `${root}/registry-fixture.json`,
-    JSON.stringify({
-      expo: rows(["2.0.0", "3.0.0"]),
-      react: rows(reactVersions),
-    }),
-  );
-  assert(
-    (await new Deno.Command("git", { cwd: root, args: ["add", "."] }).output())
-      .success,
-  );
-  return manifest;
+    const manifest = {
+        packageManager: "npm@11.19.1",
+        dependencies: { one: "1.0.0", expo: "1.0.0", react: range },
+    };
+    await Deno.writeTextFile(`${root}/package.json`, JSON.stringify(manifest));
+    await Deno.writeTextFile(
+        `${root}/package-lock.json`,
+        JSON.stringify({
+            lockfileVersion: 3,
+            packages: {
+                "": { dependencies: manifest.dependencies },
+                "node_modules/one": { version: "1.0.0" },
+                "node_modules/expo": { version: "1.0.0" },
+                "node_modules/react": { version: "1.0.0" },
+            },
+        }),
+    );
+    const rows = (versions: string[]) => ({
+        versions,
+        time: Object.fromEntries(
+            versions.map((v) => [v, "2020-01-01T00:00:00Z"]),
+        ),
+    });
+    await Deno.writeTextFile(
+        `${root}/registry-fixture.json`,
+        JSON.stringify({
+            expo: rows(["2.0.0", "3.0.0"]),
+            react: rows(reactVersions),
+        }),
+    );
+    assert(
+        (await new Deno.Command("git", { cwd: root, args: ["add", "."] })
+            .output())
+            .success,
+    );
+    return manifest;
 }
 for (const command of ["pack", "view"]) {
-  Deno.test(`Expo ${command} infrastructure failure aborts planning without choosing an older SDK`, async () => {
-    await fixture(async (root, log) => {
-      const manifest = await expoProject(root);
-      await Deno.writeTextFile(
-        `${root}/fail-${command}`,
-        command === "pack" ? "3.0.0" : "react",
-      );
-      const error = await assertRejects(
-        () => jsPlan(batchArgs(root), [expoCandidate]),
-        MaintenanceFailure,
-        command === "pack"
-          ? "Cannot read the Expo SDK"
-          : "Cannot read registry target metadata",
-      );
-      assertEquals(error.exitCode, 70);
-      const calls = await Deno.readTextFile(log);
-      assertEquals(calls.includes("npm pack expo@2.0.0"), false);
-      assertEquals(calls.includes("npm install"), false);
-      assertEquals(
-        JSON.parse(await Deno.readTextFile(`${root}/package.json`)),
-        manifest,
-      );
+    Deno.test(`Expo ${command} infrastructure failure aborts planning without choosing an older SDK`, async () => {
+        await fixture(async (root, log) => {
+            const manifest = await expoProject(root);
+            await Deno.writeTextFile(
+                `${root}/fail-${command}`,
+                command === "pack" ? "3.0.0" : "react",
+            );
+            const error = await assertRejects(
+                () => jsPlan(batchArgs(root), [expoCandidate]),
+                MaintenanceFailure,
+                command === "pack"
+                    ? "Cannot read the Expo SDK"
+                    : "Cannot read registry target metadata",
+            );
+            assertEquals(error.exitCode, 70);
+            const calls = await Deno.readTextFile(log);
+            assertEquals(calls.includes("npm pack expo@2.0.0"), false);
+            assertEquals(calls.includes("npm install"), false);
+            assertEquals(
+                JSON.parse(await Deno.readTextFile(`${root}/package.json`)),
+                manifest,
+            );
+        });
     });
-  });
 }
 for (const reason of ["range", "no eligible alignment"]) {
-  Deno.test(`Expo falls back after ${reason}, with one metadata read per path/package/SDK per plan`, async () => {
-    await fixture(async (root, log) => {
-      const manifest = await expoProject(
-        root,
-        reason === "range" ? "^1.0.0 || ^2.0.0" : "^1.0.0",
-        reason === "range" ? ["2.0.0", "3.0.0"] : ["2.0.0"],
-      );
-      for (let run = 1; run <= 2; run++) {
-        const plan = await jsPlan(batchArgs(root), [expoCandidate]);
-        assertEquals(plan.blocked, []);
-        assertEquals(plan.targets.map((t) => [t.package, t.version]), [[
-          "expo",
-          "2.0.0",
-        ], ["react", "2.0.0"]]);
-        const calls = (await Deno.readTextFile(log)).split("\n");
-        for (
-          const prefix of [
-            "npm view expo ",
-            "npm view react ",
-            "npm pack expo@3.0.0 ",
-            "npm pack expo@2.0.0 ",
-          ]
-        ) {
-          assertEquals(
-            calls.filter((line) => line.startsWith(prefix)).length,
-            run,
-            prefix,
-          );
-        }
-        assertEquals(
-          JSON.parse(await Deno.readTextFile(`${root}/package.json`)),
-          manifest,
-        );
-      }
+    Deno.test(`Expo falls back after ${reason}, with one metadata read per path/package/SDK per plan`, async () => {
+        await fixture(async (root, log) => {
+            const manifest = await expoProject(
+                root,
+                reason === "range" ? "^1.0.0 || ^2.0.0" : "^1.0.0",
+                reason === "range" ? ["2.0.0", "3.0.0"] : ["2.0.0"],
+            );
+            for (let run = 1; run <= 2; run++) {
+                const plan = await jsPlan(batchArgs(root), [expoCandidate]);
+                assertEquals(plan.blocked, []);
+                assertEquals(plan.targets.map((t) => [t.package, t.version]), [[
+                    "expo",
+                    "2.0.0",
+                ], ["react", "2.0.0"]]);
+                const calls = (await Deno.readTextFile(log)).split("\n");
+                for (
+                    const prefix of [
+                        "npm view expo ",
+                        "npm view react ",
+                        "npm pack expo@3.0.0 ",
+                        "npm pack expo@2.0.0 ",
+                    ]
+                ) {
+                    assertEquals(
+                        calls.filter((line) => line.startsWith(prefix)).length,
+                        run,
+                        prefix,
+                    );
+                }
+                assertEquals(
+                    JSON.parse(await Deno.readTextFile(`${root}/package.json`)),
+                    manifest,
+                );
+            }
+        });
     });
-  });
 }
 Deno.test("writable selection propagates infrastructure, unknown errors and aborts without checking older versions", async () => {
-  for (
-    const error of [
-      new MaintenanceFailure("registry unavailable"),
-      new Error("unexpected failure"),
-      new DOMException("cancelled", "AbortError"),
-    ]
-  ) {
-    const checked: string[] = [];
-    const caught = await assertRejects(() =>
-      writableReleases(expoCandidate, {}, [
-        { version: "3.0.0", publishedAt: "2020-01-01T00:00:00Z" },
-        { version: "2.0.0", publishedAt: "2020-01-01T00:00:00Z" },
-      ], (version) => {
-        checked.push(version);
-        throw error;
-      })
-    );
-    assertEquals(caught, error);
-    assertEquals(checked, ["3.0.0"]);
-  }
+    for (
+        const error of [
+            new MaintenanceFailure("registry unavailable"),
+            new Error("unexpected failure"),
+            new DOMException("cancelled", "AbortError"),
+        ]
+    ) {
+        const checked: string[] = [];
+        const caught = await assertRejects(() =>
+            writableReleases(expoCandidate, {}, [
+                { version: "3.0.0", publishedAt: "2020-01-01T00:00:00Z" },
+                { version: "2.0.0", publishedAt: "2020-01-01T00:00:00Z" },
+            ], (version) => {
+                checked.push(version);
+                throw error;
+            })
+        );
+        assertEquals(caught, error);
+        assertEquals(checked, ["3.0.0"]);
+    }
 });
 Deno.test("blocked writable selection retains distinct reasons from the newest options", async () => {
-  const error = await assertRejects(() =>
-    writableReleases(expoCandidate, {}, [
-      { version: "3.0.0", publishedAt: "2020-01-01T00:00:00Z" },
-      { version: "2.0.0", publishedAt: "2020-01-01T00:00:00Z" },
-    ], (version) => {
-      throw new UnwritableTarget(
-        version === "3.0.0"
-          ? "Cannot preserve React range"
-          : "No eligible React release",
-      );
-    }), UnwritableTarget);
-  assertStringIncludes(
-    error.message,
-    "expo 3.0.0: Cannot preserve React range",
-  );
-  assertStringIncludes(error.message, "expo 2.0.0: No eligible React release");
+    const error = await assertRejects(
+        () =>
+            writableReleases(expoCandidate, {}, [
+                { version: "3.0.0", publishedAt: "2020-01-01T00:00:00Z" },
+                { version: "2.0.0", publishedAt: "2020-01-01T00:00:00Z" },
+            ], (version) => {
+                throw new UnwritableTarget(
+                    version === "3.0.0"
+                        ? "Cannot preserve React range"
+                        : "No eligible React release",
+                );
+            }),
+        UnwritableTarget,
+    );
+    assertStringIncludes(
+        error.message,
+        "expo 3.0.0: Cannot preserve React range",
+    );
+    assertStringIncludes(
+        error.message,
+        "expo 2.0.0: No eligible React release",
+    );
 });
 
 Deno.test("legacy capitalized npm names stay eligible beside another package and preserve their spelling", async () => {
-  await fixture(async (root) => {
-    const path = `${root}/package.json`;
-    const manifest = JSON.parse(await Deno.readTextFile(path));
-    manifest.dependencies.JSONStream = "^1.0.0";
-    delete manifest.dependencies.two;
-    await Deno.writeTextFile(path, JSON.stringify(manifest));
-    const lock = JSON.parse(
-      await Deno.readTextFile(`${root}/package-lock.json`),
-    );
-    lock.packages[""].dependencies = manifest.dependencies;
-    lock.packages["node_modules/JSONStream"] = { version: "1.0.0" };
-    delete lock.packages["node_modules/two"];
-    await Deno.writeTextFile(`${root}/package-lock.json`, JSON.stringify(lock));
-    const plan = await jsPlan(
-      batchArgs(root),
-      ["one", "JSONStream"].map((packageName) => ({
-        path: ".",
-        manager: "js",
-        package: packageName,
-        reasons: ["major"],
-        advisories: [],
-      })),
-    );
-    assertEquals(plan.blocked, []);
-    assertEquals(plan.targets.map((t) => t.package).sort(), [
-      "JSONStream",
-      "one",
-    ]);
-  });
+    await fixture(async (root) => {
+        const path = `${root}/package.json`;
+        const manifest = JSON.parse(await Deno.readTextFile(path));
+        manifest.dependencies.JSONStream = "^1.0.0";
+        delete manifest.dependencies.two;
+        await Deno.writeTextFile(path, JSON.stringify(manifest));
+        const lock = JSON.parse(
+            await Deno.readTextFile(`${root}/package-lock.json`),
+        );
+        lock.packages[""].dependencies = manifest.dependencies;
+        lock.packages["node_modules/JSONStream"] = { version: "1.0.0" };
+        delete lock.packages["node_modules/two"];
+        await Deno.writeTextFile(
+            `${root}/package-lock.json`,
+            JSON.stringify(lock),
+        );
+        const plan = await jsPlan(
+            batchArgs(root),
+            ["one", "JSONStream"].map((packageName) => ({
+                path: ".",
+                manager: "js",
+                package: packageName,
+                reasons: ["major"],
+                advisories: [],
+            })),
+        );
+        assertEquals(plan.blocked, []);
+        assertEquals(plan.targets.map((t) => t.package).sort(), [
+            "JSONStream",
+            "one",
+        ]);
+    });
 });
 
 Deno.test("invalid target data blocks only its candidate with the schema issue", async () => {
-  const plan = await planBatch(
-    ["bad/name", "one"].map((packageName) => ({
-      path: ".",
-      manager: "js",
-      package: packageName,
-      current: "1.0.0",
-      reasons: ["major"],
-      advisories: [],
-    })),
-    {},
-    () =>
-      Promise.resolve([{
-        version: "2.0.0",
-        publishedAt: "2020-01-01T00:00:00Z",
-      }]),
-    (choices) => Promise.resolve({ targets: choices.map((c) => c[0]) }),
-  );
-  assertEquals(plan.targets.map((t) => t.package), ["one"]);
-  assertEquals(plan.blocked.length, 1);
-  assertEquals(plan.blocked[0].package, "bad/name");
-  assertStringIncludes(plan.blocked[0].reason, "invalid JS package");
+    const plan = await planBatch(
+        ["bad/name", "one"].map((packageName) => ({
+            path: ".",
+            manager: "js",
+            package: packageName,
+            current: "1.0.0",
+            reasons: ["major"],
+            advisories: [],
+        })),
+        {},
+        () =>
+            Promise.resolve([{
+                version: "2.0.0",
+                publishedAt: "2020-01-01T00:00:00Z",
+            }]),
+        (choices) => Promise.resolve({ targets: choices.map((c) => c[0]) }),
+    );
+    assertEquals(plan.targets.map((t) => t.package), ["one"]);
+    assertEquals(plan.blocked.length, 1);
+    assertEquals(plan.blocked[0].package, "bad/name");
+    assertStringIncludes(plan.blocked[0].reason, "invalid JS package");
 });
 
 for (
-  const [label, response] of [
-    ["E404", { error: { code: "E404", summary: "Not Found" } }],
-    ["detail", { error: { detail: "'two' is not in this registry." } }],
-    ["stderr", { _stderr: "npm ERR! code E404\nnpm ERR! package not found" }],
-  ] as const
+    const [label, response] of [
+        ["E404", { error: { code: "E404", summary: "Not Found" } }],
+        ["detail", { error: { detail: "'two' is not in this registry." } }],
+        ["stderr", {
+            _stderr: "npm ERR! code E404\nnpm ERR! package not found",
+        }],
+    ] as const
 ) {
-  Deno.test(`npm registry miss ${label} blocks only that package beside a healthy candidate`, async () => {
-    await fixture(async (root) => {
-      await Deno.writeTextFile(
-        `${root}/registry-fixture.json`,
-        JSON.stringify({ two: response }),
-      );
-      const plan = await jsPlan(
-        batchArgs(root),
-        ["two", "one"].map((packageName) => ({
-          path: ".",
-          manager: "js",
-          package: packageName,
-          reasons: ["major"],
-          advisories: [],
-        })),
-      );
-      assertEquals(plan.targets.map((t) => t.package), ["one"]);
-      assertEquals(plan.blocked.length, 1);
-      assertEquals(plan.blocked[0].package, "two");
-      assertStringIncludes(plan.blocked[0].reason, "not found in registry");
+    Deno.test(`npm registry miss ${label} blocks only that package beside a healthy candidate`, async () => {
+        await fixture(async (root) => {
+            await Deno.writeTextFile(
+                `${root}/registry-fixture.json`,
+                JSON.stringify({ two: response }),
+            );
+            const plan = await jsPlan(
+                batchArgs(root),
+                ["two", "one"].map((packageName) => ({
+                    path: ".",
+                    manager: "js",
+                    package: packageName,
+                    reasons: ["major"],
+                    advisories: [],
+                })),
+            );
+            assertEquals(plan.targets.map((t) => t.package), ["one"]);
+            assertEquals(plan.blocked.length, 1);
+            assertEquals(plan.blocked[0].package, "two");
+            assertStringIncludes(
+                plan.blocked[0].reason,
+                "not found in registry",
+            );
+        });
     });
-  });
 }
 for (const code of ["E500", "E502", "ETIMEDOUT", "ECONNRESET"]) {
-  Deno.test(`npm ${code} still aborts planning instead of blocking one candidate`, async () => {
-    await fixture(async (root) => {
-      await Deno.writeTextFile(
-        `${root}/registry-fixture.json`,
-        JSON.stringify({ two: { error: { code } } }),
-      );
-      const error = await assertRejects(
-        () =>
-          jsPlan(
-            batchArgs(root),
-            ["two", "one"].map((packageName) => ({
-              path: ".",
-              manager: "js",
-              package: packageName,
-              reasons: ["major"],
-              advisories: [],
-            })),
-          ),
-        MaintenanceFailure,
-        "Cannot read registry target metadata",
-      );
-      assertEquals(error.exitCode, 70);
+    Deno.test(`npm ${code} still aborts planning instead of blocking one candidate`, async () => {
+        await fixture(async (root) => {
+            await Deno.writeTextFile(
+                `${root}/registry-fixture.json`,
+                JSON.stringify({ two: { error: { code } } }),
+            );
+            const error = await assertRejects(
+                () =>
+                    jsPlan(
+                        batchArgs(root),
+                        ["two", "one"].map((packageName) => ({
+                            path: ".",
+                            manager: "js",
+                            package: packageName,
+                            reasons: ["major"],
+                            advisories: [],
+                        })),
+                    ),
+                MaintenanceFailure,
+                "Cannot read registry target metadata",
+            );
+            assertEquals(error.exitCode, 70);
+        });
     });
-  });
 }
