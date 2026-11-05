@@ -30,5 +30,5 @@ The proof runs the built CLI against a fresh nested topology with a Gateway, a M
 | Node by ID only | Pass a Node name instead of its ID. | `node.id_invalid`, with no request. Fails today: the CLI accepts a name. |
 | Dropped inputs | Run the command with `--idempotency-key`. | The option is refused as unknown. Fails today: the CLI offers `--idempotency-key`. |
 | Lost response | Lose the response to the start, then repeat the command. | Exactly one Operation exists for the add. Fails today: the CLI needs `--idempotency-key` to avoid a second Operation. |
-| Refusals | A Node the caller has no access grant to, and an unknown ID. | `node.access_denied` and a not-found error. Nothing changes. |
+| Refusals | A Node the caller has no access grant to, and an unknown ID. | `node_access.required` and a not-found error. Nothing changes. |
 | Output forms | A wide and a narrow terminal, output piped to a file, and `--json`. | One progress indicator, then the final result with the Operation and request IDs. The piped output has no animation or escape codes. With `--json`, stdout holds only the final Operation. |

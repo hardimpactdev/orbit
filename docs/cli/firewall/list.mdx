@@ -19,4 +19,4 @@ Rules are listed in the order UFW checks them, so the first matching row wins. A
 
 A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a failed rule also has `failed_step` and `error_code`; repeat the command that created it once the cause is fixed.
 
-The command refuses a `--node` that is not a positive integer (`firewall.node_id_invalid`) and a Node that the calling Node has no access grant to (`node.access_denied`).
+The command refuses a `--node` that is not a positive integer (`firewall.node_id_invalid`) and a Node that the calling Node has no access grant to (`node_access.required`).
