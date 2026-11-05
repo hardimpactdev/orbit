@@ -71,7 +71,7 @@ function orb277_build_gate_template(): string
     mkdir($root.'/swamp/bin', 0o700, true);
     file_put_contents($root.'/swamp/bin/validate-swamp-workflows.py', '');
     file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
-    foreach (['docs-openapi', 'mcp-tools', 'api-fixtures'] as $generator) {
+    foreach (['check-operation-kinds', 'docs-openapi', 'mcp-tools', 'api-fixtures'] as $generator) {
         file_put_contents($root.'/bin/'.$generator, "#!/usr/bin/env sh\nexit 0\n");
         chmod($root.'/bin/'.$generator, 0o700);
     }
@@ -298,7 +298,7 @@ SH);
             ->and($web->pluck('exit_code')->all())->toBe([0, 0]);
     });
 
-    it('runs every PHP project for documentation-only and tools changes', function (string $path, array $extraProjects): void {
+    it('runs every PHP project for documentation-only and tools changes', function (string $path, array $extraProjects, int $expectedChecks): void {
         $fixture = orb277_gate_fixture($path);
         $receipt = orb277_run_gate($fixture)['receipt'];
 
@@ -306,11 +306,11 @@ SH);
             ->and($receipt['changed_paths'])->toBe([$path])
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())
             ->toBe([...orb277_selected_projects(), ...$extraProjects])
-            ->and(collect($receipt['checks'])->count())->toBe(6 + count($extraProjects));
+            ->and(collect($receipt['checks'])->count())->toBe($expectedChecks);
     })->with([
-        'documentation-only change' => ['docs/reference/example.md', []],
-        // A tools change selects every CI job, so the Swamp workflows are validated too.
-        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', ['swamp']],
+        'documentation-only change' => ['docs/reference/example.md', [], 6],
+        // A tools change selects every CI job, so the contracts and the Swamp workflows are checked too.
+        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', ['swamp'], 11],
     ]);
 
     it('selects the Pi server CI profile for Pi server changes', function (): void {

@@ -51,7 +51,7 @@ def select(paths, main=False):
             jobs['api-reference'] = jobs['web'] = True
         if path.startswith('apps/web/'):
             jobs['web'] = True
-            if path.startswith('apps/web/tools/api-types/'):
+            if path.startswith(('apps/web/tools/api-types/', 'apps/web/fixtures/')):
                 jobs['api-reference'] = True
         if path.startswith('apps/agent/'):
             agent = True

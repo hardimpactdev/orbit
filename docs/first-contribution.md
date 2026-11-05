@@ -92,13 +92,7 @@ composer docs-lint
 
 Generated outputs stay out of Git. Add a new page through its own file in `docs/navigation/`, then run `composer docs-build` and `composer docs-lint`. Docs-lint fails for a page that is in no navigation fragment. See [Parallel command families](/contributor-guide#parallel-command-families).
 
-CI also runs checks from the repository root that no project check covers. They compare generated files and documentation with the code. Run the ones that match your change:
-
-| When you change | Run from the root |
-| --- | --- |
-| A Gateway API route or its data | `bin/docs-openapi --check`, then `bin/mcp-tools --check` |
-
-The MCP tool manifest is generated from the API reference, so an API change can make both commands report drift. When either does, run `bin/docs-openapi` and then `bin/mcp-tools` without `--check`, and commit their output. The other checks name what to fix.
+When you change a Gateway API route or its data, run `bin/docs-openapi`, then `bin/mcp-tools`, then `bin/api-fixtures --check` from the root. The generators write ignored outputs and fail when the sources disagree with the API contract. Root `composer check` and CI run the same steps.
 
 ## 6. Open a pull request
 
