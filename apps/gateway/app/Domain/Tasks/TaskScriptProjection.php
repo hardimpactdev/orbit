@@ -6,16 +6,23 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Proof\ProofRunContinuation;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Records the bounded native script outcome without executing repository code. */
-final readonly class TaskScriptProjection implements DirectOperationProjection
+final readonly class TaskScriptProjection implements DirectOperationProjection, DirectOperationTimeout
 {
     public function input(Operation $operation): array
     {
         return ['intent' => $operation->input, 'execution_secrets' => []];
+    }
+
+    /** A script the Gateway timed out ends without a native result; a proof that waits for it must still go on. */
+    public function timedOut(Operation $operation): void
+    {
+        app(ProofRunContinuation::class)->apply($operation);
     }
 
     public function apply(Operation $operation, array $data): Operation
