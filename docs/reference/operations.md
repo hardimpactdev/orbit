@@ -94,13 +94,15 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `gateway.release` has a provisional 3,000 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A first success replaces it with a p95.
 
-A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. The proof reset `bin/proof-fleet reset GROUP --from-ready` captures 360 seconds. Every other script and every check captures the budget of its kind's history. The history of short scripts had set 120 seconds, which timed out the first real reset twice.
+A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. It is the budget of the kind's history. The history of short scripts had set 120 seconds, which timed out the first real proof reset twice; the proof reset runs as the child `proof-fleet-prepare` of the `proof.run` run, with its own step time limits.
 
 The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
 
 The other task VM workflows (`task-workspace-source`, `task-vm-workspace`, `task-approved-push` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
 
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, `composer install` where lock files differ from the seed (31 to 35 seconds for five) and the memory snapshot `base` (about 19 seconds); 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
+
+`proof.run` has a provisional 3,000 seconds. It has no run yet. One run provisions a task VM, resets its fleet from the ready copies, verifies up to two commands and destroys the VM. Basis: about 3 minutes for the provision, 360 seconds for the reset, at most 1,800 seconds for the cases of each command and 2 minutes for the destroy, plus a margin, rounded up to five minutes. Replace it with the 14-day p95 after the first success.
 
 `proof.verify` has a provisional 2,700 seconds. It has no run yet. A run executes the cases of one command in the task VM through the workflow `proof-fleet-verify`. Basis: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; with 1.5 times margin and rounded up to five minutes it is 2,700. Replace it with the 14-day p95 after the first success.
 
@@ -353,7 +355,7 @@ Admission records the intent, the idempotency key and the target hold in one tra
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
 
-the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) and `proof.run` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when the task operations of its proof group (`tasks.provision`, `tasks.script`, `proof.verify` and `tasks.cancel`) have ended.
+the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) are the exception. The Gateway runs or closes them itself, with no Swamp run of their own.
 
 ### One operation per target
 

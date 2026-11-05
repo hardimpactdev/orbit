@@ -16,14 +16,6 @@ final class OperationRunBudgets
     private const int AdmissionSeconds = 600;
 
     /**
-     * The proof reset `bin/proof-fleet reset GROUP --from-ready`: the history of short scripts gave 120 s, which timed out the
-     * first real reset (op 10861). Basis: the measured parts on a fresh VM, the restore from the ready copies, the rsync sync,
-     * `composer install` where lock files differ from the seed (31 to 35 s for five) and the memory snapshot `base` (about 19 s),
-     * plus margin; 360 s. Replace with the 14-day p95 after the first passing runs. Other scripts keep the history-derived budget.
-     */
-    private const int ProofResetSeconds = 360;
-
-    /**
      * Kinds whose admission captures `input.run_budget_seconds` and hands it to their SSH steps as the step time limit. The
      * captured number wins over the kind's history, so the Gateway deadline and the step limits agree.
      *
@@ -71,9 +63,9 @@ final class OperationRunBudgets
         // Horizon drain, which waits for running jobs up to the longest supervisor timeout + 30 s (1,730 s); x 1.5 = 2,783 s,
         // rounded up to five minutes. An expiry pauses releases. Replace with the 14-day p95 after the first success.
         'gateway.release' => 3000,
-        // No run yet. Basis: the case budget of 1,800 s that docs/cli/proof/run.mdx sets, the test fleet reset (about 60 s,
-        // 300 s allowed), the fleet release (600 s) and a margin, rounded up to five minutes. Replace with the 14-day p95
-        // after the first success.
+        // No run yet. Basis: the provision of a task VM (about 3 min), the reset of the fleet from the ready copies (360 s allowed),
+        // the cases of up to two commands (1,800 s each at most, usually far less), the destroy of the VM (about 2 min) and a margin,
+        // rounded up to five minutes. Replace with the 14-day p95 after the first success.
         'proof.run' => 3000,
         // No run yet. Basis: the runner cases of firewall:allow, 16 cases, each about 85 s with its restore (65 s of it the wait for Doctor in
         // the main case only) and at most 180 s; 14 cases x 120 s plus 2 batch restores is about 1,800 s, x 1.5, rounded up to five minutes.
@@ -114,25 +106,13 @@ final class OperationRunBudgets
     ];
 
     /**
-     * The budget that the admission of a `tasks.script` captures in `input.run_budget_seconds`, or null for a script with no explicit budget.
-     *
-     * @param  list<string>  $args
+     * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the budget of the kind's history. The workflow
+     * sets it as the time limit of each of its SSH steps, so a step against a VM that is gone ends with the Operation. The Gateway
+     * does not re-read the history after admission.
      */
-    public static function scriptSeconds(string $script, array $args): ?int
+    public static function scriptBudget(): int
     {
-        return $script === 'bin/proof-fleet' && ($args[0] ?? null) === 'reset' ? self::ProofResetSeconds : null;
-    }
-
-    /**
-     * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the explicit budget, else the budget of the
-     * history. The workflow sets it as the time limit of each of its SSH steps, so a step against a VM that is gone ends with the
-     * Operation. The Gateway does not re-read the history after admission.
-     *
-     * @param  list<string>  $args
-     */
-    public static function scriptBudget(string $script, array $args): int
-    {
-        return self::scriptSeconds($script, $args) ?? self::historySeconds(OperationKinds::TasksScript);
+        return self::historySeconds(OperationKinds::TasksScript);
     }
 
     public static function seconds(Operation $operation): int
