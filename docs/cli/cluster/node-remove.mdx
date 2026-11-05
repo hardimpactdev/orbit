@@ -1,27 +1,58 @@
 ---
 title: "orbit cluster:node:remove"
 sidebarTitle: "cluster:node:remove"
-description: "Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD. The Gateway deletes the Node's `router` assignments that never became active. Any other `router` assignment blocks the detach with `cluster.router_detach_forbidden`."
+description: "Detach a Node from a Cluster. Its Routes return to Node scope and its generated domains fall back to the Node TLD before membership ends."
 ---
 
 ```bash
-orbit cluster:node:remove <cluster> <node> [--force]
+orbit cluster:node:remove <cluster> <node> [--force] [--json]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--force` | Skip the confirmation prompt. Required in non-interactive and `--json` calls. |
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `cluster` | yes | Numeric Cluster ID. |
+| `node` | yes | Numeric Node ID of a member of the Cluster. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--force` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the Cluster, or the final task, as JSON. |
 
 ```bash
 orbit cluster:node:remove 3 7 --force
 ```
 
+In a terminal, an omitted Cluster is chosen from an interactive list, and an omitted Node from the Cluster's members that the caller has a grant to; an empty list says `No members.` and sends no request. The CLI then asks to confirm with the Cluster's and the Node's names and the effect, that the Node's Routes return to Node scope and it leaves the Cluster, with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled` and starts no change. A noninteractive or `--json` call that omits the Cluster or the Node is refused with `cluster.id_invalid` or `node.id_invalid`, and one without `--force` with `cluster.confirmation_required`; neither sends a request.
+
+The Gateway first checks the Node, for an inactive Cluster too: it must be a member of this Cluster, or have an unfinished detach from it; it must have no `router` assignment that is active, being removed or failed, and no `ingress` role; and, while the Cluster is active, it must not share the Cluster TLD. Detaching from an inactive Cluster then ends the membership at once. No Node is contacted and no traffic changes. Detaching from an active Cluster also checks the whole change: every affected Route must keep a valid domain, scope and target. A Route whose targets span this Node and other members is refused with `route.target_scope_conflict`. Instances on the Node stay and keep running. One refusal leaves every Route in place. An active public Route that the change would move is refused with `route.reconciliation_required`. Then Orbit returns the Node's Routes to Node scope, with generated domains on the Node TLD, moves the Node's private DNS answers from the Router to the Node, and prunes the LAN ingress rules the Cluster does not need. The rules go last, so the Node keeps its path to the Router until its Routes and DNS have moved. Custom proxy Routes keep their Node scope. The Node leaves the Cluster, and the Gateway deletes its `router` assignment if that never became active, in the same step that ends the membership. Any other `router` assignment blocks the detach with `cluster.router_detach_forbidden`. The CLI shows one progress indicator while the task runs, then prints the Cluster by its name with the task and request IDs.
+
+The cutover is the point where the Gateway ends the membership and records the new domains and scopes. When no Route changes, the Gateway ends the membership when the run succeeds. A failure before the cutover leaves the Node a member and every Route as it was. A failure after it leaves the Node detached with a pending detach, and the same command finishes the withdrawal, the DNS update and the prune. The pending detach ends when a run succeeds; the same command for another Cluster is still refused with `cluster.membership_missing`. Finished steps stay; there is no rollback. After you fix the cause, run the same command again. See [Change a TLD, Cluster state, or Cluster membership](/reference/routes#change-a-tld-cluster-state-or-cluster-membership).
+
 ## Errors
 
-| Error code | Meaning |
+| Code | Meaning |
 | --- | --- |
-| `cluster.membership_missing` | The Node does not belong to this Cluster. |
-| `cluster.router_detach_forbidden` | The Node is the Cluster Router; clear the Router first. |
+| `cluster.id_invalid`, `node.id_invalid` | The Cluster or Node is missing in a call that cannot prompt, or is not a positive integer. |
+| `cluster.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
+| `cluster.membership_missing` | The Node does not belong to this Cluster, and no detach of it from this Cluster is unfinished. |
+| `cluster.router_detach_forbidden` | The Node has a `router` assignment that is active, being removed or failed; clear the Router first. |
 | `cluster.ingress_detach_forbidden` | The Node carries the `ingress` role; remove that role first. |
 | `cluster.tld_conflict` | The Node shares the active Cluster TLD and cannot leave while that TLD is active. |
-| `cluster.confirmation_required` | The call was non-interactive without `--force`. |
+| `cluster.router_busy` | Another Cluster change holds the Cluster for more than 30 seconds. Retry after it finishes. |
+| `route.reconciliation_required` | An active public Route would change its domain or scope. |
+| `route.domain_conflict` | A new Route domain would collide with another Route. |
+| `route.tld_required` | A generated Route would have no effective TLD, because the Node has none. |
+| `route.target_scope_conflict` | The targets of a Route would span routing scopes. |
+| `route.target_invalid` | A Route or tracking host has no valid target. |
+| `route.generation_basis_missing` | A generated Route has no generation basis. |
+| `route.generation_basis_invalid` | A generated Route cannot be reconciled from its stored basis. |
+| `route.scope_invalid` | A Route without a target cannot leave its Cluster scope. |
+| `route.domain_change_conflict` | An affected Route already has another domain change in progress. |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed`, `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
+| `http.404` | The Cluster or Node is unknown. |
+| `node_access.required` | The caller has no access grant to the Node being detached. |
+
+## How it works
+
+<div className="flow-at" data-chart="cluster/node-remove"></div>
