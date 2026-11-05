@@ -139,7 +139,7 @@ if ($argv[1] === 'seed') {
     // The operator is a caller-only peer: an active WireGuard address with access, but no SSH identity, so nothing
     // treats it as a managed Node or reaches it over SSH (version 12).
     $operator->forceFill(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null])->saveQuietly();
-    // The verifier of the agent key up.py wrote on each target, as after enrollment.
+    // The verifier of the agent key the proof bring-up wrote on each target, as after enrollment.
     foreach ($targets as $index => $target) {
         $target->forceFill(['agent_secret_hash' => $input['targets'][$index]['agent_secret_hash'], ...($wireguard === null ? ['wireguard_public_key' => null] : [])])->saveQuietly();
     }
@@ -179,7 +179,7 @@ if ($argv[1] === 'agent') {
     exit(0);
 }
 
-// The Node's complete Caddyfile as its Caddy build renders it, so up.py serves what every later build serves (version 12).
+// The Node's complete Caddyfile as its Caddy build renders it, so the proof bring-up serves what every later build serves (version 12).
 if ($argv[1] === 'caddyfile') {
     $caddyfile = app(NodeCaddyfileRenderer::class)->render(Node::query()->findOrFail((int) $input['node']));
     echo json_encode(['content' => $caddyfile->content, 'problems' => $caddyfile->problems]), PHP_EOL;
@@ -297,13 +297,13 @@ if ($argv[1] === 'fixture') {
             json_encode(['domain' => $owner->domain, 'previous_domain' => null, 'timezone' => $spec['timezone'] ?? 'Europe/Amsterdam', 'goals' => []], JSON_THROW_ON_ERROR));
     }
     // The websocket role on one Node, as its convergence leaves it: the role, the server credentials and the
-    // site marked serving. The Reverb .env goes to up.py, which runs the pinned server (version 11).
+    // site marked serving. The Reverb .env goes to the proof bring-up, which runs the pinned server (version 11).
     if (isset($input['websocket'])) {
         $node = Node::query()->findOrFail((int) $input['websocket']);
         $node->roles()->firstOrCreate(['role' => 'websocket'], ['status' => 'active']);
         $credentials = app(NativeWebSocketCredentialManager::class)->ensure($node);
         app(WebSocketDnsTarget::class)->markServing($node->id);
-        // up.py places the Reverb certificate where the role's certificate step puts it (version 12).
+        // the proof bring-up places the Reverb certificate where the role's certificate step puts it (version 12).
         app(CaddySiteCertificates::class)->record($node->id, WebSocketCaddySiteSource::CertificateSlug);
         echo json_encode(['websocket' => ['environment' => app(WebSocketEnvironmentRenderer::class)->render($credentials, (int) config('orbit.websocket.port')),
             'unit' => app(WebSocketServiceUnitRenderer::class)->render('/opt/orbit/websocket', 'orbit', 'orbit', (int) config('orbit.websocket.port')),

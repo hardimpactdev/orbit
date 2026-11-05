@@ -11,7 +11,7 @@ A command has **one PR**. Preparation is its first commit, not its own PR. The f
 | --- | --- | --- |
 | Chart | `docs/cli/<family>/<command>.mmd` | The ideal flow, step by step |
 | Docs page | `docs/cli/<family>/<command>.mdx` | The ideal behavior: description, usage, how it works, errors |
-| Cases | `swamp/proof/<family>/<command>.cases.md` | What a proof must observe to call the command correct |
+| Cases | `swamp/proof/<family>/<command>.cases.yaml` | What a proof must observe to call the command correct |
 
 The spec is **approved in the draft PR**. A merged docs-only PR no longer makes a command ready, and no docs-only prep PR is opened. The code and the runnable proof cases follow in the same PR, with [developing-commands](../developing-commands/SKILL.md), so a reviewer can check that all of it matches.
 
@@ -26,7 +26,7 @@ Prepare one command at a time. Take the next command from the review queue on th
 ## 1. Read first
 
 1. Call Recall `resolve` for the command and its family, and `decisions` for the family. Current decisions override older text.
-2. Read the existing page, chart and any old fixture `swamp/proof/<family>.<command>*.json`. Read the code only to learn what exists, never as the target.
+2. Read the existing page, chart, any old table `swamp/proof/<family>/<command>.cases.md` and any old fixture `swamp/proof/<family>.<command>*.json`. Both are reading material only ([old paths](../../../docs/reference/old-paths.md)). Read the code only to learn what exists, never as the target.
 
 3. For a command that mirrors an approved sibling, such as `firewall:deny` after `firewall:allow`, start from the sibling's chart, page and cases and show Nick the diff. Then settle the edge cases that differ (protected resources, repeats, conflicts) and apply the answer to both commands and the family page in the same PR.
 

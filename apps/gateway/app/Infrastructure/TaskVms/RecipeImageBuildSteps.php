@@ -10,7 +10,11 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\DB;
 
-/** Pure desired-recipe and serving-delivery checks for admitted image intent. */
+/**
+ * Old path: do not extend; target: a refresh of the topology seed by converge, docs/reference/pipeline/6-task-image-seed-refresh.mmd. Still used until that refresh exists. Listed in docs/reference/old-paths.md.
+ *
+ * Pure desired-recipe and serving-delivery checks for admitted image intent.
+ */
 final readonly class RecipeImageBuildSteps
 {
     public function assertCurrent(TaskVmImageBuild $build): void

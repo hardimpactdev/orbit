@@ -12,11 +12,11 @@ Start every flow PR from this page. Review every flow PR against it and the [bin
 Build and prove a flow in a production-equivalent dev topology, never against production.
 
 1. **Start from the chart** in `docs/cli/<family>/<command>.mmd`. Tighten it with the `flow-tighten` skill. The chart and the command's documentation are the spec.
-2. **Write the tests first:** Gateway admission and projection tests, and the parity check for the fixture.
-3. **Start the topology** with `bin/swamp-proof up --topology <name>`. Never build against production serve or a 209 login.
+2. **Write the tests first:** Gateway admission and projection tests, and the cases file `swamp/proof/<family>/<command>.cases.yaml` ([format](/reference/verification-cases)).
+3. **Reset the proof fleet** in your task VM with `bin/proof-fleet reset GROUP`. Never build against production serve or a 209 login. `bin/swamp-proof` is gone ([old paths](/reference/old-paths)).
 4. **Build** the workflow with the [mapping steps](#map-a-flow-to-swamp) and the template.
 5. **Run** the whole path in the topology as often as you need: request, admission, Swamp, Nodes and projection. Read full stderr and step timings.
-6. **Write the receipt** with the final run (`bin/swamp-proof receipt`) once parity passes within budget (F8). The PR carries it. Then run `bin/swamp-proof down`.
+6. **Keep the verdicts** of the final run (`bin/proof-fleet verify GROUP CASE...`, target `orbit proof:run`) once the cases pass within budget (F8). The PR carries them. Then run `bin/proof-fleet release GROUP`.
 7. **Review and merge.** An independent review checks the PR. Then it merges with a squash merge, not a merge queue. Interim: `gh pr merge <n> -R hardimpactdev/orbit --auto --squash`. A live check confirms the load.
 
 A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet.

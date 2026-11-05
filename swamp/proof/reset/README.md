@@ -22,7 +22,7 @@ bin/proof-fleet release 3187
 
 A case that needs a clean fleet gets a new reset: that is a later step. Today every case shares the one generation and must clean its own fixtures.
 
-Do not call `bin/swamp-proof up` from a task VM. This entrypoint never provisions
+This entrypoint never provisions
 an outer VM, restages the candidate checkout, starts a production worker, or
 changes the outer observer. Provision a missing task runtime through the existing
 `tasks.provision` / `task-vm-provision` path instead. Prepare the attached seed

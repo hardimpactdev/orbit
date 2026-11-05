@@ -18,7 +18,11 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/** Desired identity is persisted before dispatch; a busy host catches up on the next scheduler check. */
+/**
+ * Old path: do not extend; target: a refresh of the topology seed by converge, docs/reference/pipeline/6-task-image-seed-refresh.mmd. Still used until that refresh exists. Listed in docs/reference/old-paths.md.
+ *
+ * Desired identity is persisted before dispatch; a busy host catches up on the next scheduler check.
+ */
 final readonly class RecipeImageBuilds
 {
     public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain, private RecipeMaintenanceAlerts $alerts, private UpCloudServers $servers) {}

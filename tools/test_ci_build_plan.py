@@ -77,7 +77,7 @@ class BuildPlanTest(unittest.TestCase):
     def test_proof_harness_changes_select_the_proof_checks_and_nothing_else_selects_them(self):
         self.assertEqual({'swamp', 'proof'}, self.selected(['swamp/proof/reset/phases.py']))
         self.assertEqual({'swamp', 'proof'}, self.selected(['swamp/proof/firewall/cases/allow_fresh_ipv4_tcp.py']))
-        self.assertIn('proof', self.selected(['tools/swamp-proof-guest/up.py']))
+        self.assertIn('proof', self.selected(['tools/swamp-proof-guest/boot.py']))
         for paths in (['swamp/workflows/x.yaml'], ['swamp/extensions/example.ts'], ['apps/gateway/app/Thing.php'], ['README.md']):
             self.assertNotIn('proof', self.selected(paths))
 

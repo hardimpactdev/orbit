@@ -10,7 +10,7 @@ covers:
 
 # CLI design standard
 
-This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. A command's page and its cases file (`swamp/proof/<family>/<command>.cases.md`) state which requirements it meets and how a proof observes them. This standard alone does not make a command compliant.
+This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. A command's page and its cases file (`swamp/proof/<family>/<command>.cases.yaml`) state which requirements it meets and how a proof observes them. This standard alone does not make a command compliant.
 
 ## Scope and authority
 

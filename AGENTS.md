@@ -6,6 +6,8 @@ Swamp lives under `swamp/`. Read the binding [Swamp shape guide](swamp/docs/swam
 
 Read the kind's chart first: `docs/cli/<family>/<command>.mmd`, beside its command page ([chart rules](docs/cli/README.md)); it states the intent. Any change to a command's flow starts by updating its chart to the ideal flow; the code follows the chart.
 
+Before you build on something, check [old paths](docs/reference/old-paths.md): it lists what a newer path replaced or will replace.
+
 ## Quality bar
 
 - Read [Mission](docs/mission.md) and the reference page or ADR that owns the behaviour before you change it.

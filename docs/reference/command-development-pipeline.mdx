@@ -27,7 +27,7 @@ About 74 commands were prepared through docs-only PRs before this flow. Their ch
 - Skill: [preparing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/preparing-commands/SKILL.md), with [flow-tighten](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/flow-tighten/SKILL.md) for the chart.
 - Chart: `docs/cli/<family>/<command>.mmd`. Rules: [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
 - Docs page: `docs/cli/<family>/<command>.mdx`.
-- Cases: `swamp/proof/<family>/<command>.cases.md`, for example [`firewall/allow.cases.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.md).
+- Cases: `swamp/proof/<family>/<command>.cases.yaml`, for example [`firewall/allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml). Commands not converted yet keep the old table `<command>.cases.md` ([old paths](/reference/old-paths)).
 
 ## 2. Development environment
 
@@ -52,7 +52,7 @@ The target: the nested VMs hold their own checkout, with no code share from the 
 - Chart: the stage chart above. A command's own chart, such as [`firewall:allow`](/cli/firewall/allow#how-it-works), shows the command, not the proof run.
 - Design draft: [Verification cases](/reference/verification-cases) describes how cases are written as short specifications, covered against the command chart, and run by one shared runner (chart [3-proof-runner](/reference/verification-cases#the-run)).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
-- Files: [`allow-fresh-ipv4-tcp.sh`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh), [`allow.cases.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.md), and the drafts [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml) and [`batches.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/batches.yaml).
+- Files: the drafts [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml) and [`batches.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/batches.yaml). The older `allow-fresh-ipv4-tcp.sh` and `allow.cases.md` are old paths ([old paths](/reference/old-paths)).
 
 ## 4. PR and CI
 

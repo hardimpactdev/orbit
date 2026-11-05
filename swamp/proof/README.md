@@ -10,7 +10,7 @@ A reset from ready copies ends with an Incus memory snapshot `base` of the three
 
 The boot fixes that keep a reset near 50 s (agent after the tunnel, cloud-init off, the hosts line, Swamp serve and worker at boot, 2 vCPUs for the Gateway, dev-safe opcache and no Laravel caches) are code in [`tools/swamp-proof-guest/boot.py`](../../tools/swamp-proof-guest/boot.py). A fresh build writes them; nobody edits a VM by hand.
 
-Cases live under `swamp/proof/<family>/cases/`. A case calls the real candidate CLI, checks the real effect and exits 0 (pass), 1 (fail) or 2 (unrun). The first one is [`firewall/cases/allow-fresh-ipv4-tcp.sh`](firewall/cases/allow-fresh-ipv4-tcp.sh): a real `firewall:allow` opens real traffic.
+Cases are written in `swamp/proof/<family>/<command>.cases.yaml` and run by the shared runner in [`runner/`](runner/runner.py) ([format](../../docs/reference/verification-cases.mdx)). A case calls the real candidate CLI, checks the real effect and prints a verdict. The first file is [`firewall/allow.cases.yaml`](firewall/allow.cases.yaml): a real `firewall:allow` opens real traffic. The older hand-written programs under `<family>/cases/` (`firewall/cases/allow-fresh-ipv4-tcp.sh`) are an old path until the `firewall:allow` switch lands ([old paths](../../docs/reference/old-paths.md)).
 
 ## Ready copies: the contract
 
@@ -23,39 +23,17 @@ Cases live under `swamp/proof/<family>/cases/`. A case calls the real candidate 
 - **No secret.** The proof Swamp Club key is never in a copy. `ready` deletes it from the running Gateway, scans every file of all three guests (`find / -xdev`, no size limit, a grep error fails) for the key and stops with the paths if one holds it (the running fleet gets its key back either way), runs `fstrim -av` under `timeout` so the freed blocks of the deleted key are discarded from the disk image that every task VM clones (the output is in the receipt), and checks that all three guests report `Stopped` before it copies. The restore pushes the key in after the Gateway agent is up, as the full build does, then restarts Swamp serve and the worker.
 - **Source.** The Gateway's database and its `.env` key belong to the source tree it was built from. Today the fast reset takes that state (`.env`, `storage`, `bootstrap/cache`, the agent manifest) and the attempt lease from the source of the active generation, so it needs an active generation whose network has the subnet of the copies. A fresh task VM with only seed copies is not covered yet: it needs the runtime state of the source stored with the copies and a network and lease created for it.
 
-## Superseded paths
+## Old path: do not extend
 
-These paths stay until each kind has a case under the current path. Removal is a later milestone.
+The first proof path was `bin/swamp-proof`, which provisioned its own Project 62 VM and ran the `<kind>.json` fixtures on a minimal topology. It was removed on 2026-11-05 with `tools/swamp_proof.py` and `tools/swamp-proof-guest/up.py` and `run.py`. Nothing runs the fixtures now.
 
-- `bin/swamp-proof` and `tools/swamp_proof.py`: provision their own Project 62 VM.
-- `tools/swamp-proof-guest/up.py` and `run.py`: the older `up` and fixture runner. The shared helpers they call (`fixture.py`, `gateway.php`) are current.
-- [`topologies/minimal`](topologies/minimal/topology.json) and the `<kind>.json` fixtures in this folder, with their per-kind folders.
+What stays is reading material for porting a kind, until its command has a `<command>.cases.yaml` under the current path: the `swamp/proof/<kind>.json` fixtures and their per-kind folders, [`topologies/minimal`](topologies/minimal/topology.json), `receipts/`, and the guest helpers that fixtures name (`converge-network-proof.py`, `network-proof.sh`, `peer-dns-proof.sh`, `vaultwarden_setup.py`, `vaultwarden_account.py`). Do not add to them. The target is the case runner (`swamp/proof/runner/`) and the cases files ([verification cases](../../docs/reference/verification-cases.mdx)). The full list, with the target and the blockers of each item, is in [old paths](../../docs/reference/old-paths.md).
 
-The rest of this page describes those paths.
+The `proof-reaper` schedule on Node 209 still cancels open Project 62 groups (titled `swamp-proof <host>:<session> <topology>@<version>` by the removed tool) that are idle or older than 90 minutes.
 
-# Swamp proof topology (superseded)
+The rest of this page describes the old topology and its fixture format. Read it to understand a fixture; do not follow it to run one.
 
-`bin/swamp-proof` proves a Swamp kind against a real Gateway, real Swamp and a real Node on one disposable VM on Beast or Shark. The topology is minimal (Nick, 2026-11-01): grow it only when a kind needs more.
-
-```sh
-bin/swamp-proof up                 # provision (or keep the held VM), stage this commit, bring the topology up
-bin/swamp-proof run firewall.allow firewall.deny firewall.remove firewall.remove-ambiguous firewall.deny-peer firewall.deny-ssh
-bin/swamp-proof receipt            # path of the latest receipt
-bin/swamp-proof down               # cancel the task group; the VM is destroyed
-```
-
-A lane runs its consecutive kinds on one `up`: `run a b c` and later `run d` reuse the held VM, and `down` comes at the end. A fixture with `"clean": true` needs a clean end state: when another fixture ran since the last `up`, `run` first restages the held VM with new nested Nodes and a fresh Gateway database. Only a fixture that a leftover would change marks itself clean.
-
-Provision checks the Operation's compact input summary for an Incus placement on Beast or Shark and matches its admitted image fingerprint to the terminal image result. It does not read nested execution payloads. Guest setup then verifies the nested topology. Repeating `up` follows the existing provision Operation under its original key and reuses its VM.
-
-Always finish with `down`. Proof VMs do not outlive the proof. The scheduled reaper catches a lane that forgets:
-
-- The `proof-reaper` schedule runs on Node 209 every 10 minutes for every machine. The Gateway publishes the open Project 62 groups as its inputs, with each running VM's pinned SSH target. Swamp reads each heartbeat with one official `@swamp/ssh exec` (`stat -c %Y /home/orbit/swamp-proof-activity`) and chooses a group when the heartbeat is older than 60 minutes, when the file is missing and the group started more than 60 minutes ago, or when a newer open group of the same lane exists. A group older than 90 minutes is chosen too, unless a heartbeat from the last 60 minutes renewed it: that catches groups whose VM has no pinned key, an unreadable heartbeat or no VM at all. Otherwise an unreachable VM is left alone. The Gateway then cancels each chosen group with the normal cancel intent, which destroys the VM. No Swamp step calls the Gateway.
-- `up` and `run` touch the heartbeat at their start and end. It lives outside `/home/orbit/swamp-proof`, which every `up` replaces.
-- Each group is titled `swamp-proof <host>:<session> <topology>@<version>`. The lane is `<host>:<session>`: one machine and session hold one VM at a time, so an older open group of the lane is a leftover.
-`up` and `run` never expire another local session; the scheduled reaper owns that cleanup. A cancel that ended without success is not replayed: the next `down` admits a new one under the next idempotency key, because the Gateway replays a key's original Operation. It then trusts only the Gateway's group record: cancelled, with the VM destroyed. `--session NAME` (default `minimal`) gives each user of the tool its own VM and session file.
-
-## Topology `minimal`
+## Old topology `minimal` (reference only)
 
 [`topologies/minimal/topology.json`](topologies/minimal/topology.json) holds its version. One shared version serves every lane; the proof topology owner changes it, and lanes request changes instead of versioning it themselves. A topology change bumps the version. A receipt records the version it ran on and stays valid for that version.
 
@@ -95,8 +73,6 @@ A scheduled producer with no Operation uses `scheduled_run` instead of `request`
 
 - No WireGuard, Router, ingress, Reverb, Horizon or Caddy. Reverb drives the subscriber and Horizon works the queue in production; here `gateway.php` does both, paced below serve's per-IP WebSocket burst limit.
 - The Gateway runs from source with `composer install --no-dev --no-scripts`; the release runner is not exercised.
-
-Use `bin/swamp-proof up --fresh` to restage changed workflow code and replace the nested Nodes in one pass on the held VM.
 
 A fixture can name a shared JSON map with `"defaults": "node-role-add-defaults.json"`. Its own fields override that map, including complete arrays such as `phases`. Both the host and guest use the same loader.
 

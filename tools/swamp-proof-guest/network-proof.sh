@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Old path: do not extend; target: the case runner (swamp/proof/runner) and cases files, docs/reference/verification-cases.mdx. Listed in docs/reference/old-paths.md.
 # Network converge fixture, root on the task VM from the staged checkout. Args: target and peer Node ids.
 # The target becomes a running legacy hub (key inline in orbit.conf, no peers); the peer has no WireGuard state.
 # The Gateway records the target as the VPN hub and trusts its public key. Never prints a private key.

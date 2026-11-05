@@ -9,6 +9,7 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use Illuminate\Console\Command;
 use Throwable;
 
+/** Old path: do not extend; target: a refresh of the topology seed by converge, docs/reference/pipeline/6-task-image-seed-refresh.mmd. Still used until that refresh exists. Listed in docs/reference/old-paths.md. */
 final class BuildTaskVmRecipeCommand extends Command
 {
     #[\Override]
