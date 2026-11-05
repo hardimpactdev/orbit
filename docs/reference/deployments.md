@@ -229,7 +229,7 @@ The Gateway validates the request and the access grant, checks that the Instance
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `rollback.release_not_retained` | 422 | The Instance's deployment history does not retain the release. [`instance:release:list`](/cli/instance/release-list) lists the releases it retains |
+| `rollback.release_not_retained` | 422 | The Instance's deployment history does not retain the release. [`instance:release:list`](/cli/instance/release-list) lists the releases on the Node, which can differ from the history the rollback checks |
 | `deployment_config.unavailable` | 409 | The Instance is not a production Instance |
 | `operation.target_busy` | 409 | Another operation holds the Instance |
 

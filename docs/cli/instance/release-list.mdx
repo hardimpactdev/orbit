@@ -1,10 +1,51 @@
 ---
 title: "orbit instance:release:list"
 sidebarTitle: "instance:release:list"
+description: "List the releases in the home of a production Instance and the selected one."
 ---
-
-List retained release names and the current selection. A production home keeps at most 3 releases, as [Retained releases](/reference/deployments#retained-releases) describes. See [`instance:deployment:list`](/cli/instance/deployment-list) for the recorded run history behind those releases.
 
 ```bash
 orbit instance:release:list <instance> [--json]
 ```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID of an active production Instance, or of a development `default` Instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the releases as JSON. |
+
+```bash
+orbit instance:release:list 14
+```
+
+In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
+
+The command reads the Instance's production home on its Node, so it fails while the Node is unreachable. It lists the releases in the home that pass their checks, sorted by name, not by age: the first release, `initial`, sorts after the timestamp-named ones. A clean home keeps 3 releases, and a release that a running process uses stays beyond that, as [Retained releases](/reference/deployments#retained-releases) describes. The list can differ from the recorded history that a rollback checks.
+
+The output has these parts:
+
+- The table, with the columns `RELEASE` and `SELECTED`. `SELECTED` reads `yes` for the release the Instance serves and `no` for the others.
+- `Selected release:` with the selected release, or `—` when none is selected.
+- The request ID.
+
+An Instance with no release says `No retained releases found.`. A development `default` Instance deploys in its checkout, so its list is empty and no Node is read. A development Instance with another name is refused with `deployment.identity_invalid`.
+
+With `--json`, stdout holds `{ releases, selected_release, request_id }`, and `selected_release` is null when none is selected. See [`instance:deployment:list`](/cli/instance/deployment-list) for the recorded run history behind the releases.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
+| `input.cancelled` | You cancelled the Instance list. |
+| `deployment.identity_invalid` | The Instance is not an active production Instance with a release layout and a recorded user and home. |
+| `deployment.release_inspection_failed` | The inspection of the home failed. |
+| `agent.runner_failed` | The Node did not answer within the 120-second limit. |
+| `rollback.release_invalid` | A listed release has an invalid name. |
+| `deployment.repository_mismatch` | The production home serves another repository than the Project. |
+| `deployment.repository_rebind_required` | The production home records another URL for the repository. Update the Project's repository URL. |
+| `deployment.receipt_invalid` | The Node returned a release list that is not valid. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
