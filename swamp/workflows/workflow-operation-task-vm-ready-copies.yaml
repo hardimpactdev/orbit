@@ -1,4 +1,4 @@
-id: 5224af87-d96b-482b-a216-567f3349ec06
+id: dd2f5013-0a36-4ae5-b4bd-0b66f5a07a37
 name: operation-task-vm-ready-copies
 description: >-
   Save the ready copies of the nested fleet that runs in a task VM (stage 6, "Save the new images") and boot-check them. The copies are self-contained, with their own state, no checkout, no operator key and no Club key. Each step is one incus command over official SSH, once per nested VM.
@@ -128,7 +128,7 @@ jobs:
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: *each, methodName: exec, globalArgs: {<<: *vm, name: *each},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'set', '${{ "fleet-ready-" + self.role }}', '${{ "user.ready.hwaddr=" + steps["Read the MAC-" + self.role].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.ipv4=" + steps["Read the address-" + self.role].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.subnet=" + steps["Read the subnet"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.role=" + self.role }}', '${{ "user.ready.set=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.made=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'], timeoutSec: 40}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'set', '${{ "fleet-ready-" + self.role }}', '${{ "user.ready.hwaddr=" + steps["Read the MAC-" + self.role + "-" + string(self._index)].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.ipv4=" + steps["Read the address-" + self.role + "-" + string(self._index)].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.subnet=" + steps["Read the subnet"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.role=" + self.role }}', '${{ "user.ready.set=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.made=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Remove the NIC', condition: {type: succeeded}}, {step: 'Read the MAC', condition: {type: succeeded}}, {step: 'Read the address', condition: {type: succeeded}}, {step: 'Read the subnet', condition: {type: succeeded}}, {step: 'Read the time', condition: {type: succeeded}}]
   # Written last, on every copy, after all three have their keys: a set without it is half made.
   - name: 'Complete the set'
@@ -236,6 +236,6 @@ jobs:
     labels: {role: swamp}
     task:
       type: assert
-      expr: 'steps["Read the operator keys"].outputs.stdout.split("\n")[0] == "0" && steps["Look for the operator peer"].outputs.stdout.startsWith("peer-exit=1") && ["gateway", "app-dev", "app-prod"].all(r, steps["Scan for the Club key-" + r].outputs.stdout.startsWith("scan-exit=1") && steps["Search for the Club key-" + r].outputs.stdout.startsWith("scan-exit=1") && steps["Read the stateful setting-" + r].outputs.stdout.split("\n")[0] == "true" && !steps["Read the devices-" + r].outputs.stdout.contains("eth0"))'
+      expr: 'steps["Read the operator keys"].outputs.stdout.split("\n")[0] == "0" && steps["Look for the operator peer"].outputs.stdout.startsWith("peer-exit=1") && [0, 1, 2].all(i, steps["Scan for the Club key-" + ["gateway", "app-dev", "app-prod"][i] + "-" + string(i)].outputs.stdout.startsWith("scan-exit=1") && steps["Search for the Club key-" + ["gateway", "app-dev", "app-prod"][i] + "-" + string(i)].outputs.stdout.startsWith("scan-exit=1") && steps["Read the stateful setting-" + ["gateway", "app-dev", "app-prod"][i] + "-" + string(i)].outputs.stdout.split("\n")[0] == "true" && !steps["Read the devices-" + ["gateway", "app-dev", "app-prod"][i] + "-" + string(i)].outputs.stdout.contains("eth0"))'
       severity: high
       message: The ready copies are not self-contained.
