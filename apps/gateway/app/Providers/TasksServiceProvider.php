@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Console\Commands\FileProblemsCommand;
 use App\Console\Commands\ReleaseTaskWorkspaceLeaseCommand;
+use App\Console\Commands\TaskPullRequestGateCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
@@ -144,6 +145,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         $this->commands([
             FileProblemsCommand::class,
             ReleaseTaskWorkspaceLeaseCommand::class,
+            TaskPullRequestGateCommand::class,
         ]);
 
         // {group} is the top-level task. The Task scope itself returns only subtasks.

@@ -1003,12 +1003,26 @@ After the gate, the Gateway mints a new token with `contents: write` and `pull_r
 
 Swamp reads the pull request again, refuses a moved head, and merges with a squash merge that carries the expected `sha`. If the head moved or the pull request conflicts with the base branch, the merge is refused and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
 
+### Gate check
+
+The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extension is on. The command only reads GitHub and admits steps; it changes nothing on GitHub, and Swamp steps never call back to the Gateway. It looks at each open external group that has a published pull request and belongs to a Project with [review and merge](/reference/projects#review-and-merge) enabled. For each one it reads the pull request with a read-only App token and then:
+
+- A pull request in draft gets the ready step in manual mode. Admission requires a green merge check on the head.
+- A pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
+
+A pending or red check, a missing approval, a busy group, a moved head or a failed read is a quiet skip, and the next tick reads again.
+
+Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so a repeat tick on the same head replays the recorded step and starts nothing. A step that failed is not tried again on the same head. A push moves the head and the check starts again, or the operator calls the step by hand with a new key.
+
+The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code.
+
+Only manual mode exists. The automatic gate has no self-review run to admit.
+
 ### Not built
 
 These parts of stage 4 do not exist yet:
 
 - The automatic gate: a fresh self-review agent with at most 3 review rounds.
-- The continuation that starts the merge when the approval arrives.
 - An `orbit` command for each step, and a proof case for each step.
 - Pull requests that the Orbit App opens.
 
