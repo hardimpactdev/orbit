@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; one parent workflow runs provision, verify, cancel as children; Gateway projects once.
-  %% status: reviewed
+  %% status: draft
   %% command: proof:run
   %% kind: proof.run
   autonumber
@@ -24,13 +24,29 @@ sequenceDiagram
   GW->>SW: Start one run<br/>operation-proof-run
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
-  SW->>VM: Run the proof<br/>child flow · proof-fleet verify
+  SW->>VM: Reset and sync<br/>ready copies · the commit
   %%> What it does:
-  %%> - Orbit's own Swamp runs the reset and verify workflows (`workflow-proof-fleet-reset`, `-ready`, `-verify`) directly and reaches into the task VM over SSH, like every other step
-  %%> - resets the nested topology from the ready copies, then runs each selected case (for example the firewall:allow traffic case); one verdict per case
-  %%> - pushes the proof Swamp Club key from its vault into the nested Gateway during the reset; the nested Gateway runs its own Swamp as part of the Orbit under test. The key is copied in at boot, never baked, and never stored on the outer task VM
+  %%> - Orbit's own Swamp reaches into the task VM over SSH, like every other step, and resets the nested topology from the ready copies
+  %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
+  %%> - syncs the commit into the nested Gateway and app-dev, the same sync as `orbit-nested`; installs only when a lock file changed
   %%> Not built:
   %%> - the direct run; today `bin/proof-fleet` starts a local Swamp inside the task VM
+  opt the commit changes playbooks or pins
+    SW->>VM: Converge once<br/>outer VM · nested Nodes
+    %%> What it does:
+    %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
+    %%> - runs after the sync, so the nested Orbit has the new playbooks; the proof never resets the outer VM, so this lasts the whole run
+    %%> - the base images are not touched; only the merge and the seed refresh change them
+  end
+  SW->>VM: Take base<br/>memory snapshot
+  %%> What it does:
+  %%> - an Incus stateful snapshot `base` of the three nested VMs, with any converged state in it
+  %%> - it holds the Club key; accepted because the VM and its snapshots are destroyed after the run
+  SW->>VM: Run the proof<br/>child flow · proof-fleet verify
+  %%> What it does:
+  %%> - each batch restores `base` once and applies its declared start state; its cases run one after another with their own resources and no undo
+  %%> - a case that did not pass triggers a restore before the next case; a restore that fails or is not healthy within 30 s stops the run, and the remaining cases become `unrun`
+  %%> - one verdict per case, as in the proof stage of the [command development pipeline](/reference/command-development-pipeline)
   SW->>VM: Destroy the task VM<br/>child workflow · always
   %%> Runs after success or failure, so no proof VM is left behind.
   alt every case passes

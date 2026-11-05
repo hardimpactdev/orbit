@@ -6,16 +6,9 @@ command: firewall:allow
 chart: firewall/allow          # docs/cli/firewall/allow.mmd; `covers` names its `%% path:` ids
 target: app-dev                # the Node under test
 sources: [gateway, app-prod]   # the Nodes that probe it
-baseline: [ufw, firewall_records, operations, listeners]   # compared after every cleanup, and by `unchanged`
+baseline: [ufw, firewall_records, operations, listeners]   # what `unchanged` compares; recorded at the start of act
 
-# Starting states. These move to swamp/proof/batches.yaml when a second command needs them.
-batches:
-  fresh-fleet:
-    summary: The healthy nested fleet from the ready copies. Only Orbit's own rules and the proof-network allowance exist.
-  dual-stack:
-    summary: As fresh-fleet, and every Node also has an IPv6 address on the proof bridge.
-    setup:
-      - ipv6_addresses: {nodes: [gateway, app-dev, app-prod]}
+# Each case names its batch; swamp/proof/batches.yaml defines the batches and their order.
 
 # Lists that a command line can splice with "@name".
 vars:
@@ -51,7 +44,6 @@ cases:
       - cli:
           run: [firewall:allow, "@tcp_rule"]
           expect: {exit: 0, status: succeeded}
-          undo: [firewall:remove, "@tcp_rule", --yes]
     expect:
       - probe: {id: gateway-connects, from: gateway, to: app-dev, port: "${port}", expect: connect}
       - probe: {from: app-prod, to: app-dev, port: "${port}", expect: blocked}
@@ -74,7 +66,7 @@ cases:
     fails_today: The command refuses the duplicate.
     setup:
       - use: blocked-port
-      - cli: {run: [firewall:allow, "@tcp_rule"], expect: {exit: 0, status: succeeded}, undo: [firewall:remove, "@tcp_rule", --yes]}
+      - cli: {run: [firewall:allow, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
     act:
       - cli:
           run: [firewall:allow, "@tcp_rule"]
@@ -98,7 +90,6 @@ cases:
       - cli:
           run: [firewall:allow, "@rule"]
           expect: {exit: 0, status: succeeded}
-          undo: [firewall:remove, "@rule", --yes]
     expect:
       - probe: {from: gateway, to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
       - probe: {from: app-prod, to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
@@ -117,7 +108,7 @@ cases:
       - fault: {on: app-dev, command: ufw, fail_after: {match: delete, count: 1}}
     stages:
       - act:
-          - cli: {run: [firewall:allow, "@tcp_rule"], expect: {status: failed}, undo: [firewall:remove, "@tcp_rule", --yes]}
+          - cli: {run: [firewall:allow, "@tcp_rule"], expect: {status: failed}}
         expect:
           - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: failed}, count: 1}
           - ufw: {on: app-dev, family: 4, rows: [{ref: deny}], absent: [{to: "${port}/tcp", action: ALLOW, from: "${gateway.src}"}]}
@@ -138,7 +129,7 @@ cases:
     summary: A deny with the same port, protocol and source refuses the allow.
     setup:
       - use: blocked-port
-      - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 0, status: succeeded}, undo: [firewall:remove, "@tcp_rule", --yes]}
+      - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
     act:
       - cli: {run: [firewall:allow, "@tcp_rule"], expect: {exit: 1, code: firewall.rule_conflict, request: none}}
     expect:
@@ -174,7 +165,6 @@ cases:
       - cli:
           run: [firewall:allow, "@rule", "@flags"]
           expect: {exit: 0, status: succeeded}
-          undo: [firewall:remove, "@rule", "@flags", --yes]
     expect:
       - probe: {from: gateway, to: app-dev, proto: "${proto}", port: "${port}", expect: connect}
       - probe: {from: app-prod, to: app-dev, proto: "${proto}", port: "${port}", expect: blocked}
@@ -192,7 +182,6 @@ cases:
       - cli:
           run: [firewall:allow, "@rule6"]
           expect: {exit: 0, status: succeeded}
-          undo: [firewall:remove, "@rule6", --yes]
     expect:
       - probe: {from: gateway, to: app-dev, family: 6, port: "${port}", expect: connect}
       - probe: {from: app-prod, to: app-dev, family: 6, port: "${port}", expect: blocked}
@@ -214,7 +203,6 @@ cases:
       - cli:
           run: [firewall:allow, "${range.spec}", "--node=${app-dev.id}", "--from=${gateway.src}", "--protocol=tcp"]
           expect: {exit: 0, status: succeeded}
-          undo: [firewall:remove, "${range.spec}", "--node=${app-dev.id}", "--from=${gateway.src}", "--protocol=tcp", --yes]
     expect:
       - probe: {from: gateway, to: app-dev, proto: tcp, port: ["${range.lo}", "${range.mid}", "${range.hi}"], expect: connect}
       - probe: {from: gateway, to: app-dev, proto: tcp, port: "${outside}", expect: blocked}
@@ -234,7 +222,7 @@ cases:
       - fault: {on: app-dev, command: ufw, fail_after: {match: allow, count: 1}}
     stages:
       - act:
-          - cli: {run: [firewall:allow, "@rule"], expect: {status: failed}, undo: [firewall:remove, "@rule", --yes]}
+          - cli: {run: [firewall:allow, "@rule"], expect: {status: failed}}
         expect:
           - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: failed}, count: 1}
           - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: ALLOW, from: "${gateway.src}"}, {ref: deny}]}
@@ -258,7 +246,6 @@ cases:
           run: [firewall:allow, 22, "--node=${app-dev.id}"]
           forms: [json, human]
           expect: {exit: 0, status: succeeded, skipped: firewall.rule_exists}
-          undo: [firewall:remove, 22, "--node=${app-dev.id}", --yes]
     expect:
       - probe: {from: gateway, to: app-dev, port: 22, expect: connect}
       - unchanged: {since: act, what: [ufw, firewall_records]}
@@ -279,13 +266,11 @@ cases:
             - {see: port, send: "${port}"}
             - {see: Node, choose: app-dev}
           expect: {exit: 0, status: succeeded}
-          undo: [firewall:remove, "${port}", "--node=${app-dev.id}", --yes]
       - cli:
           run: [firewall:allow, "${port2}"]
           tty:
             - {see: Node, choose: app-dev}
           expect: {exit: 0, status: succeeded}
-          undo: [firewall:remove, "${port2}", "--node=${app-dev.id}", --yes]
     expect:
       - record: {list: firewall:list, node: app-dev, where: {port: ["${port}", "${port2}"], status: active}, count: 2}
 
