@@ -14,10 +14,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant VM as Task VM<br/>author · reviewer
   participant GH as GitHub<br/>draft PR
-  CLI->>GW: tasks:prep 42<br/>--command=firewall:deny
+  CLI->>GW: tasks:prep 42<br/>command firewall:deny
   %%> Command:
-  %%> - `orbit tasks:prep 42 --command=firewall:deny`
-  %%> - syntax: `[group] --command=FAMILY:COMMAND [--idempotency-key=KEY] [--json]`
+  %%> - the MCP tool `tasks-prep`, or `POST /api/v1/task-groups/42/prep` with `{"command": "firewall:deny"}` and an `Idempotency-Key`
   Note over GW: Admit one prep run<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway

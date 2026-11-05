@@ -233,6 +233,7 @@ Use the kind and target type to start or find the work of a command.
 | `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
 | `tasks:park` | `tasks.park` | `task_group` | Gateway |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
+| `POST task-groups/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |

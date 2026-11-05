@@ -20,6 +20,19 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
             'execution_secrets' => $operation->input['execution_secrets']];
     }
 
+    /**
+     * Records what a finished turn reports on the thread it ran on: its token metrics and its final state.
+     *
+     * @param  array<string,mixed>  $result
+     */
+    public static function recordThread(int $group, int $thread, array $result): void
+    {
+        AgentThread::query()->where('task_group_id', $group)->findOrFail($thread)->update([
+            ...array_intersect_key(ValidatedData::object($result['metrics'] ?? []), array_flip(['tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens'])),
+            'state' => $result['state'] ?? 'failed', 'error' => $result['error'] ?? null, 'observed_at' => now(),
+        ]);
+    }
+
     public function apply(Operation $operation, array $data): Operation
     {
         return DB::transaction(function () use ($operation, $data): Operation {
@@ -33,11 +46,7 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
             }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $projected->status->terminal()) {
-                $thread = AgentThread::query()->where('task_group_id', $operation->target_id)->findOrFail(ValidatedData::integer($operation->input['thread_id']));
-                $thread->update([
-                    ...array_intersect_key(ValidatedData::object($result['metrics'] ?? []), array_flip(['tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens'])),
-                    'state' => $result['state'] ?? 'failed', 'error' => $result['error'] ?? null, 'observed_at' => now(),
-                ]);
+                self::recordThread($operation->target_id, ValidatedData::integer($operation->input['thread_id']), $result);
             }
 
             app(TaskMaintenanceContinuation::class)->apply($projected);

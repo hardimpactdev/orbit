@@ -7,6 +7,7 @@ use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskMaintenanceProjection;
 use App\Domain\Tasks\TaskParkProjection;
+use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\Tasks\TaskPublishProjection;
 use App\Domain\Tasks\TaskPullRequestMergeProjection;
@@ -41,6 +42,21 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the merge', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'merge', 'step' => 'Squash on expected head', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-merge-write-[a-f0-9-]{36}$']],
+        ], 'tasks.prep' => [
+            'workflow' => 'operation-task-prep', 'projection' => TaskPrepProjection::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'prep', 'step' => 'Review has no findings', 'native' => true, 'captures' => [
+                'provision' => ['job' => 'prep', 'step' => 'Create the VM'],
+                'draft' => ['job' => 'prep', 'step' => 'Draft the spec'],
+                'review_1' => ['job' => 'prep', 'step' => 'Review the spec 1'], 'fix_1' => ['job' => 'prep', 'step' => 'Fix the findings 1'],
+                'review_2' => ['job' => 'prep', 'step' => 'Review the spec 2'], 'fix_2' => ['job' => 'prep', 'step' => 'Fix the findings 2'],
+                'review_3' => ['job' => 'prep', 'step' => 'Review the spec 3'],
+                'publish' => ['job' => 'prep', 'step' => 'Open a draft PR'],
+            ]],
+            'execution_copies' => [...$vmProvision['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-git-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
+                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
+                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
+                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
         ], 'tasks.park' => [
             'workflow' => 'operation-task-park',
             'projection' => TaskParkProjection::class,

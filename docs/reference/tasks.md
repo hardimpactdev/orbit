@@ -270,7 +270,7 @@ The result stays `{ branch, commit, pull_request_number, pull_request_url }`, wi
 
 #### Prepare a command
 
-`tasks:prep <group> --command=FAMILY:COMMAND` starts `tasks.prep` through `POST /api/v1/task-groups/{group}/prep`. It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs. A command that is not `family:command` in lower case returns `422 tasks.prep_command_invalid`.
+`tasks:prep` starts `tasks.prep` through `POST /api/v1/task-groups/{group}/prep` with `{ command }`, where `command` is `family:command`. It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request, like `tasks:pr-ready`; the MCP tool `tasks-prep` is the caller. A command that is not `family:command` in lower case returns `422 tasks.prep_command_invalid`.
 
 The group is an external `todo` group, made with `tasks:create`, of a Project that the GitHub App reads. It has no VM yet. The Gateway admits one run. In one transaction it captures the placement, VM, workspace and credentials the way [provision](#provision-an-external-group) does, and it captures the rest of the intent:
 

@@ -1,15 +1,25 @@
 ---
-title: "orbit tasks:prep"
+title: "tasks:prep"
 sidebarTitle: "tasks:prep"
+description: "Prepare one command for the command development pipeline: draft its spec, review it and open the draft pull request. API and MCP only."
 ---
 
-Prepare one command for the [command development pipeline](/reference/command-development-pipeline#1-prep). An author agent drafts the chart, the docs page and the cases in a task VM, a review agent checks them, and Swamp opens a draft pull request as the Orbit App with the spec as its first commit. See [Prepare a command](/reference/tasks#prepare-a-command).
+Prepare one command for [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep). An author agent drafts the chart, the docs page and the cases in a task VM, a review agent checks them, and Swamp opens a draft pull request as the Orbit App with the spec as its first commit. The Gateway only admits the run and records its end. See [Prepare a command](/reference/tasks#prepare-a-command).
+
+There is no `orbit` command yet. Use the API or the MCP tool `tasks-prep`.
 
 ```bash
-orbit tasks:prep 42 --command=firewall:deny
+curl -X POST "$GATEWAY/api/v1/task-groups/42/prep" \
+  -H "Idempotency-Key: prep-42-firewall-deny" \
+  -d '{"command": "firewall:deny"}'
 ```
 
-The optional `group` argument is the numeric ID of a `todo` task group with no VM. `--command` names the command as `family:command` and is required. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`. Ctrl-C stops following, not the run. A rerun with the same key follows the same run.
+The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. The reply is `202` with the operation. Follow it with `operation:show` until it ends. A repeat with the same key returns the same operation.
+
+| Input | Meaning |
+| --- | --- |
+| `group` | The numeric ID of a `todo` task group with no VM, made with `tasks:create`. It has one subtask with a deliverable. |
+| `command` | The command as `family:command` in lower case. |
 
 ## How it works
 
@@ -19,9 +29,10 @@ The optional `group` argument is the numeric ID of a `todo` task group with no V
 
 | Code | When |
 | --- | --- |
-| `tasks.prep_command_invalid` | `--command` is not `family:command` in lower case |
+| `tasks.prep_command_invalid` | `command` is not `family:command` in lower case |
 | `tasks.not_todo`, `tasks.group_closed`, `tasks.already_claimed` | the group is not an open `todo` group with no VM |
+| `tasks.subtask_deliverables_missing` | the group has no subtask, or its first subtask has no deliverable |
 | `tasks.capacity_unavailable` | no task VM host has room; the group is unchanged |
-| `tasks.prep_not_committed` | the draft left HEAD where it was |
+| `tasks.prep_not_committed` | the draft or a fix left HEAD where it was |
 | `tasks.prep_review_unresolved` | a finding is left after the last review round; nothing is published |
 | `tasks.head_moved`, `tasks.not_fast_forward`, `tasks.push_failed`, `tasks.publish_failed` | publication failed; see [publish](/reference/tasks#publish-an-external-group) |
