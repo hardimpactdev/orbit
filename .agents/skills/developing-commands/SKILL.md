@@ -9,7 +9,7 @@ Take one command at a time through the full development and release flow, using 
 
 The target flow, from idea to deployed, is in [the feature flow](../../../docs/reference/feature-flow.md). Write only to `hardimpactdev/orbit`.
 
-For the first complete pass, follow the feature flow's build order: establish verified baseline templates before wiring the VM CI job that clones them. Reuse the same command cases for development and CI. A manual proof or template update helps build the pipeline, but does not complete its automatic release stages.
+For the first complete pass, follow the feature flow's build order: establish the verified proof topology before wiring the VM CI job that resets from it. Reuse the same command cases for development and CI. A manual proof or seed refresh helps build the pipeline, but does not complete its automatic release stages.
 
 ## Before code
 
@@ -43,7 +43,7 @@ Work through it in order. Each item ends with evidence in the PR.
    2. CI: fast checks plus the VM job for this command, selected by the changed files.
    3. Merge through the queue.
    4. Release as a Swamp run.
-   5. Template refresh: converge onto the templates, snapshot, copy to the task VM hosts.
+   5. Per-host refresh: each task VM host refreshes its task image and topology seed.
    6. Fleet: `node:converge` with the release scope (Orbit footprint plus changed roles).
    7. Doctor shows no new drift on the fleet.
 

@@ -1,18 +1,19 @@
 ---
 title: "Feature flow"
-description: "The target flow for an Orbit change, from idea to deployed, and what is built today."
+description: "The target flow for an Orbit change, from idea to deployed."
 ---
 
-This is the target flow for an Orbit change, agreed with Nick on 2026-11-04. The `developing-commands` skill (`.agents/skills/developing-commands/SKILL.md`) applies it to one command at a time. The `verifying-commands` skill defines the VM proof used during development and in CI. The last section shows what is built today.
+This is the target flow for an Orbit change. The [command pipeline](/reference/command-pipeline) lists the stages of a command with their status and links to every chart. The `developing-commands` skill (`.agents/skills/developing-commands/SKILL.md`) applies this flow to one command at a time. The `verifying-commands` skill defines the VM proof used during development and in CI.
 
 ## Words used here
 
-These terms distinguish the shared templates, their hosts and the state on each Node.
+These terms distinguish the task images, topology seeds, their hosts and the state on each Node.
 
 | Term | Meaning |
 | --- | --- |
-| Templates | VM snapshots of a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. Dev VMs, CI and the task VM image all start from them. |
 | Task VM hosts | Machines that run task VMs and their nested topologies: beast, shark and host 14. |
+| Task image | The VM image that a host starts its task VMs from. Each host builds its own. |
+| Topology seed | Stopped copies of a ready Gateway with Swamp, `app-dev` Node and `app-prod` Node, kept by each host. A task VM resets its test fleet from them. |
 | Orbit footprint | What Orbit owns on a Node: the agent, CLI, Gateway code, and the files and units Orbit renders for itself. |
 | Workload state | What users run on Nodes: Instances, Processes, containers, Caddy sites, firewall rules, `.env` files and role config. |
 
@@ -36,9 +37,9 @@ The agent that takes the Task gets the updated chart, the updated docs, the brie
 
 ## 2. Develop
 
-Build and check the change in a dev topology before pushing it.
+Build and check the change on a proof topology before pushing it.
 
-1. Start a dev VM from the templates, with its nested topology. It matches what CI and the fleet run.
+1. Start a task VM with `tasks:provision`. It holds the nested topology, reset quickly from the ready copies in the host's topology seed. It matches what CI and the fleet run.
 2. Build the change.
    - The Gateway records intent and starts a Swamp run. Swamp executes. The agent only observes.
    - For each part of the Node work, choose native Swamp steps or an Ansible phase (flow-tighten rule 22):
@@ -57,7 +58,7 @@ Use the chart to cover the command's paths.
    Each case asserts the command's promised effect, the recorded state and the observed Node state. Doctor reports zero drift for the records it touched, and a second run changes nothing. An error case checks that the command refuses and nothing changes.
 
    For example, a firewall case proves that traffic reaches a blocked port after the allow command. A restricted source case also proves that an excluded source stays blocked. A broad test-network allowance must not let either assertion pass without the tested rule. The `verifying-commands` skill owns the case contract and evidence requirements.
-4. Converge the branch onto the dev topology and run the cases there. The change works there before it is pushed.
+4. Reset the topology to the branch and run the cases there with `bin/proof-fleet verify`. The change works there before it is pushed.
 
 ## 3. Pull request
 
@@ -79,20 +80,19 @@ CI is the only gate: if CI passes, the PR merges. So CI must be strict about wha
 
 1. Fast checks run in about 1 minute.
 2. The VM job runs only when command code changed:
-   1. Orbit takes a VM and starts a fresh test fleet from the ready snapshot, in seconds.
-   2. It applies the PR's code to that fleet, in about 2 to 3 minutes.
-   3. It runs only the test cases of the affected commands, one after another in that fleet, and then releases the VM.
+   1. Orbit takes a task VM. It resets the test fleet from the ready copies in the host's topology seed and applies the PR's code, in about 75 seconds.
+   2. It runs only the test cases of the affected commands, one after another in that fleet, and then releases the VM.
 
    Development and CI use the same cases and assertions. The required check identifies the tested commit and reports every selected case. A missing result or a failed assertion fails the check. A passing check confirms the defined cases; it does not prove behavior that the cases omit.
 
-   This adds about 5 to 8 minutes, and only to PRs that change commands. The run budget is 30 minutes. See [the VM job](#the-vm-job).
+   This adds time only to PRs that change commands. The run budget is 30 minutes after the fleet is ready. See [the VM job](#the-vm-job).
 3. The merge queue applies the same selection rule.
 
    A batch needs the VM job only for PRs that change command code.
 
 ### The VM job
 
-The VM job is the target. Built so far: the `orbit proof:run` admission (trust check and case selection) and the selection list. Not built yet: proof execution (VM claim, commit transfer, receipt), the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+The VM job is the target. Built so far: the `orbit proof:run` admission (trust check and case selection), the selection list, and the execution as a Gateway-started chain that moves to one Swamp flow next. Not built yet: the receipt store, the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
 
 The job is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
 
@@ -196,16 +196,14 @@ The release run builds and loads the code, then checks the Gateway.
 
 6. The Gateway records the release.
 
-## 7. Templates
+## 7. Task image and seed refresh
 
-Refresh the shared templates after the release.
+After each release and at least daily, each task VM host refreshes itself.
 
-1. Converge the new release onto the templates and snapshot them.
-2. Export the templates as image files. Copy them to the other task VM hosts with `scp` and import them there.
+1. The host builds its task image from the recipe ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-build.mmd)).
+2. It refreshes its topology seed: the ready nested topology of the running release ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd)).
 
-   Earlier image work found `scp` much faster than `incus copy`.
-
-3. From then on, dev VMs, CI and new task VMs start from the new templates.
+The hosts refresh in parallel. Nothing is copied between hosts: they have different CPUs, and a copy loses the storage sharing inside the seed. From then on, task VMs and CI proofs start from the new seed. See [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
 
 The images stay on our own machines. Nothing goes to GitHub or UpCloud.
 
@@ -241,7 +239,7 @@ Doctor reports drift so you can choose a fix.
 Version changes follow the same flow as other changes.
 
 1. Self-hosted Renovate, running on our runners, proposes version changes as PRs to `recipe.json`, with checksums.
-2. The PR goes through the same CI: the VM job converges the new versions onto a template copy and runs the tests of the roles it changes.
+2. The PR goes through the same CI: the VM job converges the new versions onto the ready copies of a topology and runs the tests of the roles it changes.
 3. A green PR merges. A red PR stays open until someone excludes the broken version.
 4. The release then rolls the new versions out to the Nodes with those roles (step 8.2).
 
@@ -249,46 +247,39 @@ Tools that a user installs on one Node with `tool:install` stay separate. They u
 
 ## 11. Nightly
 
-The nightly build checks that templates match a fresh installation.
+The nightly build checks that the topology seed matches a fresh installation.
 
 1. A schedule creates a Task in a task VM.
 2. It builds the topology from stock Ubuntu up to the running release, and runs the full test suite.
-3. It compares the result with the converged templates through Doctor. A difference means converge left something behind.
-4. If it passes, the fresh build replaces the templates.
-5. If it fails, the current templates stay, and a Pi agent starts in that VM:
+3. It compares the result with the converged seed through Doctor. A difference means converge left something behind.
+4. If it passes, the fresh build replaces the seed.
+5. If it fails, the current seed stays, and a Pi agent starts in that VM:
    - an Orbit bug: Pi fixes the code, proves it, and opens a PR;
    - an upstream break: Pi pins the last working version and opens a PR with the reason;
    - an infrastructure problem: Pi reruns once, then reports.
 
 ## First complete command: firewall:allow
 
-`firewall:allow` is the first command to complete this whole flow. The existing `node:role:add` work continues through its conversion, shared Ansible setup and proofs. That work is reused where needed; it does not own the new CI, template or scoped rollout work. Firewall uses native Swamp steps, so its preparation can proceed while the role conversion finishes.
+`firewall:allow` is the first command to complete this whole flow. The existing `node:role:add` work continues through its conversion, shared Ansible setup and proofs. That work is reused where needed; it does not own the new CI, per-host refresh or scoped rollout work. Firewall uses native Swamp steps, so its preparation can proceed while the role conversion finishes.
 
 Build the missing parts in dependency order. This order prepares the pipeline; a release still follows steps 6 through 9 above.
 
 1. **Agree the command contract and cases.** Align the documented contract with the implementation. Extend the existing harness with chart-path cases. Verify the CLI output and intended Node state, including Doctor and unchanged reruns.
-2. **Establish the templates.** Verify the Gateway with Swamp, app-dev and app-prod templates. Record their release and snapshot identities. Development and CI clone the same set.
-3. **Connect the cases to CI.** Run affected cases on clones converged to the tested commit. Changes only to documentation skip VM tests. Prove that a failed case blocks the merge queue.
+2. **Establish the proof environment.** Verify that the topology seed of a host holds the ready Gateway with Swamp, app-dev and app-prod copies. Record their release identity. Development and CI reset from the same copies.
+3. **Connect the cases to CI.** Run affected cases on a topology reset to the tested commit. Changes only to documentation skip VM tests. Prove that a failed case blocks the merge queue.
 4. **Verify the Swamp release.** Follow the merged commit into the running Gateway and loaded workflows. A manual proof receipt does not establish that the automatic release works.
-5. **Complete template refresh.** Refresh and distribute verified snapshots as described in step 7. Keep previous templates on failure. Verify that the next development or CI clone uses the new release.
+5. **Complete the per-host refresh.** Each host refreshes its task image and seed after a release (step 7). A failed refresh keeps the previous seed. Verify that the next development or CI reset uses the new release.
 6. **Complete scoped fleet convergence.** Apply the release scope from step 8. Compare Doctor with the pre-release baseline. Record evidence and update the skills before the next full command pass.
 
-These stages can ship in focused PRs, but `firewall:allow` is complete only after all of them work. Manual CI runs, a manual template update or a Doctor check on just one Node do not replace the automatic stages or fleet verification. Renovate and the nightly fresh build follow after this first complete path works.
+These stages can ship in focused PRs, but `firewall:allow` is complete only after all of them work. Manual CI runs, a manual seed refresh or a Doctor check on just one Node do not replace the automatic stages or fleet verification. Renovate and the nightly fresh build follow after this first complete path works.
 
 ## What is built today
 
-This table separates the parts already built from the work still planned.
+The [command pipeline](/reference/command-pipeline) shows the status of the stages from preparation to the per-host refresh. This table covers the rest of the flow.
 
 | Step | State |
 | --- | --- |
-| 1. Charts and flow-tighten rules | Built |
 | 2. Ansible phases | First command (`node:role:add`) in progress |
-| 2. Dev VM from templates | Not built: dev VMs use today's task VM image |
-| 3. Auto-merge by the author | Built |
-| 4. Fast CI and merge queue | Built (about 1 minute) |
-| 4. VM job in CI | Designed (`proof:run` and the job above), not built |
-| 6. Release as a Swamp workflow | Built: manual and automatic releases use one Swamp run; the old release runner is removed |
-| 7. Templates | Designed (ADR 0247), not built |
 | 8. Rollout of the Orbit footprint | Built (`fleet.rollout`) |
 | 8. Rollout of changed roles | Not built |
 | 9. Doctor findings with a fix per finding | Doctor built; fix per finding not built |
@@ -304,4 +295,4 @@ These choices remain open.
 - The first content of `swamp/proof/selection.txt`: which Gateway and CLI files map to which command.
 - How Pi's PRs merge: check App-token auto-merge through the queue after task-VM development restarts.
 - Speed of nested VMs inside a task VM, for the nightly build.
-- The agent becomes an observer only after templates replace the image build and the remaining Gateway calls to agent commands are gone.
+- The agent becomes an observer only after the task image build stops using the agent and the remaining Gateway calls to agent commands are gone.
