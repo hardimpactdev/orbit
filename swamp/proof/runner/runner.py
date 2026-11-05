@@ -38,8 +38,9 @@ class Run:
         return result
 
     def sleep(self, seconds):
+        """Wait on the target Node, so that the wait is one fleet call and not a loop of the runner."""
         if seconds > 0:
-            time.sleep(seconds)
+            self.fleet.sh(self.spec.target, f'sleep {int(seconds) + 1}', timeout=int(seconds) + 30)
 
     def evidence_text(self, name, text):
         (self.evidence / name).write_text(text)

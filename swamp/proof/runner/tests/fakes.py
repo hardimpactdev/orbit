@@ -30,6 +30,8 @@ class FakeFleet:
             return completed(out=self.render(node))
         if command.startswith('ufw insert') or command.startswith('ufw '):
             return self.ufw_command(node, command)
+        if command.startswith('sleep '):
+            return completed()
         if command == 'ss -Htln':
             return completed(out=''.join(f'LISTEN 0 16 0.0.0.0:{port} 0.0.0.0:*\n' for port in sorted(self.listeners[node])))
         if command.startswith('cat > /tmp/proof-listen.py'):

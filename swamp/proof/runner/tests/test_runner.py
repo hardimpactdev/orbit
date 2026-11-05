@@ -103,6 +103,13 @@ class RunnerTest(unittest.TestCase):
         result, _ = self.execute('conflict', negative=True)
         self.assertEqual(result['cause'], 'infrastructure')
 
+    def test_the_doctor_wait_is_one_sleep_on_the_target_node(self):
+        patch.stopall()
+        self.spec.case(CASE).stages[0].expect[-1].args['drift'] = 0
+        with patch.object(runner.time, 'time', return_value=1000.0):
+            runner.Run(self.fleet, self.spec, self.directory.name).sleep(64.2)
+        self.assertEqual(self.fleet.commands[-1], ('app-dev', 'sleep 65'))
+
     def test_the_receipt_and_the_command_output_go_to_the_evidence_directory(self):
         self.execute()
         files = {path.name for path in Path(self.directory.name).iterdir()}

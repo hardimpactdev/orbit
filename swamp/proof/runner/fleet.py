@@ -81,15 +81,10 @@ def discover(prefix=None, guests=None, node_ids=None):
     return Fleet(nodes)
 
 
-def listed_node_ids(tries=10, pause=3):
-    """The Gateway needs a few seconds after a restore of the base snapshot, so the first calls may fail."""
-    for attempt in range(tries):
-        listed = Fleet({}).cli(['node:list'])
-        if not listed['rc'] and listed['json']:
-            break
-        if attempt + 1 == tries:
-            raise FleetError('node:list failed: ' + str(listed['rc']))
-        time.sleep(pause)
+def listed_node_ids():
+    listed = Fleet({}).cli(['node:list'])
+    if listed['rc'] or not listed['json']:
+        raise FleetError('node:list failed: ' + str(listed['rc']))
     return {node['name']: node['id'] for node in listed['json']['nodes']}
 
 

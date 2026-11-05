@@ -291,7 +291,7 @@ The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`
 | `busy_node` | New. Needs a spike to hold the lock without a long write. |
 | `ipv6_addresses` | New. The nested fleet has no IPv6 today. Needs a spike. |
 | A step that is new fails the case with cause `infrastructure` and the message `... is not built` | Built. |
-| Restore of `base` per batch and after a case that did not pass | New. Measured on tvm-554 with stock Incus: about 15 seconds until healthy. The Gateway of the restored fleet needs a few more seconds; the runner retries `node:list` for up to 30 seconds. |
+| Restore of `base` per batch and after a case that did not pass | New. Measured on tvm-554 with stock Incus: about 15 seconds until healthy. The Gateway of the restored fleet answers `node:list` about 15 seconds later, so the restore step must wait for that; the runner does not retry. |
 | `bin/check-cases` and the `check-flows` marker rule | New. |
 | Workflows `proof-fleet-verify` and the per-batch and per-case children | New. `proof-command-verification` and the reset workflows exist. |
 
