@@ -1,4 +1,4 @@
-id: 122c0997-a079-4b4f-acab-3fcd049f896f
+id: fe3065e0-fba6-4bf4-9a2e-2db2ca06b2db
 name: operation-task-vm-ready-copies
 description: >-
   Save the ready copies of the nested fleet that runs in a task VM (stage 6, "Save the new images") and boot-check them. The copies are self-contained, with their own state, no checkout, no operator key and no Club key. Each step is one incus command over official SSH, once per nested VM.
@@ -176,12 +176,12 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-search-for-the-club-key" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-search-for-the-club-key" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'sh', '-c', 'grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 910}}
     dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
-  # The copy holds no checkout: no file under /home/orbit/orbit. The directories a booted guest makes (mount points, empty log directories) are no checkout.
+  # The copy holds no checkout: no file under /home/orbit/orbit but the log a booted guest writes there. The directories it makes (mount points, log directories) are no checkout.
   - name: 'Look for a checkout'
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-a-checkout" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-a-checkout" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'find', '/home/orbit/orbit', '-type', 'f'], timeoutSec: 40}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'find', '/home/orbit/orbit', '-type', 'f', '-not', '-path', '*/storage/logs/*'], timeoutSec: 40}}
     dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
   # The state stays on the guest's own disk; the mount step puts it over the shared checkout.
   - name: 'Look for the state'
