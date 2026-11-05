@@ -195,7 +195,7 @@ printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
-        for name in ('docs-nav', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
+        for name in ('docs-openapi', 'mcp-tools', 'api-fixtures'):
             check = self.root / 'bin' / name
             check.write_text('#!/bin/sh\nexit 0\n')
             check.chmod(0o755)
@@ -262,8 +262,7 @@ fi
         self.assertEqual('builder', report['role'])
         self.assertEqual(git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
         self.assertEqual(self.commit, report['base'])
-        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit]),
-                    ('repository', ['bin/docs-nav'])]
+        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit])]
         for project in PROJECTS:
             expected.extend((project, command) for command in [['composer', 'check']])
         expected.extend(('repository', [f'bin/{name}', '--check']) for name in ('docs-openapi', 'mcp-tools'))

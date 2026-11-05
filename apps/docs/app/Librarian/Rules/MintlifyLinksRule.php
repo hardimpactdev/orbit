@@ -12,12 +12,21 @@ use HardImpact\Librarian\Linting\GroupedRule;
 use JsonException;
 
 /**
- * Checks Markdown links, MDX component links, Mintlify navigation paths, and redirect destinations.
- * Mintlify's build validator owns MDX syntax and the complete docs.json schema.
+ * Checks Markdown links, MDX component links, Mintlify navigation paths, redirect destinations, and that every page
+ * is in the navigation. Mintlify's build validator owns MDX syntax and the complete docs.json schema.
  */
 final readonly class MintlifyLinksRule implements GroupedRule
 {
     public const string RULE = 'orbit.mintlify_links';
+
+    /** Pages that stay out of the site navigation on purpose, keyed by their path under docs/ without the extension. */
+    public const array OUTSIDE_NAVIGATION = [
+        'README' => 'Map of the docs folder for contributors, read on GitHub.',
+        'cli/README' => 'Format rules for the flow charts, read on GitHub; command pages show the charts.',
+        'decisions/README' => 'Folder index read on GitHub; the site lists the decisions overview instead.',
+        'domains/README' => 'Folder index read on GitHub; the site lists each domain page directly.',
+        'solutions/README' => 'Folder index read on GitHub; the site lists each solution page directly.',
+    ];
 
     public function __construct(private DocumentationRepository $repository) {}
 
@@ -30,8 +39,9 @@ final readonly class MintlifyLinksRule implements GroupedRule
     {
         $findings = [];
         $mintlify = is_file($this->repository->docsPath.'/docs.json');
+        $documents = $this->repository->markdownDocuments();
 
-        foreach ($this->repository->markdownDocuments() as $path => $contents) {
+        foreach ($documents as $path => $contents) {
             foreach (MarkdownProse::lines($contents) as $lineNumber => $line) {
                 $line = preg_replace('/`[^`]*`/', '', $line) ?? $line;
                 preg_match_all('/\[[^\]]*\]\((<[^>]+>|(?:[^\s()]|\((?1)\))+)(?:\s+"[^"]*")?\)|\bhref=["\']([^"\']+)["\']/', $line, $matches, PREG_SET_ORDER);
@@ -53,11 +63,14 @@ final readonly class MintlifyLinksRule implements GroupedRule
             }
         }
 
-        return [...$findings, ...$this->navigationFindings()];
+        return [...$findings, ...$this->navigationFindings(array_keys($documents))];
     }
 
-    /** @return list<Finding> */
-    private function navigationFindings(): array
+    /**
+     * @param  list<string>  $documents
+     * @return list<Finding>
+     */
+    private function navigationFindings(array $documents): array
     {
         $configPath = $this->repository->docsPath.'/docs.json';
         if (! is_file($configPath)) {
@@ -74,7 +87,62 @@ final readonly class MintlifyLinksRule implements GroupedRule
             return [new Finding('docs/docs.json', null, FindingSeverity::Error, self::RULE, 'Mintlify configuration must define navigation.')];
         }
 
-        return [...$this->navigationPages($config['navigation']), ...$this->redirectFindings($config['redirects'] ?? [])];
+        return [
+            ...$this->navigationPages($config['navigation']),
+            ...$this->unlistedPages($config['navigation'], $documents),
+            ...$this->redirectFindings($config['redirects'] ?? []),
+        ];
+    }
+
+    /**
+     * A page that is only on disk is hard to find, and nothing else notices it.
+     *
+     * @param  array<array-key, mixed>  $navigation
+     * @param  list<string>  $documents
+     * @return list<Finding>
+     */
+    private function unlistedPages(array $navigation, array $documents): array
+    {
+        $listed = array_fill_keys($this->listedPages($navigation), true);
+        $findings = [];
+        foreach ($documents as $path) {
+            $page = preg_replace('/\.mdx?$/i', '', substr($path, strlen('docs/'))) ?? '';
+            if (! isset($listed[$page]) && ! isset(self::OUTSIDE_NAVIGATION[$page])) {
+                $findings[] = new Finding($path, null, FindingSeverity::Error, self::RULE,
+                    'Page is not in the docs.json navigation. Add it through a docs/navigation fragment, or to MintlifyLinksRule::OUTSIDE_NAVIGATION with the reason.');
+            }
+        }
+        foreach (array_keys(self::OUTSIDE_NAVIGATION) as $page) {
+            if (isset($listed[$page])) {
+                $findings[] = new Finding('docs/docs.json', null, FindingSeverity::Error, self::RULE,
+                    "Page [{$page}] is in the navigation, so remove it from MintlifyLinksRule::OUTSIDE_NAVIGATION.");
+            }
+        }
+
+        return $findings;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $navigation
+     * @return list<string>
+     */
+    private function listedPages(array $navigation): array
+    {
+        $pages = [];
+        foreach ($navigation as $key => $value) {
+            if ($key === 'pages' && is_array($value)) {
+                foreach ($value as $page) {
+                    if (is_string($page)) {
+                        $pages[] = ltrim($page, '/');
+                    }
+                }
+            }
+            if (is_array($value)) {
+                array_push($pages, ...$this->listedPages($value));
+            }
+        }
+
+        return $pages;
     }
 
     /**

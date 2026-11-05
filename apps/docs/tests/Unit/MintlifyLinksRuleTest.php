@@ -18,7 +18,7 @@ afterEach(function (): void {
 });
 
 it('accepts Mintlify navigation and local Markdown and MDX links', function (): void {
-    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["index",{"group":"Reference","pages":["reference/apps"]}]}]}}');
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["index",{"group":"Reference","pages":["reference/apps","reference/link(test)","reference/links"]}]}]}}');
     file_put_contents($this->root.'/index.mdx', <<<'MDX'
         ---
         title: "Orbit"
@@ -48,7 +48,7 @@ it('accepts Mintlify navigation and local Markdown and MDX links', function (): 
 });
 
 it('rejects missing navigation pages and card or Markdown destinations', function (): void {
-    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["missing-page"]}]}}');
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["index","reference/apps","missing-page"]}]}}');
     file_put_contents($this->root.'/index.mdx', "<Card href=\"/missing-card\" />\n[Missing](reference/missing.md)\n");
 
     $findings = $this->rule->check();
@@ -71,7 +71,7 @@ it('checks local links without requiring a Mintlify configuration in fixtures', 
 });
 
 it('rejects repository page URLs that would break Mintlify navigation', function (string $target): void {
-    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["reference/apps"]}]}}');
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["index","reference/apps"]}]}}');
     file_put_contents($this->root.'/index.mdx', "[Apps]({$target})");
 
     $findings = $this->rule->check();
@@ -109,7 +109,7 @@ it('rejects operation navigation when its specification is missing or malformed'
     if ($contents !== null) {
         file_put_contents($this->root.'/openapi.json', $contents);
     }
-    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"openapi":"/openapi.json","pages":["GET /api/v1/nodes"]}]}}');
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"openapi":"/openapi.json","pages":["GET /api/v1/nodes","reference/apps"]}]}}');
 
     expect($this->rule->check())->toHaveCount(1);
 })->with([
@@ -146,4 +146,23 @@ it('rejects a redirect to a missing page or heading', function (): void {
         'Redirect destination [/reference/apps#no-such-heading] names no heading on its page.',
         'Redirect destination [/reference/apps#inside-a-fence] names no heading on its page.',
     ]);
+});
+
+it('rejects a page that is not in the navigation unless it stays outside on purpose', function (): void {
+    file_put_contents($this->root.'/README.md', '# Docs folder');
+    file_put_contents($this->root.'/reference/lost.mdx', '# Lost');
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["reference/apps"]}]}}');
+
+    $findings = $this->rule->check();
+
+    expect(array_column($findings, 'path'))->toBe(['docs/reference/lost.mdx'])
+        ->and($findings[0]->message)->toContain('not in the docs.json navigation');
+});
+
+it('rejects a page that is both in the navigation and allowed outside it', function (): void {
+    file_put_contents($this->root.'/README.md', '# Docs folder');
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["README","reference/apps"]}]}}');
+
+    expect(array_column($this->rule->check(), 'message'))
+        ->toBe(['Page [README] is in the navigation, so remove it from MintlifyLinksRule::OUTSIDE_NAVIGATION.']);
 });
