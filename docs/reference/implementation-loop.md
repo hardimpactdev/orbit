@@ -173,6 +173,8 @@ The managed setup preloads every pinned action from the repository’s workflows
 
 Run `tools/ci-runners/setup.sh actions NAME` after action pins change, then restart that container’s runner service once it is idle. The command is idempotent, preserves other runner environment settings, and does not restart or register a runner. `container NAME` also preloads the cache. The cache is readable by the runner and owned by root; each archive uses its pinned commit as the key.
 
+Every shard runner also runs `tools/ci-runners/job-started-hook.sh` before each job, through the runner's standard `ACTIONS_RUNNER_HOOK_JOB_STARTED` setting. The hook resets each reused checkout under the work directory with `git reset --hard` and `git clean -ffdx`, and empties a checkout that git cannot reset. A job that leaves tracked files modified therefore cannot fail the next `actions/checkout`. `container NAME` installs the hook; `tools/ci-runners/setup.sh hook NAME` installs it on a running runner without a restart. Restart the runner service once it is idle to load it.
+
 ### Agent delivery
 
 CI has no agent build, selection, combine or upload jobs. The command guard downloads the pinned binary only to verify its read-only command inventory; it publishes nothing. Gateway preparation verifies the pinned published manifest and writes that same pin into each prepared release. Desired fleet state reads that pin. No Gateway commit waits for its own agent or CLI release.
