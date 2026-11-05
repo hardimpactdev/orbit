@@ -184,7 +184,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: proof-run-report
+      behaviorName: '${{ "proof-run-report-" + string(self._index) }}'
       methodName: execute
       inputs:
         run: |
