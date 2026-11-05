@@ -140,6 +140,28 @@ Deno.test("an open PR is updated, otherwise one is opened, with caller prose unc
     );
     assertEquals(JSON.parse(update.body), input.pull_request);
 });
+Deno.test("a draft PR is opened as a draft and an open PR keeps its draft state", () => {
+    const input = PublishInput.parse({
+        ...publishInput(),
+        pull_request: { title: "Spec", body: "Chart, page and cases", draft: true },
+    });
+    const create = pullPlan({ input, steps: steps() });
+    assertEquals(JSON.parse(create.body), {
+        title: "Spec",
+        body: "Chart, page and cases",
+        draft: true,
+        head: "task-1",
+        base: "main",
+    });
+    const update = pullPlan({
+        input,
+        steps: { ...steps(), read_pull: out(0, JSON.stringify([open()])) },
+    });
+    assertEquals(JSON.parse(update.body), {
+        title: "Spec",
+        body: "Chart, page and cases",
+    });
+});
 Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
     const input = publishInput();
     const plan = (stdout: string, code = 0) =>

@@ -519,7 +519,20 @@ describe('tasks:publish', function (): void {
         [['group' => '17', '--check' => 'bad'], 'tasks.check_invalid'],
         [['group' => '17', '--check' => '31', '--title' => 'Title'], 'tasks.pull_request_invalid'],
         [['group' => '17', '--check' => '31', '--body' => 'Body'], 'tasks.pull_request_invalid'],
+        [['group' => '17', '--check' => '31', '--draft' => true], 'tasks.pull_request_invalid'],
     ]);
+
+    it('opens the pull request as a draft with --draft', function (): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];
+        $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => 12, 'pull_request_url' => 'https://github.com/acme/shop/pull/12'];
+        $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result])], $seen, PublishTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('tasks:publish', ['group' => '17', '--check' => '31', '--title' => 'Spec', '--body' => 'Chart, page and cases', '--draft' => true, '--json' => true, '--no-interaction' => true]))->toBe(0);
+
+        $pending = $mock->findResponseByRequest(PublishTaskGroupRequest::class)->getPendingRequest();
+        expect($pending->body()->all())->toBe(['check' => 31, 'pull_request' => ['title' => 'Spec', 'body' => 'Chart, page and cases', 'draft' => true]]);
+    });
 });
 
 describe('tasks:park', function (): void {

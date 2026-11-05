@@ -73,6 +73,8 @@ inputs:
               body:
                 type: string
                 maxLength: 65536
+              draft:
+                type: boolean
             required:
             - title
             - body
