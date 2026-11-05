@@ -8,8 +8,7 @@ Read each rule that covers the files in scope.
 The repository guidance is invalid when this index is missing or unreadable,
 an indexed rule is missing or empty, or a material path is not covered. Stop
 package work. Restore the committed guidance with
-`git restore --source=HEAD -- AGENTS.md .ai/rules composer.json`, then run
-`composer guidance:check`. Do not report a missing `.ai/rules/` tree as a
+`git restore --source=HEAD -- AGENTS.md .ai/rules composer.json`. Do not report a missing `.ai/rules/` tree as a
 non-blocking observation.
 
 This directory is a repository-owned instruction source. The SDK stays
@@ -40,4 +39,4 @@ repositories.
 | `src/Testing/**/*.php` | PHP and Spatie; Saloon transport; Redaction and security; Testing and quality |
 | `tests/**/*.php` | PHP and Spatie; Saloon transport; Redaction and security; Public contract; Testing and quality |
 | `README.md`, `AGENTS.md`, `.agents/**/*.md`, `.ai/rules/**/*.md` | Public contract; Testing and quality |
-| `composer.json`, `composer.lock`, `phpunit.guidance.xml`, `phpunit.xml.dist`, `pint.json`, `phpstan.neon`, `rector.php`, `.gitignore` | PHP and Spatie; Testing and quality |
+| `composer.json`, `composer.lock`, `phpunit.xml.dist`, `pint.json`, `phpstan.neon`, `rector.php`, `.gitignore` | PHP and Spatie; Testing and quality |

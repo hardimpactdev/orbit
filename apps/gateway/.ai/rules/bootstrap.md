@@ -10,7 +10,6 @@ paths:
   - 'composer.lock'
   - 'pint.json'
   - 'phpstan.neon'
-  - 'phpunit.guidance.xml'
   - 'phpunit.xml'
   - '.ai/**'
   - '.agents/**'

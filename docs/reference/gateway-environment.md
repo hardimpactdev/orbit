@@ -3,7 +3,6 @@ title: "Gateway environment"
 description: "Where the Gateway reads its own .env settings, how to apply a change, and what each key in the example file does."
 covers:
   - apps/gateway/.env.example
-  - bin/env-docs
   - apps/gateway/app/Actions/Tasks/*SwampReaderCredentialAction.php
   - apps/gateway/app/Console/Commands/*SwampReaderCredentialCommand.php
   - apps/gateway/app/Domain/Tasks/SwampReaderCredential.php
@@ -164,17 +163,5 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
 A Gateway release runs no smoke step. Remove the former `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT` and `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` variables from the shared env file with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read them.
-
-## Drift check
-
-`bin/env-docs` runs in CI. It fails when:
-
-- Gateway, CLI, or PHP SDK code reads an `ORBIT_` key that no docs page mentions.
-- `apps/gateway/.env.example` lists a key that this page does not mention.
-- `apps/gateway/.env.example` lists a key that neither Gateway code nor Laravel reads.
-
-Gateway code includes each extension under `apps/gateway/extensions`, such as the documents extension's `config/documents.php`.
-
-The check finds keys read through `env()`, including `env(key: ...)`, and through `getenv()`, `Env::get()`, `$_SERVER`, and `$_ENV`. ADRs do not count as documentation. Keys without the `ORBIT_` prefix belong to Laravel, PHP, or the operating system, and their own docs cover them.
 
 The shared task VM [package cache](/reference/compute-drivers#shared-package-cache) reads its byte budget from `config/package_cache.php` (`package_cache.max_bytes`, 20 GiB by default). Its host list comes only through `TaskVmSettings`; the package cache has no environment host list.

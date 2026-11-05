@@ -4,7 +4,6 @@ paths:
   - 'pint.json'
   - 'phpstan.neon'
   - 'boost.json'
-  - 'phpunit.guidance.xml'
 ---
 
 # Tooling rules

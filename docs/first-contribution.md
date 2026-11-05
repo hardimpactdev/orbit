@@ -4,7 +4,6 @@ sidebarTitle: "First contribution"
 description: "The steps a person follows to make a first change to Orbit, from a fresh clone to a merged pull request."
 covers:
   - .github/pull_request_template.md
-  - bin/project-vocabulary
 ---
 
 # Your first contribution
@@ -51,7 +50,7 @@ From the repository root, run:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. It also checks the project guidance and seeds the Pint and PHPStan caches. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
+`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
 
 Add `--skip-checks` to install without the checks. The default run includes the Gateway tests. On macOS, they need the extra tools that [Implement and verify](/contributor-guide#3-implement-and-verify) lists, so use `--skip-checks` until you install them. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
 
@@ -97,15 +96,10 @@ CI also runs checks from the repository root that no project check covers. They 
 
 | When you change | Run from the root |
 | --- | --- |
-| An environment variable | `php bin/env-docs` |
-| A Composer project's scripts, Pint, Rector, PHPStan, or PHPUnit setup | `php bin/tooling-baseline` |
 | A Gateway API route or its data | `bin/docs-openapi --check`, then `bin/mcp-tools --check` |
 | A new or moved docs page | `php bin/docs-nav` |
-| Any text, for old names that `bin/project-vocabulary` lists | `php bin/project-vocabulary` |
 
 The MCP tool manifest is generated from the API reference, so an API change can make both commands report drift. When either does, run `bin/docs-openapi` and then `bin/mcp-tools` without `--check`, and commit their output. The other checks name what to fix.
-
-The vocabulary checker permits GitHub and [Reverb app](/reference/websocket-apps) identifiers. They belong to those integrations. Orbit uses Project and Instance identifiers for its own records.
 
 ## 6. Open a pull request
 

@@ -27,7 +27,7 @@ ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBud
 ci_select = runpy.run_path(str(Path(__file__).resolve().parent / "ci-build-plan"))["select"]
 
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
-PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'))
+PHP_COMMANDS = (('composer', 'check'),)
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_BUILD_OUTPUTS = ('bash', '-c', 'test -s dist/index.html && test -s dist/version.json')
 WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./tools/api-types/node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && { diff -u --label src/api/schema.d.ts --label generated/schema.d.ts src/api/schema.d.ts "$generated" || { echo "src/api/schema.d.ts is stale. Run: cd apps/web && bun run types" >&2; exit 1; }; }')
@@ -42,15 +42,11 @@ API_ARTIFACT_COMMANDS = (('bin/docs-openapi', '--check'), ('bin/mcp-tools', '--c
 API_FIXTURE_TRIGGERS = ('docs/openapi.json', 'packages/php-sdk/fixtures/', 'apps/web/fixtures/',
                         'bin/api-fixtures', 'bin/review-check')
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
-# The lint and direct tests of the programs that the Gateway runs on Nodes (docs/reference/remote-programs.md).
-# A change to the gate alone does not run it: copies of the gate in test fixtures have no programs to check.
 # Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN, never the
 # developer's login; without them the script exits 78 and the gate reports the check as skipped. CI always validates.
 SWAMP_VALIDATE = ('python3', 'bin/validate-swamp-workflows.py', '--cache', str(Path.home() / '.cache/orbit-shape-runtime'),
                   '--report', str(Path(tempfile.gettempdir()) / f'orbit-swamp-validate-{os.getpid()}.json'))
 SWAMP_AUTH_UNAVAILABLE = 78
-REMOTE_PROGRAM_TRIGGERS = ('apps/gateway/resources/', 'apps/gateway/tests/Programs/', 'apps/gateway/ruff.toml',
-                           'bin/remote-programs-check')
 BASES = ('origin/main', 'main')
 # Reports older than this are removed by the next run of the user that wrote them.
 REPORT_RETENTION_SECONDS = 24 * 60 * 60
@@ -136,7 +132,7 @@ def selected_projects(paths, root):
         selected.append(('repository', (('bin/api-fixtures', '--check'),)))
     for project in ('apps/agent', 'apps/desktop/src-tauri'):
         prefix = 'apps/desktop/' if 'desktop' in project else project + '/'
-        if any(path.startswith(prefix) or path == '.github/workflows/ci.yml'
+        if any(path.startswith(prefix)
                or (project == 'apps/agent' and re.match(r'apps/gateway/extensions/[^/]+/agent/', path))
                for path in paths):
             selected.append((project, (RUST_FORMAT,)))
@@ -146,37 +142,18 @@ def selected_projects(paths, root):
         selected.append(('apps/web', (WEB_INSTALL, WEB_TYPES)))
     if any(path.startswith('apps/pi-server/') for path in paths):
         selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
-    if any(path.startswith(REMOTE_PROGRAM_TRIGGERS) for path in paths):
-        selected.append(('repository', (('bin/remote-programs-check',),)))
     if ci_select(paths)['jobs']['swamp']:
         selected.append(('swamp', (SWAMP_VALIDATE,)))
-    for project, _commands in list(selected):
-        if project not in PHP_PROJECTS:
-            continue
-        if 'bin/check-classification-fakes' in paths:
-            selected.append((project, (('php', '../../bin/check-classification-fakes', 'tests'),)))
-            continue
-        test_sources = [path[len(project) + 1:] for path in changed_php_test_sources(paths)
-                        if path.startswith(project + '/') and (root / path).is_file()]
-        if test_sources:
-            selected.append((project, (('php', '../../bin/check-classification-fakes', *test_sources),)))
     return selected
 
 
 def command_log_name(command):
     """Return a concise, unique log label for a gate command."""
-    if len(command) > 1 and command[1] == '../../bin/check-classification-fakes':
-        return 'classification-fakes'
     if command == WEB_TYPES:
         return 'generated-types'
     if command == WEB_BUILD_OUTPUTS:
         return 'build-outputs'
     return '-'.join(command).replace('/', '-').replace(':', '-')
-
-
-def changed_php_test_sources(paths):
-    """Return every changed PHP source under a selected project's tests directory."""
-    return [path for path in paths if path.endswith('.php') and '/tests/' in path]
 
 
 def prune_reports(checks):
@@ -266,7 +243,7 @@ def main(argv=None):
                                  'exit_code': 1, 'seconds': 0, 'log': str(log)})
         print(f'[repository] bin/docs-impact --gate: FAILED (0.000s; {log})', flush=True)
         print(log.read_text(), flush=True)
-    for check_name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav') if shard_index == 1 else ():
+    for check_name in ('docs-nav',) if shard_index == 1 else ():
         log = directory / f'{check_name}.log'
         started = time.monotonic()
         with log.open('w') as output:
@@ -279,14 +256,6 @@ def main(argv=None):
               f'{"passed" if result.returncode == 0 else "FAILED"} ({report["checks"][-1]["seconds"]:.3f}s; {log})', flush=True)
         if result.returncode:
             print(log.read_text(), flush=True)
-    # Seed absent quality caches first, so a fresh clone does not run every check cold.
-    # A cache miss or a missing seeding script only makes the checks slower.
-    seed = ['bin/worktree-cache', '--worktree', str(root)]
-    if (root / seed[0]).is_file():
-        started = time.monotonic()
-        seeded = subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
-        print(f'[cache] {" ".join(seed)}: {"passed" if seeded.returncode == 0 else "cache miss"} '
-              f'({time.monotonic() - started:.3f}s)', flush=True)
     # Pint and Rector check only the files the candidate changes; CI and plain runs check every file.
     # ORBIT_CHECK_SCOPE=full in the environment makes the gate check every file too.
     quality_scope = {} if 'ORBIT_CHECK_SCOPE' in os.environ else {

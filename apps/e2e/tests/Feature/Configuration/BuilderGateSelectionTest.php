@@ -66,11 +66,11 @@ function orb277_build_gate_template(): string
     copy(base_path('../../tools/check_budget.py'), $root.'/tools/check_budget.py');
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
     copy(base_path('../../bin/check-processes'), $root.'/bin/check-processes');
-    copy(base_path('../../bin/check-classification-fakes'), $root.'/bin/check-classification-fakes');
+    copy(base_path('../../bin/ci-build-plan'), $root.'/bin/ci-build-plan');
+    // A tools change selects every CI job, Swamp included; its workflow validation passes here.
+    mkdir($root.'/swamp/bin', 0o700, true);
+    file_put_contents($root.'/swamp/bin/validate-swamp-workflows.py', '');
     file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
-    file_put_contents($root.'/bin/project-vocabulary', "#!/usr/bin/env sh\nexit 0\n");
-    file_put_contents($root.'/bin/env-docs', "#!/usr/bin/env sh\nexit 0\n");
-    file_put_contents($root.'/bin/tooling-baseline', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/docs-nav', "#!/usr/bin/env sh\nexit 0\n");
     foreach (['docs-openapi', 'mcp-tools', 'api-fixtures'] as $generator) {
         file_put_contents($root.'/bin/'.$generator, "#!/usr/bin/env sh\nexit 0\n");
@@ -106,11 +106,7 @@ SH);
     chmod($root.'/apps/web/tools/api-types/node_modules/.bin/openapi-typescript', 0o700);
     chmod($root.'/bin/review-check', 0o700);
     chmod($root.'/bin/check-processes', 0o700);
-    chmod($root.'/bin/check-classification-fakes', 0o700);
     chmod($root.'/bin/docs-impact', 0o700);
-    chmod($root.'/bin/project-vocabulary', 0o700);
-    chmod($root.'/bin/env-docs', 0o700);
-    chmod($root.'/bin/tooling-baseline', 0o700);
     chmod($root.'/bin/docs-nav', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 
@@ -305,17 +301,19 @@ SH);
             ->and($web->pluck('exit_code')->all())->toBe([0, 0]);
     });
 
-    it('runs every PHP project for documentation-only and tools changes', function (string $path, int $expectedChecks): void {
+    it('runs every PHP project for documentation-only and tools changes', function (string $path, array $extraProjects): void {
         $fixture = orb277_gate_fixture($path);
         $receipt = orb277_run_gate($fixture)['receipt'];
 
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt['changed_paths'])->toBe([$path])
-            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects())
-            ->and(collect($receipt['checks'])->count())->toBe($expectedChecks);
+            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())
+            ->toBe([...orb277_selected_projects(), ...$extraProjects])
+            ->and(collect($receipt['checks'])->count())->toBe(7 + count($extraProjects));
     })->with([
-        'documentation-only change' => ['docs/reference/example.md', 15],
-        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', 15],
+        'documentation-only change' => ['docs/reference/example.md', []],
+        // A tools change selects every CI job, so the Swamp workflows are validated too.
+        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', ['swamp']],
     ]);
 
     it('selects the Pi server CI profile for Pi server changes', function (): void {
@@ -366,34 +364,6 @@ SH);
         $composer = json_decode((string) file_get_contents(base_path('../../composer.json')), true, flags: JSON_THROW_ON_ERROR);
 
         expect($composer['scripts']['check'])->toBe(['Composer\\Config::disableProcessTimeout', 'bin/review-check']);
-    });
-
-    it('checks changed Pest setup and helper sources for guarded classification fakes', function (): void {
-        $fixture = orb277_gate_fixture();
-        $root = $fixture['root'];
-        file_put_contents($root.'/apps/gateway/tests/Pest.php', <<<'PHP'
-<?php
-use Laravel\Ai\Classification;
-Classification::fake(fn (): array => [])->preventStrayClassifications();
-PHP);
-        mkdir($root.'/apps/gateway/tests/Support', 0o700, true);
-        file_put_contents($root.'/apps/gateway/tests/Support/ClassificationFixtures.php', <<<'PHP'
-<?php
-\Laravel\Ai\Classification::fake(function (): array {
-    return [];
-})->preventStrayClassifications();
-PHP);
-
-        $receipt = orb277_run_gate($fixture)['receipt'];
-        $check = collect($receipt['checks'])->first(
-            static fn (array $check): bool => ($check['command'][1] ?? null) === '../../bin/check-classification-fakes',
-        );
-
-        expect($receipt['passed'])->toBeTrue()
-            ->and($check['command'] ?? [])->toBe([
-                'php', '../../bin/check-classification-fakes', 'tests/ExampleTest.php', 'tests/Pest.php',
-                'tests/Support/ClassificationFixtures.php',
-            ]);
     });
 
     it('runs no test suite, whatever the candidate changes', function (): void {

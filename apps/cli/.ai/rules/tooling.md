@@ -7,7 +7,6 @@ paths:
   - 'phpacker/**'
   - 'pint.json'
   - 'phpstan.neon'
-  - 'phpunit.guidance.xml'
   - 'phpunit.xml.dist'
   - 'rector.php'
 ---

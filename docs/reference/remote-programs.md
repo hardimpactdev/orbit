@@ -1,13 +1,10 @@
 ---
 title: "Remote programs"
-description: "The remaining Tasks workspace program runner and its checks."
+description: "The remaining Tasks workspace program runner and the programs still to port to Swamp."
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
   - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,gateway/task-workspace-owner.py}
-  - apps/gateway/ruff.toml
-  - apps/gateway/tests/Programs/**
-  - bin/remote-programs-check
 ---
 
 # Remote programs
@@ -36,21 +33,17 @@ The retained runtime needs Python 3.10 or newer. `resources/remote/bootstrap.py`
 
 The Gateway has an [architecture test](/reference/node-agent#commands) that permits this excluded Tasks path explicitly. It rejects new dependencies on the runner elsewhere.
 
-## Lint and direct tests
+## Still to port
 
-`bin/remote-programs-check` runs from the repository root. It checks the remaining programs under `apps/gateway/resources` and extension resources:
+The Gateway still sends these programs from `apps/gateway/resources` to Nodes, outside Swamp. Each moves to a Swamp flow:
 
-- shellcheck checks Bash files.
-- ruff 0.17.0 checks Python files and assembled programs with `apps/gateway/ruff.toml`.
-- PHP tests verify that findings name the original template or library line.
+- The Tasks workspace scripts `tasks/check`, `tasks/composer`, `tasks/metadata`, `tasks/workspace-operation.py`, and `tasks/unit-state.py`.
+- The workspace owner check `remote/gateway/task-workspace-owner.py`, with `remote/bootstrap.py` and `remote/lib/program.py`.
+- The CI cache import `tasks/ci-caches.sh`.
 
-Use `bin/remote-programs-check --resources PATH` to lint one resource tree. The default checks the Gateway and extension resources. Pest covers the retained Tasks monitors and program runtime; the checker needs no pytest runtime.
+`remote/route/publish-dns.py` and `remote/database/valkey.py` have no catalog entry and no caller. Delete them.
 
-PHP tests cover the retained bootstrap and result protocol. They start each excluded Tasks program in an isolated process through `PythonPrograms`. The PHP helper owns input, output, deadlines, and child cleanup; it runs no Python test host.
-
-Tasks monitors share `tasks/unit-state.py` through `TaskUnitProgram`, which replaces `# ORBIT_TASK_UNIT_STATE` before transport. The check lints the assembled source and maps each finding to its original template or library line. This preserves the workspace scripts while they await the separate Tasks migration.
-
-Each Project check shard installs the pinned linters before running the candidate gate. The shard selected for remote programs runs these checks. The [candidate gate](/reference/implementation-loop#the-candidate-gate) also runs them when a candidate changes Gateway resources, direct program tests, Ruff configuration, or the checker. A missing tool fails the check.
+PHP tests cover the retained bootstrap and result protocol. They start each excluded Tasks program in an isolated process through `PythonPrograms`. Tasks monitors share `tasks/unit-state.py` through `TaskUnitProgram`, which replaces `# ORBIT_TASK_UNIT_STATE` before transport.
 
 ## Why it works this way
 

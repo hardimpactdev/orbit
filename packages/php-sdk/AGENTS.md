@@ -8,8 +8,8 @@ Read [the repository rule index](.ai/rules/index.md) before you change or
 review package files. Treat a missing index, a missing indexed rule, or missing
 material-path coverage as a repository-bootstrap failure. Restore the committed
 guidance with
-`git restore --source=HEAD -- AGENTS.md .ai/rules composer.json`, then run
-`composer guidance:check`; do not silently skip it.
+`git restore --source=HEAD -- AGENTS.md .ai/rules composer.json`; do not
+silently skip it.
 
 The `.ai/rules/` tree contains repository instructions only. It does not imply
 Laravel or Boost support.

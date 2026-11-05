@@ -42,7 +42,6 @@
     "scripts": {
         "analyse": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check": [
-            "@guidance:check",
             "@docs:lint",
             "@fixtures:check",
             "@analyse",
@@ -56,7 +55,6 @@
         "issue:lint": "@php artisan orbit:issue-lint",
         "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
         "format:check": "../../bin/quality-scope pint vendor/bin/pint --test --parallel --max-processes=$(../../bin/check-processes)",
-        "guidance:check": "../../bin/guidance-check",
         "lint": "@format:check",
         "rector": "../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never",

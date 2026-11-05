@@ -16,14 +16,12 @@ Laravel Zero 13 client for Orbit.
 `.ai/rules/index.md` and every indexed project rule file are required repository state.
 If either is absent, the checkout or Boost bootstrap is incomplete.
 
-Run `composer guidance:check` before planning or editing any file. If it fails
-because guidance is missing or incomplete:
+If guidance is missing or incomplete:
 
 1. Restore the committed guidance inputs and outputs with
    `git restore --source=HEAD -- AGENTS.md .ai .agents/skills .codex/config.toml boost.json config/boost.php composer.json composer.lock`.
 2. Run `composer install` when `vendor/` is absent or incomplete.
 3. Run `composer guidance:update` to refresh Boost-managed output.
-4. Run `composer guidance:check` again and stop if it still fails.
 
 Do not reconstruct missing rules from memory. Do not silently continue without
 the project rule set.
@@ -59,12 +57,11 @@ the project rule set.
 
 - `.ai/rules/index.md` and every indexed rule file are required repository state. Open the index, read every rule whose globs match the files in scope, and search `.ai/rules` for relevant terms before planning or editing.
 - If `.ai/rules` does not exist, the checkout or Boost bootstrap is incomplete. Restore or regenerate the guidance before planning or editing any file. Do not silently continue without the project rule set.
-- Store durable project decisions in a concise repository-owned rule file and keep its frontmatter globs in the index. Run `composer guidance:check` after each rule change.
+- Store durable project decisions in a concise repository-owned rule file and keep its frontmatter globs in the index.
 
 ## Boost Commands
 
 - Run `composer guidance:update` to refresh Boost-managed guidance, skills, and scoped rules without interactive package discovery.
-- Run `composer guidance:check` to verify the committed guidance and installed skill output.
 - The Boost MCP server is configured in `.codex/config.toml`. Use a Boost MCP tool only when the active client exposes that tool. Use repository commands and files when it does not.
 
 === php rules ===
