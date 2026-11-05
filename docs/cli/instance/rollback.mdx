@@ -1,44 +1,68 @@
 ---
 title: "orbit instance:rollback"
 sidebarTitle: "instance:rollback"
-description: "Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback restarts active Instance Processes after PHP refresh, using the same opt-out as deployment. It reports restart failures and leaves the rollback release selected. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files."
+description: "Select one retained release of a production Instance through `current`."
 ---
 
 ```bash
-orbit instance:rollback <instance> --release=NAME [--idempotency-key=KEY] [--json]
+orbit instance:rollback <instance> --release=NAME [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Numeric Instance ID. |
+| `instance` | yes | Numeric Instance ID of a production Instance. |
 
-| Option | Meaning |
-| --- | --- |
-| `--release=NAME` | Retained release name from `instance:release:list`. |
-| `--idempotency-key=KEY` | Retry the same operation start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key) for its form and conflict rules. |
-
-The command starts an `instance.rollback` [operation](/reference/operations) and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does: over Reverb, or every `poll_after_seconds` without it. Human output shows a progress tree of the steps `Find retained release`, `Activate release`, `Refresh PHP cache` for an Instance that serves PHP, and `Restart Processes`. New output of the running step prints above the tree, labeled and escaped. The final lines add the failed step, the error code, the selected release when available, the operation ID, and the request ID. `--json` prints nothing while it follows, then the final operation document with every step.
-
-A rollback wins over a deploy of the same Instance that no worker has started: the deploy ends `cancelled` with `operation.superseded`, and the rollback starts. A deploy that a worker has started keeps the Instance, also while it waits to resume after a lost worker, and the rollback returns `operation.target_busy` with the deploy's operation ID. [One operation at a time](/reference/deployments#one-operation-at-a-time) gives the rules.
-
-Pressing Ctrl-C stops following, not the rollback. The CLI prints the command that shows the operation and exits nonzero. It sends no cancel request; [`operation:cancel`](/cli/operation/cancel) stops a rollback before its `activation` step. Once the release is selected, the rollback finishes PHP refresh and Process restarts.
-
-| Outcome | Exit status |
-| --- | --- |
-| The operation succeeded. | `0` |
-| The operation failed or was cancelled. | Nonzero. The command names the failed step and the selected release when the result includes one. |
-| The Gateway refused the request, such as `operation.target_busy` while a deploy runs, or `rollback.release_not_retained` for a release the Instance does not retain. | Nonzero, with the one-line error envelope. Nothing changes. |
-| You pressed Ctrl-C. | `130`. The operation keeps running. |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--release=NAME` | prompt | The retained release to select, from [`instance:release:list`](/cli/instance/release-list). The name is letters, digits, dots, hyphens and underscores, at most 128 characters, and starts with a letter or digit. |
+| `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
 ```bash
 orbit instance:release:list 15
 orbit instance:rollback 15 --release=20260914T101500Z
 ```
 
-<Warning>
-Orbit selects the older code only. You own any data or application recovery that the switch needs.
-</Warning>
+In a terminal, an omitted Instance is chosen from an interactive list, and an omitted release from the releases that `instance:release:list` shows for the Instance; an empty list fails and the command never invents a default. That list comes from the Node, while the Gateway checks the release against its recorded history, so a listed release can still be refused with `rollback.release_not_retained`. A noninteractive or `--json` call without the Instance is refused with `instance.id_invalid`, and one without the release, or with an empty `--release=`, with `deployment.release_required`; neither sends a request. A value that is not a positive integer is refused with `instance.id_invalid`, and a release name outside the allowed form with `validation.failed`. The command asks for no confirmation: it names its target release, and `rollback` is undone by a deploy or a rollback.
+
+A successful deployment keeps the previous selection and one other release, so these are the rollback targets. A rollback selects the release through `current`, reloads the PHP-FPM service for an Instance that serves PHP, which empties its OPcache and changes no pool or unit, and restarts the active Processes that opt in, with the same opt-out as a deploy. Rolling back to the release that is already selected, or forward to a newer retained one, is admitted. It does not fetch Git, synchronize environment values, run deploy steps, or change database files. Orbit selects the older code only: you own any data or application recovery that the switch needs.
+
+The Gateway checks the Instance and the release against the Instance's recorded deployment history before it records anything. A rollback pauses automatic deployment of the Instance as soon as it is admitted, also after a failure, and it blocks the commit it moved away from for automatic deploys. Automatic deployment stays paused until [`instance:auto-deploy:enable`](/cli/instance/auto-deploy-enable). See [Rollback](/reference/deployments#the-rollback-operation).
+
+The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Human output shows a progress tree of the steps `Activate release`, `Swap current`, `Refresh PHP cache` for an Instance that serves PHP, `Restart Processes`, `Read current back` and `Check the selection`. On failure the tree marks the failed step and shows its error code, and the final lines add the failed step, the error code, the selected release when known, the task ID and the request ID. `--json` prints nothing while it follows, then the final task document with every step.
+
+A rollback wins over a deploy of the same Instance that no run has started: the deploy ends `cancelled` with `operation.superseded`, and the rollback starts. Today the rollback is refused with `operation.target_busy` instead. A deploy that a run has started keeps the Instance, also while it waits to resume after a lost run, and the rollback is refused with `operation.target_busy` and the deploy's task ID. [One operation at a time](/reference/deployments#one-operation-at-a-time) gives the rules.
+
+Pressing Ctrl-C stops following, not the rollback. In human output the CLI prints the command that shows the task and exits 130; with `--json` it prints no line and exits 130. It sends no cancel request. [`operation:cancel`](/cli/operation/cancel) stops a rollback before its `Swap current` step. Once the release is selected, the rollback finishes the PHP refresh and the Process restarts.
+
+| Outcome | Exit status |
+| --- | --- |
+| The task succeeded. | `0` |
+| The task failed or was cancelled. | Nonzero. The command names the failed step and the selected release when the result has one. |
+| The Gateway refused the request. | Nonzero, with the one-line error. Nothing changes. |
+| You pressed Ctrl-C. | `130`. The rollback keeps running. |
+
+A failure in `Activate release` or `Swap current` leaves the recorded selection in place, and the result's `selected_release` is null. A failure after the swap, in the PHP refresh, a Process restart or the read-back, leaves the rolled-back release selected and names the failed step; a failure in `Read current back` or `Check the selection` means `current` may not name it, so check it. A run that outlasts its deadline reports `selected_release` null even when the swap already ran, so check `current` then too. A failure outside these steps, such as a lost SSH connection, ends with `operation.native_failed`. Orbit undoes no step. After you fix the cause, run the same command again.
 
 ## How it works
 
 <div className="flow-at" data-chart="instance/rollback"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
+| `deployment.release_required` | The release is missing and the CLI cannot prompt. |
+| `input.cancelled` | You cancelled a list. |
+| `deployment_config.unavailable` | The Instance is not a production Instance. |
+| `rollback.release_not_retained` | The Instance's deployment history does not retain the release. Nothing changes. |
+| `operation.target_busy` | A deploy that a run has started, or another operation, holds the Instance. |
+| `operation.native_failed` | A failure outside the mapped steps, such as a lost SSH connection. |
+| `validation.failed` | The release name is outside the allowed form. |
+| `rollback.release_invalid` | Linking the release failed, for example because it was removed. |
+| `deployment.selection_invalid` | Swapping `current` or reading it back failed. |
+| `deployment.php_runtime_unconfirmed` | The PHP runtime did not confirm the release. |
+| `process.restart_failed` | Reloading or restarting a Process failed. |
+| `deployment.cancelled`, `operation.timed_out` | The rollback was cancelled, or outlasted its 900-second deadline. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
