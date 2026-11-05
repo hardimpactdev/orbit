@@ -1,9 +1,46 @@
 ---
 title: "orbit instance:setup-step:update"
 sidebarTitle: "instance:setup-step:update"
-description: "Change the command, timeout, or position of one setup step. `--rebalance=NAME=SECONDS` sets other steps' timeouts in the same write, as for create."
+description: "Change the command, timeout, or position of one setup step."
 ---
 
 ```bash
-orbit instance:setup-step:update <name> --project=<id> [--command=<command>] [--timeout=<seconds>] [--before=<name>|--after=<name>] [--rebalance=<name>=<seconds>]... [--json]
+orbit instance:setup-step:update <name> --project=ID [--command=COMMAND] [--timeout=SECONDS] [--before=NAME | --after=NAME] [--rebalance=NAME=SECONDS]... [--json]
 ```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Name of the step to change. A terminal asks for it when it is omitted. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | prompt | Numeric Project ID. |
+| `--command=COMMAND` | unchanged | Replacement shell command, with the limits of [`instance:setup-step:create`](/cli/instance/setup-step-create). |
+| `--timeout=SECONDS` | unchanged | Timeout from 1 through 540 seconds. |
+| `--before=NAME` | unchanged | Move the step before this step. Exclusive with `--after`. |
+| `--after=NAME` | unchanged | Move the step after this step. Exclusive with `--before`. |
+| `--rebalance=NAME=SECONDS` | none | Set another step's timeout in the same write. Repeat for each step. Use it to [make room in a full list](/reference/instance-setup#make-room-in-a-full-list). |
+| `--json` | off | Print the step as JSON. |
+
+```bash
+orbit instance:setup-step:update build-assets --project=4 --timeout=540 --rebalance=install-js=360
+```
+
+In a terminal, an omitted Project is chosen from an interactive list, and an omitted name from the Project's setup steps. A noninteractive or `--json` call without the Project or the name is refused with `project.id_invalid` or `lifecycle_step.name_required`, and sends no request. An empty `--command=`, `--before=` or `--after=` is read as omitted, so alone it counts as no change option; an empty `--timeout=` or `--rebalance=` is refused with `lifecycle_step.timeout_invalid` or `lifecycle_step.rebalance_invalid`. A `--timeout` or `--rebalance` value that is not an integer is refused with `lifecycle_step.timeout_invalid` or `lifecycle_step.rebalance_invalid` before any request.
+
+The command changes the Project's list and writes no file into a checkout. At least one of `--command`, `--timeout`, `--before`, `--after` or `--rebalance` is required; a call with none is refused with `validation.failed`. A call with only `--rebalance` succeeds and returns the step unchanged. A step name that does not match the step-name pattern matches no route and gives `http.404`. The name of a step never changes: remove the step and create it again to rename it. The Gateway checks the whole change against the limits of the create command and stores nothing when one fails; a list stored before the 540-second cap accepts any change that does not raise its total. A refusal is `validation.failed` with the reason, which names the failed rule. The command changes the list only; it runs nothing. Updating a step to the values it has succeeds and changes nothing. [Instance setup and teardown](/reference/instance-setup) owns the limits, the order and the execution contract.
+
+The command prints a detail titled `Setup step: <name>` with the Project by name, Timeout and Command, and the request ID. With `--json`, stdout holds the step with `name`, `command`, `timeout_seconds` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `project.id_invalid` | The Project is missing in a call that cannot prompt, or is not a positive integer. |
+| `lifecycle_step.name_required` | The name is missing in a call that cannot prompt. |
+| `lifecycle_step.timeout_invalid`, `lifecycle_step.rebalance_invalid` | `--timeout` or a `--rebalance` value is not an integer, or is not `NAME=SECONDS`. |
+| `input.cancelled` | You cancelled a list or a prompt. |
+| `validation.failed` | No change option was given, a value is outside the limits, `--before` and `--after` were both given or name no step or the step itself, a rebalanced step is not another step of the list, or the timeouts would add up to more than 540 seconds. |
+| `setup_step.not_found` | The Project has no setup step of that name. |
+| `http.404` | The Project is unknown, or the name is not a valid step name. Fails today for the second case: it is `http.404` and not `setup_step.not_found`. |
+| `node_access.required` | The caller has no access grant to any Node that holds an Instance of the Project, or to the Gateway Node when it has none. |
