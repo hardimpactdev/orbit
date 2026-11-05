@@ -1,0 +1,73 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, one Swamp run, hub peers as one file per Node (orbit-peers.d), native steps because the work is under five steps (rule 22). docs/reference/node-provisioning.md#wireguard-hub.
+  %% status: reviewed
+  %% command: node:wireguard-key
+  %% kind: node.wireguard_key
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant H as WireGuard hub<br/>vpn Node
+  CLI->>GW: node:wireguard-key<br/>NODE PUBLIC-KEY
+  %%> Command:
+  %%> - `orbit node:wireguard-key NODE PUBLIC-KEY`
+  %%> - syntax: `<node> <public-key> [--json]`
+  %%> Input:
+  %%> - the Node and its WireGuard public key, as canonical base64 of 32 bytes
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, store the key
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the target Node
+  %%> - the target does not hold the `gateway` role (`node.wireguard_key_gateway`)
+  %%> - the target is unmanaged: it lacks a WireGuard address or a pinned SSH host fingerprint, or both; with both it is managed (`node.wireguard_key_managed`)
+  %%> - the target has a WireGuard address (`node.wireguard_ip_required`)
+  %%> - the key is valid and belongs to no other Node and not to the hub (`node.wireguard_key_conflict`); the check and the assignment are atomic across concurrent assignments
+  %%> - no other lifecycle change runs for the Node's name (`node.provisioning_busy`)
+  %%> - no other `node:wireguard-key`, `node:converge`, add or remove runs on the Node or holds the hub (`operation.target_busy`), so an older run cannot write an old key back
+  %%> Result:
+  %%> - the key is stored, the change is broadcast, and a task is recorded with the full intent; the target is never contacted
+  GW->>SW: Start run, full intent<br/>operation-node-wireguard-key
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> What you get:
+  %%> - the task ID, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>H: Write the peer file<br/>cfgmgmt file
+  %%> What it does:
+  %%> - writes this peer's file in the hub's peer folder with the new key; the other peers' files stay
+  SW->>H: Apply the peer<br/>SSH argv · wg set
+  %%> What it does:
+  %%> - removes the previous key from the live hub and adds the new one, so the old key is not left listed
+  %%> - sending the same key again repeats these steps, so a retry repairs a failed one
+  SW->>H: Check the hub<br/>native assert
+  %%> Why:
+  %%> - the one end check: the live hub lists the peer with the new key and its allowed address, and not the previous key
+  alt hub lists the peer
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result
+    %%> Result:
+    %%> - the task succeeds
+  else a step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Keep the stored key
+    %%> Result:
+    %%> - the stored key stays and the task fails with the failed step
+    %%> On the hub:
+    %%> - after a failed write the old file stays; after a failed apply the new file is on disk and the live hub still has the old key; there is no rollback
+    %%> Retry:
+    %%> - run the same command again after fixing the hub; a `node:converge` of the hub publishes the stored key too
+  end
+  opt run completed or failed
+    SW->>SW: Remove the run folder<br/>private run files
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end
