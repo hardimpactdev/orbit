@@ -57,7 +57,9 @@ CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT
 # agent manifest) and the attempt lease. A reset from ready copies carries these into the next generation's fresh export.
 CARRIED_STATE = ('.e2e', 'apps/agent/delivery', 'apps/gateway/.env', 'apps/gateway/bootstrap/cache', 'apps/gateway/storage')
 # What a sync leaves out of the guests' checkouts: the history, the dependencies, and what the guests wrote themselves.
-SYNC_EXCLUDES = ('/.git', '/.e2e', '/apps/agent/delivery', 'vendor', 'node_modules', '.env', '/apps/*/storage', '/apps/*/bootstrap/cache')
+# Python caches differ between the outer VM and a guest, so a sync without them would always move files and re-apply.
+SYNC_EXCLUDES = ('/.git', '/.e2e', '/apps/agent/delivery', 'vendor', 'node_modules', '.env', '/apps/*/storage', '/apps/*/bootstrap/cache',
+                 '__pycache__', '*.pyc')
 SYNC_EXCLUDE_ARGS = tuple(f'--exclude={pattern}' for pattern in SYNC_EXCLUDES)
 # The directories Caddy in the Gateway guest traverses to reach the public directory; the build gave them an ACL for it.
 ACL_DIRECTORIES = ('.', 'apps', 'apps/gateway', 'apps/gateway/public')
