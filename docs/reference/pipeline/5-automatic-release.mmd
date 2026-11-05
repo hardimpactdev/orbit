@@ -14,9 +14,9 @@ sequenceDiagram
   participant GN as Gateway Node<br/>code · services
   Note over GW,GH: Find newest green commit<br/>on main · CI
   %%> Built:
-  %%> - the Gateway looks on a timer while automatic releases are on, and reads CI through its GitHub App
+  %%> - the Gateway looks every five minutes while automatic releases are on, and reads CI through its GitHub App; the merges of those five minutes go out in one release of the newest green commit
   %%> What it accepts:
-  %%> - a run of `ci.yml` on `main` or the merge queue branch, with `Required checks` and `Gateway release inputs` green
+  %%> - a run of `ci.yml` on `main`, with `Required checks` and `Gateway release inputs` green; there is no merge queue, so a red main commit is never released and main is fixed forward
   %%> - a run from a fork, a PR or another workflow does not count
   Note over GW: Admit the release<br/>one at a time
   %%> Requirements:

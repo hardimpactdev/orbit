@@ -17,7 +17,7 @@ A command change has **one PR**. The chart, the docs page, the verification case
 
 1. The PR starts as a **draft**. Its first commit is the spec: chart, page and cases, from [preparing-commands](../preparing-commands/SKILL.md). In manual mode, Nick may review the spec in the draft before code is written; in automatic mode there is no checkpoint.
 2. You add the code and the runnable proof cases to the same branch, in later commits. Never open a second PR for them.
-3. Proof CI runs on every push. When everything is green, the PR leaves draft. Then the gate: Nick's approving review on the exact head in manual mode, or a separate final self-review in automatic mode. Swamp then adds the PR to the merge queue, which runs CI again and merges.
+3. Proof CI runs on every push. When everything is green, the PR leaves draft. Then the gate: Nick's approving review on the exact head in manual mode, or a separate final self-review in automatic mode. Swamp then merges the PR straight into `main` with a squash merge. There is no merge queue. CI runs on `main` after the merge; a red `main` is fixed forward.
 
 A command that was prepared earlier through a docs-only PR already has its chart, page and cases on main. Open the draft PR with a first commit that reviews and updates them.
 
@@ -49,7 +49,7 @@ Work through it in order. Each item ends with evidence in the PR.
    - Gateway Pest tests only for what this command's Gateway code needs: admission, refusals, intent rendering, projection. The old suite was deleted; for how things were set up, read git history at tag `pest-before-rewrite`. Keep them fast.
 6. **Proof.** Run the cases on the shared proof topology. Record fresh and no-drift times against the old workflow.
 7. **The whole release flow.** The command is not done until it has gone through all of it:
-   1. PR: the same draft PR that holds the spec. Push the code and proof cases to it; when everything is green it leaves draft (`gh pr ready <n> -R hardimpactdev/orbit`). After the gate, auto-merge as `nckrtl` (`gh pr merge <n> -R hardimpactdev/orbit --auto`). This is the interim, as it is today: the target is that Swamp opens the draft PR as the Orbit App, takes it out of draft, and adds it to the merge queue (`enqueuePullRequest`) with a GitHub App token that the Gateway mints, after Nick's approving review on the exact head (manual mode) or a separate final self-review (automatic mode) ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
+   1. PR: the same draft PR that holds the spec. Push the code and proof cases to it; when everything is green it leaves draft (`gh pr ready <n> -R hardimpactdev/orbit`). After the gate, run `gh pr merge <n> -R hardimpactdev/orbit --auto` as `nckrtl`; GitHub merges once Required checks pass. This is the interim, as it is today. The target: Swamp opens the draft PR as the Orbit App, takes it out of draft, and merges it with a squash merge using a GitHub App token that the Gateway mints, after Nick's approving review on the exact head (manual mode) or green CI plus a fresh self-review agent (automatic mode); there is no merge queue and no GitHub auto-merge ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
    2. CI: fast checks plus the proof CI for this command, selected by the changed files. It runs on every push.
    3. Merge through the queue, which runs CI again on the merge group.
    4. Release as a Swamp run.

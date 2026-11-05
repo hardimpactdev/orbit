@@ -60,7 +60,7 @@ The following is the target contract; the template-based CI runner is not implem
 4. Clean up owned clones after success or failure. Retain diagnostic artifacts, not running proof VMs.
 5. Report a required CI result for the exact tested commit. Any failed or unexecuted selected case fails the result. Exercise this gate with a known failing case before relying on it.
 
-Run the whole affected proof, including commands that transitively consume a changed shared workflow, extension or role. Changes only to documentation must not start the proof CI. Missing dependency coverage must be made explicit; it must not silently produce a green result with no tests. Apply the same selection and required check to the merge queue's combined commit.
+Run the whole affected proof, including commands that transitively consume a changed shared workflow, extension or role. Changes only to documentation must not start the proof CI. Missing dependency coverage must be made explicit; it must not silently produce a green result with no tests. The proof runs only on the PR head. A new push cancels the proof run of the previous push on that PR. It does not run again after the merge.
 
 ## Report
 

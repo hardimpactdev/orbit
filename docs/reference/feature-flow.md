@@ -75,21 +75,25 @@ Use the chart to cover the command's paths.
 
 ## 3. Pull request
 
-The author prepares the one PR of the command change for the merge queue. The PR already exists as a draft with the spec (step 1).
+The author prepares the one PR of the command change. The PR already exists as a draft with the spec (step 1).
 
 1. Swamp opens the draft PR as the Orbit App, with the spec as its first commit.
 2. Push the code and the runnable proof cases to the same branch. CI, with the proof CI for command code, runs on every push.
-3. When everything is green, the PR leaves draft.
-4. The gate passes: Nick's approving review on the exact head in manual mode, or a separate final self-review in automatic mode.
-5. Swamp adds the PR to the merge queue.
+3. When everything is green, the PR leaves draft. In manual mode, Swamp also requests Nick's review, so GitHub notifies him.
+4. The gate passes: Nick's approving review on the exact head in manual mode, or a separate final self-review in automatic mode. Automatic mode allows at most 3 self-review rounds. Then the PR switches to manual mode.
+5. Swamp merges the PR straight into `main` with a squash merge.
 
-The merge queue then runs CI on the merge group and merges. The Orbit App, through a Swamp step, decides whether a PR may merge. Swamp uses an App token that the Gateway mints and calls GitHub's `enqueuePullRequest` GraphQL mutation. The Gateway only admits the request and mints the token. GitHub auto-merge is not used.
+The Orbit App, through a Swamp step, decides whether a PR may merge. Swamp uses an App token that the Gateway mints. The Gateway only admits the request and mints the token. There is no merge queue and no GitHub auto-merge.
 
-Not built yet: PRs opened by the App, and Swamp adding PRs to the merge queue. The repository's auto-merge setting is switched off once Swamp enqueues PRs. Until then (the interim), the author opens the draft PR as `nckrtl`, takes it out of draft and runs `gh pr merge <n> -R hardimpactdev/orbit --auto`.
+CI runs on `main` after the merge. A red `main` is fixed forward and never released. The proof runs only on the PR head, never again before or after the merge.
+
+Two PRs for the same command normally conflict, because each edits the command's chart, page and cases file. The second PR rebases. That reruns CI and the proof.
+
+Not built yet: PRs opened by the App, and Swamp merging PRs. Until then (the interim), the author opens the draft PR as `nckrtl`, takes it out of draft and runs `gh pr merge <n> -R hardimpactdev/orbit --auto`. GitHub merges the PR once the Required checks pass.
 
 ## 4. CI
 
-CI is the only gate: if CI passes, the PR merges. CI runs on every push to the PR, also while it is a draft; the jobs follow the changed files of the whole PR. There is one CI: the fast checks plus, for command code, the proof CI. The merge queue requires that one result. So CI must be strict about what matters and run nothing else. The changed files decide which jobs run:
+CI is the only gate: if CI passes, the PR merges. CI runs on every push to the PR, also while it is a draft; the jobs follow the changed files of the whole PR. There is one CI: the fast checks plus, for command code, the proof CI. The merge requires that one result. So CI must be strict about what matters and run nothing else. The changed files decide which jobs run:
 
 | Changed files | Jobs |
 | --- | --- |
@@ -98,7 +102,7 @@ CI is the only gate: if CI passes, the PR merges. CI runs on every push to the P
 | Web or CLI code | Fast checks and that build |
 | Command code: Swamp workflows, extensions, playbooks, role definitions, versions | Fast checks and the proof CI for the affected commands |
 
-1. Fast checks run in about 1 minute.
+1. Fast checks run in about 2 minutes.
 2. The proof CI runs only when command code changed:
    1. Orbit takes a task VM. It resets the test fleet from the ready copies in the host's topology seed and applies the PR's code, in about 75 seconds.
    2. It runs only the test cases of the affected commands, one after another in that fleet, and then releases the VM.
@@ -106,21 +110,21 @@ CI is the only gate: if CI passes, the PR merges. CI runs on every push to the P
    Development and CI use the same cases and assertions. The required check identifies the tested commit and reports every selected case. A missing result or a failed assertion fails the check. A passing check confirms the defined cases; it does not prove behavior that the cases omit.
 
    This adds time only to PRs that change commands. The run budget is 30 minutes after the fleet is ready. See [the proof CI](#the-proof-ci).
-3. The merge queue applies the same selection rule.
+3. A new push cancels the proof run of the previous push on the same PR.
 
-   A batch needs the proof CI only for PRs that change command code.
+   The proof CI starts only when a changed path selects a command in `swamp/proof/selection.txt`. Docs, charts and case descriptions never start it.
 
 ### The proof CI
 
 The proof CI is the target. Built so far: the `orbit proof:run` admission (trust check and case selection), the selection list, and the execution as a Gateway-started chain that moves to one Swamp flow next. Not built yet: the receipt store, the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
 
-The job is `Proofs`, a job of the one CI; the merge queue requires the one CI result. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
+The job is `Proofs`, a job of the one CI; the merge requires the one CI result. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
 
 **The job**
 
 - A hosted scope step reads the changed paths with `bin/proof-select`, run from `main` and not from the pull request. A path that needs a proof starts `Proofs`.
 - A path that matches no line fails the scope step. A change to documentation only never starts the proof CI.
-- `Proofs` passes one commit SHA to `orbit proof:run --json`: the pull request head, or the merge queue commit.
+- `Proofs` passes one commit SHA to `orbit proof:run --json`: the pull request head.
 - It also passes an idempotency key built from the workflow run and its attempt. It checks out nothing and chooses no cases.
 - Orbit fetches the commit and selects the cases with its own program.
 **The result**
@@ -128,12 +132,11 @@ The job is `Proofs`, a job of the one CI; the merge queue requires the one CI re
 - The job summary lists each case, the uncovered paths and the receipt link. It holds no command output and no host name. The receipt link needs access to the private network.
 - A run with uncovered paths and no case passes, and the summary says so. It never looks like a run that proved something.
 - The job exits with the verdict. The timeout is 45 minutes: the VM wait plus the run budget. A cancelled job cancels its run.
-- `Proofs` tests the pull request head, not its merge with `main`. The merge queue tests the merge.
+- `Proofs` tests the pull request head, not its merge with `main`. It does not run again after the merge.
 
 **Triggers**
 
 - A pull request from a branch of `hardimpactdev/orbit` runs the job automatically.
-- The merge queue runs it on the combined commit, with the same selection.
 - A pull request from a fork starts no proof by itself.
 
 **Outside pull requests**
@@ -148,7 +151,7 @@ The job is `Proofs`, a job of the one CI; the merge queue requires the one CI re
 
 - The runner group of beast and shark serves only this repository.
 - A GitHub setting requires a maintainer's approval for every workflow run of an outside collaborator. A maintainer does not approve a run whose diff touches `.github/`.
-- The workflow condition picks a self-hosted runner for a pull request from this repository and for the merge queue. It picks a hosted runner for every other pull request.
+- The workflow condition picks a self-hosted runner for a pull request from this repository. It picks a hosted runner for every other pull request.
 - `tools/test_ci_runner_policy.py` pins the condition. A fork controls its own copy of the workflow, so the approval is the gate and the condition is the second layer.
 - The job passes no secret.
 - The CI proof VM holds no Pi token and no model key.
@@ -156,7 +159,7 @@ The job is `Proofs`, a job of the one CI; the merge queue requires the one CI re
 
 **Required check**
 
-- `Proofs` is a job of the one CI. The merge queue requires the one CI result, `Required checks`, which will hold it.
+- `Proofs` is a job of the one CI. The merge requires the one CI result, `Required checks`, which will hold it.
 - Only the scope step may skip it, and only for a change that needs no proof.
 
 ### Choose the cases
@@ -197,7 +200,7 @@ A malformed line is refused with `proof.selection_invalid`. A commit without a s
 
 ## 5. Merge
 
-The merge queue lands the PR on main.
+Swamp merges the PR into `main` with a squash merge, after the gate. The interim is `gh pr merge <n> -R hardimpactdev/orbit --auto` as `nckrtl`. CI then runs on `main`; a red `main` is fixed forward.
 
 ## 6. Release
 
@@ -218,10 +221,18 @@ The release run builds and loads the code, then checks the Gateway.
 
 ## 7. Task image and seed refresh
 
-After each release and at least daily, each task VM host refreshes itself.
+A release that changed playbooks, pins or lock files starts a refresh on each task VM host, and a daily run does too. There is no image build per release. Only Linux hosts (beast and shark) refresh.
 
-1. The host builds its task image from the recipe ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-build.mmd)).
-2. It refreshes its topology seed: the ready nested topology of the running release ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd)).
+Per host:
+
+1. Start a refresh task VM from the current image and seed.
+2. Reset the nested fleet and sync the release commit.
+3. Converge once, only if playbooks or pins changed.
+4. Re-mint the nested Swamp tokens.
+5. Save the outer VM as the new task image and the nested VMs as new ready copies. The copies hold no key.
+6. Boot-check both, then promote them.
+
+A recipe build runs only for a new host or a new base OS ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-build.mmd)). The seed refresh chart is [here](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd).
 
 The hosts refresh in parallel. Nothing is copied between hosts: they have different CPUs, and a copy loses the storage sharing inside the seed. From then on, task VMs and CI proofs start from the new seed. See [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
 
@@ -286,7 +297,7 @@ Build the missing parts in dependency order. This order prepares the development
 
 1. **Agree the command contract and cases.** Align the documented contract with the implementation. Extend the existing harness with chart-path cases. Verify the CLI output and intended Node state, including Doctor and unchanged reruns.
 2. **Establish the development environment.** Verify that the topology seed of a host holds the ready Gateway with Swamp, app-dev and app-prod copies. Record their release identity. Development and CI reset from the same copies.
-3. **Connect the cases to CI.** Run affected cases on a topology reset to the tested commit. Changes only to documentation skip VM tests. Prove that a failed case blocks the merge queue.
+3. **Connect the cases to CI.** Run affected cases on a topology reset to the tested commit. A change to documentation skips VM tests. A failed case turns the CI result red.
 4. **Verify the Swamp release.** Follow the merged commit into the running Gateway and loaded workflows. A manual proof receipt does not establish that the automatic release works.
 5. **Complete the per-host refresh.** Each host refreshes its task image and seed after a release (step 7). A failed refresh keeps the previous seed. Verify that the next development or CI reset uses the new release.
 6. **Complete scoped fleet convergence.** Apply the release scope from step 8. Compare Doctor with the pre-release baseline. Record evidence and update the skills before the next full command pass.
@@ -313,6 +324,6 @@ These choices remain open.
 - Parallel rollout: dev Nodes first, or all Nodes at once.
 - The `node:converge` flag names for the release scope (footprint, changed roles).
 - The first content of `swamp/proof/selection.txt`: which Gateway and CLI files map to which command.
-- How Pi's PRs merge: check that Swamp can add them to the merge queue with an App token after task-VM development restarts.
+- How Pi's PRs merge: check that Swamp can merge them with an App token after task-VM development restarts.
 - Speed of nested VMs inside a task VM, for the nightly build.
 - The agent becomes an observer only after the task image build stops using the agent and the remaining Gateway calls to agent commands are gone.

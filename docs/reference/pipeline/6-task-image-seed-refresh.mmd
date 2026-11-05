@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). After each release and at least daily, every task VM host refreshes its own task image and topology seed, in parallel; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
+  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). After a release that changed playbooks, pins or lock files, and at least daily, every task VM host brings its current task image and topology seed up to the release, in parallel, and saves them as the new ones: no build from the recipe; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
   %% status: draft
   %% command: development pipeline stage 6 · per-host task image and seed refresh
   %% kind: pipeline.6-task-image-seed-refresh
@@ -7,48 +7,67 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=each host tone=amber
+  %% lane VM icon=server pill=target tone=gray
   %% lane SL icon=server pill=pool tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>one run per host
   participant H as Task VM host<br/>Incus over ssh
+  participant VM as Refresh VM<br/>a task VM
   participant SL as Ready slots<br/>stopped task VMs
-  Note over GW: Start the refresh<br/>after a release · daily
+  Note over GW: Start the refresh<br/>inputs changed · daily
   %%> Triggers:
-  %%> - a release that went live and passed its check (stage 5)
+  %%> - a release that went live and passed its check (stage 5), only when it changed what the images carry: playbooks, pins or lock files; a code-only release needs no refresh, because a task syncs that code in about 2 s
   %%> - a daily schedule, so a seed never gets older than a day: the Swamp tokens in the ready copies last 24 hours and a ready copy expires after 20
   %%> Not built:
   %%> - both triggers (B8); today an operator runs `php artisan task-vms:refresh-seed HOST`
+  %%> Hosts:
+  %%> - Linux only: the task VM hosts beast and shark, with Incus
   %%> Requirements per host:
-  %%> - an active task VM host with no image build running and three free large slots
+  %%> - an active task VM host with no refresh running and one free large slot for the refresh VM
   %%> - the Gateway has the release commit, GitHub App read access to the repository, and the proof Swamp Club key
   GW->>SW: Start one run per host<br/>all in parallel
   %%> Why:
-  %%> - hosts differ in CPU, and a copy between hosts loses the storage sharing inside the seed; so each host builds its own
+  %%> - hosts differ in CPU, and a copy between hosts loses the storage sharing inside the seed; so each host refreshes its own
   %%> - a second admission for a host returns the open task
   loop each task VM host, in parallel
-    SW->>H: Build the task image<br/>from the recipe
+    SW->>H: Start a refresh VM<br/>current image · seed
     %%> What it does:
-    %%> - builds a builder VM from the stock image, runs the recipe phases, smoke-tests it and publishes it
-    %%> - promotes the image only when built and smoke-tested; a failed build leaves the previous image
-    %%> Chart:
-    %%> - `task_vm.image_build`
-    %%> Target, not built:
-    %%> - the build uses the same playbooks as Nodes and no orbit-agent
-    SW->>H: Refresh the topology seed<br/>release commit
+    %%> - starts a task VM from the host's current task image, with a clone of its current topology seed, as for any task
+    SW->>VM: Reset and sync<br/>the release commit
     %%> What it does:
-    %%> - clones the current seed, boots a builder from the new image, checks out the release commit, runs `proof-fleet reset` and `ready`
-    %%> - boots a throwaway copy of each ready copy to check it, stops the builder, and promotes the clone under the host lock
-    %%> - keeps the old seed as `-previous`, the rollback copy; cleanup always runs
-    %%> Target, not built:
-    %%> - the nested Gateway and app-dev ready copies hold their own checkout of the release commit, with `vendor` and `node_modules` installed and the package caches warm; no code share from the outer VM
-    %%> - task VMs already running keep their own copy; when one rebases onto main, its sync sees the changed playbooks and converges that VM (stage 2)
-    %%> Chart:
-    %%> - `task_vm.seed_refresh`
+    %%> - resets the nested fleet from the current ready copies and syncs the release commit into the nested Gateway and app-dev, the same sync as stage 2
+    %%> - `composer install` or `bun install` only where a lock file changed; then migrations and a Swamp reload
+    opt playbooks or pins changed since the current image
+      SW->>VM: Converge once<br/>outer VM · nested Nodes
+      %%> What it does:
+      %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
+      %%> - the same step as in the proof CI (stage 4)
+    end
+    SW->>VM: Re-mint Swamp tokens<br/>in the nested Gateway
+    %%> Why:
+    %%> - the tokens of the ready copies last 24 hours, so every refresh starts them fresh
+    SW->>H: Save the new images<br/>image · ready copies
+    %%> What it does:
+    %%> - stops the nested VMs and copies them into a clone of the seed as the new ready copies, key-free: the proof Club key is deleted, every file is scanned for it, and freed blocks are trimmed
+    %%> - publishes the outer VM as the new task image
+    SW->>H: Boot-check, promote<br/>under the host lock
+    %%> What it does:
+    %%> - boots a throwaway copy of each ready copy and of the image to check them, then promotes both and destroys the refresh VM
+    %%> - keeps the old image and seed as `-previous`, the rollback copy; cleanup always runs
+    %%> - a failed step keeps the old image and seed
+    %%> Not built:
+    %%> - the whole refresh from a running task VM; today the seed refresh boots a builder from the image and runs `proof-fleet reset` and `ready`, and the image is built from the recipe
     SW->>SL: Replace old ready slots<br/>one at a time
     %%> Target, not built:
     %%> - destroys a ready slot made from the old image, enrols a new one from the new image, then takes the next
     %%> - a slot is always ready; a slot in use keeps running on its own clone
     %%> - when the image did not change, nothing is replaced
+    opt a new host or a new base OS
+      SW->>H: Build from the recipe<br/>once, not per release
+      %%> What it does:
+      %%> - builds the task image from the stock image with the recipe phases (`task_vm.image_build`) and the first seed (`task_vm.seed_refresh`)
+      %%> - every later release only brings these up to date
+    end
   end
   alt every host refreshed
     SW-->>GW: Host refreshed<br/>terminal event per host

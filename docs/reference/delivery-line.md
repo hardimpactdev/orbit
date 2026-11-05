@@ -64,6 +64,8 @@ Do not add hostnames under the generic `upcloudobjects.com` provider suffix (`ob
 
 This repository does not wake ReviewBot when a GitHub `pull_request_review` event arrives without a new push; wiring that wake is a follow-up. A review event never bypasses `bin/pr-head-check`: an `APPROVED` review and successful `Required checks` must still match the exact current head.
 
+The target flow has no merge queue and no GitHub auto-merge. After the gate, Swamp merges the PR into `main` with a squash merge, using a Gateway-minted App token. Until that step is built, the author runs `gh pr merge <n> -R hardimpactdev/orbit --auto`. The check above stays a read-only check of the gate evidence.
+
 On any mismatch the JSON names the mismatch. For an unmerged pull request, the next step is to review the new head. For `merged:true`, stop instead, regardless of the mismatch. The command never runs `gh pr merge`.
 
 | `error` | Next step |
