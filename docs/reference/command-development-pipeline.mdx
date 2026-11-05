@@ -46,6 +46,7 @@ The command development pipeline is the stages every command goes through during
 <div className="flow-at" data-chart="reference/pipeline/3-proof"></div>
 
 - Chart: the stage chart above. A command's own chart, such as [`firewall:allow`](/cli/firewall/allow#how-it-works), shows the command, not the proof run.
+- Design draft: [Verification cases](/reference/verification-cases) describes how cases are written as short specifications, covered against the command chart, and run by one shared runner (chart [3-proof-runner](/reference/verification-cases#the-run)).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
 - Files: [`allow-fresh-ipv4-tcp.sh`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh), [`allow.cases.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.md).
 
