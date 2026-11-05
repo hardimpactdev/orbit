@@ -16,6 +16,9 @@ interface ProofSlotClaim
     /** @throws ResourceOperationException proof.no_slot */
     public function claim(): ProofSlot;
 
-    /** Frees the slot after the run ends, however it ended. */
+    /**
+     * Frees the slot after the run ends, however it ended. The claim also frees a slot whose Operation ended with no
+     * projection, such as one cancelled before it started: the host sweep of the chart does that.
+     */
     public function release(string $name): void;
 }

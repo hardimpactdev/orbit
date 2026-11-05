@@ -67,11 +67,11 @@ def verification(request):
 
 
 def final_line(status, generation, evidence):
-    """The one JSON line on stdout: status, then summary, so a truncated tail never loses either."""
+    """The one JSON line on stdout: status and summary, 12 bytes a case. The cases with their notes stay in status.json."""
     value = {'status': status['status']}
     if 'summary' in status:
         value['summary'] = status['summary']
-    value.update({key: item for key, item in status.items() if key not in value})
+    value.update({key: item for key, item in status.items() if key not in value and key != 'cases'})
     return json.dumps({**value, 'generation': generation, 'evidence': str(evidence)}, separators=(',', ':'))
 
 

@@ -55,9 +55,10 @@ final class OperationRunBudgets
         // Horizon drain, which waits for running jobs up to the longest supervisor timeout + 30 s (1,730 s); x 1.5 = 2,783 s,
         // rounded up to five minutes. An expiry pauses releases. Replace with the 14-day p95 after the first success.
         'gateway.release' => 3000,
-        // No run yet. Basis: the case budget of 1,800 s that docs/cli/proof/run.mdx sets, plus the test fleet reset, the
-        // fleet release and a margin, rounded up to five minutes. Replace with the 14-day p95 after the first success.
-        'proof.run' => 2100,
+        // No run yet. Basis: the case budget of 1,800 s that docs/cli/proof/run.mdx sets, the test fleet reset (about 60 s,
+        // 300 s allowed), the fleet release (600 s) and a margin, rounded up to five minutes. Replace with the 14-day p95
+        // after the first success.
+        'proof.run' => 3000,
         'node.converge' => 3900,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.

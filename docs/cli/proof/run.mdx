@@ -46,7 +46,7 @@ The slot gets the commit and no credential. It has no Pi token, no model key, no
 
 Orbit builds a fresh test fleet in the slot from the ready snapshot: a Gateway, an `app-dev` Node and an `app-prod` Node. It runs the selected cases one after another with the CLI built from the commit. Each case asserts the command's promised effect, the recorded state and the Node state, and removes what it created. After each case, Orbit compares the state that the case touched with its state before the case. A leftover fails the case. A case that needs a clean fleet gets a new one.
 
-The whole run has a budget of 30 minutes after the slot is taken.
+The cases have a budget of 30 minutes after the test fleet is ready. The reset and the release come on top of it.
 
 ## The execution switch
 

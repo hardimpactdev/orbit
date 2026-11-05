@@ -254,6 +254,32 @@ describe('proof:run admission', function (): void {
             ->and(Operation::query()->count())->toBe(0);
     });
 
+    it('gives the slot back when the run cannot be admitted after the claim', function (): void {
+        config(['proof.execution' => true]);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+        $claim = new class implements ProofSlotClaim
+        {
+            /** @var list<string> */
+            public array $released = [];
+
+            public function claim(): ProofSlot
+            {
+                return new ProofSlot('beast-tvm-1', Node::query()->value('id'), '/home/orbit/orbit');
+            }
+
+            public function release(string $name): void
+            {
+                $this->released[] = $name;
+            }
+        };
+        app()->instance(ProofSlotClaim::class, $claim);
+
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('swamp.ssh_target_unavailable')
+            ->and($claim->released)->toBe(['beast-tvm-1'])->and(Operation::query()->count())->toBe(0);
+    });
+
     it('runs every case for --all and never lets a docs-only commit skip it', function (): void {
         $source = proofSource();
         $source->files = [new ProofChangedFile('docs/a.md', 'modified')];

@@ -100,7 +100,7 @@ jobs:
       inputs:
         hosts: name:target
         okExitCodes: any
-        timeoutSec: 2100
+        timeoutSec: 2400
         argv: ${{ ["env", "-C", inputs.intent.slot.checkout_path, "PROOF_BUDGET_SECONDS=1800", "bin/proof-fleet", "verify", string(inputs.operation_id)] + inputs.intent.cases.map(c, c.program) }}
     dependsOn:
     - step: Check the checkout

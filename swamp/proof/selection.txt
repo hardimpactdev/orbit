@@ -42,3 +42,4 @@ swamp/proof/reset/**                             *
 swamp/proof/reset/*.md                           skip
 swamp/proof/reset/reset.mmd                      skip
 bin/proof-fleet                                  *
+tools/swamp-proof-guest/**                       *

@@ -29,8 +29,8 @@ final class GitHubProofCommitSource implements ProofCommitSource
 
     private const int PAGE_SIZE = 100;
 
-    /** GitHub lists at most 3,000 files of a comparison. */
-    private const int FILE_PAGES = 30;
+    /** GitHub lists at most 300 files of a comparison, on its first page. */
+    private const int COMPARE_FILES = 300;
 
     /** @var array<string,string> One token per permission set, for the life of this request. */
     private array $tokens = [];
@@ -97,55 +97,47 @@ final class GitHubProofCommitSource implements ProofCommitSource
 
     public function changes(string $sha): ProofChangedFiles
     {
+        $response = $this->get($this->contentsToken(), $this->path('/compare/'.rawurlencode($this->settings->baseBranch()).'...'.$sha), ['per_page' => 1]);
+        $this->assertOk($response);
+        $mergeBase = $response->json('merge_base_commit.sha');
+        $rows = $response->json('files') ?? [];
+        if (! is_string($mergeBase) || preg_match('/\A[0-9a-f]{40}\z/D', $mergeBase) !== 1 || ! is_array($rows) || ! array_is_list($rows) || count($rows) > self::COMPARE_FILES) {
+            throw GitHubApiException::unavailable();
+        }
         $files = [];
-        $mergeBase = null;
-        $complete = false;
-        for ($page = 1; $page <= self::FILE_PAGES; $page++) {
-            $response = $this->get($this->contentsToken(), $this->path('/compare/'.rawurlencode($this->settings->baseBranch()).'...'.$sha), ['per_page' => self::PAGE_SIZE, 'page' => $page]);
-            $this->assertOk($response);
-            $base = $response->json('merge_base_commit.sha');
-            $rows = $response->json('files') ?? [];
-            if (! is_string($base) || preg_match('/\A[0-9a-f]{40}\z/D', $base) !== 1 || ! is_array($rows) || count($rows) > self::PAGE_SIZE || ($mergeBase !== null && $mergeBase !== $base)) {
+        foreach ($rows as $row) {
+            if (! is_array($row) || ! is_string($row['filename'] ?? null) || ! is_string($row['status'] ?? null)) {
                 throw GitHubApiException::unavailable();
             }
-            $mergeBase = $base;
-            foreach ($rows as $row) {
-                if (! is_array($row) || ! is_string($row['filename'] ?? null) || ! is_string($row['status'] ?? null)) {
-                    throw GitHubApiException::unavailable();
-                }
-                $files[] = new ProofChangedFile($row['filename'], $row['status'], is_string($row['previous_filename'] ?? null) ? $row['previous_filename'] : null);
-            }
-            if (count($rows) < self::PAGE_SIZE) {
-                $complete = true;
-                break;
-            }
+            $files[] = new ProofChangedFile($row['filename'], $row['status'], is_string($row['previous_filename'] ?? null) ? $row['previous_filename'] : null);
         }
 
-        return new ProofChangedFiles((string) $mergeBase, $files, $complete);
+        // GitHub lists no more than 300 files of a comparison and gives no total, so a full list may be cut.
+        return new ProofChangedFiles($mergeBase, $files, count($rows) < self::COMPARE_FILES);
     }
 
     public function file(string $sha, string $path): ?string
     {
-        $token = $this->contentsToken();
-        $blob = $this->github->fileBlob($token, $this->settings->repository(), $sha, $path);
+        $segments = explode('/', $path);
+        $name = array_pop($segments);
+        $tree = $sha;
+        foreach ($segments as $segment) {
+            $tree = $this->child($tree, $segment, 'tree');
+            if ($tree === null) {
+                return null;
+            }
+        }
+        $blob = $this->child($tree, $name, 'blob');
 
-        return $blob === null ? null : $this->github->blobContents($token, $this->settings->repository(), $blob);
+        return $blob === null ? null : $this->github->blobContents($this->contentsToken(), $this->settings->repository(), $blob);
     }
 
     public function proofPaths(string $sha): array
     {
-        $tree = $sha;
-        foreach (['swamp', 'proof'] as $segment) {
-            $entries = $this->tree($tree);
-            $tree = null;
-            foreach ($entries['tree'] as $entry) {
-                if (($entry['path'] ?? null) === $segment && ($entry['type'] ?? null) === 'tree' && is_string($entry['sha'] ?? null)) {
-                    $tree = $entry['sha'];
-                }
-            }
-            if ($tree === null) {
-                return [];
-            }
+        $tree = $this->child($sha, 'swamp', 'tree');
+        $tree = $tree === null ? null : $this->child($tree, 'proof', 'tree');
+        if ($tree === null) {
+            return [];
         }
         $listing = $this->tree($tree, recursive: true);
         if ($listing['truncated']) {
@@ -154,6 +146,22 @@ final class GitHubProofCommitSource implements ProofCommitSource
 
         return array_values(array_map(static fn (array $entry): string => 'swamp/proof/'.$entry['path'],
             array_filter($listing['tree'], static fn (array $entry): bool => ($entry['type'] ?? null) === 'blob' && is_string($entry['path'] ?? null))));
+    }
+
+    /** The git SHA of one named entry of a tree, or null when the tree has none of that type. A cut listing fails. */
+    private function child(string $tree, string $name, string $type): ?string
+    {
+        $listing = $this->tree($tree);
+        if ($listing['truncated']) {
+            throw GitHubApiException::unavailable();
+        }
+        foreach ($listing['tree'] as $entry) {
+            if (($entry['path'] ?? null) === $name && ($entry['type'] ?? null) === $type && is_string($entry['sha'] ?? null)) {
+                return $entry['sha'];
+            }
+        }
+
+        return null;
     }
 
     /** @return array{tree: list<array<mixed>>, truncated: bool} */

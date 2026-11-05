@@ -274,10 +274,11 @@ class LauncherTests(unittest.TestCase):
             code, lines, request = self.verify(programs, native)
         self.assertEqual(1, code)
         final = json.loads(lines[-1])
-        self.assertEqual({'status', 'summary', 'exit', 'cases_ran', 'cases', 'generation', 'evidence'}, set(final))
+        self.assertEqual({'status', 'summary', 'exit', 'cases_ran', 'generation', 'evidence'}, set(final))
         self.assertEqual(('failed', 1, False), (final['status'], final['exit'], final['cases_ran']))
         self.assertEqual([{'program': program, 'verdict': 'unrun', 'exit_code': None, 'seconds': 0,
-                           'note': 'the test fleet was not ready'} for program in programs], final['cases'])
+                           'note': 'the test fleet was not ready'} for program in programs],
+                         json.loads((Path(final['evidence']) / 'status.json').read_text())['cases'])
         self.assertEqual([['u', 0], ['u', 0]], final['summary'])
         self.assertEqual(programs, request['cases'])
         self.assertEqual(1800.0, request['budget_seconds'])

@@ -10,6 +10,7 @@ use App\Domain\Proof\ProofCommitSource;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Mockery\MockInterface;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -19,13 +20,14 @@ const SOURCE_SHA = 'c0ffee0000000000000000000000000000000002';
 function githubSource(): ProofCommitSource
 {
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'proof', 'proof', 'hardimpactdev', 'organization', 'https://github.com/apps/proof', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (Mockery\MockInterface $github): void {
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github): void {
         $github->shouldReceive('repositoryInstallation')->andReturn(7);
         $github->shouldReceive('repositoryReadToken')->andReturn('contents-token');
         $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('pulls-token');
         $github->shouldReceive('repositoryMetadataToken')->andReturn('metadata-token');
         $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
         $github->shouldReceive('reviews')->with('reviews-token', Mockery::any(), 9)->andReturn([]);
+        $github->shouldReceive('blobContents')->with('contents-token', Mockery::any(), 'b1')->andReturn('LIST');
     }));
     Http::preventStrayRequests();
 
@@ -95,24 +97,33 @@ it('lists the changed files of the diff against the merge base with main, and ke
     expect($changes->mergeBase)->toBe($base)->and($changes->complete)->toBeTrue()->and($changes->paths())->toBe(['docs/a.md', 'new.txt', 'old.txt']);
 });
 
-it('reads every page of a large diff, and calls the list incomplete when GitHub stops at its limit', function (): void {
-    $page = static fn (int $number): array => ['merge_base_commit' => ['sha' => str_repeat('a', 40)],
-        'files' => array_map(static fn (int $i): array => ['filename' => "f{$number}-{$i}", 'status' => 'added'], range(1, 100))];
-    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/*' => Http::response($page(1))]);
+it('lists the diff with one request and calls it complete below the 300 files GitHub lists', function (int $count, bool $complete): void {
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/*' => Http::response(['merge_base_commit' => ['sha' => str_repeat('a', 40)],
+        'files' => array_map(static fn (int $i): array => ['filename' => "f{$i}", 'status' => 'added'], $count === 0 ? [] : range(1, $count))])]);
 
     $changes = githubSource()->changes(SOURCE_SHA);
 
-    // The same full page answers every request, so the walk ends at its 30 page limit with a full last page.
-    expect($changes->complete)->toBeFalse()->and($changes->files)->toHaveCount(3000);
-    Http::assertSentCount(30);
+    expect($changes->complete)->toBe($complete)->and($changes->files)->toHaveCount($count);
+    Http::assertSentCount(1);
+})->with([[0, true], [99, true], [299, true], [300, false]]);
+
+it('refuses a diff with more files than GitHub lists', function (): void {
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/*' => Http::response(['merge_base_commit' => ['sha' => str_repeat('a', 40)],
+        'files' => array_map(static fn (int $i): array => ['filename' => "f{$i}", 'status' => 'added'], range(1, 301))])]);
+
+    expect(fn () => githubSource()->changes(SOURCE_SHA))->toThrow(GitHubApiException::class);
 });
 
-it('reads the diff of a small commit in one request and finds it complete', function (): void {
-    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/*' => Http::response(['merge_base_commit' => ['sha' => str_repeat('a', 40)],
-        'files' => array_map(static fn (int $i): array => ['filename' => "f{$i}", 'status' => 'added'], range(1, 99))])]);
+it('reads a file through the trees of its directories, so a large directory does not hide it', function (): void {
+    Http::fake([
+        'api.github.com/repos/hardimpactdev/orbit/git/trees/'.SOURCE_SHA => Http::response(['tree' => [['path' => 'swamp', 'type' => 'tree', 'sha' => 's1']]]),
+        'api.github.com/repos/hardimpactdev/orbit/git/trees/s1' => Http::response(['tree' => [['path' => 'proof', 'type' => 'tree', 'sha' => 'p1']]]),
+        'api.github.com/repos/hardimpactdev/orbit/git/trees/p1' => Http::response(['tree' => [['path' => 'selection.txt', 'type' => 'blob', 'sha' => 'b1'], ['path' => 'other', 'type' => 'tree', 'sha' => 'o1']]]),
+    ]);
 
-    expect(githubSource()->changes(SOURCE_SHA)->complete)->toBeTrue();
-    Http::assertSentCount(1);
+    expect(githubSource()->file(SOURCE_SHA, 'swamp/proof/selection.txt'))->toBe('LIST')
+        ->and(githubSource()->file(SOURCE_SHA, 'swamp/proof/missing.txt'))->toBeNull()
+        ->and(githubSource()->file(SOURCE_SHA, 'swamp/other/selection.txt'))->toBeNull();
 });
 
 it('refuses a diff that GitHub answers without a merge base', function (): void {

@@ -14,6 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
+use Throwable;
 
 /**
  * Admits `proof:run`: it checks that the commit is trusted, selects the cases from the diff and the selection list of
@@ -48,11 +49,22 @@ final readonly class ProofRunIntent
                 details: ['commit' => $commit, 'cases' => $selection->programs(), 'uncovered' => array_column($selection->uncovered, 'path')]);
         }
         $slot = $this->slots->claim();
+        try {
+            $operation = $this->start->execute(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, [...$intent,
+                'slot' => ['name' => $slot->name, 'checkout_path' => $slot->checkout],
+                'ssh_execution' => $this->ssh->forNode(Node::query()->findOrFail($slot->nodeId)),
+            ], $caller, $requestId);
+        } catch (Throwable $exception) {
+            $this->slots->release($slot->name);
 
-        return $this->start->execute(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, [...$intent,
-            'slot' => ['name' => $slot->name, 'checkout_path' => $slot->checkout],
-            'ssh_execution' => $this->ssh->forNode(Node::query()->findOrFail($slot->nodeId)),
-        ], $caller, $requestId);
+            throw $exception;
+        }
+        // A request that raced an earlier one with the same key got that run back; its slot is the one that counts.
+        if (! $operation->wasRecentlyCreated) {
+            $this->slots->release($slot->name);
+        }
+
+        return $operation;
     }
 
     private function select(string $commit, bool $all): ProofSelectionResult

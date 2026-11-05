@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from launcher import parse_budget, unrun_case, write_json
+from launcher import unrun_case, write_json
 
 
 def checked(result, program):
@@ -515,12 +515,14 @@ def run_program(program, source, env, log_path, timeout):
         try:
             code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
             code = None
+        finally:
+            if process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
     return code, round(time.monotonic() - started, 2)
 
 
@@ -530,8 +532,7 @@ def run_cases(request):
     programs = request.get('cases') or []
     if not programs:
         raise RuntimeError('The request lists no case programs.')
-    budget = request.get('budget_seconds')
-    budget = float(budget) if budget else parse_budget(os.environ.get('PROOF_BUDGET_SECONDS'))
+    budget = float(request['budget_seconds'])
     result = json.loads((evidence / 'publish.json').read_text())
     source = source_for(request, request['generation'])
     results = []

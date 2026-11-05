@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -138,6 +139,28 @@ class CasePhaseTests(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.killpg(pid, 0)
 
+    def test_a_case_still_running_when_the_wait_raises_has_its_process_group_killed(self):
+        pidfile = self.root / 'pid'
+        program = self.program('hang.sh', f'echo $$ > {pidfile}; sleep 60 & wait')
+        waits = []
+
+        class Interrupted(subprocess.Popen):
+            def wait(self, timeout=None):
+                if not waits:
+                    waits.append(1)
+                    deadline = time.monotonic() + 10
+                    while not pidfile.exists() and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                    raise KeyboardInterrupt
+                return super().wait(timeout)
+
+        with patch.object(subprocess, 'Popen', Interrupted), self.assertRaises(KeyboardInterrupt):
+            phases.run_program(self.source / program, self.source, dict(os.environ), self.evidence / 'cases-1.log', 30)
+        pid = int(pidfile.read_text())
+        time.sleep(0.2)
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(pid, 0)
+
     def test_each_case_gets_the_remaining_budget_as_its_timeout(self):
         timeouts = []
         real = phases.run_program
@@ -151,24 +174,6 @@ class CasePhaseTests(unittest.TestCase):
         self.assertEqual(2, len(timeouts))
         self.assertLess(timeouts[1], timeouts[0] - 0.4)
         self.assertLessEqual(timeouts[0], 30)
-
-    def test_the_budget_defaults_to_the_environment_variable_then_1800(self):
-        request = {**self.request([self.program('a.sh', 'exit 0')]), 'budget_seconds': None}
-        seen = []
-        real = phases.run_program
-
-        def spy(program, source, env, log_path, timeout):
-            seen.append(timeout)
-            return real(program, source, env, log_path, timeout)
-        with patch.object(phases, 'run_program', side_effect=spy):
-            with patch.dict(os.environ, {'PROOF_BUDGET_SECONDS': '600'}):
-                phases.run_cases(request)
-            with patch.dict(os.environ):
-                os.environ.pop('PROOF_BUDGET_SECONDS', None)
-                phases.run_cases(request)
-        self.assertLessEqual(seen[0], 600)
-        self.assertGreater(seen[0], 590)
-        self.assertGreater(seen[1], 1790)
 
     def test_an_unreadable_state_before_the_case_leaves_it_unrun(self):
         with patch.object(phases, 'case_baseline', side_effect=RuntimeError('gateway down')):
@@ -205,7 +210,19 @@ class SummaryTests(unittest.TestCase):
 
     def test_the_final_line_puts_summary_right_after_status(self):
         line = launcher.final_line({'exit': 1, 'status': 'failed', 'cases': [], 'summary': [['u', 0]]}, 'g', '/e')
-        self.assertEqual('{"status":"failed","summary":[["u",0]],"exit":1,"cases":[],"generation":"g","evidence":"/e"}', line)
+        self.assertEqual('{"status":"failed","summary":[["u",0]],"exit":1,"generation":"g","evidence":"/e"}', line)
+
+    def test_forty_failing_cases_keep_the_line_under_the_swamp_output_cut(self):
+        note = 'exited 3; left residue in firewall database records, UFW rules on app-dev, UFW rules on app-prod'
+        cases = [{'program': f'swamp/proof/firewall/cases/some-long-case-name-{n}.sh', 'verdict': 'failed', 'exit_code': 3,
+                  'seconds': 123.456, 'note': note} for n in range(40)]
+        status = {'status': 'failed', 'summary': launcher.summary(cases), 'exit': 1, 'cases_ran': True, 'cases': cases}
+        line = launcher.final_line(status, 'a' * 32, '/home/orbit/work/orbit/.orbit-artifacts/3187/reset/' + 'a' * 32)
+        self.assertLess(len(line.encode()), 4096)
+        self.assertLess(len(line.encode()), 1000)
+        value = json.loads(line)
+        self.assertNotIn('cases', value)
+        self.assertEqual(40, len(value['summary']))
 
     def test_a_reset_has_no_summary(self):
         self.assertEqual('{"status":"succeeded","exit":0,"cases_ran":false,"generation":"g","evidence":"/e"}',
@@ -265,24 +282,25 @@ class CaseResultTests(unittest.TestCase):
             self.line = output.getvalue().splitlines()[-1]
             final = json.loads(self.line)
             evidence = Path(final['evidence'])
-            self.assertEqual(final['cases'], json.loads((evidence / 'status.json').read_text())['cases'])
-            self.assertEqual({'generation': final['generation'], 'cases': final['cases']}, json.loads((evidence / 'cases.json').read_text()))
+            self.status = json.loads((evidence / 'status.json').read_text())
+            self.assertEqual({'generation': final['generation'], 'cases': self.status['cases']}, json.loads((evidence / 'cases.json').read_text()))
         return code, final, programs
 
     def test_the_final_json_line_holds_the_verdicts_and_exit_1_for_any_case_that_did_not_pass(self):
         code, final, programs = self.verify('999998', ['exit 0', 'exit 1', 'exit 2'])
         self.assertEqual(1, code)
-        self.assertEqual({'status', 'summary', 'exit', 'cases_ran', 'cases', 'generation', 'evidence'}, set(final))
+        self.assertEqual({'status', 'summary', 'exit', 'cases_ran', 'generation', 'evidence'}, set(final))
         self.assertEqual(('failed', 1, True), (final['status'], final['exit'], final['cases_ran']))
-        self.assertEqual(programs, [case['program'] for case in final['cases']])
-        self.assertEqual(['passed', 'failed', 'unrun'], [case['verdict'] for case in final['cases']])
+        self.assertEqual(programs, [case['program'] for case in self.status['cases']])
+        self.assertEqual(['passed', 'failed', 'unrun'], [case['verdict'] for case in self.status['cases']])
 
     def test_the_summary_comes_first_in_compact_form_and_survives_a_truncated_tail(self):
         _, final, _ = self.verify('999995', ['exit 0', 'exit 1', 'exit 2'])
-        self.assertEqual(['status', 'summary', 'exit', 'cases_ran', 'cases', 'generation', 'evidence'], list(final))
-        self.assertEqual([['p', final['cases'][0]['seconds']], ['f', final['cases'][1]['seconds']], ['u', 0]], final['summary'])
+        self.assertEqual(['status', 'summary', 'exit', 'cases_ran', 'generation', 'evidence'], list(final))
+        self.assertEqual([['p', self.status['cases'][0]['seconds']], ['f', self.status['cases'][1]['seconds']], ['u', 0]], final['summary'])
         self.assertTrue(self.line.startswith('{"status":"failed","summary":[["p",'), self.line[:80])
-        self.assertNotIn(', ', self.line.split('"cases"')[0])
+        self.assertNotIn(', ', self.line)
+        self.assertNotIn('"cases"', self.line)
         self.assertNotIn('": ', self.line)
         # Swamp keeps the first 4096 bytes: the head still parses as far as the summary.
         head = self.line[:200]
@@ -295,7 +313,7 @@ class CaseResultTests(unittest.TestCase):
         code, final, _ = self.verify('999997', ['exit 0', 'exit 0'])
         self.assertEqual(0, code)
         self.assertEqual(('succeeded', 0, True), (final['status'], final['exit'], final['cases_ran']))
-        self.assertEqual(['passed', 'passed'], [case['verdict'] for case in final['cases']])
+        self.assertEqual(['passed', 'passed'], [case['verdict'] for case in self.status['cases']])
 
     def test_one_unrun_case_alone_exits_one(self):
         code, final, _ = self.verify('999996', ['exit 2'])
