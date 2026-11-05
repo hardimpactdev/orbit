@@ -60,8 +60,8 @@ READY_WAIT_SECONDS = 150
 # The Incus memory snapshot of the three nested VMs, and the one bound for putting it back and checking the fleet.
 BASE = 'base'
 BASE_TAKE_SECONDS = 120
-BASE_RESTORE_SECONDS = 30
-# Most reads of the Node list while the agents come back; the 30 s bound ends the reads long before this many.
+BASE_RESTORE_SECONDS = 45
+# Most reads of the Node list while the agents come back; the 45 s bound ends the reads long before this many.
 AGENT_READS = 200
 ACTIONS = ('base-take', 'base-restore','inventory', 'release-previous', 'snapshot', 'snapshot-ready', 'prepare', 'swamp-state', 'gateway-db',
            'gateway-runtime', 'restore-ready', 'ready-wait', 'agents-online', 'candidate', 'operator', 'transport-readiness',

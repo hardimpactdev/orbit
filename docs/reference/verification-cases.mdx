@@ -183,7 +183,7 @@ A batch is a group of cases that run one after another after one restore. Every 
 - Inside a batch, cases run one after another and undo nothing. Each uses its own resources, so it does not see the others.
 - A case that changes state all cases share gets its own batch: UFW turned off, an injected `fault`, a held lock (`busy_node`), network setup, or a check of the complete list.
 - A case that does not pass triggers a restore of `base` and the batch setup before the next case.
-- A restore that fails or is not healthy within 30 seconds stops the run. The cases that did not run become `unrun` with cause `infrastructure`; the verdicts already reached stay.
+- A restore that fails or is not healthy within 45 seconds stops the run. The cases that did not run become `unrun` with cause `infrastructure`; the verdicts already reached stay.
 - A case that needs a state that no batch offers gets a new batch. Do not build a different world inside one case.
 
 A batch costs a restore, so keep few. `firewall:allow` needs two:

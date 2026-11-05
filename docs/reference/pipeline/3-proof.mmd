@@ -28,7 +28,7 @@ sequenceDiagram
   %%> - restores the task's Incus stateful snapshot `base` (stage 2), all three VMs in parallel
   %%> - sets each guest clock from the outer VM as soon as that VM's agent answers; a restore puts the clocks back to snapshot time
   %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat (every 5 s) and Doctor is healthy
-  %%> - every restore in this chart has a 30 s limit: a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
+  %%> - every restore in this chart has a 45 s limit: a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
   %%> Time, measured on tvm-554:
   %%> - stock Incus restore and agent wait, no tuning: restore about 9 s, healthy about 16 s
   SW->>VM: Sync the author's code<br/>same sync as orbit-nested
@@ -76,7 +76,7 @@ sequenceDiagram
     SW->>NT: Restore base<br/>about 16 s
     %%> What it does:
     %%> - one restore per batch; skipped when the fleet is still at `base`, as for the first batch
-    %%> - 30 s limit, as for every restore; a failed restore stops the run
+    %%> - 45 s limit, as for every restore; a failed restore stops the run
       opt the batch declares a start state
       SW->>NT: Set up the batch<br/>its declared start state
       %%> What it does:
