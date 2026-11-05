@@ -163,7 +163,7 @@ jobs:
     - step: Review the spec 1
       condition:
         type: or
-        conditions: [{type: completed}, {type: skipped}]
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -199,7 +199,7 @@ jobs:
     - step: Fix the findings 1
       condition:
         type: or
-        conditions: [{type: completed}, {type: skipped}]
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -235,7 +235,7 @@ jobs:
     - step: Review the spec 2
       condition:
         type: or
-        conditions: [{type: completed}, {type: skipped}]
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -271,7 +271,7 @@ jobs:
     - step: Fix the findings 2
       condition:
         type: or
-        conditions: [{type: completed}, {type: skipped}]
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -307,7 +307,7 @@ jobs:
     - step: Review the spec 3
       condition:
         type: or
-        conditions: [{type: completed}, {type: skipped}]
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
