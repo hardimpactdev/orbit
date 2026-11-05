@@ -489,7 +489,9 @@ The unit runs before `sshd-keygen.service`, ssh, WireGuard and the observer, so 
 
 The file `99-orbit-slot.cfg` is the single line `ssh_deletekeys: false`. Without it, cloud-init deletes the host keys on the first boot of every clone and makes new ones, and the slot would not keep its host key. The enrol writes this file into the volume with the keys.
 
-The file alone is not enough. The identity unit and cloud-init start at the same time, and cloud-init can read its configuration, or run its `ssh` module, before the unit has installed the file. A proof VM showed this: cloud-init deleted the installed keys and made new ones, so the VM presented a new host key on every boot. So the boot of a slot VM (the enrol's proof VM and every claim) also sets `ssh_deletekeys: false` in the cloud-init user-data of the instance. The user-data is there from the first cloud-init stage, so the setting does not depend on the order of the two. cloud-init still makes a key that is missing, and the unit installs the slot key over it.
+The file alone is not enough. The identity unit and cloud-init start at the same time. cloud-init can run its `ssh` module before the unit has installed the file. A proof VM showed this: cloud-init deleted the installed keys and made new ones, so the VM presented a new host key on every boot.
+
+So the boot of a slot VM (the enrol's proof VM and every claim) also sets `ssh_deletekeys: false` in the cloud-init user-data of the instance. cloud-init has the user-data from its first stage, so the setting does not depend on the order of the two. cloud-init still makes a key that is missing, and the unit installs the slot key over it.
 
 The files that hold no key are text that the Gateway renders, and the enrol writes them into the volume:
 
