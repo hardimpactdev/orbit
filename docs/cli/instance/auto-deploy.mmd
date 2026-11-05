@@ -27,7 +27,7 @@ sequenceDiagram
   Note over GW: Check, record auto-deploy<br/>Instance 42 · on, unpaused
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
-  %%> - Instance 42 is an active production Instance and has one succeeded deployment
+  %%> - Instance 42 is an active production Instance; before its first succeeded deployment the check reports `not_deployed`
   %%> - when the Project has a `merge_check`, the GitHub App can read its check runs
   %%> Result:
   %%> - auto-deploy recorded as on and unpaused
