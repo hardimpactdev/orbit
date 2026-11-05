@@ -4,8 +4,10 @@ Run this repository program through `tasks.script`, or use the same program as
 an existing Project check hook on the allocated task VM:
 
 ```sh
-bin/proof-fleet reset 3187
-bin/proof-fleet verify 3187 swamp/proof/reset/cases/smoke.sh swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh
+bin/proof-fleet reset 3187                # build from scratch, about 230 s
+bin/proof-fleet ready 3187                # copy the healthy fleet to ready copies
+bin/proof-fleet reset 3187 --from-ready   # restore from ready copies, about 75 s; build and copy when there are none
+bin/proof-fleet verify 3187 swamp/proof/reset/cases/smoke.sh swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh   # fast when the copies are usable
 bin/proof-fleet release 3187
 ```
 
@@ -29,6 +31,61 @@ once with `sudo bin/e2e-topology-host-setup`.
 ## Network and operator
 
 The nested fleet has a real WireGuard network, `10.45.0.0/24`. The nested Gateway is the hub (`10.45.0.1`), `app-dev` is `10.45.0.2` and `app-prod` is `10.45.0.3`. The outer VM joins as the roleless member `operator` (`10.45.0.10`) on its own interface, `wg-nested`. That interface never touches the real fleet's `orbit` interface or `10.44.0.0/24`. The native step `operator` sets up the outer VM's side. It installs the candidate CLI as `/usr/local/bin/orbit-nested`, so the real `orbit` on that VM is never replaced, and adds one profile, `nested`, that names the Gateway by address. It refuses to run when the CLI already has another profile, so it never switches a real default Gateway. Cases call `orbit-nested`. A release disables and stops `wg-quick@wg-nested`, and the next reset enables it again. The Gateway recognises the outer VM as a WireGuard member, so a command arrives as it does from an operator machine. Keys live on the outer VM, so every reset agrees with them.
+
+## Ready copies and the fast reset
+
+A build constructs the whole fleet: 54 s of it creates VMs and the rest installs Orbit again. A fleet that is already
+healthy can instead be stored and put back. `bin/proof-fleet ready GROUP` stops the three guests of the active
+generation, copies each to `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod` (an Incus copy on the
+btrfs pool, about 0.2 s each) and starts the originals again. `reset --from-ready` and `verify` then put the copies back
+in place of the guests. The names `ready-*`, `ready2-*` and `ready3-*` belong to earlier hand-made experiments; nothing
+here touches them.
+
+**What a ready copy carries.** Nothing that belongs to one generation, so it never blocks release or cleanup. It has no
+`user.orbit.e2e.*` label, so the inventory and the harness release see only the guests of an attempt. It has no `eth0`
+device: a stopped NIC would keep the network in use, and Incus refuses a second VM that holds the same static MAC or
+IP. It has no `orbit-source` device, which names one generation's source directory. The MAC, the IP, the subnet, the
+mount path, the Gateway's Node ids, the creation time and one set identity are `user.ready.*` keys; `user.ready.complete`
+is written last on all three, so a half made set is never used.
+
+**When copies are usable.** All three exist, stopped, with one complete set identity and no label or generation device.
+They are for the subnet and the three addresses of the active generation, which also needs a fleet record (the
+generation was published healthy; one built before the record existed has the same facts in its evidence). They are
+younger than 20 h, because the Swamp tokens that a build mints last 24 h and its certificates 2 days. Otherwise
+`verify` builds as it always did, and `reset --from-ready` builds and then makes new copies.
+
+**The fast reset** is the workflow `proof-fleet-reset-ready`; every step is named there. Measured on a task VM, three runs took 78.7, 72.7 and 71.3 s from the command to a checked fleet, against 233 s for a build. Boot is about 50 s of it (`wait` ends 49 to 57 s after the start); the export of the candidate is about 10 s and the readiness check 3 s.
+
+1. `inventory` pins the candidate, as in a build.
+2. `snapshot` exports the pinned candidate to a new generation. The generation inherits the previous one's attempt lease
+   (`.e2e`), its runtime state (the Gateway `.env`, caches, logs, the agent manifest) and the ACL on the directories that
+   lead Caddy to `public`. It becomes the active generation last, so an earlier failure leaves the previous one active
+   and releasable. A later release removes the same guests and network, because the lease names them.
+3. `restore` deletes the three guests, copies each ready copy back under the generation's name, labels it for the
+   attempt, adds a NIC on the generation's network with the saved MAC and IP, adds the new source mount and starts all
+   three. It records the time just before the start.
+4. `candidate` applies the candidate inside the Gateway as soon as it has mounted the new source, while the Nodes still
+   boot: Caddy access, `package:discover`, migrations, the Swamp repository (serve hot-reloads the workflows; its `.swamp.yaml`, which holds the datastore the build set up, stays), the
+   extensions whose pin changed, and a restart of the queue worker and the agent-view subscriber. The Gateway mounts the
+   generation's private source copy; mounting the live checkout is a later change.
+5. `wait` waits within a fixed 150 s bound for the guest agents, a fresh WireGuard handshake with the nested Gateway,
+   an answer from the Gateway, every Node agent online by the Gateway's own presence heartbeat, and the Swamp worker
+   enrolled in serve. A boot is not an observation of Orbit state, so this one step waits; every later step is one-shot.
+6. `operator` pins the restored Gateway's CA and the single profile, as in a build.
+7. `readiness` is the one readiness check: the Gateway answers the outer VM as a WireGuard member, scoped Doctor is
+   healthy for each Node, and the firewall baseline for the cases is recorded.
+8. `publish` records the receipt and the fleet record. `retire-previous` runs beside it and deletes the previous
+   generation's source directory (the guests wrote some of it as root, so it uses sudo).
+
+A fleet restored from ready copies sends no new Node fact, because the agent reports a fact only when it changes, so
+the build's check for facts received after the start does not apply. The presence heartbeat in `wait` proves that each
+agent is alive, and the recorded facts must exist.
+
+A failure at any step runs the same failure cleanup as a build: it releases the active generation. The ready copies
+stay, but with no fleet they are unusable until the next build. `release` removes the generation and leaves them.
+
+`status.json` of a run records `mode` (`full`, `ready`, `ready-make` or `build-ready`), the run's seconds and the seconds of
+every job. `mode.json` records the workflow chosen and why.
 
 ## Boot behaviour
 
