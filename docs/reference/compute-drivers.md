@@ -453,7 +453,7 @@ A slot is in one of these states:
 | `ready` | A task holds the slot, and Pi runs |
 | `parked` | A task holds the slot, and its VM is stopped. See [Park and resume](#park-and-resume) |
 | `destroying` | The task ended and Orbit is releasing the slot: it deletes the VM and its seed clone |
-| `failed` | A step failed. No claim can take the slot. The failed Operation shows the cause. A `failed` slot of an ended task is released again by the [host sweep](#release) |
+| `failed` | A step failed, and no claim can take the slot. The failed Operation shows the cause. The [host sweep](#release) releases the slot once its task has ended |
 
 A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, but no VM runs, so its observer shows offline. Doctor skips a `free` slot, as it skips a `parked` one. Fleet rollout and Metrics skip every task VM Node already.
 
@@ -594,12 +594,20 @@ When the run has succeeded, the Gateway scrubs its own records, in one transacti
 
 - It deletes the slot Node's agent facts of every kind. The next task uses the same workspace path, and an old checkout fact would still read as current.
 - It removes the workspace records on the slot Node without contacting it: Instance, Route, Schedule, and every Process except `pi-server`.
-- It checks that the Node holds no Instance, Route, Schedule or Process except `pi-server`, no database connection, no firewall rule and no Tool. A leftover sets the slot to `failed` with the error `task_vm.slot_not_clean`, fails the Operation and reports the error, which files a problem.
-- Otherwise it clears the task, `claimed_at`, `ready_at`, the image, and the publish, topology and error fields. The slot becomes `free`.
+
+Then it checks that the Node holds nothing else. The Node has no Instance, Route or Schedule. It has no Process except `pi-server`. It has no database connection, firewall rule or Tool.
+
+A leftover is a failure. The slot becomes `failed` with the error `task_vm.slot_not_clean`. The Operation fails, and the Gateway reports the error, which files a problem.
+
+With a clean Node, it clears the task, `claimed_at`, `ready_at`, the image, and the publish, topology and error fields. The slot becomes `free`.
 
 The release rotates nothing. The Pi token, the model key and the observer secret stay the same from task to task. The Node, the hub peer and the identity volume stay too. Orbit revokes the model key when an operator removes the slot, not when a task ends.
 
-If a host step fails or the run expires, the slot stays `destroying` with the error. The task VM host sweep, every thirty minutes, releases a slot again when it is `provisioning`, `ready`, `parked`, `failed` or `destroying`, its task has ended, and the task no longer owns a workspace. A task that ended with its workspace still in place waits for the ending run first, because only that run can push the approved work and tear the workspace down. A failed claim never got past provisioning, so it needs no ending run. The forced deletes make a repeated release safe. A slot with no recorded task is `free` or still enrolling, and has nothing to release.
+If a host step fails or the run expires, the slot stays `destroying` with the error.
+
+The task VM host sweep runs every thirty minutes. It releases a slot again when the slot is `provisioning`, `ready`, `parked`, `failed` or `destroying`, its task has ended, and the task does not own a workspace. The forced deletes make a repeated release safe.
+
+A task that ended with its workspace still in place waits for the ending run first, because only that run can push the approved work and tear the workspace down. A failed claim never got past provisioning, so it needs no ending run. A slot with no recorded task is `free` or still enrolling, and has nothing to release.
 
 #### Network and firewall
 

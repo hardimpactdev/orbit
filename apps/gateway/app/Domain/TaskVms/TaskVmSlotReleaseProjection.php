@@ -10,6 +10,7 @@ use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskableType;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Instance;
 use App\Models\Node;
@@ -17,6 +18,7 @@ use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Route;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -127,6 +129,8 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
             $instance->processes()->get()->each(static fn (Process $process): bool => $process->delete() ?? false);
             $instance->delete();
         }
+        // A group that failed in its claim still points at its workspace; the record is gone now.
+        Task::query()->withoutGlobalScopes()->where('taskable_type', TaskableType::Instance)->whereIn('taskable_id', $instances->modelKeys())->update(['taskable_type' => null, 'taskable_id' => null]);
         $node->schedules()->delete();
         $node->hostedSchedules()->delete();
         $node->processes()->where('name', '!=', 'pi-server')->get()->each(static fn (Process $process): bool => $process->delete() ?? false);

@@ -496,6 +496,9 @@ it('admits one release per slot, marks the slot destroying, and leaves a free sl
 
 it('frees the slot after a passed end check: scrubs the facts and the workspace records, keeps the identity, and clears the task', function (): void {
     [$vm, $group, $instance] = endedSlot();
+    // A failed claim: the group ended `failed` and still names its workspace.
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Failed])->save();
     $other = TaskVm::query()->where('slot', 1)->whereKeyNot($vm->id)->first();
     $vm->update(['state' => TaskVmState::Destroying]);
     $operation = releaseOperation($vm);
@@ -519,8 +522,9 @@ it('frees the slot after a passed end check: scrubs the facts and the workspace 
     expect(Process::query()->where('owner_type', Node::class)->where('owner_id', $vm->node_id)->pluck('name')->all())->toBe(['pi-server']);
     expect($vm->node->status->value)->toBe('active');
     expect($other)->toBeNull();
-    // The group is not touched: it ended already.
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+    // The group keeps its status, and no group points at the removed workspace.
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+    expect(Task::query()->withoutGlobalScopes()->whereNotNull('taskable_id')->count())->toBe(0);
     // A new task can claim the slot at once.
     expect(app(AllocateTaskVmAction::class)->capture(claimGroup())->id)->toBe($vm->id);
 })->group('slots');

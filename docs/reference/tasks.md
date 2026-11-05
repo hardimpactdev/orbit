@@ -190,6 +190,8 @@ The Gateway retains the owned workspace and VM records until the terminal result
 
 A completed group with an owned residual VM or workspace uses this same cleanup and stays `completed`; a completed group with neither returns `tasks.not_cancellable`. A VM without a group uses `task_vm.destroy`.
 
+A [slot](/reference/compute-drivers#task-vm-slots) is never destroyed. For a task on a slot, the ending DAG pushes approved work, withdraws the Route and runs the teardown steps as above, but its destroy step is skipped and the Gateway keeps the slot's Node, keys and tokens. When the run succeeds and the workspace records are gone, the Gateway admits the [slot release](/reference/compute-drivers#release), which deletes the VM and returns the slot to `free`. Completion by `tasks.maintenance_finish` and a failed claim end the same way.
+
 Plain Task VMs have no Swamp worker. Native provision supplies the Pi runtime and public Node metadata; Tasks work runs from Node 209 over official SSH.
 
 #### Keep command output out of run history
