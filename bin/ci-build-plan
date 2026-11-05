@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-JOBS = ('php', 'gateway-static', 'cli', 'docs', 'api-reference', 'web', 'swamp', 'proof')
+JOBS = ('php', 'gateway-static', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
 SELECTION = 'swamp/proof/selection.txt'
 SELECTION_COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
@@ -97,6 +97,14 @@ def select(paths, main=False, selection=None):
             continue
         if path.startswith(('.github/', 'bin/', 'tools/', '.agents/')) or '/' not in path:
             jobs = dict.fromkeys(JOBS, True)
+        # Each PHP project that no other job analyses has its own static analysis. Every file of the project selects it,
+        # its Composer manifest and lock included, so a dependency bump is analysed with the code that uses it.
+        if path.startswith(('apps/cli/', 'packages/php-sdk/')):
+            jobs['cli-static'] = True
+        if path.startswith('packages/php-sdk/'):
+            jobs['sdk-static'] = True
+        if path.startswith('apps/e2e/'):
+            jobs['e2e-static'] = True
         if path.endswith('.php') or path.endswith(('composer.json', 'composer.lock')):
             jobs['php'] = True
         if path.startswith(('apps/cli/tests/', 'apps/gateway/tests/', 'packages/php-sdk/tests/')):

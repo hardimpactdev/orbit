@@ -99,6 +99,78 @@ jobs:
       version: ''
       changed-only: true
 
+  cli-static:
+    name: CLI static analysis
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: cli-static
+      - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          coverage: none
+      - name: Install the dependencies of apps/cli
+        if: steps.scope.outputs.selected == 'true'
+        run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      - name: Analyze apps/cli
+        if: steps.scope.outputs.selected == 'true'
+        working-directory: apps/cli
+        run: composer analyse
+
+  sdk-static:
+    name: PHP SDK static analysis
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: sdk-static
+      - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          coverage: none
+      - name: Install the dependencies of packages/php-sdk
+        if: steps.scope.outputs.selected == 'true'
+        run: composer install --working-dir=packages/php-sdk --no-interaction --prefer-dist --no-scripts
+      - name: Analyze packages/php-sdk
+        if: steps.scope.outputs.selected == 'true'
+        working-directory: packages/php-sdk
+        run: composer analyse
+
+  e2e-static:
+    name: E2E static analysis
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: e2e-static
+      - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          coverage: none
+      - name: Install the dependencies of apps/e2e
+        if: steps.scope.outputs.selected == 'true'
+        run: composer install --working-dir=apps/e2e --no-interaction --prefer-dist --no-scripts
+      - name: Analyze apps/e2e
+        if: steps.scope.outputs.selected == 'true'
+        working-directory: apps/e2e
+        run: composer analyse
+
   docs:
     name: Docs build
     runs-on: ubuntu-26.04
@@ -340,7 +412,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, docs, api-reference, web, swamp, proof, gateway-release, changes]
+    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, swamp, proof, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks

@@ -4,23 +4,15 @@ declare(strict_types=1);
 
 namespace App\Support;
 
-use Laravel\Boost\Mcp\Tools\ApplicationInfo;
+use Laravel\Boost\Mcp\Resources\ApplicationInfo;
 use Laravel\Boost\Support\PackageRegistry;
-use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
-use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Laravel\Roster\Package;
 
-#[IsReadOnly]
 final class LaravelZeroApplicationInfo extends ApplicationInfo
 {
     #[\Override]
-    protected string $name = 'application-info';
-
-    #[\Override]
-    protected string $title = 'Application Info';
-
-    public function handle(Request $request): Response
+    public function handle(): Response
     {
         return Response::json([
             'php_version' => PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION,

@@ -48,6 +48,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
 | Gateway static analysis | Run the complete Gateway PHPStan configuration and collect all Gateway tests whenever a PR changes any file under `apps/gateway/`, including tests |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
+| CLI static analysis, PHP SDK static analysis, E2E static analysis | Run PHPStan for `apps/cli`, `packages/php-sdk` or `apps/e2e` when a PR changes any file of that project, `composer.lock` included. The SDK also selects the CLI analysis |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
