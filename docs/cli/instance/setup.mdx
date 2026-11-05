@@ -1,23 +1,50 @@
 ---
 title: "orbit instance:setup"
 sidebarTitle: "instance:setup"
-description: "Run the Project setup steps for one development Instance. The command runs every step from the start of the list. A failed step leaves the Instance in place."
+description: "Run the Project setup steps for one development Instance, from the start of the list."
 ---
 
-The Gateway returns an `instance.run_steps` Operation with status `202`. The CLI follows it to completion. `--json` returns the final Operation; `--idempotency-key` retries the same admission. Setup and teardown configuration remains Gateway data.
-
 ```bash
-orbit instance:setup <instance> [--idempotency-key=<key>] [--json]
+orbit instance:setup <instance> [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Numeric Instance ID. |
+| `instance` | yes | Numeric Instance ID of an active development Instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
 ```bash
 orbit instance:setup 12
 ```
 
+In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
+
+The command runs every setup step of the Instance's Project in list order, from the start of the list, as the Instance's account in the repository root of the code the Instance serves. It stops at the first failure. Each step keeps its own timeout, and the whole list is limited to 540 seconds. An empty list succeeds and changes nothing. Setup and teardown configuration stays Gateway data, and Orbit writes no script into the checkout. See [Instance setup and teardown](/reference/instance-setup) for the lists, the budget and the step commands.
+
+The command records the current list when it is admitted. A change to the list before the run starts makes the run refuse the admitted list; run the command again to use the new one. A failed step leaves the Instance and its checkout in place and rolls nothing back. Run the command again after the fix; it starts from the first step. The Instance records the failed step and its error code, and a later success clears them and ends the first-setup state.
+
+The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does: a progress tree of the steps, Ctrl-C stops following and not the setup and exits 130, and `--json` prints nothing while it follows. The command output of a step is not kept: a failed step is named with its error code.
+
 ## How it works
 
 <div className="flow-at" data-chart="instance/setup"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
+| `input.cancelled` | You cancelled the Instance list. |
+| `instance.setup_unavailable` | The Instance is not an active development Instance. |
+| `instance.step_not_admitted` | The Project's list changed after admission, or the Instance is not placed on an `app-dev` Node, has a root or invalid account, or has an invalid checkout path. |
+| `instance.lifecycle_busy` | A development `default` deploy holds the checkout. |
+| `operation.target_busy` | Another operation holds the Instance. Fails today: setup takes no hold. |
+| `instance.setup_step_failed` | A setup command exited with an error. |
+| `instance.setup_step_unavailable` | A setup command was not found on the Node. |
+| `command.deadline_exceeded` | A step ran past its timeout, or the list budget stopped it. No command keeps running after its timeout. |
+| `instance.step_execution_unconfirmed` | The run ended without a step proven to have failed, such as a lost SSH connection. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
