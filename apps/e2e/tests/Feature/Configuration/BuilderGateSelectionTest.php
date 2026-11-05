@@ -310,7 +310,7 @@ SH);
     })->with([
         'documentation-only change' => ['docs/reference/example.md', [], 6],
         // A tools change selects every CI job, so the contracts and the Swamp workflows are checked too.
-        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', ['swamp'], 11],
+        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', ['swamp'], 12],
     ]);
 
     it('selects the Pi server CI profile for Pi server changes', function (): void {
