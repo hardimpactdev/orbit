@@ -94,9 +94,10 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             ShowGatewayReleaseCommand::class,
         ]);
         // The tick only admits a run. Its bound covers admission's network reads, such as the 120-second agent
-        // download; a release that switches restarts the scheduler.
+        // download; a release that switches restarts the scheduler. PRs merge straight into main, so the merges of
+        // five minutes go out in one release of the newest green commit.
         $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
-            GatewaySchedule::command($schedule, 'gateway:release:auto', uniqueFor: 300, overlapMinutes: 5)->everyMinute();
+            GatewaySchedule::command($schedule, 'gateway:release:auto', uniqueFor: 300, overlapMinutes: 5)->everyFiveMinutes();
         });
     }
 }
