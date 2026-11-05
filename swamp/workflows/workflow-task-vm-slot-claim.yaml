@@ -1,0 +1,135 @@
+id: 3881f648-c4c3-4bd3-9423-2fa5478f5111
+name: task-vm-slot-claim
+description: Claim one task VM slot for a task. Boot its VM from the task image with the read-only identity volume, check it, fetch the task commit and reset the nested topology. The Gateway took the slot at admission; the slot keeps its Node, keys and tokens, so no secret travels here.
+vaults: [orbit-control-inputs]
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [tasks.provision]}
+    intent: {type: object}
+  # The parent also passes `execution_secrets`, which a slot claim does not use: the slot holds its secrets already.
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: true
+jobs:
+- name: claim
+  labels: {role: swamp}
+  steps:
+  - name: Boot the VM
+    labels: {role: swamp}
+    writes: true
+    # The boot of an enrolment's proof VM: remove a stale VM, clone the seed, create the VM with the read-only identity disk, start it, wait for the guest.
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-slot-boot
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ inputs.intent.slot_claim }}'
+  - name: Check the slot VM
+    labels: {role: swamp}
+    dependsOn: [{step: Boot the VM, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-slot-claim-guest-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      methodName: exec
+      # The slot's address and host key never change, so the pin comes from the Gateway's record of the slot.
+      globalArgs:
+        name: '${{ ("task-vm-slot-claim-guest-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.slot_claim.guest.user }}', port: 22, identityFile: '${{ inputs.intent.slot_claim.guest.identity_file }}', connectTimeoutSec: 10, extraOptions: [ConnectionAttempts=12]}
+        hosts: [{name: slot, address: '${{ inputs.intent.slot_claim.guest.address }}', transport: {hostKeys: ['${{ inputs.intent.slot_claim.guest.host_key }}']}}]
+      # The identity unit installs the identity before ssh starts, so a connection means it finished and the connection attempts
+      # are the boot allowance (12 attempts, 10 s each). The command proves the unit did not fail, the pinned binaries, the
+      # observer and Pi.
+      inputs:
+        hosts: name:slot
+        sudo: true
+        argv:
+        - timeout
+        - '120'
+        - bash
+        - -c
+        - |
+          set -eu
+          systemctl is-active --quiet orbit-slot-identity.service
+          printf '%s  %s\n%s  %s\n' "$1" /usr/local/bin/orbit-agent "$2" /home/orbit/.local/bin/pi-server | sha256sum -c --quiet
+          systemctl is-active --quiet orbit-agent.service
+          curl -fsS -o /dev/null --max-time 10 -H @<(printf 'Authorization: Bearer %s' "$(cat /home/orbit/.pi/agent/orbit-token)") "$3/capabilities"
+        - bash
+        - '${{ inputs.intent.slot_claim.guest.agent_sha256 }}'
+        - '${{ inputs.intent.slot_claim.guest.pi_sha256 }}'
+        - '${{ inputs.intent.slot_claim.guest.pi_url }}'
+        timeoutSec: 130
+  - name: Fetch the task branch
+    labels: {role: swamp}
+    writes: true
+    # A public repository needs no credential; the workspace children clone it as they do without a slot.
+    guard: '${{ inputs.intent.git_authorization == null }}'
+    dependsOn: [{step: Check the slot VM, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-slot-claim-guest-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("task-vm-slot-claim-guest-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.slot_claim.guest.user }}', port: 22, identityFile: '${{ inputs.intent.slot_claim.guest.identity_file }}', connectTimeoutSec: 10, extraOptions: [ConnectionAttempts=12]}
+        hosts: [{name: slot, address: '${{ inputs.intent.slot_claim.guest.address }}', transport: {hostKeys: ['${{ inputs.intent.slot_claim.guest.host_key }}']}}]
+      # The token reaches git through stdin and the environment of one process, never argv, and stays off the disk.
+      # The step does nothing while the image holds no checkout at the workspace path.
+      inputs:
+        hosts: name:slot
+        stdin: '${{ vault.get(inputs.intent.git_authorization.vault, inputs.intent.git_authorization.key) }}'
+        argv:
+        - timeout
+        - '300'
+        - sh
+        - -c
+        - |
+          set -eu
+          [ -d "$1/.git" ] || exit 0
+          IFS= read -r GIT_CONFIG_VALUE_0 || [ -n "$GIT_CONFIG_VALUE_0" ]
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0
+          git -C "$1" fetch --no-tags --quiet origin "$2"
+        - sh
+        - '${{ inputs.intent.workspace.checkout_path }}'
+        - '${{ inputs.intent.workspace.start_commit }}'
+        timeoutSec: 310
+  - name: Reset the nested topology
+    labels: {role: swamp}
+    writes: true
+    # The workflow lands with B3/B4. Until then `nested_reset` is off and the step is skipped.
+    guard: '${{ inputs.intent.slot_claim.nested_reset == false }}'
+    dependsOn: [{step: Fetch the task branch, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-nested-reset
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ inputs.intent.slot_claim }}'
+  - name: result
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Check the slot VM, condition: {type: succeeded}}
+    - {step: Fetch the task branch, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Reset the nested topology, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    # The receipt that task-vm-provision returns, from the Gateway's record of the slot: the parent reads the same fields.
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment-input'
+      behaviorName: '${{ "vm-enrollment-result" }}'
+      methodName: forward
+      inputs:
+        receipt:
+          result_json: '${{ inputs.intent.slot_claim.receipt_json }}'
+          task_vm_id: '${{ inputs.intent.slot_claim.receipt.task_vm_id }}'
+          guest_node_id: '${{ inputs.intent.slot_claim.receipt.guest_node_id }}'
+          ready: '${{ inputs.intent.slot_claim.receipt.ready }}'
+          provider: '${{ inputs.intent.slot_claim.receipt.provider }}'
+          enrollment: '${{ inputs.intent.slot_claim.receipt.enrollment }}'

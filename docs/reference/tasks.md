@@ -132,6 +132,8 @@ Each captured Project setup command then runs in order as `env -C <checkout> …
 
 Full capacity, or no usable promoted image, returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available. While a host builds the current recipe, or after its build failed, the host's last promoted image serves a new VM when it is at most one day old, unless the group set `current_recipe`. See [Image fallback](/reference/compute-drivers#image-fallback).
 
+On a host that [claims slots](/reference/compute-drivers#claim), the group takes a free slot instead of a new VM. It waits with `Task VM: no capacity.` when none is free.
+
 Admission captures the workspace's runtime with the same actions as `instance:create`. A Project that serves a web root with `task_workspace_routed` on gets a private Route on the development Cluster. Development Process definitions become Instance Processes. Schedule definitions are production-only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)), so a workspace gets none. The guest's host key is unknown at admission, so the Gateway captures the guest's SSH targets with `host_keys: null`.
 
 `Bind the workspace keys` fills those keys from the VM step's pinned key and refuses any other Node. The run uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials. Success activates the Route and completes the Processes; a failure marks them failed. The projection reads the admitted Process members only when the receipt reports Process outcomes.

@@ -14,6 +14,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
+use App\Domain\TaskVms\TaskVmSlotClaim;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Models\Instance;
@@ -28,7 +29,7 @@ use Illuminate\Support\Facades\DB;
 /** State projection only. Swamp owns source, setup, runtime and readiness. */
 final readonly class TaskProvisionProjection implements DirectOperationProjection
 {
-    public function __construct(private TaskVmProvisionIntent $vms, private TaskVmEnrollmentProjection $enrollment) {}
+    public function __construct(private TaskVmProvisionIntent $vms, private TaskVmEnrollmentProjection $enrollment, private TaskVmSlotClaim $claims) {}
 
     public function input(Operation $operation): array
     {
@@ -50,7 +51,7 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         });
         $route = is_array($operation->input['route'] ?? null) ? $operation->input['route'] : null;
 
-        return [...$input, 'execution_secrets' => $copies, 'intent' => [...$intent,
+        return [...$input, 'execution_secrets' => $copies === [] ? (object) [] : $copies, 'intent' => [...$intent,
             'eligible' => ($intent['eligible'] ?? false) && $group->status === TaskGroupStatus::Reserved,
             'processes' => $members, 'route' => $route['route_create'] ?? null, 'route_secrets' => $route['execution_secrets'] ?? (object) []]];
     }
@@ -73,9 +74,13 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
             $instance = Instance::query()->where('task_workspace_owner_id', $group->id)
                 ->where('node_id', $vm->node_id)->where('project_id', $group->project_id)->findOrFail(ValidatedData::integer($operation->input['instance_id']));
+            if ($vm->slot !== null && $data['status'] === 'succeeded' && ! $this->claims->reports($vm)) {
+                // The slot's agent has not reported since the claim, so the new VM is not proven: the task fails.
+                $data = [...$data, 'status' => 'failed', 'error_code' => 'task_vm.slot_not_reporting'];
+                $result = $data['result'] = [...$result, 'error_code' => 'task_vm.slot_not_reporting', 'failed_step' => 'report'];
+            }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             $this->recordRuntime($operation, $result, $data['error_code'] ?? null);
-            $intent = ValidatedData::object($operation->input['enrollment']);
             if (in_array($data['status'], ['succeeded', 'failed', 'interrupted', 'cancelled'], true) && ($result['ready'] ?? false) === true) {
                 $provider = ValidatedData::object($result['provider'] ?? []);
                 if (($result['task_vm_id'] ?? null) !== $vm->id || ($result['guest_node_id'] ?? null) !== $vm->node_id
@@ -84,7 +89,11 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
                     throw new ResourceOperationException('operation.invalid_result', 'The Tasks result does not confirm its admitted VM and image.', 422);
                 }
                 $vm->update(Arr::only($provider, ['provider_id', 'address']));
-                $this->enrollment->record($vm, $intent, ValidatedData::object($result['enrollment']));
+                if ($vm->slot === null) {
+                    $this->enrollment->record($vm, ValidatedData::object($operation->input['enrollment']), ValidatedData::object($result['enrollment']));
+                } elseif ($this->claims->reports($vm)) {
+                    $this->claims->record($vm, $result);
+                }
                 $vm->refresh();
             }
             if ($data['status'] === 'succeeded') {

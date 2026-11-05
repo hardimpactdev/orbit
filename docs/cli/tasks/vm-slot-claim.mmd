@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: B6 slot design (migration-dashboard/drafts/task-vm-slots.md, M1), docs/reference/compute-drivers.md (Task VM slots), docs/reference/task-vm-native-provision.md, DECISIONS R1-R4.
-  %% Tightened: flow-tighten rules 1, 2, 3, 6, 9, 14, 15, 16, 20, 22 (enrolment, hub peer, keys and model key are gone from the claim; the VM steps are native argvs; one ready check that waits for the identity unit; the nested topology is one call to a shared workflow).
+  %% Tightened: flow-tighten rules 1, 2, 3, 6, 9, 14, 15, 16, 20, 22, 27 (enrolment, hub peer, keys and model key are gone from the claim; the VM steps are the boot workflow that the enrolment's proof VM uses; one ready check that waits for the identity unit; the nested topology is one call to a shared workflow).
+  %% Changed in M4: the claim is a child workflow of the task's own `tasks.provision` run, as `task-vm-provision` is; the boot is one call to `task-vm-slot-boot` (rule 27); the claim removes the slot Node's old facts; the fetch takes the start commit.
   %% status: reviewed
   %% command: none · task VM claim for a task
   %% kind: task_vm.slot_claim
@@ -20,17 +21,22 @@ sequenceDiagram
   %%> Requirements:
   %%> - an active task VM host has a `free` slot
   %%> - the task has no other slot
+  %%> - the host is listed in `task_vms.slot_claim_hosts` (none is by default); any other host enrols a new VM for the task, as before
   %%> - one SQLite transaction takes the slot, so two claims never get the same one
   %%> Chooses:
   %%> - the host with the most free slots, then its lowest-numbered free slot
   %%> - the current task image, or the one-day fallback image
+  %%> - a host that claims slots never creates a VM of its own; a host that does not claim slots is used only when no claiming host has a free slot
   %%> Result:
   %%> - the slot becomes `provisioning` and records the task, `claimed_at` and the image
   %%> - no Node, address, token or key is made: the slot already has them
+  %%> - the slot Node's old agent facts are removed in the same transaction (an unchanged report is never rewritten, so an old fact would stay)
   %%> - a task is recorded with the full intent
   %%> When it waits:
   %%> - no host has a free slot: the task waits (`capacity`) and starts when a slot is released
-  GW->>SW: Start run, full intent<br/>operation-task-vm-slot-claim
+  GW->>SW: Start run, full intent<br/>operation-task-provision
+  %%> Why this run:
+  %%> - the claim is the child workflow `task-vm-slot-claim`; the run's workspace steps follow it, as they follow `task-vm-provision`
   %%> Inputs:
   %%> - the slot name, host, project and pool
   %%> - the image fingerprint, the seed volume names and the resource limits
@@ -39,21 +45,13 @@ sequenceDiagram
   %%> - the task branch and its commit
   %%> Secrets:
   %%> - none travel in this run; the identity volume on the host holds them
-  SW->>H: Clone the seed<br/>ssh exec · incus volume copy
-  %%> How:
-  %%> - one argv: copy the image's topology seed to `HOST-tvm-N-topology-seed`
-  %%> - the seed holds the three stopped nested VMs (gateway, app-dev, app-prod)
-  %%> - an existing clone is kept
-  SW->>H: Create the VM<br/>ssh exec · incus init
+  SW->>H: Boot the VM<br/>workflow · task-vm-slot-boot
   %%> What it does:
-  %%> - one argv with the instance config on stdin
-  %%> - the task image, the seed clone, the identity volume as a read-only disk at `/opt/orbit-slot`
-  %%> - the static address, the fixed MAC, the limits and the user data for the account
-  %%> Why one step:
-  %%> - the account metadata and the devices are part of the create (rule 6)
-  SW->>H: Start the VM<br/>ssh exec · incus start
-  %%> How:
-  %%> - one argv; the next step waits for the boot
+  %%> - the boot that an enrolment's proof VM uses, as ssh exec argvs on the host
+  %%> - removes a stale VM and seed clone of the slot (none exists for a free slot)
+  %%> - copies the image's topology seed to `HOST-tvm-N-topology-seed`; the seed holds the three stopped nested VMs (gateway, app-dev, app-prod)
+  %%> - creates the VM with the instance config on stdin: the task image, the seed clone, the identity volume as a read-only disk at `/opt/orbit-slot`, the static address, the fixed MAC, the limits and the user data for the account
+  %%> - starts it, then waits until the guest has its address
   SW->>VM: Check the slot VM<br/>ssh exec · pinned host key
   %%> What it does:
   %%> - runs `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`, within the boot allowance, then one command
@@ -67,15 +65,16 @@ sequenceDiagram
   VM-->>GW: First host report<br/>orbit-agent · host fact
   %%> Why:
   %%> - the Gateway keeps the latest fact per Node, kind and subject
-  %%> - the release removed the old facts, so a newer `host` fact proves the new VM reports
+  %%> - the claim removed the old facts, so a `host` fact received after `claimed_at` proves the new VM reports
   SW->>VM: Fetch the task branch<br/>ssh exec · git fetch
   %%> What it does:
-  %%> - fetches the task's branch onto the checkout baked into the task image
+  %%> - fetches the task's start commit onto the checkout at the workspace path, when the task image holds one
   %%> - only the new commits travel
+  %%> - skipped for a public repository, which needs no credential; the workspace steps clone it as they do without a slot
   %%> Credential:
   %%> - the Gateway mints a short-lived GitHub token when it admits the task
   %%> - it passes the token through the vault as a key name, never as a value
-  %%> - the fetch uses the token once and does not keep it on disk
+  %%> - the fetch gets the token on stdin and in one process's environment, never in argv, and does not keep it on disk
   SW->>VM: Reset the nested topology<br/>workflow · task-vm-nested-reset
   %%> What it does:
   %%> - runs on the slot VM's own nested Incus, as `ssh exec` argvs
@@ -83,6 +82,8 @@ sequenceDiagram
   %%> - starts them
   %%> - applies the candidate code: migrations, then a Swamp reload
   %%> - one readiness check: fresh agent facts from the nested Nodes, and the nested Gateway answers on `10.45.0.1`
+  %%> When it runs:
+  %%> - only while the Gateway setting `nested_reset` is on; it is off, and the step is skipped, until the workflow lands with B3/B4 (a placeholder workflow fails if the setting is turned on early)
   %%> Why one call:
   %%> - one shared workflow keeps the claim short
   %%> - it touches only the three nested VMs
@@ -92,7 +93,8 @@ sequenceDiagram
     %%> - its run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Record result
     %%> Result:
-    %%> - the slot becomes `ready` once a `host` fact newer than `claimed_at` has arrived
+    %%> - the slot becomes `ready` once a `host` fact received after `claimed_at` has arrived; the workspace steps run first, so the first report is normally in
+    %%> - when none has arrived, the task fails with `task_vm.slot_not_reporting` and the slot becomes `failed`
     %%> - the task succeeds, with the nested topology up on the candidate code
     %%> Next:
     %%> - the `tasks:provision` flow sets up the workspace on the slot's Node
