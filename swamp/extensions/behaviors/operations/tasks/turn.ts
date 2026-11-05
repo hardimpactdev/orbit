@@ -167,6 +167,7 @@ const ResultArgs = z.object({
     failure: z.boolean().default(false),
     failure_code: z.enum([
         "tasks.head_moved",
+        "tasks.prompt_too_large",
     ]).nullable().default(null),
 });
 export function finish(raw: unknown) {

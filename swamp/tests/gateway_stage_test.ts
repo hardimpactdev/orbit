@@ -516,6 +516,36 @@ Deno.test("implement opens a new thread, then continues it with the reviewer's f
     assertStringIncludes(String(second.body!.prompt), "Pin carbon.");
 });
 
+Deno.test("a later subtask is not implemented until the docs subtask completed", async () => {
+    const gw = fakeGateway({
+        groupStatus: "running",
+        tasks: [
+            { id: 10, position: 1, status: "failed" },
+            { id: 11, position: 2, status: "todo" },
+        ],
+    });
+    const job = await runStage(args("implement"), harness().deps(gw.http))
+        .catch((error: Error) => ({ lastError: error.message }));
+    assertStringIncludes(
+        String(job.lastError),
+        "waits for docs subtask 10 to complete",
+    );
+    assertEquals(gw.calls.filter((c) => c.method === "POST").length, 0);
+
+    const done = fakeGateway({
+        groupStatus: "running",
+        tasks: [
+            { id: 10, position: 1, status: "completed" },
+            { id: 11, position: 2, status: "todo" },
+        ],
+    });
+    await runStage(args("implement"), harness().deps(done.http));
+    assertEquals(
+        done.calls.find((c) => c.method === "POST")!.body!.subtask,
+        11,
+    );
+});
+
 Deno.test("a turn result's thread id becomes the change artifact's thread", async () => {
     const gw = fakeGateway({
         groupStatus: "running",

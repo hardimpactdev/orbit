@@ -99,6 +99,21 @@ Deno.test("untrusted prompt expressions remain inert JSON content", () => {
         true,
     );
 });
+Deno.test("an oversized prompt ends the turn with its own code and sends nothing", () => {
+    const input = turnInput();
+    input.prompt = "x".repeat(100000);
+    const prepared = prepare({ operation_id: 15, node_id: 30, intent: input });
+    assertEquals(prepared.error_code, "tasks.prompt_too_large");
+    const value = JSON.parse(
+        finish({
+            ...result(),
+            failure: true,
+            failure_code: prepared.error_code,
+        }).result_json,
+    );
+    assertEquals(value.state, "failed");
+    assertEquals(value.error_code, "tasks.prompt_too_large");
+});
 Deno.test("turn result retains the existing board token metrics", () => {
     assertEquals(finish(result()).successful, true);
     const value = JSON.parse(finish(result()).result_json);

@@ -744,6 +744,14 @@ async function plan(
         case "handoff":
             return req("/check", { subtask: t.id, phase: "handoff" }, t.id);
         case "implement": {
+            // Docs come first: a later subtask starts only after the group's first subtask, its docs, completed.
+            const docs =
+                [...g.tasks].sort((a, b) => a.position - b.position)[0];
+            if (docs && docs.id !== t.id && docs.status !== "completed") {
+                throw new Error(
+                    `subtask ${t.id} waits for docs subtask ${docs.id} to complete`,
+                );
+            }
             await setSubtaskStatus(http, group, t, "running");
             const change = envelope(args.change);
             const thread = change && change.payload.subtask === t.id &&
