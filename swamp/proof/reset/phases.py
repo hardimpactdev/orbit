@@ -1039,6 +1039,9 @@ def execute(request, action):
         return prune_generations(request)
     if action == 'prepare':
         source = source_for(request, request['generation'])
+        # A task group of an external orchestrator declares no topology, so Orbit never runs the host setup for it. It adopts the
+        # attached topology seed as the pool that holds `node-template`, and is idempotent.
+        privileged([str(Path(request['candidate']) / 'bin/e2e-topology-host-setup')], timeout=600)
         value = harness(request, 'prepare', source)
         value['gateway_resources'] = gateway_resources(request, value, source)
         return value

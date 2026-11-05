@@ -139,6 +139,16 @@ class OwnershipTests(unittest.TestCase):
             self.assertEqual({'released': True}, value)
             self.assertIn('timed out', json.loads((root / 'failure-kernel.json').read_text())['gateway'])
 
+    def test_prepare_adopts_the_topology_seed_before_the_harness(self):
+        calls = []
+        request = {'candidate': '/candidate', 'generation': 'a' * 32, 'evidence': '/evidence'}
+        with patch.object(phases, 'source_for', return_value='source'), \
+                patch.object(phases, 'privileged', side_effect=lambda argv, **kwargs: calls.append(('setup', argv))), \
+                patch.object(phases, 'harness', side_effect=lambda *args, **kwargs: calls.append(('harness', args[1])) or {}), \
+                patch.object(phases, 'gateway_resources', return_value={}):
+            phases.execute(request, 'prepare')
+        self.assertEqual([('setup', ['/candidate/bin/e2e-topology-host-setup']), ('harness', 'prepare')], calls)
+
     def test_gateway_memory_change_requires_complete_generation_ownership(self):
         prepared = {'construction': {'issue': 'TASK-3187', 'attempt_id': 'attempt', 'nodes': {'gateway': {'instance': 'owned'}}}, 'source': {'operation_id': 'operation'}}
         config = {'user.orbit.e2e.' + key: value for key, value in {'owner': 'orbit-e2e', 'issue': 'TASK-3187', 'attempt': 'attempt', 'operation': 'operation'}.items()}
