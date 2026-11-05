@@ -47,7 +47,9 @@ sequenceDiagram
     SW-->>GW: Child succeeded<br/>returns to the parent run
   else a step fails
     SW--xGW: Child failed<br/>error_code, failed step
-    Note over GW: Mark the change failed<br/>rerun resumes
+    Note over GW: Read the failed step<br/>cutover or not
+    %%> How the Gateway knows the cutover:
+    %%> - it derives it from the failed step, as for `route:update`; a step up to the DNS move is before it
     %%> Result before the cutover:
     %%> - the old Routes stay authoritative and the replacements are `failed`; the Gateway restores the Laravel URLs and private DNS; a failed Caddy validation leaves the candidate file and stops the reload
     %%> Result after the cutover:
