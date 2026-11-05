@@ -198,7 +198,6 @@ return [
     '0194' => ['0194-respond-to-github-review-feedback'],
     '0195' => ['0195-request-topologies-for-review-with-an-operator-container'],
     '0197' => ['0197-native-project-documents-with-private-s3-storage'],
-    '0198' => ['0198-keep-delivery-line-proofs-as-repo-commands'],
     '0199' => ['0199-post-direction-requests-to-opsbot-immediately'],
     '0200' => ['0200-run-each-task-group-in-its-own-sandbox-vm'],
     '0201' => ['0201-release-the-gateway-automatically-from-green-main'],

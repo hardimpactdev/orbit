@@ -5,7 +5,7 @@ description: Use when exploring or checking behavior on a task group's Incus top
 
 # Using Incus topologies
 
-A task group's topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` VM, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`, each with any roles its entry adds, such as `app-prod+ingress`). The implementer uses it to explore and check behavior while building, and the reviewer proves the deliverables on it. Subtasks do not carry proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
+A task group's topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` VM, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`, each with any roles its entry adds, such as `app-prod+ingress`). A subtask that declares a topology uses it to explore and check behavior while building, and the reviewer proves the deliverables on it. Subtasks do not carry proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
 
 ## Use the declared topology
 
@@ -59,7 +59,9 @@ bin/e2e-topology kill TASK-58 app-dev viewer
 
 ## Change code on the topology
 
-The worktree is mounted read-write into `gateway`, `app-dev`, and `operator`, so an edited file is live there at once. Run `sync` only after a migration or when a guest helper script changed. A full `sync` runs the readiness check and takes minutes. After a migration, run `sync ISSUE --quick` when you do not need full verification: it proves the mount, installs the guest helpers, and applies the migrations without the readiness probes. Run a full `sync` before you rely on `verify`.
+This harness mounts the worktree read-write into `gateway`, `app-dev` and `operator`, so an edited file is live there at once. Run `sync` only after a migration or when a guest helper script changed. A full `sync` runs the readiness check and takes minutes; `sync ISSUE --quick` skips the probes.
+
+This harness is not the command proof. To develop and prove a command, use the nested fleet of your task VM and `orbit-nested` (stages 2 and 3 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)). The nested VMs hold their own checkout and `orbit-nested` syncs it; nothing is shared.
 
 ## Add what the task needs
 

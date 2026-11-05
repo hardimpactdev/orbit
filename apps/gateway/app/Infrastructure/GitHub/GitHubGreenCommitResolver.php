@@ -19,7 +19,7 @@ use InvalidArgumentException;
 
 /**
  * Walks the branch's first-parent history from its head through the Gateway GitHub App. The same
- * rules as `bin/pr-head-check` decide a commit's check: a run of the required name for exactly that
+ * rules as the task merge gate decide a commit's check: a run of the required name for exactly that
  * `head_sha`, completed with `success`. A commit with no such run, such as one pushed together with
  * a newer commit, is never green. Every run of the required name must also come from GitHub Actions,
  * so another App with `checks: write` cannot report a commit green. Commits are read with a

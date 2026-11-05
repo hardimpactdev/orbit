@@ -53,27 +53,12 @@ directly). Every `swamp model …` spelling remains supported.
 
 # Orbit operations in Swamp
 
-Read the binding [Swamp shape guide](docs/swamp-shape.md) and its linked
-[Swamp manual](https://swamp-club.com/manual) pages before writing, porting or
-reviewing an operation. They override older repository guidance and conflicting
-Recall atoms. Build and review flows with the
-[swamp-flow skill](../.agents/skills/swamp-flow/SKILL.md) and its
-[porting reference](../docs/swamp/porting.md).
+The flow of a command is the [command development pipeline](../docs/reference/command-development-pipeline.mdx) and its stage charts. Read the binding [Swamp shape guide](docs/swamp-shape.md) and its linked [Swamp manual](https://swamp-club.com/manual) pages before you write, port or review an operation. They override older repository guidance and conflicting Recall atoms. Build and review flows with the [swamp-flow skill](../.agents/skills/swamp-flow/SKILL.md) and its [porting reference](../docs/swamp/porting.md).
 
-The guide owns the execution contract and per-PR checks. Before you push, run `bin/swamp-shape-gate` at the repository root: it is the one script that CI runs for the shape gate and the validation. Do not copy existing
-grandfathered implementations as templates. Use lane 11's native pilot once its
-open points are settled. Until then, pause conversions and keep live-breakage
-fixes minimal.
+The guide owns the execution contract and the per-PR checks. Before you push, run `bin/swamp-shape-gate` at the repository root: it is the one script that CI runs for the shape gate and the validation. Do not copy grandfathered implementations as templates.
 
-Use native workflows, placed one-action steps and Swamp defaults. Use existing
-types when they fit. Keep reusable data in Swamp and connect steps through typed
-inputs and outputs. Pin extension dependencies. Inspect native reports after a
-failure before deciding how to resume.
+Use native workflows, placed one-action steps and Swamp defaults. Use existing types when they fit. Keep reusable data in Swamp and connect steps through typed inputs and outputs. Pin extension dependencies. Inspect native reports after a failure before deciding how to resume.
 
-The Gateway owns state, admission and terminal result projection. It supplies
-full non-secret intent and vault key names. Steps do not read intent or report
-progress over Gateway HTTP. The agent only observes and stays frozen.
+The Gateway records intent, admits requests and projects the terminal result. It supplies the full non-secret intent and vault key names. Steps do not read intent or report progress over Gateway HTTP. The agent only observes and stays frozen.
 
-No local documentation grants authority for credentials, DNS, production data
-moves or deleting production resources. Follow the current execution plan for
-ownership and approval.
+No local documentation grants authority for credentials, DNS, production data moves or deleting production resources. Follow the current execution plan for ownership and approval.

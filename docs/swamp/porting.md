@@ -5,33 +5,28 @@ description: "Steps, template, native mapping and anti-patterns for building the
 
 # Build a Swamp flow
 
-Start every flow PR from this page. Review every flow PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, the workflow and the deletion of what it replaces together. Agents load it through the [swamp-flow skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-flow/SKILL.md); the Ansible part of a flow follows the [ansible-phase skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/ansible-phase/SKILL.md). Add a lesson after every merged flow change. Every flow is proved inside a dev topology, and its PR carries the receipt ([the loop](#build-inside-the-topology-f13)).
+Start every flow PR from this page. Review every flow PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, the workflow and the deletion of what it replaces together. Agents load it through the [swamp-flow skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-flow/SKILL.md); the Ansible part of a flow follows the [ansible-phase skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/ansible-phase/SKILL.md). Add a lesson after every merged flow change. Every flow is proved inside a dev topology, and its PR carries the receipt ([the loop](#build-and-prove-the-flow-f13)).
 
-## Build inside the topology (F13)
+## Build and prove the flow (F13)
 
-Build and prove a flow in a production-equivalent dev topology, never against production.
+Build and prove a flow on the nested fleet of your task VM, never against production. The steps, the proof and the PR are in the [command development pipeline](/reference/command-development-pipeline) and its stage charts. Never build against production serve or a 209 login.
 
 1. **Start from the chart** in `docs/cli/<family>/<command>.mmd`. Tighten it with the `flow-tighten` skill. The chart and the command's documentation are the spec.
 2. **Write the tests first:** Gateway admission and projection tests, and the cases file `swamp/proof/<family>/<command>.cases.yaml` ([format](/reference/verification-cases)).
-3. **Reset the proof fleet** in your task VM with `bin/proof-fleet reset GROUP`. Never build against production serve or a 209 login. `bin/swamp-proof` is gone ([old paths](/reference/old-paths)).
-4. **Build** the workflow with the [mapping steps](#map-a-flow-to-swamp) and the template.
-5. **Run** the whole path in the topology as often as you need: request, admission, Swamp, Nodes and projection. Read full stderr and step timings.
-6. **Keep the verdicts** of the final run (`bin/proof-fleet verify GROUP CASE...`, target `orbit proof:run`) once the cases pass within budget (F8). The PR carries them. Then run `bin/proof-fleet release GROUP`.
-7. **Review and merge.** An independent review checks the PR. Then it merges with a squash merge, not a merge queue. Interim: `gh pr merge <n> -R hardimpactdev/orbit --auto --squash`. A live check confirms the load.
+3. **Build** the workflow with the [mapping steps](#map-a-flow-to-swamp) and the template.
+4. **Run** the whole path on the nested fleet as often as you need, from request to projection. Read full stderr and step timings.
+5. **Keep the verdicts** of the final run once the cases pass within budget (F8). The PR carries them.
+6. **PR and merge** follow [stage 4](/reference/command-development-pipeline#4-pr-and-ci). A live check confirms the load.
 
-A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet.
+The nested fleet is built from Node roles (F14): a Gateway VM with the `gateway` and `swamp` roles, pinned official Swamp, a local datastore and vault, and the Nodes the kind needs (`app-dev`, `app-prod`), joined by WireGuard like the fleet. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
-Parity receives the full Operation through the JSON file named by `PROOF_OPERATION_FILE`, keeping large recipe intents out of the process environment.
+A change to a Swamp workflow, behavior or script that a kind runs needs proof verdicts, even titled "retire" or "remove" (#2257, #2259). So does a Gateway change to a kind's admission, intent, inputs, vault pushes, minting, signing or projection; three of four create bugs were Gateway-only (#2266, #2273, #2304).
 
-Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
-
-A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even titled "retire" or "remove" (#2257, #2259). So does a Gateway change to a kind's admission, intent, inputs, vault pushes, minting, signing or projection; three of four create bugs were Gateway-only (#2266, #2273, #2304).
-
-Other Gateway changes need failing-without tests, docs and an independent review. Only deletion, docs and test PRs fix forward without a receipt, after a deletion-speed review of tests and docs. An outage fix skips the receipt only if its PR body says "merges without a topology receipt" and names the live check that follows the load (#2332).
+Other Gateway changes need failing-without tests, docs and an independent review. Only deletion, docs and test PRs fix forward without proof verdicts, after a deletion-speed review of tests and docs. An outage fix skips the proof only if its PR body says "merges without a proof" and names the live check that follows the load (#2332).
 
 ### Map a flow to Swamp
 
-Use these steps in step 4 of the loop.
+Use these steps in step 3 of the loop.
 1. **Start from the chart.** Its steps and phases are the spec. Keep every edge case the command documents, even values the Gateway rewrites first (#2304).
 2. **One phase, one step.** Each phase becomes one native step on one Node.
 
@@ -175,8 +170,7 @@ Put each test where its project's CI runs it.
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script directly, with shellcheck or ruff. |
-| Parity tests for the command's documented cases, and a generator drift test when a generator writes the workflow | Each documented case gives the same public result. Committed YAML equals readable generator output. |
-| `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or the v0 design on beast until it lands) | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. No secret appears in it or in argv. |
+| The command's `cases.yaml` ([stage 3](/reference/command-development-pipeline#3-proof)), and a generator drift test when a generator writes the workflow | Each documented case gives the same public result. Committed YAML equals readable generator output. |
 
 Test Orbit's TypeScript logic with fast sibling `*_test.ts` files and the [official testing helpers](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp/references/extension/references/model/testing.md). Keep a case only when it covers Orbit logic that another unit test does not cover. Do not add native workflow tests or test Swamp's engine, shell commands or CEL through a custom harness. Prove execution on the disposable topology.
 
@@ -248,8 +242,8 @@ Use this checklist for every flow PR and its review.
 - [ ] Name the core feature and official extension checked. Use defaults, and record each deviation's measured reason and removal condition in PLAN.
 - [ ] Delete the steps, behaviors, scripts and tests the change replaces. Remove baseline rows in the last commit, after the last rebase.
 - [ ] **Growth (F15):** list `swamp/` growth per part (behaviors, workflows, scripts, tests and fixtures) next to the Orbit net. Give each growth a [reason](#anti-patterns).
-- [ ] Prove behavior with topology receipts and parity tests, not large mocked fixtures. Delete duplicate or mock-heavy tests. Keep the diff under GitHub's 20,000-line limit.
-- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing flow carries its [topology receipt](#build-inside-the-topology-f13). Without them the review fails.
+- [ ] Prove behavior with case verdicts, not large mocked fixtures. Delete duplicate or mock-heavy tests. Keep the diff under GitHub's 20,000-line limit.
+- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing flow carries its [proof verdicts](#build-and-prove-the-flow-f13). Without them the review fails.
 - [ ] Every workflow, children included, sets an explicit `queueTimeout`.
 
 Check the completed flow and report what the evidence proves.

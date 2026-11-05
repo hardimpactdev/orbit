@@ -55,7 +55,7 @@ function proofRefusal(callable $callback): ResourceOperationException
 }
 
 it('skips documentation, charts and case descriptions: nothing to prove', function (): void {
-    $selected = proofSelect(['docs/cli/proof/run.mdx', 'README.md', 'swamp/proof/firewall/allow.cases.md', 'apps/web/src/main.ts']);
+    $selected = proofSelect(['docs/cli/proof/run.mdx', 'README.md', 'docs/cli/firewall/allow.mmd', 'apps/web/src/main.ts']);
 
     expect($selected['nothing'])->toBeTrue()->and($selected['cases'])->toBe([])->and($selected['uncovered'])->toBe([]);
 });
@@ -186,7 +186,7 @@ it('finds only cases files of the form swamp/proof/<family>/<command>.cases.yaml
         'swamp/proof/reset/README.md',
         'swamp/proof/firewall/deny.cases.yaml',
         'swamp/proof/firewall/allow.cases.yaml',
-        'swamp/proof/firewall/allow.cases.md',
+        'swamp/proof/firewall/allow.md',
         'swamp/proof/firewall/check.py',
         'swamp/proof/firewall/cases/old.cases.yaml',
         'swamp/proof/firewall.allow.json',

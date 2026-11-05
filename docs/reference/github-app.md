@@ -242,7 +242,7 @@ A commit qualifies when all of these hold.
 - On main, the `Gateway release inputs` check runs for every commit, because a Gateway release also loads Swamp.
 - The commit has not failed a release.
 
-The check name, SHA, completion, and App rules also apply to [`bin/pr-head-check`](https://github.com/hardimpactdev/orbit/blob/main/bin/pr-head-check) and the [task merge gate](/reference/tasks#execution-ownership). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.
+The check name, SHA, completion, and App rules also apply to the [task merge gate](/reference/tasks#execution-ownership). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.
 
 A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
 

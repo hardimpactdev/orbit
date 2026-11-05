@@ -4,7 +4,7 @@ version: 2026.10.27.1
 visibility: private
 license: MIT
 description: PROJECT-NAME maintenance configuration.
-repository: https://github.com/hardimpactdev/orbit-swamp
+repository: https://github.com/hardimpactdev/orbit
 behaviors:
   - projects/PROJECT-SLUG/mod.ts
 include:

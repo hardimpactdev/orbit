@@ -170,14 +170,6 @@
       "destination": "/reference/vaultwarden"
     },
     {
-      "source": "/decisions/0198-keep-delivery-line-proofs-as-repo-commands",
-      "destination": "/reference/delivery-line"
-    },
-    {
-      "source": "/decisions/0197-keep-delivery-line-proofs-as-repo-commands",
-      "destination": "/reference/delivery-line"
-    },
-    {
       "source": "/decisions/0195-derive-application-directory-from-web-root",
       "destination": "/decisions/0196-derive-application-directory-from-web-root"
     },
