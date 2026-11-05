@@ -63,7 +63,6 @@ cases:
     batch: fresh-fleet
     covers: [already-applied, succeeded]
     summary: Repeating a correct rule succeeds as skipped and adds nothing.
-    fails_today: The command refuses the duplicate.
     setup:
       - use: blocked-port
       - cli: {run: [firewall:allow, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
@@ -82,7 +81,6 @@ cases:
     batch: fresh-fleet
     covers: [changes-needed, succeeded]
     summary: Only the TCP line of a TCP and UDP rule exists. The command adds the UDP line and keeps the TCP line.
-    fails_today: After an earlier attempt left the rule marked failed, the Gateway refuses the same rule again.
     setup:
       - use: {fixture: blocked-port, proto: [tcp, udp]}
       - ufw_rule: {as: existing, on: app-dev, action: allow, proto: tcp, port: "${port}", from: "${gateway.src}", above: deny}
@@ -101,7 +99,6 @@ cases:
     batch: fresh-fleet
     covers: [changes-needed, failed, succeeded]
     summary: The command stops after it deleted a misplaced line. The failure stays visible and a repeat puts the line back in place.
-    fails_today: The repeat is refused because the failed rule has the same identity.
     setup:
       - use: blocked-port
       - ufw_rule: {as: misplaced, on: app-dev, action: allow, proto: tcp, port: "${port}", from: "${gateway.src}", below: deny}
@@ -216,7 +213,6 @@ cases:
     batch: fresh-fleet
     covers: [changes-needed, failed, succeeded]
     summary: The apply fails after the first line. The failure and that line stay visible, and a retry finishes without duplicates.
-    fails_today: The retry is refused because the failed rule has the same identity.
     setup:
       - use: {fixture: blocked-port, proto: [tcp, udp]}
       - fault: {on: app-dev, command: ufw, fail_after: {match: allow, count: 1}}
@@ -240,7 +236,6 @@ cases:
     batch: fresh-fleet
     covers: [already-applied, succeeded]
     summary: An allow for SSH from every source only repeats access Orbit already gives. It succeeds as skipped and adds nothing.
-    fails_today: The Gateway records and applies a new operator rule.
     act:
       - cli:
           run: [firewall:allow, 22, "--node=${app-dev.id}"]
@@ -255,7 +250,6 @@ cases:
     batch: fresh-fleet
     covers: []
     summary: In a terminal, omitted input is prompted. An invalid port is asked again.
-    fails_today: The arguments are required and nothing prompts.
     setup:
       - listener: {on: app-dev, proto: tcp, ports: [port, port2]}
     act:
@@ -278,7 +272,6 @@ cases:
     batch: fresh-fleet
     covers: []
     summary: Ctrl-C at a prompt ends the command without a request.
-    fails_today: The arguments are required and nothing prompts.
     act:
       - cli:
           run: [firewall:allow]
@@ -292,7 +285,6 @@ cases:
     batch: fresh-fleet
     covers: []
     summary: Without a terminal, and with --json, a missing Node is refused.
-    fails_today: The arguments are required and nothing prompts.
     setup:
       - listener: {on: app-dev, proto: tcp, ports: [port]}
     act:
