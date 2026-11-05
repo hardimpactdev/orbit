@@ -469,6 +469,8 @@ Pi preparation runs on 209 with pinned official SSH, and no script reaches the g
 
 Each file then arrives on stdin of one `install` command: the Orbit root, `models.json` and the token (0600, owned by the managed account), and the `pi-server` unit. The Gateway renders the whole `models.json` with the VM's model key as one vault value, `task-vm-pi-models-<id>`, because Swamp passes a secret only whole. One command reloads systemd and enables and restarts the unit; `systemctl is-active` and one `curl` to Pi's capabilities, with the bearer read on the guest, are the end checks.
 
+The guest firewall denies incoming traffic by default. The SSH preparation step allows TCP 22 from 209, and TCP 3774, Pi's port, from 209 (`orbit:task-vm-pi-209`) and from the Gateway (`orbit:task-vm-pi-gateway`), on the `orbit` interface, before it enables ufw. Resume writes the same rules again. Without them every turn fails at `session_create` with curl exit 28.
+
 The official cfgmgmt behaviors are not used here: they trust the worker's shared `known_hosts`, and task VMs reuse addresses. The Gateway retains the model-key record and creates the normal `pi-server` Process. Resume checks `agent.status` before requesting Pi capabilities.
 
 #### Skip what the image holds
