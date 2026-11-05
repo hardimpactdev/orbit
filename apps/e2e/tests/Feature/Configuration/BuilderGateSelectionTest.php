@@ -68,8 +68,8 @@ function orb277_build_gate_template(): string
     copy(base_path('../../bin/check-processes'), $root.'/bin/check-processes');
     copy(base_path('../../bin/ci-build-plan'), $root.'/bin/ci-build-plan');
     // A tools change selects every CI job, Swamp included; its shape gate and workflow validation pass here.
-    mkdir($root.'/swamp/bin', 0o700, true);
-    file_put_contents($root.'/swamp/bin/shape-gate.py', '');
+    mkdir($root.'/swamp', 0o700, true);
+    file_put_contents($root.'/bin/swamp-shape-gate', '');
     file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/docs-nav', "#!/usr/bin/env sh\nexit 0\n");
     foreach (['docs-openapi', 'mcp-tools', 'api-fixtures'] as $generator) {

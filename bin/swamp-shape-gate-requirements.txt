@@ -3,4 +3,4 @@ ruff==0.17.0
 shellcheck-py==0.11.0.1
 shfmt-py==4.2.0
 ansible-lint==26.10.1
--r ../ansible/requirements.txt
+-r ../swamp/ansible/requirements.txt

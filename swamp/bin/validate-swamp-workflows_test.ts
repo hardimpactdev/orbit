@@ -31,9 +31,9 @@ Deno.test("required validation only receives event-scoped credentials", () => {
     assertStringIncludes(validate, "github.ref == 'refs/heads/main'");
 });
 Deno.test("serve grant validation and coverage regressions remain required", async () => {
-    assertStringIncludes(validate, "bin/shape-gate.py --only validate --strict");
+    assertStringIncludes(validate, "bin/swamp-shape-gate\" --only validate --strict");
     const gate = await Deno.readTextFile(
-        new URL("./shape-gate.py", import.meta.url),
+        new URL("../../bin/swamp-shape-gate", import.meta.url),
     );
     for (
         const required of [

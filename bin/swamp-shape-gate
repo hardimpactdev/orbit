@@ -12,7 +12,7 @@ before you push; commit first, because the checkers compare committed HEAD with 
 --tools DIR        cache of the pinned tool venvs (default: ~/.cache/orbit-shape-gate)
 --strict           fail instead of skipping a step that needs a credential or a tool
 
-The linters are pinned in swamp/bin/shape-gate-requirements.txt, the only place that names them.
+The linters are pinned in bin/swamp-shape-gate-requirements.txt, the only place that names them.
 Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN.
 Without them it is skipped and reported as skipped, not passed. `--only validate` then exits 78."""
 import argparse
@@ -27,9 +27,9 @@ import tempfile
 import time
 from pathlib import Path
 
-SWAMP = Path(__file__).resolve().parent.parent
-ROOT = SWAMP.parent
-REQUIREMENTS = SWAMP / 'bin/shape-gate-requirements.txt'
+ROOT = Path(__file__).resolve().parent.parent
+SWAMP = ROOT / 'swamp'
+REQUIREMENTS = ROOT / 'bin/swamp-shape-gate-requirements.txt'
 COLLECTIONS = SWAMP / 'ansible/requirements.yml'
 CREDENTIALS = ('SWAMP_API_KEY', 'SWAMP_SIGNIN_TOKEN')
 CREDENTIALS_MISSING = 78

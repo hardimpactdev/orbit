@@ -42,10 +42,10 @@ API_ARTIFACT_COMMANDS = (('bin/docs-openapi', '--check'), ('bin/mcp-tools', '--c
 API_FIXTURE_TRIGGERS = ('docs/openapi.json', 'packages/php-sdk/fixtures/', 'apps/web/fixtures/',
                         'bin/api-fixtures', 'bin/review-check')
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
-# CI's Swamp shape gate and workflow validation are one script, swamp/bin/shape-gate.py. Validation needs a Swamp account
+# CI's Swamp shape gate and workflow validation are one script, bin/swamp-shape-gate. Validation needs a Swamp account
 # and reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN, never the developer's login; without them the script exits 78
 # and the gate reports the validation as skipped. CI always validates.
-SWAMP_GATE = ('python3', 'bin/shape-gate.py')
+SWAMP_GATE = ('python3', str(Path(__file__).resolve().parent / 'swamp-shape-gate'))
 SWAMP_AUTH_UNAVAILABLE = 78
 BASES = ('origin/main', 'main')
 # Reports older than this are removed by the next run of the user that wrote them.
