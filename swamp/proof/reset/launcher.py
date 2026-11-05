@@ -5,7 +5,9 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 
@@ -21,7 +23,6 @@ STOPPED = 'the case phase stopped before this case'
 DEFAULT_BUDGET = 1800.0
 # The cases step of proof-command-verification times out at 2400 s; the budget plus baselines must fit inside it.
 MAX_BUDGET = 2100.0
-USAGE = 'Usage: bin/proof-fleet reset|release GROUP | verify GROUP PROGRAM [PROGRAM...]\n'
 
 
 def parse_budget(raw):
@@ -71,7 +72,8 @@ def final_line(status, generation, evidence):
     value = {'status': status['status']}
     if 'summary' in status:
         value['summary'] = status['summary']
-    value.update({key: item for key, item in status.items() if key not in value and key != 'cases'})
+    # The job timings stay in status.json: they would eat the 4096 bytes the verdicts need.
+    value.update({key: item for key, item in status.items() if key not in value and key not in ('cases', 'jobs')})
     return json.dumps({**value, 'generation': generation, 'evidence': str(evidence)}, separators=(',', ':'))
 
 
@@ -85,32 +87,126 @@ def swamp(request, args, name, cwd=None):
                               cwd=cwd or root / 'controller', stdout=log, stderr=subprocess.STDOUT).returncode
 
 
+USAGE = ('Usage: bin/proof-fleet reset GROUP [--from-ready] | ready GROUP | release GROUP'
+         ' | verify GROUP PROGRAM [PROGRAM...]\n')
+ACTIONS = ('reset', 'ready', 'verify', 'release')
+
+
+def parse(argv):
+    """(action, group, programs, from_ready) for a valid command line, else None. Only verify takes case programs."""
+    args = argv[1:]
+    from_ready = '--from-ready' in args
+    args = [argument for argument in args if argument != '--from-ready']
+    if not args or args[0] not in ACTIONS:
+        return None
+    action = args[0]
+    if len(args) < 2 or (len(args) > 2) != (action == 'verify') or (from_ready and action != 'reset'):
+        return None
+    if not re.fullmatch('[1-9][0-9]*', args[1]):
+        return None
+    return action, args[1], args[2:], from_ready
+
+
+def choose(request):
+    """The mode and the native workflow of this run, decided inside the group lock.
+
+    A reset from ready copies uses them when they can replace the active generation, else it builds from scratch and
+    makes them. A verification uses them when it can and otherwise builds as before.
+    """
+    action = request['action']
+    if action == 'release':
+        return 'full', 'proof-fleet-release', 'release'
+    if action == 'ready':
+        return 'ready-make', 'proof-fleet-ready', 'copy the active generation'
+    wants = request.get('from_ready') or action == 'verify'
+    if wants:
+        import phases
+        state = phases.ready_state(request)
+        if state['usable']:
+            return 'ready', 'proof-fleet-reset-ready' if action == 'reset' else 'proof-command-verification-ready', state['reason']
+        reason = state['reason']
+    else:
+        reason = 'a full build was requested'
+    if action == 'reset':
+        return ('build-ready', 'proof-fleet-reset-build-ready', reason) if request.get('from_ready') else ('full', 'proof-fleet-reset', reason)
+    return 'full', 'proof-command-verification', reason
+
+
+def durations(history):
+    """Seconds of every named job or step in a native run history, for the receipt."""
+    found = {}
+
+    def walk(value):
+        if isinstance(value, dict):
+            if 'name' in value and 'startedAt' in value and 'completedAt' in value:
+                begin = datetime.fromisoformat(value['startedAt'].replace('Z', '+00:00'))
+                end = datetime.fromisoformat(value['completedAt'].replace('Z', '+00:00'))
+                found.setdefault(value['name'], round((end - begin).total_seconds(), 1))
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+    walk(history)
+    return found
+
+
+def run_workflow(request, workflow):
+    """Validate and run one native workflow; (exit code, seconds of the run or None when validation failed)."""
+    evidence = Path(request['evidence'])
+    code = swamp(request, ['workflow', 'validate', workflow], 'validate.json')
+    if code:
+        return code, None
+    started = time.monotonic()
+    code = swamp(request, ['workflow', 'run', workflow, '--input', 'request=' + str(evidence / 'request.json'),
+                          '--input', 'candidate=' + request['candidate']], 'run.json')
+    seconds = round(time.monotonic() - started, 1)
+    swamp(request, ['workflow', 'history', 'get', workflow], 'history.json')
+    if code:
+        swamp(request, ['report', 'get', '@swamp/workflow-summary', '--workflow', workflow], 'failure-report.json')
+    return code, seconds
+
+
 def run_locked(request):
     """Called only by the group's native proof-owner command/shell transaction."""
     root, evidence = Path(request['root']), Path(request['evidence'])
     if json.loads((root / 'owner.json').read_text()) != {k: request[k] for k in ('candidate', 'group')}:
         raise RuntimeError('Proof root belongs to a different candidate or group.')
+    mode, workflow, reason = choose(request)
+    request = {**request, 'mode': mode}
+    write_json(evidence / 'request.json', request)
+    write_json(evidence / 'mode.json', {'mode': mode, 'workflow': workflow, 'reason': reason})
     controller = root / 'controller'
     (controller / 'workflows').mkdir(exist_ok=True)
     for definition in (Path(request['candidate']) / 'swamp/proof/reset').glob('workflow-*.yaml'):
         shutil.copyfile(definition, controller / 'workflows' / definition.name)
-    workflow = {'reset': 'proof-fleet-reset', 'verify': 'proof-command-verification',
-                'release': 'proof-fleet-release'}[request['action']]
-    code = swamp(request, ['workflow', 'validate', workflow], 'validate.json')
-    if not code:
-        code = swamp(request, ['workflow', 'run', workflow, '--input', 'request=' + str(evidence / 'request.json'),
-                              '--input', 'candidate=' + request['candidate']], 'run.json')
-        swamp(request, ['workflow', 'history', 'get', workflow], 'history.json')
-        if code:
-            swamp(request, ['report', 'get', '@swamp/workflow-summary', '--workflow', workflow], 'failure-report.json')
+    code, seconds = run_workflow(request, workflow)
+    retried = None
+    if code and mode == 'ready' and not (evidence / 'cases-started.json').exists():
+        # The fast path failed before any case ran. Its failure cleanup released the fleet, so build one instead, once.
+        for name in ('validate.json', 'run.json', 'history.json', 'failure-report.json'):
+            if (evidence / name).is_file():
+                (evidence / name).rename(evidence / ('fast-' + name))
+        retried = {'from': mode, 'exit': code, 'seconds': seconds}
+        mode, workflow = ('build-ready', 'proof-fleet-reset-build-ready') if request['action'] == 'reset' else ('full', 'proof-command-verification')
+        request = {**request, 'mode': mode}
+        write_json(evidence / 'request.json', request)
+        write_json(evidence / 'mode.json', {'mode': mode, 'workflow': workflow, 'reason': 'the fast reset failed before a case ran', 'retried_from': 'ready'})
+        code, seconds = run_workflow(request, workflow)
+    jobs = {}
+    if (evidence / 'history.json').is_file():
+        try:
+            jobs = durations(json.loads((evidence / 'history.json').read_text()))
+        except ValueError:
+            jobs = {}  # the receipt keeps the run exit; a history that is not JSON only loses the timings
     verified = {}
     if request['action'] == 'verify':
         verified = verification(request)
         write_json(evidence / 'cases.json', {'generation': request['generation'], 'cases': verified['cases']})
         # Any case that did not pass makes the run exit 1; otherwise the workflow's own exit stands.
         code = 1 if any(case['verdict'] != 'passed' for case in verified['cases']) else code
-    status = {'status': 'succeeded' if code == 0 else 'failed', 'summary': verified.get('summary'), 'exit': code,
-              'cases_ran': (evidence / 'cases-started.json').exists(), 'cases': verified.get('cases')}
+    status = {'status': 'succeeded' if code == 0 else 'failed', 'summary': verified.get('summary'), 'exit': code, 'mode': mode,
+              'seconds': seconds, 'retried': retried, 'jobs': jobs, 'cases_ran': (evidence / 'cases-started.json').exists(), 'cases': verified.get('cases')}
     write_json(evidence / 'status.json', {key: value for key, value in status.items() if value is not None or key == 'exit'})
     return code
 
@@ -134,14 +230,11 @@ def validated_programs(candidate, programs):
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ('reset', 'verify', 'release'):
+    command = parse(sys.argv)
+    if command is None:
         sys.stderr.write(USAGE)
         return 2
-    action, group = sys.argv[1:3]
-    programs = sys.argv[3:]
-    if not re.fullmatch('[1-9][0-9]*', group) or (action == 'verify') != bool(programs):
-        sys.stderr.write(USAGE)
-        return 2
+    action, group, programs, from_ready = command
     os.umask(0o077)
     candidate, home = Path(__file__).resolve().parents[3], Path.home()
     root = home / '.local/state' / ('orbit-proof-' + group)
@@ -165,7 +258,7 @@ def main():
     key = home / '.config/swamp/club-api-key'
     request = {**marker, 'issue': 'TASK-' + group, 'root': str(root), 'generation': generation,
                'evidence': str(evidence), 'cases': programs if action == 'verify' else None,
-               'budget_seconds': budget, 'action': action, 'key_file': str(key)}
+               'budget_seconds': budget, 'action': action, 'from_ready': from_ready, 'key_file': str(key)}
     request_path = evidence / 'request.json'
     write_json(request_path, request)
     if not key.is_file() or key.is_symlink() or key.stat().st_uid != os.getuid() or key.stat().st_mode & 0o077:

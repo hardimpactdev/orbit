@@ -4,6 +4,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import secrets
 import signal
 import subprocess
@@ -11,9 +12,11 @@ import sys
 import tarfile
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+import ready
 from launcher import unrun_case, write_json
 
 
@@ -43,6 +46,18 @@ WG_OUTER = 'wg-nested'
 NESTED_CLI = '/usr/local/bin/orbit-nested'
 NESTED_PROFILE = 'nested'
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
+
+# What the guests write into the generation's source directory while the Gateway is built (`.env`, caches, logs, the
+# agent manifest) and the attempt lease. A reset from ready copies carries these into the next generation's fresh export.
+CARRIED_STATE = ('.e2e', 'apps/agent/delivery', 'apps/gateway/.env', 'apps/gateway/bootstrap/cache', 'apps/gateway/storage')
+# The directories Caddy in the Gateway guest traverses to reach the public directory; the build gave them an ACL for it.
+ACL_DIRECTORIES = ('.', 'apps', 'apps/gateway', 'apps/gateway/public')
+# A boot is not an observation: the guests need about 50 s from `incus start` to a healthy fleet. The bound is fixed.
+READY_WAIT_SECONDS = 150
+ACTIONS = ('inventory', 'release-previous', 'snapshot', 'snapshot-ready', 'prepare', 'swamp-state', 'gateway-db',
+           'gateway-runtime', 'restore-ready', 'ready-wait', 'agents-online', 'candidate', 'operator', 'transport-readiness',
+           'observer-facts', 'readiness', 'ready-check', 'ready-make', 'ready-complete', 'ready-discard', 'ready-drop', 'publish', 'prune-generations', 'failure-cleanup',
+           'release-active', 'cases')
 
 
 def privileged(argv, *, data=None, timeout=60):
@@ -118,6 +133,12 @@ def bring_up_wireguard(topology, network):
         privileged(['systemctl', 'enable', '--now', f'wg-quick@{WG_OUTER}'])
     # A recreated Gateway cannot read the old session; one packet starts the handshake at once.
     subprocess.run(['ping', '-c', '1', '-W', '3', network['nodes']['gateway']['ip']], capture_output=True, timeout=15, check=False)
+
+
+def force_handshake(address):
+    """Make the outer VM's tunnel handshake now. With a deadline, ping keeps sending until the first reply: one blocking
+    command, so a Gateway that restarted or sat idle cannot leave the last handshake too old."""
+    subprocess.run(['ping', '-c', '1', '-w', '60', address], capture_output=True, timeout=90, check=False)
 
 
 def tunnel_ready(network, *, seconds=120):
@@ -252,7 +273,11 @@ def stop_operator_tunnel():
             raise
 
 
-def snapshot(request):
+def same_lock(first, second):
+    return (first / 'composer.lock').is_file() and (first / 'composer.lock').read_bytes() == (second / 'composer.lock').read_bytes()
+
+
+def snapshot(request, *, activate=True, vendors_from=None):
     before = json.loads((Path(request['evidence']) / 'inventory.json').read_text())
     if identity(request['candidate']) != before['candidate']:
         raise RuntimeError('Candidate changed while reset was starting; start a new independent run.')
@@ -273,16 +298,69 @@ def snapshot(request):
         installed = Path(request['candidate']) / package / 'vendor'
         if not (installed / 'autoload.php').is_file():
             raise RuntimeError(f'Missing installed dependencies for {package}; use existing task provisioning.')
+        earlier = vendors_from / package if vendors_from else None
+        if earlier and (earlier / 'vendor/autoload.php').is_file() and same_lock(earlier, source / package):
+            # The previous generation installed the same lock: hard links in scratch space cost nothing and never reach the candidate.
+            checked(subprocess.run(['cp', '-al', str(earlier / 'vendor'), str(source / package / 'vendor')],
+                                   capture_output=True, timeout=180), 'cp')
+            continue
         checked(subprocess.run(['cp', '-a', '--reflink=auto', str(installed), str(source / package / 'vendor')],
                                capture_output=True, timeout=180), 'cp')
     if identity(source)['effective_tree'] != before['candidate']['effective_tree']:
         raise RuntimeError('Exported candidate identity differs from the pinned tree.')
-    write_json(Path(request['root']) / 'active.json', {'generation': request['generation']})
+    if activate:
+        write_json(Path(request['root']) / 'active.json', {'generation': request['generation']})
     return {'source': str(source), 'candidate': before['candidate']}
 
 
+def fleet_path(request, generation):
+    return Path(request['root']) / 'generations' / generation / 'fleet.json'
+
+
+def fleet_record(request, generation=None):
+    """The record of a published generation (default: the active one): its preparation evidence and the Gateway's Node ids.
+
+    A generation published before the record existed has the same facts in its evidence directory.
+    """
+    generation = generation or active_generation(request)
+    if not generation:
+        raise RuntimeError('There is no active generation.')
+    path = fleet_path(request, generation)
+    if path.is_file():
+        return json.loads(path.read_text())
+    earlier = Path(request['evidence']).parent / generation
+    if all((earlier / name).is_file() for name in ('publish.json', 'prepare.json', 'gateway-db.json')):
+        return {'prepare': json.loads((earlier / 'prepare.json').read_text()),
+                'nodes': json.loads((earlier / 'gateway-db.json').read_text())['nodes']}
+    raise RuntimeError('The generation has no fleet record; it was never published healthy.')
+
+
 def prepared(request):
-    return json.loads((Path(request['evidence']) / 'prepare.json').read_text())
+    evidence = Path(request['evidence']) / 'prepare.json'
+    return json.loads(evidence.read_text()) if evidence.is_file() else fleet_record(request)['prepare']
+
+
+def node_ids(request):
+    evidence = Path(request['evidence']) / 'gateway-db.json'
+    return json.loads(evidence.read_text())['nodes'] if evidence.is_file() else fleet_record(request)['nodes']
+
+
+def started_at(request):
+    """When the fleet last started from ready copies or after the copies were made, else None."""
+    evidence = Path(request['evidence'])
+    for name in ('restore-ready.json', 'ready-make.json'):
+        if (evidence / name).is_file():
+            return json.loads((evidence / name).read_text())['started_at']
+    return None
+
+
+def fresh_since(request):
+    """Facts count as fresh when the Gateway received them after the generation was prepared.
+
+    The agent sends a fact when it changes, so a fleet that starts from ready copies sends none: there the agent's
+    presence heartbeat, which ready-wait checks, proves it is alive, and the recorded facts need only exist.
+    """
+    return 0.0 if started_at(request) is not None else (Path(request['evidence']) / 'prepare.json').stat().st_mtime
 
 
 def guest(request, action):
@@ -433,6 +511,7 @@ def transport_readiness(request):
                   data=json.dumps({'group': request['group'], 'nodes': topology['nodes'],
                                    'managed': {key: {'address': node['incus_address'], 'host_key': incus(['exec', node['instance'], '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1]} for key, node in topology['nodes'].items() if key != 'operator'}}).encode(), timeout=240).decode()
     network = wireguard(topology)
+    force_handshake(network['nodes']['gateway']['ip'])
     handshake_age = tunnel_ready(network)
     _, status = local_cli(request, 'gateway:status', '--json')
     # Only an active WireGuard member is told the release state, so this proves the Gateway knows the outer VM by 10.45.0.10.
@@ -447,9 +526,9 @@ def transport_readiness(request):
 
 
 def observer_facts(request):
-    ids = json.loads((Path(request['evidence']) / 'gateway-db.json').read_text())['nodes']
+    ids = node_ids(request)
     managed = [value for key, value in ids.items() if key != 'operator']
-    since = (Path(request['evidence']) / 'prepare.json').stat().st_mtime
+    since = fresh_since(request)
     state = gateway_state(request)
     if not fresh_facts(state, managed, since):
         write_json(Path(request['evidence']) / 'facts-not-ready.json', state)
@@ -459,9 +538,11 @@ def observer_facts(request):
 
 def readiness(request):
     evidence = Path(request['evidence'])
+    if request.get('mode') in ('ready-make', 'build-ready'):
+        agents_online(request)
     transport = json.loads((evidence / 'transport-readiness.json').read_text())
     facts = json.loads((evidence / 'observer-facts.json').read_text())
-    ids = json.loads((evidence / 'gateway-db.json').read_text())['nodes']
+    ids = node_ids(request)
     doctors = {}
     for key, value in ids.items():
         if key == 'operator':
@@ -475,18 +556,328 @@ def readiness(request):
 
 
 
+def generation_guests(record):
+    """Role to instance name for the guests ready copies replace."""
+    nodes = record['prepare']['construction']['nodes']
+    return {role: nodes[role]['instance'] for role in ready.ROLES}
+
+
+def ready_state(request):
+    """Can the ready copies replace the active generation's guests in place? Never raises: the reason is for humans."""
+    try:
+        generation = active_generation(request)
+        if not generation:
+            return {'usable': False, 'reason': 'no active generation to restore into'}
+        record = fleet_record(request, generation)
+        construction = record['prepare']['construction']
+        guests = generation_guests(record)
+        found = ready.inspect()
+        if not found['usable']:
+            return found
+        if found['inputs'] != inputs_digest(request):
+            return {'usable': False, 'reason': 'the boot fixes, the fixture or the agent pin changed since the ready copies were made'}
+        network = ready.network_of(guests['gateway'])
+        subnet = ready.subnet_of(network)
+        if found['subnet'] != subnet:
+            return {'usable': False, 'reason': f"the ready copies are for {found['subnet']}, the generation uses {subnet}"}
+        for role in ready.ROLES:
+            if found['addresses'][role] != construction['nodes'][role]['incus_address']:
+                return {'usable': False, 'reason': f'the ready copy of {role} has another address than the generation'}
+        return {**found, 'guests': guests, 'network': network}
+    except (RuntimeError, ValueError, KeyError, OSError, subprocess.TimeoutExpired) as error:
+        return {'usable': False, 'reason': str(error)}
+
+
+def carry_state(origin, target):
+    """Copy the runtime state the guests wrote into one source directory over the fresh export of the next."""
+    for relative in CARRIED_STATE:
+        source = origin / relative
+        if not source.exists():
+            continue
+        destination = target / relative
+        if source.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+            checked(subprocess.run(['cp', '-a', '--reflink=auto', str(source) + '/.', str(destination)], capture_output=True, timeout=180), 'cp')
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            checked(subprocess.run(['cp', '-a', '--reflink=auto', str(source), str(destination)], capture_output=True, timeout=180), 'cp')
+
+
+def carry_acls(origin, target):
+    """Give the directories that lead Caddy to the public directory the ACL they have in the previous source."""
+    for relative in ACL_DIRECTORIES:
+        listing = checked(subprocess.run(['getfacl', '--absolute-names', '--omit-header', str(origin / relative)], capture_output=True, timeout=30), 'getfacl')
+        checked(subprocess.run(['setfacl', '--set-file=-', str(target / relative)], input=listing, capture_output=True, timeout=30), 'setfacl')
+
+
+def snapshot_ready(request):
+    """The next generation of a reset from ready copies: a fresh export of the candidate that inherits the fleet's lease.
+
+    The attempt lease and the runtime state move with the guests, so a later release removes the same resources. The
+    generation becomes the active one last: a failure earlier leaves the previous generation active and releasable.
+    """
+    previous = json.loads((Path(request['evidence']) / 'inventory.json').read_text())['previous']
+    state = ready_state(request)
+    if not previous or not state['usable']:
+        raise RuntimeError('Ready copies are not usable: ' + state['reason'])
+    origin = source_for(request, previous)
+    record = fleet_record(request, previous)
+    result = snapshot(request, activate=False, vendors_from=origin)
+    source = Path(result['source'])
+    carry_state(origin, source)
+    carry_acls(origin, source)
+    mounts = {role: {**mount, 'source': str(source)} for role, mount in record['prepare'].get('mounts', {}).items()}
+    write_json(fleet_path(request, request['generation']),
+               {'prepare': {**record['prepare'], 'mounts': mounts}, 'nodes': state['nodes']})
+    write_json(Path(request['root']) / 'active.json', {'generation': request['generation']})
+    return {**result, 'carried_from': previous, 'ready_set': state['set']}
+
+
+def restore_ready(request):
+    state = ready_state(request)
+    if not state['usable']:
+        raise RuntimeError('Ready copies are not usable: ' + state['reason'])
+    record = fleet_record(request)
+    construction = record['prepare']['construction']
+    labels = {'owner': 'orbit-e2e', 'issue': construction['issue'], 'attempt': construction['attempt_id'],
+              'operation': record['prepare']['source']['operation_id']}
+    return ready.restore(state['guests'], state['network'], source_for(request, request['generation']), labels)
+
+
+CLUB_KEY = '/home/orbit/.config/swamp/club-api-key'
+
+
+def deliver_key(request, gateway):
+    """Put the proof Swamp Club key into a started Gateway and start Swamp with it, as the full build does. Never baked."""
+    incus(['wait', gateway, 'agent', '--timeout', str(READY_WAIT_SECONDS)], timeout=READY_WAIT_SECONDS + 30)
+    incus(['file', 'push', request['key_file'], gateway + CLUB_KEY, '--mode=0600', '--uid=1000', '--gid=1000'])
+    # Serve could not start without the key and may have hit its start limit.
+    incus(['exec', gateway, '--', 'sh', '-c', 'systemctl reset-failed orbit-swamp-serve orbit-node-worker; systemctl restart orbit-swamp-serve orbit-node-worker'],
+          timeout=READY_WAIT_SECONDS + 30)
+
+
+def scrub_key(request, guests):
+    """Delete the club key from the running Gateway, prove no file on any of the three guests holds it, trim the freed blocks.
+
+    The scan has no size limit, and a grep error fails it. It drops the guest's page cache after every batch of files: the
+    guests' memory is shared memory of the outer VM, and a scan that fills it killed the nested VMs. The file list names paths only. The fstrim output goes into the
+    receipt: a filesystem that cannot discard (fstrim exits 64 when others were trimmed) does not fail the step, but the
+    root filesystem must report a trim.
+    """
+    gateway = guests['gateway']
+    key = Path(request['key_file']).read_bytes().strip()
+    if not key:
+        raise RuntimeError('The proof club key file is empty; nothing to scan for.')
+    incus(['exec', gateway, '--', 'rm', '-f', CLUB_KEY])
+    scan = ('umask 077; cat > /run/club-key-scan; '
+            "find / -xdev -type f -exec sh -c 'grep -lF -f /run/club-key-scan \"$@\"; s=$?; echo 1 > /proc/sys/vm/drop_caches; [ \"$s\" -le 1 ]' sh {} + ; "
+            'status=$?; rm -f /run/club-key-scan; [ "$status" -eq 0 ]')
+    found = []
+    for instance in guests.values():
+        found += [f'{instance}:{path}' for path in incus(['exec', instance, '--', 'sh', '-c', scan], data=key + b'\n', timeout=900).decode().split()]
+    if found:
+        raise RuntimeError('The proof club key is still on a guest disk, nothing copied: ' + ', '.join(sorted(found)))
+    # Deleting a file leaves its blocks in the disk image, and every task VM clones the image. Discard the freed blocks now.
+    trim = 'timeout 300 fstrim -av; status=$?; [ "$status" -eq 0 ] || [ "$status" -eq 64 ]'
+    trimmed = incus(['exec', gateway, '--', 'sh', '-c', trim], timeout=330).decode().strip().splitlines()
+    if not any(line.startswith('/:') and 'trimmed' in line for line in trimmed):
+        raise RuntimeError('The Gateway root filesystem was not trimmed: ' + ' | '.join(trimmed))
+    return {'scanned': sorted(guests), 'files_holding_the_key': 0, 'fstrim': trimmed}
+
+
+def minted_at(gateway):
+    """When the build minted the Gateway's credentials (the oldest of their files), in epoch seconds."""
+    out = incus(['exec', gateway, '--', 'sh', '-c', 'stat -c %Y /home/orbit/.orbit/proof-control/credentials/* | sort -n | head -n 1']).decode().strip()
+    return int(out)
+
+
+def inputs_digest(request):
+    """A digest of what is baked into the guests of a fleet: the boot fixes, the fixture, the pinned agent manifest."""
+    candidate = Path(request['candidate'])
+    digest = hashlib.sha256()
+    for relative in ('tools/swamp-proof-guest/boot.py', 'tools/swamp-proof-guest/fixture.py', 'apps/gateway/resources/agent/frozen-manifest.json'):
+        path = candidate / relative
+        digest.update(relative.encode() + b'\0' + (path.read_bytes() if path.is_file() else b'absent') + b'\0')
+    return digest.hexdigest()
+
+
+def start_units(instance, units):
+    """Start units in one guest. systemctl returns when the start jobs finish, and fails if a job fails."""
+    incus(['exec', instance, '--', 'systemctl', 'start', *units], timeout=READY_WAIT_SECONDS + 30)
+
+
+def apply_candidate(request):
+    """Apply the candidate in the restored Gateway as soon as it has mounted the new source, while the Nodes still boot."""
+    gateway = prepared(request)['construction']['nodes']['gateway']['instance']
+    deliver_key(request, gateway)
+    # This unit's start waits (at most 60 s) for the new source mount, so the job ends when the mount is there.
+    start_units(gateway, ['orbit-proof-operations'])
+    incus(['exec', gateway, '--', 'test', '-f', '/home/orbit/orbit/apps/gateway/artisan'], timeout=10)
+    return guest(request, 'candidate')
+
+
+def ready_wait(request):
+    """Block on the started guests: guest agents, units, tunnel handshake.
+
+    Each wait is one blocking command with a fixed bound: `incus wait` for the guest agent and `systemctl start` for the
+    units, which returns when their start jobs end. The units' own start conditions wait for the Gateway.
+    """
+    topology = prepared(request)['construction']
+    network = wireguard(topology)
+    address = network['nodes']['gateway']['ip']
+    since = started_at(request)
+    if since is None:
+        raise RuntimeError('The fleet has no recorded start; restore or make ready copies first.')
+    instances = {key: node['instance'] for key, node in topology['nodes'].items() if key != 'operator'}
+    for instance in instances.values():
+        incus(['wait', instance, 'agent', '--timeout', str(READY_WAIT_SECONDS)], timeout=READY_WAIT_SECONDS + 30)
+    start_units(instances['gateway'], ['php8.5-fpm', 'caddy', 'orbit-websocket', 'orbit-swamp-serve', 'orbit-node-worker',
+                                       'orbit-proof-agent-view', 'orbit-proof-operations', 'orbit-agent'])
+    for key, instance in instances.items():
+        if key != 'gateway':
+            start_units(instance, ['orbit-agent'])
+    force_handshake(address)
+    tunnel_ready(network, seconds=max(1.0, time.time() - since))
+    return {'seconds_since_start': round(time.time() - since, 1), 'address': address}
+
+
+def agents_online(request):
+    """One observation: every Node agent is online by the Gateway's presence heartbeat, its facts exist, the worker is enrolled.
+
+    It runs at the start of the readiness check, a few seconds after the agent units started: the agents report their
+    presence within one heartbeat and no command blocks on that.
+    """
+    topology = prepared(request)['construction']
+    managed = [value for key, value in node_ids(request).items() if key != 'operator']
+    state = gateway_state(request)
+    agents = state.get('agents')
+    if agents is None:
+        # A generation built before the Gateway driver reported presence: ask through the candidate CLI.
+        agents = {str(node): local_cli(request, 'node:show', str(node), '--json')[1]['agent']['state'] for node in managed}
+    silent = [node for node in managed if agents.get(str(node)) != 'online']
+    if silent:
+        raise RuntimeError('The Node agents are not online: ' + ', '.join(map(str, silent)))
+    if not fresh_facts(state, managed, 0.0):
+        raise RuntimeError('The Node facts are missing.')
+    if request.get('mode') == 'ready':
+        # The restored Gateway runs the candidate's guest program, so it can name the worker check itself.
+        incus(['exec', topology['nodes']['gateway']['instance'], '--', 'python3', '/home/orbit/orbit/swamp/proof/reset/guest.py', 'worker'],
+              data=json.dumps({'group': request['group'], 'generation': request['generation'], 'nodes': topology['nodes'], 'wireguard': wireguard(topology)}).encode(), timeout=60)
+    return {'online': managed}
+
+
+def ready_check(request):
+    """The one readiness check of a reset from ready copies: the Gateway knows the operator, Doctor has no finding."""
+    agents_online(request)
+    ids = {key: value for key, value in node_ids(request).items() if key != 'operator'}
+    # The reads are independent, so they run together.
+    with ThreadPoolExecutor(max_workers=len(ids) + 2) as pool:
+        status = pool.submit(local_cli, request, 'gateway:status', '--json')
+        doctors = {key: pool.submit(local_cli, request, 'doctor', '--node=' + str(value), '--family=firewall', '--json') for key, value in ids.items()}
+        baseline = pool.submit(case_baseline, request)
+        reply = status.result()[1]
+        if reply is None or (reply.get('data', reply)).get('auto_release') is None:
+            raise RuntimeError('The nested Gateway does not recognise the outer VM as a WireGuard member.')
+        reports = {key: future.result()[1] for key, future in doctors.items()}
+        for key, report in reports.items():
+            if report.get('healthy') is not True:
+                raise RuntimeError('Scoped firewall Doctor baseline is not healthy: ' + key)
+        write_json(Path(request['evidence']) / 'baseline.json', baseline.result())
+    return {'passed': True, 'doctor': reports}
+
+
+def ready_make(request):
+    """Copy the healthy active generation to ready copies, then start it again. The set is completed by `ready-complete`."""
+    record = fleet_record(request)
+    construction = record['prepare']['construction']
+    guests = generation_guests(record)
+    expected = {'user.orbit.e2e.owner': 'orbit-e2e', 'user.orbit.e2e.issue': request['issue'],
+                'user.orbit.e2e.attempt': construction['attempt_id'], 'user.orbit.e2e.operation': record['prepare']['source']['operation_id']}
+    observed = {row['name']: row for row in inventory()['guests']}
+    for instance in guests.values():
+        if instance not in observed or observed[instance]['metadata'] != expected:
+            raise RuntimeError('Guest ownership mismatch, nothing copied: ' + instance)
+    # The harness creates an operator VM the proof does not use. Its 1 GiB of shared memory is what a scan of the three guests
+    # needs on an 8 GiB task VM: with it running, the kernel killed nested VMs. A stopped guest is still released by name.
+    operator = record['prepare']['construction']['nodes'].get('operator', {}).get('instance')
+    if operator and operator in observed and observed[operator]['status'] == 'Running':
+        incus(['stop', operator], timeout=300)
+    # Nothing is copied from a fleet that is not healthy.
+    ready_check(request)
+    failure = None
+    try:
+        scrubbed = scrub_key(request, guests)
+        made = ready.make(guests, ready.network_of(guests['gateway']), record['nodes'], minted=minted_at(guests['gateway']),
+                          attempt=construction['attempt_id'], inputs=inputs_digest(request))
+    except Exception as error:
+        failure = error
+    # The running fleet goes on with its key, as after any start of a Gateway, also when the scan or the trim failed.
+    # The first error is the one reported.
+    try:
+        deliver_key(request, guests['gateway'])
+    except Exception as error:
+        if failure is None:
+            raise
+        raise failure from error
+    if failure is not None:
+        raise failure
+    return {**made, 'key': scrubbed}
+
+
+def ready_complete(request):
+    """The last step of `ready`: the fleet the copies came from passed its checks after the restart, so the set is usable."""
+    identity = json.loads((Path(request['evidence']) / 'ready-make.json').read_text())['set']
+    ready.complete(identity)
+    return {'set': identity, 'complete': True}
+
+
+def prune_generations(request):
+    """Keep the active generation and the previous one; delete the other generation source directories of this group.
+
+    A directory is deleted only when it is a generation of this candidate and group and no guest mounts it. The guests
+    wrote some of it as root (the agent manifest, Python caches), so the outer user needs sudo. Best effort: a directory
+    that cannot be deleted is reported and does not fail a healthy run.
+    """
+    previous = json.loads((Path(request['evidence']) / 'inventory.json').read_text())['previous']
+    keep = {request['generation'], previous}
+    expected = {key: request[key] for key in ('candidate', 'group')}
+    removed, failed = [], {}
+    try:
+        mounted = incus(['list', '--format=json']).decode()
+        directories = sorted((Path(request['root']) / 'generations').iterdir())
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+        return {'kept': sorted(name for name in keep if name), 'removed': [], 'failed': {'listing': str(error)}}
+    for directory in directories:
+        owner = directory / 'owner.json'
+        try:
+            if directory.name in keep or not re.fullmatch('[0-9a-f]{32}', directory.name) or directory.is_symlink() or not owner.is_file():
+                continue
+            if json.loads(owner.read_text()) != expected or str(directory) in mounted:
+                continue
+            privileged(['rm', '-rf', '--', str(directory)], timeout=300)
+            removed.append(directory.name)
+        except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+            failed[directory.name] = str(error)[-300:]
+    return {'kept': sorted(name for name in keep if name), 'removed': removed, 'failed': failed}
+
+
 def preservation(request):
     before = json.loads((Path(request['evidence']) / 'inventory.json').read_text())
     now = inventory()
     if identity(request['candidate']) != before['candidate'] or outer_identity() != before['outer']:
         raise RuntimeError('Candidate or outer observer identity changed during the reset.')
+    # A reset from ready copies keeps the previous generation's guests and network: the new generation inherited them.
+    carried = request.get('mode') == 'ready'
     for kind in ('guests', 'networks'):
         previous_owned = before['previous_owned'][kind]
-        unrelated = [row for row in before['resources'][kind] if row['name'] not in previous_owned]
+        unrelated = [row for row in before['resources'][kind] if row['name'] not in previous_owned and not row['name'].startswith(ready.PREFIX)]
         for row in unrelated:
             if row not in now[kind]:
                 raise RuntimeError('Unrelated fixture changed: ' + row['name'])
-        if any(row['name'] in previous_owned for row in now[kind]):
+        survivors = {row['name'] for row in now[kind] if row['name'] in previous_owned}
+        if carried and survivors != set(previous_owned):
+            raise RuntimeError('A carried resource of the fleet disappeared: ' + ', '.join(sorted(set(previous_owned) - survivors)))
+        if survivors and not carried:
             raise RuntimeError('An old generation resource survived release.')
     return {'passed': True, 'candidate': before['candidate'], 'outer': before['outer'], 'resources': now}
 
@@ -602,6 +993,8 @@ def run_cases(request):
 
 
 def execute(request, action):
+    if action not in ACTIONS:
+        raise RuntimeError('Unknown bounded proof phase: ' + action)
     evidence = Path(request['evidence'])
     if action == 'inventory':
         previous = active_generation(request)
@@ -622,6 +1015,28 @@ def execute(request, action):
         return release(request, before['previous'], 'cleanup-previous')
     if action == 'snapshot':
         return snapshot(request)
+    if action == 'snapshot-ready':
+        return snapshot_ready(request)
+    if action == 'restore-ready':
+        return restore_ready(request)
+    if action == 'candidate':
+        return apply_candidate(request)
+    if action == 'ready-wait':
+        return ready_wait(request)
+    if action == 'agents-online':
+        return agents_online(request)
+    if action == 'ready-make':
+        return ready_make(request)
+    if action == 'ready-complete':
+        return ready_complete(request)
+    if action == 'ready-discard':
+        return {'removed': ready.discard_incomplete()}
+    if action == 'ready-drop':
+        return {'removed': ready.drop()}
+    if action == 'ready-check':
+        return ready_check(request)
+    if action == 'prune-generations':
+        return prune_generations(request)
     if action == 'prepare':
         source = source_for(request, request['generation'])
         value = harness(request, 'prepare', source)
@@ -638,9 +1053,13 @@ def execute(request, action):
     if action == 'readiness':
         return readiness(request)
     if action == 'publish':
-        return {'generation': request['generation'], 'topology': prepared(request),
-                'readiness': json.loads((evidence / 'readiness.json').read_text()),
-                'preservation': preservation(request)}
+        checked_file = evidence / 'readiness.json' if (evidence / 'readiness.json').is_file() else evidence / 'ready-check.json'
+        result = {'generation': request['generation'], 'topology': prepared(request),
+                  'readiness': json.loads(checked_file.read_text()),
+                  'preservation': preservation(request)}
+        # The generation is healthy: its record lets a later run copy it to ready copies or restore into it.
+        write_json(fleet_path(request, request['generation']), {'prepare': prepared(request), 'nodes': node_ids(request)})
+        return result
     if action == 'failure-cleanup':
         try:
             failure_inventory = inventory()

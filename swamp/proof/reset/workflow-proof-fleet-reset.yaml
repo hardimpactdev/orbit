@@ -44,6 +44,22 @@ jobs:
           - step: inventory
             condition:
               type: succeeded
+      - name: drop-ready
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-ready-drop
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" ready-drop'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: release-previous
+            condition:
+              type: succeeded
       - name: snapshot
         task:
           type: behavior
@@ -57,7 +73,7 @@ jobs:
               PROOF_REQUEST: "${{ inputs.request }}"
               PROOF_CANDIDATE: "${{ inputs.candidate }}"
         dependsOn:
-          - step: release-previous
+          - step: drop-ready
             condition:
               type: succeeded
       - name: prepare
@@ -202,6 +218,18 @@ jobs:
           methodName: execute
           inputs:
             run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" publish'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+      - name: prune
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-prune-generations
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" prune-generations'
             timeout: 600000
             env:
               PROOF_REQUEST: "${{ inputs.request }}"

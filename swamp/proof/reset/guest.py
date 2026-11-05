@@ -28,6 +28,30 @@ def driver(ctx, action, value):
     return json.loads(output.strip().splitlines()[-1]) if output.strip() else None
 
 
+def candidate(ctx):
+    """Apply the candidate to a Gateway restored from a ready copy.
+
+    The guest mounts the new generation's source: its runtime state is carried over, so only the candidate's changes
+    remain. Caddy needs access to the new directories, the schema moves to the candidate's migrations, the Swamp
+    repository takes the candidate's workflows (serve hot-reloads them), and the PHP workers that load the code again.
+    """
+    fixture.caddy_access(ctx)
+    fixture.run(ctx, ['php', 'artisan', 'package:discover'], user=ctx.ACCOUNT, cwd=ctx.GATEWAY)
+    fixture.run(ctx, ['php', 'artisan', 'migrate', '--force'], user=ctx.ACCOUNT, cwd=ctx.GATEWAY, timeout=600)
+    pins = 'extensions/models/upstream_extensions.json'
+    before = json.loads((ctx.REPO / pins).read_text())
+    # `.swamp.yaml` holds the datastore the build set up, and Swamp rewrites `.gitignore`: both belong to this repository.
+    shutil.copytree(SOURCE / 'swamp', ctx.REPO, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('.swamp', '.swamp.yaml', '.gitignore', 'node_modules', '__pycache__'))
+    fixture.run(ctx, ['chown', '-R', 'orbit:orbit', str(ctx.REPO)])
+    after = json.loads((ctx.REPO / pins).read_text())
+    pulled = [name + '@' + entry['version'] for name, entry in after.items() if (before.get(name) or {}).get('version') != entry['version']]
+    for pull in pulled:
+        fixture.native(ctx, 'extension', 'pull', pull, timeout=300)
+    fixture.run(ctx, ['systemctl', 'restart', 'orbit-proof-operations', 'orbit-proof-agent-view'])
+    return {'migrated': True, 'workflows': 'synced', 'extensions_pulled': pulled}
+
+
 def main(action, facts):
     ctx = context(facts)
     if action == 'swamp-state':
@@ -51,6 +75,14 @@ def main(action, facts):
         boot.apply(lambda argv, input=None: fixture.run(ctx, argv, input=input), 'gateway', fixture.member_address(ctx), checkout=str(SOURCE))
         baseline = json.loads(fixture.run(ctx, ['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'proof-state'], user=ctx.ACCOUNT, cwd=ctx.GATEWAY, input='{}'))
         return {'baseline_commands': baseline['baseline_commands'], 'agents': {key: driver(ctx, 'agent', {'node': value}) for key, value in seeded['nodes'].items() if key != 'operator'}}
+    if action == 'candidate':
+        return candidate(ctx)
+    if action == 'worker':
+        rows = fixture.native(ctx, 'worker', 'list', '--server', ctx.URL, '--token-file', str(ctx.STATE / 'credentials/operator'), timeout=15)['workers']
+        enrolled = [row for row in rows if row.get('tokenName') == 'orbit-node-209' and row.get('status') in ('idle', 'busy')]
+        if not enrolled:
+            raise RuntimeError('The orbit-node-209 worker is not enrolled in Swamp serve yet.')
+        return {'enrolled': True, 'workers': len(enrolled)}
     if action == 'install-agent':
         fixture.install_agent(ctx, facts['rendered'], facts['secret'])
         return {'installed': True}

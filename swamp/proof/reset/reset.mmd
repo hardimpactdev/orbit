@@ -1,16 +1,39 @@
 flowchart TD
   hook[Existing tasks.script / check hook] --> lock[Native per-behavior group lock covers run and cleanup]
-  lock --> inventory[Pin candidate and inventory owned / unrelated resources]
-  inventory --> release[Validate every owned resource then scoped release]
-  release --> snapshot[Export pinned source to disposable checkout]
-  snapshot --> prepare[Harness reserve / boot / mount; offline owned Gateway resize to 2560MiB and 2 vCPUs, boot and wait for agent; not ready]
-  prepare --> fixture[Shared fixture bootstrap: WireGuard network with the outer VM as operator, Swamp then Gateway, canonical firewall baseline, trust, observers, projection queue and boot fixes]
-  fixture --> operator[Native step: the outer VM becomes the operator: nested-CLI wrapper, one profile, WireGuard tunnel]
-  operator --> transport[Native step: authenticated operator HTTP and queued worker SSH probe]
-  transport --> facts[Native step: one-shot fresh host / ufw / units observation; fail closed if missing]
-  facts --> readiness[Native step: scoped Doctor and firewall baseline]
+  lock --> mode{Which reset?}
+  mode -->|reset, verify with no usable ready copies| inventory
+  mode -->|reset --from-ready, no usable copies| build
+  mode -->|verify or reset --from-ready, usable copies| fastInventory
+
+  subgraph full[Full build, about 230 s]
+    inventory[Pin candidate and inventory owned / unrelated resources] --> release[Validate every owned resource then scoped release]
+    release --> snapshot[Export pinned source to disposable checkout]
+    snapshot --> prepare[Harness reserve / boot / mount; offline owned Gateway resize to 2560MiB and 2 vCPUs, boot and wait for agent; not ready]
+    prepare --> fixture[Shared fixture bootstrap: WireGuard network with the outer VM as operator, Swamp then Gateway, canonical firewall baseline, trust, observers, projection queue and boot fixes]
+    fixture --> operator[Native step: the outer VM becomes the operator: nested-CLI wrapper, one profile, WireGuard tunnel]
+    operator --> transport[Native step: authenticated operator HTTP and queued worker SSH probe]
+    transport --> facts[Native step: one-shot fresh host / ufw / units observation; fail closed if missing]
+    facts --> readiness[Native step: scoped Doctor and firewall baseline]
+  end
+
+  build[Full build, then make ready copies] --> inventory
+  readiness -. after a build-ready run .-> makeReady
+
+  subgraph ready[Ready copies, about 75 s to a checked fleet; the boot is about 50 s of it]
+    makeReady[Make ready copies: stop the 3 guests, copy each to fleet-ready-ROLE, drop the generation labels, NIC and source mount, record MAC, IP, subnet and Node ids, start the originals] --> readyCheck[Same readiness steps as a build]
+    fastInventory[Pin candidate and inventory] --> fastSnapshot[Export pinned source to a new generation; carry the lease and the Gateway runtime state from the previous one; activate last]
+    fastSnapshot --> restore[Per guest: delete, copy from ready copy, label for this attempt, add NIC with saved MAC and IP, add the new source mount; start all]
+    restore --> candidate[Candidate overlay in the Gateway as soon as it mounts the new source: Caddy access, migrations, Swamp repository, restart queue workers]
+    candidate --> wait[Blocking commands: incus wait agent, systemctl start of the units; tunnel handshake]
+    wait --> fastOperator[Native step: operator, pins the restored CA]
+    fastOperator --> fastTransport[One readiness check: every Node agent online, Swamp worker enrolled, Gateway knows the operator, Doctor has no finding, record the case baseline]
+  end
+
   readiness --> result[Publish generation, readiness and preservation evidence]
+  fastTransport --> result
+  readyCheck --> receipt
   result --> cases{Verification run?}
+  result -. in parallel .-> prune[Keep the active and the previous generation source; delete the others]
   cases -->|yes| commands[Run each case program in order against the one fleet within the case budget; scoped case cleanup]
   cases -->|no| held[Keep generation for explicit test use]
   commands --> baseline[After each case compare its own pre-case database and firewall state; residue fails that case]
@@ -22,5 +45,9 @@ flowchart TD
   transport -. failure .-> diagnose
   facts -. failure .-> diagnose
   readiness -. failure .-> diagnose
-  diagnose --> ownedCleanup[Release only this generation; preserve failure]
+  restore -. failure .-> diagnose
+  wait -. failure .-> diagnose
+  candidate -. failure .-> diagnose
+  fastTransport -. failure .-> diagnose
+  diagnose --> ownedCleanup[Release only this generation; preserve failure; ready copies stay but are unusable until the next build]
   ownedCleanup --> receipt

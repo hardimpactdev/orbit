@@ -1,0 +1,43 @@
+id: ba882115-e7b1-4d12-853e-b4585164bddd
+name: proof-command-verification-ready
+description: Task-local disposable proof fleet; runs the request's case programs in order and records a verdict for each. Never touches the outer control plane.
+version: 1
+inputs:
+  type: object
+  properties:
+    request:
+      type: string
+      description: Absolute path to the owned nonsecret execution request. It lists the ordered case programs (`cases`) and the case budget in seconds (`budget_seconds`).
+    candidate:
+      type: string
+      description: Candidate repository owning the bounded phase programs.
+  required: [request, candidate]
+  additionalProperties: false
+jobs:
+  - name: fresh-fleet
+    steps:
+      - name: reset
+        task:
+          type: workflow
+          workflowIdOrName: proof-fleet-reset-ready
+          inputs:
+            request: "${{ inputs.request }}"
+            candidate: "${{ inputs.candidate }}"
+  - name: command-cases
+    dependsOn:
+      - job: fresh-fleet
+        condition:
+          type: succeeded
+    steps:
+      - name: cases
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-cases
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" cases'
+            timeout: 2400000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"

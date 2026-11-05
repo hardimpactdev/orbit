@@ -1,0 +1,144 @@
+id: b6b3875e-1b4a-49b4-a894-087f0141268a
+name: proof-fleet-ready
+description: Task-local disposable proof fleet; never touches the outer control plane.
+version: 1
+inputs:
+  type: object
+  properties:
+    request:
+      type: string
+      description: Absolute path to the owned nonsecret execution request.
+    candidate:
+      type: string
+      description: Candidate repository owning the bounded phase programs.
+  required: [request, candidate]
+  additionalProperties: false
+jobs:
+  - name: ready
+    steps:
+      - name: inventory
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-inventory
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" inventory'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+      - name: ready-make
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-ready-make
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" ready-make'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: inventory
+            condition:
+              type: succeeded
+      - name: wait
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-ready-wait
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" ready-wait'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: ready-make
+            condition:
+              type: succeeded
+      - name: transport-readiness
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-transport-readiness
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" transport-readiness'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: wait
+            condition:
+              type: succeeded
+      - name: observer-facts
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-observer-facts
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" observer-facts'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: transport-readiness
+            condition:
+              type: succeeded
+      - name: readiness
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-readiness
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" readiness'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: observer-facts
+            condition:
+              type: succeeded
+      - name: complete
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-ready-complete
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" ready-complete'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: readiness
+            condition:
+              type: succeeded
+  - name: failure
+    dependsOn:
+      - job: ready
+        condition:
+          type: failed
+    steps:
+      - name: discard
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-ready-discard
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" ready-discard'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
