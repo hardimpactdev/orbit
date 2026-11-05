@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS 1 (token at admission, vault.get; signing is the one step→Gateway call), scope (Process/Schedule definitions, same-Node preview Route); database.clone merged in as a step; .env through the vault as in instance.create. docs/reference/instance-cloning.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (no DNS step: the preview name is inside Node 14's TLD; cert install in the publish step as in route:create; cfgmgmt user/file/systemd, 0600 credential file for the fetch).
-  %% status: draft
+  %% status: reviewed
   %% command: instance:clone
   %% kind: instance.clone
   autonumber
@@ -18,11 +18,11 @@ sequenceDiagram
   CLI->>GW: instance:clone 42 14 shop
   %%> Command:
   %%> - `orbit instance:clone 42 14 shop --preview-name=shop.com`
-  %%> - syntax: `<candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--idempotency-key=KEY]`
+  %%> - syntax: `<candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--json]`
   %%> What it does:
   %%> - clones development Instance 42 on Node 12 into a new production Instance `shop` on Node 14
   %%> Required input:
-  %%> - `--preview-name=NAME` is mandatory even though the signature declares an option
+  %%> - `--preview-name=NAME` is required: a terminal asks for it, and a noninteractive call without it is refused
   %%> Options:
   %%> - `--preview-name`: combined with Node 14's TLD, such as `shop.com.prod.orbit`
   %%> - `--branch`: another branch; the default is the candidate's branch
@@ -36,7 +36,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has access grants to Node 12 and Node 14
   %%> - Node 14 is active, has the `app-prod` role and a TLD
-  %%> - Instance 42 is active with a recorded source and no attached server database; the branch exists in the repository
+  %%> - Instance 42 is active with a recorded source and no attached server database; a web Project's Node is not in an active Cluster
   %%> - Project 7 has no production Instance on Node 14 yet, and the preview domain is free
   %%> Plans:
   %%> - the account `orbit-app-7` and its home `/home/orbit-app-7`
@@ -131,7 +131,7 @@ sequenceDiagram
     %%> When:
     %%> - after success and after failure
     %%> Failure:
-    %%> - a failed cleanup is a warning; the leftover is harmless
+    %%> - a failed cleanup leaves harmless files and does not fail the clone
   end
   Note over SW: Report the result<br/>commit · warnings · error code
   %%> What it does:
@@ -167,7 +167,7 @@ sequenceDiagram
     %%> - what Node 14 got stays; the candidate is unchanged
     %%> Retry:
     %%> - the same request reuses Instance 43 and repeats only what is missing
-    %%> - a changed input returns `instance.clone_retry_conflict`
+    %%> - a changed candidate, Node, preview name, branch or SQLite path returns `instance.clone_retry_conflict`
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5152
