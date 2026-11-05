@@ -23,8 +23,11 @@ use App\Models\TaskVmImageBuild;
  */
 final readonly class TaskVmSeedRefreshIntent
 {
+    /** The host scripts of the workflow, in the repository root. They travel in the intent, so the run shows what it ran. */
+    private const array Scripts = ['cleanup' => 'cleanup-builder.sh', 'promote' => 'promote-seed.sh'];
+
     public function __construct(private TaskVmSettings $settings, private TaskVmPromotedImage $images, private SwampSshExecutionInput $ssh,
-        private SwampCommandStep $shared, private RepositoryReadAccess $git) {}
+        private SwampCommandStep $shared, private RepositoryReadAccess $git, private TaskVmCapacity $capacity) {}
 
     /**
      * Refuses a host that cannot refresh: not a configured, active task VM host; an image build running on it; or a
@@ -39,7 +42,13 @@ final readonly class TaskVmSeedRefreshIntent
             throw new ResourceOperationException('task_vm.image_build_running', 'An image build is running on this host. Refresh the seed after it ends.', 409);
         }
 
-        return $this->settings->host($host->id);
+        $location = $this->settings->host($host->id);
+        $slots = TaskVmSize::Large->slots();
+        if (($this->capacity->freeSlots([[$location, $host]])[$host->id] ?? 0) < $slots) {
+            throw new ResourceOperationException('task_vm.seed_refresh_no_capacity', "A seed refresh needs the {$slots} slots of a large VM free on this host.", 409);
+        }
+
+        return $location;
     }
 
     /**
@@ -79,11 +88,24 @@ final readonly class TaskVmSeedRefreshIntent
                 'checkout' => TaskVmSeedRefresh::Checkout, 'group' => TaskVmSeedRefresh::Group, 'branch' => TaskVmSeedRefresh::Branch,
                 'roles' => TaskVmSeedRefresh::Roles],
             'source' => ['repository' => $repository, 'commit' => $commit],
+            'scripts' => array_map($this->script(...), self::Scripts),
             'execution_secrets' => [
                 'git_authorization' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-seed-refresh-git-'.$host->id, $access),
                 'proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club),
             ],
         ];
+    }
+
+    /** The text of one script of `tools/task-vm-seed`, from the release the Gateway runs. */
+    private function script(string $name): string
+    {
+        $path = dirname(base_path(), 2).'/tools/task-vm-seed/'.$name;
+        $text = is_file($path) ? file_get_contents($path) : false;
+        if (! is_string($text) || $text === '') {
+            throw new ResourceOperationException('task_vm.seed_refresh_unavailable', "The release has no script {$name} for the seed refresh.", 409);
+        }
+
+        return $text;
     }
 
     /** The commit that the Gateway runs: the ready topology holds the release it was built from. */

@@ -1381,7 +1381,7 @@ The seed that the image build leaves holds only the stopped `node-template`. A *
 
 Each task VM host refreshes its own seed. Nothing is copied between hosts. The hosts have different CPUs, and a copy between machines loses the reflink sharing of the pool inside the seed (14.8 GiB instead of 6.8 GiB). The release flow starts the refresh for every host in parallel once the release is live. An operator runs one with `php artisan task-vms:refresh-seed <host>` on the Gateway. There is no CLI command of its own.
 
-The `task_vm.seed_refresh` kind targets the host (`task_vm_host`), so a second admission returns the open Operation. The Gateway refuses a host with an image build running or no promoted task image. It also refuses when it has no release commit, no GitHub App read access to the release repository, or no proof Swamp Club key. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd) shows the run.
+The `task_vm.seed_refresh` kind targets the host (`task_vm_host`), so a second admission returns the open Operation. The Gateway refuses a host with an image build running or no promoted task image. It also refuses when it has no release commit, no GitHub App read access to the release repository, or no proof Swamp Club key. It needs the three slots of a large VM free. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd) shows the run.
 
 The workflow `operation-task-vm-seed-refresh` runs these steps on the host over official SSH:
 
@@ -1391,8 +1391,9 @@ The workflow `operation-task-vm-seed-refresh` runs these steps on the host over 
 4. It installs the proof Swamp Club key and the Composer packages.
 5. It runs `bin/e2e-topology-host-setup` and `bin/proof-fleet reset 1`.
 6. [`tools/task-vm-seed/ready-copies.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/ready-copies.sh) keeps a stopped copy of each VM as `ready-<role>`. It deletes the other VMs of the build.
-7. It stops the builder cleanly. It deletes the builder and runs `zfs promote` on the clone. It then renames the current seed to `-previous` and the clone to the seed name. It deletes the replaced seed.
-8. Cleanup always runs. It removes the builder and an unpromoted clone.
+7. [`check-ready.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/check-ready.sh) boots a throwaway copy of each ready copy and searches it for the club key.
+8. It stops the builder cleanly. [`promote-seed.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/promote-seed.sh) then promotes the clone.
+Cleanup always runs, after success, failure and cancellation.
 
 The builder has no fleet identity: no WireGuard address, Node, token or model key. The checkout is on the branch `seed-refresh/task-1`, because the harness refuses a branch that does not name its task. The GitHub read header and the club key come from the vault on standard input. The ready copies step also deletes the operator VM that the harness still makes.
 
@@ -1400,11 +1401,25 @@ The builder has no fleet identity: no WireGuard address, Node, token or model ke
 
 ##### How a claim selects the new seed
 
-A claim and a slot clone the seed named from the fingerprint of the task image (`orbit-topology-seed-<12 hex>`), as before. The refresh swaps what that name holds, so no claim path changes. A task VM that already runs keeps its own clone of the old seed. A claim between the two renames finds no seed. The window is two renames.
+A claim and a slot clone the seed named from the fingerprint of the task image (`orbit-topology-seed-<12 hex>`), as before. The refresh swaps what that name holds, so no claim path changes. A task VM that already runs keeps its own clone of the old seed.
 
-A failed refresh leaves the seed it found. The promotion is the last change on the host, and it undoes itself. A run that died between the two renames left the old seed under `-previous` and no current seed. The first step of the next run renames it back.
+One host lock, `/run/lock/orbit-task-vm-seed.lock`, orders the two. The claim’s seed clone and the promotion both take it with `flock`. So no claim clones the seed between the two renames, and a claim waits for them.
 
-`zfs promote` makes the new seed own the blocks it shares with the old one, so successive refreshes form no clone chain. The replaced seed is a clone of the new one and is deleted. No rollback copy stays. The frozen image pruning could not clean one up after its image went, and the next refresh replaces a bad seed. A new task image has a new fingerprint and so a new seed, with only `node-template`. Refresh that seed after the image is promoted.
+##### Promotion and crashes
+
+`promote-seed.sh` takes the lock, deletes the builder and runs `zfs promote` on the clone. Promotion makes the new seed own the blocks it shares with the old one, so successive refreshes form no clone chain. The script deletes the `-previous` seed of the refresh before. It then renames the current seed to `-previous` and the clone to the seed name. It ignores HUP, INT and TERM during the two renames. If the second rename fails, it undoes the first.
+
+The old seed stays as `-previous`, the rollback copy, until the next successful refresh deletes it. Renaming it back restores the old seed. A task VM keeps working while its seed is promoted over and later deleted: Incus keeps the dataset of the deleted seed until the last clone of it is gone.
+
+A kill between the two renames leaves no current seed and the old one under `-previous`. `cleanup-builder.sh` runs first in a run and last in every run. It takes the lock and repairs that state before it deletes anything. It renames `-previous` back when the current seed is missing, and only then deletes an unpromoted clone. A failed refresh leaves the seed it found.
+
+A new task image has a new fingerprint and so a new seed, with only `node-template`. Refresh that seed after the image is promoted. The frozen image pruning deletes only the seed and `-new`. The `-previous` seed of a pruned image shows in the stray report until an operator deletes it.
+
+##### When a host refreshes
+
+A refresh admits only when the host has the three free slots of a large VM. An open refresh holds those slots in the capacity count. A refresh and an image build share the host lock `task_vm_host:<node id>`, so each waits for the other. The image build scheduler tries again after a refresh.
+
+A host’s seed is refreshed after each release, and at least daily. The Swamp tokens in the ready copies last 24 hours, and a ready copy expires after 20 hours. The release flow and the daily schedule are B8. They are not built yet. Until then an operator runs `php artisan task-vms:refresh-seed <host>`.
 
 ##### The ready copies
 
@@ -1414,13 +1429,13 @@ The reset from ready copies adds the NIC back when it copies a ready copy to a r
 
 The ready Gateway and app-dev run the code of the build from a directory of the outer VM. The build wrote its `.env` into it, with the application key the baked database needs, and `storage`, `bootstrap/cache` and the ACLs of the web server. So the seed also holds a copy of that tree, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it into the fixed path before it starts the copies.
 
-A copy carries no `user.orbit.e2e.*` label, so a release of a build never deletes it. A ready copy is never started.
+A copy carries no `user.orbit.e2e.*` label, so a release of a build never deletes it. A ready copy is never started: the check boots throwaway copies of it. The build pushes the proof Swamp Club key into the nested Gateway, so the check searches every copy for it. A key in the seed would reach every task VM of the host.
 
 The Gateway keeps no state of its own for a refresh. The succeeded Operation is the record. It holds the seed, the ready copies, the size of the seed (`referenced_bytes`) and the bytes the build wrote (`written_bytes`). The budget is in [Operations](/reference/operations).
 
 After promotion, the final chain step prunes old recipe images on that host. It keeps the current and previous promoted base images, images used by existing VMs, and images of other running builds.
 
-Pruning deletes a base image's topology seed, and a seed under construction, right before the image, so a kept base keeps its seed. A [seed refresh](#refresh-the-topology-seed) holds its `-refresh` clone and its `-previous` seed only while it runs, so pruning has nothing of them to delete. When VMs still use clones of a deleted seed, Incus moves the seed's dataset to its `deleted` path and destroys it with the last clone, so Orbit tracks no references.
+Pruning deletes a base image's topology seed, and a seed under construction, right before the image, so a kept base keeps its seed. A [seed refresh](#refresh-the-topology-seed) keeps `-previous`, a rollback copy, until its next run. Pruning does not delete it. When VMs still use clones of a deleted seed, Incus moves the seed's dataset to its `deleted` path and destroys it with the last clone, so Orbit tracks no references.
 
 Pruning also removes the unused gateway, app-dev, app-prod, and operator aliases for host-local build records, including current and previous recipes. Images and aliases used by existing VMs stay until unused. Otherwise aliased or retained base images stay; only their unused role aliases are removed. Pruning failures resume without rebuilding. The base-only chain has 15 jobs, including the topology seed, promotion, and pruning.
 
@@ -1567,6 +1582,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:build-image` |
 | `task_vm.topology_seed_failed` | 502 | `incus.build-topology-seed` refused the build. The error includes its bounded diagnostic |
+| `task_vm.seed_refresh_no_capacity` | 409 | A seed refresh needs the three slots of a large VM free on the host |
 | `task_vm.seed_refresh_unavailable` | 409 | A seed refresh cannot start: the Gateway has no release commit, the GitHub App cannot read the release repository, or the proof Swamp Club key is not set |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
 | `task_vm.image_channel_lost` | 409 | The bounded observation period ended without a readable phase result. The guest outcome is unknown; inspect the retained builder before resuming |

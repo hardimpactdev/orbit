@@ -19,7 +19,7 @@ use JsonException;
  * Projects the terminal run of a topology seed refresh. The Gateway keeps no state of its own for it: the seed lives on
  * the host under the name every claim already clones, and the succeeded Operation is the record of when it was
  * refreshed and what it holds. A run that failed changes nothing: the host still has the seed it had, because the run
- * promotes the new seed only as its last host change.
+ * promotes the new seed only as its last host change, and the old seed stays as `-previous` until the next refresh.
  */
 final readonly class TaskVmSeedRefreshProjection implements DirectOperationProjection, NativeOperationProjection
 {
@@ -29,13 +29,17 @@ final readonly class TaskVmSeedRefreshProjection implements DirectOperationProje
     /** The step that lists the ready copies in the seed, before it is stopped. */
     public const string ReadyStep = 'Make the ready copies';
 
+    /** The step that boots a throwaway copy of each ready copy and searches it for the Swamp Club key. */
+    public const string CheckStep = 'Check the ready copies';
+
     /** The step that swaps the seed and prints what the host holds afterwards. */
     public const string PromoteStep = 'Promote the seed';
 
     /** @return array<string,array{job:string,step:string}> */
     public static function captures(): array
     {
-        return ['ready' => ['job' => 'build', 'step' => self::ReadyStep], 'promoted' => ['job' => 'promote', 'step' => self::PromoteStep]];
+        return ['ready' => ['job' => 'build', 'step' => self::ReadyStep], 'checked' => ['job' => 'build', 'step' => self::CheckStep],
+            'promoted' => ['job' => 'promote', 'step' => self::PromoteStep]];
     }
 
     public function native(Operation $operation): bool
@@ -77,7 +81,7 @@ final readonly class TaskVmSeedRefreshProjection implements DirectOperationProje
      * clones, and its ready copies are the roles the intent named.
      *
      * @param  array<string,mixed>  $run
-     * @return array{ready:true,host_node_id:int,image_fingerprint:string,seed:string,roles:list<string>,referenced_bytes:int,written_bytes:int}
+     * @return array{ready:true,host_node_id:int,image_fingerprint:string,seed:string,previous:string,roles:list<string>,referenced_bytes:int,written_bytes:int}
      */
     private function report(Operation $operation, array $run): array
     {
@@ -87,6 +91,7 @@ final readonly class TaskVmSeedRefreshProjection implements DirectOperationProje
         try {
             $promoted = ValidatedData::object(json_decode(ValidatedData::string(ValidatedData::object($run['promoted'] ?? [])['stdout'] ?? null), true, flags: JSON_THROW_ON_ERROR));
             $ready = ValidatedData::stringList(json_decode(ValidatedData::string(ValidatedData::object($run['ready'] ?? [])['stdout'] ?? null), true, flags: JSON_THROW_ON_ERROR));
+            $checked = ValidatedData::stringList(json_decode(ValidatedData::string(ValidatedData::object($run['checked'] ?? [])['stdout'] ?? null), true, flags: JSON_THROW_ON_ERROR));
         } catch (JsonException|InvalidArgumentException) {
             throw $this->invalid();
         }
@@ -95,14 +100,17 @@ final readonly class TaskVmSeedRefreshProjection implements DirectOperationProje
         sort($ready);
         $bytes = $promoted['referenced_bytes'] ?? null;
         $written = $promoted['written_bytes'] ?? null;
-        if ($promoted['seed'] !== $seed['current'] || $ready !== $expected
+        sort($checked);
+        $roleList = $roles;
+        sort($roleList);
+        if (($promoted['seed'] ?? null) !== $seed['current'] || ($promoted['previous'] ?? null) !== $seed['previous'] || $ready !== $expected || $checked !== $roleList
             || ! is_int($bytes) || $bytes < 1 || ! is_int($written) || $written < 0) {
             throw $this->invalid();
         }
 
         return ['ready' => true, 'host_node_id' => ValidatedData::integer($input['host_node_id']),
             'image_fingerprint' => ValidatedData::string(ValidatedData::object($input['image'])['fingerprint']),
-            'seed' => ValidatedData::string($seed['current']), 'roles' => $roles, 'referenced_bytes' => $bytes, 'written_bytes' => $written];
+            'seed' => ValidatedData::string($seed['current']), 'previous' => ValidatedData::string($seed['previous']), 'roles' => $roles, 'referenced_bytes' => $bytes, 'written_bytes' => $written];
     }
 
     private function invalid(): ResourceOperationException

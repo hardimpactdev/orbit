@@ -20,6 +20,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - the host is an active task VM host with a promoted task image, and no image build is running on it
   %%> - the host has the seed of that image: a refresh starts from it and never from nothing
+  %%> - the host has the three slots of a large VM free, and no image build holds the host lock
   %%> - the Gateway runs a release commit, the GitHub App can read the release repository, and the proof Swamp Club key is set
   %%> Result:
   %%> - a task is recorded with the full intent; a second admission for the host returns the open task
@@ -32,15 +33,20 @@ sequenceDiagram
   %%> Inputs:
   %%> - the task image, the names of the current, building and previous seed, and the builder VM with its instance config
   %%> - the release repository and the commit the Gateway runs, so the ready topology is the release it will serve
-  SW->>H: Remove a stale builder<br/>ssh exec · incus delete
+  SW->>H: Remove a stale builder<br/>ssh exec · cleanup-builder.sh
   %%> What it does:
-  %%> - deletes the builder, its seed clone and a previous seed, each only when it exists
-  %%> - never deletes the current seed; if an earlier run died between the two renames of its promotion, the old seed is still under the previous name and goes back first
+  %%> - takes the host seed lock, the lock a claim's seed clone takes
+  %%> - deletes the builder VM
+  %%> - repairs a promotion that died between its two renames: if the current seed is missing, the old seed goes back from `-previous`
+  %%> - only then deletes an unpromoted `-refresh` clone
+  %%> - keeps `-previous`, the rollback copy
   %%> Why:
   %%> - a host refreshes one seed at a time, so anything with these names belongs to an earlier run that ended badly
+  %%> The script:
+  %%> - the file `tools/task-vm-seed/cleanup-builder.sh` travels in the intent, so the run shows what it ran
   SW->>H: Clone the seed<br/>ssh exec · volume copy
   %%> What it does:
-  %%> - copies the current seed to the building name; on ZFS the copy is a clone and costs only what the build writes
+  %%> - takes the host seed lock, then copies the current seed to the building name; on ZFS the copy is a clone and costs only what the build writes
   %%> Why:
   %%> - the build starts from the node template that is in the seed, and the old seed stays untouched
   %%> Fails when:
@@ -84,40 +90,50 @@ sequenceDiagram
   %%> - the disk `orbit-source` points at the fixed path `/home/orbit/.orbit/ready/source`
   %%> - the build's source tree, with its `.env`, `storage`, `bootstrap/cache`, ACLs and owners, is kept in the pool as the custom volume `ready-source`; the ready Gateway needs it, because its baked database is encrypted with the application key in that `.env`, and a task VM restores it to the fixed path before it starts the copies
   %%> - no `user.orbit.e2e.*` label, so a release of a build never deletes a ready copy
+  SW->>B: Check the ready copies<br/>incus exec · check-ready.sh
+  %%> What it does:
+  %%> - starts a throwaway copy of each ready copy and waits for its Incus agent, so each ready copy is a VM that boots
+  %%> - searches each copy, and the volume `ready-source`, for the Swamp Club key of the build, by path and by value
+  %%> - deletes the copies; a ready copy itself is never started
+  %%> Why:
+  %%> - the seed is cloned into every task VM of the host, so a key in it would reach all of them
+  %%> - a ready copy that does not boot must not become the seed
+  %%> Prints:
+  %%> - the roles that passed, which the Gateway compares with the roles it admitted
   SW->>H: Stop the builder<br/>ssh exec · incus stop
   %%> What it does:
   %%> - stops the builder cleanly; its Incus unmounts the pool, so the seed holds a finished file system
-  SW->>H: Promote the seed<br/>ssh exec · zfs promote, rename
+  SW->>H: Promote the seed<br/>ssh exec · promote-seed.sh
   %%> What it does:
+  %%> - takes the host seed lock, so no claim clones the seed between the renames
   %%> - deletes the builder; its seed clone stays as a volume
   %%> - `zfs promote` makes the clone own the blocks it shares with the old seed, so a chain of refreshes does not grow
-  %%> - renames the current seed to `-previous`, then the clone to the seed name; if the second rename fails, the first is undone
-  %%> - deletes the replaced seed; a task VM that runs keeps its own clone of it until the task ends
+  %%> - deletes the `-previous` seed of the refresh before, then renames the current seed to `-previous` and the clone to the seed name
+  %%> - ignores HUP, INT and TERM during the two renames; if the second rename fails, the first is undone
   %%> - prints the seed name, its size and the bytes the build wrote
-  %%> Not kept:
-  %%> - no rollback copy; the old seed is not a copy the frozen image pruning could clean up, and the next refresh replaces a bad one
-  %%> Why renames:
-  %%> - a claim clones the seed named from its image fingerprint, so no claim path changes
-  %%> - a task VM that already runs keeps its own clone of the old seed
+  %%> Rollback copy:
+  %%> - the old seed stays as `-previous` until the next successful refresh deletes it
+  %%> - a task VM that runs keeps its own clone of the old seed, even after that deletion
   %%> The only change:
   %%> - this is the only step that changes what a claim clones
-  SW->>H: Remove the builder<br/>ssh exec · incus delete
+  SW->>H: Remove the builder<br/>ssh exec · cleanup-builder.sh
   %%> What it does:
-  %%> - runs after success, failure and cancellation
-  %%> - deletes the builder VM and the unpromoted seed clone, each only when it exists; a promoted clone has the seed name by now
+  %%> - runs after success, failure and cancellation, with the same script as the first step
+  %%> - repairs a promotion that died between its renames before it deletes anything
+  %%> - deletes the builder VM and an unpromoted clone; a promoted clone has the seed name by now
   %%> - lists the VMs and volumes for the end check
   Note over SW: Check the seed<br/>assert
   %%> End check:
   %%> - a native `assert` over the step results
-  %%> - the build, the ready copies, the promotion and the cleanup passed
-  %%> - the host lists the seed, and no builder, no unpromoted clone and no replaced seed
+  %%> - the build, the ready copies, their check, the promotion and the cleanup passed
+  %%> - the host lists the seed, and no builder and no unpromoted clone
   alt every step passes
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Record result
     %%> Result:
-    %%> - the task succeeds, with the seed name, the ready copies, the size of the seed and the bytes the build wrote
+    %%> - the task succeeds, with the seed name, its rollback copy, the ready copies, the size of the seed and the bytes the build wrote
     %%> - the Gateway keeps no other state: the seed is on the host, under the name every claim clones
     %%> The next claim:
     %%> - clones the new seed and boots a VM that holds the three ready VMs

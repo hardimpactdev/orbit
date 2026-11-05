@@ -13,8 +13,10 @@ use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Starts the refresh of one task VM host's topology seed as one Operation. The host holds the lock, so one refresh runs
- * at a time; a refresh that is running is returned instead of a second one. No host or provider call: Swamp does the work.
+ * Starts the refresh of one task VM host's topology seed as one Operation. The host holds the lock, and the lock is the
+ * one an image build takes, so a refresh and an image build never run together on a host. A refresh that is open is
+ * returned instead of a second one. The intent reads GitHub and writes the vault, so it is captured before the
+ * transaction opens; the transaction only checks again and records the Operation.
  */
 final readonly class StartTaskVmSeedRefreshAction
 {
@@ -22,16 +24,22 @@ final readonly class StartTaskVmSeedRefreshAction
 
     public function execute(Node $host): Operation
     {
-        return DB::transaction(function () use ($host): Operation {
-            $host = Node::query()->lockForUpdate()->findOrFail($host->id);
-            $existing = Operation::query()->where('kind', 'task_vm.seed_refresh')->where('target_type', 'task_vm_host')->where('target_id', $host->id)
-                ->whereNotIn('status', OperationStatus::terminalValues())->first();
-            if ($existing instanceof Operation) {
-                return $existing;
-            }
+        if (($open = $this->open($host)) instanceof Operation) {
+            return $open;
+        }
+        $input = $this->intent->capture($host);
 
-            return $this->start->execute('task_vm.seed_refresh', 'task_vm_host', $host->id, $host->id, $this->intent->capture($host), 'task-vm', null,
+        return DB::transaction(function () use ($host, $input): Operation {
+            $host = Node::query()->lockForUpdate()->findOrFail($host->id);
+
+            return $this->open($host) ?? $this->start->execute('task_vm.seed_refresh', 'task_vm_host', $host->id, $host->id, $input, 'task-vm', null,
                 lockKey: OperationStore::lockKey('task_vm_host', $host->id));
         });
+    }
+
+    private function open(Node $host): ?Operation
+    {
+        return Operation::query()->where('kind', 'task_vm.seed_refresh')->where('target_type', 'task_vm_host')->where('target_id', $host->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->first();
     }
 }

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\TaskVm;
 
 /**
@@ -38,7 +40,7 @@ final readonly class TaskVmCapacity
 
     /**
      * The free slots of each of `$hosts`, in their order: `max_vms` minus the slots of every task VM on the host that
-     * is not destroyed or failed, parked ones too. A failed VM holds no slot, so it never blocks placement:
+     * is not destroyed or failed, parked ones too, and the large builder VM of each open `task_vm.seed_refresh` on it. A failed VM holds no slot, so it never blocks placement:
      * its group asks for assistance. A VM takes the slots of its size
      * ({@see TaskVmSize::slots()}). A host over its budget has 0.
      *
@@ -51,6 +53,11 @@ final readonly class TaskVmCapacity
         foreach (TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->get(['host_node_id', 'size']) as $vm) {
             $host = (int) $vm->host_node_id;
             $used[$host] = ($used[$host] ?? 0) + $vm->size->slots();
+        }
+        // The builder of an open seed refresh is a large VM that has no row.
+        foreach (Operation::query()->where('kind', 'task_vm.seed_refresh')->where('target_type', 'task_vm_host')
+            ->whereNotIn('status', OperationStatus::terminalValues())->get(['target_id']) as $refresh) {
+            $used[$refresh->target_id] = ($used[$refresh->target_id] ?? 0) + TaskVmSize::Large->slots();
         }
         $free = [];
         foreach ($hosts as [$host]) {

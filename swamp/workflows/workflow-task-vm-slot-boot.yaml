@@ -61,7 +61,11 @@ jobs:
         sudo: true
         argv:
         - timeout
+        - '620'
+        - flock
+        - --wait
         - '600'
+        - /run/lock/orbit-task-vm-seed.lock
         - incus
         - --project
         - '${{ inputs.intent.vm.project }}'
@@ -70,7 +74,7 @@ jobs:
         - copy
         - '${{ inputs.intent.vm.pool + "/" + inputs.intent.vm.seed_source }}'
         - '${{ inputs.intent.vm.pool + "/" + inputs.intent.vm.seed_clone }}'
-        timeoutSec: 620
+        timeoutSec: 640
   - name: Create the VM
     labels: {role: swamp}
     writes: true

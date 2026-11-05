@@ -2,27 +2,35 @@
 
 declare(strict_types=1);
 
+use App\Actions\TaskVms\StartTaskVmImageOperationAction;
 use App\Actions\TaskVms\StartTaskVmSeedRefreshAction;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSeedRefresh;
 use App\Domain\TaskVms\TaskVmSeedRefreshIntent;
 use App\Domain\TaskVms\TaskVmSeedRefreshProjection;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlot;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 
@@ -111,6 +119,38 @@ function refreshWorld(): array
     return [$host, $socket];
 }
 
+/** The error code of the refusal that `$call` throws. A call that does not refuse fails the test. */
+function refusal(Closure $call): string
+{
+    try {
+        $call();
+    } catch (ResourceOperationException $error) {
+        return $error->errorCode;
+    }
+
+    throw new RuntimeException('The call was not refused.');
+}
+
+/**
+ * Admits a refresh. The run start after the commit needs a Swamp server that the suite has not, so it may throw; the Operation
+ * is recorded before it, and this returns it with the error. Any other error fails the test.
+ *
+ * @return array{Operation, ?Throwable}
+ */
+function admitted(Node $host): array
+{
+    try {
+        return [app(StartTaskVmSeedRefreshAction::class)->execute($host), null];
+    } catch (Throwable $error) {
+        $operation = Operation::query()->where('kind', 'task_vm.seed_refresh')->latest('id')->first();
+        if (! $operation instanceof Operation || ! str_contains($error::class, 'Swamp') && ! $error instanceof ResourceOperationException) {
+            throw $error;
+        }
+
+        return [$operation, $error];
+    }
+}
+
 /** A running seed refresh Operation with the intent of the world's host. */
 function runningRefresh(Node $host): Operation
 {
@@ -121,17 +161,18 @@ function runningRefresh(Node $host): Operation
 }
 
 /** @return array<string,mixed> */
-function refreshRun(string $status, ?string $promoted = null, ?string $ready = null, string $endCheck = 'succeeded'): array
+function refreshRun(string $status, ?string $promoted = null, ?string $ready = null, string $endCheck = 'succeeded', ?string $checked = '["app-dev","app-prod","gateway"]'): array
 {
     return ['run_id' => 'fixture-refresh', 'status' => $status, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'result' => ['steps' => ['Check the seed' => ['status' => $endCheck]], 'summary' => ['failed_steps' => $endCheck === 'failed' ? ['Check the seed'] : []],
             ...($promoted === null ? [] : ['promoted' => ['stdout' => $promoted."\n"]]),
-            ...($ready === null ? [] : ['ready' => ['stdout' => $ready."\n"]])]];
+            ...($ready === null ? [] : ['ready' => ['stdout' => $ready."\n"]]),
+            ...($checked === null ? [] : ['checked' => ['stdout' => $checked."\n"]])]];
 }
 
 function promotedReport(array $change = []): string
 {
-    return json_encode(['seed' => 'orbit-topology-seed-c1c2cf4051fb',
+    return json_encode(['seed' => 'orbit-topology-seed-c1c2cf4051fb', 'previous' => 'orbit-topology-seed-c1c2cf4051fb-previous',
         'referenced_bytes' => 6_300_796_128, 'written_bytes' => 778_560_288, ...$change], JSON_THROW_ON_ERROR);
 }
 
@@ -199,47 +240,127 @@ it('renders the full public intent of a refresh and sends only vault names for t
 
 it('refuses a host that cannot refresh, before any credential is copied', function (): void {
     [$host, $socket] = refreshWorld();
-    $code = static fn (Closure $call): string => rescue(fn () => $call() ?? 'none', static fn (ResourceOperationException $error): string => $error->errorCode, false);
     $other = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'plain', 'status' => 'active', 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']));
 
-    expect($code(fn () => app(TaskVmSeedRefreshIntent::class)->capture($other)))->toBe('task_vm.host_unavailable');
+    expect(refusal(fn () => app(TaskVmSeedRefreshIntent::class)->capture($other)))->toBe('task_vm.host_unavailable');
 
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-2', 'state' => TaskVmImageBuildState::Running]);
-    expect($code(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.image_build_running');
+    expect(refusal(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.image_build_running');
     $build->delete();
 
     TaskVmImageBuild::query()->where('host_node_id', $host->id)->delete();
-    expect($code(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.image_unavailable');
+    expect(refusal(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.image_unavailable');
     expect($socket->frames)->toBe([]);
 })->group('seed-refresh');
 
 it('refuses a refresh without the proof club key or a readable release', function (): void {
     [$host] = refreshWorld();
-    $code = static fn (Closure $call): string => rescue(fn () => $call() ?? 'none', static fn (ResourceOperationException $error): string => $error->errorCode, false);
 
     config(['swamp.proof_club_api_key' => '']);
-    expect($code(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.seed_refresh_unavailable');
+    expect(refusal(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.seed_refresh_unavailable');
 
     config(['swamp.proof_club_api_key' => 'proof-club-key']);
     unlink($this->base.'/orbit');
-    expect($code(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.seed_refresh_unavailable');
+    expect(refusal(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.seed_refresh_unavailable');
 })->group('seed-refresh');
 
-it('admits one refresh as one Operation on the host and returns the running one for a second', function (): void {
+it('admits one refresh as one Operation on the host and returns the open one for a second', function (): void {
     [$host] = refreshWorld();
 
-    $operation = rescue(fn (): Operation => app(StartTaskVmSeedRefreshAction::class)->execute($host), fn (Throwable $error): Operation => Operation::query()->latest('id')->firstOrFail(), false);
+    [$operation, $dispatch] = admitted($host);
 
+    expect($dispatch)->not->toBeNull();
     expect(Operation::query()->where('kind', 'task_vm.seed_refresh')->count())->toBe(1);
     expect([$operation->kind, $operation->target_type, $operation->target_id, $operation->node_id])->toBe(['task_vm.seed_refresh', 'task_vm_host', $host->id, $host->id]);
     expect($operation->lock_key)->toBe('task_vm_host:'.$host->id);
     expect($operation->input['seed']['current'])->toBe('orbit-topology-seed-c1c2cf4051fb');
 
-    $again = rescue(fn (): Operation => app(StartTaskVmSeedRefreshAction::class)->execute($host), fn (Throwable $error): Operation => Operation::query()->latest('id')->firstOrFail(), false);
+    [$again] = admitted($host);
 
     expect($again->id)->toBe($operation->id);
     expect(Operation::query()->where('kind', 'task_vm.seed_refresh')->count())->toBe(1);
+})->group('seed-refresh');
+
+it('reads GitHub and writes the vault outside the admission transaction, and not again for an open refresh', function (): void {
+    [$host, $socket] = refreshWorld();
+    $levels = [];
+    Http::fake(function (Request $request) use (&$levels) {
+        $levels[] = DB::transactionLevel();
+
+        return match (true) {
+            str_ends_with($request->url(), '/installation') => Http::response(['id' => 123]),
+            str_ends_with($request->url(), '/access_tokens') => Http::response(['token' => 'read-token', 'permissions' => ['contents' => 'read', 'metadata' => 'read'],
+                'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z')], 201),
+            default => Http::response('unexpected', 500),
+        };
+    });
+    // The suite itself runs in one transaction: the level at admission is the level of an admission outside any transaction.
+    $base = DB::transactionLevel();
+
+    admitted($host);
+    $puts = count($socket->frames);
+    admitted($host);
+
+    expect($levels)->not->toBe([])->each->toBe($base);
+    expect(count($socket->frames))->toBe($puts);
+})->group('seed-refresh');
+
+it('refuses a refresh unless the large builder\'s slots are free, and counts an open refresh as those slots', function (): void {
+    [$host] = refreshWorld();
+    $capacity = app(TaskVmCapacity::class);
+    $slots = TaskVmSize::Large->slots();
+    expect($capacity->freeSlots($capacity->activeHosts())[$host->id])->toBe(5);
+
+    admitted($host);
+
+    expect($capacity->freeSlots($capacity->activeHosts())[$host->id])->toBe(5 - $slots);
+    Operation::query()->where('kind', 'task_vm.seed_refresh')->update(['status' => 'succeeded']);
+    expect($capacity->freeSlots($capacity->activeHosts())[$host->id])->toBe(5);
+
+    foreach ([1, 2, 3] as $number) {
+        TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'name' => "tvm-{$number}",
+            'state' => TaskVmState::Ready, 'address' => "10.251.77.{$number}0", 'wireguard_ip' => "10.44.0.{$number}0", 'size' => TaskVmSize::Normal]);
+    }
+    expect($capacity->freeSlots($capacity->activeHosts())[$host->id])->toBe(2);
+    expect(refusal(fn () => app(TaskVmSeedRefreshIntent::class)->capture($host)))->toBe('task_vm.seed_refresh_no_capacity');
+})->group('seed-refresh');
+
+it('puts the two host scripts of the release in the intent', function (): void {
+    [$host] = refreshWorld();
+
+    $input = app(TaskVmSeedRefreshIntent::class)->capture($host);
+
+    expect(array_keys($input['scripts']))->toBe(['cleanup', 'promote']);
+    expect($input['scripts']['promote'])->toBe(file_get_contents(dirname(base_path(), 2).'/tools/task-vm-seed/promote-seed.sh'));
+    expect($input['scripts']['cleanup'])->toContain('flock')->toContain('rename "$pool" "$previous" "$current"');
+    expect($input['scripts']['promote'])->toContain("trap '' HUP INT TERM")->toContain('flock');
+})->group('seed-refresh');
+
+it('takes the host lock of an image build, so a refresh and a build exclude each other on both sides', function (): void {
+    [$host] = refreshWorld();
+
+    [$refresh] = admitted($host);
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-3', 'state' => TaskVmImageBuildState::Running,
+        'builder_vm_name' => 'tvm-image-1', 'recipe_json' => '{}', 'recipe_generation' => 1]);
+
+    // A build while a refresh is open is refused with the code the scheduler already tolerates.
+    expect(refusal(fn () => app(StartTaskVmImageOperationAction::class)->execute($build)))->toBe('task_vm.image_build_running');
+
+    // A refresh while an image build holds the host lock is refused too, before any credential is copied.
+    Operation::query()->whereKey($refresh->id)->update(['status' => 'succeeded', 'lock_key' => null]);
+    $build->update(['state' => TaskVmImageBuildState::Succeeded]);
+    Operation::query()->create(['kind' => 'task_vm.image_build', 'target_type' => 'task_vm_image', 'target_id' => $build->id, 'node_id' => $host->id, 'status' => 'running',
+        'sequence' => 1, 'attempts' => 1, 'input' => ['build_id' => $build->id], 'lock_key' => 'task_vm_host:'.$host->id]);
+    $build->update(['state' => TaskVmImageBuildState::Running]);
+    expect(refusal(fn () => app(StartTaskVmSeedRefreshAction::class)->execute($host)))->toBe('task_vm.image_build_running');
+})->group('seed-refresh');
+
+it('owns the builder VM of a refresh in the host audit', function (): void {
+    expect(TaskVmHostAudit::isSeedRefreshBuilder('tvm-seed-refresh'))->toBeTrue();
+    foreach (['tvm-seed-refresh-2', 'seed-refresh', 'tvm-1', 'x-tvm-seed-refresh'] as $name) {
+        expect(TaskVmHostAudit::isSeedRefreshBuilder($name))->toBeFalse();
+    }
 })->group('seed-refresh');
 
 it('records what the host holds after a refresh from the reports of the run', function (): void {
@@ -251,7 +372,7 @@ it('records what the host holds after a refresh from the reports of the run', fu
 
     expect($operation->refresh()->status->value)->toBe('succeeded');
     expect($operation->result)->toBe(['ready' => true, 'host_node_id' => $host->id, 'image_fingerprint' => RefreshImage, 'seed' => 'orbit-topology-seed-c1c2cf4051fb',
-        'roles' => ['gateway', 'app-dev', 'app-prod'], 'referenced_bytes' => 6_300_796_128, 'written_bytes' => 778_560_288]);
+        'previous' => 'orbit-topology-seed-c1c2cf4051fb-previous', 'roles' => ['gateway', 'app-dev', 'app-prod'], 'referenced_bytes' => 6_300_796_128, 'written_bytes' => 778_560_288]);
 })->group('seed-refresh');
 
 it('refuses a success without the end check, the right seed, the three ready copies or a size', function (string $case): void {
@@ -262,6 +383,10 @@ it('refuses a success without the end check, the right seed, the three ready cop
         'no promotion report' => refreshRun('succeeded', null, ReadyList),
         'no ready report' => refreshRun('succeeded', promotedReport(), null),
         'another seed' => refreshRun('succeeded', promotedReport(['seed' => 'orbit-topology-seed-aaaaaaaaaaaa']), ReadyList),
+        'no seed key' => refreshRun('succeeded', json_encode(['previous' => 'orbit-topology-seed-c1c2cf4051fb-previous', 'referenced_bytes' => 1, 'written_bytes' => 1]), ReadyList),
+        'another previous' => refreshRun('succeeded', promotedReport(['previous' => 'orbit-topology-seed-c1c2cf4051fb-old']), ReadyList),
+        'no check report' => refreshRun('succeeded', promotedReport(), ReadyList, 'succeeded', null),
+        'a role not checked' => refreshRun('succeeded', promotedReport(), ReadyList, 'succeeded', '["app-dev","gateway"]'),
         'a missing ready copy' => refreshRun('succeeded', promotedReport(), '["ready-app-dev","ready-gateway"]'),
         'an extra ready copy' => refreshRun('succeeded', promotedReport(), '["ready-app-dev","ready-app-prod","ready-gateway","ready-operator"]'),
         'a bad size' => refreshRun('succeeded', promotedReport(['referenced_bytes' => 0]), ReadyList),
@@ -272,7 +397,7 @@ it('refuses a success without the end check, the right seed, the three ready cop
     expect(fn () => app(TaskVmSeedRefreshProjection::class)->apply($operation, $run))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.result_invalid'));
     expect($operation->refresh()->status->value)->toBe('running');
-})->with(['no end check', 'no promotion report', 'no ready report', 'another seed', 'a missing ready copy', 'an extra ready copy', 'a bad size', 'a bad written size',
+})->with(['no end check', 'no promotion report', 'no ready report', 'another seed', 'no seed key', 'another previous', 'no check report', 'a role not checked', 'a missing ready copy', 'an extra ready copy', 'a bad size', 'a bad written size',
     'text that is no report'])->group('seed-refresh');
 
 it('records a failed, cancelled or interrupted run as failed and keeps no result', function (string $status): void {
