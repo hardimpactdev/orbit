@@ -181,7 +181,11 @@
 
         # The agent trims its secret file and the Gateway hashes the trimmed secret, so the digest is of the trimmed text.
         - name: Read the observer digest
-          ansible.builtin.shell: tr -d '[:space:]' < "{{ stage.path }}/new/etc/orbit/agent/secret" | sha256sum | cut -d' ' -f1
+          ansible.builtin.shell: |
+            set -o pipefail
+            tr -d '[:space:]' < "{{ stage.path }}/new/etc/orbit/agent/secret" | sha256sum | cut -d' ' -f1
+          args:
+            executable: /bin/bash
           register: observer_secret
           changed_when: false
 
