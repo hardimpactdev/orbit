@@ -8,4 +8,34 @@ description: "Clear the target and keep the Route, its domain, scope, and public
 orbit route:target:unset <route> [--yes] [--json]
 ```
 
-The Gateway clears the target set and returns the Route at once; no Node changes, so no run starts. Clearing an empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active Instance without a Route. On a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated), it returns `route.target_conflict` and names `route:destroy`.
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--yes` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the Route as JSON. |
+
+```bash
+orbit route:target:unset 9 --yes
+```
+
+In a terminal, an omitted Route is chosen from an interactive list, and the CLI asks to confirm with the Route's domain and the effect, with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--yes`, a call that cannot prompt is refused with `input.confirmation_required`. Without the Route it is refused with `route.id_invalid`. A declined or refused call changes nothing. Before it asks, the CLI looks the Route up, so an unknown or inaccessible Route is refused with `http.404` or `node_access.required` first.
+
+Orbit clears the target set and returns the Route at once. No Node changes and no run starts. Clearing succeeds when the Route has no target or none of its Instances is active. Clearing an app Route that has no target succeeds with `Skipped — no target (route.target_unchanged)` and changes nothing.
+
+Orbit refuses with `route.target_conflict` when clearing would leave an active Instance without a Route. On a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated), it also returns `route.target_conflict` and names `route:destroy`. An `active` Route that has targets is refused with `route.reconciliation_required`. A custom proxy Route is refused with `route.kind_unsupported`, and a Route with public Reverb attachments with `websocket.route_in_use`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `route.id_invalid` | The Route is missing or is not a positive integer, and the CLI cannot prompt. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `route.target_conflict` | Clearing would leave an active Instance without a Route, or the Route is a replacement that never activated. |
+| `route.reconciliation_required` | The Route is `active` and has targets. |
+| `route.kind_unsupported` | The Route is a custom proxy Route. |
+| `websocket.route_in_use` | The Route has public Reverb attachments. |
+| `http.404` | The Route is unknown. |
+| `node_access.required` | The caller has no access grant to the Node the Route is scoped to, or, for a Cluster-scoped Route, to any member Node; for a public custom proxy Route, to its Ingress and Process Nodes. |
