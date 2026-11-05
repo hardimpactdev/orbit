@@ -97,7 +97,7 @@ Deno.test("closed window defers shared nodes; daytime nodes bypass the window", 
     }
 });
 
-Deno.test("closed window prevents installation and leaves the rollout running", async () => {
+Deno.test("closed window prevents installation and the run still succeeds", async () => {
     const directory = await Deno.makeTempDir();
     const file = `${directory}/state.json`;
     const node = { node_id: 2, user: "node", release: null, profile: "{}", skip_reason: null, plan_error: null, daytime: false, agent: null, ssh: null };
@@ -116,7 +116,6 @@ Deno.test("closed window prevents installation and leaves the rollout running", 
         await release.methods.finish.execute({ ...args, admission, node_results: { "node-0": { outputs: { record: gate.result } } } }, context);
         const { operation } = JSON.parse(await Deno.readTextFile(file));
         assertEquals(operation.status, "succeeded");
-        assertEquals(operation.result.rollout_status, "running");
         assertEquals(operation.result.nodes, [gate.result]);
     } finally {
         await Deno.remove(directory, { recursive: true });
@@ -151,4 +150,23 @@ Deno.test("a failed or missing earlier Node keeps later fleet participants pendi
         } }, context);
         assertEquals([gate.install, gate.result.outcome], [true, "unchanged"]);
     } finally { await Deno.remove(directory, { recursive: true }); }
+});
+
+Deno.test("a rollout admitted before the record tables were dropped still prepares", async () => {
+    const directory = await Deno.makeTempDir();
+    const file = `${directory}/state.json`;
+    const node = { node_id: 2, row_id: 41, user: "node", release: null, profile: "{}", skip_reason: null, plan_error: null, daytime: false, agent: null, ssh: null };
+    await Deno.writeTextFile(file, JSON.stringify({ bound: true, calls: [], operation: {
+        id: 7, kind: "fleet.rollout", node_id: 1, status: "running", cancel_requested: false,
+        input: { rollout_id: 668, remaining: 0, commit: "a".repeat(40), nodes: [node] },
+    } }));
+    try {
+        const release = fleetRelease(() => directHttp(file), () => new Date("2026-10-31T12:30:00Z"));
+        const test = createModelTestContext({ globalArgs: { gatewayUrl: "https://gateway.invalid", caFile: "/unused" } });
+        const context = Object.assign(test.context, { extensionFile: (path: string) => new URL(path, import.meta.url).pathname }) as unknown as Parameters<typeof release.methods.prepare.execute>[1];
+        const admission = await release.methods.prepare.execute({ operation_id: 7, kind: "fleet.rollout" as const, node_id: 1, run_id: crypto.randomUUID() }, context);
+        assertEquals([admission.ready, admission.nodes.length], [true, 1]);
+    } finally {
+        await Deno.remove(directory, { recursive: true });
+    }
 });

@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Data\Nodes\NodeUpdatingData;
-use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -15,11 +13,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * Which Nodes the Gateway is updating now ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)):
- *
- * - a Node whose fleet rollout visit started and has not finished, while its Swamp Operation is active;
- * - the Gateway Node while a release record is `running`.
- *
- * It reads active Operation-backed visits and the running Gateway release from Gateway records.
+ * the Gateway Node while a release record is `running`. A fleet rollout visit is followed in its Operation.
  */
 final readonly class NodeUpdates
 {
@@ -34,33 +28,15 @@ final readonly class NodeUpdates
      */
     public function forNodes(iterable $nodes): array
     {
-        $ids = [];
         $gateways = [];
 
         foreach ($nodes as $node) {
-            $ids[$node->id] = true;
-
             if ($this->isGateway($node)) {
                 $gateways[] = $node->id;
             }
         }
 
-        if ($ids === []) {
-            return [];
-        }
-
         $updates = [];
-
-        foreach ($this->visits() as $visit) {
-            if ($visit->node_id !== null && isset($ids[$visit->node_id]) && $visit->started_at instanceof Carbon) {
-                $updates[$visit->node_id] = new NodeUpdatingData(
-                    kind: NodeUpdateKind::FleetRollout,
-                    since: $visit->started_at->toIso8601String(),
-                    rollout: $visit->fleet_rollout_id,
-                );
-            }
-        }
-
         $release = $gateways === [] ? null : $this->runningRelease();
 
         if ($release instanceof GatewayRelease) {
@@ -74,32 +50,6 @@ final readonly class NodeUpdates
         }
 
         return $updates;
-    }
-
-    /**
-     * The visits in progress, oldest first. A catch-up visits Nodes of a completed rollout, so a completed rollout
-     * counts as well as a running one. A visit counts while its queued, running or waiting fleet Operation owns it.
-     *
-     * @return iterable<FleetRolloutNode>
-     */
-    private function visits(): iterable
-    {
-        $visits = FleetRolloutNode::query()
-            ->whereExists(static function ($query): void {
-                $query->selectRaw('1')->from('operations')->whereColumn('operations.target_id', 'fleet_rollout_nodes.fleet_rollout_id')->where('operations.target_type', 'fleet_rollout')
-                    ->where('kind', 'fleet.rollout')->whereIn('status', ['queued', 'running', 'waiting']);
-            })
-            ->whereNotNull('started_at')
-            ->whereNull('finished_at')
-            ->whereHas('rollout', static fn ($query) => $query->whereIn('status', [
-                FleetRolloutStatus::Running->value,
-                FleetRolloutStatus::Completed->value,
-            ]))
-            ->orderBy('started_at')
-            ->orderBy('id')
-            ->get(['id', 'fleet_rollout_id', 'node_id', 'started_at']);
-
-        return $visits;
     }
 
     private function runningRelease(): ?GatewayRelease

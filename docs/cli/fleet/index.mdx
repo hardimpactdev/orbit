@@ -1,23 +1,12 @@
 ---
 title: "fleet"
 sidebarTitle: "Overview"
-description: "Show the fleet rollout that follows each Gateway release, and resume it after a halt."
+description: "How the fleet rollout and CLI convergence bring the managed Nodes to the Gateway's release."
 covers:
-  - apps/cli/app/Commands/Fleet/**
-  - packages/php-sdk/src/Requests/Fleet/**
-  - packages/php-sdk/src/Responses/Fleet/**
+  - swamp/workflows/workflow-operation-fleet-{rollout,cli-converge}.yaml
 ---
 
-After each verified Gateway release, the Gateway brings the managed workload Nodes to the same release, one Node at a time. The `fleet` family shows that rollout and resumes it after a halt. [Fleet rollout](/reference/gateway-recovery#fleet-rollout) explains the rollout set, the order, the steps on each Node, and the catch-up.
-
-## Commands
-
-| Command | Result |
-| --- | --- |
-| [`fleet:rollout:status`](/cli/fleet/rollout-status) | Show the newest rollout, each Node's result, and the Nodes it leaves out. |
-| [`fleet:rollout:resume`](/cli/fleet/rollout-resume) | Resume a halted rollout, optionally past one Node. |
-
-Both commands accept `--json`. JSON output contains only the response.
+After each verified Gateway release, Swamp brings the managed workload Nodes to the same release, one Node at a time. The `fleet` family has no CLI commands. Each rollout pass is one `fleet.rollout` Operation: follow it with [`operation:list --kind=fleet.rollout`](/cli/operation/list) and [`operation:show`](/cli/operation/show). [Fleet rollout](/reference/gateway-recovery#fleet-rollout) explains the rollout set, the order, the steps on each Node, and a failed Node.
 
 ## How it works
 
@@ -25,6 +14,6 @@ The rollout publishes the CLI and the Node agent on each Node in turn. Each Node
 
 <div className="flow-at" data-chart="fleet/rollout"></div>
 
-`POST /api/v1/fleet/cli/converge` publishes only the CLI, through the same children.
+`POST /api/v1/fleet/cli/converge` publishes only the CLI, through the same children. It names why it leaves a Node out as that Node's skip reason.
 
 <div className="flow-at" data-chart="fleet/cli-converge"></div>

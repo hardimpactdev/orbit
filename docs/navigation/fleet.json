@@ -8,9 +8,7 @@
         {
           "group": "fleet",
           "pages": [
-            "cli/fleet/index",
-            "cli/fleet/rollout-status",
-            "cli/fleet/rollout-resume"
+            "cli/fleet/index"
           ]
         }
       ]

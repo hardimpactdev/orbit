@@ -46,10 +46,9 @@ const invalidated = (spy: { mock: { calls: unknown[][] } }) =>
 describe("applyEvent", () => {
     it("sets and clears a node's update from node.updated", () => {
         const updating = {
-            kind: "fleet_rollout",
+            kind: "gateway_release",
             since: "2026-01-01T00:00:00+00:00",
-            rollout: 7,
-            release: null,
+            release: 31,
         };
         client.setQueryData(
             ["nodes"],

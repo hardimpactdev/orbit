@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign 2026-11-03 (each Node visit runs node:converge; release after R3 starts the rollout). docs/reference/gateway-recovery.md#fleet-rollout.
+  %% Target design: fleet maintenance redesign 2026-11-03 (each Node visit runs node:converge); R3c: no rollout records, Swamp run history is the record. docs/reference/gateway-recovery.md#fleet-rollout.
   %% status: draft
-  %% command: none · after each verified Gateway release
+  %% command: none · each fleet maintenance pass
   %% kind: fleet.rollout
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,34 +10,40 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  Note over GW: Release verified<br/>desired state · task #5160
+  Note over GW: Pick Nodes behind<br/>GET fleet/rollout/plan
   %%> When:
-  %%> - the Swamp release run ended verified, while `ORBIT_FLEET_ROLLOUT=true`
-  %%> - again after `fleet:rollout:resume`
-  %%> Requirements:
-  %%> - no other rollout is running or halted
-  %%> Builds:
-  %%> - the rollout set in risk order: `app-dev`, then `ci-runner` `metrics` `analytics`, then `database` `websocket` `vpn` `router`, then `app-prod` `ingress`
-  %%> - for each Node the same targets-only intent as `node:converge`
+  %%> - each minute, from Swamp's fleet maintenance pass, while `ORBIT_FLEET_ROLLOUT=true`
+  %%> - only for a commit whose Gateway release is verified
+  %%> Picks:
+  %%> - a Node whose last visit for this commit did not converge it, a drifted Node, or a Node not visited yet
+  %%> - at most once per 5 minutes per Node; the last visit is read from earlier rollout results
+  %%> - no Node after a failed Node that still waits its 5 minutes
+  %%> - in risk order: `app-dev`, then `ci-runner` `metrics` `analytics`, then `database` `websocket` `vpn` `router`, then `app-prod` `ingress`
   GW->>SW: Start run, full intent<br/>operation-fleet-rollout
+  %%> Input:
+  %%> - the commit, the CLI release, the agent pin and each picked Node
+  %%> Requirements:
+  %%> - no other rollout is running
   loop each Node, in risk order
     Note over SW: Wait for the Node's window<br/>gate
     %%> Why:
     %%> - `app-dev`-only Nodes go at any hour; others only 03:00–06:00 Europe/Amsterdam
-    %%> - a closed window defers the Node to the catch-up; it is not a failure
+    %%> - a closed window defers the Node to a later pass; it is not a failure
     SW->>N: Converge the Node<br/>operation-node-converge
     %%> Why the same workflow:
     %%> - one way to bring a Node to the release
     %%> - a failed Tool does not fail the Node; Doctor shows it
   end
-  alt every Node converged
+  alt every Node converged or deferred
     SW-->>GW: Run succeeded
-    Note over GW: Record each Node<br/>rollout completed
+    %%> Result:
+    %%> - the Operation result lists each Node's outcome; the next pass reads it
   else a Node fails
-    SW--xGW: Run failed<br/>Node 12 · error_code
+    SW--xGW: Run failed<br/>NODE · error_code
     %%> Why stop:
     %%> - later Nodes are not visited, so one bad release breaks at most one Node
-    Note over GW: Halt the rollout<br/>alert rollout_halted
+    Note over GW: Alert once<br/>rollout_halted
     %%> Retry:
-    %%> - fix the cause, then `fleet:rollout:resume` (Node 12 first) or `--skip=12`
+    %%> - fix the cause; the next pass, 5 minutes later, starts again at this Node
+    %%> - retries raise no new alert for the same Node, commit and error
   end

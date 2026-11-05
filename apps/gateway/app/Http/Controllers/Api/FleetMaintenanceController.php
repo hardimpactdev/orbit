@@ -29,8 +29,7 @@ final class FleetMaintenanceController extends Controller
     #[StartsOperation('fleet.rollout')]
     public function rollout(AdmitFleetReleaseRequest $request, AdmitFleetRolloutAction $action): JsonResponse
     {
-        $operation = $action->execute($request->validated('rollout_id') === null ? null : $request->integer('rollout_id'),
-            $request->validated('node_ids') === null ? null : ValidatedData::integerList($request->validated('node_ids')));
+        $operation = $action->execute($request->validated('node_ids') === null ? null : ValidatedData::integerList($request->validated('node_ids')));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }

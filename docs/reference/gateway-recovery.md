@@ -9,7 +9,7 @@ covers:
   - "{apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
-  - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
+  - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,config/fleet.php}
 ---
 
 # Update and recover a Gateway
@@ -412,7 +412,7 @@ Do not migrate the restored database forward while attempting to run the older c
 
 ## Release alerts
 
-A release command raises an alert when a release fails, when it pauses automatic releases, or when a fleet rollout halts.
+A release command raises an alert when a release fails, when it pauses automatic releases, or when a Node of a fleet rollout fails.
 
 The [automatic deployment tick](/reference/deployments#automatic-deployments) also raises one when an automatic deployment of a production Instance fails, stalls, or pauses. Its target is `instance:<id>`.
 
@@ -422,12 +422,9 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | --- | --- |
 | `release_failed` | A release failed. Nothing went live, or the previous release serves again |
 | `release_paused` | A release failed after its migrations ran, or died after it touched the schema or the current link, and automatic releases are paused |
-| `rollout_halted` | A fleet rollout stopped at a Node that failed |
+| `rollout_halted` | A fleet rollout stopped at a Node that failed. Once per Node, commit and error code |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, including a wait for agent delivery, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the release switch |
-| `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |
-| `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
-| `rollout_cli_fallback` | A fleet rollout used an ancestor's CLI release. The summary names why the commit's own release was not used. Once per rollout; the rollout does not halt |
 | `instance_deploy_failed` | An [automatic deployment](/reference/deployments#automatic-deployments) of a production Instance failed. Once per commit |
 | `instance_deploy_stalled` | A commit that the automatic deployment tick would deploy to a production Instance, or a head whose check has not finished, waited 30 minutes. Once per commit |
 | `instance_deploy_paused` | A manual deployment or a rollback paused automatic deployment of a production Instance |
@@ -511,24 +508,26 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 ## Fleet rollout
 
-After each verified Gateway release, the Gateway brings every managed workload Node to the same release, one Node at a time. Each Node runs [`orbit self-update`](/reference/self-update), the same command an operator runs on a Mac. A fleet failure never rolls the Gateway back. [`fleet`](/cli/fleet) shows and resumes the rollout.
+After each verified Gateway release, Swamp brings every managed workload Node to the same release, one Node at a time. A fleet failure never rolls the Gateway back.
+
+The rollout keeps no records of its own. Each pass is one `fleet.rollout` Operation and its Swamp run. The Operation's input holds the desired state, and its result holds each Node's outcome. Read them with [`operation:list --kind=fleet.rollout`](/cli/operation/list) and [`operation:show`](/cli/operation/show). Swamp's run history keeps each step.
 
 ### Turn it on
 
-The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, Swamp admits no rollout, and Doctor reports no `node.release_lag`. `fleet:rollout:status` shows `Rollout off`.
+The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, Swamp admits no rollout, and Doctor reports no `node.release_lag`.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `ORBIT_FLEET_ROLLOUT` | `false` | Run rollouts and the catch-up |
+| `ORBIT_FLEET_ROLLOUT` | `false` | Run rollouts |
 | `ORBIT_FLEET_ROLLOUT_ORDER` | empty | Node names, comma-separated, that go first, in this order. The other Nodes follow in the default order. It never adds or removes a Node |
 
 ### Execution
 
-Swamp's fleet maintenance workflow reads the current Gateway plan each minute and admits one fleet-wide `fleet.rollout` Operation. The same workflow admits [peer DNS](/reference/private-dns#resolver-selection) for one changed peer at a time. The Gateway validates the serving release and captures the participants and their pinned release assets.
+Swamp's fleet maintenance workflow reads `GET /api/v1/fleet/rollout/plan` each minute. The plan names the [Nodes that need a visit](#which-nodes-a-pass-visits). When it names any, the workflow admits one `fleet.rollout` Operation for them with `POST /api/v1/fleet/rollout`. The same workflow admits [peer DNS](/reference/private-dns#resolver-selection) for one changed peer at a time.
 
-The Operation belongs to Node 209, because its steps run there and record the result on it. A run that fails before it visits any Node settles the Operation as failed and leaves the rollout and its Nodes pending, so the next admission retries them. Swamp owns order, maintenance windows and publication. The release run does not install or start a fleet service or timer.
+Admission validates the serving release and captures the desired state: the commit, the CLI release, the agent pin, and each Node's SSH target. One rollout runs at a time; a second admission returns `fleet.rollout_busy` (409). A plan with no Node to visit admits nothing.
 
-During this conversion's deployment, stop and disable `orbit-fleet-converge.timer` and remove its service and timer files. Swamp's maintenance workflow owns further visits and catch-ups.
+The Operation belongs to Node 209, because its steps run there and record the result on it. Swamp owns order, maintenance windows and publication.
 
 A plan from an older release admits no further Node after a newer release becomes current. The Gateway compares release directories rather than versions, so a leftover `APP_VERSION` does not reopen the old rollout.
 
@@ -543,11 +542,11 @@ The rollout visits a Node when all of these hold:
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
 - its `/usr/local/bin/orbit` is not a CLI that Orbit did not install.
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, or `roleless`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, or `roleless`.
 
 A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) owns, on an Incus host or at [UpCloud](/reference/compute-drivers#upcloud-overflow). The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
 
-The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. The `sandbox` reason comes first, so a sandbox shows it in every state.
+The rollout never visits a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. The `sandbox` reason comes first, so a sandbox shows it in every state.
 
 The order goes lowest risk first. Each role has a group. A Node with several roles goes in the latest group of its roles, so it waits until every lower-risk Node is done. Inside a group, the Node ID decides.
 
@@ -560,25 +559,21 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 
 Orbit has no `agent` or `s3` role yet. The order already places `agent` in group 1 and `s3` in group 2.
 
-`fleet.rollout` starts `operation-fleet-rollout`, one native Swamp DAG for the admitted fleet. Each Node has a placed publication step. Native concurrency is one; each step requires successful prior Node outputs before acting. There are no child Operations, polled claims, target holds or execution receipts. `fleet.cli_converge` uses the same publication behavior in its own native DAG and updates only the CLI.
+`fleet.rollout` starts `operation-fleet-rollout`, one native Swamp DAG for the admitted Nodes. Each Node has a placed publication step. Native concurrency is one; each step requires successful prior Node outputs before acting. There are no child Operations, polled claims, target holds or execution receipts. `fleet.cli_converge` uses the same publication behavior in its own native DAG and updates only the CLI.
 
-Each workload Node runs its step on its `orbit-node-ID` worker. vpn1 and usexit18 require lane 21's SSH proxy workers on Node 209. Each worker has the target Node's exact label. They receive no Swamp binary. Control steps run on Node 209. No step asks orbit-agent to act.
+Control steps run on Node 209. No step asks orbit-agent to act.
 
-App-dev-only Nodes may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later run.
+App-dev-only Nodes may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later pass.
 
 ### Desired state
 
-One run resolves the desired state of the commit the Gateway serves: the CLI release `cli-v0.N.0` with the SHA-256 of each binary, the agent pin with the SHA-256 of each binary, and the footprint digest of each Node. A footprint digest covers only what Orbit renders from its own code and pins, never a user's sites, Routes, or DNS records. It stores the state on a rollout record for that commit. The record belongs to the commit's `verified` release record, and [`gateway:release:show`](/cli/gateway/release-show) shows it under `fleet_rollout`, with each Node's result.
+Admission resolves the desired state of the commit the Gateway serves: the CLI release `cli-v0.N.0` with the SHA-256 of each binary, and the agent pin with the SHA-256 of each binary. It stores the state in the Operation's input.
 
-A Gateway in the release layout rolls out only a commit whose release record is `verified`. A run during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the run rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
+A Gateway in the release layout rolls out only a commit whose release record is `verified`. A pass during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the pass rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
 
-The Gateway can release before CI publishes that commit's CLI: admission verifies the commit's pinned agent delivery. The rollout waits until the CLI release exists. A Node whose `orbit self-update` reports a pending release waits too.
+The Gateway can release before CI publishes that commit's CLI: admission verifies the commit's pinned agent delivery. The rollout waits until the CLI release exists (`waiting`).
 
-When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. The rollout then starts with that release and raises `rollout_cli_fallback` once, so a missing release is never silent. When the commit's own release appears later, the catch-up visits each Node again and brings it to that release.
-
-A started rollout visits no Node while its CLI release cannot be confirmed, for example while GitHub fails after the confirmed release left the cache. Each Node would otherwise get a release it cannot install. The catch-up continues once the release is confirmed again.
-
-A rollout that waits longer than 2 hours raises `rollout_stalled` once. It means the fleet is stuck: CI never published the release, and no ancestor's release could stand in. Publish the release, or merge a newer commit.
+When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. When the commit's own release appears later, a Node's recorded CLI version differs from the desired one, so the next pass visits it again.
 
 ### One Node
 
@@ -588,58 +583,37 @@ A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/f
 
 Full Node footprint convergence remains the Nodes family's operation. Release rollout changes only the CLI, its public connection profile and the observer binary. It does not apply Caddy, DNS, PHP or role configuration.
 
-A definite Node failure stops later Nodes through native DAG dependencies. A lost or unknown command result leaves the Operation unresolved; it is not reported as success. Native workflow resume owns recovery. The Gateway records only the resulting per-Node status and versions.
+A lost or unknown command result leaves the Operation unresolved; it is not reported as success.
 
-### Halt and resume
+### A failed Node
 
-At the first failed Node, native dependencies leave later Nodes untouched. The rollout record becomes `halted` with the Node and bounded error code. Swamp history keeps the native step results; Gateway rows keep the Operation and run identifiers.
+At the first failed Node, native dependencies leave later Nodes untouched. The run fails with that Node's error code, and the Operation's result names the Node. The Gateway raises [`rollout_halted`](#release-alerts) for that Node.
 
-A halted rollout blocks every later rollout and the catch-up. Fix the cause, then resume:
+Fix the cause. The next pass, at least 5 minutes after the failed run, starts again at that Node, because it is the first Node in risk order that the commit has not converged. Until it converges, later Nodes wait, also during those 5 minutes. A deferred Node does not hold back later Nodes, just as it does not inside a run. A retry raises no new alert for the same Node, commit and error code, and the alert's problem resolves once a later pass converges the Node.
 
-```bash
-orbit fleet:rollout:status
-orbit fleet:rollout:resume                 # visit the failed Node again first
-orbit fleet:rollout:resume --skip=<node>   # leave that Node for later
-```
+Native `swamp workflow resume` does not replace the retry. A failed rollout Operation is final at the Gateway, and the pinned Swamp release drops the inline SSH arguments of a resumed run. A new pass is the retry.
 
-`fleet:rollout:resume` sets the failed Node back to `pending` and returns. Swamp admits the next visit. A skipped Node stays `skipped` in this rollout; the next desired state visits it again. When the Gateway moved to a newer commit since the halt, the halted rollout becomes `superseded`, and a rollout of the newest desired state opens with the skip carried over.
+### Which Nodes a pass visits
 
-| Code | HTTP | Meaning |
-| --- | --- | --- |
-| `fleet.rollout_not_halted` | 409 | No rollout is halted |
-| `fleet.node_not_in_rollout` | 422 | `--skip` names a Node outside the halted rollout |
-| `fleet.node_already_converged` | 422 | `--skip` names a Node that already runs the desired state |
+The plan reads the newest result of each Node in the terminal `fleet.rollout` Operations of the desired commit. It visits a Node of the rollout set when one of these holds:
 
-### Catch-up
-
-After the rollout, every run visits some Nodes again, one at a time and with the same rules:
-
-| Node | Why the catch-up visits it |
+| Node | Why the pass visits it |
 | --- | --- |
-| `pending`, `unreachable`, `deferred`, or `waiting` | The rollout did not converge it |
-| New in the rollout set | It joined after the rollout opened |
-| `converged` or `unchanged`, but drifted | Its observer reports another version or its recorded CLI version differs from the desired release |
+| No result for this commit | It was not visited yet, or it joined the rollout set since |
+| `deferred`, `failed`, `cancelled` or `skipped` | Its last visit did not converge it |
+| `converged` or `unchanged`, but drifted | Its observer reports another version, or its recorded CLI version differs from the desired release |
 
-So a Node that was offline is converged within 5 minutes after it returns.
+A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged within about 5 minutes after it returns, inside its window.
 
-Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no rollout yet`, `not in the rollout`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a run already resolved; it never asks Git or GitHub.
+Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no visit yet`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a pass already resolved; it never asks Git or GitHub.
 
 ### Nodes being updated
 
-Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating` field. It is null unless the Gateway is updating that Node now:
+Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating` field. It is null unless a [release record](/cli/gateway/release-show) is `running`; then the Node with the active `gateway` role has `kind` `gateway_release`, `since` the record's `created_at`, and `release`, the record id. A `queued` release record does not count, because nothing changed yet.
 
-| `kind` | The Node is updating while | `since` | Id field |
-| --- | --- | --- | --- |
-| `fleet_rollout` | The rollout or the catch-up visits it: the visit has a `started_at` and no `finished_at` | The visit's `started_at` | `rollout`, the rollout id |
-| `gateway_release` | A [release record](/cli/gateway/release-show) is `running`. Only the Node with the active `gateway` role updates | The record's `created_at` | `release`, the record id |
+The Gateway reads a running release's result from its Swamp run. An interrupted run pauses releases, as [Release as a Swamp run](#release-as-a-swamp-run) describes. The Gateway broadcasts [`node.updated`](/reference/events#node) with the new value when a release record starts running and ends. The [web app](/reference/web-app#live-node-and-process-state) shows the Node as `updating`.
 
-The other id field is null. A visit clears its `finished_at` when it starts, so a catch-up visit of a converged Node counts too. The rollout visits one Node at a time, so at most one Node is `fleet_rollout`. The Gateway Node is never in the [rollout set](#rollout-set-and-order), so one Node is never both. A `queued` release record does not count, because nothing changed yet.
-
-A visit counts while its queued or running fleet Operation owns it. An expired worker lease keeps the same visit active while Swamp recovers its receipts. A terminal completion ends the visit. The Gateway reads a running release's result from its Swamp run. An interrupted run pauses releases, as [Release as a Swamp run](#release-as-a-swamp-run) describes.
-
-The list reads Operation-backed visits and the running release from Gateway records.
-
-The Gateway broadcasts [`node.updated`](/reference/events#node) with the new value when a visit starts and ends, and when a release record starts running and ends. The [web app](/reference/web-app#live-node-and-process-state) shows the Node as `updating`.
+A fleet rollout visit does not set `updating`. Its progress is in the Operation and its Swamp run.
 
 ## Limits
 
@@ -657,16 +631,15 @@ The parent workflow runs the definition loaded when it started. The activate chi
 
 The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order). An operator updates an operator machine or a macOS Node with `orbit self-update`, and the CLI [tells the operator](/reference/self-update#the-newer-release-notice) about a newer release.
 
-The rollout visits one Node at a time, so it takes longer as the fleet grows. A halted rollout blocks every later rollout until an operator resumes it.
+The rollout visits one Node at a time, so it takes longer as the fleet grows. A failed Node blocks every later Node until it converges. There is no way to skip it.
 
-The Gateway pushes the rendered footprint over SSH, such as the Caddyfile or the [`tmpfiles` rule](/reference/node-provisioning#converge-the-orbit-footprint) of an `app-dev` Node. Adding or removing an artifact changes the footprint digest of each Node it applies to. The next rollout converges the artifacts in the [current footprint list](/reference/node-provisioning#converge-the-orbit-footprint). `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
+The rollout publishes only the CLI, its connection profile and the Node agent. It does not converge the [Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint), such as the Caddyfile or the `tmpfiles` rule of an `app-dev` Node; `node:converge` does. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
 
 ### Not built
 
 Each of these needs its own decision:
 
 - copies of the pre-migration snapshots off the Gateway host;
-- Node convergence of the static Gateway runtime files;
 - `orbit self-update` that applies the rendered footprint on the Node, so the Gateway stops pushing configuration over SSH;
 - automatic updates on operator Macs;
 - a macOS Node agent;
@@ -726,8 +699,10 @@ The Instance pipeline deploys to Nodes over SSH and runs one PHP-FPM pool per In
 
 `orbit self-update` is the one node-local updater, on a Node and on an operator's Mac. A rollout in which the Gateway runs each update step over SSH would work, but it keeps the update logic in the Gateway. With one node-local command, a later move to another trigger changes only the trigger.
 
-### One Node at a time, and a halt
+### One Node at a time, and no rollout records
 
-Converging Nodes in parallel is faster, but a bad release would break many Nodes at once. A failed Node halts the rollout, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. A fleet failure never rolls the Gateway back, because the Gateway already verified and serves.
+Converging Nodes in parallel is faster, but a bad release would break many Nodes at once. A failed Node stops the run, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. A fleet failure never rolls the Gateway back, because the Gateway already verified and serves.
 
-An unreachable Node changed nothing, so it does not halt the fleet; the catch-up converges it. Halting on it would let one offline Node block every other. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release that adds the units does not reach Nodes before an operator prepared them.
+Each pass starts again at the first Node in risk order that the commit has not converged. So a retry visits the failed Node first, and later Nodes stay untouched until it converges. That keeps the halt without a halt record, and the Operations and Swamp's run history are the only record of the rollout.
+
+A closed window or a busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release does not reach Nodes before an operator prepared them.

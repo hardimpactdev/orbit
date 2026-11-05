@@ -286,10 +286,11 @@ it('reads the update in progress and ignores a malformed one', function (mixed $
         ->and($response->toArray()['updating'])->toBe($expected);
 })->with([
     'gateway release' => [
-        ['kind' => 'gateway_release', 'since' => '2026-10-08T12:00:00+00:00', 'rollout' => null, 'release' => 31],
-        ['kind' => 'gateway_release', 'since' => '2026-10-08T12:00:00+00:00', 'rollout' => null, 'release' => 31],
+        ['kind' => 'gateway_release', 'since' => '2026-10-08T12:00:00+00:00', 'release' => 31],
+        ['kind' => 'gateway_release', 'since' => '2026-10-08T12:00:00+00:00', 'release' => 31],
     ],
     'absent' => [null, null],
     'unknown kind' => [['kind' => 'reboot', 'since' => '2026-10-08T12:00:00+00:00'], null],
-    'missing since' => [['kind' => 'fleet_rollout', 'rollout' => 3], null],
+    'missing since' => [['kind' => 'gateway_release', 'release' => 3], null],
+    'retired fleet rollout kind' => [['kind' => 'fleet_rollout', 'since' => '2026-10-08T12:00:00+00:00', 'rollout' => 3], null],
 ]);

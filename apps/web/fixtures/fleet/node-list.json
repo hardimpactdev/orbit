@@ -25,7 +25,11 @@
                 "error_code": null,
                 "roles": ["gateway"],
                 "settings": null,
-                "updating": null
+                "updating": {
+                    "kind": "gateway_release",
+                    "since": "2026-01-02T09:58:00+00:00",
+                    "release": 31
+                }
             },
             {
                 "id": 2,
@@ -48,12 +52,7 @@
                 "error_code": null,
                 "roles": ["app-dev", "database"],
                 "settings": null,
-                "updating": {
-                    "kind": "fleet_rollout",
-                    "since": "2026-01-02T09:58:00+00:00",
-                    "rollout": 7,
-                    "release": null
-                }
+                "updating": null
             },
             {
                 "id": 3,

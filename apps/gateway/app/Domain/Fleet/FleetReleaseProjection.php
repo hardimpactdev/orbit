@@ -4,30 +4,26 @@ declare(strict_types=1);
 
 namespace App\Domain\Fleet;
 
-use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\FleetRollout;
-use App\Models\FleetRolloutNode;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
-/** Records native per-Node release results. Swamp owns effects, order and retries. */
+/** Records native per-Node release results on the Operation. Swamp owns effects, order and retries. */
 final readonly class FleetReleaseProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        return array_intersect_key($operation->input, array_flip(['nodes', 'commit', 'rollout_id', 'remaining']));
+        return array_intersect_key($operation->input, array_flip(['nodes', 'commit']));
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['nodes', 'error_code', 'rollout_status', 'halted_node_id']));
+        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['nodes', 'error_code']));
         $nodes = $result['nodes'] ?? [];
         if (! is_array($nodes)) {
             throw new ResourceOperationException('operation.result_invalid', 'The fleet result requires a Node list.', 422);
@@ -46,8 +42,6 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
                 'nodes.*.agent_version' => ['present', 'nullable', 'string', 'max:128'],
                 'nodes.*.step' => ['required', 'in:admission,cli,agent,verify'],
                 'nodes.*.ok' => ['required', 'boolean'],
-                'rollout_status' => ['sometimes', 'in:running,halted,completed'],
-                'halted_node_id' => ['sometimes', 'nullable', 'integer'],
             ]);
             $admitted = $operation->input['nodes'] ?? [];
             if (! is_array($admitted) || $valid->fails() || array_column($nodes, 'node_id') !== array_column($admitted, 'node_id')
@@ -55,10 +49,6 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
                 throw new ResourceOperationException('operation.result_invalid', 'The result must name each admitted Node once in rollout order.', 422);
             }
             $result['nodes'] = array_map(static fn (array $node): array => array_intersect_key($node, array_flip(['node_id', 'outcome', 'error_code', 'cli_version', 'agent_version', 'step', 'ok'])), $nodes);
-            if ($operation->kind === 'fleet.rollout' && (! isset($result['rollout_status'])
-                || (($result['halted_node_id'] ?? null) !== null && ! in_array($result['halted_node_id'], array_column($result['nodes'], 'node_id'), true)))) {
-                throw new ResourceOperationException('operation.result_invalid', 'The rollout result needs its admitted status and halt Node.', 422);
-            }
         }
 
         return DB::transaction(function () use ($operation, $data, $result, $nodes): Operation {
@@ -68,41 +58,13 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
             if ($terminal || ! $projected->status->terminal()) {
                 return $projected;
             }
-            foreach ($nodes as $entry) {
-                $entry = ValidatedData::object($entry);
-                if ($entry['outcome'] === 'pending') {
-                    continue;
-                }
-                $node = Node::query()->find(ValidatedData::integer($entry['node_id']));
-                if ($node === null) {
-                    continue;
-                }
-                if (is_int($operation->input['rollout_id'] ?? null)) {
-                    FleetRolloutNode::query()->where('fleet_rollout_id', $operation->input['rollout_id'])->where('node_id', $node->id)->update([
-                        'outcome' => $entry['outcome'] === 'cancelled' ? FleetNodeOutcome::Deferred->value : $entry['outcome'], 'error_code' => $entry['error_code'] ?? null,
-                        'cli_version' => $entry['cli_version'] ?? null, 'agent_version' => $entry['agent_version'] ?? null,
-                        'step' => $entry['step'] ?? null, 'finished_at' => now(),
-                        'evidence' => json_encode(['operation_id' => $operation->id, 'run_id' => $data['run_id']], JSON_THROW_ON_ERROR),
-                    ]);
-                }
-                DB::afterCommit(fn () => app(NodeUpdateBroadcaster::class)->node($node->id));
-            }
-            // No Node was visited, so the rollout and its Node rows stay as they are; the next admission retries.
-            if (is_int($operation->input['rollout_id'] ?? null) && $nodes !== []) {
-                FleetRollout::query()->whereKey($operation->input['rollout_id'])->update([
-                    'status' => $result['rollout_status'] ?? ($projected->status === OperationStatus::Failed ? FleetRolloutStatus::Halted->value : FleetRolloutStatus::Completed->value),
-                    'halted_node_id' => $result['halted_node_id'] ?? null,
-                    'error_code' => $projected->error_code, 'finished_at' => ($result['rollout_status'] ?? null) === 'running' ? null : now(),
-                ]);
-                if (($result['rollout_status'] ?? null) === 'halted' && is_int($result['halted_node_id'] ?? null)) {
-                    $rolloutId = $operation->input['rollout_id'];
-                    $haltedNodeId = $result['halted_node_id'];
-                    DB::afterCommit(static function () use ($rolloutId, $haltedNodeId): void {
-                        $rollout = FleetRollout::query()->findOrFail($rolloutId);
-                        $row = $rollout->nodes()->where('node_id', $haltedNodeId)->firstOrFail();
-                        app(FleetRolloutAlerts::class)->halted($rollout, $row);
-                    });
-                }
+            // The first failed Node stopped the rollout run; later Nodes stay `pending` until a pass converges it.
+            $failed = $operation->kind === 'fleet.rollout' && $projected->status === OperationStatus::Failed
+                ? array_find($nodes, static fn (array $node): bool => $node['outcome'] === 'failed') : null;
+            if ($failed !== null) {
+                $node = ['node_id' => ValidatedData::integer($failed['node_id']), 'step' => ValidatedData::string($failed['step']),
+                    'error_code' => is_string($failed['error_code'] ?? null) ? $failed['error_code'] : null];
+                DB::afterCommit(static fn () => app(FleetRolloutAlerts::class)->failed($projected, $node));
             }
 
             return $projected;
