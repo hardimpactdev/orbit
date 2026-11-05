@@ -1,38 +1,69 @@
 ---
 title: "orbit instance:destroy"
 sidebarTitle: "instance:destroy"
+description: "Remove an Instance with its Route, Processes, Schedules, runtime and owned source."
 ---
 
-Remove an Instance with its Route, Processes, Schedules, and runtime. A development removal runs the teardown steps first and deletes the checkout. A production removal deletes its user, home, application data, and source state after runtime cleanup. See [Instance removal](/reference/instance-removal).
-
 ```bash
-orbit instance:destroy <instance> [--yes] [--force] [--idempotency-key=KEY] [--json]
+orbit instance:destroy <instance> [--yes] [--force] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `instance` | yes | Numeric Instance ID. |
 
-| Option | Meaning |
-| --- | --- |
-| `--yes` | Confirm removal without prompting. Required for JSON and noninteractive calls. |
-| `--force` | Delete dirty or unpublished development source after identity checks pass, and accept a checkout together with its registered linked worktrees. |
-
-Interactive removal defaults to No. `--force` does not supply consent.
-
-Normal removal refuses dirty source, a `HEAD` that no origin branch or tag contains, and a checkout with registered linked worktrees. `--force` waives only those three refusals. The source identity checks apply in both modes.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--yes` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. `--force` does not supply consent. |
+| `--force` | off | Delete dirty or unpublished development source after the identity checks pass, and accept a checkout together with its registered linked worktrees. |
+| `--json` | off | Print the final task as JSON. |
 
 ```bash
 orbit instance:destroy 12
 orbit instance:destroy 12 --force
 ```
 
+In a terminal, an omitted Instance is chosen from an interactive list. The CLI then asks to confirm with the Instance's name and ID and the effect, with No selected. For a production Instance the effect is to delete its production content, Route and runtime; for a development Instance, its owned source, Route and runtime, and with `--force` also dirty or unpublished work and registered linked worktrees. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no removal. A noninteractive or `--json` call without the Instance is refused with `instance.id_invalid`, and one without `--yes` with `input.confirmation_required`; neither starts a removal. Without `--yes` the CLI first reads the Instance, so an unknown Instance or a missing grant is reported with `http.404` or `node_access.required` before the confirmation.
+
+The command removes the Instance with its Route, Processes, Schedules and runtime. A development removal runs the teardown steps first and deletes the checkout. A production removal deletes its user, home, application data and source state after runtime cleanup. See [Instance removal](/reference/instance-removal).
+
+Normal removal refuses dirty source, a `HEAD` that no origin branch or tag contains, and a checkout with registered linked worktrees. `--force` waives only the source refusals: those three, the check that needs GitHub CLI source access, and a failed fetch of the origin.
+
 <Warning>
 Production removal deletes the production account, source state, and whole home, including `releases/`, `.env`, shared data, and `database.sqlite`. Back up any application data you need before removal. Only the local PHP-FPM tuning stays.
 </Warning>
 
-Repeat the same command to resume an interrupted removal. A failed development teardown step keeps the Instance, and the next `instance:destroy` runs the teardown list again.
+The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does: a progress tree of the task's steps, Ctrl-C stops following and not the removal and exits 130, and `--json` prints nothing while it follows. Run the same command again to resume an interrupted removal. A failed development teardown step keeps the Instance, and the next `instance:destroy` runs the teardown list again.
+
+A failed removal rolls nothing back. The Route is already withdrawn, so its site stays down; the Schedule triggers stay removed; and the Instance is marked as having a failed removal. Add `--force` only after a failed non-forced removal: a rerun without `--force` after a forced one, or `--force` on a removal that has not failed, is refused with `instance.removal_conflict`.
+
+An Instance without a Route can be removed only when its Project does not serve the web, or when the Instance never got past source resolution or failed during creation. Those skip the teardown and the push check. Any other Instance without one removable Route is refused with `instance.remove_refused`.
 
 ## How it works
 
 <div className="flow-at" data-chart="instance/destroy"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
+| `instance.remove_refused` | The Instance is not active, its environment or its Route cannot be removed, it has no removable Route, its source layout is not removable, the source has dirty or unpublished work or linked worktrees and `--force` is absent, or removing the source failed. |
+| `instance.checkout_path_unsafe` | The checkout path is not safe to delete. |
+| `instance.clone_in_progress` | The Instance is the candidate of an incomplete clone. |
+| `instance.removal_conflict` | The Instance belongs to a different removal request, or `--force` was added or dropped on a rerun against the rules above. |
+| `operation.target_busy` | Another operation holds the Instance, such as a removal that is still running. |
+| `instance.destroy_unsupported` | The Node account is not an unprivileged account, or the placement is a member placement. |
+| `websocket.route_in_use` | The Route has public Reverb attachments. |
+| `analytics.tracking_hosts_exist` | The Instance has analytics tracking hosts. Disable analytics first. |
+| `database.removal_conflict` | An owned database is targeted by another Instance. |
+| `route.withdrawal_node_unavailable` | A Node that serves the Route is unavailable, so the Route cannot be withdrawn. |
+| `instance.transfer_incomplete` | An open transfer owns the Instance. Finish or roll it back first. |
+| `operation.kind_unavailable` | The placement has no removal flow, which is today every production Instance, or the source access cannot be verified. |
+| `instance.teardown_step_failed`, `instance.teardown_step_unavailable`, `command.deadline_exceeded` | A teardown step failed, was not found, or outlasted its limit. The Instance stays. |
+| `route.withdrawal_failed` | Withdrawing the Route failed. |
+| `instance.removal_incomplete` | A step outside the ones above failed. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
