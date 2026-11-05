@@ -13,6 +13,10 @@ A ready copy carries nothing that belongs to one generation, so it never blocks 
 A copy keeps its own checkout at ``/home/orbit/orbit`` on its disk. No source directory of the outer VM is shared with a
 guest: a restore syncs the candidate's code into the checkout by rsync (see ``phases.sync_candidate``).
 
+The guests are stateful: ``migration.stateful`` is on and the root disk's ``size.state`` equals the memory limit, so Incus
+can take a memory snapshot of them (``base``, see ``phases.base_take``). Incus changes both only on a stopped VM, so
+``make`` and ``restore`` set them while the guests are stopped. A copy never carries snapshots (``--instance-only``).
+
 ``user.ready.complete`` is written last, on every copy, with the set identity. A set without it is half made and unused.
 """
 import json
@@ -26,6 +30,7 @@ ROLES = ('gateway', 'app-dev', 'app-prod')
 LABELS = ('owner', 'issue', 'attempt', 'operation')
 # The device that belongs to one generation: the NIC (network, MAC, IP).
 NIC = 'eth0'
+STATEFUL = 'migration.stateful'
 # A build still shares the generation's source with the guests (the harness adds this device). A copy never carries it.
 MOUNT = 'orbit-source'
 CHECKOUT = '/home/orbit/orbit'
@@ -124,6 +129,25 @@ def keep_checkout(guest):
     incus(['exec', guest, '--', 'sh', '-c', script], timeout=600)
 
 
+def make_stateful(instance):
+    """Give one stopped VM what a memory snapshot needs: ``migration.stateful`` and a root ``size.state`` equal to ``limits.memory``.
+
+    Idempotent: a VM that has both is not touched. Incus changes neither on a running VM.
+    """
+    details = json.loads(incus(['query', '/1.0/instances/' + instance]))
+    if details.get('status') != 'Stopped':
+        raise RuntimeError(f'{instance} must be stopped to become stateful.')
+    memory = (details.get('expanded_config') or {}).get('limits.memory')
+    if not memory:
+        raise RuntimeError(f'{instance} has no limits.memory; size.state cannot match it.')
+    if (details.get('config') or {}).get(STATEFUL) != 'true':
+        incus(['config', 'set', instance, STATEFUL + '=true'])
+    if (details.get('expanded_devices') or {}).get('root', {}).get('size.state') != memory:
+        # A root disk that comes from a profile is overridden on the instance; one the instance owns is changed.
+        verb = 'set' if 'root' in (details.get('devices') or {}) else 'override'
+        incus(['config', 'device', verb, instance, 'root', 'size.state=' + memory])
+
+
 def make(guests, network, nodes, *, minted, attempt, inputs):
     """Stop the running guests and copy them to ready copies; start the originals again. The set is not complete yet.
 
@@ -154,11 +178,14 @@ def make(guests, network, nodes, *, minted, attempt, inputs):
         for role in ROLES:
             if json.loads(incus(['query', '/1.0/instances/' + guests[role]]))['status'] != 'Stopped':
                 raise RuntimeError(f'{guests[role]} is not stopped; nothing copied.')
+        # The guests are stopped, so this is the time to make them stateful. The copies and every restore inherit it.
+        for role in ROLES:
+            make_stateful(guests[role])
         for existing in copies():
             incus(['delete', '--force', existing])
         for role in ROLES:
             target = name(role)
-            incus(['copy', guests[role], target])
+            incus(['copy', '--instance-only', guests[role], target])
             settings = {'user.ready.set': identity, 'user.ready.role': role, 'user.ready.made': made,
                         'user.ready.minted': stamp_of(minted), 'user.ready.attempt': attempt, 'user.ready.inputs': inputs,
                         'user.ready.hwaddr': saved[role]['hwaddr'], 'user.ready.ipv4': saved[role]['ipv4'],
@@ -235,7 +262,9 @@ def restore(guests, network, labels):
         incus(['delete', '--force', *present], timeout=300)
     for role in ROLES:
         target, config = guests[role], rows[name(role)].get('config') or {}
-        incus(['copy', name(role), target])
+        incus(['copy', '--instance-only', name(role), target])
+        # A set made before the guests were stateful lacks it; the copy is stopped now, so it is set before the start.
+        make_stateful(target)
         incus(['config', 'set', target, *(f'user.orbit.e2e.{label}={labels[label]}' for label in LABELS)])
         incus(['config', 'device', 'add', target, NIC, 'nic', 'network=' + network,
                'hwaddr=' + config['user.ready.hwaddr'], 'ipv4.address=' + config['user.ready.ipv4']])

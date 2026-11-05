@@ -2,6 +2,7 @@
 
 These tests drive a fake Incus. A live reset from ready copies is separate acceptance evidence.
 """
+import copy
 import json
 import re
 import subprocess
@@ -31,7 +32,9 @@ def guest_row(role, status='Running'):
                'root': {'type': 'disk', 'path': '/', 'pool': 'seed'}}
     if role != 'app-prod':
         devices['orbit-source'] = {'type': 'disk', 'path': '/home/orbit/orbit', 'source': '/generation/source'}
-    return {'name': GUESTS[role], 'status': status, 'config': dict(LABELS), 'devices': devices}
+    # Not stateful yet, as a guest of a build: the memory limit comes from the profile, so does the root disk's size.state.
+    return {'name': GUESTS[role], 'status': status, 'config': dict(LABELS), 'devices': devices,
+            'expanded_config': {'limits.memory': '2560MiB'}, 'expanded_devices': {'root': dict(devices['root'])}}
 
 
 def copy_row(role, **overrides):
@@ -40,6 +43,7 @@ def copy_row(role, **overrides):
               'user.ready.inputs': 'digest1', 'user.ready.hwaddr': MACS[role], 'user.ready.ipv4': ADDRESSES[role],
               'user.ready.subnet': '10.232.2.1/24', 'user.ready.nodes': json.dumps({'gateway': 209, 'app-dev': 211})}
     row = {'name': ready.name(role), 'status': 'Stopped', 'config': config, 'devices': {'root': {'type': 'disk', 'path': '/'}}}
+    row.update({'expanded_config': {'limits.memory': '2560MiB'}, 'expanded_devices': {'root': {'type': 'disk', 'path': '/'}}})
     row.update(overrides)
     return row
 
@@ -63,14 +67,34 @@ class FakeIncus:
             for row in self.rows:
                 if row['name'] in args[1:]:
                     row['status'] = 'Stopped'
+        if args[:2] == ['delete', '--force']:
+            self.rows = [row for row in self.rows if row['name'] not in args[2:]]
+        if args[0] == 'copy':
+            clone = copy.deepcopy(self.row(args[-2]))
+            clone.update(name=args[-1], status='Stopped')
+            self.rows.append(clone)
+        if args[:2] == ['config', 'set']:
+            for pair in args[3:]:
+                key, _, value = pair.partition('=')
+                self.row(args[2])['config'][key] = value
+        if args[:3] in (['config', 'device', 'set'], ['config', 'device', 'override']):
+            key, _, value = args[-1].partition('=')
+            row = self.row(args[3])
+            row['expanded_devices'][args[4]][key] = value
+            if args[2] == 'set':
+                row['devices'][args[4]][key] = value
+            else:
+                row['devices'][args[4]] = dict(row['expanded_devices'][args[4]])
         if args[0] == 'list':
             return json.dumps(self.rows).encode()
         if args[0] == 'query':
-            name = args[1].rsplit('/', 1)[1]
-            return json.dumps(next(row for row in self.rows if row['name'] == name)).encode()
+            return json.dumps(self.row(args[1].rsplit('/', 1)[1])).encode()
         if args[:2] == ['network', 'get']:
             return b'10.232.2.1/24\n'
         return b''
+
+    def row(self, name):
+        return next(row for row in self.rows if row['name'] == name)
 
     def verbs(self):
         return [call[:3] for call in self.calls if call[0] not in ('list', 'query', 'network')]
@@ -90,7 +114,7 @@ class MakeTests(unittest.TestCase):
         self.assertLess(next(i for i, call in enumerate(calls) if call[0] == 'stop'), first_copy)
         for role in ready.ROLES:
             target = ready.name(role)
-            self.assertIn(['copy', GUESTS[role], target], calls)
+            self.assertIn(['copy', '--instance-only', GUESTS[role], target], calls)
             for label in ready.LABELS:
                 self.assertIn(['config', 'unset', target, 'user.orbit.e2e.' + label], calls)
             self.assertIn(['config', 'device', 'remove', target, 'eth0'], calls)
@@ -151,7 +175,7 @@ class MakeTests(unittest.TestCase):
         self.assertTrue(all('ready3-gateway' not in call for call in incus.calls))
 
     def test_the_fleet_starts_again_and_the_half_made_copies_are_deleted_when_a_copy_fails(self):
-        incus = FakeIncus([guest_row(role) for role in ready.ROLES], fail_on=['copy', GUESTS['app-dev']])
+        incus = FakeIncus([guest_row(role) for role in ready.ROLES], fail_on=['copy', '--instance-only', GUESTS['app-dev']])
         incus.rows.append({'name': ready.name('gateway'), 'status': 'Stopped', 'config': {}, 'devices': {}})
         with self.assertRaisesRegex(RuntimeError, 'copy'):
             self.make(incus)
@@ -161,7 +185,7 @@ class MakeTests(unittest.TestCase):
         self.assertFalse(any(any(a.startswith('user.ready.complete=') for a in call) for call in incus.calls))
 
     def test_the_copy_error_is_reported_even_when_the_start_fails_too(self):
-        incus = FakeIncus([guest_row(role) for role in ready.ROLES], fail_on=['copy', GUESTS['app-dev']])
+        incus = FakeIncus([guest_row(role) for role in ready.ROLES], fail_on=['copy', '--instance-only', GUESTS['app-dev']])
         original = incus.__call__
 
         def both(args, **kwargs):
@@ -206,7 +230,7 @@ class RestoreTests(unittest.TestCase):
         self.assertEqual(['delete', '--force', *GUESTS.values()], calls[1])
         for role in ready.ROLES:
             target = GUESTS[role]
-            self.assertIn(['copy', ready.name(role), target], calls)
+            self.assertIn(['copy', '--instance-only', ready.name(role), target], calls)
             self.assertIn(['config', 'set', target, *(f'user.orbit.e2e.{k}={v}' for k, v in self.LABELS.items())], calls)
             self.assertIn(['config', 'device', 'add', target, 'eth0', 'nic', 'network=oe-new', 'hwaddr=' + MACS[role], 'ipv4.address=' + ADDRESSES[role]], calls)
             # No guest shares a source directory with the outer VM.
@@ -302,9 +326,10 @@ class InspectTests(unittest.TestCase):
             self.assertEqual(3, sum(1 for call in incus.calls if call[:2] == ['config', 'set'] and call[3] == 'user.ready.complete=set1'))
             with self.assertRaisesRegex(RuntimeError, 'not part of set other'):
                 ready.complete('other')
-            incus.calls.clear()
+        half = FakeIncus([dict(row, config={k: v for k, v in row['config'].items() if k != 'user.ready.complete'}) for row in complete_set().values()])
+        with patch.object(ready, 'incus', half):
             self.assertEqual(sorted(ready.name(role) for role in ready.ROLES), sorted(ready.discard_incomplete()))
-            self.assertEqual(3, sum(1 for call in incus.calls if call[:2] == ['delete', '--force']))
+            self.assertEqual(3, sum(1 for call in half.calls if call[:2] == ['delete', '--force']))
         complete = FakeIncus(list(complete_set().values()))
         with patch.object(ready, 'incus', complete):
             self.assertEqual([], ready.discard_incomplete())
@@ -1098,6 +1123,69 @@ class WorkflowDefinitionTests(unittest.TestCase):
         with patch.object(ready, 'incus', side_effect=subprocess.TimeoutExpired('incus', 1)):
             with self.assertRaises(subprocess.TimeoutExpired):
                 ready.copies()
+
+
+class StatefulTests(unittest.TestCase):
+    """A memory snapshot needs migration.stateful and a root size.state equal to the memory limit, on a stopped VM."""
+
+    def stateful(self, rows, instance):
+        incus = FakeIncus(rows)
+        with patch.object(ready, 'incus', incus):
+            ready.make_stateful(instance)
+        return incus
+
+    def test_a_root_disk_the_instance_owns_is_changed_and_the_flag_is_set(self):
+        incus = self.stateful([guest_row('gateway', 'Stopped')], GUESTS['gateway'])
+        self.assertEqual([['config', 'set', GUESTS['gateway'], 'migration.stateful=true'],
+                          ['config', 'device', 'set', GUESTS['gateway'], 'root', 'size.state=2560MiB']],
+                         [call for call in incus.calls if call[0] == 'config'])
+
+    def test_a_root_disk_from_a_profile_is_overridden(self):
+        row = guest_row('gateway', 'Stopped')
+        del row['devices']['root']
+        incus = self.stateful([row], GUESTS['gateway'])
+        self.assertIn(['config', 'device', 'override', GUESTS['gateway'], 'root', 'size.state=2560MiB'], incus.calls)
+
+    def test_a_guest_that_is_already_stateful_is_not_touched(self):
+        row = guest_row('gateway', 'Stopped')
+        row['config']['migration.stateful'] = 'true'
+        row['expanded_devices']['root']['size.state'] = '2560MiB'
+        incus = self.stateful([row], GUESTS['gateway'])
+        self.assertEqual([], [call for call in incus.calls if call[0] == 'config'])
+
+    def test_a_running_guest_is_refused_and_not_changed(self):
+        incus = FakeIncus([guest_row('gateway')])
+        with patch.object(ready, 'incus', incus), self.assertRaisesRegex(RuntimeError, 'must be stopped'):
+            ready.make_stateful(GUESTS['gateway'])
+        self.assertEqual([], [call for call in incus.calls if call[0] == 'config'])
+
+    def test_a_guest_without_a_memory_limit_is_refused(self):
+        row = guest_row('gateway', 'Stopped')
+        row['expanded_config'] = {}
+        with self.assertRaisesRegex(RuntimeError, 'no limits.memory'):
+            self.stateful([row], GUESTS['gateway'])
+
+    def test_make_sets_it_on_the_stopped_originals_before_the_first_copy(self):
+        incus = FakeIncus([guest_row(role) for role in ready.ROLES])
+        with patch.object(ready, 'incus', incus), patch.object(ready, 'stamp', return_value='2026-11-05T10:00:00Z'):
+            ready.make(GUESTS, 'oe-net', {'gateway': 209, 'app-dev': 211}, minted=1793836800, attempt='a' * 32, inputs='digest1')
+        first_copy = next(i for i, call in enumerate(incus.calls) if call[0] == 'copy')
+        stop = next(i for i, call in enumerate(incus.calls) if call[0] == 'stop')
+        for role in ready.ROLES:
+            flag = incus.calls.index(['config', 'set', GUESTS[role], 'migration.stateful=true'])
+            size = incus.calls.index(['config', 'device', 'set', GUESTS[role], 'root', 'size.state=2560MiB'])
+            self.assertTrue(stop < flag < first_copy and stop < size < first_copy)
+
+    def test_restore_sets_it_on_each_stopped_guest_before_the_start(self):
+        rows = [guest_row(role) for role in ready.ROLES] + list(complete_set().values())
+        incus = FakeIncus(rows)
+        found = ready.inspect({row['name']: row for row in complete_set().values()}, now=NOW)
+        with patch.object(ready, 'incus', incus), patch.object(ready, 'inspect', return_value=found):
+            ready.restore(GUESTS, 'oe-new', RestoreTests.LABELS)
+        start = next(i for i, call in enumerate(incus.calls) if call[0] == 'start')
+        for role in ready.ROLES:
+            self.assertLess(incus.calls.index(['config', 'set', GUESTS[role], 'migration.stateful=true']), start)
+            self.assertLess(incus.calls.index(['config', 'device', 'set', GUESTS[role], 'root', 'size.state=2560MiB']), start)
 
 
 if __name__ == '__main__':
