@@ -7,6 +7,7 @@ use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
+use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSeedRefreshProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
@@ -49,6 +50,14 @@ return ['task_vm.hub_converge' => [
     // The GitHub read header of the release repository, and the proof Swamp Club key.
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-seed-refresh-git-[1-9][0-9]*$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
+], 'task_vm.ready_copies' => [
+    'workflow' => 'operation-task-vm-ready-copies',
+    'projection' => TaskVmReadyCopiesProjection::class,
+    'workflow_inputs' => true,
+    // No result step: the projector reads the run's step statuses; the native assert is the end check.
+    'terminal_result' => ['job' => 'end', 'step' => TaskVmReadyCopiesProjection::EndCheck, 'native' => true],
+    // The proof Swamp Club key, which the scan looks for in the guests.
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
 ], 'task_vm.fill_package_cache' => [
     'workflow' => 'operation-task-vm-cache-fill',
     'projection' => TaskVmPackageCacheProjection::class,

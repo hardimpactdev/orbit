@@ -1,0 +1,1486 @@
+id: b7c3d05a-a734-4932-b167-f51c4960b52e
+name: operation-task-vm-ready-copies
+description: >-
+  Save the ready copies of the nested fleet that runs in a refresh VM (stage 6, "Save the new images"), and boot-check them. The copies are self-contained, with their own state, no checkout, no operator key and no Club key. Each step is one incus command over official SSH.
+vaults: [orbit-control-inputs]
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: task_vm.ready_copies}
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^swamp-proof-club-api-key$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: keys
+  labels: {role: swamp}
+  steps:
+  # The copies hold no WireGuard key of the operator, so the key of the VM that made them works nowhere else (stage 2 makes a new one).
+  # The Node record first, then the peer on the Gateway hub. Both are end states: a rerun changes nothing.
+  - name: Remove the operator key
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &vm
+        name: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.ssh_execution.target.user }}'
+          port: '${{ inputs.intent.ssh_execution.target.port }}'
+          identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.ssh_execution.target.host }}'
+          transport:
+            hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - '--user'
+        - '1000'
+        - '--env'
+        - HOME=/home/orbit
+        - '--cwd'
+        - /home/orbit/orbit/apps/gateway
+        - '--'
+        - php
+        - artisan
+        - tinker
+        - '--execute=DB::table(''nodes'')->where(''name'', ''operator'')->update([''wireguard_public_key'' => null]);'
+        timeoutSec: 70
+  # Takes the peer of the operator address 10.45.0.10 out of every WireGuard file of the Gateway hub, in the hub file or in a peer file; the live interface is not touched.
+  - name: Remove the operator peer
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - '--'
+        - find
+        - /etc/wireguard
+        - '-type'
+        - f
+        - '-name'
+        - '*.conf'
+        - '-exec'
+        - perl
+        - '-0pi'
+        - '-e'
+        - 's/\n?\[Peer\]\n(?:#[^\n]*\n)?PublicKey = [^\n]*\nAllowedIPs = 10\.45\.0\.10\/32\n?//'
+        - '{}'
+        - +
+        timeoutSec: 40
+  # The proof Swamp Club key is in no copy. The Gateway is the only guest that holds it.
+  - name: Delete the Club key
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - '--'
+        - rm
+        - '-f'
+        - /home/orbit/.config/swamp/club-api-key
+        timeoutSec: 40
+  # The key is searched by value in every file of the guest, with the key on standard input. grep lists a match and exits 0, and exits 1 when nothing matches. The `incus` command exits 1 on its own errors too, so the shell prints grep's exit status and the end check requires `scan-exit=1`.
+  - name: Scan gateway for the Club key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '900'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - '--'
+        - sh
+        - '-c'
+        - grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?
+        stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}'
+        timeoutSec: 910
+    dependsOn:
+    - step: Delete the Club key
+      condition: {type: succeeded}
+  - name: Scan app-dev for the Club key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '900'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.app_dev }}'
+        - '--'
+        - sh
+        - '-c'
+        - grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?
+        stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}'
+        timeoutSec: 910
+    dependsOn:
+    - step: Delete the Club key
+      condition: {type: succeeded}
+  - name: Scan app-prod for the Club key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '900'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.app_prod }}'
+        - '--'
+        - sh
+        - '-c'
+        - grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?
+        stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}'
+        timeoutSec: 910
+    dependsOn:
+    - step: Delete the Club key
+      condition: {type: succeeded}
+  # The freed blocks of the deleted key are discarded from the disk image that every task VM clones. fstrim exits 64 when it trimmed some file systems and not others.
+  - name: Trim gateway
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '300'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - '--'
+        - fstrim
+        - '-av'
+        okExitCodes: [0, 64]
+        timeoutSec: 310
+    dependsOn:
+    - step: Delete the Club key
+      condition: {type: succeeded}
+  - name: Trim app-dev
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '300'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.app_dev }}'
+        - '--'
+        - fstrim
+        - '-av'
+        okExitCodes: [0, 64]
+        timeoutSec: 310
+    dependsOn:
+    - step: Delete the Club key
+      condition: {type: succeeded}
+  - name: Trim app-prod
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '300'
+        - incus
+        - exec
+        - '${{ inputs.intent.fleet.guests.app_prod }}'
+        - '--'
+        - fstrim
+        - '-av'
+        okExitCodes: [0, 64]
+        timeoutSec: 310
+    dependsOn:
+    - step: Delete the Club key
+      condition: {type: succeeded}
+- name: copy
+  labels: {role: swamp}
+  steps:
+  # What the copies store about the nested network: its subnet, and each Node MAC and address. A task VM creates the network from them.
+  - name: Read the subnet
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - network
+        - get
+        - '${{ inputs.intent.fleet.network }}'
+        - ipv4.address
+        timeoutSec: 40
+  - name: Read the gateway MAC
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - get
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - eth0
+        - hwaddr
+        timeoutSec: 40
+  - name: Read the gateway address
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - get
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - eth0
+        - ipv4.address
+        timeoutSec: 40
+  - name: Read the app-dev MAC
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - get
+        - '${{ inputs.intent.fleet.guests.app_dev }}'
+        - eth0
+        - hwaddr
+        timeoutSec: 40
+  - name: Read the app-dev address
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - get
+        - '${{ inputs.intent.fleet.guests.app_dev }}'
+        - eth0
+        - ipv4.address
+        timeoutSec: 40
+  - name: Read the app-prod MAC
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - get
+        - '${{ inputs.intent.fleet.guests.app_prod }}'
+        - eth0
+        - hwaddr
+        timeoutSec: 40
+  - name: Read the app-prod address
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - get
+        - '${{ inputs.intent.fleet.guests.app_prod }}'
+        - eth0
+        - ipv4.address
+        timeoutSec: 40
+  - name: Read the time
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - date
+        - '-u'
+        - '+%Y-%m-%dT%H:%M:%SZ'
+        timeoutSec: 20
+  # A clean stop: the guests unmount their disks, so a copy holds finished file systems.
+  - name: Stop the nested VMs
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '300'
+        - incus
+        - stop
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - '${{ inputs.intent.fleet.guests.app_dev }}'
+        - '${{ inputs.intent.fleet.guests.app_prod }}'
+        timeoutSec: 310
+  # The fleet started from the earlier copies, so they exist; the seed holds one set. A rerun after a failed copy finds some names gone, which is no error: a copy step that finds a name left fails.
+  - name: Remove the old copies
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - delete
+        - '--force'
+        - fleet-ready-gateway
+        - fleet-ready-app-dev
+        - fleet-ready-app-prod
+        okExitCodes: any
+        timeoutSec: 130
+    dependsOn:
+    - step: Stop the nested VMs
+      condition: {type: succeeded}
+  # `--instance-only` leaves the `base` snapshot of the earlier fleet behind. The copy keeps `migration.stateful` and the root disk's size.state.
+  - name: Copy gateway
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - copy
+        - '--instance-only'
+        - '${{ inputs.intent.fleet.guests.gateway }}'
+        - fleet-ready-gateway
+        timeoutSec: 610
+    dependsOn:
+    - step: Remove the old copies
+      condition: {type: succeeded}
+  - name: Copy app-dev
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - copy
+        - '--instance-only'
+        - '${{ inputs.intent.fleet.guests.app_dev }}'
+        - fleet-ready-app-dev
+        timeoutSec: 610
+    dependsOn:
+    - step: Remove the old copies
+      condition: {type: succeeded}
+  - name: Copy app-prod
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - copy
+        - '--instance-only'
+        - '${{ inputs.intent.fleet.guests.app_prod }}'
+        - fleet-ready-app-prod
+        timeoutSec: 610
+    dependsOn:
+    - step: Remove the old copies
+      condition: {type: succeeded}
+  # A copy with a NIC would keep the network in use and its MAC and address from a second VM.
+  - name: Remove the gateway NIC
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - device
+        - remove
+        - fleet-ready-gateway
+        - eth0
+        timeoutSec: 40
+    dependsOn:
+    - step: Copy gateway
+      condition: {type: succeeded}
+  - name: Remove the app-dev NIC
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - device
+        - remove
+        - fleet-ready-app-dev
+        - eth0
+        timeoutSec: 40
+    dependsOn:
+    - step: Copy app-dev
+      condition: {type: succeeded}
+  - name: Remove the app-prod NIC
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - device
+        - remove
+        - fleet-ready-app-prod
+        - eth0
+        timeoutSec: 40
+    dependsOn:
+    - step: Copy app-prod
+      condition: {type: succeeded}
+  # Keys on each copy: role, set identity, time, subnet, MAC and address.
+  - name: Record the network of gateway
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - set
+        - fleet-ready-gateway
+        - '${{ "user.ready.hwaddr=" + steps["Read the gateway MAC"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.ipv4=" + steps["Read the gateway address"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.subnet=" + steps["Read the subnet"].outputs.stdout.split("\n")[0] }}'
+        - user.ready.role=gateway
+        - '${{ "user.ready.set=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.made=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        timeoutSec: 40
+    dependsOn:
+    - step: Remove the gateway NIC
+      condition: {type: succeeded}
+    - step: Read the gateway MAC
+      condition: {type: succeeded}
+    - step: Read the gateway address
+      condition: {type: succeeded}
+    - step: Read the subnet
+      condition: {type: succeeded}
+    - step: Read the time
+      condition: {type: succeeded}
+  - name: Record the network of app-dev
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - set
+        - fleet-ready-app-dev
+        - '${{ "user.ready.hwaddr=" + steps["Read the app-dev MAC"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.ipv4=" + steps["Read the app-dev address"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.subnet=" + steps["Read the subnet"].outputs.stdout.split("\n")[0] }}'
+        - user.ready.role=app-dev
+        - '${{ "user.ready.set=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.made=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        timeoutSec: 40
+    dependsOn:
+    - step: Remove the app-dev NIC
+      condition: {type: succeeded}
+    - step: Read the app-dev MAC
+      condition: {type: succeeded}
+    - step: Read the app-dev address
+      condition: {type: succeeded}
+    - step: Read the subnet
+      condition: {type: succeeded}
+    - step: Read the time
+      condition: {type: succeeded}
+  - name: Record the network of app-prod
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - set
+        - fleet-ready-app-prod
+        - '${{ "user.ready.hwaddr=" + steps["Read the app-prod MAC"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.ipv4=" + steps["Read the app-prod address"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.subnet=" + steps["Read the subnet"].outputs.stdout.split("\n")[0] }}'
+        - user.ready.role=app-prod
+        - '${{ "user.ready.set=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        - '${{ "user.ready.made=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        timeoutSec: 40
+    dependsOn:
+    - step: Remove the app-prod NIC
+      condition: {type: succeeded}
+    - step: Read the app-prod MAC
+      condition: {type: succeeded}
+    - step: Read the app-prod address
+      condition: {type: succeeded}
+    - step: Read the subnet
+      condition: {type: succeeded}
+    - step: Read the time
+      condition: {type: succeeded}
+  # Written last, on every copy, after all three have their keys: a set without it is half made.
+  - name: Complete gateway
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - set
+        - fleet-ready-gateway
+        - '${{ "user.ready.complete=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        timeoutSec: 40
+    dependsOn:
+    - step: Record the network of gateway
+      condition: {type: succeeded}
+    - step: Record the network of app-dev
+      condition: {type: succeeded}
+    - step: Record the network of app-prod
+      condition: {type: succeeded}
+    - step: Read the time
+      condition: {type: succeeded}
+  - name: Complete app-dev
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - set
+        - fleet-ready-app-dev
+        - '${{ "user.ready.complete=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        timeoutSec: 40
+    dependsOn:
+    - step: Record the network of gateway
+      condition: {type: succeeded}
+    - step: Record the network of app-dev
+      condition: {type: succeeded}
+    - step: Record the network of app-prod
+      condition: {type: succeeded}
+    - step: Read the time
+      condition: {type: succeeded}
+  - name: Complete app-prod
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - config
+        - set
+        - fleet-ready-app-prod
+        - '${{ "user.ready.complete=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'
+        timeoutSec: 40
+    dependsOn:
+    - step: Record the network of gateway
+      condition: {type: succeeded}
+    - step: Record the network of app-dev
+      condition: {type: succeeded}
+    - step: Record the network of app-prod
+      condition: {type: succeeded}
+    - step: Read the time
+      condition: {type: succeeded}
+  dependsOn:
+  - job: keys
+    condition: {type: succeeded}
+- name: check
+  labels: {role: swamp}
+  steps:
+  # A run that was killed leaves its throwaway copies; a copy of the same name would fail. Nothing to remove is no error.
+  - name: Remove stale check copies
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - delete
+        - '--force'
+        - ready-check-gateway
+        - ready-check-app-dev
+        - ready-check-app-prod
+        okExitCodes: any
+        timeoutSec: 130
+  # Boot-check: a throwaway copy of each ready copy starts and is checked; the ready copy itself is never started.
+  - name: Copy gateway to check
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - copy
+        - fleet-ready-gateway
+        - ready-check-gateway
+        timeoutSec: 610
+    dependsOn:
+    - step: Remove stale check copies
+      condition: {type: succeeded}
+  - name: Copy app-dev to check
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - copy
+        - fleet-ready-app-dev
+        - ready-check-app-dev
+        timeoutSec: 610
+    dependsOn:
+    - step: Remove stale check copies
+      condition: {type: succeeded}
+  - name: Copy app-prod to check
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - copy
+        - fleet-ready-app-prod
+        - ready-check-app-prod
+        timeoutSec: 610
+    dependsOn:
+    - step: Remove stale check copies
+      condition: {type: succeeded}
+  - name: Start gateway to check
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - start
+        - ready-check-gateway
+        timeoutSec: 130
+    dependsOn:
+    - step: Copy gateway to check
+      condition: {type: succeeded}
+  - name: Start app-dev to check
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - start
+        - ready-check-app-dev
+        timeoutSec: 130
+    dependsOn:
+    - step: Copy app-dev to check
+      condition: {type: succeeded}
+  - name: Start app-prod to check
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - start
+        - ready-check-app-prod
+        timeoutSec: 130
+    dependsOn:
+    - step: Copy app-prod to check
+      condition: {type: succeeded}
+  - name: Wait for gateway
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '130'
+        - incus
+        - wait
+        - ready-check-gateway
+        - agent
+        - '--timeout'
+        - '120'
+        timeoutSec: 140
+    dependsOn:
+    - step: Start gateway to check
+      condition: {type: succeeded}
+  - name: Wait for app-dev
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '130'
+        - incus
+        - wait
+        - ready-check-app-dev
+        - agent
+        - '--timeout'
+        - '120'
+        timeoutSec: 140
+    dependsOn:
+    - step: Start app-dev to check
+      condition: {type: succeeded}
+  - name: Wait for app-prod
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '130'
+        - incus
+        - wait
+        - ready-check-app-prod
+        - agent
+        - '--timeout'
+        - '120'
+        timeoutSec: 140
+    dependsOn:
+    - step: Start app-prod to check
+      condition: {type: succeeded}
+  # The same scan as before the stop, on the stored copy: files the guest wrote while it stopped are searched too.
+  - name: Search gateway for the Club key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '900'
+        - incus
+        - exec
+        - ready-check-gateway
+        - '--'
+        - sh
+        - '-c'
+        - grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?
+        stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}'
+        timeoutSec: 910
+    dependsOn:
+    - step: Wait for gateway
+      condition: {type: succeeded}
+  # The copy holds no checkout: `rmdir` of an empty directory succeeds and fails on one that holds a file. The directory is the throwaway's.
+  - name: Look for a checkout in gateway
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - ready-check-gateway
+        - '--'
+        - rmdir
+        - /home/orbit/orbit
+        timeoutSec: 40
+    dependsOn:
+    - step: Wait for gateway
+      condition: {type: succeeded}
+  # The state stays on the guest's own disk; the mount step puts it over the shared checkout.
+  - name: Look for the state of gateway
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - ready-check-gateway
+        - '--'
+        - stat
+        - '-c'
+        - '%n'
+        - /var/lib/orbit-checkout-state/apps/gateway/.env
+        - /var/lib/orbit-checkout-state/apps/gateway/storage
+        - /var/lib/orbit-checkout-state/apps/gateway/bootstrap/cache
+        timeoutSec: 40
+    dependsOn:
+    - step: Wait for gateway
+      condition: {type: succeeded}
+  - name: Search app-dev for the Club key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '900'
+        - incus
+        - exec
+        - ready-check-app-dev
+        - '--'
+        - sh
+        - '-c'
+        - grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?
+        stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}'
+        timeoutSec: 910
+    dependsOn:
+    - step: Wait for app-dev
+      condition: {type: succeeded}
+  - name: Look for a checkout in app-dev
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - ready-check-app-dev
+        - '--'
+        - rmdir
+        - /home/orbit/orbit
+        timeoutSec: 40
+    dependsOn:
+    - step: Wait for app-dev
+      condition: {type: succeeded}
+  - name: Look for the state of app-dev
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - ready-check-app-dev
+        - '--'
+        - stat
+        - '-c'
+        - '%n'
+        - /var/lib/orbit-checkout-state/apps/gateway/.env
+        - /var/lib/orbit-checkout-state/apps/gateway/storage
+        - /var/lib/orbit-checkout-state/apps/gateway/bootstrap/cache
+        timeoutSec: 40
+    dependsOn:
+    - step: Wait for app-dev
+      condition: {type: succeeded}
+  - name: Search app-prod for the Club key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '900'
+        - incus
+        - exec
+        - ready-check-app-prod
+        - '--'
+        - sh
+        - '-c'
+        - grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?
+        stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}'
+        timeoutSec: 910
+    dependsOn:
+    - step: Wait for app-prod
+      condition: {type: succeeded}
+  # The Gateway database is the one its own `.env` names, the one the key step updated.
+  - name: Read the database path
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - ready-check-gateway
+        - '--'
+        - grep
+        - '-m1'
+        - ^DB_DATABASE=
+        - /var/lib/orbit-checkout-state/apps/gateway/.env
+        timeoutSec: 40
+    dependsOn:
+    - step: Wait for gateway
+      condition: {type: succeeded}
+  - name: Read the operator keys
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - ready-check-gateway
+        - '--'
+        - sqlite3
+        - '${{ steps["Read the database path"].outputs.stdout.split("\n")[0].split("=")[1] }}'
+        - 'select count(*) from nodes where name = ''operator'' and wireguard_public_key is not null'
+        timeoutSec: 40
+    dependsOn:
+    - step: Read the database path
+      condition: {type: succeeded}
+  # The hub has no peer of the operator: grep finds nothing and exits 1. The shell prints the status, as for the scans.
+  - name: Look for the operator peer
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '30'
+        - incus
+        - exec
+        - ready-check-gateway
+        - '--'
+        - sh
+        - '-c'
+        - 'grep -rq ''10\.45\.0\.10/32'' /etc/wireguard; echo peer-exit=$?'
+        timeoutSec: 40
+    dependsOn:
+    - step: Wait for gateway
+      condition: {type: succeeded}
+  - name: Read the gateway stateful setting
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - get
+        - fleet-ready-gateway
+        - migration.stateful
+        timeoutSec: 40
+  - name: Read the gateway devices
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - list
+        - fleet-ready-gateway
+        timeoutSec: 40
+  - name: Read the app-dev stateful setting
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - get
+        - fleet-ready-app-dev
+        - migration.stateful
+        timeoutSec: 40
+  - name: Read the app-dev devices
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - list
+        - fleet-ready-app-dev
+        timeoutSec: 40
+  - name: Read the app-prod stateful setting
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - get
+        - fleet-ready-app-prod
+        - migration.stateful
+        timeoutSec: 40
+  - name: Read the app-prod devices
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - incus
+        - config
+        - device
+        - list
+        - fleet-ready-app-prod
+        timeoutSec: 40
+  dependsOn:
+  - job: copy
+    condition: {type: succeeded}
+- name: cleanup
+  labels: {role: swamp}
+  steps:
+  # Runs after success, failure and cancellation. A check copy that was never made is not an error.
+  - name: Remove the gateway check copy
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - delete
+        - '--force'
+        - ready-check-gateway
+        okExitCodes: any
+        timeoutSec: 130
+  - name: Remove the app-dev check copy
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - delete
+        - '--force'
+        - ready-check-app-dev
+        okExitCodes: any
+        timeoutSec: 130
+  - name: Remove the app-prod check copy
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("ready-copies-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *vm
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - delete
+        - '--force'
+        - ready-check-app-prod
+        okExitCodes: any
+        timeoutSec: 130
+  dependsOn:
+  - job: check
+    condition: {type: completed}
+- name: end
+  labels: {role: swamp}
+  steps:
+  - name: Check the ready copies
+    labels: {role: swamp}
+    task:
+      type: assert
+      # The three copies are complete and self-contained: no operator key in the record or on the hub, no Club key before and after the stop,
+      # stateful, and no NIC. The checkout and state checks fail their own steps.
+      expr: 'steps["Read the operator keys"].outputs.stdout.split("\n")[0] == "0" && steps["Look for the operator peer"].outputs.stdout.startsWith("peer-exit=1") && steps["Scan gateway for the Club key"].outputs.stdout.startsWith("scan-exit=1") && steps["Search gateway for the Club key"].outputs.stdout.startsWith("scan-exit=1") && steps["Scan app-dev for the Club key"].outputs.stdout.startsWith("scan-exit=1") && steps["Search app-dev for the Club key"].outputs.stdout.startsWith("scan-exit=1") && steps["Scan app-prod for the Club key"].outputs.stdout.startsWith("scan-exit=1") && steps["Search app-prod for the Club key"].outputs.stdout.startsWith("scan-exit=1") && steps["Read the gateway stateful setting"].outputs.stdout.split("\n")[0] == "true" && !steps["Read the gateway devices"].outputs.stdout.contains("eth0") && steps["Read the app-dev stateful setting"].outputs.stdout.split("\n")[0] == "true" && !steps["Read the app-dev devices"].outputs.stdout.contains("eth0") && steps["Read the app-prod stateful setting"].outputs.stdout.split("\n")[0] == "true" && !steps["Read the app-prod devices"].outputs.stdout.contains("eth0")'
+      severity: high
+      message: The ready copies are not self-contained.
+  dependsOn:
+  - job: check
+    condition: {type: succeeded}
+  - job: cleanup
+    condition: {type: succeeded}
