@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 4 of the command development pipeline (feature-flow sections 3 and 4). There is one CI: the fast checks plus, for command code, the proof CI (proof:run for the affected commands). The merge queue requires that one CI result. Swamp opens the PR as the Orbit App and turns on auto-merge with a Gateway-minted App token; the Gateway only admits and mints.
+  %% Target design: stage 4 of the command development pipeline (feature-flow sections 3 and 4). There is one CI: the fast checks plus, for command code, the proof CI (proof:run for the affected commands). The merge queue requires that one CI result. Swamp opens the PR as the Orbit App and, once the gate has passed and CI is green, adds it to the merge queue with a Gateway-minted App token; the Gateway only admits and mints. GitHub auto-merge is not used.
   %% status: draft
   %% command: development pipeline stage 4 · PR and CI
   %% kind: pipeline.4-pr-and-ci
@@ -80,14 +80,15 @@ sequenceDiagram
     GW->>SW: Admit the merge step<br/>fresh token key name
     %%> Why:
     %%> - a token lives one hour and an approval can take longer, so the Gateway mints a new one for this step
-    SW->>GH: Turn on auto-merge<br/>as the Orbit App
+    SW->>GH: Add to the merge queue<br/>enqueuePullRequest (App token)
     %%> What it does:
-    %%> - Swamp turns on auto-merge through GitHub's `enablePullRequestAutoMerge`, with the Gateway-minted App token passed by vault key name
-    %%> - the PR joins the merge queue
+    %%> - Swamp adds the PR to the merge queue through GitHub's `enqueuePullRequest` GraphQL mutation, with the Gateway-minted App token passed by vault key name
+    %%> - the Orbit App, through this Swamp step, decides whether the PR may merge; the PR's CI is already green and the gate has passed
     %%> History:
-    %%> - GitHub ignores auto-merge turned on with the built-in Actions token, so #2550 removed that workflow; an App token is different
+    %%> - GitHub auto-merge is no longer used
     %%> Not built:
-    %%> - Swamp turning on auto-merge; App-enabled auto-merge still has to be proven to join the queue; today the author runs `gh pr merge --auto` as `nckrtl`
+    %%> - Swamp adding the PR to the merge queue; today the author runs `gh pr merge --auto` as `nckrtl` (the interim)
+    %%> - the repository's auto-merge setting is switched off once Swamp enqueues PRs
     GH->>CI: Test the combined commit<br/>merge queue run
     %%> What it does:
     %%> - the queue builds the PR on top of the newest main and runs the same selection rule
