@@ -21,21 +21,21 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Drives one proof through the normal task operations, as TaskMaintenanceContinuation does for maintenance: the group is
- * provisioned at the commit, `bin/proof-fleet verify` runs in its VM as tasks.script, then the group is cancelled. The
- * terminal result of each step admits the next, and the last closes the proof.run Operation. See docs/cli/proof/run.mmd.
+ * provisioned at the commit, `bin/proof-fleet reset` builds the nested fleet in its VM as tasks.script, the Swamp workflow
+ * `proof-fleet-verify` (kind proof.verify) runs the cases of one command over SSH, then the group is cancelled. A second
+ * command resets the fleet again and verifies. The terminal result of each step admits the next, and the last closes the
+ * proof.run Operation. See docs/cli/proof/run.mmd.
  */
 final readonly class ProofRunContinuation
 {
-    private const array Verdicts = ['p' => 'passed', 'f' => 'failed', 'u' => 'unrun'];
-
     public function __construct(private OperationStore $store) {}
 
-    /** Admits one task operation under its own key, because the request key of proof:run belongs to the proof.run Operation. */
-    public function admit(Task $group, string $kind, Closure $start): Operation
+    /** Admits one task operation under its own key, because the request key of proof:run belongs to the proof.run Operation. A later command of the same proof has its own `stage`. */
+    public function admit(Task $group, string $kind, Closure $start, int $stage = 0): Operation
     {
         $identity = app(OperationIdempotency::class);
         $prior = [$identity->kind, $identity->key, $identity->fingerprint];
-        $key = 'proof:'.$group->id.':'.$kind;
+        $key = 'proof:'.$group->id.':'.$kind.($stage > 0 ? ':'.$stage : '');
         [$identity->kind, $identity->key, $identity->fingerprint] = [$kind, $key, hash('sha256', $key)];
         try {
             return $start();
@@ -60,19 +60,40 @@ final readonly class ProofRunContinuation
             return;
         }
         $group = Task::topLevel()->findOrFail($operation->target_id);
+        $stage = ValidatedData::integer($proof->state['stage'] ?? 0);
+        // A script that exits nonzero is a succeeded operation with outcome failed: a reset that failed leaves no fleet to verify.
+        $go = $operation->status === OperationStatus::Succeeded && $proof->cancel_requested_at === null
+            && ($operation->kind !== 'tasks.script' || ($operation->result['outcome'] ?? null) === 'passed');
         if ($operation->kind === 'tasks.cancel') {
             $this->close($proof);
-        } elseif ($operation->kind === 'tasks.provision' && $operation->status === OperationStatus::Succeeded && $proof->cancel_requested_at === null) {
-            $subtask = $group->tasks()->orderBy('position')->firstOrFail();
-            $this->admit($group, 'tasks.script', fn () => app(StartTaskScriptAction::class)->execute($group,
-                new StartTaskScriptData($subtask->id, 'bin/proof-fleet', ['verify', (string) $group->id, ...ValidatedData::stringList(array_column($this->cases($proof), 'program'))]), 'proof-run', null));
+        } elseif ($go && $operation->kind === 'tasks.provision') {
+            $this->reset($group, $stage);
+        } elseif ($go && $operation->kind === 'tasks.script') {
+            $command = $this->commands($proof)[$stage];
+            $this->admit($group, 'proof.verify', fn () => app(ProofVerifyIntent::class)->start($group, $command['command'], $command['file'], 'proof-run', null), $stage);
         } else {
-            if ($operation->kind === 'tasks.script') {
-                $this->store->change($proof, ['state' => [...($proof->state ?? []), 'verdict' => $this->verdict($this->lastLine($operation), $proof)]]);
+            if ($operation->kind === 'proof.verify') {
+                $next = $stage + 1;
+                $this->store->change($proof, ['state' => [...($proof->state ?? []), 'stage' => $next, 'rows' => [...array_values((array) ($proof->state['rows'] ?? [])), ...$this->rows($operation)],
+                    'evidence' => ValidatedData::string($operation->input['checkout_path']).'/.orbit-artifacts/'.$group->id.'/verify']]);
+                if ($next < count($this->commands($proof)) && $proof->cancel_requested_at === null) {
+                    $this->reset($group, $next);
+                    $operation->update(['state' => [...($operation->state ?? []), 'proof_continued' => true]]);
+
+                    return;
+                }
             }
             $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, 'proof-run', null));
         }
         $operation->update(['state' => [...($operation->state ?? []), 'proof_continued' => true]]);
+    }
+
+    /** The nested fleet of the VM, from the ready copies and with its `base` snapshot, for the cases of one command. */
+    private function reset(Task $group, int $stage): void
+    {
+        $subtask = $group->tasks()->orderBy('position')->firstOrFail();
+        $this->admit($group, 'tasks.script', fn () => app(StartTaskScriptAction::class)->execute($group,
+            new StartTaskScriptData($subtask->id, 'bin/proof-fleet', ['reset', (string) $group->id, '--from-ready']), 'proof-run', null), $stage);
     }
 
     /** The job gave up: cancel the group once more and close the proof with what it has. */
@@ -98,36 +119,55 @@ final readonly class ProofRunContinuation
             ->whereNotIn('status', OperationStatus::terminalValues())->latest('id')->first();
     }
 
-    /** @return array<string,mixed> the one JSON line that `bin/proof-fleet verify` prints last, or nothing when the run printed none */
-    private function lastLine(Operation $script): array
+    /**
+     * Each command of the selection once, with the cases file that the runner reads. The selection names a command by its case programs.
+     *
+     * @return list<array{command:string,file:string}>
+     */
+    private function commands(Operation $proof): array
     {
-        $lines = array_values(array_filter(array_map(trim(...), explode("\n", ValidatedData::string($script->result['output'] ?? '')))));
-        $line = json_decode($lines === [] ? '' : $lines[count($lines) - 1], true);
+        $commands = [];
+        foreach ($this->cases($proof) as $case) {
+            $command = ValidatedData::string($case['command']);
+            [$family, $name] = explode(':', $command, 2) + [1 => ''];
+            $commands[$command] ??= ['command' => $command, 'file' => 'swamp/proof/'.$family.'/'.str_replace(':', '-', $name).'.cases.yaml'];
+        }
 
-        return is_array($line) ? ValidatedData::object($line) : [];
+        return array_values($commands);
     }
 
     /**
-     * Each admitted case with its verdict from the summary of that line. A case with no usable row is unrun.
+     * The verdict row of each case in the verdict lines of a finished proof.verify.
      *
-     * @param  array<string,mixed>  $line
-     * @return array{ran: bool, evidence: string|null, cases: list<array<string,mixed>>}
+     * @return list<array<string,mixed>>
      */
-    private function verdict(array $line, Operation $proof): array
+    private function rows(Operation $verify): array
     {
-        $cases = $this->cases($proof);
-        $summary = is_array($line['summary'] ?? null) ? array_values($line['summary']) : [];
-        $usable = count($summary) === count($cases);
+        $file = ValidatedData::string($verify->input['file']);
         $rows = [];
-        foreach ($cases as $index => $case) {
-            $row = $usable ? $summary[$index] : null;
-            $letter = is_array($row) ? ($row[0] ?? null) : null;
-            $seconds = is_array($row) ? ($row[1] ?? null) : null;
-            $known = is_string($letter) && isset(self::Verdicts[$letter]) && (is_int($seconds) || is_float($seconds));
-            $rows[] = [...$case, 'verdict' => $known ? self::Verdicts[$letter] : 'unrun', 'seconds' => $known ? $seconds : 0];
+        foreach ((array) ($verify->result['lines'] ?? []) as $line) {
+            $line = ValidatedData::object($line);
+            $rows[] = ['program' => $file.'#'.ValidatedData::string($line['id']), 'command' => $verify->input['command'], 'case' => $line['id'], ...array_diff_key($line, ['id' => 0])];
         }
 
-        return ['ran' => $usable && ($line['cases_ran'] ?? false) === true, 'evidence' => is_string($line['evidence'] ?? null) ? $line['evidence'] : null, 'cases' => $rows];
+        return $rows;
+    }
+
+    /**
+     * Every command of the selection with the rows of its cases. A command that has no rows, because the fleet or the run failed before it, is one unrun row.
+     *
+     * @return array{ran: bool, evidence: string|null, cases: list<array<string,mixed>>}
+     */
+    private function verdict(Operation $proof): array
+    {
+        $recorded = array_map(ValidatedData::object(...), (array) ($proof->state['rows'] ?? []));
+        $cases = [];
+        foreach ($this->commands($proof) as $command) {
+            $rows = array_values(array_filter($recorded, static fn (array $row): bool => $row['command'] === $command['command']));
+            $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $command['file'], 'command' => $command['command'], 'verdict' => 'unrun', 'seconds' => 0]])];
+        }
+
+        return ['ran' => array_any($recorded, static fn (array $row): bool => $row['verdict'] !== 'unrun'), 'evidence' => is_string($proof->state['evidence'] ?? null) ? $proof->state['evidence'] : null, 'cases' => $cases];
     }
 
     /** @return list<array<string,mixed>> */
@@ -138,12 +178,12 @@ final readonly class ProofRunContinuation
 
     private function close(Operation $proof): void
     {
-        $verdict = ValidatedData::object($proof->state['verdict'] ?? $this->verdict([], $proof));
-        $cases = array_values(array_map(ValidatedData::object(...), (array) $verdict['cases']));
+        $verdict = $this->verdict($proof);
+        $cases = $verdict['cases'];
         $passed = array_all($cases, static fn (array $case): bool => $case['verdict'] === 'passed');
-        $error = $passed ? null : (($verdict['ran'] ?? false) === true ? 'proof.cases_failed' : 'proof.run_failed');
+        $error = $passed ? null : ($verdict['ran'] ? 'proof.cases_failed' : 'proof.run_failed');
         $this->store->change($proof, ['status' => $passed ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $error,
             'result' => ['commit' => $proof->input['commit'], 'outcome' => $passed ? 'passed' : 'failed', 'cases' => $cases, 'uncovered' => $proof->input['uncovered'],
-                'evidence' => $verdict['evidence'] ?? null, 'receipt_url' => null]]);
+                'evidence' => $verdict['evidence'], 'receipt_url' => null]]);
     }
 }

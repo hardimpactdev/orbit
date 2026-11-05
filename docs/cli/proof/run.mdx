@@ -42,11 +42,13 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 Orbit creates a task group on the Orbit Project and provisions it with the same `tasks.provision` operation as any task. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the provision waits as it does for a task.
 
-Orbit then runs `bin/proof-fleet verify` in the VM as a `tasks.script` operation, and cancels the group whatever the cases did. This is the interim: the target is that Orbit's own Swamp runs the reset and verify workflows directly over SSH, with no `bin/proof-fleet` and no second Swamp in the VM.
+Orbit then runs `bin/proof-fleet reset GROUP --from-ready` in the VM as a `tasks.script` operation. It builds a fresh test fleet from the ready snapshot (a Gateway, an `app-dev` Node and an `app-prod` Node) and takes the memory snapshot `base`. This is the interim: the target is that Orbit's own Swamp runs the reset directly over SSH, with no `bin/proof-fleet` and no second Swamp in the VM.
 
-Orbit builds a fresh test fleet in the VM from the ready snapshot: a Gateway, an `app-dev` Node and an `app-prod` Node. It runs the selected cases one after another with the CLI built from the commit. Each case asserts the command's promised effect, the recorded state and the Node state, and removes what it created. After each case, Orbit compares the state that the case touched with its state before the case. A leftover fails the case. A case that needs a clean fleet gets a new one.
+Orbit then starts the operation `proof.verify` for each selected command, one after another. It runs the Swamp workflow `proof-fleet-verify` on Node 209, which reaches the VM over SSH like every other step. The runner reads the cases file of the command, `swamp/proof/<family>/<command>.cases.yaml`, at the tested commit and runs its cases with the CLI built from the commit. When the run ends, Orbit cancels the group whatever the cases did.
 
-The cases have a budget of 30 minutes after the test fleet is ready. The reset and the release come on top of it.
+The cases run in batches. The first batch starts on the fresh fleet; each later batch restores `base` first and then applies its declared start state. Inside a batch the cases run one at a time. Each case asserts the promised effect, the recorded state and the Node state, on its own resources, and undoes nothing. A case that did not pass triggers a restore of `base` before the next case. A restore that fails or is not healthy within 45 seconds stops the run: the cases that did not run end `unrun` with cause `infrastructure`, and the verdicts already reached stay. Orbit retries nothing. [Verification cases](/reference/verification-cases#the-run) describes the workflow.
+
+Each case has its own timeout, 180 seconds unless the case sets another. The operation `proof.verify` has a budget of 45 minutes.
 
 ## The execution switch
 
@@ -56,7 +58,7 @@ The cases have a budget of 30 minutes after the test fleet is ready. The reset a
 
 Each selected case ends `passed`, `failed` or `unrun`. A case that exceeds the budget is `failed`. A case is `unrun` when its setup could not start or the run stopped before it. Neither `failed` nor `unrun` counts as a pass. If the fleet never becomes ready, every selected case is `unrun`.
 
-The result names the commit, each case with its verdict and duration, the uncovered paths and the evidence directory in the VM. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
+The result names the commit, each case with its verdict and duration, the uncovered paths and the evidence directory in the VM. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |

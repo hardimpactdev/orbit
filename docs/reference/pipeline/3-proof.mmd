@@ -20,7 +20,8 @@ sequenceDiagram
   %%> - the cases file (`swamp/proof/FAMILY/COMMAND.cases.yaml`) names the batch of each case; `swamp/proof/batches.yaml` defines the shared batches and their order; nothing is picked at run time
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
   %%> Not built:
-  %%> - the command, the cases file format, the runner
+  %%> - the command `orbit proof COMMAND`; today `proof:run` is the only way in
+  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below
   Note over GW: Authorize<br/>mint tokens
   GW->>SW: Start the proof<br/>cases file · this VM
   SW->>NT: Restore the base snapshot<br/>memory included · about 16 s
@@ -99,6 +100,8 @@ sequenceDiagram
   SW->>NT: Restore base<br/>fleet clean on the author's code
   %%> Why:
   %%> - the author keeps developing on a clean fleet that already runs the latest code; nothing switches back
+  %%> Not built:
+  %%> - `proof-fleet-verify` does not run this restore; it belongs to the author's own command
   Note over SW: Join the verdicts<br/>report step
   %%> What it does:
   %%> - each case ended with one JSON line of at most 1 KB (Swamp cuts step output at 4,096 bytes): id, verdict, cause, seconds and the failed checks
