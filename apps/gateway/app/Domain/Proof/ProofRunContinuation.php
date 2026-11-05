@@ -94,7 +94,7 @@ final readonly class ProofRunContinuation
     /** The running proof of the group that the task operation belongs to. */
     private function proof(Operation $operation): ?Operation
     {
-        return Operation::query()->where('kind', OperationKinds::ProofRun)->where('target_type', 'task_group')->where('target_id', $operation->target_id)
+        return Operation::query()->where('kind', OperationKinds::ProofRun)->where('target_type', 'proof')->where('target_id', $operation->target_id)
             ->whereNotIn('status', OperationStatus::terminalValues())->latest('id')->first();
     }
 

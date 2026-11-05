@@ -22,7 +22,7 @@ function proofRunning(): Operation
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'swamp', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit']));
 
-    return Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id,
+    return Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'proof', 'target_id' => $group->id, 'node_id' => $node->id,
         'input' => ['commit' => str_repeat('a', 40), 'uncovered' => [], 'group_id' => $group->id, 'cases' => [
             ['program' => 'swamp/proof/a/cases/one.sh', 'command' => 'a:one'], ['program' => 'swamp/proof/b/cases/two.sh', 'command' => 'b:two']]],
         'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
