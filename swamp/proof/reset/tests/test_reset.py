@@ -398,7 +398,7 @@ class OperatorTests(unittest.TestCase):
         argv = privileged.call_args.args[0]
         self.assertEqual('/usr/local/bin/orbit-nested', argv[-1])
         self.assertNotIn('/usr/local/bin/orbit"', argv[2])
-        self.assertIn(b'python3 /home/orbit/apps/orbit/workspace/swamp/proof/reset/nested.py "$@"', privileged.call_args.kwargs['data'])
+        self.assertIn(b'python3 /home/orbit/apps/orbit/workspace/tools/orbit_nested.py "$@"', privileged.call_args.kwargs['data'])
 
     def test_the_nested_config_names_the_checkout_and_the_vms_and_clears_a_pending_repair(self):
         with tempfile.TemporaryDirectory() as temporary:

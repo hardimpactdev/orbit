@@ -499,9 +499,9 @@ def local_cli(request, *args, allow_failure=False, timeout=120):
 def install_cli(request):
     """`orbit-nested` on the outer VM's PATH under its own name; the real `orbit` there is never replaced.
 
-    The wrapper runs the candidate's `nested.py`, which syncs the candidate into the nested VMs and then runs its CLI.
+    The wrapper runs the candidate's `tools/orbit_nested.py`, which syncs the candidate into the nested VMs and then runs its CLI.
     """
-    wrapper = f"#!/bin/sh\nexec python3 {Path(request['candidate']) / 'swamp/proof/reset/nested.py'} \"$@\"\n".encode()
+    wrapper = f"#!/bin/sh\nexec python3 {Path(request['candidate']) / 'tools/orbit_nested.py'} \"$@\"\n".encode()
     privileged(['sh', '-c', 'umask 022; cat > "$1"; chmod 0755 "$1"', 'sh', NESTED_CLI], data=wrapper)
 
 

@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import nested
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools'))
+import orbit_nested as nested  # noqa: E402
 import phases
 
 NODES = {'gateway': {'instance': 'gw'}, 'app-dev': {'instance': 'dev'}, 'app-prod': {'instance': 'prod'}}

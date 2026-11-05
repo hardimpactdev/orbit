@@ -34,9 +34,9 @@ The nested fleet has a real WireGuard network, `10.45.0.0/24`. The nested Gatewa
 
 ## `orbit-nested` syncs before each call
 
-`/usr/local/bin/orbit-nested` runs `nested.py` from the candidate. The `operator` step also writes `~/.orbit/nested.json`: the checkout to sync from (the candidate, the author's own checkout) and the nested VMs to sync to. Every reset writes it again.
+`/usr/local/bin/orbit-nested` runs `tools/orbit_nested.py` from the candidate. It lives outside `swamp/` because it is a tool the author runs, not a Swamp step: it passes any command through. The `operator` step also writes `~/.orbit/nested.json`: the checkout to sync from (the candidate, the author's own checkout) and the nested VMs to sync to. Every reset writes it again.
 
-Before each call, `nested.py` runs the sync of the reset (`phases.sync_source`: `rsync -a --checksum --delete` into the Gateway and app-dev, the same excludes, `composer install` only where a `composer.lock` changed). It needs no daemon and no file watcher. When rsync moved or deleted a file in the Gateway, it runs the apply step (`guest.py candidate`: package discovery, migrations, the Swamp repository, a restart of the two proof services). It then runs the CLI, or the command:
+Before each call, `orbit_nested.py` runs the sync of the reset (`phases.sync_source`: `rsync -a --checksum --delete` into the Gateway and app-dev, the same excludes, `composer install` only where a `composer.lock` changed). It needs no daemon and no file watcher. When rsync moved or deleted a file in the Gateway, it runs the apply step (`guest.py candidate`: package discovery, migrations, the Swamp repository, a restart of the two proof services). It then runs the CLI, or the command:
 
 ```
 orbit-nested gateway:status --json

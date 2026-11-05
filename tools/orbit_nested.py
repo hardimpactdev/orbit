@@ -15,7 +15,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# A tool the author runs on the outer task VM, not a Swamp step, so it lives outside swamp/. It passes any command
+# through, which the Swamp-shape rules for steps do not allow.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'swamp/proof/reset'))
 import phases
 import ready
 
