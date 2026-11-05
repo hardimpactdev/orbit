@@ -18,6 +18,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskTopology;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -58,7 +59,9 @@ final readonly class ProofRunIntent
         }
         $group = app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof '.substr($commit, 0, 12),
             'Prove commit '.$commit.' with the selected cases.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
-                'bin/proof-fleet verify runs the selected cases in the task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
+                'bin/proof-fleet verify runs the selected cases in the task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']],
+                // The nested test fleet has two test nodes beside the Gateway: that declares a large VM, which boots with the host topology seed.
+                TaskTopology::fromInput(['app-dev', 'app-prod']))]));
         try {
             $this->chain->admit($group, 'tasks.provision', fn () => app(StartTaskProvisionAction::class)->execute($group, 'proof-run', null, $commit));
         } catch (ResourceOperationException $exception) {
