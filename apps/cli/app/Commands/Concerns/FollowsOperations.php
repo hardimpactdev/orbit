@@ -9,6 +9,7 @@ use App\Data\GatewayProfile;
 use App\Support\Console\Animation;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\InterruptIntent;
+use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalText;
 use App\Support\Operations\OperationFollower;
@@ -19,17 +20,34 @@ use App\Support\Realtime\RealtimeSubscriber;
 use App\Support\Realtime\WebSocketTransport;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Throwable;
 
 /**
- * Follows the parent native result. Ctrl-C stops following and leaves the Operation running.
+ * Follows the parent native result. Ctrl-C stops following and leaves the Operation running, unless the command
+ * overrides interruptCancelsOperation().
  *
  * @phpstan-require-extends GatewayCommand
  */
 trait FollowsOperations
 {
+    /** A command whose Ctrl-C and SIGTERM must end the work, not only the follow, returns true. */
+    protected function interruptCancelsOperation(): bool
+    {
+        return false;
+    }
+
+    /** The progress state and closing line of an ended operation, or null for the standard ones. */
+    protected function operationOutcome(OperationResponse $operation, string $verb): ?ProgressOutcome
+    {
+        return null;
+    }
+
+    /** Writes the product result of an ended operation ahead of the standard summary lines. */
+    protected function writeOperationResult(OperationResponse $operation): void {}
+
     protected function followOperation(GatewayConnector $connector, GatewayProfile $profile, OperationResponse $started, string $title, string $verb): int
     {
         $follower = new OperationFollower(
@@ -76,12 +94,28 @@ trait FollowsOperations
             $follower->close();
         }
 
-        // Ctrl-C stops following; GatewayCommand turns the pending signal into exit status 130.
-        if ($this->option('json') !== true) {
+        // GatewayCommand turns the pending signal into exit status 130 or 143.
+        if ($this->interruptCancelsOperation()) {
+            $this->cancelInterruptedOperation($connector, $started);
+        } elseif ($this->option('json') !== true) {
             $this->writeHumanMessage("The operation keeps running. Follow it with: orbit operation:show {$started->id}");
         }
 
         return self::FAILURE;
+    }
+
+    private function cancelInterruptedOperation(GatewayConnector $connector, OperationResponse $started): void
+    {
+        try {
+            $this->sendOrThrow($connector, new CancelOperationRequest($started->id), OperationResponse::class);
+        } catch (GatewayApiException $exception) {
+            $code = $exception->errorCode() ?? 'gateway.request_failed';
+            $this->writeHumanMessage("Could not cancel the operation ({$code}). Cancel it with: orbit operation:cancel {$started->id}");
+
+            return;
+        }
+
+        $this->writeHumanMessage("Cancelling the operation. Follow it with: orbit operation:show {$started->id}");
     }
 
     private function followOperationMachine(GatewayConnector $connector, OperationFollower $follower, OperationResponse $operation): int
@@ -107,12 +141,13 @@ trait FollowsOperations
 
             return $operation;
         });
-        $progress->complete('native', match ($operation->status) {
+        $outcome = $this->operationOutcome($operation, $verb);
+        $progress->complete('native', $outcome instanceof ProgressOutcome ? $outcome->state : match ($operation->status) {
             'succeeded' => ProgressState::Success,
             'cancelled' => ProgressState::Skipped,
             default => ProgressState::Failure,
         }, $operation->errorCode ?? '');
-        $progress->finish(match ($operation->status) {
+        $progress->finish($outcome instanceof ProgressOutcome ? $outcome->footer : match ($operation->status) {
             'succeeded' => $operation->kind === 'tasks.check' ? match ($operation->result['outcome'] ?? null) {
                 'passed' => 'Check passed.',
                 'failed' => 'Check failed.',
@@ -135,6 +170,8 @@ trait FollowsOperations
 
     private function writeOperationSummary(OperationResponse $operation): void
     {
+        $this->writeOperationResult($operation);
+
         if ($operation->failedStep !== null) {
             $this->writeHumanMessage('Failed step: '.$operation->failedStep);
         }

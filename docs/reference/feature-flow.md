@@ -92,7 +92,9 @@ CI is the only gate: if CI passes, the PR merges. So CI must be strict about wha
 
 ### The VM job
 
-The VM job is the target and is not built yet: not the command, the selection list, the job or the label workflow. It is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
+The VM job is the target. Built so far: the `orbit proof:run` admission (trust check and case selection) and the selection list. Not built yet: proof execution (slot claim, commit transfer, receipt), the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+
+The job is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
 
 **The job**
 
@@ -139,7 +141,7 @@ The VM job is the target and is not built yet: not the command, the selection li
 
 ### Choose the cases
 
-This rule is the target and is not built yet. The file `swamp/proof/selection.txt` is the selection list: it maps changed paths to commands. Each line holds a path glob and the value it selects. The scope step and Orbit read the list of the tested commit.
+The rule is built in `orbit proof:run`; the scope step that reads it in CI is not. The file `swamp/proof/selection.txt` is the selection list: it maps changed paths to commands. Each line holds a path glob and the value it selects. The scope step and Orbit read the list of the tested commit.
 
 ```text
 # path glob                                   selects
@@ -160,7 +162,7 @@ swamp/workflows/workflow-vault-sync.yaml      none: no case yet
 | `*` | Every case runs. Use it for shared code that every command consumes. |
 | `none: <reason>` | The path has no case yet. It is listed as uncovered and does not fail the run. |
 
-The case programs of a command are `swamp/proof/<family>/cases/<command>-*.sh`. Further colons of the command name become `-`.
+The case programs of a command are `swamp/proof/<family>/cases/<command>-*.sh`. Further colons of the command name become `-`. A program whose name has no `-`, such as the harness check `swamp/proof/reset/cases/smoke.sh`, belongs to no command and never runs as a case.
 
 - The last matching line wins.
 - A path that matches no line is refused with `proof.path_unmapped`, so the author must classify every path.
@@ -170,6 +172,8 @@ The case programs of a command are `swamp/proof/<family>/cases/<command>-*.sh`. 
 - List a helper that several commands share with every one of them.
 - A command that becomes ready also maps the code that implements it, including its Gateway Action and CLI files. Until then, those files stay `skip`.
 - Case programs are code and select their command. Charts, pages and `*.cases.md` files are `skip`.
+
+A malformed line is refused with `proof.selection_invalid`. A commit without a selection list selects every case.
 
 ## 5. Merge
 

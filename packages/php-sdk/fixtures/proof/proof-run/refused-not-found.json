@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Proof\\RunProofRequest",
+    "route": "POST /api/v1/proof/run",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "proof.commit_not_found",
+            "message": "The Orbit repository has no such commit.",
+            "details": {}
+        }
+    }
+}

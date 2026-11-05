@@ -26,6 +26,8 @@ In a terminal, an omitted commit is asked for with a text prompt. A noninteracti
 
 The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the VM job](/reference/feature-flow#the-vm-job).
 
+Built so far: the trust check, the case selection, and the verdict of each case that `bin/proof-fleet verify` reports. Not built yet: the proof slot claim, the transfer of the commit into the slot, the receipt store and the CI job. Until they are, execution stays off, as [the switch](#the-execution-switch) describes.
+
 ## Which commits Orbit proves
 
 Orbit proves only code that it can trust. The commit must be the head of a branch of the Orbit repository. A commit from a pull request from elsewhere is accepted only when it is the head of that open pull request, the pull request carries the label `run-proofs`, and a maintainer approved exactly that commit. A new push needs a new approval. Orbit fetches the commit itself, so a caller cannot change what runs.
@@ -45,6 +47,12 @@ The slot gets the commit and no credential. It has no Pi token, no model key, no
 Orbit builds a fresh test fleet in the slot from the ready snapshot: a Gateway, an `app-dev` Node and an `app-prod` Node. It runs the selected cases one after another with the CLI built from the commit. Each case asserts the command's promised effect, the recorded state and the Node state, and removes what it created. After each case, Orbit compares the state that the case touched with its state before the case. A leftover fails the case. A case that needs a clean fleet gets a new one.
 
 The whole run has a budget of 30 minutes after the slot is taken.
+
+## The execution switch
+
+`proof:run` works in two stages. Admission checks the commit and selects the cases. Execution takes a slot and runs them. Execution is off by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `false`. While it is off, a commit that selects cases is refused with `proof.execution_disabled`, and the error details name the selected cases and the uncovered paths. The command then works as a dry run: it takes no slot and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
+
+With execution on, a run is refused with `proof.no_slot` until the proof slot claim exists, because no slot can be taken without it.
 
 ## Verdicts
 
@@ -80,8 +88,12 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 | `proof.commit_not_found` | The Orbit repository has no such commit. |
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |
 | `proof.path_unmapped` | A changed path matches no line of the selection list. The details name the path. |
-| `proof.no_slot` | No slot became free within 10 minutes. |
+| `proof.no_slot` | No slot became free within 10 minutes, or the proof slot claim is not built yet. |
 | `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
 | `proof.run_failed` | The test fleet did not become ready. Every selected case is `unrun`; the details name the failed step. |
+| `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The details hold the commit, the selected cases and the uncovered paths. |
+| `proof.selection_invalid` | The selection list of the commit is malformed. The details name the line. |
+| `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |
+| `proof.swamp_unavailable` | No active Swamp Node exists to run the proof. |
 | `node_access.required` | The calling Node has no access grant to the Gateway Node. |
 | `extension.disabled` | The tasks extension is off. |

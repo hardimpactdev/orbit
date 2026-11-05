@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\DependencyBatchMergeController;
+use App\Http\Controllers\Api\ProofRunsController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskInsightsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
@@ -61,6 +62,7 @@ Route::middleware([
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
         Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
+        Route::post('proof/run', [ProofRunsController::class, 'store'])->name('proof:run');
         Route::post('task-groups/{group}/park', [TaskGroupsController::class, 'park'])
             ->whereNumber('group')->name('tasks:park');
         Route::post('task-groups/{group}/dependency-merge', [DependencyBatchMergeController::class, 'store'])

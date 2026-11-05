@@ -1,0 +1,22 @@
+Proof running...
+
+┌  Prove commit 0123456789ab
+│
+├  ● Proof running
+│    proof.cases_failed
+│
+└  Proof failed.
+
+ ┌─────────────────┬─────────────────────────────┬─────────┬──────────┐
+ │ COMMAND         │ CASE                        │ VERDICT │ DURATION │
+ ├─────────────────┼─────────────────────────────┼─────────┼──────────┤
+ │ firewall:allow  │ allow-fresh-ipv4-tcp.sh     │ passed  │ 12.4 s   │
+ │ firewall:deny   │ deny-leaves-rule.sh         │ failed  │ 9.1 s    │
+ │ firewall:remove │ remove-needs-clean-fleet.sh │ unrun   │ 0.3 s    │
+ └─────────────────┴─────────────────────────────┴─────────┴──────────┘
+Slot: shark-tvm-1
+Receipt: https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846
+Failed step: run-cases
+Error code: proof.cases_failed
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

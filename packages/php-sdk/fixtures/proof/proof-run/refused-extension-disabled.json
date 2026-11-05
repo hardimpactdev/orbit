@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Proof\\RunProofRequest",
+    "route": "POST /api/v1/proof/run",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "extension.disabled",
+            "message": "The tasks extension is disabled.",
+            "details": {}
+        }
+    }
+}

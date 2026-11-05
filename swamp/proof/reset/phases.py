@@ -5,14 +5,16 @@ import ipaddress
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
-from launcher import write_json
+from launcher import parse_budget, unrun_case, write_json
 
 
 def checked(result, program):
@@ -489,6 +491,115 @@ def preservation(request):
     return {'passed': True, 'candidate': before['candidate'], 'outer': before['outer'], 'resources': now}
 
 
+# What a state read or the preservation check can raise; anything else is a defect and stops the phase.
+STATE_ERRORS = (RuntimeError, OSError, ValueError, KeyError, subprocess.TimeoutExpired)
+
+
+def baseline_residue(before, after):
+    """Names what a case left behind, by comparing its own pre-case state with the state after it."""
+    found = []
+    if before['firewall_records'] != after['firewall_records']:
+        found.append('firewall database records')
+    for key in sorted({*before['ufw'], *after['ufw']}):
+        if before['ufw'].get(key) != after['ufw'].get(key):
+            found.append('UFW rules on ' + key)
+    return found
+
+
+def run_program(program, source, env, log_path, timeout):
+    """Runs one case program in its own process group; returns (exit code or None on timeout, seconds)."""
+    started = time.monotonic()
+    with log_path.open('w') as log:
+        process = subprocess.Popen(['bash', str(program)], cwd=source, env=env, stdout=log,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            code = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            code = None
+    return code, round(time.monotonic() - started, 2)
+
+
+def run_cases(request):
+    """Each program in order against one fleet; a case is judged against its own pre-case state."""
+    evidence = Path(request['evidence'])
+    programs = request.get('cases') or []
+    if not programs:
+        raise RuntimeError('The request lists no case programs.')
+    budget = request.get('budget_seconds')
+    budget = float(budget) if budget else parse_budget(os.environ.get('PROOF_BUDGET_SECONDS'))
+    result = json.loads((evidence / 'publish.json').read_text())
+    source = source_for(request, request['generation'])
+    results = []
+
+    def publish():
+        write_json(evidence / 'cases.json', {'generation': request['generation'], 'cases': results})
+
+    write_json(evidence / 'cases-started.json', {'generation': request['generation'], 'programs': programs})
+    deadline = time.monotonic() + budget
+    exhausted = False
+    for index, program in enumerate(programs, 1):
+        if exhausted:
+            results.append(unrun_case(program, 'an earlier case exceeded the budget'))
+            publish()
+            continue
+        try:
+            before = case_baseline(request)
+        except STATE_ERRORS as error:
+            results.append(unrun_case(program, 'the state before the case could not be read: ' + str(error)[-300:]))
+            publish()
+            continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            exhausted = True
+            results.append(unrun_case(program, 'the budget was used up before this case'))
+            publish()
+            continue
+        env = {**os.environ, 'PROOF_RESULT': str(evidence / 'publish.json'), 'PROOF_SOURCE': str(source),
+               'PROOF_GENERATION': request['generation'], 'PROOF_EVIDENCE': str(evidence), 'PROOF_CASE_INDEX': str(index)}
+        code, seconds = run_program(source / program, source, env, evidence / f'cases-{index}.log', remaining)
+        notes = []
+        if code is None:
+            exhausted = True
+            verdict = 'failed'
+            notes.append('exceeded the budget')
+        else:
+            verdict = {0: 'passed', 2: 'unrun'}.get(code, 'failed')
+            if code == 2:
+                notes.append('the case reported that it could not run (exit 2)')
+            elif code:
+                notes.append(f'exited {code}')
+            try:
+                after = case_baseline(request)
+                write_json(evidence / f'baseline-after-case-{index}.json', after)
+                residue = baseline_residue(before, after)
+            except STATE_ERRORS as error:
+                residue = []
+                verdict = 'failed'
+                notes.append('the state after the case could not be read: ' + str(error)[-300:])
+            if residue:
+                verdict = 'failed'
+                notes.append('left residue in ' + ', '.join(residue))
+        results.append({'program': program, 'verdict': verdict, 'exit_code': code, 'seconds': seconds,
+                        'note': '; '.join(notes) or None})
+        publish()
+    problems = []
+    try:
+        preservation(request)
+    except STATE_ERRORS as error:
+        problems.append('Preservation failed: ' + str(error))
+    bad = [f"{case['program']} {case['verdict']}" for case in results if case['verdict'] != 'passed']
+    if bad:
+        problems.append('Cases not passed: ' + ', '.join(bad) + '; see cases.json and cases-N.log.')
+    if problems:
+        raise RuntimeError(' '.join(problems))
+    return {'generation': result['generation'], 'cases': results}
+
+
 def execute(request, action):
     evidence = Path(request['evidence'])
     if action == 'inventory':
@@ -550,24 +661,7 @@ def execute(request, action):
     if action == 'release-active':
         return release(request, active_generation(request), 'cleanup-active')
     if action == 'cases':
-        result = json.loads((evidence / 'publish.json').read_text())
-        source = source_for(request, request['generation'])
-        case = source / request['case']
-        env = {**os.environ, 'PROOF_RESULT': str(evidence / 'publish.json'), 'PROOF_SOURCE': str(source),
-               'PROOF_GENERATION': request['generation'], 'PROOF_EVIDENCE': str(evidence)}
-        write_json(evidence / 'cases-started.json', {'generation': request['generation'], 'program': request['case']})
-        with (evidence / 'cases.log').open('w') as log:
-            completed = subprocess.run(['bash', str(case)], cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=1800)
-        value = {'exit_code': completed.returncode, 'generation': result['generation'], 'program': request['case']}
-        write_json(evidence / 'cases.json', value)
-        if completed.returncode:
-            raise RuntimeError(f'Candidate cases exited {completed.returncode}; see cases.log.')
-        preservation(request)
-        after = case_baseline(request)
-        write_json(evidence / 'baseline-after-cases.json', after)
-        if after != json.loads((evidence / 'baseline.json').read_text()):
-            raise RuntimeError('Case left firewall database or UFW residue; start a new independent verification.')
-        return value
+        return run_cases(request)
     raise RuntimeError('Unknown bounded proof phase: ' + action)
 
 

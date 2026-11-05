@@ -11,10 +11,10 @@ flowchart TD
   facts --> readiness[Native step: scoped Doctor and firewall baseline]
   readiness --> result[Publish generation, readiness and preservation evidence]
   result --> cases{Verification run?}
-  cases -->|yes| commands[Run real candidate CLI cases; scoped case cleanup]
+  cases -->|yes| commands[Run each case program in order against the one fleet within the case budget; scoped case cleanup]
   cases -->|no| held[Keep generation for explicit test use]
-  commands --> baseline[Compare scoped database and firewall baseline; reject case residue]
-  baseline --> receipt[Record actual case exit; release group lock]
+  commands --> baseline[After each case compare its own pre-case database and firewall state; residue fails that case]
+  baseline --> receipt[Record a verdict per case; release group lock]
   held --> receipt
   prepare -. failure .-> diagnose[Retain bounded nonsecret diagnostics; timeouts do not skip release]
   fixture -. failure .-> diagnose

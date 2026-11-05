@@ -77,6 +77,10 @@ final class GatewayFailureRenderer
             return is_string($keys) && strlen($keys) <= 65_536 && preg_match('/\A[A-Za-z_][A-Za-z0-9_.]*(?:,[A-Za-z_][A-Za-z0-9_.]*)*\z/D', $keys) === 1 ? ['keys' => $keys] : [];
         }
 
+        if (str_starts_with($code, 'proof.')) {
+            return self::proofDetails($details);
+        }
+
         if (in_array($code, ['operation.target_busy', 'operation.dispatch_failed'], true)) {
             // The operation that holds the target, or the one that could not be queued, so the caller can follow or cancel it.
             $operationId = $details['operation_id'] ?? null;
@@ -109,6 +113,48 @@ final class GatewayFailureRenderer
         }
 
         return [...$safe, ...self::operationDetails($details), ...self::buildDetails($details)];
+    }
+
+    /**
+     * Keeps what a proof refusal names: the commit, the unmapped path, and the selected and uncovered cases as a count or a
+     * bounded list of paths, besides the closed operation fields.
+     *
+     * @param  array<string,mixed>  $details
+     * @return array<string,mixed>
+     */
+    private static function proofDetails(array $details): array
+    {
+        $safe = [];
+        $commit = $details['commit'] ?? null;
+
+        if (is_string($commit) && preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/D', $commit) === 1) {
+            $safe['commit'] = $commit;
+        }
+
+        $path = is_string($details['path'] ?? null) ? self::safeText($details['path'], self::MAX_MESSAGE_LENGTH) : null;
+
+        if ($path !== null) {
+            $safe['path'] = $path;
+        }
+
+        foreach (['cases', 'uncovered'] as $field) {
+            $value = $details[$field] ?? null;
+
+            if (is_int($value) && $value >= 0) {
+                $safe[$field] = $value;
+            } elseif (is_array($value) && array_is_list($value)) {
+                $paths = array_values(array_filter(array_map(
+                    static fn (mixed $item): ?string => is_string($item) ? self::safeText($item, self::MAX_MESSAGE_LENGTH) : null,
+                    array_slice($value, 0, self::MAX_FIELD_MESSAGES),
+                ), is_string(...)));
+
+                if ($paths !== []) {
+                    $safe[$field] = $paths;
+                }
+            }
+        }
+
+        return [...$safe, ...self::operationDetails($details)];
     }
 
     /**

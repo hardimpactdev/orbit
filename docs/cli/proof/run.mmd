@@ -40,6 +40,9 @@ sequenceDiagram
     %%> - the commit is not trusted (`proof.commit_untrusted`) or unknown (`proof.commit_not_found`)
     %%> - a changed path matches no line of the selection list (`proof.path_unmapped`)
     %%> - the calling Node has no access grant (`node_access.required`)
+    %%> - GitHub cannot be read, so the commit or its diff cannot be checked (`proof.github_unavailable`)
+    %%> - the selection list is malformed (`proof.selection_invalid`)
+    %%> - cases are selected and proof execution is switched off (`proof.execution_disabled`): the error holds the selected cases and the uncovered paths
     %%> Result:
     %%> - nothing is recorded and nothing starts
   else nothing to prove
@@ -47,6 +50,7 @@ sequenceDiagram
     %%> Result:
     %%> - only paths that need no proof changed, such as documentation and charts
     %%> - no slot is taken and nothing runs
+    %%> - the task is recorded as succeeded, with no run
     %%> - paths marked as having no case yet are listed in the result
   else cases selected
     Note over GW: Record the task<br/>queue for a proof slot

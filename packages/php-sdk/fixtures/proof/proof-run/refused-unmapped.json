@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Proof\\RunProofRequest",
+    "route": "POST /api/v1/proof/run",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "proof.path_unmapped",
+            "message": "A changed path matches no line of the selection list.",
+            "details": {
+                "path": "apps/cli/app/Commands/Proof/NewKind.php"
+            }
+        }
+    }
+}

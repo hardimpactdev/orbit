@@ -1,10 +1,12 @@
 """Fast mechanics regressions. Live resets are separate acceptance evidence."""
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -201,15 +203,92 @@ class LauncherTests(unittest.TestCase):
                 with patch.object(Path, 'home', return_value=home), patch.object(sys, 'argv', args), patch.object(launcher, 'swamp', side_effect=native) as invoked:
                     code = launcher.main()
                     request = invoked.call_args.args[0]
-                self.assertEqual(17 if action == 'verify' else 0, code)
+                # The workflow failed before any case started: the case is unrun and the run exits 1, not the native 17.
+                self.assertEqual(1 if action == 'verify' else 0, code)
+                self.assertEqual(['bin/proof-fleet'] if action == 'verify' else None, request['cases'])
+                self.assertNotIn('case', request)
                 status = json.loads((Path(request['evidence']) / 'status.json').read_text())
                 self.assertEqual(code, status['exit'])
                 self.assertFalse(status['cases_ran'])
+                self.assertEqual('cases' in status, action == 'verify')
                 self.assertEqual('failed' if code else 'succeeded', status['status'])
             self.assertEqual(3, len(owners))
             self.assertTrue(all(owner == owners[0] for owner in owners))
             self.assertEqual(['@command/shell', 'execute', 'proof-owner'], owners[0][0])
             self.assertTrue(any(c[:2] == ['report', 'get'] for c in calls))
+
+    def verify(self, programs, native, environment=None, group='999999'):
+        """Runs main() as `bin/proof-fleet verify GROUP PROGRAM...` against a fake Swamp; returns (code, stdout lines, request)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            key = home / '.config/swamp/club-api-key'
+            key.parent.mkdir(parents=True)
+            key.write_text('unit-test-not-a-real-key')
+            key.chmod(0o600)
+            controller = home / '.local/state' / ('orbit-proof-' + group) / 'controller'
+            controller.mkdir(parents=True)
+            (controller / '.swamp.yaml').write_text('fixture')
+            output = io.StringIO()
+            with patch.object(Path, 'home', return_value=home), patch.dict(os.environ, environment or {}), \
+                    patch.object(sys, 'argv', ['bin/proof-fleet', 'verify', group, *programs]), \
+                    patch.object(launcher, 'swamp', side_effect=native) as invoked, redirect_stdout(output):
+                code = launcher.main()
+            return code, output.getvalue().splitlines(), invoked.call_args_list[0].args[0] if invoked.call_args_list else None
+
+    def test_verify_takes_one_or_more_programs_and_refuses_an_empty_list_and_a_duplicate(self):
+        def native(request, args, name, cwd=None):
+            raise AssertionError('Swamp must not start for a refused request.')
+        with patch.object(sys, 'stderr', io.StringIO()) as error:
+            self.assertEqual(2, self.verify([], native)[0])
+        self.assertIn('verify GROUP PROGRAM [PROGRAM...]', error.getvalue())
+        with self.assertRaisesRegex(RuntimeError, 'listed twice'):
+            self.verify(['bin/proof-fleet', 'bin/proof-fleet'], native)
+        with self.assertRaisesRegex(RuntimeError, 'listed twice'):
+            self.verify(['bin/proof-fleet', './bin/../bin/proof-fleet'], native)
+        with self.assertRaisesRegex(RuntimeError, 'inside the candidate'):
+            self.verify(['bin/proof-fleet', '../outside.sh'], native)
+        with self.assertRaisesRegex(RuntimeError, 'inside the candidate'):
+            self.verify(['bin/no-such-program'], native)
+
+    def test_each_program_is_checked_as_nonignored_candidate_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary).resolve()
+            subprocess.run(['git', '-C', str(candidate), 'init', '-q'], check=True)
+            (candidate / '.gitignore').write_text('ignored.sh\n')
+            for name in ('tracked.sh', 'untracked.sh', 'ignored.sh'):
+                (candidate / name).write_text('exit 0\n')
+            subprocess.run(['git', '-C', str(candidate), 'add', 'tracked.sh'], check=True)
+            self.assertEqual(['tracked.sh', 'untracked.sh'], launcher.validated_programs(candidate, ['tracked.sh', 'untracked.sh']))
+            with self.assertRaisesRegex(RuntimeError, 'nonignored'):
+                launcher.validated_programs(candidate, ['tracked.sh', 'ignored.sh'])
+
+    def test_a_failed_fleet_leaves_every_selected_program_unrun_and_starts_no_case(self):
+        programs = ['bin/proof-fleet', 'swamp/proof/reset/cases/smoke.sh']
+
+        def native(request, args, name, cwd=None):
+            if args[:2] == ['behavior', 'run']:
+                return launcher.run_locked(request)
+            return 1 if args[:2] == ['workflow', 'run'] else 0
+
+        with patch.object(phases, 'run_program', side_effect=AssertionError('no case may start')):
+            code, lines, request = self.verify(programs, native)
+        self.assertEqual(1, code)
+        final = json.loads(lines[-1])
+        self.assertEqual({'status', 'summary', 'exit', 'cases_ran', 'cases', 'generation', 'evidence'}, set(final))
+        self.assertEqual(('failed', 1, False), (final['status'], final['exit'], final['cases_ran']))
+        self.assertEqual([{'program': program, 'verdict': 'unrun', 'exit_code': None, 'seconds': 0,
+                           'note': 'the test fleet was not ready'} for program in programs], final['cases'])
+        self.assertEqual([['u', 0], ['u', 0]], final['summary'])
+        self.assertEqual(programs, request['cases'])
+        self.assertEqual(1800.0, request['budget_seconds'])
+
+    def test_the_budget_comes_from_the_environment_and_must_be_sane(self):
+        def native(request, args, name, cwd=None):
+            return 0
+        self.assertEqual(90.5, self.verify(['bin/proof-fleet'], native, {'PROOF_BUDGET_SECONDS': '90.5'})[2]['budget_seconds'])
+        for bad in ('soon', '0', '-5', 'inf', '99999'):
+            with self.subTest(bad), self.assertRaisesRegex(RuntimeError, 'PROOF_BUDGET_SECONDS'):
+                self.verify(['bin/proof-fleet'], native, {'PROOF_BUDGET_SECONDS': bad})
 
     def test_native_lock_timeout_does_not_enter_transaction_or_lose_active_lease(self):
         with tempfile.TemporaryDirectory() as temporary:

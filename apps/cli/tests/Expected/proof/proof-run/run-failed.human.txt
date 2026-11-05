@@ -1,0 +1,20 @@
+Proof running...
+
+┌  Prove commit 0123456789ab
+│
+├  ● Proof running
+│    proof.run_failed
+│
+└  Proof failed.
+
+ ┌────────────────┬─────────────────────────┬─────────┬──────────┐
+ │ COMMAND        │ CASE                    │ VERDICT │ DURATION │
+ ├────────────────┼─────────────────────────┼─────────┼──────────┤
+ │ firewall:allow │ allow-fresh-ipv4-tcp.sh │ unrun   │ 0.1 s    │
+ └────────────────┴─────────────────────────┴─────────┴──────────┘
+Slot: shark-tvm-1
+Receipt: https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846
+Failed step: reset-fleet
+Error code: proof.run_failed
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

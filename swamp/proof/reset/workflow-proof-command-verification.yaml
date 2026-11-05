@@ -1,13 +1,13 @@
 id: 75d6c38c-0462-4151-8370-28de53da986c
 name: proof-command-verification
-description: Task-local disposable proof fleet; never touches the outer control plane.
+description: Task-local disposable proof fleet; runs the request's case programs in order and records a verdict for each. Never touches the outer control plane.
 version: 1
 inputs:
   type: object
   properties:
     request:
       type: string
-      description: Absolute path to the owned nonsecret execution request.
+      description: Absolute path to the owned nonsecret execution request. It lists the ordered case programs (`cases`) and the case budget in seconds (`budget_seconds`).
     candidate:
       type: string
       description: Candidate repository owning the bounded phase programs.
