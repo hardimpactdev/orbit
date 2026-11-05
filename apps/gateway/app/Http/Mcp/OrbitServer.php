@@ -31,7 +31,7 @@ class OrbitServer extends Server
     protected string $instructions = <<<'MARKDOWN'
         Operate an Orbit fleet through the Gateway. Every tool is one Gateway API operation and returns the API's JSON, usually `{"data": ..., "meta": {"request_id": ...}}`.
 
-        - You act as the Node whose WireGuard address your connection comes from. A `403` with `peer.identity_unknown` means that address is not an active Node; `node.access_denied` means your Node has no access edge to the serving Node.
+        - You act as the Node whose WireGuard address your connection comes from. A `403` with `peer.identity_unknown` means that address is not an active Node; `node_access.required` means your Node has no access edge to the serving Node.
         - Tool names follow `<family>-<verb>`, for example `node-list`, `instance-show`, `process-restart`. List or show a record before changing it, and pass numeric ids unless the schema says otherwise.
         - A failed call returns the API error envelope `{"status", "error": {"code", "message", "details"}}`. Use `error.code` to decide what to do next; validation failures list the offending fields in `details`.
         - Each tool that starts an operation returns at once with `{"operation": {...}, "poll": {"tool": "operation-show", "after_seconds": 2}}`. Follow its parent record with `operation-show` and the numeric `operation` ID. Wait two seconds between reads until `status` is `succeeded`, `failed`, or `cancelled`, then read `result` and `error_code`. Operation replies carry the current parent record, never step deltas. After a lost context, `operation-list` finds unfinished operations; `operation-cancel` asks one to stop.
