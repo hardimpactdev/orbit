@@ -1,21 +1,49 @@
 ---
 title: "orbit instance:database:remove"
 sidebarTitle: "instance:database:remove"
-description: "Remove a Database connection from an Instance and clear the prefixed stored keys. Other stored keys stay in place."
+description: "Remove a Database connection from an Instance and clear the keys of its prefix from the stored environment configuration."
 ---
 
 ```bash
 orbit instance:database:remove <slug> --instance=SELECTOR [--prefix=PREFIX] [--force] [--json]
 ```
 
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Slug of the connection to remove. A terminal asks for it when it is omitted. |
+
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
-| `--prefix=PREFIX` | `DB` | Prefix of the attachment to remove. |
-| `--force` | off | Confirm removal without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `database.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
+| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. A terminal asks for it when it is omitted. |
+| `--prefix=PREFIX` | `DB` | Prefix of the attachment to remove: letters, digits and underscore, starting with a letter, at most 32 characters. |
+| `--force` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the result as JSON. |
 
 ```bash
 orbit instance:database:remove app --instance=12 --force
 ```
 
-An unknown attachment returns `database.attachment_missing`.
+In a terminal, an omitted slug is chosen from the connections added to the Instance, and an omitted Instance from an interactive list. The CLI first checks that the connection is added with that prefix, then asks to confirm with the slug, the Instance by name, the prefix and the effect, that the prefixed keys leave the stored configuration and the workload `.env` stays unchanged, with No selected. An unknown Instance or connection, a missing grant, and an attachment that does not exist are refused (`http.404`, `node_access.required`, `database.attachment_missing`) before any prompt, also in a noninteractive call without `--force`. Declining, Ctrl-C or end of input ends with `input.cancelled` and removes nothing. A noninteractive or `--json` call without the slug or the Instance is refused with `database.slug_required` or `database.instance_required`, and one without `--force` with `database.confirmation_required`; neither removes anything.
+
+The command removes the mapping and the keys of the prefix from the Instance's stored configuration. Other keys stay, and the connection stays registered for other Instances. It starts no task and changes nothing on a Node. Run `orbit env:sync --instance=SELECTOR` to write the change to the workload `.env`. The caller needs an access grant to the Instance's Node. A repeat after a success is refused with `database.attachment_missing`. See [Add a connection on an Instance](/reference/database-connections#add-a-connection-on-an-instance).
+
+The Instance must be active, and its placement and Route must be usable (`env.owner_unavailable`). An Instance without a recorded source profile is refused with `instance.source_profile_missing`, and a remaining stored configuration that is already invalid with `env.configuration_invalid`.
+
+The command prints a detail titled `Database connection [<slug>] removed from Instance [<id>].` with Instance ID, Slug, Prefix, Keys (the six key names of the prefix, also when fewer were stored), Host and Port (`—`), Operation (`detach`), Changed (`true`), Stored keys (the number of keys the Instance holds afterwards), `Workload file: unchanged` and the request ID. With `--json`, stdout holds `instance_id`, `slug`, `prefix`, `keys`, `host`, `port`, `operation`, `changed`, `key_count` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `database.slug_required` | The slug is missing in a call that cannot prompt. |
+| `database.slug_invalid` | The slug is not a valid connection slug. |
+| `database.instance_required` | The Instance is missing in a call that cannot prompt. |
+| `database.prefix_invalid` | The prefix is not an uppercase name of at most 32 characters that starts with a letter. |
+| `database.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, the input ended, or you cancelled a list. |
+| `database.attachment_missing` | The connection is not added to the Instance with that prefix. |
+| `http.404` | The Instance or the connection is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
+| `env.owner_unavailable` | The Instance is not active, or its placement or Route is not usable. |
+| `instance.source_profile_missing` | The Instance has no recorded source profile. |
+| `env.configuration_invalid` | The remaining stored configuration is invalid. |
