@@ -20,23 +20,7 @@ import {
     syncAssistance,
 } from "../extensions/behaviors/_lib/gateway_stage.ts";
 
-import { analysisFixture, HEAD, TREE } from "./_support/analysis_fixture.ts";
-const task = (id: number, position: number) => ({
-    id,
-    position,
-    title: `Subtask ${id}`,
-    brief: "Update dependencies.",
-    deliverables: [{
-        id: "lock",
-        type: "file",
-        description: "composer.lock modified",
-    }],
-});
-const fixture = await analysisFixture({
-    title: "Deps",
-    brief: "Group brief.",
-    tasks: [task(11, 1)],
-});
+const HEAD = "a".repeat(40), TREE = "b".repeat(40);
 
 interface Call {
     method: string;
@@ -177,8 +161,6 @@ const args = (
     workItem: "tg-7",
     stage,
     key: `tg-7.${stage}.c1`,
-    ...fixture.inputs,
-    analysis: fixture.analysis(stage === "review" ? "review" : "implement"),
     ...extra,
 });
 const env = (payload: Record<string, unknown>, recordedAt: string) => ({
@@ -276,12 +258,6 @@ Deno.test("provision moves a backlog group to todo, starts once with its key, th
         instance_id: 5,
         node_id: 6,
         starting_commit: HEAD,
-        analysis_base: {
-            base: TREE,
-            instance_id: 5,
-            repository: fixture.plan.repository,
-            branch: fixture.plan.branch,
-        },
     };
     const operation = {
         id: 900,
@@ -301,13 +277,11 @@ Deno.test("provision moves a backlog group to todo, starts once with its key, th
         instanceId: 5,
         nodeId: 6,
         startingCommit: HEAD,
-        analysisBase: result.analysis_base,
     });
     assertEquals(job.evidence, {
         status: "succeeded",
         runId: "900",
         operationId: 900,
-        operation,
     });
     const start = gw.calls.find((c) => c.method === "POST")!;
     assertEquals(start.path, "/api/v1/task-groups/7/provision");
@@ -594,15 +568,8 @@ Deno.test("an approval completes the subtask and reports whether another remains
             result: turnResult({ outcome: "approved", summary: "Fine." }, 45),
         },
     });
-    const multi = await analysisFixture({
-        title: "Deps",
-        brief: "Group brief.",
-        tasks: [task(11, 1), task(12, 2)],
-    });
     const job = await settle(
         args("review", {
-            ...multi.inputs,
-            analysis: multi.analysis("review"),
             handoff: env({
                 subtask: 11,
                 outcome: "passed",

@@ -19,7 +19,6 @@ import {
 // The driver never re-dispatches an entry: recovery re-runs the idempotent
 // method under the dispatch already recorded, so the dispatch guard is not used up.
 import { z } from "npm:zod@4";
-import { planConsentNote, PlanSchema } from "./_lib/repository_analysis.ts";
 
 const GlobalArgsSchema = z.object({
     factory: z.string().default("orbit-subtask-factory"),
@@ -63,7 +62,7 @@ export function preapprovalName(
 /** The gate ids a parked status waits on: its pending human-approval gates and cycle overrides. */
 /**
  * A gate that only a human decision can open: the human gate itself, or a CEL gate that reads that gate's
- * approvals (plan-authorized checks its exact consent note) and fails because no decision exists yet.
+ * approvals and fails because no decision exists yet.
  */
 function awaitsHuman(t: Transition, g: Gate): boolean {
     if (g.type === "human-approval") return true;
@@ -364,7 +363,7 @@ async function step(
                 Date.parse(pre.createdAt) < Date.parse(startedAt))
         ) continue;
         await call(ctx, f, "approve", {
-            // A gate may check the note exactly (plan-authorized), so a given note passes verbatim.
+            // A supplied approval note passes verbatim.
             workItem,
             gateId,
             actor: pre.actor,
@@ -470,68 +469,7 @@ export const behavior = {
                 return { dataHandles: [] };
             },
         },
-        plan: {
-            outputLifetime: "7d",
-            description:
-                "Record the operator's typed plan for a group parked at the plan stage, with exact consent for that plan",
-            arguments: z.object({
-                workItem: z.string().regex(/^tg-[1-9][0-9]*$/),
-                plan: PlanSchema,
-                actor: z.string().min(1),
-            }),
-            execute: async (
-                args: {
-                    workItem: string;
-                    plan: z.infer<typeof PlanSchema>;
-                    actor: string;
-                },
-                rawCtx: Omit<Ctx, "definitionName"> & {
-                    definition: { name: string };
-                },
-            ) => {
-                const ctx = Object.assign(rawCtx, {
-                    definitionName: rawCtx.definition.name,
-                }) as unknown as Ctx;
-                const f = ctx.globalArgs.factory;
-                await call(ctx, f, "status", { workItem: args.workItem });
-                const status = await latest<Status>(
-                    ctx,
-                    f,
-                    `status-${args.workItem}`,
-                );
-                if (status?.stage.id !== "plan") {
-                    throw new Error(
-                        `${args.workItem} is not at the plan stage`,
-                    );
-                }
-                await call(ctx, f, "record_artifact", {
-                    workItem: args.workItem,
-                    name: "plan",
-                    payload: args.plan,
-                });
-                const { cycle } = status.stage;
-                const handle = await ctx.writeResource(
-                    "preapproval",
-                    preapprovalName(
-                        args.workItem,
-                        "plan-authorized",
-                        "plan",
-                        cycle,
-                    ),
-                    {
-                        workItem: args.workItem,
-                        gateId: "plan-authorized",
-                        stage: "plan",
-                        cycle,
-                        actor: args.actor,
-                        note: planConsentNote(args.plan),
-                        createdAt: new Date().toISOString(),
-                        appliedAt: null,
-                    },
-                );
-                return { dataHandles: [handle] };
-            },
-        },
+
         preapprove: {
             outputLifetime: "7d",
             description:

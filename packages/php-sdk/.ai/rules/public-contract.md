@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 243 concrete public Gateway API operations:
+The SDK models exactly 242 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -9,7 +9,7 @@ The SDK models exactly 243 concrete public Gateway API operations:
 - Project Documents: Project-scoped list, search, create, show, update, write, read, download, version list, restore-version, archive, restore, and removal; Gateway-scoped storage show and update. Preserve revisions, hashes, cursor metadata and request IDs. Credentials are write-only. Decode bounded downloads only after verifying size and digest; never retry conflicts automatically.
 - Project: list, show, create, update, review-and-merge enable and disable, dependency maintenance enable, disable and inspect, remove, and Swamp dependency results read; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
-- Operation: list, show, and cancel. Instance deploy, rollback, environment synchronization, and task group provision, check, script, analyze, turn, park, and publish return the queued operation.
+- Operation: list, show, and cancel. Instance deploy, rollback, environment synchronization, and task group provision, check, script, turn, park, and publish return the queued operation.
 - Instance: list, show, create, register, rename, clone, transfer, remove, update, auto-deploy enable and disable, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
@@ -26,7 +26,7 @@ The SDK models exactly 243 concrete public Gateway API operations:
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.
 - Vault: status, setup, sync, and teardown.
-- Tasks: enable, disable, status, group list, show, create, update, provision, check, script, analyze, turn, publish, park, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.
+- Tasks: enable, disable, status, group list, show, create, update, provision, check, script, turn, publish, park, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.
 - Proof: run the cases that a commit selects.
 
 The five abstract request bases are implementation details, not extra Gateway

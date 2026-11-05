@@ -139,7 +139,7 @@ const Source = z.object({
     php_version: z.string().nullable(),
     laravel: z.boolean(),
 });
-const Observation = z.object({ source: Source, analysis_base: Sha.nullable() });
+const Observation = z.object({ source: Source });
 const COMPOSER_BYTES = 1048576;
 
 /**
@@ -186,8 +186,7 @@ export async function setupOutput(
 
 /**
  * Shapes the public checkout reads into the identity and source profile.
- * `identity` is `git rev-parse HEAD --abbrev-ref HEAD`, `base` the merge base
- * (empty when Git found none), `files` the `stat -c %n|%F|%s` lines of
+ * `identity` is `git rev-parse HEAD --abbrev-ref HEAD`, `files` the `stat -c %n|%F|%s` lines of
  * composer.json and the entry point (absent files have no line), and
  * `composer` the downloaded composer.json bytes, or null when no copy ran.
  */
@@ -195,13 +194,11 @@ export function observe(
     workspace: z.infer<typeof Workspace>,
     read: {
         identity: string;
-        base: string;
         files: string;
         composer: Uint8Array | null;
     },
 ) {
     const [commit = "", branch = ""] = read.identity.trim().split("\n");
-    const base = read.base.trim();
     const files = new Map(
         read.files.split("\n").filter((line) => line !== "").map((line) => {
             const [name, type, size] = line.split("|");
@@ -244,7 +241,6 @@ export function observe(
     return {
         branch,
         commit: Sha.parse(commit),
-        analysis_base: base === "" ? null : Sha.parse(base),
         profile,
     };
 }
@@ -278,7 +274,6 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
             "origin",
             "branch",
             "identity",
-            "analysis_base",
             "inspect",
             "composer",
             "profile",
@@ -331,19 +326,13 @@ export function result(
             failed_step: "proof_club",
         };
     }
-    const { source: observed, analysis_base: base } = Observation.parse(source);
+    const { source: observed } = Observation.parse(source);
     return {
         ...ready,
         source: observed,
         instance_id: intent.instance_id,
         node_id: intent.guest_node_id,
         starting_commit: observed.commit,
-        analysis_base: base === null ? null : {
-            base,
-            instance_id: intent.instance_id,
-            repository: intent.workspace.repository,
-            branch: observed.branch,
-        },
     };
 }
 export const behavior = {
@@ -381,7 +370,7 @@ export const behavior = {
             description:
                 "Use the provision child's trusted observed pin for the admitted workspace",
             arguments: z.object({ intent: Intent, vm: z.unknown() }),
-            execute: async (
+            execute: (
                 args: { intent: unknown; vm: unknown },
                 ctx: Context,
             ) => data(ctx, { workspace: connection(args.intent, args.vm) }),
@@ -395,7 +384,7 @@ export const behavior = {
                 route: z.unknown(),
                 processes: z.array(z.unknown()),
             }),
-            execute: async (
+            execute: (
                 args: {
                     vm: unknown;
                     guest_node_id: number;
@@ -414,11 +403,10 @@ export const behavior = {
         },
         profile: {
             description:
-                "Classify source with canonical Instance profile policy and retain its initial analysis pin; read and delete the downloaded composer.json, keeping only its facts",
+                "Classify source with canonical Instance profile policy read and delete the downloaded composer.json, keeping only its facts",
             arguments: z.object({
                 intent: Intent,
                 identity: z.string(),
-                analysis_base: z.string(),
                 files: z.string(),
                 composer: Path,
             }),
@@ -426,7 +414,6 @@ export const behavior = {
                 args: {
                     intent: z.infer<typeof Intent>;
                     identity: string;
-                    analysis_base: string;
                     files: string;
                     composer: string;
                 },
@@ -440,7 +427,6 @@ export const behavior = {
                 );
                 const observation = observe(workspace, {
                     identity: args.identity,
-                    base: args.analysis_base,
                     files: args.files,
                     composer: composer?.bytes ?? null,
                 });
@@ -473,7 +459,6 @@ export const behavior = {
                         commit: observation.commit,
                         ...profile,
                     },
-                    analysis_base: observation.analysis_base,
                 });
             },
         },

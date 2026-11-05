@@ -66,7 +66,7 @@ Deno.test("provision source uses the trusted child pin with captured WG/account 
     });
     assertThrows(() => connection(intent, { ...vm, guest_node_id: 99 }));
 });
-Deno.test("a failed source step retains VM readiness but never supplies successful source or analysis evidence", () => {
+Deno.test("a failed source step retains VM readiness but never supplies successful source evidence", () => {
     const receipt = result(intent, vm, {
         guest: { status: "succeeded" },
         prepare: { status: "failed" },
@@ -75,7 +75,6 @@ Deno.test("a failed source step retains VM readiness but never supplies successf
     assertEquals(receipt.error_code, "tasks.provision_failed");
     assertEquals(receipt.failed_step, "prepare");
     assertEquals("source" in receipt, false);
-    assertEquals("analysis_base" in receipt, false);
 });
 Deno.test("wrong child identity is never retained as confirmed VM readiness", () => {
     const receipt = result(intent, { ...vm, task_vm_id: 99 }, {
@@ -84,7 +83,7 @@ Deno.test("wrong child identity is never retained as confirmed VM readiness", ()
     assertEquals("ready" in receipt, false);
     assertEquals(receipt.failed_step, "guest");
 });
-Deno.test("source result requires every ordered setup step before exposing the initial analysis pin", () => {
+Deno.test("source result requires every ordered setup step before exposing the source receipt", () => {
     const input = {
         ...intent,
         workspace: {
@@ -116,13 +115,11 @@ Deno.test("source result requires every ordered setup step before exposing the i
             "origin",
             "branch",
             "identity",
-            "analysis_base",
             "inspect",
             "composer",
             "profile",
         ].map((name) => [name, { status: "succeeded", outputs: {} }]),
     );
-    steps.profile.outputs = { source, analysis_base: "b".repeat(40) };
     assertEquals(sourceResult(input, steps), {
         error_code: "tasks.provision_failed",
         failed_step: "setup-0",
@@ -133,21 +130,15 @@ Deno.test("source result requires every ordered setup step before exposing the i
         error_code: "tasks.provision_failed",
         failed_step: "composer",
     });
+    steps.profile.outputs = { source };
     delete steps.composer;
     steps["setup-0"] = { status: "succeeded", outputs: {} };
     assertEquals(sourceResult(input, steps), {
         source,
-        analysis_base: "b".repeat(40),
     });
     const receipt = result(input, vm, {
         guest: { status: "succeeded" },
         ...steps,
-    });
-    assertEquals(receipt.analysis_base, {
-        base: "b".repeat(40),
-        instance_id: 40,
-        repository: "https://github.com/acme/test.git",
-        branch: "task-30",
     });
     assertEquals("result_json" in receipt, false);
 });
@@ -169,7 +160,6 @@ Deno.test("proof provision requires private delivery before group readiness but 
                 "origin",
                 "branch",
                 "identity",
-                "analysis_base",
                 "inspect",
                 "composer",
             ].map((name) => [name, { status: "succeeded", outputs: {} }]),
@@ -183,7 +173,6 @@ Deno.test("proof provision requires private delivery before group readiness but 
                     php_version: null,
                     laravel: false,
                 },
-                analysis_base: null,
             },
         },
         proof_club: { status: "failed" },
@@ -205,7 +194,6 @@ Deno.test("profile refuses a checkout that is not on the admitted start commit",
     };
     const read = (commit: string) => ({
         identity: commit + "\ntask-30\n",
-        analysis_base: commit + "\n",
         files: "",
         composer: "/nonexistent/composer.json",
     });
@@ -247,7 +235,6 @@ Deno.test("profile reads and deletes the downloaded composer.json and keeps only
             },
         }),
         identity: "c".repeat(40) + "\ntask-30\n",
-        analysis_base: "",
         files: "composer.json|regular file|90\nartisan|regular file|20\n",
         composer: path,
     }, {
@@ -264,7 +251,6 @@ Deno.test("profile reads and deletes the downloaded composer.json and keeps only
             php_version: "8.5",
             laravel: true,
         },
-        analysis_base: null,
     }]);
     await assertRejects(() => Deno.stat(path), Deno.errors.NotFound);
     await Deno.remove(directory);
@@ -326,7 +312,7 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
     );
 });
 
-Deno.test("the checkout reads become the identity, analysis pin and source profile", () => {
+Deno.test("the checkout reads become the identity and source profile", () => {
     const workspace = Intent.parse({
         ...intent,
         workspace: {
@@ -353,7 +339,6 @@ Deno.test("the checkout reads become the identity, analysis pin and source profi
     );
     assertEquals(laravel.branch, "task-30");
     assertEquals(laravel.commit, head);
-    assertEquals(laravel.analysis_base, "b".repeat(40));
     assertEquals(laravel.profile, {
         kind: "composer",
         composer: btoa(composer),
@@ -370,7 +355,6 @@ Deno.test("the checkout reads become the identity, analysis pin and source profi
         "tasks.provision_failed",
     );
     // Git found no merge base: the pin is unavailable, never the current HEAD.
-    assertEquals(observe(workspace, read("", "")).analysis_base, null);
     assertEquals(observe(workspace, read("")).profile.kind, "none");
     assertEquals(
         observe(workspace, read("artisan|regular file|300\n")).profile.kind,

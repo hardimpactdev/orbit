@@ -210,7 +210,7 @@ if ($argv[1] === 'fixture') {
     }
     // A task group's owned workspace, in the order its references need: the group and its subtasks, the Instance the
     // group owns, the group holding that Instance (a task holds only a workspace it owns), its task VM, and a
-    // recorded Operation such as the provision that pinned the analysis base.
+    // recorded Operation.
     $holds = [];
     foreach ($input['task_groups'] ?? [] as $group) {
         $subtasks = $group['subtasks'] ?? [];

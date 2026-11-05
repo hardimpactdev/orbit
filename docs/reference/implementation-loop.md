@@ -16,9 +16,7 @@ covers:
 
 A feature reaches main as one complete pull request with its code, tests, documentation, and any in-progress ADRs. The [contributor guide](/contributor-guide) describes the steps. Orbit builds its own features as [tasks](/reference/tasks): the first subtask writes the documentation, each subtask handoff runs the Project task check, and the task ends in a pull request. This page covers review evidence, merge, CI, the local checks, and the main caches that make those checks fast.
 
-The docs-first amendment for [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) supplies complete candidate-bound evidence to existing turns; it is not another baseline or handoff lane. Its native implementation follows independent docs review. Run Orbit's existing checker with the complete cumulative plan, preserve all diagnostics and check-mode generator outcomes, and keep the docs gate that checks actual files at handoff.
 
-Edits invalidate the author evidence; analyze the current checked candidate for review rather than rerunning baseline. Unknown execution or descendants stay fenced until terminal proof, and a lost reply never authorizes a duplicate run or send. Record measured duration and zero mechanical LLM calls without claiming savings or live interruption proof from documentation checks.
 
 ## Review on Incus
 
@@ -120,7 +118,7 @@ Workflow validation runs only when the change selects the Swamp checks, and vali
 
 Required checks target five minutes. Project checks are removed from CI for now; Nick decides which checks return. Their local commands remain available. Orbit keeps fast TypeScript unit tests and no native workflow suite or custom runtime harness. Workflow validation and pinned `serve check-config` remain required. No nightly workflow replaces removed checks.
 
-Tests of bin scripts live beside their script. The shape job names the liveness and Node 209 source suites explicitly. It also runs every unit test in `swamp/tests` and in the automatic-deploy, Composer and JS maintenance and Project extension folders. Three files in `swamp/tests` stay out: `repository_analysis_producer_test.ts` and `metrics_exporter_firewall_test.ts` until they pass, and `native_host_method_test.ts`, which needs systemd and passwordless sudo, so it runs on a host. Test fixtures serve unit tests; they do not start Swamp or pull extensions.
+Tests of bin scripts live beside their script. The shape job names the liveness and Node 209 source suites explicitly. It also runs every unit test in `swamp/tests` and in the automatic-deploy, Composer and JS maintenance and Project extension folders. Two files in `swamp/tests` stay out: `metrics_exporter_firewall_test.ts` until it passes, and `native_host_method_test.ts`, which needs systemd and passwordless sudo, so it runs on a host. Test fixtures serve unit tests; they do not start Swamp or pull extensions.
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 

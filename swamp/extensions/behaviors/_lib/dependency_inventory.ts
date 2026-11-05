@@ -6,7 +6,7 @@ import {
     type Resolution,
     type SourceIdentity,
 } from "./dependency_results_schema.ts";
-import { sha256 } from "./repository_analysis.ts";
+import { sha256 } from "./canonical_json.ts";
 
 type Scope = "regular" | "development";
 type Node = {

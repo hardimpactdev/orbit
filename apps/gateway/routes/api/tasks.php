@@ -69,8 +69,6 @@ Route::middleware([
             ->whereNumber('group')->name('tasks:dependency-merge');
         Route::post('task-groups/{group}/publish', [TaskGroupsController::class, 'publish'])
             ->whereNumber('group')->name('tasks:publish');
-        Route::post('task-groups/{group}/analyze', [TaskGroupsController::class, 'analyze'])
-            ->whereNumber('group')->name('tasks:analyze');
         Route::post('task-groups/{group}/script', [TaskGroupsController::class, 'script'])
             ->whereNumber('group')->name('tasks:script');
         Route::post('task-groups/{group}/check', [TaskGroupsController::class, 'check'])

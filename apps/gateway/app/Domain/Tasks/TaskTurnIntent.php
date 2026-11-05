@@ -73,15 +73,6 @@ final readonly class TaskTurnIntent
             } catch (AgentDriverException $exception) {
                 throw new ResourceOperationException('tasks.model_refused', $exception->getMessage(), 422);
             }
-            $analysis = null;
-            if ($data->analysis !== null) {
-                $evidence = Operation::query()->where('kind', 'tasks.analyze')->where('target_type', 'task_group')->where('target_id', $group->id)->find($data->analysis['operation']);
-                if ($evidence?->status->value !== 'succeeded' || ($evidence->input['subtask'] ?? null) !== $task->id
-                    || ($evidence->input['plan_sha256'] ?? null) !== $data->analysis['plan_sha256'] || ! in_array($evidence->result['outcome'] ?? null, ['ready', 'action_required'], true)) {
-                    throw new ResourceOperationException('tasks.analysis_not_usable', 'Analysis must identify this subtask and exact plan.', 422);
-                }
-                $analysis = ['input' => $evidence->input, 'result' => $evidence->result];
-            }
             if (! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
                 throw new ResourceOperationException('tasks.pi_credential_unavailable', 'The task VM Pi credential is unavailable.', 409);
             }
@@ -100,7 +91,7 @@ final readonly class TaskTurnIntent
                 'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id, 'new_session' => $data->thread === 'new',
                 'model' => $model, 'effort' => $thread->effort, 'pi_port' => app(PiConnection::class)->port(),
                 'pi_host' => $instance->node->wireguard_ip, 'candidate' => $candidate,
-                'deliverables' => $task->deliverables ?? [], 'analysis_evidence' => $analysis,
+                'deliverables' => $task->deliverables ?? [],
                 'execution_secrets' => ['pi_token' => $piToken],
             ], $caller, $request);
         });

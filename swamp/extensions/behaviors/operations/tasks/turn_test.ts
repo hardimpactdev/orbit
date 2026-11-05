@@ -28,7 +28,6 @@ export function turnInput(role = "implementer") {
         pi_port: 3774,
         candidate: role === "reviewer" ? head : null,
         deliverables: [],
-        analysis_evidence: null,
     });
 }
 function result(role = "implementer") {
@@ -302,12 +301,12 @@ Deno.test("review evidence retains the restored candidate identity", () => {
     assertEquals(value.after_reset, { head, tree });
     assertEquals(value.receipt.outcome, "approved");
 });
-Deno.test("analysis plus prompt cannot exceed the existing prompt bound", () => {
+Deno.test("assembled prompt cannot exceed the existing prompt bound", () => {
     const input = turnInput();
     input.prompt = "x".repeat(100000);
     assertEquals(
         prepare({ operation_id: 15, node_id: 30, intent: input }).error_code,
-        "tasks.analysis_prompt_too_large",
+        "tasks.prompt_too_large",
     );
 });
 

@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4";
 import { type DependencyProject } from "./dependency_project_schema.ts";
-import { canonical, sha256 } from "./repository_analysis.ts";
+import { canonical, sha256 } from "./canonical_json.ts";
 import {
     BatchPlanSchema,
     TargetsSchema,

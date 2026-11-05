@@ -4,8 +4,7 @@ Git snapshots use bounded official `@swamp/ssh exec` argv calls with a temporary
 `GIT_INDEX_FILE`. Snapshotting includes untracked files and leaves the real index
 unchanged. Each snapshot first copies the checkout index so tracked files that
 match ignore rules remain tracked. Public shaping joins the head and tree identities. Reviewer cleanup
-uses separate `git reset --hard` and `git clean -fd` commands. The turn no longer
-checks workspace ownership or repository-analysis provenance before sending Pi.
+uses separate `git reset --hard` and `git clean -fd` commands. The Gateway admits the workspace before Swamp sends the prompt to Pi.
 Scratch indexes are removed after both trees are captured. A failed snapshot keeps
 its index so native resume can finish it with the same tracked-file set.
 

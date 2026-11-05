@@ -68,7 +68,6 @@ const JobSchema = z.object({
     nextReadAt: z.string().nullable(),
     artifacts: z.record(z.string(), z.record(z.string(), z.unknown())),
     evidence: z.record(z.string(), z.unknown()).nullable(),
-    analysisContext: z.unknown().optional(),
     invalidated: z.boolean().optional(),
 });
 
@@ -375,8 +374,6 @@ export const behavior = {
                 change: z.unknown().optional(),
                 handoff: z.unknown().optional(),
                 review: z.unknown().optional(),
-                plan: z.unknown().optional(),
-                analysis: z.unknown().optional(),
                 workspace: z.unknown().optional(),
                 baseline: z.unknown().optional(),
             }),

@@ -688,7 +688,7 @@ final class TaskWorkspaceLease
 
                 return;
             }
-            if (in_array($holder->kind, ['analysis', 'script'], true)) {
+            if ($holder->kind === 'script') {
                 // The operation adopts its reserved run and complete artifact; no TaskCheck row is involved.
                 return;
             }

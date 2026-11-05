@@ -377,40 +377,6 @@ jobs:
       condition:
         type: succeeded
     allowFailure: true
-  - name: analysis_base
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        argv:
-        - /usr/bin/git
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - merge-base
-        - ${{ "refs/remotes/origin/" + inputs.intent.workspace.default_branch }}
-        - HEAD
-    dependsOn:
-    - step: identity
-      condition:
-        type: succeeded
-    allowFailure: true
   - name: inspect
     labels: {role: swamp}
     task:
@@ -493,11 +459,10 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         identity: ${{ steps.identity.outputs.stdout }}
-        analysis_base: ${{ steps.analysis_base.outputs.stdout }}
         files: ${{ steps.inspect.outputs.stdout }}
         composer: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/composer.json" }}
     dependsOn:
-    - step: analysis_base
+    - step: identity
       condition:
         type: succeeded
     - step: inspect
@@ -771,9 +736,6 @@ jobs:
       condition:
         type: always
     - step: identity
-      condition:
-        type: always
-    - step: analysis_base
       condition:
         type: always
     - step: inspect

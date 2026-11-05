@@ -67,7 +67,6 @@ Each summary is keyed by route name, so removing a route removes its summary in 
 
 The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, and deliverable requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors. The `tasks:question:close` description names the `question_closed` comment and the `tasks.question_closed` refusal, and its `question` path parameter is a positive integer.
 
-The agreed docs-first contract for [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) requires runtime generation of the closed analyze body, required idempotency header, full typed manifest/report/provenance, bounded refusal codes, and optional `analysis` reference on the existing turn request. Reuse the operation-start marker and envelope. Preserve complete artifact `content` as a string whose decoded UTF-8 bytes match `sha256` and `bytes`, not a JSON object reserialization or log tail.
 
 OpenAPI, SDK, MCP, CLI fixtures, and web API types must agree at runtime delivery; this docs child adds no generated endpoint or shipped capability. Generate MCP from native operation IDs rather than adding the source brief's underscore tool spelling as an alias.
 

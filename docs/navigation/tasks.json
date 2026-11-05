@@ -39,7 +39,6 @@
             "cli/tasks/provision",
             "cli/tasks/turn",
             "cli/tasks/check",
-            "cli/tasks/analyze",
             "cli/tasks/publish",
             "cli/tasks/park"
           ]
