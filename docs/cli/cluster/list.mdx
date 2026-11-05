@@ -1,9 +1,31 @@
 ---
 title: "orbit cluster:list"
 sidebarTitle: "cluster:list"
-description: "List every Cluster with its state, TLD, Router, and member Nodes."
+description: "List the Clusters you can reach with their state, TLD, Router, and member Nodes."
 ---
 
 ```bash
 orbit cluster:list [--json]
 ```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the Clusters as JSON. |
+
+The list shows what Orbit has recorded for each Cluster. It does not contact the Nodes, so it works while a Node is unreachable. The Gateway Node, and any Node with a grant to it, sees every Cluster; any other caller sees the Clusters that have a member Node it has an access grant to. Clusters are sorted by name, and so are the member Nodes in JSON.
+
+| Column | Meaning |
+| --- | --- |
+| `ID`, `NAME` | The Cluster's ID and its unique name. |
+| `TLD` | The Cluster's development TLD, with a leading dot. |
+| `STATE` | `inactive` or `active`. |
+| `NODES` | The number of member Nodes. |
+| `ROUTER` | The Router Node, as name and ID. |
+
+A missing value shows `—`, but a Cluster without members shows `0` in `NODES`. An empty list says `No Clusters found.`. In JSON each Cluster carries its member Nodes and its Router.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node_access.required` | The caller has no access grant to any Node and no Gateway authority. |
