@@ -40,6 +40,7 @@ const values = (key: keyof typeof units, name: string) =>
 Deno.test("the build pushes each unit to its path in order, enables only the target, and cleans after", () => {
     const order = [
         "slot-identity-enable",
+        "slot-units-group",
         ...Object.values(units).map(([step]) => step),
         "slot-units-enable",
         "clean-marker",
@@ -79,9 +80,11 @@ Deno.test("each baked unit starts only when its identity files exist", () => {
     assertEquals(values("target", "ConditionPathExists"), [
         "/etc/systemd/system/orbit-slot.target.d/10-pi.conf",
     ]);
-    assertEquals(values("target", "Wants"), [
-        "wg-quick@orbit.service orbit-agent.service",
-    ]);
+    // BindsTo, not Requires: a failed or skipped WireGuard, or Pi unit (the identity tree's drop-in binds it), fails the
+    // target at start, and a later stop of either takes the target down. Requires= does neither once the unit has started.
+    assertEquals(values("target", "BindsTo"), ["wg-quick@orbit.service"]);
+    assertEquals(values("target", "Requires"), []);
+    assertEquals(values("target", "Wants"), ["orbit-agent.service"]);
     assertEquals(values("target", "WantedBy"), ["multi-user.target"]);
     // Everything the target pulls in is ordered before it, so an active target means the slot is up.
     const after = values("target", "After").join(" ").split(" ");
@@ -123,8 +126,19 @@ Deno.test("the identity unit installs the tree's unit files, reloads systemd and
     // The new unit names are unknown to systemd until it reloads, and the boot transaction has already expanded the
     // target, so the target is started again after the reload to pull in the Pi unit. --no-block avoids waiting on itself.
     assert(copy >= 0 && copy < umount && umount < reload && reload < start);
-    assert(exec.includes("/usr/sbin/groupadd -f --system orbit-env"));
+    assertFalse(unit.includes("groupadd"));
     assertFalse(unit.includes("pi.env"));
+});
+
+Deno.test("the image bakes the group the observer unit names, once, before the units", () => {
+    const group = steps.get("slot-units-group")!.task.inputs.argv!;
+    assertEquals(group.slice(-4), [
+        "/usr/sbin/groupadd",
+        "-f",
+        "--system",
+        "orbit-env",
+    ]);
+    assertEquals(values("agent", "SupplementaryGroups"), ["orbit-env"]);
 });
 
 Deno.test("the baked observer unit is the text the Gateway renders for a new Node", async () => {
@@ -142,9 +156,16 @@ Deno.test("the baked observer unit is the text the Gateway renders for a new Nod
         executor.indexOf("return ['configuration'"),
     );
     const expected: string[] = [];
+    const unrecognised: string[] = [];
     for (const line of block.split("\n").map((l) => l.trim())) {
+        // Blank lines and comments say nothing about the unit; the array's own opening and closing lines are structure.
+        if (
+            line === "" || line.startsWith("//") ||
+            line.startsWith("$unit = implode(") || line === "]);"
+        ) continue;
         const literal = line.match(/^'([^'$]+)',$/);
         if (literal) expected.push(literal[1]);
+        else if (line === "'',") continue;
         else if (line === "NodeAgentFootprint::Marker,") expected.push(marker);
         else if (line === "'ExecStart='.NodeAgentFootprint::BinaryPath,") {
             expected.push(`ExecStart=${binary}`);
@@ -153,8 +174,10 @@ Deno.test("the baked observer unit is the text the Gateway renders for a new Nod
         } else if (line.startsWith("...$this->checkoutAccess(")) {
             // A new Node has no Instance root and no tool path, which renders `ProtectHome=yes`.
             expected.push("ProtectHome=yes");
-        }
+        } else unrecognised.push(line);
     }
+    // A new kind of line in the Gateway template must be taught to this test, or the baked unit drifts from it.
+    assertEquals(unrecognised, []);
     assert(expected.length > 15, "the Gateway template was not read");
     assertEquals(lines("agent").filter((line) => line !== ""), expected);
     assertEquals(values("agent", "SupplementaryGroups"), ["orbit-env"]);
@@ -164,7 +187,13 @@ Deno.test("the smoke VM has no identity, so the target is enabled and nothing st
     const smoke = steps.get("smoke-slot-units")!.task.inputs.argv!;
     const script = smoke.at(-1)!;
     assertEquals(smoke.at(-3), "/bin/sh");
-    assert(script.startsWith("systemctl is-enabled --quiet orbit-slot.target"));
+    assert(
+        script.startsWith(
+            "systemd-analyze verify orbit-slot.target orbit-agent.service orbit-slot-identity.service &&",
+        ),
+    );
+    assert(script.includes("getent group orbit-env"));
+    assert(script.includes("systemctl is-enabled --quiet orbit-slot.target"));
     assert(script.includes("! systemctl is-active --quiet"));
     for (
         const name of [

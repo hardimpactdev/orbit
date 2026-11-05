@@ -33,10 +33,10 @@ final readonly class TaskVmSlotIdentity
             'etc/orbit/agent/ca.pem' => $agent['certificate'],
             // Pi runs under the unit name the Gateway records, because `journalctl --unit` does not follow an alias. The unit
             // and its ordering come with the tree, as the image cannot know the Process id. The identity unit installs them,
-            // reloads systemd and starts the baked orbit-slot.target again, which then pulls the Pi unit in.
+            // reloads systemd and starts the baked orbit-slot.target again, which is then bound to the Pi unit.
             "etc/systemd/system/{$piUnit['name']}" => $piUnit['content'],
             "etc/systemd/system/{$piUnit['name']}.d/10-slot.conf" => "[Unit]\nAfter=wg-quick@orbit.service\n",
-            'etc/systemd/system/orbit-slot.target.d/10-pi.conf' => "[Unit]\nWants={$piUnit['name']}\nAfter={$piUnit['name']}\n",
+            'etc/systemd/system/orbit-slot.target.d/10-pi.conf' => "[Unit]\nBindsTo={$piUnit['name']}\nAfter={$piUnit['name']}\n",
             // Without it cloud-init deletes the slot's SSH host keys on the first boot of every clone.
             'etc/cloud/cloud.cfg.d/99-orbit-slot.cfg' => "ssh_deletekeys: false\n",
             'home/orbit/.pi/agent/models.json' => json_encode(['providers' => ['orbit-task-vm' => [

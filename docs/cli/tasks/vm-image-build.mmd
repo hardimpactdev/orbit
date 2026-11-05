@@ -75,7 +75,7 @@ sequenceDiagram
   %%> What it does:
   %%> - `image.recipe-marker`, `image.boot`, `systemctl enable ssh.service`, the Orbit root CA in the trust store, then `image.clean`
   %%> - `slot-identity-unit` pushes `orbit-slot-identity.service` with `incus file push`, and `slot-identity-enable` enables it; the unit is idle without an identity volume
-  %%> - the `slot-units-*` steps push the slot target, the observer unit and its drop-in and the WireGuard drop-in, and `slot-units-enable` enables the target; each unit starts only when its identity file exists; the Pi unit is not baked, it comes with the identity tree
+  %%> - the `slot-units-*` steps create the `orbit-env` group (`slot-units-group`), push the slot target, the observer unit and its drop-in and the WireGuard drop-in, and `slot-units-enable` enables the target; each unit starts only when its identity file exists; the Pi unit is not baked, it comes with the identity tree
   %%> - `image.clean` removes machine, SSH, Incus and service identities and refuses an enrolled guest
   %%> Why:
   %%> - one action that readies the guest for publication; the separate metadata and marker steps merge (rule 6)
@@ -89,7 +89,7 @@ sequenceDiagram
   %%> - removes the builder, launches `tvm-image-61-smoke` from the candidate, boots it as in step 4
   %%> - `image.verify` checks the recipe software, `image.check` the account, key and lean boot, and `systemctl is-active ssh.service`
   %%> - `smoke-slot-identity` runs `systemctl is-enabled orbit-slot-identity.service`; the smoke VM has no identity volume, so the unit stays skipped
-  %%> - `smoke-slot-units` checks that `orbit-slot.target` is enabled and that the target, the observer and WireGuard are all inactive
+  %%> - `smoke-slot-units` checks that `orbit-slot.target` is enabled and that `systemd-analyze verify` accepts the slot units, that the `orbit-env` group exists, and that the target, the observer and WireGuard are all inactive
   %%> Result:
   %%> - a failed smoke check stops the build before promotion
   SW->>H: Build the topology seed<br/>seed · finish-seed

@@ -1098,7 +1098,6 @@ jobs:
           ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/cloud/cloud.cfg.d /run/orbit-slot/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg
           ExecStart=/usr/bin/install -m 0600 -o root -g root -t /etc/orbit/agent /run/orbit-slot/etc/orbit/agent/secret
           ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/orbit/agent /run/orbit-slot/etc/orbit/agent/config.toml /run/orbit-slot/etc/orbit/agent/ca.pem
-          ExecStart=/usr/sbin/groupadd -f --system orbit-env
           ExecStart=/usr/bin/install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent
           ExecStart=/usr/bin/install -m 0600 -o orbit -g orbit -t /home/orbit/.pi/agent /run/orbit-slot/home/orbit/.pi/agent/orbit-token /run/orbit-slot/home/orbit/.pi/agent/models.json
           ExecStart=/usr/bin/cp -rT --preserve=mode /run/orbit-slot/etc/systemd/system /etc/systemd/system
@@ -1125,10 +1124,26 @@ jobs:
         timeoutSec: 90
   # The slot units are the same for every slot. Each one starts only when the identity tree holds its files, so a VM with no
   # identity volume starts none of them; see docs/reference/compute-drivers.md#task-vm-slots.
-  - name: slot-units-agent
+  # The observer unit names this group in SupplementaryGroups, and a unit that names a missing group does not start.
+  - name: slot-units-group
     labels: {role: swamp}
     dependsOn:
     - {step: slot-identity-enable, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/sbin/groupadd, -f, --system, orbit-env]
+        timeoutSec: 90
+  - name: slot-units-agent
+    labels: {role: swamp}
+    dependsOn:
+    - {step: slot-units-group, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1223,7 +1238,8 @@ jobs:
           Description=Orbit task VM slot services
           After=orbit-slot-identity.service wg-quick@orbit.service orbit-agent.service
           Before=multi-user.target
-          Wants=wg-quick@orbit.service orbit-agent.service
+          BindsTo=wg-quick@orbit.service
+          Wants=orbit-agent.service
           ConditionPathExists=/etc/systemd/system/orbit-slot.target.d/10-pi.conf
 
           [Install]
@@ -1624,7 +1640,7 @@ jobs:
         argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
           '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/bin/systemctl, is-enabled, orbit-slot-identity.service]
         timeoutSec: 90
-  # The smoke VM has no identity volume, so the slot target is enabled and nothing it pulls in runs.
+  # The smoke VM has no identity volume, so the slot units verify, the target is enabled and nothing it pulls in runs.
   - name: smoke-slot-units
     labels: {role: swamp}
     dependsOn:
@@ -1638,7 +1654,7 @@ jobs:
       inputs:
         hosts: name:target
         argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /bin/sh, -c, 'systemctl is-enabled --quiet orbit-slot.target && ! systemctl is-active --quiet orbit-slot.target orbit-agent.service wg-quick@orbit.service']
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /bin/sh, -c, 'systemd-analyze verify orbit-slot.target orbit-agent.service orbit-slot-identity.service && getent group orbit-env >/dev/null && systemctl is-enabled --quiet orbit-slot.target && ! systemctl is-active --quiet orbit-slot.target orbit-agent.service wg-quick@orbit.service']
         timeoutSec: 90
   - name: seed
     labels: {role: swamp}

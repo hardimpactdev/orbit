@@ -100,7 +100,7 @@ Deno.test("the build pushes and enables the unit before the image is cleaned, an
   ]);
   // The slot units follow (task_vm_image_slot_units_test.ts); the clean step comes after the last of them.
   assertEquals(
-    steps.get("slot-units-agent")!.dependsOn?.map((d) => d.step),
+    steps.get("slot-units-group")!.dependsOn?.map((d) => d.step),
     ["slot-identity-enable"],
   );
   assertEquals(steps.get("clean-marker")!.dependsOn?.map((d) => d.step), [

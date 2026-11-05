@@ -497,11 +497,11 @@ The files that hold no key are text that the Gateway renders, and the enrol writ
 | `etc/orbit/agent/ca.pem` | The Orbit root CA that the observer trusts for the Gateway. The image already trusts the same root in its system store, which is what Pi uses. |
 | `etc/systemd/system/orbit-process-<pi_process_id>-pi-server.service` | The unit of the slot's `pi-server` Process, exactly as the Gateway renders it: the WireGuard address and the Pi port are in its `ExecStart`. |
 | `…-pi-server.service.d/10-slot.conf` | Start Pi after WireGuard, because Pi listens on the WireGuard address. |
-| `etc/systemd/system/orbit-slot.target.d/10-pi.conf` | Makes `orbit-slot.target` want the Pi unit and wait for it. It is also the marker that the VM is a slot. |
+| `etc/systemd/system/orbit-slot.target.d/10-pi.conf` | Binds `orbit-slot.target` to the Pi unit and orders it after Pi. It is also the marker that the VM is a slot. |
 
 These files sit in the volume, not in the image. A change of the Gateway address, the CA, the Pi port or the Pi Process then needs a new `identity_revision` and a volume sync, not a new task image.
 
-The unit also creates the system group `orbit-env`, because the observer unit names it in `SupplementaryGroups` and a unit that names a missing group does not start.
+The image also holds the system group `orbit-env`, because the observer unit names it in `SupplementaryGroups` and a unit that names a missing group does not start. Today's enrolment creates the same group with `groupadd -f`, so it is the same on a VM that is not a slot.
 
 A VM with no volume stays quiet. The unit has no matching virtiofs tag, so its start check skips it. It installs nothing and starts no WireGuard, no observer and no Pi, and today's enrolment is unchanged.
 
@@ -511,22 +511,26 @@ Built: the task image also holds the units that start a slot. They are the same 
 
 | File in the image | Content |
 | --- | --- |
-| `/etc/systemd/system/orbit-slot.target` | Enabled in `multi-user.target`. It pulls in WireGuard and the observer, and is ordered after both. It starts only when the tree holds `orbit-slot.target.d/10-pi.conf`. |
+| `/etc/systemd/system/orbit-slot.target` | Enabled in `multi-user.target`. It is bound to WireGuard, wants the observer, and is ordered after both. It starts only when the tree holds `orbit-slot.target.d/10-pi.conf`. |
 | `/etc/systemd/system/orbit-agent.service` | The observer unit as the Gateway renders it for a new Node. It is not enabled. |
 | `/etc/systemd/system/orbit-agent.service.d/10-slot.conf` | A drop-in: start after WireGuard, and only when `/etc/orbit/agent/{secret,config.toml,ca.pem}` exist. |
 | `/etc/systemd/system/wg-quick@orbit.service.d/10-slot.conf` | A drop-in: start only when `/etc/wireguard/orbit.conf` exists. |
 
-Only the target is enabled. The target is active only when the VM has a slot identity, so a claim can check `systemctl is-active orbit-slot.target` to know that the slot is up.
+Only the target is enabled. The target means that the slot is up: it is bound to WireGuard and, through its drop-in from the tree, to the Pi unit. A WireGuard or Pi unit that fails to start, or is skipped, fails the start of the target. A WireGuard or Pi unit that stops later takes the target down with it. The observer is only wanted, because it retries by itself when the Gateway is out of reach. A claim therefore checks `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`. The target stays inactive on a VM with no slot identity.
+
+The target uses `BindsTo=`, not `Requires=`. In the proof, a Pi unit that exited right after its start left a `Requires=` target active, and a Pi unit whose condition failed did too. With `BindsTo=` the first leaves the target inactive and the second fails `systemctl start`. A Pi that crashes and restarts on its own does not bring the target back up. The next claim check starts it again.
 
 The image holds no Pi unit, no address and no key. Pi comes with the tree, as the unit that the Gateway renders for the slot's `pi-server` Process. The Gateway reads that Process as the unit `orbit-process-<id>-pi-server.service`, in its status, its observer facts and its log reads, and the Process id is different for each slot. The Gateway keeps the Process record of the slot, so the unit has that name.
 
 A systemd alias to a baked `pi-server.service` is not enough: `systemctl status` follows it, but the observer reads logs with `journalctl --unit`, which does not, and would find no entries.
 
-A new unit name is unknown to systemd until it reloads, and the boot transaction has already expanded the target. So the identity unit reloads systemd and starts `orbit-slot.target` again, and the target, with its drop-in from the tree, pulls in the Pi unit.
+A new unit name is unknown to systemd until it reloads, and the boot transaction has already expanded the target. So the identity unit reloads systemd and starts `orbit-slot.target` again, and the target, with its drop-in from the tree, is bound to the Pi unit and starts it.
 
 Each unit starts only when the files of its slot are there, so a VM with no identity volume starts none of them. The smoke VM of the [image build](#build-the-base-image) checks that, and checks that the target is enabled.
 
 A VM that is not a slot behaves as before. Today's enrolment writes `orbit-agent.service` at the same path, with the same text, and enables it. Its files make the conditions of the drop-in true. Pi runs there as the same Process unit, which today's enrolment installs. Two traces of the target remain on such a VM: the unit `orbit-slot.target` is loaded and inactive, and the slice `system-wg\x2dquick.slice` is active, because systemd creates the slice when it skips the WireGuard unit. A later converge of the Node rewrites `orbit-agent.service` from the Gateway's text. The drop-in stays.
+
+A slot that was enrolled before this image has no unit, no drop-in and no files of the new tree in its volume. Run `task-vms:enroll-slot` for it again before the image is promoted. No slot is live yet, so this is only a note.
 
 The Gateway computes `identity_revision` from the fleet-wide inputs, such as the model list and the CA. The volume keeps the same value in `REVISION`. A claim compares them. If they differ, the claim rewrites the volume before it clones the VM.
 

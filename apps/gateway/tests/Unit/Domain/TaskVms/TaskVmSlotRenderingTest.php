@@ -47,7 +47,7 @@ it('renders the identity tree without a key or a secret, and the revision follow
     expect($files['etc/orbit/agent/ca.pem'])->toBe($agent['certificate']);
     expect($files['etc/systemd/system/orbit-process-42-pi-server.service'])->toBe($pi['content']);
     expect($files['etc/systemd/system/orbit-process-42-pi-server.service.d/10-slot.conf'])->toBe("[Unit]\nAfter=wg-quick@orbit.service\n");
-    expect($files['etc/systemd/system/orbit-slot.target.d/10-pi.conf'])->toBe("[Unit]\nWants=orbit-process-42-pi-server.service\nAfter=orbit-process-42-pi-server.service\n");
+    expect($files['etc/systemd/system/orbit-slot.target.d/10-pi.conf'])->toBe("[Unit]\nBindsTo=orbit-process-42-pi-server.service\nAfter=orbit-process-42-pi-server.service\n");
     expect($files['etc/cloud/cloud.cfg.d/99-orbit-slot.cfg'])->toBe("ssh_deletekeys: false\n");
     $models = json_decode($files['home/orbit/.pi/agent/models.json'], true, flags: JSON_THROW_ON_ERROR);
     expect($models['providers']['orbit-task-vm']['apiKey'])->toBe(TaskVmSlotIdentity::ModelKeyMark);

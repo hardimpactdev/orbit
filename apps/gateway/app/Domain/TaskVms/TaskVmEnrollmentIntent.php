@@ -181,7 +181,8 @@ final readonly class TaskVmEnrollmentIntent
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'The runtime has no admitted Node.');
         $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
 
-        return ['runtime' => 'systemd', 'content' => $this->systemd->render($process, $this->processTarget($node)),
+        // The slot's identity tree carries the same unit, so a slot's Pi runs exactly as an enrolled VM's does.
+        return ['runtime' => 'systemd', 'content' => $this->unit($vm)['content'],
             'environment' => $this->systemd->environmentContent($process, $this->processTarget($node))];
     }
 }

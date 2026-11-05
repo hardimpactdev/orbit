@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -338,7 +339,10 @@ it('renders the full public intent of an enrolment and sends only vault names fo
     // The Pi unit is the Process unit the Gateway renders, under the name it reads in logs and facts, and the target pulls it in.
     $unit = $input['identity']['files']['etc/systemd/system/orbit-process-'.$piId.'-pi-server.service'];
     expect($unit)->toContain('--host='.$vm->wireguard_ip)->toContain('--port=3774')->toContain('X-Orbit-Process-ID='.$piId);
-    expect($input['identity']['files']['etc/systemd/system/orbit-slot.target.d/10-pi.conf'])->toContain('Wants=orbit-process-'.$piId.'-pi-server.service');
+    expect($input['identity']['files']['etc/systemd/system/orbit-slot.target.d/10-pi.conf'])->toContain('BindsTo=orbit-process-'.$piId.'-pi-server.service');
+    // The slot's Pi unit is the unit that today's enrolment installs, byte for byte.
+    expect($unit)->toBe(app(TaskVmEnrollmentIntent::class)->installation($vm->refresh())['content']);
+    expect(app(TaskVmEnrollmentIntent::class)->unit($vm)['content'])->toBe($unit);
     expect($input['identity']['files']['etc/orbit/agent/config.toml'])->toContain('gateway_address = "10.44.0.2"');
     expect($input['identity']['files']['etc/orbit/agent/ca.pem'])->toContain('root-fixture');
     expect($input['identity']['files']['etc/wireguard/orbit.conf'])->toContain('PostUp = wg set %i private-key /etc/wireguard/orbit.key');

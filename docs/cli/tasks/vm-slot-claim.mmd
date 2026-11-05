@@ -56,12 +56,12 @@ sequenceDiagram
   %%> - one argv; the next step waits for the boot
   SW->>VM: Check the slot VM<br/>ssh exec · pinned host key
   %%> What it does:
-  %%> - waits until `orbit-slot.target` is active (`systemctl is-active`), within the boot allowance, then runs one command
+  %%> - runs `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`, within the boot allowance, then one command
   %%> - the observer and Pi binaries match their pinned digests
   %%> - the observer answers, and Pi answers its capabilities probe
   %%> Why:
   %%> - the identity unit installs the identity before ssh, WireGuard and the observer start, then reloads systemd and starts the target again; the target starts WireGuard, the observer and the Pi unit of the tree, with no per-VM write
-  %%> - the target is ordered after WireGuard, the observer and Pi, so it is active only when all three have started
+  %%> - the target is bound to WireGuard and Pi, so a failed or skipped start of either fails the target, and a later stop of either takes it down
   %%> - the Incus agent answers about 4 s earlier, so it is not the signal
   %%> - there is no repair: the task image is refreshed after every release, so a digest that differs fails the step
   VM-->>GW: First host report<br/>orbit-agent · host fact
