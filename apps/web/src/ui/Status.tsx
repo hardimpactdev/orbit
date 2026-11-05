@@ -12,7 +12,6 @@ export type StatusProps = {
 };
 
 const UPDATE_CAUSES: Record<NonNullable<NodeUpdating["kind"]>, string> = {
-    fleet_rollout: "fleet rollout",
     gateway_release: "Gateway release",
 };
 

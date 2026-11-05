@@ -24,6 +24,7 @@ const Admission = z.object({
   id: z.number().int().positive().nullable(),
   attempt: z.number().int().nonnegative(),
   generation: z.string().optional(),
+  refused: z.boolean().optional(),
 });
 export const MaintenanceIntent = Admission;
 export async function maintenance(
@@ -56,7 +57,8 @@ export async function maintenance(
     }
     return Envelope.parse(response.body).data;
   };
-  // A saved intent is posted with its original key after a lost admission reply.
+  // A saved intent is posted with its original key after a lost admission reply. A refused one is retired, so
+  // the next pass admits what the Gateway plans then.
   const admit = async (
     name: string,
     path: string,
@@ -66,6 +68,7 @@ export async function maintenance(
   ) => {
     const saved = await ctx.readResource(name);
     let intent = saved ? Admission.parse(saved) : null;
+    if (intent?.refused) intent = null;
     if (intent?.id) {
       const observed = await request("GET", `/api/v1/operations/${intent.id}`);
       if (observed === null) return;
@@ -91,7 +94,10 @@ export async function maintenance(
       await ctx.writeResource("maintenance", name, intent);
     }
     const result = await request("POST", intent.path, intent.body, intent.key);
-    if (result === null) return;
+    if (result === null) {
+      await ctx.writeResource("maintenance", name, { ...intent, refused: true });
+      return;
+    }
     await ctx.writeResource("maintenance", name, {
       ...intent,
       id: Started.parse(result).id,
@@ -135,32 +141,16 @@ export async function maintenance(
     }
   });
   await independently(async () => {
+    // The Gateway plans only Nodes behind the desired state, at most once per five minutes each.
     const rollout = z.object({
       status: z.string(),
-      rollout: z.number().optional(),
-      targets: z.array(
-        z.object({
-          node_id: z.number(),
-          attempts: z.number(),
-          finished_at: z.string().nullable().optional(),
-        }),
-      ).default([]),
+      targets: z.array(z.number().int().positive()).default([]),
     }).parse(await request("GET", "/api/v1/fleet/rollout/plan"));
-    if (
-      !["running", "completed"].includes(rollout.status) || !rollout.rollout
-    ) return;
-    const targets = rollout.targets.filter((target) =>
-      target.attempts === 0 || !target.finished_at ||
-      new Date(target.finished_at).getTime() <= at.getTime() - 300_000
-    );
-    if (targets.length) {
+    if (rollout.status === "ready" && rollout.targets.length) {
       await admit(
-        `rollout-${rollout.rollout}`,
+        "rollout",
         "/api/v1/fleet/rollout",
-        {
-          rollout_id: rollout.rollout,
-          node_ids: targets.map((target) => target.node_id),
-        },
+        { node_ids: rollout.targets },
         true,
       );
     }

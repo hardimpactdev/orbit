@@ -655,7 +655,7 @@ The Gateway files a Backlog task when the same production problem keeps returnin
 
 The loop reads Doctor, Activity, the Gateway log, and assistance reasons. A release command also pushes its [release alerts](/reference/gateway-recovery#release-alerts) into the loop. It does not read the `schedules` table. It does not wait for an external alert manager.
 
-Doctor incidents close only after a new successful observation of the resource or proof that its persisted resource is gone. A skipped check, an unreachable Node, and a cleared occurrence episode do not prove recovery. Only untouched generated Backlog groups close automatically; groups that an operator has changed stay open.
+Doctor incidents close only after a new successful observation of the resource or proof that its persisted resource is gone. A `rollout_halted` incident closes after a later fleet rollout visit converges its Node. A skipped check, an unreachable Node, and a cleared occurrence episode do not prove recovery. Only untouched generated Backlog groups close automatically; groups that an operator has changed stay open.
 
 ### Fingerprints
 

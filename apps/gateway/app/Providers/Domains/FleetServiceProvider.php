@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Actions\Fleet\ShowFleetRolloutAction;
-use App\Console\Commands\FleetConvergeCommand;
 use App\Console\Commands\ResolveDesiredFleetStateCommand;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
@@ -95,20 +93,11 @@ final class FleetServiceProvider extends ServiceProvider
                 enabled: Config::boolean('fleet.rollout'),
             ),
         );
-        $this->app->bind(
-            ShowFleetRolloutAction::class,
-            static fn (Application $app): ShowFleetRolloutAction => new ShowFleetRolloutAction(
-                membership: $app->make(FleetRolloutMembership::class),
-                desired: $app->make(DesiredFleetState::class),
-                enabled: Config::boolean('fleet.rollout'),
-            ),
-        );
     }
 
     public function boot(): void
     {
         $this->commands([
-            FleetConvergeCommand::class,
             ResolveDesiredFleetStateCommand::class,
         ]);
     }

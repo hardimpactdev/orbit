@@ -150,6 +150,14 @@
   },
   "redirects": [
     {
+      "source": "/cli/fleet/rollout-status",
+      "destination": "/reference/gateway-recovery#fleet-rollout"
+    },
+    {
+      "source": "/cli/fleet/rollout-resume",
+      "destination": "/reference/gateway-recovery#a-failed-node"
+    },
+    {
       "source": "/decisions/0232-precreate-managed-postgresql-test-databases",
       "destination": "/reference/database-servers#postgresql-workers-exist-before-tests-start"
     },

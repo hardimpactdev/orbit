@@ -5,6 +5,7 @@ import { CliConvergePlan } from "./cli_converge_local.ts";
 export const Code = z.string().regex(/^[a-z][a-z0-9_]*\.[a-z0-9_.-]{1,90}$/);
 export const NodeRelease = CliConvergePlan.extend({
     node_id: z.number().int().positive(),
+    // Accepted, unused: rollouts admitted before the record tables were dropped carry it.
     row_id: z.number().int().positive().optional(),
     agent: z.object({
         url: CliInstallInput.shape.release.unwrap().shape.url,

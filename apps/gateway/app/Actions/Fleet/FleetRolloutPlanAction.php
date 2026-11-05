@@ -7,18 +7,22 @@ namespace App\Actions\Fleet;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutMembership;
-use App\Domain\Fleet\FleetRolloutPlanner;
-use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Fleet\FleetServingRelease;
-use App\Models\FleetRollout;
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
+use App\Models\GatewayRelease;
 
-/** Reads desired intent and rollout records. Scheduling and visits belong to Swamp. */
+/** Reads desired intent and earlier rollout results. Scheduling and visits belong to Swamp. */
 final readonly class FleetRolloutPlanAction
 {
-    public function __construct(private DesiredFleetState $desired, private FleetRolloutPlanner $planner,
-        private FleetRolloutMembership $membership, private FleetReleaseLag $lag, private FleetServingRelease $serving) {}
+    public function __construct(private DesiredFleetState $desired, private FleetRolloutMembership $membership,
+        private FleetReleaseLag $lag, private FleetServingRelease $serving) {}
 
-    /** @return array{status:string,rollout?:int,commit?:string,targets?:list<array{node_id:int,row_id:int,attempts:int,finished_at:?string}>} */
+    /**
+     * The Nodes that need a visit, in rollout order: behind the desired state, and not visited in the last
+     * {@see FleetReleaseLag::RetryAfterSeconds} seconds. A failed Node that waits holds back every later Node.
+     *
+     * @return array{status:string,commit?:string,targets?:list<int>}
+     */
     public function execute(): array
     {
         if (! config('fleet.rollout')) {
@@ -31,27 +35,56 @@ final readonly class FleetRolloutPlanAction
         if ($this->serving->supersedes()) {
             return ['status' => 'superseded'];
         }
-        $gate = $this->planner->gate($state->commit);
-        if (! in_array($gate['state'], ['verified', 'in_place'], true)) {
-            return ['status' => $gate['state'] === 'unverified' ? 'release_unverified' : 'release_layout_unreadable'];
+        $refusal = $this->gate($state->commit);
+        if ($refusal !== null) {
+            return ['status' => $refusal];
         }
-        $rollout = FleetRollout::query()->where('commit', $state->commit)->latest('id')->first();
-        $rollout = $rollout === null || $rollout->status === FleetRolloutStatus::Superseded
-            ? $this->planner->open($state, $gate['release']) : $this->planner->refresh($rollout, $state);
-        if ($rollout->status === FleetRolloutStatus::Halted || ! $state->cli->isAvailable()) {
-            return ['status' => $rollout->status->value, 'rollout' => $rollout->id];
+        if (! $state->cli->isAvailable()) {
+            return ['status' => 'waiting'];
         }
+        $members = $this->membership->members();
+        $visits = $this->lag->visits($state->commit, array_map(static fn ($node): int => $node->id, $members));
+        $retry = now()->subSeconds(FleetReleaseLag::RetryAfterSeconds);
         $targets = [];
-        foreach ($this->membership->members() as $node) {
-            $row = $rollout->nodes()->where('node_id', $node->id)->firstOrFail();
-            if (! $row->outcome->awaitsCatchUp() && ! ($row->outcome->isConverged() && $this->lag->drifted($row, $node, $state))) {
+        foreach ($members as $node) {
+            $visit = $visits[$node->id] ?? null;
+            if ($this->lag->behind($node, $visit, $state) === null) {
                 continue;
             }
-            $targets[] = ['node_id' => $node->id, 'row_id' => $row->id, 'attempts' => $row->attempts,
-                'finished_at' => $row->finished_at?->toIso8601String()];
+            if ($visit === null || $visit['finished_at']->lte($retry)) {
+                $targets[] = $node->id;
+            } elseif (in_array($visit['outcome'], ['failed', 'cancelled'], true)) {
+                // A failed Node stays a barrier while it waits: no later Node goes before it converges.
+                break;
+            }
         }
 
-        return ['status' => $rollout->status->value, 'rollout' => $rollout->id, 'commit' => $state->commit,
-            'targets' => $targets];
+        return ['status' => 'ready', 'commit' => $state->commit, 'targets' => $targets];
+    }
+
+    /**
+     * Null when the commit may roll out. A Gateway in the release layout rolls out only a commit with a `verified`
+     * release record whose verify step saw the Gateway serve that exact commit. An in-place Gateway has no release
+     * records; its running commit is the desired state. An unreadable layout fails closed.
+     */
+    private function gate(string $commit): ?string
+    {
+        $verified = GatewayRelease::query()->where('sha', $commit)->where('outcome', 'verified')->get()
+            ->contains(static fn (GatewayRelease $record): bool => self::servedExactly($record, $commit));
+
+        return $verified ? null : match ($this->serving->read()['state']) {
+            FleetServingRelease::InPlace => null,
+            FleetServingRelease::Adopted => 'release_unverified',
+            default => 'release_layout_unreadable',
+        };
+    }
+
+    /** Whether the record's verify step saw the Gateway report the commit or its 12-digit release id. */
+    private static function servedExactly(GatewayRelease $record, string $commit): bool
+    {
+        $verify = $record->phases['verify'] ?? null;
+        $version = is_array($verify) && is_string($verify['version'] ?? null) ? strtolower(trim($verify['version'])) : '';
+
+        return $version !== '' && ($version === strtolower($commit) || $version === GatewayReleaseCommit::id(strtolower($commit)));
     }
 }

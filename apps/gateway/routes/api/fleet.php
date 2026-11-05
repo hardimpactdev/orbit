@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\FleetMaintenanceController;
 use App\Http\Controllers\Api\FleetPeerDnsController;
-use App\Http\Controllers\Api\FleetRolloutsController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
@@ -19,8 +18,4 @@ Route::middleware([
     Route::get('fleet/peer-dns/targets', [FleetMaintenanceController::class, 'peerDnsTargets'])->name('fleet:peer-dns:targets');
     Route::get('fleet/peer-dns/plan', [FleetMaintenanceController::class, 'peerDnsPlan'])->name('fleet:peer-dns:plan');
     Route::post('fleet/nodes/{node}/peer-dns', [FleetPeerDnsController::class, 'store'])->name('fleet:peer-dns:reconcile');
-    Route::get('fleet/rollout', [FleetRolloutsController::class, 'show'])
-        ->name('fleet:rollout:status');
-    Route::post('fleet/rollout/resume', [FleetRolloutsController::class, 'resume'])
-        ->name('fleet:rollout:resume');
 });

@@ -38,8 +38,8 @@ it('maps the node collection and response metadata', function (): void {
         ->and($response->nodes[0]->toArray())
         ->toBe(first_list_node_with_request_id())
         ->and($response->nodes[0]->updating?->kind)
-        ->toBe('fleet_rollout')
-        ->and($response->nodes[0]->updating?->rollout)
+        ->toBe('gateway_release')
+        ->and($response->nodes[0]->updating?->release)
         ->toBe(12)
         ->and($response->nodes[1]->updating)
         ->toBeNull()
@@ -103,10 +103,9 @@ function list_nodes_gateway_data(): array
             'roles' => ['app-dev'],
             'settings' => null,
             'updating' => [
-                'kind' => 'fleet_rollout',
+                'kind' => 'gateway_release',
                 'since' => '2026-10-08T11:59:00+00:00',
-                'rollout' => 12,
-                'release' => null,
+                'release' => 12,
             ],
             'agent' => ['state' => 'offline', 'since' => '2026-11-02T17:55:00Z'],
         ],

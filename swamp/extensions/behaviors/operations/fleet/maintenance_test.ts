@@ -10,12 +10,9 @@ class MaintenanceFixture {
   statuses = new Map<number, string>();
   loseAdmission = false;
   dnsDigest = "a".repeat(64);
-  targets = [{
-    node_id: 3,
-    attempts: 0,
-    running: false,
-    finished_at: null as string | null,
-  }];
+  rolloutStatus = "ready";
+  targets = [3];
+  refuseRollout = false;
   context(): Context {
     const { context } = createModelTestContext();
     return Object.assign(context, {
@@ -38,15 +35,14 @@ class MaintenanceFixture {
     if (path.endsWith("/peer-dns/plan")) {
       data = [{ node_id: 2, configuration_digest: this.dnsDigest }];
     } else if (path.endsWith("/rollout/plan")) {
-      data = {
-        status: "running",
-        rollout: 5,
-        targets: this.targets,
-      };
+      data = { status: this.rolloutStatus, targets: this.targets };
     } else if (path.includes("/operations/")) {
       data = {
         status: this.statuses.get(Number(path.split("/").at(-1))) ?? "running",
       };
+    } else if (method === "POST" && path === "/api/v1/fleet/rollout" && this.refuseRollout) {
+      this.refuseRollout = false;
+      return { status: 409, body: { error: { code: "fleet.rollout_not_ready" } } };
     } else if (method === "POST") {
       data = { id: this.calls.length };
       if (this.loseAdmission) {
@@ -73,13 +69,30 @@ Deno.test("lost admission retains the original path, payload and key on the next
   assertEquals(writes[0].key, writes[1].key);
   assertEquals(writes[0].body, writes[1].body);
 });
-Deno.test("catch-up visits retain five-minute spacing", async () => {
+Deno.test("a rollout plan that is not ready, or names no Node, admits nothing", async () => {
   const f = new MaintenanceFixture();
-  f.targets[0].attempts = 1;
-  f.targets[0].finished_at = "2026-10-28T02:00:00Z";
-  await f.tick("2026-10-28T02:04:00Z");
+  f.rolloutStatus = "waiting";
+  await f.tick("2026-10-28T02:00:00Z");
+  f.rolloutStatus = "ready";
+  f.targets = [];
+  await f.tick("2026-10-28T02:01:00Z");
   assertEquals(f.writes("/api/v1/fleet/rollout").length, 0);
-  await f.tick("2026-10-28T02:05:00Z");
+});
+Deno.test("a refused rollout admission is retired, so the next pass admits the new plan", async () => {
+  const f = new MaintenanceFixture();
+  f.targets = [3, 4];
+  f.refuseRollout = true;
+  await f.tick("2026-10-28T02:00:00Z");
+  f.targets = [4];
+  await f.tick("2026-10-28T02:01:00Z");
+  const writes = f.writes("/api/v1/fleet/rollout");
+  assertEquals(writes.map((call) => call.body), [{ node_ids: [3, 4] }, { node_ids: [4] }]);
+  assertEquals(writes[0].key === writes[1].key, false);
+});
+Deno.test("an unfinished rollout admits no second one", async () => {
+  const f = new MaintenanceFixture();
+  await f.tick("2026-10-28T02:00:00Z");
+  await f.tick("2026-10-28T02:01:00Z");
   assertEquals(f.writes("/api/v1/fleet/rollout").length, 1);
 });
 
@@ -143,20 +156,14 @@ Deno.test("rollout admission needs no window field and leaves the maintenance wi
   await f.tick("2026-10-28T12:00:00Z");
   assertEquals(
     f.writes("/api/v1/fleet/rollout").map((call) => call.body),
-    [{ rollout_id: 5, node_ids: [3] }],
+    [{ node_ids: [3] }],
   );
 });
 Deno.test("one rollout admission captures every ready Node in fleet order", async () => {
   const f = new MaintenanceFixture();
-  f.targets.push({
-    node_id: 4,
-    attempts: 0,
-    running: false,
-    finished_at: null,
-  });
+  f.targets.push(4);
   await f.tick();
   assertEquals(f.writes("/api/v1/fleet/rollout").map((call) => call.body), [{
-    rollout_id: 5,
     node_ids: [3, 4],
   }]);
 });

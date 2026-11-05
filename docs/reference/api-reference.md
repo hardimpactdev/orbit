@@ -11,7 +11,9 @@ The task page reads Swamp history through `GET /api/v1/task-groups/{group}/swamp
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.
 
-The Node show response adds only `access` to `NodeData`; the Project show response is `ProjectData` alone.
+The Node show response adds only `access` to `NodeData`; the Project show response is `ProjectData` alone. A Node's `updating` value has one kind, `gateway_release`.
+
+The `fleet` group holds the rollout plan and admission that Swamp's fleet maintenance pass calls, CLI convergence and peer DNS. It has no rollout status or resume operation; a rollout is a `fleet.rollout` Operation.
 
 Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present.
 

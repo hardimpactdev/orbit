@@ -1,23 +1,16 @@
 import { describe, expect, it } from "vite-plus/test";
 import { statusColour, statusLabel, statusText } from "./Status";
 
-const rollout = {
-    kind: "fleet_rollout",
-    since: "2026-01-02T09:58:00+00:00",
-    rollout: 7,
-    release: null,
-} as const;
 const release = {
     kind: "gateway_release",
     since: "2026-01-02T09:58:00+00:00",
-    rollout: null,
     release: 31,
 } as const;
 
 describe("node status", () => {
     it("reads updating over every other state", () => {
-        expect(statusText({ value: "active", reach: true, updating: rollout })).toBe("updating");
-        expect(statusText({ value: "active", reach: false, updating: rollout })).toBe("updating");
+        expect(statusText({ value: "active", reach: true, updating: release })).toBe("updating");
+        expect(statusText({ value: "active", reach: false, updating: release })).toBe("updating");
         expect(statusText({ value: "offline", updating: release })).toBe("updating");
         expect(statusText({ value: "failed", updating: release })).toBe("updating");
     });
@@ -30,7 +23,7 @@ describe("node status", () => {
     });
 
     it("colours updating blue and keeps the other colours", () => {
-        expect(statusColour({ value: "active", reach: false, updating: rollout })).toBe(
+        expect(statusColour({ value: "active", reach: false, updating: release })).toBe(
             "text-blue",
         );
         expect(statusColour({ value: "active", reach: true })).toBe("text-green");
@@ -44,9 +37,6 @@ describe("node status", () => {
     });
 
     it("names what updates the node in its label", () => {
-        expect(statusLabel({ value: "active", updating: rollout })).toBe(
-            "updating — fleet rollout",
-        );
         expect(statusLabel({ value: "active", updating: release })).toBe(
             "updating — Gateway release",
         );

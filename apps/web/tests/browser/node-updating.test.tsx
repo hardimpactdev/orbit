@@ -3,8 +3,8 @@ import { queryClient } from "../../src/api/queryClient";
 import { applyEvent } from "../../src/realtime/apply";
 import { openApp, row } from "./app";
 
-// The demo fleet has beast in a fleet rollout visit; every other Node is not updating.
-const rolloutLabel = "updating — fleet rollout";
+// The demo fleet has the Gateway in a release; every other Node is not updating.
+const releaseLabel = "updating — Gateway release";
 
 const nodeUpdated = (data: Record<string, unknown>) =>
     applyEvent(queryClient, {
@@ -17,9 +17,9 @@ const nodeUpdated = (data: Record<string, unknown>) =>
 it.each(["/nodes", "/"])("draws an updating node on %s as a pulsing blue dot", async (path) => {
     await openApp(path);
 
-    const dot = row("Tracked nodes", "beast").getByLabelText(rolloutLabel);
+    const dot = row("Tracked nodes", "gateway").getByLabelText(releaseLabel);
     await expect.element(dot).toBeVisible();
-    await expect.element(dot).toHaveAttribute("title", rolloutLabel);
+    await expect.element(dot).toHaveAttribute("title", releaseLabel);
 
     const style = getComputedStyle(dot.element());
     expect(style.animationName).toBe("status-pulse");
@@ -34,11 +34,13 @@ it.each(["/nodes", "/"])("draws an updating node on %s as a pulsing blue dot", a
 
 it("flips the dot when node.updated sets or clears the update", async () => {
     await openApp("/nodes");
-    await expect.element(row("Tracked nodes", "beast").getByLabelText(rolloutLabel)).toBeVisible();
-
-    nodeUpdated({ id: 2, updating: null });
     await expect
-        .element(row("Tracked nodes", "beast").getByLabelText(/^updating/))
+        .element(row("Tracked nodes", "gateway").getByLabelText(releaseLabel))
+        .toBeVisible();
+
+    nodeUpdated({ id: 1, updating: null });
+    await expect
+        .element(row("Tracked nodes", "gateway").getByLabelText(/^updating/))
         .not.toBeInTheDocument();
 
     nodeUpdated({
@@ -46,7 +48,6 @@ it("flips the dot when node.updated sets or clears the update", async () => {
         updating: {
             kind: "gateway_release",
             since: "2026-01-02T10:00:00+00:00",
-            rollout: null,
             release: 31,
         },
     });
@@ -60,17 +61,16 @@ it("shows updating in blue where the status is text", async () => {
     nodeUpdated({
         id: 4,
         updating: {
-            kind: "fleet_rollout",
+            kind: "gateway_release",
             since: "2026-01-02T10:00:00+00:00",
-            rollout: 7,
-            release: null,
+            release: 31,
         },
     });
 
-    const status = row("Other nodes", "studio").getByTitle(rolloutLabel);
+    const status = row("Other nodes", "studio").getByTitle(releaseLabel);
     await expect.element(status).toBeVisible();
     // The cause is read out to a screen reader and hidden from the eye.
-    await expect.element(status).toMatchTextContent(rolloutLabel);
+    await expect.element(status).toMatchTextContent(releaseLabel);
     expect(status.element().firstChild?.textContent).toBe("updating");
     expect(getComputedStyle(status.element()).color).toBe("rgb(97, 175, 239)");
 });

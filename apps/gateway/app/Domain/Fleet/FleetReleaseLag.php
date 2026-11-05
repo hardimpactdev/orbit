@@ -5,19 +5,24 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Data\Fleet\DesiredFleetStateData;
+use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
-use App\Models\FleetRollout;
-use App\Models\FleetRolloutNode;
 use App\Models\Node;
+use App\Models\Operation;
+use Illuminate\Support\Carbon;
 
 /**
- * Whether a Node of the rollout set runs behind the desired fleet state: the catch-up's selection and
- * Doctor's `node.release_lag` (ADR 0202). It reads only the Gateway's records and the agent view, never
- * the Node.
+ * Whether a Node of the rollout set runs behind the desired fleet state: the rollout plan's selection and
+ * Doctor's `node.release_lag` (ADR 0202). The rollout keeps no records of its own, so a Node's last visit is
+ * its newest result in the terminal `fleet.rollout` Operations of the commit. It reads only the Gateway's
+ * records and the agent view, never the Node.
  */
 final readonly class FleetReleaseLag
 {
+    /** A Node waits this long after its last visit ended before a pass visits it again. */
+    public const int RetryAfterSeconds = 300;
+
     public function __construct(
         private DesiredFleetState $desired,
         private FleetRolloutMembership $membership,
@@ -27,15 +32,73 @@ final readonly class FleetReleaseLag
     ) {}
 
     /**
-     * Whether a converged Node drifted since its visit: its agent, CLI, or footprint differs. Only an available
-     * CLI release counts, because a pending version is no release a Node could run.
+     * The last visit of each of the Nodes for the commit, keyed by Node id, from Operations before `$before` when
+     * given. A `pending` entry names a Node that a run admitted but did not reach, so an earlier visit stands. The
+     * read stops once every Node has its newest visit.
+     *
+     * @param  list<int>  $nodeIds
+     * @return array<int, array{outcome: string, error_code: ?string, cli_version: ?string, finished_at: Carbon, operation_id: int}>
      */
-    public function drifted(FleetRolloutNode $row, Node $node, DesiredFleetStateData $state): bool
+    public function visits(string $commit, array $nodeIds, ?int $before = null): array
     {
+        $wanted = array_fill_keys($nodeIds, true);
+        $visits = [];
+        $operations = Operation::query()
+            ->where('kind', 'fleet.rollout')
+            ->where('input->commit', $commit)
+            ->whereIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])
+            ->whereNotNull('finished_at')
+            ->when($before !== null, static fn ($query) => $query->where('id', '<', $before));
+
+        foreach ($operations->lazyByIdDesc(100) as $operation) {
+            $nodes = $operation->result['nodes'] ?? [];
+
+            foreach (is_array($nodes) ? $nodes : [] as $node) {
+                $id = is_array($node) ? ($node['node_id'] ?? null) : null;
+                $outcome = is_array($node) ? ($node['outcome'] ?? null) : null;
+
+                if (! is_int($id) || ! isset($wanted[$id]) || ! is_string($outcome) || $outcome === 'pending' || isset($visits[$id]) || ! $operation->finished_at instanceof Carbon) {
+                    continue;
+                }
+
+                $visits[$id] = [
+                    'outcome' => $outcome,
+                    'error_code' => is_string($node['error_code'] ?? null) ? $node['error_code'] : null,
+                    'cli_version' => is_string($node['cli_version'] ?? null) ? $node['cli_version'] : null,
+                    'finished_at' => $operation->finished_at,
+                    'operation_id' => $operation->id,
+                ];
+            }
+
+            if (count($visits) === count($wanted)) {
+                break;
+            }
+        }
+
+        return $visits;
+    }
+
+    /**
+     * Why the Node runs behind the state, or null when its last visit converged it and it did not drift since:
+     * its observer reports another version, or its recorded CLI version differs from an available CLI release.
+     *
+     * @param  array{outcome: string, cli_version: ?string}|null  $visit
+     */
+    public function behind(Node $node, ?array $visit, DesiredFleetStateData $state): ?string
+    {
+        if ($visit === null) {
+            return 'no visit yet';
+        }
+
+        if (! in_array($visit['outcome'], ['converged', 'unchanged'], true)) {
+            return $visit['outcome'];
+        }
+
         $reported = $this->versions->get($node->id)['version'] ?? null;
 
         return ($reported !== null && $reported !== $this->delivery->reportedVersion($node))
-            || ($row->cli_version !== null && $state->cli->isAvailable() && $row->cli_version !== $state->cli->version);
+            || ($visit['cli_version'] !== null && $state->cli->isAvailable() && $visit['cli_version'] !== $state->cli->version)
+            ? 'drifted' : null;
     }
 
     /**
@@ -51,34 +114,15 @@ final readonly class FleetReleaseLag
             return null;
         }
 
-        // Doctor never waits on Git or GitHub: the fleet runner keeps the desired state cached.
+        // Doctor never waits on Git or GitHub: the rollout plan keeps the desired state cached.
         $state = $this->desired->cached();
 
         if ($state === null || $state->commit === null) {
             return null;
         }
 
-        $expected = substr($state->commit, 0, 12);
-        $rollout = FleetRollout::query()
-            ->where('commit', $state->commit)
-            ->where('status', '!=', FleetRolloutStatus::Superseded->value)
-            ->latest('id')
-            ->first();
+        $observed = $this->behind($node, $this->visits($state->commit, [$node->id])[$node->id] ?? null, $state);
 
-        if (! $rollout instanceof FleetRollout) {
-            return ['expected' => $expected, 'observed' => 'no rollout yet'];
-        }
-
-        $row = $rollout->nodes()->where('node_id', $node->id)->first();
-
-        if (! $row instanceof FleetRolloutNode) {
-            return ['expected' => $expected, 'observed' => 'not in the rollout'];
-        }
-
-        if (! $row->outcome->isConverged()) {
-            return ['expected' => $expected, 'observed' => $row->outcome->value];
-        }
-
-        return $this->drifted($row, $node, $state) ? ['expected' => $expected, 'observed' => 'drifted'] : null;
+        return $observed === null ? null : ['expected' => substr($state->commit, 0, 12), 'observed' => $observed];
     }
 }

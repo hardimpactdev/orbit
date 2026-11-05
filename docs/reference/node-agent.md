@@ -684,7 +684,7 @@ The rollout leaves out the Gateway's own Node. Gateway release runs leave its ag
 
 An installation changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. The fleet verifier reports each Node that runs another binary.
 
-The observer sends its version with each channel authorization: the Cargo version with the first 16 hexadecimal digits of its binary's SHA-256 as build metadata, such as `0.5.0+ad999ffe1ab24dca`. The Gateway derives the same string from the delivery for each Node, so presence proves the exact pinned binary. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `cli.self-update`, and the catch-up visits a Node whose agent reports another version.
+The observer sends its version with each channel authorization: the Cargo version with the first 16 hexadecimal digits of its binary's SHA-256 as build metadata, such as `0.5.0+ad999ffe1ab24dca`. The Gateway derives the same string from the delivery for each Node, so presence proves the exact pinned binary. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The [fleet rollout](/reference/gateway-recovery#which-nodes-a-pass-visits) visits a Node again when its agent reports another version.
 
 ## Failures
 

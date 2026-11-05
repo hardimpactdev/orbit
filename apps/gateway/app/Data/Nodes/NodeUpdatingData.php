@@ -9,14 +9,13 @@ use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** The update in progress on a Node. `rollout` is set for a fleet rollout visit, `release` for a Gateway release. */
+/** The update in progress on a Node: a Gateway release, with its record id. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class NodeUpdatingData extends Data
 {
     public function __construct(
         public NodeUpdateKind $kind,
         public string $since,
-        public ?int $rollout = null,
         public ?int $release = null,
     ) {}
 }

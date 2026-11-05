@@ -11,7 +11,8 @@ const Args = DirectArgs.extend({
 });
 const Input = z.object({
     nodes: z.array(NodeRelease).max(1000),
-    remaining: z.number().int().nonnegative().default(0),
+    // Accepted, unused: rollouts admitted before the record tables were dropped carry them.
+    remaining: z.number().int().nonnegative().optional(),
     rollout_id: z.number().int().positive().optional(),
     commit: z.string().optional(),
 }).strict();
@@ -157,7 +158,7 @@ export function fleetRelease(
     }
     return {
         type: "@nckrtl/fleet-release",
-        version: "2026.11.02.1",
+        version: "2026.11.05.1",
         globalArguments: Globals,
         resources: {
             admission: {
@@ -403,21 +404,9 @@ export function fleetRelease(
                         : failure
                         ? "failed"
                         : "succeeded";
-                    const running = current.input.remaining > 0 ||
-                        nodes.some((node) => node.outcome === "deferred");
                     const result = {
                         nodes,
                         ...(failure ? { error_code: failure.error_code } : {}),
-                        ...(args.kind === "fleet.rollout"
-                            ? {
-                                rollout_status: failure
-                                    ? "halted"
-                                    : running
-                                    ? "running"
-                                    : "completed",
-                                halted_node_id: failure?.node_id ?? null,
-                            }
-                            : {}),
                     };
                     await gateway.project({
                         status,

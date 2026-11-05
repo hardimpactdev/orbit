@@ -8,22 +8,21 @@ use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
-use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
-use App\Models\FleetRollout;
-use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\ProblemFingerprint;
 use App\Models\Process;
 use App\Models\Project;
@@ -118,39 +117,17 @@ final readonly class ProblemRecovery
 
             return $build->state === TaskVmImageBuildState::Succeeded && $build->attempt > (int) $attempt ? 'verified_image_build' : null;
         }
-        if (str_starts_with($resource, 'fleet')) {
-            $rollout = FleetRollout::query()->find((int) $attempt);
-
-            if (! $rollout instanceof FleetRollout) {
-                return null;
-            }
-            if ($rollout->status === FleetRolloutStatus::Superseded) {
-                return 'rollout_superseded';
-            }
-            if ($resource === 'fleet' && FleetRollout::query()->where('id', '>', $rollout->id)->where('status', FleetRolloutStatus::Completed)
-                ->where('desired_state->cli->status', 'available')->whereNull('desired_state->cli->reason')->exists()) {
-                return 'verified_rollout_supersession';
-            }
-            if ($resource === 'fleet' && $kind === ReleaseAlertKind::RolloutStalled->value
-                && $rollout->status !== FleetRolloutStatus::Waiting && data_get($rollout->desired_state, 'cli.status') === 'available') {
-                return 'cli_release_available';
-            }
-            if ($kind === ReleaseAlertKind::RolloutCaddySkipped->value && str_starts_with($resource, 'fleet-node:')) {
-                $visits = FleetRolloutNode::query()->where('node_id', (int) substr($resource, 11))
-                    ->where('fleet_rollout_id', '>=', $rollout->id)->where('finished_at', '>', $row->filed_at ?? $row->first_seen)->get();
-                foreach ($visits as $visit) {
-                    if ($visit->outcome->isConverged() && in_array(data_get($visit->evidence, 'footprint.artifacts.caddy'), ['applied', 'unchanged'], true)
-                        && data_get($visit->evidence, 'footprint.skipped.caddy') === null) {
-                        return 'verified_caddy_publication';
+        if (str_starts_with($resource, 'fleet-node:')) {
+            $nodeId = (int) substr($resource, 11);
+            $visits = Operation::query()->where('kind', 'fleet.rollout')->whereIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])
+                ->where('finished_at', '>', $row->filed_at ?? $row->first_seen);
+            foreach ($visits->lazyById(100) as $operation) {
+                $nodes = $operation->result['nodes'] ?? [];
+                foreach (is_array($nodes) ? $nodes : [] as $node) {
+                    if (is_array($node) && ($node['node_id'] ?? null) === $nodeId && in_array($node['outcome'] ?? null, ['converged', 'unchanged'], true)) {
+                        return 'verified_node_convergence';
                     }
                 }
-
-                return null;
-            }
-            if (str_starts_with($resource, 'fleet-node:') && $kind !== ReleaseAlertKind::RolloutCaddySkipped->value) {
-                $visits = FleetRolloutNode::query()->where('node_id', (int) substr($resource, 11))->where('fleet_rollout_id', '>=', $rollout->id)->get();
-
-                return $visits->contains(static fn (FleetRolloutNode $visit): bool => $visit->outcome->isConverged()) ? 'verified_node_convergence' : null;
             }
 
             return null;
