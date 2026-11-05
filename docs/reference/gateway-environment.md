@@ -45,9 +45,11 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | `ORBIT_SWAMP_READ_TOKEN_NAME` | Installed token name, written by `gateway:swamp-reader:install`. |
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |
-| `ORBIT_SWAMP_PROOF_CLUB_API_KEY` | Dedicated club credential for disposable proof topologies. Only Project 62 (`swamp-proof`) provision receives a names-only execution copy. Keep its value in the Gateway environment. |
+| `ORBIT_SWAMP_PROOF_CLUB_API_KEY` | Dedicated club credential for disposable proof topologies. Keep its value in the Gateway environment. |
 
-Proof provision writes the credential to `/home/orbit/.config/swamp/club-api-key` inside the owned Task VM, mode `0600` for `orbit`, in a `0700` directory. Three pinned official `@swamp/ssh exec` argument lists run with sudo: `install -d` makes the directory, `rm -f` drops a previous file or link, and `install … /dev/stdin` writes the token. The native parent sends the token only on SSH stdin. Run history records that the step had stdin, never the value; neither the Operation input nor its result contains it. Each step has a 10-second dispatch budget and runs under `timeout 30`. A missing credential refuses proof placement. Other Projects receive no copy. Normal task cancellation destroys the VM and its private filesystem.
+Two provisions receive a names-only execution copy: Project 62 (`swamp-proof`), and the task group that a `proof:run` creates. Every other task, in the Orbit Project too, gets none.
+
+Proof provision writes the credential to `/home/orbit/.config/swamp/club-api-key` inside the owned Task VM, mode `0600` for `orbit`, in a `0700` directory. Three pinned official `@swamp/ssh exec` argument lists run with sudo: `install -d` makes the directory, `rm -f` drops a previous file or link, and `install … /dev/stdin` writes the token. The native parent sends the token only on SSH stdin. Run history records that the step had stdin, never the value; neither the Operation input nor its result contains it. Each step has a 10-second dispatch budget and runs under `timeout 30`. A missing credential refuses proof placement. Normal task cancellation destroys the VM and its private filesystem.
 
 ### Rotate the Swamp reader credential
 

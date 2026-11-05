@@ -58,17 +58,18 @@ final readonly class TaskProvisionIntent
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit): Operation {
+        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
                 return $replay;
             }
             $this->assertProvisionable($group);
             $project = $group->project;
-            $proof = $project->id === 62 && $project->slug === 'swamp-proof';
+            // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) get the proof club key, and no other task.
+            $proof = ($project->id === 62 && $project->slug === 'swamp-proof') || $commit !== null;
             $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
             if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
-                throw new ResourceOperationException('tasks.proof_credential_unavailable', 'The proof Project requires its Gateway-held sandbox club credential before placement.', 503);
+                throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
             }
             try {
                 $vm = $this->allocate->capture($group);
