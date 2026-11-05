@@ -10,20 +10,25 @@ orbit instance:analytics:enable <instance> [--host=HOST]... [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Numeric Instance ID. |
+| `instance` | yes | Numeric Instance ID. A terminal asks for it when it is omitted. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--host=HOST` | `analytics.<instance domain>` | A tracking host. Repeat it for more, up to ten. |
+| `--host=HOST` | `analytics.<instance domain>` | A tracking host: a DNS name with a dot, without a scheme, a path or an IP address, and not under the private `orbit` names. Name each host once. Repeat the option for more, up to ten. |
+| `--json` | off | Print the tracking record as JSON. |
 
 ```bash
 orbit instance:analytics:enable 12
 orbit instance:analytics:enable 12 --host=stats.example.com --host=analytics.shop.example.com
 ```
 
-The command sets the exact host set: the Gateway publishes each named host that is missing and removes each tracking host of the Instance that you did not name. Naming the hosts that already exist changes nothing. Each host is a Route that answers only `/js/*` and `/api/event`, served wherever the Instance's own domain is served; the [Analytics role](/reference/analytics#publish-a-tracking-host) page owns that contract.
+In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
 
-Human output lists each host with its Route and status, the DNS record to create for it, and the script tag to add to the Project. JSON returns `instance_id`, `enabled`, `domain`, `dashboard_url`, `hosts`, and `snippet`. You still create the site in Plausible yourself.
+The command sets the exact host set: it publishes each named host that is missing and removes each tracking host of the Instance that you did not name. It also creates the Instance's site in Plausible, or updates it, and never makes a duplicate. Each host is a Route that answers only `/js/*` and `/api/event`, and every other path answers 404. It is served wherever the Instance's own domain is served. The [Analytics role](/reference/analytics#publish-a-tracking-host) page owns that contract. A host outside the Cluster or Node TLD also gets a private DNS record.
+
+The command returns a task ID at once and follows the task with one progress indicator until it ends. A failed step leaves the tracking Routes unpublished, with the failed step and its error code in `operation:show`. Finished steps stay and a Plausible site that was created stays; there is no rollback. Run the same command again to finish. A repeat with the same hosts converges the same site and hosts again and succeeds, without a duplicate site or Route. The caller needs an access grant to the Instance's Node, and the analytics role must be active.
+
+When the task ends, the CLI prints a detail with Instance (by name), Domain, Tracking, Dashboard (`—` when no analytics role is active) and the request ID, a table of each host with its Route, status and publication, the public DNS record to create for each host, and the script tag to add to the Project. The record is a `CNAME` from the host to the Instance's domain; Orbit creates no public record. With `--json`, stdout holds `instance_id`, `enabled`, `domain`, `dashboard_url`, `hosts`, `snippet` and `request_id`.
 
 ## How it works
 
@@ -33,7 +38,21 @@ Human output lists each host with its Route and status, the DNS record to create
 
 | Error code | Meaning |
 | --- | --- |
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
 | `analytics.role_missing` | No Node has an active analytics role. |
 | `analytics.domain_required` | The Instance does not serve a domain yet. |
+| `validation.failed` | A named host is not a valid tracking host name, is named twice, or more than ten were named. |
+| `analytics.host_invalid` | The default host `analytics.<instance domain>` is not a valid tracking host. |
 | `analytics.host_taken` | Another Route already uses a named host. |
-| `validation.failed` | A host is not a lowercase DNS name, is reserved, is repeated, or more than ten hosts were named. |
+| `analytics.credentials_missing` | The protected Plausible credentials are missing. |
+| `operation.target_busy` | Another analytics or Route change holds the Instance. |
+| `analytics.tracking_changed` | The Instance's Route ownership or placement changed after the request was admitted. |
+| `analytics.site_failed` | The Plausible site could not be created or updated. |
+| `app-dev.certificate_request_failed` | The Router could not make the certificate request. |
+| `app-dev.certificate_sign_failed` | The Gateway could not sign the certificate request. |
+| `route.publish_failed` | Caddy refused the tracking sites, or could not reload. |
+| `route.probe_failed` | The tracking host did not answer over TLS with the script. |
+| `private_dns.publication_failed` | The private DNS records could not be published. |
+| `analytics.enable_failed` | The task failed outside a named step. |
