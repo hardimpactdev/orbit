@@ -30,7 +30,7 @@ sequenceDiagram
     %%> What it does:
     %%> - restores the task's stateful snapshot `base` of the three nested VMs; skipped when the fleet is still at `base`, as for the first batch
     %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
-    %%> - `runner restore --group N` prints one line, `{"restore": "failed", ...}` on a failure; Swamp drops the outputs of a failed child, so no step fails on purpose: every guard and the report read that line
+    %%> - not built: the step that restores; the old `runner restore` was removed
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>batch setup steps
       %%> What it does:

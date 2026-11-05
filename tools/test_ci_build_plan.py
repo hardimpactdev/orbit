@@ -75,9 +75,8 @@ class BuildPlanTest(unittest.TestCase):
         self.assertFalse(plan.select(paths)['gateway_release'])
 
     def test_proof_harness_changes_select_the_proof_checks_and_nothing_else_selects_them(self):
-        self.assertEqual({'swamp', 'proof'}, self.selected(['swamp/proof/reset/phases.py']))
         self.assertEqual({'swamp', 'proof'}, self.selected(['swamp/proof/runner/steps.py']))
-        self.assertIn('proof', self.selected(['tools/swamp-proof-guest/boot.py']))
+        self.assertIn('proof', self.selected(['tools/swamp-proof-guest/terminal.py']))
         for paths in (['swamp/workflows/x.yaml'], ['swamp/extensions/example.ts'], ['apps/gateway/app/Thing.php'], ['README.md']):
             self.assertNotIn('proof', self.selected(paths))
 
@@ -104,11 +103,11 @@ class BuildPlanTest(unittest.TestCase):
     def test_proof_run_follows_the_selection_list_the_gateway_reads(self):
         selection = SELECTION
         for path in ('swamp/extensions/behaviors/operations/firewall/x.ts', 'apps/gateway/app/Actions/Firewall/A.php',
-                     'swamp/proof/reset/phases.py', 'bin/proof-fleet', 'swamp/proof/selection.txt'):
+                     'tools/swamp-proof-guest/terminal.py', 'swamp/proof/selection.txt'):
             with self.subTest(path=path):
                 self.assertTrue(self.proof_run([path], selection))
         for path in ('docs/cli/firewall/allow.mmd', 'docs/cli/firewall/allow.mdx', 'README.md', 'apps/web/src/a.ts',
-                     'swamp/workflows/workflow-vault-sync.yaml', 'swamp/proof/reset/README.md', 'bin/ci-build-plan'):
+                     'swamp/workflows/workflow-vault-sync.yaml', 'swamp/proof/firewall/README.md', 'bin/ci-build-plan'):
             with self.subTest(path=path):
                 self.assertFalse(self.proof_run([path], selection))
 
@@ -149,9 +148,7 @@ swamp/proof/firewall/**            firewall:allow
 swamp/proof/firewall/*.md          skip
 apps/gateway/app/Actions/Firewall/**   firewall:allow
 swamp/proof/selection.txt          *
-swamp/proof/reset/**               *
-swamp/proof/reset/*.md             skip
-bin/proof-fleet                    *
+tools/swamp-proof-guest/**         *
 """
 
 

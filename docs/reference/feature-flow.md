@@ -81,7 +81,6 @@ docs/**                                       skip
 apps/web/**                                   skip
 swamp/workflows/workflow-firewall-*.yaml      firewall:allow firewall:deny firewall:remove
 swamp/proof/firewall/allow.cases.yaml         firewall:allow
-swamp/proof/reset/**                          *
 swamp/workflows/workflow-vault-sync.yaml      none: no case yet
 ```
 

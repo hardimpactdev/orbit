@@ -52,9 +52,4 @@ packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewa
 
 # The proof tooling is shared code of every case.
 swamp/proof/selection.txt                        *
-swamp/proof/reset/**                             *
-swamp/proof/reset/*.md                           skip
-swamp/proof/reset/reset.mmd                      skip
-bin/proof-fleet                                  *
 tools/swamp-proof-guest/**                       *
-tools/orbit_nested.py                            *

@@ -17,8 +17,8 @@ apps/**                                       none: no case yet
 apps/web/**                                   skip
 swamp/workflows/workflow-firewall-*.yaml      firewall:allow firewall:deny firewall:remove
 swamp/proof/firewall/*.cases.yaml             firewall:allow firewall:deny firewall:remove
-swamp/proof/reset/**                          *
-bin/proof-fleet                               *
+swamp/proof/runner/**                         *
+tools/swamp-proof-guest/**                    *
 swamp/workflows/workflow-vault-sync.yaml      none: no case yet
 swamp/workflows/workflow-shared-*.yaml        node:role:add firewall:allow
 swamp/workflows/workflow-ghost.yaml           ghost:run
@@ -100,17 +100,17 @@ it('turns further colons of the command name into dashes', function (): void {
 });
 
 it('selects every case for a wildcard path', function (): void {
-    $selected = proofSelect(['bin/proof-fleet']);
+    $selected = proofSelect(['tools/swamp-proof-guest/terminal.py']);
 
     expect($selected['files'])->toBe(PROOF_CASES_FILES)->and($selected['because'])->toBe('wildcard')
         ->and(array_column($selected['cases'], 'command'))->toBe(['firewall:allow', 'firewall:deny', 'node:role-add']);
 });
 
 it('lets the last matching line win', function (): void {
-    // apps/web/** is a later skip than apps/** (none), and swamp/proof/reset/** (*) comes after docs/** (skip).
+    // apps/web/** is a later skip than apps/** (none), and swamp/proof/runner/** (*) comes after docs/** (skip).
     expect(proofSelect(['apps/web/x.ts'])['nothing'])->toBeTrue()
         ->and(proofSelect(['apps/web/x.ts'])['uncovered'])->toBe([])
-        ->and(proofSelect(['swamp/proof/reset/README.md'])['because'])->toBe('wildcard');
+        ->and(proofSelect(['swamp/proof/runner/runner.py'])['because'])->toBe('wildcard');
 });
 
 it('selects every case when the selection list changed, and the change cannot narrow it', function (): void {
@@ -167,8 +167,8 @@ it('matches globs: ** crosses directories, * stays in one name, ** and a slash m
     ['a/*/c', 'a/b/b/c', false],
     ['a/?.sh', 'a/x.sh', true],
     ['a/?.sh', 'a/xy.sh', false],
-    ['bin/proof-fleet', 'bin/proof-fleet', true],
-    ['bin/proof-fleet', 'bin/proof-fleet2', false],
+    ['bin/tool', 'bin/tool', true],
+    ['bin/tool', 'bin/tool2', false],
 ]);
 
 it('refuses a malformed selection list', function (string $text): void {
@@ -183,7 +183,7 @@ it('refuses a malformed selection list', function (string $text): void {
 
 it('finds only cases files of the form swamp/proof/<family>/<command>.cases.yaml', function (): void {
     expect(ProofSelection::casesFiles([
-        'swamp/proof/reset/README.md',
+        'swamp/proof/runner/README.md',
         'swamp/proof/firewall/deny.cases.yaml',
         'swamp/proof/firewall/allow.cases.yaml',
         'swamp/proof/firewall/allow.md',

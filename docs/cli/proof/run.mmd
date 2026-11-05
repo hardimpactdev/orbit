@@ -31,7 +31,7 @@ sequenceDiagram
   %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
   %%> - the nested Gateway and app-dev mount the VM's checkout of the commit over NFS (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
   %%> Not built:
-  %%> - the direct reset: today `bin/proof-fleet reset GROUP --from-ready` runs in the VM as a task script, starts a local Swamp there, builds the nested fleet from the ready copies and takes `base`
+  %%> - the direct reset: not built; the old reset was removed, and a Swamp workflow will build the nested fleet from the ready copies and take `base`
   %%> - the parent workflow `operation-proof-run`: today the Gateway admits provision, reset, verify and cancel as task operations and continues on each result
   opt the commit changes playbooks or pins
     SW->>VM: Converge once<br/>outer VM · nested Nodes
@@ -46,8 +46,9 @@ sequenceDiagram
   %%> - it holds the Club key; accepted because the VM and its snapshots are destroyed after the run
   SW->>VM: Run the proof<br/>child flow · proof-fleet verify
   %%> What it does:
-  %%> - each batch restores `base` once and applies its declared start state; its cases run one after another with their own resources and no undo
-  %%> - a case that did not pass triggers a restore before the next case; a restore that fails or is not healthy within 45 s stops the run, and the remaining cases become `unrun`
+  %%> - each batch applies its declared start state; its cases run one after another with their own resources and no undo
+  %%> - a batch setup that fails stops the run, and the remaining cases become `unrun`
+  %%> - not built: the restore of `base` before each batch and after a case that did not pass; the old restore was removed
   %%> - one verdict per case, as in the proof stage of the [command development pipeline](/reference/command-development-pipeline)
   %%> - built: the Gateway admits it as the kind `proof.verify`; the Swamp workflow `proof-fleet-verify` on Node 209 runs the runner over official SSH, one child per batch and one per case, and no second Swamp runs for this step
   %%> - the Gateway reads the `report` step once, when the run ends, and records the verdicts; no step calls back

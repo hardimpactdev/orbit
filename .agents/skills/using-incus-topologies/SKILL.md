@@ -61,7 +61,7 @@ bin/e2e-topology kill TASK-58 app-dev viewer
 
 This harness mounts the worktree read-write into `gateway`, `app-dev` and `operator`, so an edited file is live there at once. Run `sync` only after a migration or when a guest helper script changed. A full `sync` runs the readiness check and takes minutes; `sync ISSUE --quick` skips the probes.
 
-This harness is not the command proof. To develop and prove a command, use the nested fleet of your task VM and `orbit-nested` (stages 2 and 3 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)). The nested VMs hold their own checkout and `orbit-nested` syncs it; nothing is shared.
+This harness is not the command proof. To develop and prove a command, use the nested fleet of your task VM (stages 2 and 3 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)). The nested VMs hold their own checkout; nothing is shared. Not built: the tool that syncs your code into them.
 
 ## Add what the task needs
 

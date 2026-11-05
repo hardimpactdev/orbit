@@ -5,7 +5,7 @@ description: Use when defining or running the proof cases of an Orbit command on
 
 # Prove a command (stages 2 and 3)
 
-The flows are the stage charts: [2, the proof environment](../../../docs/reference/command-development-pipeline.mdx#2-development-environment) and [3, the proof](../../../docs/reference/command-development-pipeline.mdx#3-proof). In the task VM, run the CLI and direct commands against the nested fleet with `orbit-nested`; it syncs your code first. The same cases and the same runner run in CI ([stage 4](../../../docs/reference/pipeline/4-pr-and-ci.mmd)). Build no second runner.
+The flows are the stage charts: [2, the proof environment](../../../docs/reference/command-development-pipeline.mdx#2-development-environment) and [3, the proof](../../../docs/reference/command-development-pipeline.mdx#3-proof). In the task VM, run the CLI and direct commands against the nested fleet. Not built: the tool that syncs your code into it first. The same cases and the same runner run in CI ([stage 4](../../../docs/reference/pipeline/4-pr-and-ci.mmd)). Build no second runner.
 
 ## The cases file
 

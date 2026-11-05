@@ -1,4 +1,4 @@
-"""The runner commands that the workflow `proof-fleet-verify` calls: the plan lines, the restore of base and the batch setup."""
+"""The runner commands that the workflow `proof-fleet-verify` calls: the plan lines and the batch setup."""
 import contextlib
 import io
 import json
@@ -10,10 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'reset'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet as fleet_module
-import phases
 import runner
 import spec
 import steps
@@ -57,49 +55,6 @@ class PlanLinesTest(unittest.TestCase):
         _, lines = call('plan', '--file', str(CASES), '--batches', str(BATCHES))
         self.assertTrue(lines[0].startswith('firewall:allow  '))
         self.assertTrue(any(line.startswith('batch fresh-fleet:') for line in lines))
-
-
-class RestoreTest(unittest.TestCase):
-    def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        self.request = Path(self.directory.name) / 'request.json'
-        self.request.write_text(json.dumps({'group': '7'}))
-
-    def test_a_restore_prints_one_ok_line_and_exits_0(self):
-        with patch.object(phases, 'execute', return_value={'snapshot': 'base'}) as restore:
-            code, lines = call('restore', '--group', '7', '--request', str(self.request))
-        self.assertEqual(code, 0)
-        restore.assert_called_once_with({'group': '7'}, 'base-restore')
-        self.assertEqual(len(lines), 1)
-        self.assertEqual(json.loads(lines[0])['restore'], 'ok')
-
-    def test_a_restore_that_fails_prints_a_failed_line_with_the_reason_and_is_not_retried(self):
-        with patch.object(phases, 'execute', side_effect=RuntimeError('The tunnel did not come back.')) as restore:
-            code, lines = call('restore', '--group', '7', '--request', str(self.request))
-        self.assertEqual(code, 1)
-        self.assertEqual(restore.call_count, 1)
-        line = json.loads(lines[0])
-        self.assertEqual(line['restore'], 'failed')
-        self.assertIn('The tunnel did not come back.', line['error'])
-        self.assertIn('"restore": "failed"', lines[0])  # the workflow's guards match this text
-
-    def test_a_group_with_no_reset_request_is_a_failed_restore(self):
-        with patch.object(runner, 'latest_request', side_effect=fleet_module.FleetError('no reset request for group 9')):
-            code, lines = call('restore', '--group', '9')
-        self.assertEqual(code, 1)
-        self.assertIn('no reset request for group 9', json.loads(lines[0])['error'])
-
-    def test_the_request_is_the_newest_generation_of_the_group(self):
-        root = Path(self.directory.name)
-        for number, generation in enumerate(('old', 'new')):
-            path = root / '.orbit-artifacts' / '7' / 'reset' / generation
-            path.mkdir(parents=True)
-            (path / 'request.json').write_text('{}')
-            os.utime(path / 'request.json', (1000 + number, 1000 + number))
-        self.assertEqual(runner.latest_request('7', root).parent.name, 'new')
-        with self.assertRaises(fleet_module.FleetError):
-            runner.latest_request('8', root)
 
 
 class SetupTest(unittest.TestCase):

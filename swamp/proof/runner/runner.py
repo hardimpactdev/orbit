@@ -217,32 +217,8 @@ def command_case(args):
     return {'passed': 0, 'failed': 1, 'unrun': 2}[result['verdict']]
 
 
-def latest_request(group, root=None):
-    """The request of the newest reset generation of the task group: the one the nested fleet in this VM belongs to."""
-    root = Path(root) if root else Path(__file__).resolve().parents[3]
-    found = sorted((root / '.orbit-artifacts' / str(group) / 'reset').glob('*/request.json'), key=lambda path: path.stat().st_mtime)
-    if not found:
-        raise fleet_module.FleetError(f'no reset request for group {group}')
-    return found[-1]
-
-
-def command_restore(args):
-    """Put the nested fleet back to `base`: the phase `base-restore` with its own 45 s limit, once, no retry. One JSON line."""
-    started = time.time()
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'reset'))
-        import phases
-        request = json.loads(Path(args.request or latest_request(args.group)).read_text())
-        phases.execute(request, 'base-restore')
-    except Exception as error:  # a restore that fails ends the run: the line says why, and the exit code stops the batch
-        print(json.dumps({'restore': 'failed', 'secs': round(time.time() - started, 1), 'error': f'{type(error).__name__}: {error}'[:300]}))
-        return 1
-    print(json.dumps({'restore': 'ok', 'secs': round(time.time() - started, 1)}))
-    return 0
-
-
 def command_setup(args):
-    """Run the setup steps a batch declares, on the restored fleet. One JSON line; exit 1 when a step fails or is not built."""
+    """Run the setup steps a batch declares, on the fleet. One JSON line; exit 1 when a step fails or is not built."""
     spec = spec_module.load(args.file, args.batches)
     if args.batch not in spec.batches:
         raise spec_module.SpecError('unknown batch: ' + args.batch)
@@ -271,10 +247,7 @@ def main(argv=None):
     case.add_argument('id')
     case.add_argument('--negative', action='store_true')
     case.add_argument('--evidence')
-    restore = commands.add_parser('restore', help='put the nested fleet back to base; one 45 s limit, no retry')
-    restore.add_argument('--group', required=True)
-    restore.add_argument('--request')
-    setup = commands.add_parser('setup', help='run the setup steps of one batch on the restored fleet')
+    setup = commands.add_parser('setup', help='run the setup steps of one batch on the fleet')
     setup.add_argument('batch')
     setup.add_argument('--evidence')
     for command in (plan, case, setup):
@@ -282,8 +255,6 @@ def main(argv=None):
         command.add_argument('--batches', default=str(BATCHES))
     args = parser.parse_args(argv)
     try:
-        if args.command == 'restore':
-            return command_restore(args)
         return {'plan': command_plan, 'case': command_case, 'setup': command_setup}[args.command](args)
     except spec_module.SpecError as error:
         print(f'cases file refused: {error}', file=sys.stderr)

@@ -231,104 +231,10 @@ jobs:
         - sh
         - '${{ inputs.intent.builder.checkout }}'
         timeoutSec: 910
-  - name: Build the topology
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Install the dependencies, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *host
-      # The proof reset of the cloned release (bin/proof-fleet). A full reset deletes the ready copies of the seed it started from: Gateway with Swamp, app-dev and app-prod, with real
-      # nested WireGuard, healthy and Doctor-clean. It adopts the seed clone as the Incus pool first.
-      inputs:
-        hosts: name:host
-        sudo: true
-        argv:
-        - timeout
-        - '1700'
-        - incus
-        - --project
-        - '${{ inputs.intent.seed.project }}'
-        - exec
-        - '${{ inputs.intent.builder.name }}'
-        - --cwd
-        - '${{ inputs.intent.builder.checkout }}'
-        - --
-        - runuser
-        - -u
-        - orbit
-        - --
-        - env
-        - HOME=/home/orbit
-        - PATH=/usr/local/bin:/usr/bin:/bin
-        - sh
-        - -c
-        - |
-          set -eu
-          if ! sudo -n bin/e2e-topology-host-setup >/tmp/host-setup.log 2>&1; then
-            tail -n 3 /tmp/host-setup.log >&2
-            exit 1
-          fi
-          if ! bin/proof-fleet reset "$1" >/dev/null; then
-            latest=$(ls -td .orbit-artifacts/"$1"/reset/*/ | head -n 1)
-            for report in "$latest"*-failure.json "$latest"facts-not-ready.json; do
-              [ -f "$report" ] && python3 -c 'import json, sys; print(sys.argv[1].split("/")[-1], str(json.load(open(sys.argv[1])))[:300])' "$report" >&2
-            done
-            exit 1
-          fi
-        - sh
-        - '${{ inputs.intent.builder.group }}'
-        timeoutSec: 1710
-  - name: Make the ready copies
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Build the topology, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *host
-      # `bin/proof-fleet ready` of the cloned release: it copies the healthy fleet to `fleet-ready-<role>` and removes the Swamp Club
-      # key from them. `release` then deletes the guests of the build, which leaves the copies. The contract of the copies is in
-      # swamp/proof/README.md.
-      inputs:
-        hosts: name:host
-        sudo: true
-        argv:
-        - timeout
-        - '1500'
-        - incus
-        - --project
-        - '${{ inputs.intent.seed.project }}'
-        - exec
-        - '${{ inputs.intent.builder.name }}'
-        - --cwd
-        - '${{ inputs.intent.builder.checkout }}'
-        - --
-        - runuser
-        - -u
-        - orbit
-        - --
-        - env
-        - HOME=/home/orbit
-        - PATH=/usr/local/bin:/usr/bin:/bin
-        - sh
-        - -c
-        - |
-          set -eu
-          bin/proof-fleet ready "$1" >/dev/null
-          bin/proof-fleet release "$1" >/dev/null
-        - sh
-        - '${{ inputs.intent.builder.group }}'
-        timeoutSec: 1510
   - name: Keep the ready state
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Make the ready copies, condition: {type: succeeded}}]
+    dependsOn: [{step: Install the dependencies, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -472,8 +378,8 @@ jobs:
     labels: {role: swamp}
     task:
       type: assert
-      # The build and the ready copies passed, the promotion printed the seed the claims clone, and the host now lists that
+      # The ready state check passed, the promotion printed the seed the claims clone, and the host now lists that
       # seed, and no builder and no unpromoted clone.
-      expr: 'steps["Build the topology"].outputs.exitCode == 0 && steps["Make the ready copies"].outputs.exitCode == 0 && steps["Keep the ready state"].outputs.exitCode == 0 && steps["Check the ready copies"].outputs.exitCode == 0 && steps["Promote the seed"].outputs.exitCode == 0 && steps["Remove the builder"].outputs.exitCode == 0 && !steps["Remove the builder"].outputs.stdout.split("\n").exists(line, line == inputs.intent.builder.name || line == "custom," + inputs.intent.seed.building) && steps["Remove the builder"].outputs.stdout.split("\n").exists(line, line == "custom," + inputs.intent.seed.current)'
+      expr: 'steps["Keep the ready state"].outputs.exitCode == 0 && steps["Check the ready copies"].outputs.exitCode == 0 && steps["Promote the seed"].outputs.exitCode == 0 && steps["Remove the builder"].outputs.exitCode == 0 && !steps["Remove the builder"].outputs.stdout.split("\n").exists(line, line == inputs.intent.builder.name || line == "custom," + inputs.intent.seed.building) && steps["Remove the builder"].outputs.stdout.split("\n").exists(line, line == "custom," + inputs.intent.seed.current)'
       severity: high
-      message: The seed is not refreshed; the build, the ready copies, the promotion or the cleanup is not as admitted.
+      message: The seed is not refreshed; the ready copies, the promotion or the cleanup is not as admitted.

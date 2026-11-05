@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Keeps what a fresh task VM needs next to the ready copies of a seed refresh (docs/cli/tasks/vm-seed-refresh.mmd). Run as
-# root, in the builder, after `bin/proof-fleet ready GROUP` and `bin/proof-fleet release GROUP`. Argument: the proof group.
+# root, in the builder, after the step that makes the ready copies. Argument: the proof group.
 #
-# `bin/proof-fleet ready` made `fleet-ready-<role>` (the contract is in swamp/proof/README.md, "Ready copies: the contract").
+# That step made `fleet-ready-<role>` (the contract is in swamp/proof/README.md, "Ready copies: the contract").
 # 1. It checks the pool holds `node-template` and the three complete, stopped ready copies, and nothing else: the guests of the
 #    build are gone. It checks the keys `user.ready.set`, `complete`, `minted`, `attempt` and `inputs`, and that no copy has a
 #    NIC, a source mount or a generation label.

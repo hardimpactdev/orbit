@@ -23,16 +23,13 @@ sequenceDiagram
   %%> - one line a batch, `BATCH SETUP CASE...`, in the order of `swamp/proof/batches.yaml`; inside a batch, in file order
   VM-->>SW: Ordered plan<br/>batches · cases
   loop each batch, one at a time
-    opt not the first batch
-      SW->>VM: Restore base<br/>runner restore
-      %%> What it does:
-      %%> - the phase `base-restore`, one 45 s limit, no retry
-      %%> - a restore that fails prints a failed line; the cases of the batch and every later batch become `unrun` with cause `infrastructure`, and the verdicts already reached stay
-    end
+    Note over SW: Restore base<br/>not built
+    %%> Not built:
+    %%> - the restore of `base` before each batch; the old restore was removed, and its replacement is rebuilt as a Swamp step
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>runner setup
       %%> What it does:
-      %%> - runs the setup steps of the batch; a setup that fails or is not built stops the run like a failed restore
+      %%> - runs the setup steps of the batch; a setup that fails or is not built stops the run
     end
     loop each case, one at a time, one child workflow
       SW->>VM: Run one case<br/>runner case ID
@@ -41,10 +38,12 @@ sequenceDiagram
       %%> Returns:
       %%> - one JSON line of at most 1 KB: the case id, the verdict, the cause, the seconds and the failed checks
       opt the case did not pass and is not the last of its batch
-        SW->>VM: Restore base<br/>then the batch setup
+        SW->>VM: Set up the batch again<br/>runner setup
         %%> Why:
-        %%> - a failed case can leave anything behind; the next case starts clean
-        %%> - the last case of a batch skips it, because the next batch restores anyway
+        %%> - a failed case can leave anything behind; the setup of the batch runs again
+        %%> - the last case of a batch skips it
+        %%> Not built:
+        %%> - the restore of `base` before the setup; the old restore was removed
       end
     end
     Note over SW: Join the batch lines<br/>report

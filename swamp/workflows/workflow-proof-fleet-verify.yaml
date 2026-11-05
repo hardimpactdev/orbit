@@ -68,7 +68,7 @@ jobs:
   - job: plan
     condition: {type: succeeded}
   steps:
-  # One child per batch, one at a time, in plan order. A batch that stopped on a restore or its setup stops the run.
+  # One child per batch, one at a time, in plan order. A batch that stopped on its setup stops the run.
   - name: batch-${{ self._index }}
     labels: {role: swamp}
     forEach:
@@ -85,7 +85,6 @@ jobs:
         group_id: ${{ inputs.intent.group_id }}
         file: ${{ inputs.intent.file }}
         batch: ${{ self.batch.batch }}
-        first: ${{ self._index == 0 }}
         setup: ${{ self.batch.setup }}
         cases: ${{ self.batch.cases }}
 - name: report
@@ -106,4 +105,4 @@ jobs:
         run: |
           printf '%s\n' "$LINES"
         env:
-          LINES: '${{ [steps.filter(k, k.startsWith("batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("").trim()).filter(x, x != "")].map(x, (x + [x.join("\n")].map(e, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: a restore or the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'
+          LINES: '${{ [steps.filter(k, k.startsWith("batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("").trim()).filter(x, x != "")].map(x, (x + [x.join("\n")].map(e, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'

@@ -30,7 +30,7 @@ function runningScript(?string $run = RUN, int $minutes = 20): Operation
         'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => 'orbit']));
 
     return Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id,
-        'input' => ['script' => 'bin/proof-fleet', 'args' => ['reset', '1', '--from-ready'], 'run_budget_seconds' => 360], 'status' => OperationStatus::Running,
+        'input' => ['script' => 'scripts/dependencies', 'args' => ['routine'], 'run_budget_seconds' => 360], 'status' => OperationStatus::Running,
         'state' => $run === null ? [] : ['swamp_run_id' => $run], 'sequence' => 1, 'attempts' => 1, 'started_at' => now()->subMinutes($minutes)]);
 }
 
