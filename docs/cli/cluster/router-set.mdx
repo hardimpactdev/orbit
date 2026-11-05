@@ -1,25 +1,44 @@
 ---
 title: "orbit cluster:router:set"
 sidebarTitle: "cluster:router:set"
-description: "Set or replace the Cluster Router. The Router must be an active member Node."
+description: "Set or replace the Router of a Cluster."
 ---
 
 ```bash
-orbit cluster:router:set <cluster> <node> [--idempotency-key=KEY]
+orbit cluster:router:set <cluster> <node> [--json]
 ```
-
-Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `cluster` | yes | Numeric Cluster ID. |
-| `node` | yes | Numeric Node ID of an active member. |
+| `node` | yes | Numeric Node ID of an active member that is a Linux Node. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the final Operation as JSON. |
 
 ```bash
 orbit cluster:router:set 3 7
 ```
 
-Replacement keeps the current Router active until its replacement is ready, promotes the candidate, and then cleans up the old assignment. Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`. A replacement that another Router change left unfinished fails with `cluster.router_transition_conflict`. A Node that is not an active member fails with `cluster.router_node_invalid`.
+In a terminal, an omitted Cluster is chosen from an interactive list, and an omitted Node from the Cluster's active members. A noninteractive or `--json` call that omits one is refused with `cluster.id_invalid` or `node.id_invalid` and sends no request.
+
+Members on the LAN reach Cluster Routes through the Router over HTTPS. Cluster DNS on the Router is not built yet. Replacement keeps the current Router serving until the candidate can serve every Cluster Route. Orbit prepares the candidate, signs its certificates, opens the LAN paths, publishes the Router sites, probes every workload from the candidate, switches private DNS, waits for the DNS answers to expire, and then retires the old Router's sites and LAN rules. The CLI follows the Operation and prints the final result with the request ID.
+
+Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`. A replacement that another Router change left unfinished fails with `cluster.router_transition_conflict`. A Node that is not an active member, or not a Linux Node with a valid account, fails with `cluster.router_node_invalid`. A candidate without a LAN address is reached by its WireGuard address. Setting the Node that is already the active Router, with no replacement pending, succeeds with `Skipped — already the Router (cluster.router_unchanged)` and changes nothing.
+
+If preparing, publishing or the DNS selection fails, Orbit restores the captured Caddy, firewall and DNS state, so the old Router keeps serving, and the candidate's assignment is marked failed. If the restore fails too, the old assignment stays active, the result says the restore failed, and `doctor` shows the drift. Packages and Caddy installed on the candidate stay. If retiring the old Router fails after the switch, the candidate stays the Router, the old assignment stays recorded as unfinished, and a rerun finishes it. After you fix the cause, run the same command again.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `cluster.id_invalid`, `node.id_invalid` | The Cluster or Node is missing or is not a positive integer, and the CLI cannot prompt. |
+| `cluster.router_node_invalid` | The Node is not an active member of the Cluster, or not a Linux Node with a valid account. |
+| `cluster.router_busy` | Another Router change holds the Cluster. |
+| `cluster.router_transition_conflict` | An earlier replacement is unfinished. |
+| `http.404` | The Cluster or Node is unknown. |
+| `node_access.required` | The caller has no access grant to the candidate Node. |
 
 ## How it works
 
