@@ -66,8 +66,9 @@ final readonly class ProofRunIntent
 
             throw $exception;
         }
-        // The group's own operations carry the run; this Operation closes with the verdicts after the group is cancelled.
-        $operation = $this->store->create(OperationKinds::ProofRun, 'task_group', $group->id, $swamp->id, [...$intent, 'group_id' => $group->id], $caller, $requestId);
+        // The group's own operations carry the run, so this Operation is not a task_group target: the cancel of the group refuses to start while an Operation holds it.
+        // It closes with the verdicts after the group is cancelled.
+        $operation = $this->store->create(OperationKinds::ProofRun, 'proof', $group->id, $swamp->id, [...$intent, 'group_id' => $group->id], $caller, $requestId);
         $this->store->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()]);
 
         return $operation;
