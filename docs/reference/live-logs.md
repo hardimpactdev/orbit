@@ -159,7 +159,7 @@ Redaction is a safety net. It misses a secret with no recognizable shape or key 
 
 The `websocket` role Node sees every log line in plain text, because TLS ends there. Orbit trusts that Node as part of the realtime layer, as it does for every other realtime message.
 
-The CLI redacts credential-shaped text again before it prints a line, and it writes `[redacted]` in lower case. A line in the terminal can therefore show both forms. `[REDACTED]` marks a value that the agent or the Gateway replaced. `[redacted]` marks one that the CLI replaced, for example in `API_KEY=[redacted]`, where the CLI matched the already redacted `API_KEY=[REDACTED]` again.
+The CLI redacts credential-shaped text again before it prints a line. It writes every redaction as `[redacted]` in lower case, also a value that the agent or the Gateway already replaced with `[REDACTED]`. `API_KEY=[REDACTED]` therefore shows as `API_KEY=[redacted]`.
 
 ## When the live path is not available
 
