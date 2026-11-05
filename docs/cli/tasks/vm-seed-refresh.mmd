@@ -1,0 +1,159 @@
+sequenceDiagram
+  %% Target design: B3 (migration-dashboard/public/task-vms.html, "What is baked in" and the decision log), docs/reference/compute-drivers.md (The topology seed), swamp/proof/reset/README.md.
+  %% Tightened: flow-tighten rules 1, 3, 6, 9, 20, 22 (the host work is one placed step per action group; the build is the proof reset of the release, not a second builder; the swap is renames in one step; one end check).
+  %% status: draft
+  %% command: none · refresh the topology seed of a task VM host
+  %% kind: task_vm.seed_refresh
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane B icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant H as Task VM host<br/>over ssh
+  participant B as Builder VM<br/>task image
+  Note over GW: Validate, record the run
+  %%> Started by:
+  %%> - the release flow, for every task VM host in parallel, once the release is live and the host's task image is promoted (B8)
+  %%> - there is no CLI command of its own; an operator runs `php artisan task-vms:refresh-seed HOST` on the Gateway
+  %%> Requirements:
+  %%> - the host is an active task VM host with a promoted task image, and no image build is running on it
+  %%> - the host has the seed of that image: a refresh starts from it and never from nothing
+  %%> - the host has the three slots of a large VM free, and no image build holds the host lock
+  %%> - the Gateway runs a release commit, the GitHub App can read the release repository, and the proof Swamp Club key is set
+  %%> Result:
+  %%> - a task is recorded with the full intent; a second admission for the host returns the open task
+  %%> - nothing on the host changes yet
+  GW->>SW: Push the credentials<br/>vault: GitHub header, club key
+  %%> Why:
+  %%> - credentials go Gateway → vault → step; the run inputs hold only vault key names
+  %%> - the GitHub read header is minted by the Gateway's App, whose key never leaves the Gateway
+  GW->>SW: Start run, full intent<br/>operation-task-vm-seed-refresh
+  %%> Inputs:
+  %%> - the task image, the names of the current, building and previous seed, and the builder VM with its instance config
+  %%> - the release repository and the commit the Gateway runs, so the ready topology is the release it will serve
+  SW->>H: Remove a stale builder<br/>ssh exec · cleanup-builder.sh
+  %%> What it does:
+  %%> - takes the host seed lock, the lock a claim's seed clone takes
+  %%> - deletes the builder VM
+  %%> - repairs a promotion that died between its two renames: if the current seed is missing, the old seed goes back from `-previous`
+  %%> - only then deletes an unpromoted `-refresh` clone
+  %%> - keeps `-previous`, the rollback copy
+  %%> Why:
+  %%> - a host refreshes one seed at a time, so anything with these names belongs to an earlier run that ended badly
+  %%> The script:
+  %%> - the file `tools/task-vm-seed/cleanup-builder.sh` travels in the intent, so the run shows what it ran
+  SW->>H: Clone the seed<br/>ssh exec · volume copy
+  %%> What it does:
+  %%> - takes the host seed lock, then copies the current seed to the building name; on ZFS the copy is a clone and costs only what the build writes
+  %%> Why:
+  %%> - the build starts from the node template that is in the seed, and the old seed stays untouched
+  %%> Fails when:
+  %%> - the host has no current seed; nothing has changed
+  SW->>H: Start the builder<br/>ssh exec · incus init, start
+  %%> What it does:
+  %%> - creates a large VM (12 GiB, 6 CPUs) from the task image, with the seed clone as the disk `topology-seed`, and starts it
+  %%> - waits until the Incus agent reports the VM's address
+  %%> Not included:
+  %%> - no fleet identity: the builder has no WireGuard address, Node, token or model key, and it is not an enrolled slot
+  SW->>B: Fetch the source<br/>incus exec · git clone
+  %%> What it does:
+  %%> - clones the release repository into the checkout path and checks out the release commit on the branch `seed-refresh/task-1`
+  %%> Why the branch:
+  %%> - the topology harness refuses a checkout whose branch does not name its task
+  %%> Secret:
+  %%> - the GitHub read header reaches Git from standard input; it is in no argument and no file
+  SW->>B: Prepare the builder<br/>incus exec · prepare-builder.sh
+  %%> What it does:
+  %%> - installs the proof Swamp Club key for the reset's Swamp runs, from standard input, mode 0600
+  %%> - adds idle stand-ins for the observer and Pi services and a throwaway `orbit` interface
+  %%> Why the stand-ins:
+  %%> - the reset proves it leaves the outer VM's services and tunnel as it found them, and a builder has none of them
+  SW->>B: Install the dependencies<br/>incus exec · composer install
+  %%> What it does:
+  %%> - installs the Composer packages of the SDK, the CLI, the harness and the Gateway, in that order
+  SW->>B: Build the topology<br/>incus exec · bin/proof-fleet
+  %%> What it does:
+  %%> - adopts the seed clone as the Incus pool `topology-seed`
+  %%> - runs the proof reset of the release: Gateway with Swamp, app-dev and app-prod, real WireGuard on 10.45.0.0/24
+  %%> - the reset ends when the fleet is healthy, its agents are online and Doctor is clean
+  %%> Measured:
+  %%> - 6 min 33 s to 7 min 26 s on beast at host load 5 to 9, in whole runs of 7 min 31 s and 10 min 2 s; the S3 measurement of the reset alone is 232 s on a quiet host
+  SW->>B: Make the ready copies<br/>incus exec · proof-fleet
+  %%> What it does:
+  %%> - runs `bin/proof-fleet ready` of the release: it copies the healthy fleet to `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`
+  %%> - the copies carry no Swamp Club key: the command deletes it from the Gateway, scans for it, and discards the freed blocks
+  %%> - then runs `bin/proof-fleet release`, which deletes the guests of the build and leaves the copies
+  %%> The contract:
+  %%> - names, `user.ready.*` keys, no NIC, no source mount and no generation label are in `swamp/proof/README.md`, "Ready copies: the contract"
+  SW->>B: Keep the ready state<br/>incus exec · ready-state.sh
+  %%> What it does:
+  %%> - checks that the pool holds `node-template` and the three complete, stopped copies of one set, with the keys `minted`, `attempt` and `inputs`, and nothing else
+  %%> - keeps the build's source tree as the custom volume `ready-source`, with its `.env`, `storage`, `bootstrap/cache`, ACLs and owners
+  %%> Why the source tree:
+  %%> - the ready Gateway's database is encrypted with the key in that `.env`, and the tree is a directory of the outer VM, not part of the seed
+  %%> - a fresh task VM restores it before it restores the copies
+  %%> Prints:
+  %%> - the copies, their set identity and the keys, which the Gateway compares with what it admitted
+  SW->>B: Check the ready copies<br/>incus exec · check-ready.sh
+  %%> What it does:
+  %%> - starts a throwaway copy of each ready copy and waits for its Incus agent, so each ready copy is a VM that boots
+  %%> - searches each copy, and the volume `ready-source`, for the Swamp Club key of the build, by path and by value
+  %%> - deletes the copies; a ready copy itself is never started
+  %%> Why:
+  %%> - the seed is cloned into every task VM of the host, so a key in it would reach all of them
+  %%> - a ready copy that does not boot must not become the seed
+  %%> Prints:
+  %%> - the roles that passed, which the Gateway compares with the roles it admitted
+  SW->>H: Stop the builder<br/>ssh exec · incus stop
+  %%> What it does:
+  %%> - stops the builder cleanly; its Incus unmounts the pool, so the seed holds a finished file system
+  SW->>H: Promote the seed<br/>ssh exec · promote-seed.sh
+  %%> What it does:
+  %%> - takes the host seed lock, so no claim clones the seed between the renames
+  %%> - deletes the builder; its seed clone stays as a volume
+  %%> - `zfs promote` makes the clone own the blocks it shares with the old seed, so a chain of refreshes does not grow
+  %%> - deletes the `-previous` seed of the refresh before, then renames the current seed to `-previous` and the clone to the seed name
+  %%> - ignores HUP, INT and TERM during the two renames; if the second rename fails, the first is undone
+  %%> - prints the seed name, its size and the bytes the build wrote
+  %%> Rollback copy:
+  %%> - the old seed stays as `-previous` until the next successful refresh deletes it
+  %%> - a task VM that runs keeps its own clone of the old seed, even after that deletion
+  %%> The only change:
+  %%> - this is the only step that changes what a claim clones
+  SW->>H: Remove the builder<br/>ssh exec · cleanup-builder.sh
+  %%> What it does:
+  %%> - runs after success, failure and cancellation, with the same script as the first step
+  %%> - repairs a promotion that died between its renames before it deletes anything
+  %%> - deletes the builder VM and an unpromoted clone; a promoted clone has the seed name by now
+  %%> - lists the VMs and volumes for the end check
+  Note over SW: Check the seed<br/>assert
+  %%> End check:
+  %%> - a native `assert` over the step results
+  %%> - the build, the ready copies, their check, the promotion and the cleanup passed
+  %%> - the host lists the seed, and no builder and no unpromoted clone
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result
+    %%> Result:
+    %%> - the task succeeds, with the seed name, its rollback copy, the ready copies, the size of the seed and the bytes the build wrote
+    %%> - the Gateway keeps no other state: the seed is on the host, under the name every claim clones
+    %%> The next claim:
+    %%> - clones the new seed and boots a VM that holds the three ready VMs
+  else a step fails
+    H--xSW: exit ≠ 0
+    %%> When:
+    %%> - a host command, the build, the ready copies, the promotion or the end check fails, or the run is cancelled
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Record failure
+    %%> Result:
+    %%> - the task fails; no alert fires
+    %%> On the host:
+    %%> - the host keeps the seed it had, because the promotion is the last host change and undoes itself
+    %%> - the builder and its clone are deleted by the cleanup, and the next run removes any a crash left
+    %%> Retry:
+    %%> - run the refresh again after fixing the cause; it starts from the current seed
+  end

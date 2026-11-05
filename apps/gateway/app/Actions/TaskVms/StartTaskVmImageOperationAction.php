@@ -6,7 +6,10 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -33,6 +36,11 @@ final readonly class StartTaskVmImageOperationAction
         if ($existing !== null) {
             return $existing;
         }
+        if (Operation::query()->where('kind', 'task_vm.seed_refresh')->where('target_type', 'task_vm_host')->where('target_id', $build->host_node_id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            // The caller's transaction rolls the build row back; the scheduler tries again after the refresh.
+            throw new TaskVmException('task_vm.image_build_running', 'A seed refresh is running on this host. The image build starts after it ends.', 409);
+        }
         $host = $this->settings->host($build->host_node_id);
         $node = $build->hostNode;
         $recipe = $this->recipes->decode((string) $build->recipe_json);
@@ -51,7 +59,7 @@ final readonly class StartTaskVmImageOperationAction
             'base_alias' => $host->imageAlias, 'gateway_public_key' => $this->keys->identity()['public_key'], 'certificate' => $this->certificates->rootCertificate(),
             'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'pi_artifact' => $pi === null ? null : ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location, 'sha256' => $pi->digest],
             'prune' => $this->pruning->input($build),
-        ], 'task-vm-image', null);
+        ], 'task-vm-image', null, lockKey: OperationStore::lockKey('task_vm_host', $node->id));
     }
 
     /** The release's pinned agent for the build host; the build installs it before any agent call. */

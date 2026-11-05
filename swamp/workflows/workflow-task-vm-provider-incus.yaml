@@ -169,7 +169,8 @@ jobs:
           $name-topology-seed\" 'any(.[]; .type == \"custom\" and .name == $name)'\
           \ >/dev/null; then\n  exit 0\nfi\nprintf '%s' \"$observed\" | jq -e --arg\
           \ name \"$source\" 'any(.[]; .type == \"custom\" and .name == $name)' >/dev/null\n\
-          /usr/bin/sudo -n -- /usr/bin/incus --project \"$project\" storage volume\
+          /usr/bin/sudo -n -- /usr/bin/flock --wait 600 /run/lock/orbit-task-vm-seed.lock\
+          \ /usr/bin/incus --project \"$project\" storage volume\
           \ copy -- \"$pool/$source\" \"$pool/$name-topology-seed\"\n"
         timeoutSec: 900
       globalArgs: *id001

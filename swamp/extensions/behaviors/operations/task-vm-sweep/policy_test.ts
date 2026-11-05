@@ -193,3 +193,26 @@ Deno.test("a slot's VM, seed clone and identity volume are owned and never delet
     const orphans = selectIncusOrphans(scope, rows(names.slice(0, 1)), rows(names.slice(1)));
     assertEquals([orphans.instances, orphans.volumes], [[], []]);
 });
+
+Deno.test("a seed refresh's builder, clone and previous seed are owned of a kept image, and never deleted", () => {
+    const fingerprints = ["aaaaaaaaaaaa0000"];
+    const names = [
+        "orbit-topology-seed-aaaaaaaaaaaa",
+        "orbit-topology-seed-aaaaaaaaaaaa-refresh",
+        "orbit-topology-seed-aaaaaaaaaaaa-previous",
+    ];
+    const strays = incusStrays(
+        scope,
+        false,
+        [...rows(["tvm-seed-refresh", "tvm-seed-refresh-2"])],
+        [...rows(names), ...rows(["orbit-topology-seed-bbbbbbbbbbbb-refresh", "orbit-topology-seed-aaaaaaaaaaaa-old"])],
+        fingerprints,
+    );
+    assertEquals(strays.instances, [{ project: "tasks", name: "tvm-seed-refresh-2" }]);
+    assertEquals(strays.volumes.map((row) => row.name), [
+        "orbit-topology-seed-bbbbbbbbbbbb-refresh",
+        "orbit-topology-seed-aaaaaaaaaaaa-old",
+    ]);
+    const orphans = selectIncusOrphans(scope, rows(["tvm-seed-refresh"]), rows(names));
+    assertEquals([orphans.instances, orphans.volumes], [[], []]);
+});

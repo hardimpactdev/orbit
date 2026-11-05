@@ -86,6 +86,8 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the `task_vm.destroy` budget of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
+`task_vm.seed_refresh` has a provisional 3,600 seconds. Two live runs on beast, with the host at load 5 to 9, took 7 minutes 31 seconds and 10 minutes 2 seconds. The proof reset is most of it. The host steps are bounded at 340 to 1,710 seconds each, and a loaded host stretches the reset and the boot checks. The budget is one hour. A 14-day p95 replaces it after the first successes.
+
 `task_vm.slot_enroll` has a provisional 900 seconds: the identity phase, the model key issue, the hub reload, a proof VM that boots in about 17 seconds, and its cleanup, with three times the expected work as margin until a run is measured.
 
 `task_vm.slot_release` has a provisional 900 seconds: the forced VM delete and the seed clone delete (180 seconds each at their bounds) and two host reads (60 seconds each), 600 seconds in all, times 1.5, until a run is measured.

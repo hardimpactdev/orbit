@@ -79,6 +79,11 @@ final class OperationRunBudgets
         // reads (60 s bound each) run in turn, 600 s at their bounds, x 1.5 = 900 s, a multiple of five minutes. Replace with the
         // 14-day p95 after the first successes.
         'task_vm.slot_release' => 900,
+        // No successful run yet. Basis: two live runs on beast with the host at load 5 to 9, 7 min 31 s and 10 min 2 s. The host
+        // steps are bounded by 340 s (cleanup), 640 s (clone), 310 s (start), 310 s (fetch), 910 s (dependencies), 1,710 s
+        // (the proof reset), 610 s (copies), 910 s (check), 210 s (stop) and 410 s (promote). A loaded host stretches the reset
+        // and the boot checks, so the budget is 1 h, not 2 x the longer run. Replace with the 14-day p95 after the first successes.
+        'task_vm.seed_refresh' => 3600,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,

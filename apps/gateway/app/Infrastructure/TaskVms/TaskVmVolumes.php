@@ -12,6 +12,8 @@ use App\Models\Node;
  *
  * - `orbit-topology-seed-<12 hex>`: the topology seed of the base image with that fingerprint. The image build creates
  *   it as `orbit-topology-seed-<12 hex>-new` and renames it when it is finished, and pruning deletes it with its image.
+ *   A seed refresh builds the next seed as `-refresh`, the clone that its builder VM boots with, and promotes it by
+ *   renaming: the old seed becomes `-previous` for one refresh, and the clone takes the seed name.
  * - `tvm-<id>-topology-seed`: the clone of its base image's topology seed that a VM whose size runs a topology boots
  *   with. It goes with the VM.
  * - `<node-slug>-tvm-<n>-topology-seed` and `<node-slug>-tvm-<n>-identity`: the same clone of a slot's VM, and the slot's
@@ -29,7 +31,7 @@ final readonly class TaskVmVolumes
 
     private const string Clone = '/\A((?:[a-z0-9]+(?:-[a-z0-9]+)*-)?tvm-[0-9]+)-(?:topology-seed|identity)\z/D';
 
-    private const string Seed = '/\Aorbit-topology-seed-([a-f0-9]{12})(?:-new)?\z/D';
+    private const string Seed = '/\Aorbit-topology-seed-([a-f0-9]{12})(?:-new|-refresh|-previous)?\z/D';
 
     public function __construct(private IncusHost $incus) {}
 
@@ -43,6 +45,18 @@ final readonly class TaskVmVolumes
     public static function newSeed(string $fingerprint): string
     {
         return self::seed($fingerprint).'-new';
+    }
+
+    /** The name of the clone that a seed refresh builds the next seed in. */
+    public static function refreshSeed(string $fingerprint): string
+    {
+        return self::seed($fingerprint).'-refresh';
+    }
+
+    /** The name the replaced seed keeps until the next refresh. */
+    public static function previousSeed(string $fingerprint): string
+    {
+        return self::seed($fingerprint).'-previous';
     }
 
     /**
