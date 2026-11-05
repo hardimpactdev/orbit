@@ -8,4 +8,28 @@ description: "Show the tracking hosts of an Instance."
 orbit instance:analytics:show <instance> [--json]
 ```
 
-The output has the same shape as [`instance:analytics:enable`](/cli/instance/analytics-enable). An Instance without tracking hosts reports tracking as disabled, with no hosts and no script tag.
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. A terminal asks for it when it is omitted. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the tracking record as JSON. |
+
+```bash
+orbit instance:analytics:show 12
+```
+
+In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
+
+The command reads the Gateway's records and touches no Node and no Plausible. The caller needs an access grant to the Instance's Node.
+
+The CLI prints a detail with Instance, Domain, Tracking (`enabled` when the Instance has a tracking host), Dashboard (the analytics dashboard address, `—` when no analytics role is active) and the request ID. The Instance is shown by name and empty values as `—`. A table lists each host with its Route, status (with the error code of a failed host) and publication. Below it come the public DNS record to create for each host, a `CNAME` from the host to the Instance's domain, and the script tag for the first host. An Instance without tracking hosts reports tracking as disabled, with no hosts and no script tag. With `--json`, stdout holds `instance_id`, `enabled`, `domain`, `dashboard_url`, `hosts`, `snippet` and `request_id`. Each host holds `host`, `route_id`, `status`, `publication`, `failed_step`, `error_code`, `script_url`, `event_url` and `dns`.
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
