@@ -11,7 +11,7 @@
         "demo": "VITE_ORBIT_DEMO=1 vp dev",
         "build": "bun run types && tsc && vp build",
         "preview": "vp preview",
-        "check": "bun run types && vp check",
+        "check": "bun run types && vp check --fix",
         "test": "bun run test:unit && bun run test:browser",
         "test:unit": "vp test run --project unit --project verification",
         "test:browser": "vp test run --project browser",

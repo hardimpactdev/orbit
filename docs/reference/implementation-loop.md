@@ -284,9 +284,9 @@ API ownership matching removes the shared `api/v1` prefix, so a Form Request use
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
 2. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 2 to 5 share the machine.
-3. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
+3. When the candidate changes `apps/web` or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
 4. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
-5. When the candidate changes the Rust agent or the desktop app, it runs `cargo fmt --all -- --check` in the matching Rust project.
+5. When the candidate changes the Rust agent or the desktop app, it runs `cargo fmt --all` in the matching Rust project, which fixes the formatting.
 
 Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`, and test files beside their source (`*_test.ts`, `*_test.py`, `test_*.py`). A page's `covers:` glob over a source folder does not claim the test files in it. Nor does a change to the machine recipe that only bumps pinned values. A deleted CLI command needs no page either: step 1 does not ask for the page of a command whose source file is gone.
 
@@ -336,9 +336,9 @@ The gate checks the local candidate tree. CI runs the builds and static checks l
 
 #### Web and Pi server checks
 
-A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The build also requires nonempty `dist/index.html` and `dist/version.json`, as CI does. The generated-types check runs `openapi-typescript` from the web app’s `tools/api-types` workspace and writes its output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. On failure it prints a unified diff and says to run `cd apps/web && bun run types`. A change to `docs/openapi.json` alone runs the install and the generated-types check. A change under `apps/pi-server` runs `bun install --frozen-lockfile`, `bun run check`, and `bun run build` there. Its test files remain available locally. Rust formatting runs for changed Rust projects; the remaining Rust checks run only in CI.
+A change under `apps/web` or `apps/pi-server` runs `bun install --frozen-lockfile` and `bun run check` there. `bun run check` fixes formatting and lint findings with `vp check --fix`, then type-checks; the web app first generates its ignored API types. CI's `Web build` job builds the web app. Their test files remain available locally. Rust formatting runs in fix mode for changed Rust projects; no CI job checks Rust.
 
-A command whose program is missing fails with `<program>: required tool not found`. The generated-types check runs in a shell, so a tool that is missing there fails with exit code 127. The gate never skips a selected check.
+A command whose program is missing fails with `<program>: required tool not found`. The gate never skips a selected check.
 
 #### Finding checks
 
@@ -454,9 +454,9 @@ CI and the task check once disagreed on green: CI skipped the e2e guidance suite
 
 The gate checks all five Composer projects whatever the candidate changes. Checking the changed project alone is a rejected alternative, because the other projects would then have no quality check before review. The gate runs at each handoff, before review. Running it only in the independent review is also rejected, because each deterministic failure would then cost a reviewer turn and a correction round before it reached the implementer.
 
-### Web and Pi server checks join the gate, Rust stays in CI
+### Web, Pi server and Rust formatting run only in the gate
 
-A change to the web app or the Pi server could pass the gate and then fail a required CI job. So the gate runs the same fast checks as those CI jobs when their paths change. Their test files remain available locally. Running every CI job for every subtask is a rejected alternative, because path selection keeps unrelated work fast. Rust cross-compilation is too slow for each handoff, so the Rust agent stays a CI check.
+No CI job lints the web app or the Pi server, or checks Rust, so the gate runs their fast format, lint and type checks when their paths change. The formatters fix what they find. Builds stay out of the gate: CI builds the web app, and the CLI release builds the Node agent. Running every check for every subtask is a rejected alternative, because path selection keeps unrelated work fast.
 
 ### A missing tool fails the gate
 

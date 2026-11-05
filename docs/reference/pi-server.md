@@ -14,6 +14,8 @@ Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [R
 
 The Pi packages are pinned exactly to 1.4.0, including transitive dependencies. Only the required `@earendil-works/*` packages are temporarily exempt from the three-day release-age gate in `apps/pi-server/bunfig.toml`; remove the exemptions once the 2026-10-21 release passes the gate. Each session runs on one Pi Durable Harness and one SQLite database. Orbit passes Pi’s tool context through when it delegates a read.
 
+`bun run check` fixes formatting and lint findings with `vp check --fix`, then type-checks. [Bun and Rust projects](/reference/bun-and-rust-projects#pi-server) lists the other commands.
+
 ## Configure the server
 
 The server reads command-line flags first, then the environment. Orbit's systemd Processes pass only arguments, so every setting has a flag. The token has only a file flag, because arguments are visible to other users and are stored in the Process definition. The server refuses to start without a bind address and a token.

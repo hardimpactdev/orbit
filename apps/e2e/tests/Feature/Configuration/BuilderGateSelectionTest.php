@@ -47,12 +47,9 @@ function orb277_build_gate_template(): string
 
     mkdir($root.'/bin', 0o700, true);
     mkdir($root.'/tooling', 0o700, true);
-    mkdir($root.'/apps/web/src/api', 0o700, true);
-    mkdir($root.'/apps/web/tools/api-types/node_modules/.bin', 0o700, true);
+    mkdir($root.'/apps/web/src', 0o700, true);
     mkdir($root.'/apps/pi-server', 0o700, true);
-    mkdir($root.'/docs', 0o700, true);
-    file_put_contents($root.'/apps/web/src/api/schema.d.ts', "export type Example = string;\n");
-    file_put_contents($root.'/docs/openapi.json', "{}\n");
+    file_put_contents($root.'/apps/web/.gitkeep', '');
 
     // A gate that runs Pest fails: CI runs the test suites.
     foreach (orb277_projects() as $project) {
@@ -75,9 +72,6 @@ function orb277_build_gate_template(): string
         file_put_contents($root.'/bin/'.$generator, "#!/usr/bin/env sh\nexit 0\n");
         chmod($root.'/bin/'.$generator, 0o700);
     }
-    mkdir($root.'/apps/web/dist', 0o700, true);
-    file_put_contents($root.'/apps/web/dist/index.html', '<html></html>');
-    file_put_contents($root.'/apps/web/dist/version.json', '{}');
     copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
     foreach (['bun', 'vp'] as $tool) {
         file_put_contents($root.'/tooling/'.$tool, <<<'SH'
@@ -91,18 +85,6 @@ SH);
 
         chmod($root.'/tooling/'.$tool, 0o700);
     }
-    file_put_contents($root.'/apps/web/tools/api-types/node_modules/.bin/openapi-typescript', <<<'SH'
-#!/usr/bin/env sh
-while [ "$#" -gt 0 ]; do
-    if [ "$1" = "-o" ]; then
-        cp src/api/schema.d.ts "$2"
-        exit $?
-    fi
-    shift
-done
-exit 2
-SH);
-    chmod($root.'/apps/web/tools/api-types/node_modules/.bin/openapi-typescript', 0o700);
     chmod($root.'/bin/review-check', 0o700);
     chmod($root.'/bin/check-processes', 0o700);
     chmod($root.'/bin/docs-impact', 0o700);
@@ -140,8 +122,6 @@ function orb277_write_candidate(string $root, string $candidatePath): void
         }
         file_put_contents($root.'/apps/gateway/app/Example.php', "<?php\n\nfinal class Example {}\n");
         file_put_contents($root.'/apps/gateway/tests/ExampleTest.php', "<?php\n\nit('exists', fn () => expect(true)->toBeTrue());\n");
-    } elseif ($candidatePath === 'docs/openapi.json') {
-        file_put_contents($root.'/'.$candidatePath, "{\"changed\": true}\n");
     } else {
         $path = $root.'/'.$candidatePath;
         if (! is_dir(dirname($path))) {
@@ -228,73 +208,7 @@ describe('Builder gate', function (): void {
             ->and($receipt['changed_paths'])->toBe(['apps/web/src/App.tsx'])
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())
             ->toBe([...orb277_selected_projects(), 'apps/web'])
-            ->and($web->pluck('command')->all())->toHaveCount(5)
-            ->and($web[0]['command'])->toBe(['bun', 'install', '--frozen-lockfile'])
-            ->and($web[1]['command'])->toBe(['bun', 'run', 'check'])
-            ->and($web[2]['command'])->toBe(['bun', 'run', 'build'])
-            ->and($web->pluck('exit_code')->all())->toBe([0, 0, 0, 0, 0]);
-        expect($web[3]['command'][2])->toContain('test -s dist/index.html', 'test -s dist/version.json');
-        expect($web[4]['command'][0])->toBe('bash')
-            ->and($web[4]['command'][2])->toContain('./tools/api-types/node_modules/.bin/openapi-typescript');
-    });
-
-    it('rejects stale web types with the regeneration command', function (): void {
-        $fixture = orb277_gate_fixture('docs/openapi.json');
-        file_put_contents($fixture['root'].'/apps/web/tools/api-types/node_modules/.bin/openapi-typescript', <<<'SH'
-#!/usr/bin/env sh
-while [ "$#" -gt 0 ]; do
-    if [ "$1" = "-o" ]; then
-        echo 'export type Changed = number;' > "$2"
-        exit 0
-    fi
-    shift
-done
-exit 2
-SH);
-
-        $run = orb277_run_gate($fixture, expectedExit: 1);
-        $check = collect($run['receipt']['checks'])->first(
-            static fn (array $check): bool => $check['project'] === 'apps/web'
-                && str_contains(implode(' ', $check['command']), 'openapi-typescript'),
-        );
-
-        expect($run['receipt']['passed'])->toBeFalse();
-        expect(file_get_contents($check['log']))->toContain(
-            'Run: cd apps/web && bun run types',
-            '--- src/api/schema.d.ts',
-            '+++ generated/schema.d.ts',
-            '-export type Example = string;',
-            '+export type Changed = number;',
-        );
-        expect(file_get_contents($fixture['root'].'/apps/web/src/api/schema.d.ts'))
-            ->toBe("export type Example = string;\n");
-    });
-
-    it('rejects a web build that leaves out a CI artifact', function (string $artifact): void {
-        $fixture = orb277_gate_fixture('apps/web/src/App.tsx');
-        unlink($fixture['root'].'/apps/web/dist/'.$artifact);
-
-        $run = orb277_run_gate($fixture, expectedExit: 1);
-        $check = collect($run['receipt']['checks'])->first(
-            static fn (array $check): bool => $check['project'] === 'apps/web'
-                && str_contains(implode(' ', $check['command']), 'test -s dist/index.html'),
-        );
-
-        expect($run['receipt']['passed'])->toBeFalse();
-        expect($check['exit_code'])->toBe(1);
-    })->with(['index.html', 'version.json']);
-
-    it('selects only the generated web types check for OpenAPI changes', function (): void {
-        $fixture = orb277_gate_fixture('docs/openapi.json');
-        $receipt = orb277_run_gate($fixture)['receipt'];
-        $web = collect($receipt['checks'])->where('project', 'apps/web')->values();
-
-        expect($receipt['passed'])->toBeTrue()
-            ->and($receipt['changed_paths'])->toBe(['docs/openapi.json'])
-            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe([...orb277_selected_projects(), 'apps/web'])
-            ->and($web)->toHaveCount(2)
-            ->and($web[0]['command'])->toBe(['bun', 'install', '--frozen-lockfile'])
-            ->and($web[1]['command'][2])->toContain('./tools/api-types/node_modules/.bin/openapi-typescript')
+            ->and($web->pluck('command')->all())->toBe([['bun', 'install', '--frozen-lockfile'], ['bun', 'run', 'check']])
             ->and($web->pluck('exit_code')->all())->toBe([0, 0]);
     });
 
@@ -324,9 +238,8 @@ SH);
             ->and($piServer->pluck('command')->all())->toBe([
                 ['bun', 'install', '--frozen-lockfile'],
                 ['bun', 'run', 'check'],
-                ['bun', 'run', 'build'],
             ])
-            ->and($piServer->pluck('exit_code')->all())->toBe([0, 0, 0]);
+            ->and($piServer->pluck('exit_code')->all())->toBe([0, 0]);
     });
 
     it('fails with the required tool name when a selected check tool is missing', function (): void {

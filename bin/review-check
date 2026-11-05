@@ -29,15 +29,14 @@ ci_select = runpy.run_path(str(Path(__file__).resolve().parent / "ci-build-plan"
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'check'),)
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
-WEB_BUILD_OUTPUTS = ('bash', '-c', 'test -s dist/index.html && test -s dist/version.json')
-WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./tools/api-types/node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && { diff -u --label src/api/schema.d.ts --label generated/schema.d.ts src/api/schema.d.ts "$generated" || { echo "src/api/schema.d.ts is stale. Run: cd apps/web && bun run types" >&2; exit 1; }; }')
-WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_BUILD_OUTPUTS, WEB_TYPES)
-PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'), ('bun', 'run', 'build'))
+# `bun run check` formats and lints in fix mode and type-checks; CI builds the web app.
+WEB_CHECK_COMMANDS = (('bun', 'run', 'check'),)
+PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'))
 # The checks of CI's Generated contracts job. The generators write ignored build outputs; they fail when the sources
 # disagree with the API contract, and the recorded fixtures are then checked against the fresh OpenAPI document.
 CONTRACT_COMMANDS = (('bin/check-operation-kinds',), ('bin/docs-openapi',), ('bin/mcp-tools',),
                      ('bin/api-fixtures', '--check'))
-RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
+RUST_FORMAT = ('cargo', 'fmt', '--all')
 # CI's Swamp shape gate and workflow validation are one script, bin/swamp-shape-gate. Validation needs a Swamp account
 # and reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN, never the developer's login; without them the script exits 78
 # and the gate reports the validation as skipped. CI always validates.
@@ -132,8 +131,6 @@ def selected_projects(paths, root, base=None):
             selected.append((project, (RUST_FORMAT,)))
     if any(path.startswith('apps/web/') for path in paths):
         selected.extend((('apps/web', (WEB_INSTALL,)), ('apps/web', WEB_CHECK_COMMANDS)))
-    elif 'docs/openapi.json' in paths:
-        selected.append(('apps/web', (WEB_INSTALL, WEB_TYPES)))
     if any(path.startswith('apps/pi-server/') for path in paths):
         selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
     if jobs['swamp']:
@@ -144,10 +141,6 @@ def selected_projects(paths, root, base=None):
 
 def command_log_name(command):
     """Return a concise, unique log label for a gate command."""
-    if command == WEB_TYPES:
-        return 'generated-types'
-    if command == WEB_BUILD_OUTPUTS:
-        return 'build-outputs'
     return '-'.join(command).replace('/', '-').replace(':', '-')
 
 

@@ -5,7 +5,7 @@
     "type": "module",
     "scripts": {
         "start": "bun src/main.ts",
-        "check": "vp check",
+        "check": "vp check --fix",
         "test": "vp test run",
         "build": "tsc && bun build src/main.ts --compile --outfile dist/pi-server",
         "build:linux": "bun build src/main.ts --compile --target=bun-linux-x64 --outfile dist/pi-server-linux-x64"

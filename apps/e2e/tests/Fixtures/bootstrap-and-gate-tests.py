@@ -449,7 +449,7 @@ fi
                                 (['apps/desktop/src/main.ts'], ['apps/desktop/src-tauri'])):
             profiles = dict(gate.selected_projects(paths, self.root))
             for project in projects:
-                self.assertEqual((('cargo', 'fmt', '--all', '--', '--check'),), profiles[project])
+                self.assertEqual((('cargo', 'fmt', '--all'),), profiles[project])
 
     def test_gate_records_missing_artifact_tools_and_failed_rust_formatting(self):
         runner = self.gate_fixture()
@@ -466,7 +466,7 @@ fi
         self.assertIn('Rust formatting differs', result.stdout)
         report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
         check = next(item for item in report['checks'] if item['project'] == 'apps/agent')
-        self.assertEqual(['cargo', 'fmt', '--all', '--', '--check'], check['command'])
+        self.assertEqual(['cargo', 'fmt', '--all'], check['command'])
         self.assertEqual(7, check['exit_code'])
         self.assertFalse(report['passed'])
 

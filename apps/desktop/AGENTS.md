@@ -9,4 +9,4 @@
 
 ## Checks
 
-The app has no tests. CI runs `cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings` in `src-tauri`; run both before you submit. Also confirm that `bun run dev` opens the window against the web app's dev server.
+The app has no tests. Run `cargo fmt --all` and `cargo clippy --locked --all-targets -- -D warnings` in `src-tauri` before you submit; no CI job checks the app. Also confirm that `bun run dev` opens the window against the web app's dev server.
