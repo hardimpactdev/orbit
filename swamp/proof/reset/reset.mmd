@@ -35,7 +35,7 @@ flowchart TD
     readyCheck --> takeBase[Take base: incus snapshot create base --stateful --reuse on the 3 guests in parallel, about 19 s; the guests keep running; a guest that is not stateful fails here]
   end
 
-  subgraph baseRestore[Restore base, workflow proof-fleet-base-restore, one 30 s limit]
+  subgraph baseRestore[Restore base, workflow proof-fleet-base-restore, one 45 s limit]
     restoreBase[Restore base on the 3 guests in parallel: incus snapshot restore base --stateful, about 9 s] --> baseAgent[Per guest in parallel: incus wait agent, then set the guest clock from the outer VM, because a restore puts it back to snapshot time]
     restoreBase --> baseTunnel[Beside that: one blocking ping to the nested Gateway; the outer VM tunnel has no valid session, so WireGuard starts a new handshake 15 s after the first unanswered packet]
     baseAgent --> baseStatus[Gateway status is ok]
@@ -43,12 +43,12 @@ flowchart TD
     baseStatus --> baseAgents[Read node:list until every Node agent is online: the Gateway counts a heartbeat of the last 15 s and they come every 5 s]
     baseAgents --> baseDoctor[Doctor is healthy: it runs last because a silent agent is drift]
     baseDoctor --> baseResult[Healthy, about 20 s, about 26 s after an idle period]
-    restoreBase -. error or past 30 s .-> baseFail[Infrastructure error, no retry]
-    baseAgent -. error or past 30 s .-> baseFail
-    baseTunnel -. error or past 30 s .-> baseFail
-    baseStatus -. error or past 30 s .-> baseFail
-    baseAgents -. error or past 30 s .-> baseFail
-    baseDoctor -. error or past 30 s .-> baseFail
+    restoreBase -. error or past 45 s .-> baseFail[Infrastructure error, no retry]
+    baseAgent -. error or past 45 s .-> baseFail
+    baseTunnel -. error or past 45 s .-> baseFail
+    baseStatus -. error or past 45 s .-> baseFail
+    baseAgents -. error or past 45 s .-> baseFail
+    baseDoctor -. error or past 45 s .-> baseFail
   end
 
   takeBase -.-> restoreBase

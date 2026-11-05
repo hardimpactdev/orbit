@@ -1,4 +1,4 @@
-"""The `base` memory snapshot: how it is taken, how it is restored inside 30 s, and where the workflows call them.
+"""The `base` memory snapshot: how it is taken, how it is restored inside 45 s, and where the workflows call them.
 
 These tests drive a fake Incus and a fake CLI. A live restore on a task VM is separate acceptance evidence.
 """
@@ -154,7 +154,7 @@ class RestoreTests(unittest.TestCase):
         self.assertEqual(1, len(self.tunnel.calls))
         call = self.tunnel.calls[0]
         self.assertEqual({'address': '10.45.0.1', 'restored': 3}, {key: call[key] for key in ('address', 'restored')})
-        self.assertLessEqual(call['seconds'], 30)
+        self.assertLessEqual(call['seconds'], 45)
 
     def test_the_fleet_is_checked_after_every_clock_and_tunnel_and_doctor_comes_last(self):
         incus, cli = FakeIncus(), FakeCli()
@@ -172,10 +172,10 @@ class RestoreTests(unittest.TestCase):
         clock = [1000.0]
         cli = FakeCli(agents={'gateway': 'online', 'app-dev': 'online', 'app-prod': 'offline'}, on_call=lambda: clock.__setitem__(0, clock[0] + 10))
         with patch.object(phases.time, 'monotonic', side_effect=lambda: clock[0]):
-            with self.assertRaisesRegex(phases.InfrastructureError, r'Infrastructure error.*\(the bound is 30 s\)'):
+            with self.assertRaisesRegex(phases.InfrastructureError, r'Infrastructure error.*\(the bound is 45 s\)'):
                 self.restore(FakeIncus(), cli)
         self.assertNotIn('doctor', [call[0] for call in cli.calls])
-        self.assertLessEqual(len(cli.calls), 4)
+        self.assertLessEqual(len(cli.calls), 5)
 
     def test_a_tunnel_that_does_not_come_back_fails_before_any_check(self):
         incus, cli = FakeIncus(), FakeCli()
@@ -211,27 +211,27 @@ class RestoreTests(unittest.TestCase):
         with self.assertRaisesRegex(phases.InfrastructureError, 'Infrastructure error'):
             self.restore(FakeIncus(hook=slow), FakeCli())
 
-    def test_the_whole_phase_has_one_30_second_bound(self):
+    def test_the_whole_phase_has_one_45_second_bound(self):
         clock = [1000.0]
 
         def slow_restore(args):
             if args[:2] == ['snapshot', 'restore']:
-                clock[0] += 31
+                clock[0] += 46
 
         cli = FakeCli()
         with patch.object(phases.time, 'monotonic', side_effect=lambda: clock[0]):
-            with self.assertRaisesRegex(phases.InfrastructureError, r'Infrastructure error.*\(the bound is 30 s\)'):
+            with self.assertRaisesRegex(phases.InfrastructureError, r'Infrastructure error.*\(the bound is 45 s\)'):
                 self.restore(FakeIncus(hook=slow_restore), cli)
         self.assertEqual([], cli.calls)
-        self.assertEqual(30, phases.BASE_RESTORE_SECONDS)
+        self.assertEqual(45, phases.BASE_RESTORE_SECONDS)
 
     def test_every_child_process_gets_what_is_left_of_the_bound(self):
         incus, cli = FakeIncus(), FakeCli()
         self.restore(incus, cli)
         for argv, kwargs in incus.calls:
             if argv[0] != 'query':
-                self.assertLessEqual(kwargs['timeout'], 30)
-        self.assertTrue(all(timeout <= 30 for timeout in cli.timeouts))
+                self.assertLessEqual(kwargs['timeout'], 45)
+        self.assertTrue(all(timeout <= 45 for timeout in cli.timeouts))
 
 
 class WiringTests(unittest.TestCase):
@@ -271,7 +271,7 @@ class WiringTests(unittest.TestCase):
         chart = self.text('reset.mmd')
         self.assertIn('incus snapshot create base --stateful --reuse', chart)
         self.assertIn('incus snapshot restore base --stateful', chart)
-        self.assertIn('30 s limit', chart)
+        self.assertIn('45 s limit', chart)
 
 
 if __name__ == '__main__':

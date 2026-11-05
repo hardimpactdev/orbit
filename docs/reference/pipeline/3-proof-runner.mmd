@@ -28,7 +28,7 @@ sequenceDiagram
     SW->>NT: Restore base<br/>memory snapshot · about 16 s
     %%> What it does:
     %%> - restores the task's stateful snapshot `base` of the three nested VMs; skipped when the fleet is still at `base`, as for the first batch
-    %%> - a restore that fails or is not healthy within 30 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
+    %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>batch setup steps
       %%> What it does:
