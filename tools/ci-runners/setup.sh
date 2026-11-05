@@ -7,6 +7,7 @@
 #   tools/ci-runners/setup.sh container NAME [AGENT SHA256] # optional source-built agent for rollout
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh actions NAME           # cache pinned actions; restart the service only when idle
+#   tools/ci-runners/setup.sh hook NAME              # job-started hook that resets the checkout; restart only when idle
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
 # A registration token comes from `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`
@@ -177,6 +178,7 @@ if [ ! -x /home/runner/actions-runner/config.sh ]; then
 fi
 SH
   actions "$name"
+  hook "$name"
 }
 
 # GitHub images use this runner-native cache, which survives the per-job _actions cleanup:
@@ -215,6 +217,24 @@ actions() (
   '
   echo "$name: pinned actions cached; restart its runner service when idle to load the cache setting"
 )
+
+# The runner runs this before every job: it resets a reused checkout that a previous job left modified, which would
+# make actions/checkout fail with "not uptodate". `container` installs it too; the service reads .env at start.
+hook() {
+  local name=$1 runner=/home/runner/actions-runner
+  incus file push "$REPOSITORY/tools/ci-runners/job-started-hook.sh" "$name$runner/job-started-hook.sh" --project "$PROJECT" --quiet
+  in_ct "$name" chown runner:runner "$runner/job-started-hook.sh"
+  in_ct "$name" chmod 0755 "$runner/job-started-hook.sh"
+  # shellcheck disable=SC2016
+  in_ct "$name" bash -euo pipefail -c '
+    env_file=/home/runner/actions-runner/.env
+    touch "$env_file"
+    sed -i "/^ACTIONS_RUNNER_HOOK_JOB_STARTED=/d" "$env_file"
+    echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=/home/runner/actions-runner/job-started-hook.sh" >> "$env_file"
+    chown runner:runner "$env_file"
+  '
+  echo "$name: job-started hook installed; restart its runner service when idle to load it"
+}
 
 register() {
   local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}} labels=$LABELS
@@ -256,6 +276,6 @@ verify() {
 }
 
 case "${1:-}" in
-  container | actions | register | verify) "$@" ;;
-  *) sed -n '2,17p' "$0" >&2; exit 2 ;;
+  container | actions | hook | register | verify) "$@" ;;
+  *) sed -n '2,18p' "$0" >&2; exit 2 ;;
 esac

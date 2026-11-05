@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = Path(__file__).with_name('setup.sh').read_text()
-PROGRAM = 'actions() (' + SOURCE.split('actions() (', 1)[1].split('\nregister()', 1)[0]
+PROGRAM = 'actions() (' + SOURCE.split('actions() (', 1)[1].split('\n# The runner runs this before every job', 1)[0]
 
 
 class ActionCacheTest(unittest.TestCase):
