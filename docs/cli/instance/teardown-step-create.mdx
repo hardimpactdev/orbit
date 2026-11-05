@@ -1,13 +1,46 @@
 ---
 title: "orbit instance:teardown-step:create"
 sidebarTitle: "instance:teardown-step:create"
-description: "Record one named teardown step on a Project. The arguments match `instance:setup-step:create`."
+description: "Record one named teardown step on a Project. It runs before an active development Instance is removed."
 ---
 
 ```bash
-orbit instance:teardown-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--rebalance=<name>=<seconds>]... [--json]
+orbit instance:teardown-step:create <name> --project=ID --command=COMMAND [--timeout=SECONDS] [--before=NAME | --after=NAME] [--rebalance=NAME=SECONDS]... [--json]
 ```
 
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Step name, unique within the Project's teardown list: 1 to 63 lowercase letters, digits or hyphens, starting and ending with a letter or digit. A terminal asks for it when it is omitted. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | prompt | Numeric Project ID. |
+| `--command=COMMAND` | prompt | The shell command, at most 16 KiB of UTF-8 text with no NUL byte, and not blank. It runs from the repository root of the code the Instance serves, before [`instance:destroy`](/cli/instance/destroy) removes it. The command `@orbit/ci-caches` is a [Gateway-owned operation](/reference/instance-setup#gateway-owned-teardown-steps), not a shell command. |
+| `--timeout=SECONDS` | `240` | Timeout from 1 through 540 seconds. The whole list may total at most 540 seconds, except a list stored before that cap, which accepts any change that does not raise its total. |
+| `--before=NAME` | none | Insert before this step. Exclusive with `--after`. |
+| `--after=NAME` | none | Insert after this step. Exclusive with `--before`. |
+| `--rebalance=NAME=SECONDS` | none | Set another step's timeout in the same write. Repeat for each step. Use it to [make room in a full list](/reference/instance-setup#make-room-in-a-full-list). |
+| `--json` | off | Print the step as JSON. |
+
 ```bash
-orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f database/database.sqlite'
+orbit instance:teardown-step:create stop-workers --project=4 --command='php artisan queue:restart'
+orbit instance:teardown-step:create dump-data --project=4 --command='php artisan db:export' --after=stop-workers --timeout=180 --rebalance=clean-cache=60
 ```
+
+In a terminal, an omitted Project is chosen from an interactive list, and an omitted name and command are asked for as text. A noninteractive or `--json` call without the Project, the name or the command is refused with `project.id_invalid`, `lifecycle_step.name_required` or `lifecycle_step.command_required`, and sends no request. An empty `--command=`, `--before=` or `--after=` is read as omitted: without `--before` and `--after` the step goes at the end. A `--timeout` or `--rebalance` value that is not an integer is refused with `lifecycle_step.timeout_invalid` or `lifecycle_step.rebalance_invalid` before any request.
+
+The command records one row on the Project and writes no file into a checkout. The Gateway checks the whole change against the limits and stores nothing when one fails: a list holds at most 32 steps, the names are unique, the command is not blank, the timeouts of the list add up to at most 540 seconds, and a rebalanced step must be another step of the list, named once. A refusal is `validation.failed` with the reason, which names the failed rule. Repeating a create for a name that exists is refused for the same reason; the command has no skip. The command changes the list only; it runs nothing and starts no task. A teardown step runs the next time `instance:destroy` removes a development Instance of the Project, and a failing step stops that removal. [Instance setup and teardown](/reference/instance-setup) owns the limits, the order and the execution contract. List, update and destroy use the same Project selector and step name.
+
+The command prints a detail titled `Teardown step: <name>` with the Project by name, Timeout and Command, and the request ID; a long command wraps and is never cut. With `--json`, stdout holds the step with `name`, `command`, `timeout_seconds` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `project.id_invalid` | The Project is missing in a call that cannot prompt, or is not a positive integer. |
+| `lifecycle_step.name_required`, `lifecycle_step.command_required` | The name or command is missing in a call that cannot prompt. |
+| `lifecycle_step.timeout_invalid`, `lifecycle_step.rebalance_invalid` | `--timeout` or a `--rebalance` value is not an integer, or is not `NAME=SECONDS`. |
+| `input.cancelled` | You cancelled a list or a prompt. |
+| `validation.failed` | The name, command or timeout is outside the limits (the command and name limits count bytes), `--before` and `--after` were both given or name no step, a rebalanced step is not another step of the list, the names are not unique, the list would hold more than 32 steps, or its timeouts would add up to more than 540 seconds. |
+| `http.404` | The Project is unknown. |
+| `node_access.required` | The caller has no access grant to any Node that holds an Instance of the Project, or to the Gateway Node when it has none. |
