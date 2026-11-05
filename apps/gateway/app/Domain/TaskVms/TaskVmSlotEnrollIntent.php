@@ -19,9 +19,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Models\Node;
 use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
-use Illuminate\Support\Str;
 
 /**
  * Records one slot of a task VM host and renders its enrolment as the full workflow input: the Pi token, the model
@@ -32,7 +30,8 @@ final readonly class TaskVmSlotEnrollIntent
 {
     public function __construct(private TaskVmSettings $settings, private TaskVmEnrollmentIntent $enrollment, private ModelKeyIssuer $keys,
         private TaskVmModelKeyInputs $models, private WireGuardAddressAllocator $addresses, private SwampSshExecutionInput $ssh,
-        private SwampCommandStep $shared, private AgentDelivery $delivery, private PiConnection $pi, private NodeNetworkInput $network, private NodeAgentSshExecutor $agents) {}
+        private SwampCommandStep $shared, private AgentDelivery $delivery, private PiConnection $pi, private NodeNetworkInput $network, private NodeAgentSshExecutor $agents,
+        private TaskVmPromotedImage $images) {}
 
     /**
      * The slot's row, its Node, its `app-dev` role and its `pi-server` Process. A slot that is still enrolling, or
@@ -96,7 +95,7 @@ final readonly class TaskVmSlotEnrollIntent
         $files = TaskVmSlotIdentity::files(NodeNetworkConvergeInput::peerFiles(ValidatedData::object($network['peer'])),
             ValidatedData::string($model['intent']['model_origin']), $this->settings->piModels,
             $this->agents->configurationForRoot($guest, null), $this->enrollment->unit($vm));
-        $image = $this->image($host, $location);
+        $image = $this->images->forHost($host, $location);
         $identity = $this->ssh->identity();
 
         return [
@@ -119,23 +118,5 @@ final readonly class TaskVmSlotEnrollIntent
             'execution_secrets' => [...$model['execution_secrets'],
                 'pi_token' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token)],
         ];
-    }
-
-    /**
-     * The host's latest promoted image: a proof VM needs a bootable task image, not the current recipe.
-     *
-     * @return array{fingerprint:string,recipe_identity:string}
-     */
-    private function image(Node $host, TaskVmHost $location): array
-    {
-        $build = TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('state', TaskVmImageBuildState::Succeeded)
-            ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
-        $base = $build?->images['base'] ?? null;
-        if (! $build instanceof TaskVmImageBuild || $base === null || $base['project'] !== $location->project || $base['type'] !== 'virtual-machine'
-            || ! Str::of($base['fingerprint'])->isMatch('/\A[a-f0-9]{12,64}\z/D')) {
-            throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no promoted task image for a proof VM.', 409);
-        }
-
-        return ['fingerprint' => $base['fingerprint'], 'recipe_identity' => (string) $build->recipe_identity];
     }
 }

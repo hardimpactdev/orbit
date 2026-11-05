@@ -1,0 +1,437 @@
+id: 9fcf9420-1228-45f0-90ac-a3c432c8671a
+name: operation-task-vm-seed-refresh
+description: Refresh the topology seed of one task VM host. Boot a builder from the task image with a clone of the current seed, build the ready nested topology in it, stop it, and swap its clone in as the seed. A failed run keeps the old seed; cleanup always runs.
+vaults: [orbit-control-inputs]
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: task_vm.seed_refresh}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^(task-vm-seed-refresh-git-[1-9][0-9]*|swamp-proof-club-api-key)$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: boot
+  steps:
+  - name: Remove a stale builder
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &host
+        name: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}
+        hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]
+      # The builder and its seed clone are stale: a host refreshes one seed at a time. The current seed is never touched. A run
+      # that died between the two renames of its promotion left the old seed under the `-previous` name and no current seed:
+      # that name goes back first. Otherwise a `-previous` seed is a finished run's leftover and goes.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '120'
+        - sh
+        - -c
+        - |
+          set -eu
+          project=$1 pool=$2 builder=$3 building=$4 previous=$5 current=$6
+          volume() { incus --project "$project" storage volume "$@"; }
+          if incus --project "$project" info "$builder" >/dev/null 2>&1; then incus --project "$project" delete --force "$builder"; fi
+          if ! volume show "$pool" "$current" >/dev/null 2>&1 && volume show "$pool" "$previous" >/dev/null 2>&1; then volume rename "$pool" "$previous" "$current"; fi
+          for name in "$building" "$previous"; do
+            if volume show "$pool" "$name" >/dev/null 2>&1; then volume delete "$pool" "$name"; fi
+          done
+        - sh
+        - '${{ inputs.intent.seed.project }}'
+        - '${{ inputs.intent.seed.pool }}'
+        - '${{ inputs.intent.builder.name }}'
+        - '${{ inputs.intent.seed.building }}'
+        - '${{ inputs.intent.seed.previous }}'
+        - '${{ inputs.intent.seed.current }}'
+        timeoutSec: 130
+  - name: Clone the seed
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Remove a stale builder, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # On ZFS the copy is a clone: it costs what the build writes. A host without the current seed fails here, and nothing changed.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - --project
+        - '${{ inputs.intent.seed.project }}'
+        - storage
+        - volume
+        - copy
+        - '${{ inputs.intent.seed.pool + "/" + inputs.intent.seed.current }}'
+        - '${{ inputs.intent.seed.pool + "/" + inputs.intent.seed.building }}'
+        timeoutSec: 620
+  - name: Start the builder
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Clone the seed, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # The instance config on stdin holds the large VM size, the bridge NIC and the seed clone as the disk `topology-seed`.
+      # The builder has its address once the Incus agent reports it, and the agent is what the next steps run through.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '300'
+        - sh
+        - -c
+        - |
+          set -eu
+          incus --project "$1" init --vm -- "$3" "$2"
+          incus --project "$1" start "$2"
+          incus --project "$1" wait "$2" ipv4 --timeout 120 --interval 1
+        - sh
+        - '${{ inputs.intent.seed.project }}'
+        - '${{ inputs.intent.builder.name }}'
+        - '${{ inputs.intent.image.fingerprint }}'
+        stdin: '${{ inputs.intent.builder.config_json }}'
+        timeoutSec: 310
+- name: build
+  dependsOn: [{job: boot, condition: {type: succeeded}}]
+  steps:
+  - name: Fetch the source
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # The GitHub read header reaches Git through its environment, from standard input. It is in no argument and no file.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '300'
+        - incus
+        - --project
+        - '${{ inputs.intent.seed.project }}'
+        - exec
+        - '${{ inputs.intent.builder.name }}'
+        - --
+        - runuser
+        - -u
+        - orbit
+        - --
+        - sh
+        - -c
+        - |
+          set -eu
+          authorization=$(cat)
+          export HOME=/home/orbit GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="$authorization"
+          mkdir -p "$(dirname "$4")"
+          git clone --quiet --no-checkout -- "$1" "$4"
+          git -C "$4" checkout --quiet -B "$3" "$2"
+        - sh
+        - '${{ inputs.intent.source.repository }}'
+        - '${{ inputs.intent.source.commit }}'
+        - '${{ inputs.intent.builder.branch }}'
+        - '${{ inputs.intent.builder.checkout }}'
+        stdin: '${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key) }}'
+        timeoutSec: 310
+  - name: Prepare the builder
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Fetch the source, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # tools/task-vm-seed/prepare-builder.sh of the cloned release. The proof Swamp Club key, for the swamp runs of the
+      # reset, arrives on standard input and is installed 0600 for `orbit`; the script also adds the stand-ins for the
+      # services a task VM has.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '120'
+        - incus
+        - --project
+        - '${{ inputs.intent.seed.project }}'
+        - exec
+        - '${{ inputs.intent.builder.name }}'
+        - --
+        - bash
+        - '${{ inputs.intent.builder.checkout + "/tools/task-vm-seed/prepare-builder.sh" }}'
+        stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}'
+        timeoutSec: 130
+  - name: Install the dependencies
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Prepare the builder, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # The packages the reset copies into its source. No Composer scripts: they write generated files into the tracked tree,
+      # and the nested Gateway discovers its packages itself.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '900'
+        - incus
+        - --project
+        - '${{ inputs.intent.seed.project }}'
+        - exec
+        - '${{ inputs.intent.builder.name }}'
+        - --
+        - runuser
+        - -u
+        - orbit
+        - --
+        - env
+        - HOME=/home/orbit
+        - PATH=/usr/local/bin:/usr/bin:/bin
+        - sh
+        - -c
+        - |
+          set -eu
+          for package in packages/php-sdk apps/cli apps/e2e apps/gateway; do
+            composer install --working-dir="$1/$package" --no-interaction --no-progress --prefer-dist --no-scripts
+          done
+        - sh
+        - '${{ inputs.intent.builder.checkout }}'
+        timeoutSec: 910
+  - name: Build the topology
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Install the dependencies, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # The proof reset of the cloned release (bin/proof-fleet): Gateway with Swamp, app-dev and app-prod, with real
+      # nested WireGuard, healthy and Doctor-clean. It adopts the seed clone as the Incus pool first.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '1700'
+        - incus
+        - --project
+        - '${{ inputs.intent.seed.project }}'
+        - exec
+        - '${{ inputs.intent.builder.name }}'
+        - --cwd
+        - '${{ inputs.intent.builder.checkout }}'
+        - --
+        - runuser
+        - -u
+        - orbit
+        - --
+        - env
+        - HOME=/home/orbit
+        - PATH=/usr/local/bin:/usr/bin:/bin
+        - sh
+        - -c
+        - |
+          set -eu
+          if ! sudo -n bin/e2e-topology-host-setup >/tmp/host-setup.log 2>&1; then
+            tail -n 3 /tmp/host-setup.log >&2
+            exit 1
+          fi
+          if ! bin/proof-fleet reset "$1" >/dev/null; then
+            latest=$(ls -td .orbit-artifacts/"$1"/reset/*/ | head -n 1)
+            for report in "$latest"*-failure.json "$latest"facts-not-ready.json; do
+              [ -f "$report" ] && python3 -c 'import json, sys; print(sys.argv[1].split("/")[-1], str(json.load(open(sys.argv[1])))[:300])' "$report" >&2
+            done
+            exit 1
+          fi
+        - sh
+        - '${{ inputs.intent.builder.group }}'
+        timeoutSec: 1710
+  - name: Make the ready copies
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Build the topology, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # tools/task-vm-seed/ready-copies.sh: stop the three VMs, keep a copy of each as `ready-<role>`, delete the rest. Its
+      # one line of output is the JSON list of the ready copies, which the Gateway reads.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '600'
+        - incus
+        - --project
+        - '${{ inputs.intent.seed.project }}'
+        - exec
+        - '${{ inputs.intent.builder.name }}'
+        - --
+        - bash
+        - '${{ inputs.intent.builder.checkout + "/tools/task-vm-seed/ready-copies.sh" }}'
+        timeoutSec: 610
+  - name: Stop the builder
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Make the ready copies, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # A clean stop: the builder's Incus unmounts the pool, so the seed holds a finished file system.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv: [timeout, '200', incus, --project, '${{ inputs.intent.seed.project }}', stop, '${{ inputs.intent.builder.name }}', --timeout, '180']
+        timeoutSec: 210
+- name: promote
+  dependsOn: [{job: build, condition: {type: succeeded}}]
+  steps:
+  - name: Promote the seed
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # The only step that changes the seed a claim clones, and it changes it by renames. The clone must leave the builder
+      # first: Incus keeps a custom volume when its VM goes. `zfs promote` then makes the clone own the blocks it shares
+      # with the old seed, so the new seed has no origin and a chain of refreshes does not grow. The old seed becomes
+      # `-previous`, and the clone takes the seed name. If the second rename fails, the first is undone; when both are done,
+      # the old seed is deleted. A run that dies in between is repaired by the next run's first step. Standard output is the
+      # one JSON line that the Gateway reads; every other message goes to standard error.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '180'
+        - sh
+        - -c
+        - |
+          set -eu
+          exec 3>&1 1>&2
+          project=$1 pool=$2 current=$3 building=$4 previous=$5 builder=$6
+          volume() { incus --project "$project" storage volume "$@"; }
+          volume show "$pool" "$current" >/dev/null
+          volume show "$pool" "$building" >/dev/null
+          incus --project "$project" delete --force "$builder"
+          dataset=$(incus storage get "$pool" zfs.pool_name)/custom
+          written=$(zfs get -Hp -o value used "$dataset/${project}_$building")
+          zfs promote "$dataset/${project}_$building"
+          volume rename "$pool" "$current" "$previous"
+          if ! volume rename "$pool" "$building" "$current"; then
+            volume rename "$pool" "$previous" "$current"
+            exit 1
+          fi
+          volume delete "$pool" "$previous"
+          referenced=$(zfs get -Hp -o value referenced "$dataset/${project}_$current")
+          printf '{"seed":"%s","referenced_bytes":%s,"written_bytes":%s}\n' "$current" "$referenced" "$written" >&3
+        - sh
+        - '${{ inputs.intent.seed.project }}'
+        - '${{ inputs.intent.seed.pool }}'
+        - '${{ inputs.intent.seed.current }}'
+        - '${{ inputs.intent.seed.building }}'
+        - '${{ inputs.intent.seed.previous }}'
+        - '${{ inputs.intent.builder.name }}'
+        timeoutSec: 190
+- name: cleanup
+  dependsOn:
+  - {job: boot, condition: {type: always}}
+  - {job: build, condition: {type: always}}
+  - {job: promote, condition: {type: always}}
+  steps:
+  - name: Remove the builder
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-vm-seed-host-" + string(inputs.intent.host_node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *host
+      # It runs after success, failure and cancellation. Exact names, each only when it exists: the builder and an unpromoted
+      # clone. A promoted clone has the seed name by now, so a finished refresh loses nothing here. The listings are the
+      # read-back for the end check.
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv:
+        - timeout
+        - '180'
+        - sh
+        - -c
+        - |
+          set -eu
+          if incus --project "$1" info "$3" >/dev/null 2>&1; then incus --project "$1" delete --force "$3"; fi
+          if incus --project "$1" storage volume show "$2" "$4" >/dev/null 2>&1; then incus --project "$1" storage volume delete "$2" "$4"; fi
+          incus --project "$1" list --format csv --columns n
+          incus --project "$1" storage volume list "$2" --format csv --columns tn
+        - sh
+        - '${{ inputs.intent.seed.project }}'
+        - '${{ inputs.intent.seed.pool }}'
+        - '${{ inputs.intent.builder.name }}'
+        - '${{ inputs.intent.seed.building }}'
+        timeoutSec: 190
+- name: check
+  dependsOn:
+  - {job: promote, condition: {type: succeeded}}
+  - {job: cleanup, condition: {type: succeeded}}
+  steps:
+  - name: Check the seed
+    labels: {role: swamp}
+    task:
+      type: assert
+      # The build and the ready copies passed, the promotion printed the seed the claims clone, and the host now lists that
+      # seed, and no builder, no unpromoted clone and no replaced seed.
+      expr: 'steps["Build the topology"].outputs.exitCode == 0 && steps["Make the ready copies"].outputs.exitCode == 0 && steps["Promote the seed"].outputs.exitCode == 0 && steps["Remove the builder"].outputs.exitCode == 0 && !steps["Remove the builder"].outputs.stdout.split("\n").exists(line, line == inputs.intent.builder.name || line == "custom," + inputs.intent.seed.building) && !steps["Remove the builder"].outputs.stdout.split("\n").exists(line, line == "custom," + inputs.intent.seed.previous) && steps["Remove the builder"].outputs.stdout.split("\n").exists(line, line == "custom," + inputs.intent.seed.current)'
+      severity: high
+      message: The seed is not refreshed; the build, the ready copies, the promotion or the cleanup is not as admitted.
