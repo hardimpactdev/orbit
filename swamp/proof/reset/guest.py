@@ -31,8 +31,8 @@ def driver(ctx, action, value):
 def candidate(ctx):
     """Apply the candidate to a Gateway restored from a ready copy.
 
-    The guest mounts the new generation's source: its runtime state is carried over, so only the candidate's changes
-    remain. Caddy needs access to the new directories, the schema moves to the candidate's migrations, the Swamp
+    The caller has synced the candidate's code into the guest's own checkout: its runtime state stays on disk, so only
+    the candidate's changes remain. Caddy needs access to the new directories, the schema moves to the candidate's migrations, the Swamp
     repository takes the candidate's workflows (serve hot-reloads them), and the PHP workers that load the code again.
     """
     fixture.caddy_access(ctx)

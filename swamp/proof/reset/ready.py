@@ -8,8 +8,10 @@ A ready copy carries nothing that belongs to one generation, so it never blocks 
 
 - no ``user.orbit.e2e.*`` label (the inventory and the harness release see only the guests of an attempt);
 - no ``eth0`` device (a stopped NIC would keep the network in use, and Incus refuses a second VM that holds the same
-  static MAC or IP); the MAC, the IP and the subnet are in ``user.ready.*`` keys;
-- no ``orbit-source`` device (it names one generation's source directory); the mount path is in ``user.ready.mounts``.
+  static MAC or IP); the MAC, the IP and the subnet are in ``user.ready.*`` keys.
+
+A copy keeps its own checkout at ``/home/orbit/orbit`` on its disk. No source directory of the outer VM is shared with a
+guest: a restore syncs the candidate's code into the checkout by rsync (see ``phases.sync_candidate``).
 
 ``user.ready.complete`` is written last, on every copy, with the set identity. A set without it is half made and unused.
 """
@@ -22,9 +24,13 @@ from datetime import datetime, timezone
 PREFIX = 'fleet-ready-'
 ROLES = ('gateway', 'app-dev', 'app-prod')
 LABELS = ('owner', 'issue', 'attempt', 'operation')
-# Devices that belong to one generation: the NIC (network, MAC, IP) and the source mount.
+# The device that belongs to one generation: the NIC (network, MAC, IP).
 NIC = 'eth0'
+# A build still shares the generation's source with the guests (the harness adds this device). A copy never carries it.
 MOUNT = 'orbit-source'
+CHECKOUT = '/home/orbit/orbit'
+# The guests that hold a checkout. App-prod runs from its image.
+CHECKOUT_ROLES = ('gateway', 'app-dev')
 # The swamp and agent tokens minted by a build last 24 h, and the Gateway leaf certificates 2 days. The age counts from
 # the mint, not from the copy: a copy of an old fleet is as old as the fleet.
 MAX_AGE_SECONDS = 20 * 3600
@@ -108,6 +114,16 @@ def stamp_of(epoch):
     return datetime.fromtimestamp(int(epoch), timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+def keep_checkout(guest):
+    """Copy the shared source of a running guest onto the guest's own disk, below the mount.
+
+    A bind mount of ``/`` shows the disk without the share on top of it. ``.git`` stays out, as in every later sync.
+    """
+    script = (f'mkdir -p /run/rootfs && mount --bind / /run/rootfs && '
+              f'rsync -a --delete --exclude=/.git {CHECKOUT}/ /run/rootfs{CHECKOUT}/; status=$?; umount /run/rootfs; exit $status')
+    incus(['exec', guest, '--', 'sh', '-c', script], timeout=600)
+
+
 def make(guests, network, nodes, *, minted, attempt, inputs):
     """Stop the running guests and copy them to ready copies; start the originals again. The set is not complete yet.
 
@@ -124,14 +140,15 @@ def make(guests, network, nodes, *, minted, attempt, inputs):
         nic = devices.get(NIC) or {}
         if nic.get('network') != network or not nic.get('hwaddr') or not nic.get('ipv4.address'):
             raise RuntimeError(f'{guests[role]} must have a static MAC and IP on {network} to be copied.')
-        saved[role] = {'hwaddr': nic['hwaddr'], 'ipv4': nic['ipv4.address'],
-                       'mounts': {key: device['path'] for key, device in devices.items()
-                                  if key == MOUNT and device.get('type') == 'disk'}}
+        saved[role] = {'hwaddr': nic['hwaddr'], 'ipv4': nic['ipv4.address']}
     running = [guests[role] for role in ROLES if details[role].get('status') == 'Running']
     identity = secrets.token_hex(8)
     made = stamp()
     failure = None
     try:
+        for role in ROLES:
+            if MOUNT in (details[role].get('devices') or {}) and details[role].get('status') == 'Running':
+                keep_checkout(guests[role])
         if running:
             incus(['stop', *running], timeout=300)
         for role in ROLES:
@@ -145,7 +162,7 @@ def make(guests, network, nodes, *, minted, attempt, inputs):
             settings = {'user.ready.set': identity, 'user.ready.role': role, 'user.ready.made': made,
                         'user.ready.minted': stamp_of(minted), 'user.ready.attempt': attempt, 'user.ready.inputs': inputs,
                         'user.ready.hwaddr': saved[role]['hwaddr'], 'user.ready.ipv4': saved[role]['ipv4'],
-                        'user.ready.subnet': subnet, 'user.ready.mounts': json.dumps(saved[role]['mounts'])}
+                        'user.ready.subnet': subnet}
             if role == 'gateway':
                 settings['user.ready.nodes'] = json.dumps(nodes)
             incus(['config', 'set', target, *(f'{key}={value}' for key, value in settings.items())])
@@ -202,11 +219,12 @@ def drop():
     return removed
 
 
-def restore(guests, network, source, labels):
+def restore(guests, network, labels):
     """Replace the guests of the active generation with their ready copies, and start them.
 
-    ``labels`` maps each of LABELS to the generation's value and ``source`` is the generation's source directory.
-    Returns the time just before the start, which later freshness checks measure from.
+    ``labels`` maps each of LABELS to the generation's value. The guests start with the checkout of the copies; the
+    caller syncs the candidate's code into it. Returns the time just before the start, which later freshness checks
+    measure from.
     """
     found = inspect()
     if not found['usable']:
@@ -221,8 +239,6 @@ def restore(guests, network, source, labels):
         incus(['config', 'set', target, *(f'user.orbit.e2e.{label}={labels[label]}' for label in LABELS)])
         incus(['config', 'device', 'add', target, NIC, 'nic', 'network=' + network,
                'hwaddr=' + config['user.ready.hwaddr'], 'ipv4.address=' + config['user.ready.ipv4']])
-        for device, path in json.loads(config.get('user.ready.mounts') or '{}').items():
-            incus(['config', 'device', 'add', target, device, 'disk', 'source=' + str(source), 'path=' + path])
     started = time.time()
     incus(['start', *(guests[role] for role in ROLES)], timeout=300)
     return {'set': found['set'], 'started_at': started, 'guests': [guests[role] for role in ROLES]}
