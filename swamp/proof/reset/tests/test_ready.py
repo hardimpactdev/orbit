@@ -597,7 +597,7 @@ class ClubKeyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             key = Path(temporary) / 'key'
             key.write_text('club-secret-value\n')
-            with patch.object(phases, 'incus', return_value=found) as incus:
+            with patch.object(phases, 'incus', side_effect=lambda argv, **kwargs: b'/: 1 GiB (1073741824 bytes) trimmed on /dev/sda2\n' if 'fstrim' in argv else found) as incus:
                 try:
                     return phases.scrub_key({'key_file': str(key)}, 'gw'), incus
                 finally:
@@ -605,13 +605,26 @@ class ClubKeyTests(unittest.TestCase):
 
     def test_the_key_file_is_deleted_and_the_disk_scan_finds_nothing(self):
         result, incus = self.scrub(b'')
-        self.assertEqual({'scanned': True, 'files_holding_the_key': 0}, result)
+        self.assertEqual({'scanned': True, 'files_holding_the_key': 0, 'fstrim': ['/: 1 GiB (1073741824 bytes) trimmed on /dev/sda2']}, result)
         self.assertEqual(['exec', 'gw', '--', 'rm', '-f', phases.CLUB_KEY], list(map(str, incus.call_args_list[0].args[0])))
         scan = incus.call_args_list[1]
         # The key travels on stdin to a file in /run (memory); it is never an argument.
         self.assertEqual(b'club-secret-value\n', scan.kwargs['data'])
         self.assertNotIn('club-secret-value', ' '.join(map(str, scan.args[0])))
         self.assertIn('/run/club-key-scan', ' '.join(map(str, scan.args[0])))
+        # The trim comes after the delete and the scan, under timeout, and its failure is not swallowed.
+        self.assertEqual(['exec', 'gw', '--', 'timeout', '300', 'fstrim', '-av'], list(map(str, incus.call_args_list[2].args[0])))
+
+    def test_a_failed_trim_fails_ready(self):
+        def run(argv, **kwargs):
+            if 'fstrim' in argv:
+                raise RuntimeError('incus exited 1: fstrim failed')
+            return b''
+        with tempfile.TemporaryDirectory() as temporary:
+            key = Path(temporary) / 'key'
+            key.write_text('k\n')
+            with patch.object(phases, 'incus', side_effect=run), self.assertRaisesRegex(RuntimeError, 'fstrim failed'):
+                phases.scrub_key({'key_file': str(key)}, 'gw')
 
     def test_a_file_that_still_holds_the_key_fails_ready_and_names_only_paths(self):
         with self.assertRaises(RuntimeError) as raised:

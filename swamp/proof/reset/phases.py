@@ -655,14 +655,19 @@ def deliver_key(request, gateway):
 
 
 def scrub_key(request, gateway):
-    """Delete the club key from the running Gateway, then prove no file on its disks holds it. The file list names paths only."""
+    """Delete the club key from the running Gateway, prove no file on its disks holds it, then trim the freed blocks.
+
+    The file list names paths only. The fstrim output goes into the receipt.
+    """
     incus(['exec', gateway, '--', 'rm', '-f', CLUB_KEY])
     scan = ('umask 077; cat > /run/club-key-scan; find / -xdev -type f -size -20M ! -path /run/club-key-scan '
             '-exec grep -lF -f /run/club-key-scan {} + ; status=$?; rm -f /run/club-key-scan; [ "$status" -le 1 ]')
     found = incus(['exec', gateway, '--', 'sh', '-c', scan], data=Path(request['key_file']).read_bytes(), timeout=600).decode().split()
     if found:
         raise RuntimeError('The proof club key is still on the Gateway disk, nothing copied: ' + ', '.join(sorted(found)))
-    return {'scanned': True, 'files_holding_the_key': 0}
+    # Deleting a file leaves its blocks in the disk image, and every task VM clones the image. Discard the freed blocks now.
+    trimmed = incus(['exec', gateway, '--', 'timeout', '300', 'fstrim', '-av'], timeout=330).decode().strip().splitlines()
+    return {'scanned': True, 'files_holding_the_key': 0, 'fstrim': trimmed}
 
 
 def start_units(instance, units):

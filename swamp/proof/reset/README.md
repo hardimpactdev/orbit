@@ -48,7 +48,7 @@ IP. It has no `orbit-source` device, which names one generation's source directo
 mount path, the Gateway's Node ids, the creation time and one set identity are `user.ready.*` keys; `user.ready.complete`
 is written last on all three, so a half made set is never used.
 
-**No secret in a copy.** `ready` deletes the proof Swamp Club key from the running Gateway, scans its files for the key, and fails with the paths if any holds it; it also fails unless all three guests report `Stopped` before the copy. A restore (and the end of `ready`) pushes the key back in once the Gateway agent is up, then restarts Swamp serve and the worker. The contract for other tools is in [`swamp/proof/README.md`](../README.md#ready-copies-the-contract).
+**No secret in a copy.** `ready` deletes the proof Swamp Club key from the running Gateway, scans its files for the key, fails with the paths if any holds it, and trims the disk (`fstrim -av`) so the deleted key's blocks are discarded; it also fails unless all three guests report `Stopped` before the copy. A restore (and the end of `ready`) pushes the key back in once the Gateway agent is up, then restarts Swamp serve and the worker. The contract for other tools is in [`swamp/proof/README.md`](../README.md#ready-copies-the-contract).
 
 **When copies are usable.** All three exist, stopped, with one complete set identity and no label or generation device.
 They are for the subnet and the three addresses of the active generation, which also needs a fleet record (the
