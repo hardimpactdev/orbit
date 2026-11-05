@@ -115,6 +115,13 @@ class ScopeActionTest(unittest.TestCase):
                 if 'id: scope' in step:
                     continue
                 self.assertIn("steps.scope.outputs.selected == 'true'", step)
+        # Validation needs the Swamp credential, which Dependabot pull requests do not get; it runs only for Swamp
+        # inputs, and fully on the nightly schedule.
+        validate = source.split('  validate:\n', 1)[1].split('  tests:\n', 1)[0]
+        scope = validate.split('      - uses: ./.github/actions/ci-scope\n', 1)[1].split('      - ', 1)[0]
+        self.assertNotIn('if:', scope)
+        self.assertIn("enabled: ${{ github.event_name != 'schedule' }}", scope)
+        self.assertNotIn('inputs.changed-only', validate)
         shape = source.split('  shape:', 1)[1].split('  validate:', 1)[0]
         self.assertIn('fetch-depth: 0', shape)
         self.assertIn('steps.scope.outputs.swamp-base-ref', shape)

@@ -92,7 +92,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit and its merge queue run, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
-| Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
+| Swamp | Validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the reset unit tests, lint the proof programs with `ruff` and validate the `workflow-proof-*.yaml` files with the pinned Swamp runtime |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
@@ -114,7 +114,7 @@ After native validation resolves the pinned extensions, the job runs `swamp/test
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants.
 
-Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
+Operation Deno unit tests and the shape gate run on every CI change. Workflow validation runs only when the change selects the Swamp checks, and validates every workflow on the nightly schedule. It needs the Swamp account secrets, and GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them. Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
 
 Required checks target five minutes. Project checks are removed from CI for now; Nick decides which checks return. Their local commands remain available. Orbit keeps fast TypeScript unit tests and no native workflow suite or custom runtime harness. Workflow validation and pinned `serve check-config` remain required. No nightly workflow replaces removed checks.
 
@@ -252,11 +252,12 @@ API ownership matching removes the shared `api/v1` prefix, so a Form Request use
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
 2. It runs `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, and `bin/docs-nav`.
 3. It seeds absent quality caches with `bin/worktree-cache`.
-4. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 4 to 8 share the machine.
+4. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 4 to 9 share the machine.
 5. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
 6. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
 7. When the candidate changes the Rust agent, the desktop app, or `.github/workflows/ci.yml`, it runs `cargo fmt --all -- --check` in the matching Rust project.
 8. It runs `bin/check-classification-fakes` on changed test sources. A change to the checker itself checks every project’s tests.
+9. When the candidate selects the Swamp checks by the rule of `bin/ci-build-plan`, it runs `swamp/bin/validate-swamp-workflows.py`, the native workflow validation of CI. The validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them the gate reports the check as skipped, not failed, because CI validates.
 
 Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`, and test files beside their source (`*_test.ts`, `*_test.py`, `test_*.py`). A page's `covers:` glob over a source folder does not claim the test files in it. Nor does a change to the machine recipe that only bumps pinned values. A deleted CLI command needs no page either: step 1 does not ask for the page of a command whose source file is gone.
 
