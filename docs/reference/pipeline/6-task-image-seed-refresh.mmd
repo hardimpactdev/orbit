@@ -16,7 +16,7 @@ sequenceDiagram
   participant SL as Ready slots<br/>stopped task VMs
   Note over GW: Start the refresh<br/>inputs changed · daily
   %%> Triggers:
-  %%> - a release that went live and passed its check (stage 5), only when it changed what the images carry: playbooks, pins or lock files; a code-only release needs no refresh, because a task syncs that code in about 2 s
+  %%> - a release that went live and passed its check (stage 5), only when it changed what the images carry: playbooks, pins or lock files; a code-only release needs no refresh, because a task mounts its own checkout
   %%> - a daily schedule, so a seed never gets older than a day: the Swamp tokens in the ready copies last 24 hours and a ready copy expires after 20
   %%> Not built:
   %%> - both triggers (B8); today an operator runs `php artisan task-vms:refresh-seed HOST`
@@ -33,10 +33,10 @@ sequenceDiagram
     SW->>H: Start a refresh VM<br/>current image · seed
     %%> What it does:
     %%> - starts a task VM from the host's current task image, with a clone of its current topology seed, as for any task
-    SW->>VM: Reset and sync<br/>the release commit
+    SW->>VM: Start and mount<br/>the release commit
     %%> What it does:
-    %%> - resets the nested fleet from the current ready copies and syncs the release commit into the nested Gateway and app-dev, the same sync as stage 2
-    %%> - `composer install` or `bun install` only where a lock file changed; then migrations and a Swamp reload
+    %%> - checks out the release commit in the refresh VM, with `composer install` and `bun install` where a lock file changed
+    %%> - starts the nested fleet from the current ready copies, mounts that checkout over NFS and runs the apply step, as in stage 2
     opt playbooks or pins changed since the current image
       SW->>VM: Converge once<br/>outer VM · nested Nodes
       %%> What it does:
@@ -49,6 +49,10 @@ sequenceDiagram
     SW->>H: Save the new images<br/>image · ready copies
     %%> What it does:
     %%> - stops the nested VMs and copies them into a clone of the seed as the new ready copies, key-free: the proof Club key is deleted, every file is scanned for it, and freed blocks are trimmed
+    %%> Proposed 2026-11-05:
+    %%> - each ready copy is self-contained: its `.env`, storage, `bootstrap/cache` and database stay on its own disk; it holds no checkout, because every task VM mounts its own
+    %%> - stores the nested network with the copies: the subnet, and each Node's NIC MAC and address
+    %%> - removes the refresh VM's WireGuard key from the operator Node record, so a new task VM joins with its own key (stage 2)
     %%> - publishes the outer VM as the new task image
     SW->>H: Boot-check, promote<br/>under the host lock
     %%> What it does:
