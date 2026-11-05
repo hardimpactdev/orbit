@@ -23,6 +23,8 @@ import runpy
 
 _budget = runpy.run_path(str(Path(__file__).resolve().parent.parent / "tools/check_budget.py"))
 ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBudget", "lane_count", "lane_weight"))
+# The same rule as CI decides when a change needs the Swamp checks.
+ci_select = runpy.run_path(str(Path(__file__).resolve().parent / "ci-build-plan"))["select"]
 
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'))
@@ -42,6 +44,11 @@ API_FIXTURE_TRIGGERS = ('docs/openapi.json', 'packages/php-sdk/fixtures/', 'apps
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
 # The lint and direct tests of the programs that the Gateway runs on Nodes (docs/reference/remote-programs.md).
 # A change to the gate alone does not run it: copies of the gate in test fixtures have no programs to check.
+# Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN, never the
+# developer's login; without them the script exits 78 and the gate reports the check as skipped. CI always validates.
+SWAMP_VALIDATE = ('python3', 'bin/validate-swamp-workflows.py', '--cache', str(Path.home() / '.cache/orbit-shape-runtime'),
+                  '--report', str(Path(tempfile.gettempdir()) / f'orbit-swamp-validate-{os.getpid()}.json'))
+SWAMP_AUTH_UNAVAILABLE = 78
 REMOTE_PROGRAM_TRIGGERS = ('apps/gateway/resources/', 'apps/gateway/tests/Programs/', 'apps/gateway/ruff.toml',
                            'bin/remote-programs-check')
 BASES = ('origin/main', 'main')
@@ -141,6 +148,8 @@ def selected_projects(paths, root):
         selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
     if any(path.startswith(REMOTE_PROGRAM_TRIGGERS) for path in paths):
         selected.append(('repository', (('bin/remote-programs-check',),)))
+    if ci_select(paths)['jobs']['swamp']:
+        selected.append(('swamp', (SWAMP_VALIDATE,)))
     for project, _commands in list(selected):
         if project not in PHP_PROJECTS:
             continue
@@ -313,12 +322,16 @@ def main(argv=None):
                     output.write(f'{missing}: required tool not found\n')
                     result = subprocess.CompletedProcess(command, 127)
             budget.release(lane)
-            check = {'project': project, 'command': list(command), 'exit_code': result.returncode,
+            skipped = command == SWAMP_VALIDATE and result.returncode == SWAMP_AUTH_UNAVAILABLE
+            check = {'project': project, 'command': list(command), 'exit_code': 0 if skipped else result.returncode,
                      'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
+            if skipped:
+                check['skipped'] = 'no Swamp credential: set SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN; CI validates'
             with lock:
                 lane_checks.append((order, position, check))
-            say(f'[{project}] {" ".join(command)}: {"passed" if result.returncode == 0 else "FAILED"} ({check["seconds"]:.3f}s; {log})')
-            if result.returncode:
+            outcome = f'skipped, {check["skipped"]}' if skipped else 'passed' if check['exit_code'] == 0 else 'FAILED'
+            say(f'[{project}] {" ".join(command)}: {outcome} ({check["seconds"]:.3f}s; {log})')
+            if check['exit_code']:
                 say(log.read_text())
 
     def run_lane(entries):

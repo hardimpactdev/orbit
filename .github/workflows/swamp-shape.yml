@@ -117,46 +117,48 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      # Runs only when the change selects Swamp, so a pull request without Swamp inputs needs no Swamp credential;
+      # Dependabot pull requests get no Actions secrets. The nightly run validates everything.
       - uses: ./.github/actions/ci-scope
-        if: inputs.changed-only
         id: scope
         with:
           job: swamp
+          enabled: ${{ github.event_name != 'schedule' }}
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: steps.scope.outputs.selected == 'true'
         with:
           deno-version: v2.9.8
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: steps.scope.outputs.selected == 'true'
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
       - name: Native workflow validation with dedicated registry-read credentials
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: steps.scope.outputs.selected == 'true'
         env:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
       - name: Check first-contact Node enrollment trust
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: steps.scope.outputs.selected == 'true'
         run: deno test -A tests/node_add_bootstrap_test.ts
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: steps.scope.outputs.selected == 'true'
         with:
           php-version: "8.5"
           coverage: none
       - name: Validate release grants with pinned serve check-config
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: steps.scope.outputs.selected == 'true'
         env:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: |
           python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
       - name: Check placement on every step
-        if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
+        if: ${{ always() && steps.scope.outputs.selected == 'true' }}
         run: deno run --allow-read bin/lint-workflow-placement.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
+        if: ${{ always() && steps.scope.outputs.selected == 'true' }}
         with:
           name: swamp-workflow-validation
           path: |
