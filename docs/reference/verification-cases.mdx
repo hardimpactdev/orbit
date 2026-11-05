@@ -5,7 +5,7 @@ description: "How the cases that prove an Orbit command are written, checked and
 
 # Verification cases
 
-**Design draft.** This page describes the target. The only case that exists today is a script, and [what is built](#what-exists-and-what-is-new) is listed at the end.
+**Design draft.** This page describes the target. The runner and the first case, `new-restricted-allow`, are built; [what is built](#what-exists-and-what-is-new) is listed at the end.
 
 A verification case proves one behavior of one command on the nested test fleet of [stage 3](/reference/command-development-pipeline#3-proof). A case is a specification, not code: a short YAML block built from a fixed set of steps. One shared runner executes every case. Code is written only for a new kind of check, and then once, as a new step.
 
@@ -107,8 +107,8 @@ Details that a case author needs:
 - **`probe`** in `setup` is a precondition: a mismatch makes the case `unrun`. In `expect` it is an assertion: a mismatch fails the case. A list in `from`, `proto` or `port` runs one probe for each combination. `family` is 4 or 6, and `proto` is `tcp` or `udp`.
 - **`ufw`** checks that each row appears exactly once, in the order listed, top to bottom. `absent` rows must not appear. A row is `to`, `action`, `from` and an optional `comment`, or `ref` to a rule that `ufw_rule` bound with `as`.
 - **`record`** runs `list` with the node, then matches `where` against each row. `count` is exact.
-- **`doctor`** waits for the Node agent's next report, up to about one minute. Use it in the main success case, not in every case.
-- **`unchanged`** compares the providers named in `what`, or all of `baseline`. `except` leaves out rows for one port. `request: none` uses the `operations` provider.
+- **`doctor`** waits until 65 seconds after `act` ended, so that a report of the Node agent follows the change, then runs Doctor for the Node. The agent's tick has no fixed phase after a restore of `base`, so the wait does not use it. Use it in the main success case, not in every case.
+- **`unchanged`** compares the providers named in `what`, or all of `baseline` except `operations`. `operations` runs only when `what` names it, because the command under test creates an Operation. `except` leaves out rows for one port. `request: none` uses the `operations` provider.
 
 Placeholders:
 
@@ -264,32 +264,35 @@ negative:
   must_fail: [gateway-connects]
 ```
 
-The runner restores `base` and runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest must still run. A case where they pass is not a test. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
+The Swamp workflow restores `base` and runs `runner case ID --negative`, which runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest still run and are listed in the receipt. A case where they pass is not a test. The verdict is `passed` with `"negative": true` when every one of them failed. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
 
 ## What exists and what is new
 
-Today one case exists, `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh`, a 364-line Python program with a 32-line listener. Most steps exist inside it and move into the runner. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
+The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py` and the fleet access `fleet.py`. It runs `new-restricted-allow` of `allow.cases.yaml` on the nested fleet of a task VM and ends with `passed`: about 85 seconds after a restore of `base`, 65 of them the wait for Doctor. `runner.py case ID --negative` proves that the case can fail. The old case script `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh` stays until the other cases are in the runner. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
 
-| Piece | Today |
+| Piece | State |
 | --- | --- |
-| `cli` with JSON and `expect` | In the case script (`cli`). To extract; its cleanup block is deleted. |
-| `cli` with `forms: human` and `tty` | New. The terminal driver is the largest piece. |
-| `listener` for TCP | Exists (`listener.py`, `free_ports`). |
+| Loader: unknown step, batch, fixture, var or placeholder refused; fixtures, `"@name"` lists, variants, stages | Built. All 16 cases of `allow.cases.yaml` load. |
+| `runner.py plan --file F [--steps]` | Built. Prints the batches and cases in order, and with `--steps` the resolved steps. No fleet. |
+| `runner.py case ID`, verdict line, receipt in the evidence directory | Built. Exit 0 passed, 1 failed, 2 unrun, 3 file refused. |
+| `cli` with JSON and `expect` (`exit`, `status`, `code`) | Built. |
+| `cli` with `forms: human`, `tty`, and `expect` of `skipped`, `request` and `human` | New. The terminal driver is the largest piece. |
+| `listener` for TCP over IPv4 | Built. |
 | `listener` for UDP, IPv6 and `block` | New. |
-| `ufw_rule` | In the case script (`ufw insert … above proof-network`). To extract. |
-| `probe` for TCP over IPv4 | Exists (`probe`, `used_source`). |
+| `ufw_rule` (above, below, bound by `as`) | Built. |
+| `probe` for TCP over IPv4 | Built. Expanded probes run in parallel. |
 | `probe` for UDP and IPv6 | New. |
-| `ufw` rows, order and `absent` | Exist (`ufw_numbered` in the case script, `check.py`). To extract. |
-| `record` | In the case script, for `firewall:list`. To extract and generalize. |
-| `doctor` with the agent-tick wait | In the case script. To extract. |
-| `unchanged` | In the case script and `phases.py` (`case_baseline`). To extract and generalize; the undo stack is deleted. |
-| `negative` and `ufw_delete` | In the case script (the second phase). To extract. |
+| `ufw` rows, order and `absent` | Built. |
+| `record` for `firewall:list` | Built. Other list commands are new. |
+| `doctor` | Built. |
+| `unchanged` (`ufw`, `firewall_records`, `listeners`, `operations`) | Built. |
+| `negative` and `ufw_delete` | Built. |
 | `fault` | New. A `ufw` shim on the Node that passes the runner's own reads. Needs a spike. |
 | `busy_node` | New. Needs a spike to hold the lock without a long write. |
 | `ipv6_addresses` | New. The nested fleet has no IPv6 today. Needs a spike. |
-| Batch list, `plan`, `report` | New. |
-| Restore of `base` per batch and after a case that did not pass | New. Measured on tvm-554 with stock Incus: about 16 seconds until healthy. |
+| A step that is new fails the case with cause `infrastructure` and the message `... is not built` | Built. |
+| Restore of `base` per batch and after a case that did not pass | New. Measured on tvm-554 with stock Incus: about 15 seconds until healthy. The Gateway of the restored fleet answers `node:list` about 15 seconds later, so the restore step must wait for that; the runner does not retry. |
 | `bin/check-cases` and the `check-flows` marker rule | New. |
 | Workflows `proof-fleet-verify` and the per-batch and per-case children | New. `proof-command-verification` and the reset workflows exist. |
 
-Rough size, to be removed once built: the runner and its steps about 1,000 lines of Python, `bin/check-cases` about 150, tests about 300, and the workflows about 150 lines of YAML. The case script is deleted. After that a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.
+Still to build, to be removed once built: `bin/check-cases` about 150 lines, the terminal driver, the other steps in the table, and the workflows about 150 lines of YAML. The runner and its steps are about 700 lines, and its tests about 640. After that a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.

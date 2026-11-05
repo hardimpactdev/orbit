@@ -272,15 +272,17 @@ jobs:
         id: scope
         with:
           job: proof
-      - name: Unit tests of the reset and its guest programs
+      - name: Unit tests of the reset, its guest programs and the case runner
         if: steps.scope.outputs.selected == 'true'
-        run: python3 -m unittest discover -s swamp/proof/reset/tests
+        run: |
+          python3 -m unittest discover -s swamp/proof/reset/tests
+          python3 -m unittest discover -s swamp/proof/runner/tests
       - name: Lint the proof programs
         if: steps.scope.outputs.selected == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/proof-tools"
           "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
-          "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/reset swamp/proof/firewall tools/swamp-proof-guest tools/swamp_proof.py
+          "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/reset swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest tools/swamp_proof.py
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: steps.scope.outputs.selected == 'true'
         with:
