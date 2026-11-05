@@ -83,6 +83,9 @@ final class OperationRunBudgets
         // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
         'task_vm.fill_package_cache' => 2100,
         'task_vm.image_build' => 2400,
+        // No run yet. Basis: the serial bounded steps: scan 900 s, stop 300 s, a copy 600 s, the agent wait 130 s and the scan on the stored
+        // copy 900 s, plus the shorter steps and margin. Replace with the 14-day p95 after the first successes.
+        'task_vm.ready_copies' => 3600,
         // No successful run yet. Basis: two live runs on beast with the host at load 5 to 9, 7 min 31 s and 10 min 2 s. The host
         // steps are bounded by 340 s (cleanup), 640 s (clone), 310 s (start), 310 s (fetch), 910 s (dependencies),
         // 610 s (copies), 910 s (check), 210 s (stop) and 410 s (promote). A loaded host stretches the boot checks, so the

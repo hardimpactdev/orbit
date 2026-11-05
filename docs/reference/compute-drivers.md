@@ -3,13 +3,13 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
-  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/RefreshTaskVmSeedCommand.php}
+  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/RefreshTaskVmSeedCommand.php,app/Console/Commands/SaveTaskVmReadyCopiesCommand.php}
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch},tools/task-vm-seed/*.sh}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-seed-refresh}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-seed-refresh,workflow-operation-task-vm-ready-copies}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -1228,11 +1228,19 @@ A refresh admits only when the host has the three free slots of a large VM. An o
 
 A host’s seed is refreshed after each release, and at least daily. The Swamp tokens in the ready copies last 24 hours, and a ready copy expires after 20 hours. The release flow and the daily schedule are B8. They are not built yet. Until then an operator runs `php artisan task-vms:refresh-seed <host>`.
 
+##### Save the ready copies
+
+`php artisan task-vms:save-ready-copies <VM-ID>` saves the nested fleet that runs in one task VM as the ready copies of the VM's seed disk. It is the step "Save the new images" of the seed refresh, as a kind of its own (`task_vm.ready_copies`, chart `docs/cli/tasks/vm-ready-copies.mmd`); the refresh runs the same workflow as a child once it starts its own refresh VM. The VM must be `ready` and hold the nested VMs `nested-gateway`, `nested-app-dev` and `nested-app-prod` on the network `nested`.
+
+The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub file. It deletes the proof Swamp Club key and searches every file of the three guests for it. It trims the disks and stops the guests.
+
+It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked: no Club key, no checkout, its state on its own disk, no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
+
 ##### The ready copies
 
-One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the MAC, the IP, the subnet, the mounts, when the credentials were minted, the attempt and a digest of the inputs. `user.ready.complete` is written last.
+One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the role, when the copy was made, the MAC, the IP and the subnet. ``user.ready.complete` is written last.
 
-The age of a set counts from `user.ready.minted`, and a set older than 20 hours is stale. A different inputs digest also makes it stale. `ready-state.sh` requires all of these keys on the three copies.
+The age of a set counts from `user.ready.made`, and a set older than 20 hours is stale: the refresh mints the Swamp tokens just before it saves the copies.
 
 The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
 
