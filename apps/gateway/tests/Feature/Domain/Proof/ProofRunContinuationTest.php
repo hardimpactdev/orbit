@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofRunContinuation;
+use App\Domain\Proof\ProofVerifyProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScriptProjection;
 use App\Domain\Tasks\TaskStatus;
 use App\Jobs\Proof\AdvanceProofRun;
+use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
@@ -142,6 +146,19 @@ it('verifies after a reset that passed and cancels after a reset that failed', f
     expect($code($step('passed')))->toBe('tasks.no_workspace')->and($code($step('failed')))->toBe('extension.disabled');
 });
 
+it('queues the next step when the Gateway times out a script or a verify of a running proof', function (): void {
+    Queue::fake();
+    $proof = proofRunning();
+    foreach ([[new TaskScriptProjection, 'tasks.script'], [new ProofVerifyProjection, 'proof.verify']] as [$projection, $kind]) {
+        $step = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'sequence' => 1, 'attempts' => 0]);
+
+        $projection->timedOut($step);
+
+        Queue::assertPushed(AdvanceProofRun::class, static fn (AdvanceProofRun $job): bool => $job->operationId === $step->id);
+    }
+});
+
 it('does nothing for a group without a proof', function (): void {
     Queue::fake();
     $proof = proofRunning();
@@ -175,4 +192,56 @@ it('closes the proof failed when the job gives up', function (): void {
     (new AdvanceProofRun($step->id))->failed(new RuntimeException('refused'));
 
     expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.run_failed');
+});
+
+it('cancels the group of a proof that is cancelled', function (): void {
+    Queue::fake();
+    $proof = proofRunning();
+
+    app(CancelOperationAction::class)->execute($proof);
+
+    expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled);
+    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $proof->id);
+});
+
+it('does not touch the group when another operation is cancelled', function (): void {
+    Queue::fake();
+    $proof = proofRunning();
+    $other = Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
+        'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+
+    app(CancelOperationAction::class)->execute($other);
+
+    Queue::assertNotPushed(CancelProofGroup::class);
+});
+
+it('admits the cancel of the group of a cancelled proof, once, and not for a group that is already cancelled', function (): void {
+    $proof = proofRunning();
+    $proof->update(['status' => OperationStatus::Cancelled]);
+    $continuation = app(ProofRunContinuation::class);
+    $code = static function () use ($continuation, $proof): string {
+        try {
+            $continuation->cancelGroup($proof);
+        } catch (ResourceOperationException $exception) {
+            return $exception->errorCode;
+        }
+
+        return 'none';
+    };
+
+    // The tasks extension is off in these tests, so the cancel admission is refused for that reason: the job reached it and tries again.
+    expect($code())->toBe('extension.disabled');
+
+    Task::topLevel()->findOrFail($proof->target_id)->update(['status' => TaskGroupStatus::Cancelled]);
+
+    expect($code())->toBe('none');
+});
+
+it('runs the cancel of the group in a job', function (): void {
+    $proof = proofRunning();
+    Task::topLevel()->findOrFail($proof->target_id)->update(['status' => TaskGroupStatus::Cancelled]);
+
+    (new CancelProofGroup($proof->id))->handle(app(ProofRunContinuation::class));
+
+    expect($proof->refresh()->status)->toBe(OperationStatus::Running);
 });
