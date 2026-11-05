@@ -327,7 +327,8 @@ def record_rows(run, command, node):
     result = run.cli([command, '--node=' + str(run.fleet.nodes[node]['node_id'])])
     if result['rc'] or not isinstance(result['json'], dict):
         raise Infra(f"{command} failed: exit {result['rc']}")
-    return result['json'].get(key) or []
+    # `firewall:list --node` answers per Node: {"nodes": [{"node_id": 1, "rules": [...]}]}.
+    return [row for item in result['json'].get('nodes') or [] for row in item.get(key) or []]
 
 
 def record(run, args):
