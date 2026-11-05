@@ -1,23 +1,37 @@
 ---
 title: "orbit cluster:create"
 sidebarTitle: "cluster:create"
-description: "Create a Cluster in the `inactive` state."
+description: "Create an inactive Cluster, optionally with a development TLD."
 ---
 
 ```bash
-orbit cluster:create <name> [--tld=TLD]
+orbit cluster:create <name> [--tld=TLD] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `name` | yes | Unique Cluster name. |
+| `name` | yes | Unique Cluster name, at most 255 characters. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. It cannot equal, be an ancestor of, or be a descendant of `orbit` or the configured VPN domain. Comparisons ignore case and the VPN domain’s optional root dot, and use DNS label boundaries. An active Cluster with this TLD owns generated development Route domains for its members. |
+| `--json` | off | Print the Cluster as JSON. |
 
 ```bash
 orbit cluster:create lab --tld=test
 ```
 
-The CLI refuses a TLD that is not one lowercase DNS label with `cluster.tld_invalid` before it sends a request. [Placement and TLDs](/cli/cluster#placement-and-tlds) lists the ownership rules.
+In a terminal, an omitted name is asked for as text. A noninteractive or `--json` call without it is refused with `cluster.name_required` and sends no request.
+
+A new Cluster is `inactive`, has no members and no Router, and changes no traffic. The command only records the Cluster, so it contacts no Node. The caller must be the Gateway Node, its serving host, or hold a grant to the Gateway Node. Human output shows the created Cluster as a detail tree, as `cluster:show` does.
+
+A TLD is one DNS label. Case is ignored and the value is stored lowercase, and an empty value means no TLD. The CLI refuses anything else, such as `a.b`, `.test`, `-x` or a label over 63 characters, with `cluster.tld_invalid` before it sends a request. A name or a TLD that another Cluster already uses, or a TLD equal to `orbit` or the VPN domain or to its last label, is refused with `validation.failed` on `name` or `tld`, and nothing is created. An inactive Cluster may share a Node's TLD. [Placement and TLDs](/cli/cluster#placement-and-tlds) lists the ownership rules.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `cluster.name_required` | The name is missing and the CLI cannot prompt. |
+| `cluster.tld_invalid` | The TLD is not one DNS label. Refused before the request. |
+| `validation.failed` | The name is missing or taken, or the TLD is taken or conflicts with a private zone. Nothing is created. |
+| `node_access.required` | The caller is not the Gateway Node or its serving host and has no grant to the Gateway Node. |
