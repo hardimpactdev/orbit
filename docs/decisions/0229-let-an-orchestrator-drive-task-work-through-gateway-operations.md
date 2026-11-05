@@ -44,7 +44,7 @@ An evaluation of the Pi Durable harness (`@earendil-works/pi-durable`) ran besid
 
 ### Decisions this builds on
 
-Long commands are durable operations that Swamp runs ([Operations](/reference/operations#how-an-operation-runs)). [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) names a kind after its CLI command and keeps only the newest 50 finished operations of each target.
+Long commands are durable operations that Swamp runs ([Operations](/reference/operations#how-an-operation-runs)). [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-deployment-history-becomes-operations) keeps only the newest 50 finished operations of each target.
 
 [Node commands](/reference/node-agent#commands) states that detached supervision of checks and topologies is not a generic command runner.
 
@@ -85,7 +85,7 @@ A caller may send an `Idempotency-Key` header to any route that starts an operat
 - A repeat with the same key, the same target, and the same input answers `202` with the existing operation, whatever its status.
 - A repeat with the same key and a different target or input answers `409 operation.idempotency_conflict` and starts nothing.
 - The CLI passes the key with `--idempotency-key`, and each MCP tool that starts an operation takes an `Idempotency-Key` argument.
-- The WebSocket app routes move to this rule when ADR 0218 makes their changes operations. Until then they keep their own rule.
+- The WebSocket app routes keep their own Node-scoped rule.
 
 An orchestrator derives the key from its work item, stage, and cycle, such as `login-form.handoff.c2`.
 

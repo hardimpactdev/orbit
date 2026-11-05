@@ -175,7 +175,7 @@ An action validates before its first member step. When it fails after a member s
 - A failed candidate gets the Cluster DNS removal and the port 53 prune in its restore. The members never moved.
 - Offline Node removal can leave the delegate on the machine and lists it in `retained_on_node`. Router residue is also listed there. Online removal deletes it before losing access.
 - A LAN address changes only through `node:add` on a Node without Instances. For beast or shark, this ADR does not change that.
-- Member work follows its owning action: ADR 0209 and [ADR 0218 in PR #1302](https://github.com/hardimpactdev/orbit/blob/2686037bfbf93f6774c37530b8a0a609e5e1c526/docs/decisions/0218-take-long-commands-off-the-request-path.md) move Node and Cluster changes into operations. Until those conversions land, the existing request deadline bounds the work and a partial failure uses the same cleanup gates. This ADR adds no competing execution mechanism.
+- Member work follows its owning action: Swamp runs Node and Cluster changes as [operations](/reference/operations#how-an-operation-runs), and a partial failure uses the same cleanup gates. This ADR adds no competing execution mechanism.
 
 ### Firewall
 
@@ -236,7 +236,7 @@ The decision of 2026-10-16 fixes the location rule, the Cluster TLD and exact Cl
 14. **A rollback bridge before the cutover.** Recommendation: accept. Without it, a rollback needs a manual step on the `vpn` Node and several seconds without DNS.
 15. **Doctor reports Router LAN rules whose source is not eligible**, for the HTTPS family too. Recommendation: accept.
 16. **Narrow overlapping port 53 rules before enabling Cluster DNS.** Recommendation: include this in rollout, preserving Incus access on bridge interfaces. Without it, Nick's member-only requirement is not met.
-17. **Use the owning action's execution and deadline.** Recommendation: follow ADR 0209 and ADR 0218 conversions; do not add a separate DNS queue or unbounded request.
+17. **Use the owning action's execution and deadline.** Recommendation: follow the owning action's Swamp workflow; do not add a separate DNS queue or unbounded request.
 18. **Preserve the existing contribution contract.** Required compatibility, not a new approval: placement controls publication; Doctor reports stored conflicts with reserved names while publication continues. Withdrawal follows ADR 0212 step 4/A3. Recommendation: extend these same rules to the new projections.
 19. **Transition overrides remain authoritative across intermediate publications; partial writes require compensating restore.** Recommendation: accept. A digest alone does not provide distributed consistency.
 

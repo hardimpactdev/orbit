@@ -280,7 +280,7 @@ Concurrent starts with one new key create one operation and start one workflow. 
 
 The CLI commands `instance:deploy`, `instance:rollback`, `tasks:provision`, `tasks:check`, and `tasks:turn` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the `Idempotency-Key` argument (required where the API requires it), generated from the OpenAPI header.
 
-Keyed operations are never pruned, so their keys never expire. Operations currently keep every record. When ADR 0218 adds retention for finished operations, it must exclude every operation that carries a key. The [WebSocket app routes](/reference/websocket-apps) keep their own Node-scoped idempotency rule until their changes become operations.
+Keyed operations are never pruned, so their keys never expire. Operations currently keep every record. When ADR 0218 adds retention for finished operations, it must exclude every operation that carries a key. The [WebSocket app routes](/reference/websocket-apps) keep their own Node-scoped idempotency rule.
 
 ## Read an operation
 
