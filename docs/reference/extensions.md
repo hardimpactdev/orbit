@@ -75,7 +75,6 @@ Use this checklist when core adds a place for extensions to contribute:
 
 The `ci-runner` role is a core Node role. Its host boundary uses the existing role baseline and firewall catalog. It introduces no extension contribution or plug-in point.
 
-[Fixed task analysis](/reference/tasks#analyze-an-external-groups-repository) is also core behavior. `TasksServiceProvider` binds `TaskAnalysisRunner` to the existing `RemoteTaskCheckRunner`; this interface is not a tagged extension contribution. Analysis adds no plug-in point or extension-owned Node program. It binds `TaskStartCommit`, which pins the commit a [task workspace starts from](/reference/tasks#provision-an-external-group), to `GitHubTaskStartCommit`; that interface is not a tagged contribution either. The provider also registers the core Tasks console commands, such as the command that [fills older merge times](/reference/tasks#lifecycle-times); they add no plug-in point. It binds no turn receipt reader: the Swamp turn reads the [receipt file](/reference/tasks#turn-receipt) the agent writes.
 
 ## Plug-in points
 

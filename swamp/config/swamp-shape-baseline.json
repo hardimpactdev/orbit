@@ -38,7 +38,7 @@
     {
       "file": "extensions/behaviors/_lib/gateway_stage.ts",
       "rule": "gateway-http",
-      "count": 13,
+      "count": 12,
       "evidence": [
         "GET /api/v1/operations/{operation_id}",
         "GET <unknown>",
@@ -59,12 +59,6 @@
       "file": "extensions/behaviors/_lib/maintenance/batch.ts",
       "rule": "custom-control",
       "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/_lib/repository_analysis.ts",
-      "rule": "custom-control",
-      "count": 2,
       "evidence": []
     },
     {

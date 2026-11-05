@@ -16,7 +16,6 @@ check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
 check snapshot CHECKOUT         print HEAD, its parent, its tree, and the working-tree hash, without touching the index
-check analysis-base CHECKOUT START
                                 read the merge base of the full starting commit and local origin/main, or an empty base
 
 Detached check and script processes remove their allocated TMPDIR when they end, including on INT, TERM, HUP, or cancel.
@@ -358,17 +357,6 @@ def run_owned(run_id, checkout, head, tree, setup, deliverables, command, profil
             os.close(3)
         except OSError:
             pass
-
-
-def analysis_base(checkout, start):
-    """Resolve the provisioned starting commit against local origin/main, without fetching or changing the checkout."""
-    base = ''
-    if re.fullmatch(r'(?:[a-f0-9]{40}|[a-f0-9]{64})', start):
-        try:
-            base = git(checkout, 'merge-base', 'refs/remotes/origin/main', start)
-        except subprocess.CalledProcessError:
-            pass
-    print(json.dumps({'base': base}))
 
 
 def script_identity(checkout, relative):
@@ -1138,8 +1126,6 @@ def main(arguments):
         start(arguments[1], run_id=arguments[2], script=arguments[3])
     elif command == 'script-inspect' and len(arguments) == 3:
         script_inspect(*arguments[1:])
-    elif command == 'analysis-base' and len(arguments) == 3:
-        analysis_base(*arguments[1:])
     elif command == 'run-owned' and len(arguments) == 9:
         run_owned(*arguments[1:])
     elif command == 'run' and len(arguments) in (4, 5, 6, 7):

@@ -2,8 +2,7 @@ import { WEBSITE_PROJECT } from "./dependency_projects.ts";
 // An in-memory fake of the Orbit Gateway task routes for routing tests.
 // Each group follows a scenario. Operations are terminal at once; a start
 // answers 202 with poll_after_seconds 1, so the client reads it on a later tick.
-import { analysisFixture, HEAD, TREE } from "./analysis_fixture.ts";
-import { sha256 } from "../../extensions/behaviors/_lib/repository_analysis.ts";
+const HEAD = "a".repeat(40), TREE = "b".repeat(40);
 
 export interface Scenario {
     projectId?: number;
@@ -31,10 +30,6 @@ export interface Scenario {
     summaryGarbage?: boolean;
     prClosedOnce?: boolean;
     provisionIdentity?: Record<string, unknown>;
-    analysisFailure?: {
-        schema: number;
-        error: { code: string; required_bytes: number | null };
-    };
 }
 
 interface Group {
@@ -150,19 +145,17 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         k: string,
     ) => (g.counts[k] = (g.counts[k] ?? 0) + 1);
 
-    async function run(
+    function run(
         g: Group,
         kind: string,
         body: Record<string, unknown>,
         operation: number,
-    ): Promise<
-        {
-            status: string;
-            result?: unknown;
-            error_code?: string;
-            failed_step?: string;
-        }
-    > {
+    ): {
+        status: string;
+        result?: unknown;
+        error_code?: string;
+        failed_step?: string;
+    } {
         const s = g.scenario;
         switch (kind) {
             case "provision":
@@ -189,64 +182,8 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
                         instance_id: g.taskable_id,
                         node_id: 2,
                         starting_commit: HEAD,
-                        analysis_base: {
-                            base: HEAD,
-                            instance_id: 1,
-                            repository: "https://example.test/repo.git",
-                            branch: `task-${g.id}`,
-                        },
                     },
                 };
-            case "analyze": {
-                if (s.analysisFailure) {
-                    return {
-                        status: "failed",
-                        error_code: s.analysisFailure.error.code,
-                        failed_step: "analysis",
-                        result: s.analysisFailure,
-                    };
-                }
-                if (body.head !== g.head || body.tree !== g.tree) {
-                    return {
-                        status: "failed",
-                        error_code: "tasks.analysis_stale",
-                    };
-                }
-                const f = await analysisFixture(g);
-                const e = JSON.parse(f.result.artifact.content);
-                const manifest = body.plan as typeof f.plan.manifest;
-                e.head = body.head;
-                e.tree = body.tree;
-                e.base = body.base;
-                e.report.data.base = body.base;
-                e.plan_sha256 = body.plan_sha256;
-                e.report.data.paths = manifest.paths.flatMap((p) =>
-                    p.change === "rename" ? [p.from, p.path] : [p.path]
-                ).sort();
-                const content = JSON.stringify(e);
-                const result = {
-                    ...f.result,
-                    artifact: {
-                        content,
-                        bytes: new TextEncoder().encode(content).length,
-                        sha256: await sha256(content),
-                    },
-                    provenance: {
-                        ...f.result.provenance,
-                        operation_id: operation,
-                        subtask: body.subtask,
-                        base: body.base,
-                        instance_id: s.provisionIdentity?.instance_id ?? 1,
-                        node_id: s.provisionIdentity?.node_id ?? 2,
-                        plan_sha256: body.plan_sha256,
-                        plan_id: manifest.id,
-                        plan_revision: manifest.revision,
-                        before: { head: body.head, tree: body.tree },
-                        after: { head: body.head, tree: body.tree },
-                    },
-                };
-                return { status: "succeeded", result };
-            }
             case "check": {
                 const n = bump(g, `check.${body.phase}`);
                 if (body.phase === "baseline") {
@@ -635,7 +572,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
                 g.vm_power = "destroyed";
                 return json(200, view());
             }
-            const op = /^\/(provision|check|analyze|turn|publish|park)$/.exec(
+            const op = /^\/(provision|check|turn|publish|park)$/.exec(
                 rest,
             );
             if (req.method === "POST" && op) {
@@ -670,7 +607,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
                 const out = await run(g, op[1], body, id);
                 // StartTaskTurnAction persists TaskTurnData::toArray(), including nullable defaults.
                 const input = op[1] === "turn"
-                    ? { model: null, check: null, analysis: null, ...body }
+                    ? { model: null, check: null, ...body }
                     : body;
                 const rec = {
                     id,

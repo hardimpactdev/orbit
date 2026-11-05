@@ -8,7 +8,7 @@ covers:
   - "apps/gateway/app/Models/{Project,ProjectUpdate,ProjectInspection}.php"
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
-  - "swamp/extensions/behaviors/{dependency_scanner.ts,_lib/service_detection.ts,_lib/dependency_results.ts,_lib/maintenance/inspect.ts,operations/project-maintenance/**}"
+  - "swamp/extensions/behaviors/{dependency_scanner.ts,_lib/service_detection.ts,_lib/{canonical_json,dependency_inventory,dependency_results,dependency_results_schema,project_schedule}.ts,_lib/maintenance/inspect.ts,operations/project-maintenance/**}"
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_13_120000_add_maintenance_to_projects,2027_01_13_130000_create_project_inspections_table,2027_01_14_120000_drop_project_node_exclusions_table}.php"
 ---
 

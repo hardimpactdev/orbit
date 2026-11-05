@@ -5,7 +5,7 @@ import { inventory } from "../../_lib/dependency_inventory.ts";
 import { sources } from "../../_lib/dependency_results.ts";
 import { sourceKey } from "../../_lib/dependency_results_schema.ts";
 import { batchReceipt, FindingsSchema } from "../../_lib/project_schedule.ts";
-import { sha256 } from "../../_lib/repository_analysis.ts";
+import { sha256 } from "../../_lib/canonical_json.ts";
 import {
     changedSources,
     composerFacts,

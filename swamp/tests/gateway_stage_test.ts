@@ -20,23 +20,7 @@ import {
     syncAssistance,
 } from "../extensions/behaviors/_lib/gateway_stage.ts";
 
-import { analysisFixture, HEAD, TREE } from "./_support/analysis_fixture.ts";
-const task = (id: number, position: number) => ({
-    id,
-    position,
-    title: `Subtask ${id}`,
-    brief: "Update dependencies.",
-    deliverables: [{
-        id: "lock",
-        type: "file",
-        description: "composer.lock modified",
-    }],
-});
-const fixture = await analysisFixture({
-    title: "Deps",
-    brief: "Group brief.",
-    tasks: [task(11, 1)],
-});
+const HEAD = "a".repeat(40), TREE = "b".repeat(40);
 
 interface Call {
     method: string;
@@ -177,8 +161,6 @@ const args = (
     workItem: "tg-7",
     stage,
     key: `tg-7.${stage}.c1`,
-    ...fixture.inputs,
-    analysis: fixture.analysis(stage === "review" ? "review" : "implement"),
     ...extra,
 });
 const env = (payload: Record<string, unknown>, recordedAt: string) => ({
@@ -276,12 +258,6 @@ Deno.test("provision moves a backlog group to todo, starts once with its key, th
         instance_id: 5,
         node_id: 6,
         starting_commit: HEAD,
-        analysis_base: {
-            base: TREE,
-            instance_id: 5,
-            repository: fixture.plan.repository,
-            branch: fixture.plan.branch,
-        },
     };
     const operation = {
         id: 900,
@@ -301,13 +277,11 @@ Deno.test("provision moves a backlog group to todo, starts once with its key, th
         instanceId: 5,
         nodeId: 6,
         startingCommit: HEAD,
-        analysisBase: result.analysis_base,
     });
     assertEquals(job.evidence, {
         status: "succeeded",
         runId: "900",
         operationId: 900,
-        operation,
     });
     const start = gw.calls.find((c) => c.method === "POST")!;
     assertEquals(start.path, "/api/v1/task-groups/7/provision");
@@ -542,6 +516,36 @@ Deno.test("implement opens a new thread, then continues it with the reviewer's f
     assertStringIncludes(String(second.body!.prompt), "Pin carbon.");
 });
 
+Deno.test("a later subtask is not implemented until the docs subtask completed", async () => {
+    const gw = fakeGateway({
+        groupStatus: "running",
+        tasks: [
+            { id: 10, position: 1, status: "failed" },
+            { id: 11, position: 2, status: "todo" },
+        ],
+    });
+    const job = await runStage(args("implement"), harness().deps(gw.http))
+        .catch((error: Error) => ({ lastError: error.message }));
+    assertStringIncludes(
+        String(job.lastError),
+        "waits for docs subtask 10 to complete",
+    );
+    assertEquals(gw.calls.filter((c) => c.method === "POST").length, 0);
+
+    const done = fakeGateway({
+        groupStatus: "running",
+        tasks: [
+            { id: 10, position: 1, status: "completed" },
+            { id: 11, position: 2, status: "todo" },
+        ],
+    });
+    await runStage(args("implement"), harness().deps(done.http));
+    assertEquals(
+        done.calls.find((c) => c.method === "POST")!.body!.subtask,
+        11,
+    );
+});
+
 Deno.test("a turn result's thread id becomes the change artifact's thread", async () => {
     const gw = fakeGateway({
         groupStatus: "running",
@@ -594,15 +598,8 @@ Deno.test("an approval completes the subtask and reports whether another remains
             result: turnResult({ outcome: "approved", summary: "Fine." }, 45),
         },
     });
-    const multi = await analysisFixture({
-        title: "Deps",
-        brief: "Group brief.",
-        tasks: [task(11, 1), task(12, 2)],
-    });
     const job = await settle(
         args("review", {
-            ...multi.inputs,
-            analysis: multi.analysis("review"),
             handoff: env({
                 subtask: 11,
                 outcome: "passed",

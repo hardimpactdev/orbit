@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Requests\Tasks;
 
 use App\Data\Tasks\TaskTurnData;
-use App\Domain\Tasks\TaskAnalysisPlan;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Support\StrictJson;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
-use InvalidArgumentException;
 use UnexpectedValueException;
 
 final class StartTaskTurnRequest extends FormRequest
@@ -25,9 +22,6 @@ final class StartTaskTurnRequest extends FormRequest
             'thread' => ['required', 'string', 'regex:/\A(?:new|[1-9][0-9]*)\z/D'],
             'model' => ['sometimes', 'string', 'max:255'],
             'check' => ['required_if:role,reviewer', 'prohibited_unless:role,reviewer', 'integer:strict', 'min:1'],
-            'analysis' => ['sometimes', 'array:operation,plan_sha256', 'required_array_keys:operation,plan_sha256'],
-            'analysis.operation' => ['required_with:analysis', 'integer:strict', 'min:1'],
-            'analysis.plan_sha256' => ['required_with:analysis', 'string', 'regex:'.TaskAnalysisPlan::DigestPattern],
         ];
     }
 
@@ -35,13 +29,10 @@ final class StartTaskTurnRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            $fields = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['subtask', 'role', 'prompt', 'thread', 'model', 'check', 'analysis']);
-            if (array_key_exists('analysis', $fields)) {
-                StrictJson::decode($this->getContent(), PHP_INT_MAX);
-            }
+            $fields = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['subtask', 'role', 'prompt', 'thread', 'model', 'check']);
 
             return $fields;
-        } catch (UnexpectedValueException|InvalidArgumentException $exception) {
+        } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
     }

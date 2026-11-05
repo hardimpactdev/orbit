@@ -28,7 +28,6 @@ export function turnInput(role = "implementer") {
         pi_port: 3774,
         candidate: role === "reviewer" ? head : null,
         deliverables: [],
-        analysis_evidence: null,
     });
 }
 function result(role = "implementer") {
@@ -99,6 +98,21 @@ Deno.test("untrusted prompt expressions remain inert JSON content", () => {
             .startsWith(input.prompt),
         true,
     );
+});
+Deno.test("an oversized prompt ends the turn with its own code and sends nothing", () => {
+    const input = turnInput();
+    input.prompt = "x".repeat(100000);
+    const prepared = prepare({ operation_id: 15, node_id: 30, intent: input });
+    assertEquals(prepared.error_code, "tasks.prompt_too_large");
+    const value = JSON.parse(
+        finish({
+            ...result(),
+            failure: true,
+            failure_code: prepared.error_code,
+        }).result_json,
+    );
+    assertEquals(value.state, "failed");
+    assertEquals(value.error_code, "tasks.prompt_too_large");
 });
 Deno.test("turn result retains the existing board token metrics", () => {
     assertEquals(finish(result()).successful, true);
@@ -302,12 +316,12 @@ Deno.test("review evidence retains the restored candidate identity", () => {
     assertEquals(value.after_reset, { head, tree });
     assertEquals(value.receipt.outcome, "approved");
 });
-Deno.test("analysis plus prompt cannot exceed the existing prompt bound", () => {
+Deno.test("assembled prompt cannot exceed the existing prompt bound", () => {
     const input = turnInput();
     input.prompt = "x".repeat(100000);
     assertEquals(
         prepare({ operation_id: 15, node_id: 30, intent: input }).error_code,
-        "tasks.analysis_prompt_too_large",
+        "tasks.prompt_too_large",
     );
 });
 

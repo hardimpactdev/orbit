@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4";
-import { sha256 } from "./repository_analysis.ts";
+import { sha256 } from "./canonical_json.ts";
 
 const text = (max: number) =>
     z.string().min(1).refine((s) =>

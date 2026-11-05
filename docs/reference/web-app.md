@@ -13,7 +13,6 @@ covers:
 
 The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app. To install, run, and check the app, see [Bun and Rust projects](/reference/bun-and-rust-projects#web-app).
 
-The docs-first amendment for [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) requires regeneration of these API types at runtime delivery for the analyze operation and optional turn evidence reference. Complete report content is a bounded UTF-8 string with exact-byte hash and length, not an arbitrary artifact-file fetch. The native contract adds no analysis button, UI policy, or review approval authority; existing operation views remain unchanged. This documentation child adds neither generated API types nor a shipped endpoint.
 
 The generated task update schemas expose `status` for [external task groups](/reference/tasks#external-orchestration). They describe inputs only; the Gateway enforces the allowed transitions and keeps tick behavior unchanged.
 

@@ -30,8 +30,6 @@ final readonly class OperationKinds
 
     public const string TasksPublish = 'tasks.publish';
 
-    public const string TasksAnalyze = 'tasks.analyze';
-
     public const string TasksScript = 'tasks.script';
 
     public const string TasksCheck = 'tasks.check';

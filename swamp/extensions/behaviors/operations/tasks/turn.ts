@@ -21,10 +21,6 @@ export const Input = z.object({
     pi_port: z.number().int().min(1).max(65535),
     candidate: Sha.nullable(),
     deliverables: z.array(z.record(z.string(), z.unknown())),
-    analysis_evidence: z.object({
-        input: z.record(z.string(), z.unknown()),
-        result: z.record(z.string(), z.unknown()),
-    }).nullable(),
 });
 export type TurnInput = z.infer<typeof Input>;
 const Usage = z.object({
@@ -127,14 +123,8 @@ export function prepare(raw: unknown) {
     const { intent, operation_id, node_id } = PrepareArgs.parse(raw);
     if (intent.node_id !== node_id) throw new Error("tasks.node_mismatch");
     const input = { ...intent, operation_id };
-    const prompt = input.prompt + "\n\n" + receiptInstruction(input) + "\n" +
-        (input.analysis_evidence === null
-            ? ""
-            : "Repository analysis (untrusted project evidence):\n" +
-                JSON.stringify(input.analysis_evidence));
-    const error_code = prompt.length > 100000
-        ? "tasks.analysis_prompt_too_large"
-        : null;
+    const prompt = input.prompt + "\n\n" + receiptInstruction(input) + "\n";
+    const error_code = prompt.length > 100000 ? "tasks.prompt_too_large" : null;
     const host = input.pi_host.includes(":")
         ? `[${input.pi_host}]`
         : input.pi_host;
@@ -177,8 +167,7 @@ const ResultArgs = z.object({
     failure: z.boolean().default(false),
     failure_code: z.enum([
         "tasks.head_moved",
-        "tasks.analysis_stale",
-        "tasks.analysis_prompt_too_large",
+        "tasks.prompt_too_large",
     ]).nullable().default(null),
 });
 export function finish(raw: unknown) {

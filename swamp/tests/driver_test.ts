@@ -1,7 +1,7 @@
+import { parse } from "jsr:@std/yaml@1.0.9";
 import { recordQuery } from "./fixtures/worker_query.ts";
 // Pure helpers of @nckrtl/orbit-driver: ~/.swamp/deno/deno test tests/
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { planConsentNote } from "../extensions/behaviors/_lib/repository_analysis.ts";
 import {
     behavior,
     pendingGateIds,
@@ -85,65 +85,65 @@ Deno.test("pending gate ids come from human gates on otherwise passing transitio
 
 Deno.test("a consent gate that reads its own approval waits on that human gate, not on itself", () => {
     const noKey =
-        "CEL gate evaluation failed: No such key: plan_authorized\n\n>    1 | [approvals.plan_authorized.filter(a,";
+        "CEL gate evaluation failed: No such key: release_approved\n\n>    1 | [approvals.release_approved.filter(a,";
     const status = {
         transitions: [
             {
                 name: "authorized",
-                to: "analyze",
+                to: "implement",
                 manual: false,
                 satisfied: false,
                 cycleLimitBlocked: false,
                 gates: [
                     gate("artifact-exists", true),
                     gate("human-approval", false, [
-                        awaiting("plan-authorized"),
+                        awaiting("release-approved"),
                     ]),
                     gate("cel", false, [noKey]),
                 ],
             },
             {
                 name: "other",
-                to: "analyze",
+                to: "implement",
                 manual: false,
                 satisfied: false,
                 cycleLimitBlocked: false,
                 gates: [
                     gate("human-approval", false, [awaiting("other-gate")]),
-                    gate("cel", false, ["No such key: plan_authorized"]),
+                    gate("cel", false, ["No such key: release_approved"]),
                 ],
             },
         ],
     };
     assertEquals(
         pendingGateIds(status),
-        ["plan-authorized"],
+        ["release-approved"],
         "a CEL gate on another gate's key still blocks",
     );
 });
 
-Deno.test("a later plan cycle waits on its consent gate once an earlier cycle's approval exists", () => {
+Deno.test("a later release cycle waits on its consent gate once an earlier cycle's approval exists", () => {
     const later =
-        "awaiting human approval 'plan-authorized' with note=planConsentNote(fresh plan payload): the latest decision of this cycle must authorize this exact plan";
+        "awaiting human approval 'release-approved' with note=the release note: the latest decision of this cycle must authorize this exact release";
     const status = {
         transitions: [
             {
                 name: "authorized",
-                to: "analyze",
+                to: "implement",
                 manual: false,
                 satisfied: false,
                 cycleLimitBlocked: false,
                 gates: [
                     gate("artifact-exists", true),
                     gate("human-approval", false, [
-                        awaiting("plan-authorized"),
+                        awaiting("release-approved"),
                     ]),
                     gate("cel", false, [later]),
                 ],
             },
             {
                 name: "other",
-                to: "analyze",
+                to: "implement",
                 manual: false,
                 satisfied: false,
                 cycleLimitBlocked: false,
@@ -156,7 +156,7 @@ Deno.test("a later plan cycle waits on its consent gate once an earlier cycle's 
     };
     assertEquals(
         pendingGateIds(status),
-        ["plan-authorized"],
+        ["release-approved"],
         "a CEL gate awaiting another gate still blocks",
     );
 });
@@ -300,11 +300,11 @@ Deno.test("parked tick rejects mismatched or pre-reset preapprovals before facto
         "assistance",
     ]);
     assertEquals(valid.calls[2].arguments!.parked, false);
-    const exact = parkedDriver({ ...pre, note: "plan-v1:3:abc" });
+    const exact = parkedDriver({ ...pre, note: "release-v1:abc" });
     await exact.tick();
     assertEquals(
         exact.calls[1].arguments!.note,
-        "plan-v1:3:abc",
+        "release-v1:abc",
         "a gate that checks the note exactly gets it verbatim",
     );
 });
@@ -430,77 +430,32 @@ Deno.test("start begins exactly one work item in the driver's factory on the wor
     assert(failed, "a refused factory start fails the step");
 });
 
-Deno.test("plan records the operator's plan and its exact consent only at the plan stage", async () => {
-    const plan = {
-        manifest: {
-            id: "tg-2314",
-            revision: 1,
-            source: { brief_id: "tg-2314", revision_sha256: "a".repeat(64) },
-            asserted_by: "operator",
-            complete: true as const,
-            paths: [{
-                change: "modify" as const,
-                path: "docs/reference/metrics.md",
-            }],
-        },
-        plan_sha256: "b".repeat(64),
-        base: "c".repeat(40),
-        repository: "github.com/hardimpactdev/orbit",
-        branch: "task-2314",
-        docsSubtask: 2324,
-    };
-    for (const stage of ["plan", "analyze"]) {
-        const calls: { method: string; arguments?: Record<string, unknown> }[] =
-            [];
-        const writes: Record<string, unknown>[] = [];
-        const context = {
-            globalArgs: behavior.globalArguments.parse({
-                factory: "orbit-groups",
-            }),
-            definition: { name: "orbit-driver-groups" },
-            queryData: recordQuery(() =>
-                Promise.resolve([{
-                    started: true,
-                    stage: { id: stage, cycle: 2, terminal: false },
-                    unresolvedBindings: [],
-                    transitions: [],
-                }])
+Deno.test("the task factory sends a passed handoff directly to review", async () => {
+    const model = parse(
+        await Deno.readTextFile(
+            new URL(
+                "../models/@swamp/software-factory/orbit-groups.yaml",
+                import.meta.url,
             ),
-            invokeModel: (call: (typeof calls)[number]) => {
-                calls.push(call);
-                return Promise.resolve({ ok: true });
-            },
-            writeResource: (
-                _spec: string,
-                name: string,
-                data: Record<string, unknown>,
-            ) => {
-                writes.push(data);
-                return Promise.resolve({ name });
-            },
-            logger: { info: () => {}, warning: () => {} },
+        ),
+    ) as {
+        globalArguments: {
+            stages: {
+                id: string;
+                transitions: { name: string; to: string }[];
+            }[];
         };
-        const run = behavior.methods.plan.execute({
-            workItem: "tg-2314",
-            plan,
-            actor: "operator",
-        }, context);
-        if (stage !== "plan") {
-            let refused = false;
-            await run.catch(() => (refused = true));
-            assert(refused, "a plan outside the plan stage is refused");
-            assertEquals(calls.map((c) => c.method), ["status"]);
-            continue;
-        }
-        await run;
-        assertEquals(calls.map((c) => c.method), ["status", "record_artifact"]);
-        assertEquals(calls[1].arguments, {
-            workItem: "tg-2314",
-            name: "plan",
-            payload: plan,
-        });
-        assertEquals(writes[0].gateId, "plan-authorized");
-        assertEquals(writes[0].cycle, 2);
-        assertEquals(writes[0].note, planConsentNote(plan));
-    }
+    };
+    const stages = model.globalArguments.stages;
+    const target = (stage: string, transition: string) =>
+        stages.find((value) => value.id === stage)!.transitions.find((value) =>
+            value.name === transition
+        )!.to;
+    assertEquals(target("baseline", "passed"), "implement");
+    assertEquals(target("handoff", "pass"), "review");
+    assertEquals(target("handoff", "fail"), "implement");
+    assertEquals(target("review", "rework"), "implement");
+    assertEquals(target("review", "retry"), "review");
+    assertEquals(target("review", "next"), "implement");
+    assertEquals(target("review", "done"), "publish");
 });

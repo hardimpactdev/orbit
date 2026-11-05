@@ -1,5 +1,5 @@
 import { type DependencyProject } from "./dependency_project_schema.ts";
-import { canonical, sha256 } from "./repository_analysis.ts";
+import { canonical, sha256 } from "./canonical_json.ts";
 import { type BatchPlan, type Candidate } from "./maintenance/batch.ts";
 import { type Findings } from "./project_schedule.ts";
 import {

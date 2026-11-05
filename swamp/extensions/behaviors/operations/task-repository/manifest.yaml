@@ -3,7 +3,7 @@ name: '@nckrtl/task-repository-scripts'
 version: 2026.11.03.1
 visibility: private
 license: MIT
-description: Public Tasks repository metadata, native script/analysis/check/publication argv
+description: Public Tasks repository metadata, native script/check/publication argv
   and result shaping; ships no scripts.
 behaviors:
 - operations/task-repository/assets.ts

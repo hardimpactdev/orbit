@@ -6,11 +6,9 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
-use Orbit\Sdk\Requests\Tasks\AnalyzeTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\TaskAnalysisReference;
 use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
@@ -100,29 +98,6 @@ describe('operation requests', function (): void {
         $mock->assertSentCount(1);
     });
 
-    it('preserves exact manifest bytes and complete analysis evidence through typed operation transport', function (): void {
-        $manifest = '{"complete":true,"paths":[{"change":"add","path":"new.php"}]}';
-        $request = new AnalyzeTaskGroupRequest(17, 18, $manifest, str_repeat('d', 64), str_repeat('a', 40), str_repeat('b', 40), str_repeat('c', 40), 'analysis.c1');
-        $artifact = ['content' => "{\n\"complete\":true\n}\n", 'bytes' => 20, 'sha256' => str_repeat('a', 64)];
-        $result = ['outcome' => 'action_required', 'artifact' => $artifact, 'provenance' => ['execution_id' => str_repeat('e', 32), 'mechanical_llm_calls' => 0]];
-        $mock = new MockClient([$request::class => MockResponse::make(['data' => operation_payload(['kind' => 'tasks.analyze', 'result' => $result]), 'meta' => []], 202)]);
-        $response = operation_connector($mock)->send($request)->dto();
-        expect($request->getMethod())->toBe(Method::POST)
-            ->and($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/analyze')
-            ->and((string) $request->body())->toContain(',"plan":'.$manifest.'}')
-            ->and(json_decode((string) $request->body(), true, flags: JSON_THROW_ON_ERROR))->toBe(['subtask' => 18, 'plan_sha256' => str_repeat('d', 64), 'base' => str_repeat('a', 40), 'head' => str_repeat('b', 40), 'tree' => str_repeat('c', 40), 'plan' => json_decode($manifest, true, flags: JSON_THROW_ON_ERROR)])
-            ->and($request->headers()->get('Idempotency-Key'))->toBe('analysis.c1')
-            ->and($response)->toBeInstanceOf(OperationResponse::class)->and($response->result)->toBe($result);
-        $duplicates = new AnalyzeTaskGroupRequest(17, 18, '{"paths":[],"paths":[]}', 'digest', 'base', 'head', 'tree', 'key');
-        expect((string) $duplicates->body())->toContain('{"paths":[],"paths":[]}');
-        $mock->assertSentCount(1);
-    });
-
-    it('adds the exact optional analysis reference without changing ordinary turn bodies', function (): void {
-        $request = new TurnTaskGroupRequest(17, 18, 'implementer', 'Prompt', 'new', analysis: new TaskAnalysisReference(42, str_repeat('d', 64)));
-        expect(json_decode((string) $request->body(), true, flags: JSON_THROW_ON_ERROR))->toBe(['subtask' => 18, 'role' => 'implementer', 'prompt' => 'Prompt', 'thread' => 'new', 'analysis' => ['operation' => 42, 'plan_sha256' => str_repeat('d', 64)]]);
-    });
-
     it('transports a publish check and optional pull request with an idempotency key', function (bool $pull): void {
         $input = $pull ? ['title' => 'Exact title', 'body' => "Exact body\n"] : null;
         $request = new PublishTaskGroupRequest(17, 31, $input, 'task.publish.c1');
@@ -183,7 +158,7 @@ describe('operation requests', function (): void {
                 ->and($operation->toArray()['result'])->toBe($data['result']);
         }
         $mock->assertSentCount(2);
-    })->with(['tasks/tasks-analyze/failure-overflow', 'tasks/tasks-analyze/failure-unavailable', 'tasks/tasks-provision/pinned', 'tasks/tasks-provision/unavailable', 'tasks-park-succeeded']);
+    })->with(['tasks-park-succeeded']);
 
     it('uses the exact Gateway methods, paths, and queries', function (): void {
         expect([

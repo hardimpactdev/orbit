@@ -21,7 +21,6 @@ Each command is one noun family and one last segment. The last segment is a verb
 
 `database:create --locale` selects a builtin locale on a PostgreSQL server. `instance:database:add --network` selects the connection network. These options keep the existing command names; see [Database commands](/cli/database).
 
-The docs-first contract for [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) agrees one additive `tasks` family action, `analyze`, named `tasks:analyze` with operation kind `tasks.analyze`. It is not a generic `run` verb or shell command. Runtime delivery must register it and update `CommandVocabulary`, its command-surface tests, and the family-actions table together. Until that implementation, the table below describes the current registered vocabulary; documentation alone does not expose the action.
 
 The docs-first contract for [`proof:run`](/cli/proof/run) agrees one new family, `proof`, with the action `run` and operation kind `proof.run`. It belongs to the tasks extension. Runtime delivery must register it and update `CommandVocabulary`, its command-surface tests, and the family-actions table together. Until that implementation, the table below describes the current registered vocabulary.
 

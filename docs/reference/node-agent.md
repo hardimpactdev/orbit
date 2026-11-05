@@ -391,14 +391,6 @@ The target sanitizer masks matching strings, object keys and numbers before stor
 Uncertain infrastructure refusals leave the unfinished intent. If a typed pre-start or preflight refusal proves that nothing ran, the store removes that intent and syncs its directory while still holding the key lock. The same key can then execute after the precondition clears. Failure to remove the intent remains uncertain. Fixed remote-program receipts retain their failed state and exit code on both live replies and later recovery.
 
 
-### Fixed read-only task analysis
-
-`tasks.analyze` is one fixed, read-only profile of the detached Tasks check supervision. It is not a generic command runner and not an agent command. [Tasks](/reference/tasks#analyze-an-external-groups-repository) owns its typed input, report, provenance, and recovery.
-
-The repository's tracked `bin/task-analyze` is the only entry point, pinned by content digest and run with no arguments. Callers cannot choose the shell, arguments, environment, path, report location, model, or analyzer. It runs as the workspace owner without model or GitHub credentials, and it writes, commits, pushes, and approves nothing.
-
-It adds no Gateway Node script. Other deterministic task steps, and every Node mutation, still need named agent commands or a separately reviewed fixed contract.
-
 ### Future Mac session execution
 
 Command mode currently runs as the enrolled macOS account. A future LaunchAgent can receive the same envelope in that user's login session and show Touch ID or password confirmation for root work. That path is not built. It must authenticate the SSH-started process beyond its user ID, prevent project code from replacing the executable, and name the command in each prompt. The executing process must still check its own binary digest and declared privilege.
