@@ -4,8 +4,6 @@ description: "The Swamp dependency producer, native resource lookup, bounds, pro
 covers:
   - apps/gateway/app/Domain/Instances/Dependencies/**
   - apps/gateway/app/Data/Instances/Dependencies/**
-  - packages/php-sdk/src/Requests/Instances/ShowInstanceDependenciesRequest.php
-  - packages/php-sdk/src/Requests/Projects/ShowProjectDependenciesRequest.php
 ---
 
 # Dependency contracts

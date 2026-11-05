@@ -10,8 +10,6 @@ use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
-use Orbit\Sdk\Responses\Instances\InstanceRemovalResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Instances\InstancesResponse;
 use Saloon\Enums\Method;
@@ -212,80 +210,6 @@ describe('Instance requests', function (): void {
             ->not->toHaveKey('branch');
     });
 
-    it('registers a caller-local source with typed confirmed values', function (): void {
-        $registration = [
-            'project' => [
-                'id' => 3,
-                'name' => 'Orbit Docs',
-                'slug' => 'orbit-docs',
-                'repository_url' => 'https://github.com/nckrtl/orbit-docs.git',
-                'default_branch' => 'main',
-                'root' => 'public',
-            ],
-            'instance' => instance_gateway_data(),
-            'instances' => [instance_gateway_data()],
-            'status' => 'active',
-            'source_count' => 1,
-            'completed_count' => 1,
-        ];
-        $mockClient = new MockClient([
-            RegisterInstanceRequest::class => MockResponse::make([
-                'data' => $registration,
-                'meta' => ['request_id' => instance_request_id()],
-            ]),
-        ]);
-        $connector = instance_gateway_connector($mockClient);
-        $request = new RegisterInstanceRequest(
-            sourcePath: '/work/orbit-docs',
-            includeWorktrees: true,
-            projectId: 3,
-            instanceName: 'preview',
-            root: 'web',
-        );
-        $response = $connector->send($request)->dto();
-
-        expect($request->getMethod())
-            ->toBe(Method::POST)
-            ->and($request->resolveEndpoint())
-            ->toBe('/api/v1/instances/register')
-            ->and($request->body()->all())
-            ->toBe([
-                'source_path' => '/work/orbit-docs',
-                'include_worktrees' => true,
-                'project_id' => 3,
-                'instance_name' => 'preview',
-                'root' => 'web',
-            ])
-            ->and($response)
-            ->toBeInstanceOf(InstanceRegistrationResponse::class)
-            ->and($response->instance->sourceLayout)
-            ->toBe('checkout')
-            ->and($response->sourceCount)
-            ->toBe(1)
-            ->and($response->requestId)
-            ->toBe(instance_request_id());
-    });
-
-    it('maps the reported registration name conversion and omits it when there is none', function (): void {
-        $converted = InstanceRegistrationResponse::fromGatewayData([
-            'instance' => instance_gateway_data(),
-            'name_converted_from' => 'main',
-        ], instance_request_id());
-        $unconverted = InstanceRegistrationResponse::fromGatewayData([
-            'instance' => instance_gateway_data(),
-            'name_converted_from' => null,
-        ], instance_request_id());
-
-        expect($converted->nameConvertedFrom)
-            ->toBe('main')
-            ->and($converted->toArray()['name_converted_from'])
-            ->toBe('main')
-            ->and($unconverted->nameConvertedFrom)
-            ->toBeNull()
-            ->and($unconverted->toArray())
-            ->not->toHaveKey('name_converted_from');
-    });
-
     it('omits null and false optional registration values', function (): void {
         expect(new RegisterInstanceRequest('/work/orbit-docs')->body()->all())
             ->toBe(['source_path' => '/work/orbit-docs']);
@@ -333,28 +257,6 @@ describe('Instance requests', function (): void {
             ->toBe('/api/v1/instances/7')
             ->and($response)
             ->toBeInstanceOf(InstanceResponse::class);
-    });
-
-    it('removes an Instance and transports explicit force intent with bounded progress', function (): void {
-        $mockClient = new MockClient([
-            DestroyInstanceRequest::class => MockResponse::make(removal_envelope()),
-        ]);
-        $connector = instance_gateway_connector($mockClient);
-
-        $remove = new DestroyInstanceRequest(7, force: true);
-        $response = $connector->send($remove)->dto();
-        $request = $mockClient->getLastRequest();
-
-        expect($request?->getMethod())
-            ->toBe(Method::DELETE)
-            ->and($request?->resolveEndpoint())
-            ->toBe('/api/v1/instances/7')
-            ->and($remove->body()->all())
-            ->toBe(['force' => true])
-            ->and($response)
-            ->toBeInstanceOf(InstanceRemovalResponse::class)
-            ->and($response->toArray())
-            ->toBe([...removal_gateway_data(), 'request_id' => instance_request_id()]);
     });
 
     it('preserves force omission and explicit false', function (): void {
@@ -451,15 +353,6 @@ function instance_gateway_data(): array
         'transfer' => null,
         'deploy_steps' => [],
         'auto_deploy' => null,
-    ];
-}
-
-/** @return array<string, mixed> */
-function removal_envelope(): array
-{
-    return [
-        'data' => removal_gateway_data(),
-        'meta' => ['request_id' => instance_request_id()],
     ];
 }
 

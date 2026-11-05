@@ -115,10 +115,3 @@ composer test       # full Pest suite in parallel
 composer format     # Laravel Pint formatter
 composer check      # guidance, Rector, and Pint and PHPStan checks
 ```
-
-Dependency reads use `ShowInstanceDependenciesRequest` or
-`ShowProjectDependenciesRequest` with numeric IDs and optional source and page
-selectors. They return typed `DependencyResultsResponse` values from Swamp.
-Inspect availability, report provenance, freshness, and PR certainty even after
-HTTP 200. Reads never start maintenance. See the
-[dependency contract](../../docs/reference/instance-dependency-contracts.md).
