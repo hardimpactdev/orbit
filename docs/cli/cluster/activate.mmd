@@ -1,0 +1,64 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, one Swamp run with the shared route reconcile child (route.reconcile). docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
+  %% status: reviewed
+  %% command: cluster:activate
+  %% kind: cluster.activate
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane V icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Cluster Nodes<br/>Router · members
+  participant V as VPN Node<br/>private DNS
+  CLI->>GW: cluster:activate<br/>CLUSTER
+  Note over GW: Validate, lock, plan<br/>transitions stored
+  %%> Requirements:
+  %%> - the calling Node has an access grant to a member Node, or to the Gateway Node when the Cluster has none
+  %%> - a Cluster with a TLD has one active Router (`cluster.router_required`) and no non-member Node owns the TLD (`cluster.tld_conflict`); a Cluster without a TLD that has affected Routes needs a Router too (`route.router_required`)
+  %%> - every affected Route keeps a valid domain, scope and target; one refusal leaves every Route in place
+  %%> - no other Cluster change runs; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
+  %%> Stored:
+  %%> - the Cluster stays inactive; a pending replacement is stored for each domain change and the old placement for each scope change
+  alt Cluster is inactive, or an earlier change is unfinished
+    GW->>SW: Start run, full intent<br/>operation-cluster-activate
+    GW-->>CLI: 202 Accepted<br/>task ID
+    SW->>N: Open LAN ingress<br/>@swamp/cfgmgmt/firewall
+    %%> Why first:
+    %%> - LAN members must reach the Router before private DNS sends them there; identical lines stay
+    opt Routes change
+      SW->>N: Reconcile the Routes<br/>child route-reconcile
+      %%> What it does:
+      %%> - moves every affected Route to the Cluster scope and namespace; the cutover is inside the child
+    end
+    SW->>V: Select the Router in DNS<br/>records + catalog, then reload
+    %%> What it does:
+    %%> - private DNS answers Cluster names with the Router's LAN address for LAN members and its WireGuard address for the rest
+    SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent
+    %%> Why it always runs:
+    %%> - after a failure before the cutover it removes the LAN rules and DNS selection the stored state does not need
+    alt every step succeeds
+      SW-->>GW: Run succeeded<br/>terminal event
+      Note over GW: Record the Cluster active<br/>Routes cut over
+    else a step fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      Note over GW: Read the failed step<br/>cutover or not
+      %%> Result before the cutover:
+      %%> - the Cluster stays inactive and every Route keeps its domain and scope
+      %%> Result after the cutover:
+      %%> - the Cluster is active; a rerun finishes the withdrawal and the prune
+      %%> Retry:
+      %%> - run the same command again; every step runs again and skips what already matches
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
+  else Cluster is active, nothing unfinished
+    GW-->>CLI: 200 OK<br/>already active
+    %%> Skipped:
+    %%> - nothing runs and the result reports `Skipped — already active (cluster.state_unchanged)`
+  end
