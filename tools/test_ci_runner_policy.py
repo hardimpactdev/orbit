@@ -29,6 +29,15 @@ class RunnerPolicyTest(unittest.TestCase):
                 with self.subTest(job=name):
                     self.assertIn('runs-on: ubuntu-26.04', job(workflow, name))
 
+    def test_proof_run_is_report_only_and_never_runs_fork_code_on_a_node(self):
+        block = job("ci.yml", "proof-run")
+        self.assertIn("github.event_name == 'pull_request'", block)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", block)
+        self.assertNotIn("merge_group", block)
+        self.assertIn("cancel-in-progress: true", block)
+        required = job("ci.yml", "required")
+        self.assertNotIn("proof-run", required)
+
     def test_self_hosted_php_is_verified_from_the_repository_root(self):
         action = (ROOT / '.github/actions/php/action.yml').read_text()
         installer, verifier = action.split('    - name: Verify the managed runner PHP build')

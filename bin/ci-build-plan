@@ -7,9 +7,70 @@ import re
 import subprocess
 
 JOBS = ('php', 'gateway-static', 'cli', 'docs', 'api-reference', 'web', 'swamp', 'proof')
+ROOT = Path(__file__).resolve().parent.parent
+SELECTION = 'swamp/proof/selection.txt'
+SELECTION_COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
 
 
-def select(paths, main=False):
+def selection_regex(glob):
+    """Match `ProofSelectionRule` in the Gateway: `**` crosses directories, `*` and `?` stay in one name."""
+    pattern, i = '', 0
+    while i < len(glob):
+        if glob.startswith('**', i):
+            i += 2
+            if glob.startswith('/', i):
+                i += 1
+                pattern += '(?:.*/)?'
+            else:
+                pattern += '.*'
+            continue
+        pattern += '[^/]*' if glob[i] == '*' else '[^/]' if glob[i] == '?' else re.escape(glob[i])
+        i += 1
+    return re.compile(pattern)
+
+
+def selection_rules(text):
+    """The lines of `swamp/proof/selection.txt` as (glob regex, selects a proof). The Gateway refuses a malformed line."""
+    rules = []
+    for number, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            raise ValueError(f'{SELECTION} line {number}: a line holds a path glob and its value')
+        glob, value = parts[0], parts[1].strip()
+        if value == 'skip' or (value.startswith('none:') and value[5:].strip()):
+            selects = False
+        elif value == '*' or all(SELECTION_COMMAND.fullmatch(word) for word in value.split()):
+            selects = True
+        else:
+            raise ValueError(f'{SELECTION} line {number}: [{value}] is not skip, *, none: or a family:command')
+        rules.append((selection_regex(glob), selects))
+    return rules
+
+
+def proof_run(paths, selection):
+    """Whether a changed path selects a command in the list that `orbit proof:run` reads: the last matching line wins.
+
+    A path no line matches also starts the job, so `proof:run` refuses it (proof.path_unmapped). Without a list,
+    every change starts it, as proof:run then selects every case.
+    """
+    paths = [path for path in paths if path]
+    if not paths:
+        return False
+    if selection is None or SELECTION in paths:
+        return True
+    rules = selection_rules(selection)
+    for path in paths:
+        match = next((selects for regex, selects in reversed(rules) if regex.fullmatch(path)), True)
+        if match:
+            return True
+    return False
+
+
+def select(paths, main=False, selection=None):
+    """`selection` is the text of the selection list; omitted, the list of this checkout is read."""
     paths = [path for path in paths if path]
     swamp_only = bool(paths) and all(path.startswith('swamp/') for path in paths)
     jobs = dict.fromkeys(JOBS, False)
@@ -58,7 +119,10 @@ def select(paths, main=False):
         if not path.startswith(('apps/', 'packages/', 'docs/', '.github/', 'bin/', 'tools/', '.agents/')) and '/' in path:
             jobs = dict.fromkeys(JOBS, True)
     jobs['web'] |= main
-    return {'jobs': jobs, 'agent': agent, 'gateway_release': main or not swamp_only}
+    if selection is None and (ROOT / SELECTION).is_file():
+        selection = (ROOT / SELECTION).read_text()
+    # The proof-run job is report-only and outside `jobs`, so `Required checks` does not see it yet.
+    return {'jobs': jobs, 'agent': agent, 'gateway_release': main or not swamp_only, 'proof_run': proof_run(paths, selection)}
 
 
 def swamp_comparison_base(base, head):

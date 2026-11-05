@@ -98,5 +98,62 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual({'web','api-reference'}, self.selected(['apps/web/tools/api-types/package.json']))
 
 
+    def proof_run(self, paths, selection=None):
+        return plan.select(paths, selection=selection)['proof_run']
+
+    def test_proof_run_follows_the_selection_list_the_gateway_reads(self):
+        selection = SELECTION
+        for path in ('swamp/extensions/behaviors/operations/firewall/x.ts', 'apps/gateway/app/Actions/Firewall/A.php',
+                     'swamp/proof/reset/phases.py', 'bin/proof-fleet', 'swamp/proof/selection.txt'):
+            with self.subTest(path=path):
+                self.assertTrue(self.proof_run([path], selection))
+        for path in ('docs/cli/firewall/allow.mmd', 'swamp/proof/firewall/allow.cases.md', 'README.md', 'apps/web/src/a.ts',
+                     'swamp/workflows/workflow-vault-sync.yaml', 'swamp/proof/reset/README.md', 'bin/ci-build-plan'):
+            with self.subTest(path=path):
+                self.assertFalse(self.proof_run([path], selection))
+
+    def test_the_last_matching_line_wins_and_one_path_is_enough(self):
+        self.assertTrue(self.proof_run(['docs/a.md', 'swamp/proof/firewall/x.sh'], SELECTION))
+        self.assertFalse(self.proof_run(['swamp/proof/firewall/x.md'], SELECTION))
+
+    def test_an_unmapped_path_starts_the_job_so_the_gateway_refuses_it(self):
+        self.assertTrue(self.proof_run(['newdir/file.txt'], SELECTION))
+
+    def test_no_change_or_no_list_decides_as_the_gateway_does(self):
+        self.assertFalse(self.proof_run([''], SELECTION))
+        self.assertTrue(plan.proof_run(['docs/a.md'], None))
+
+    def test_a_malformed_list_is_refused(self):
+        for text in ('onlyglob', '* nonsense value', 'a/** none:'):
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError):
+                    plan.select(['a/b'], selection=text)
+
+    def test_the_real_list_keeps_docs_charts_and_cases_out_and_the_job_outside_the_required_jobs(self):
+        self.assertFalse(plan.select(['docs/cli/firewall/allow.mmd', 'docs/reference/ci.md'])['proof_run'])
+        self.assertTrue(plan.select(['swamp/proof/selection.txt'])['proof_run'])
+        self.assertNotIn('proof_run', plan.select(['swamp/proof/selection.txt'])['jobs'])
+        self.assertNotIn('proof-run', plan.JOBS)
+
+
+SELECTION = """
+# comment
+*                                  skip
+docs/**                            skip
+apps/**                            skip
+bin/**                             skip
+swamp/**                           none: no case yet
+**/*.md                            skip
+swamp/extensions/behaviors/operations/firewall/**   firewall:allow firewall:deny
+swamp/proof/firewall/**            firewall:allow
+swamp/proof/firewall/*.md          skip
+apps/gateway/app/Actions/Firewall/**   firewall:allow
+swamp/proof/selection.txt          *
+swamp/proof/reset/**               *
+swamp/proof/reset/*.md             skip
+bin/proof-fleet                    *
+"""
+
+
 if __name__ == '__main__':
     unittest.main()

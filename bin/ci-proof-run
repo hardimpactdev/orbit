@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Run `orbit proof:run` for a pull request head in CI and fail unless every case passed.
+
+The job passes only the full commit SHA and an idempotency key built from the workflow run and its attempt. Orbit
+fetches the commit and chooses the cases itself. The runner acts as an enrolled Node, so no secret is involved.
+"""
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+
+SHA = re.compile(r'[0-9a-f]{40}([0-9a-f]{24})?')
+# The proof budget is 30 minutes after the fleet is ready; the job timeout in ci.yml is 45.
+WAIT = 45 * 60
+
+
+def find_result(document):
+    """The `result` of the final operation, which `--json` may print bare or inside `data` or `operation`."""
+    if not isinstance(document, dict):
+        return None
+    for holder in (document, document.get('data'), document.get('operation')):
+        if isinstance(holder, dict) and isinstance(holder.get('result'), dict):
+            return holder['result']
+    return None
+
+
+def evaluate(code, output):
+    """Return (passed, summary lines). Only a clean exit with a result whose cases all passed is a pass."""
+    try:
+        result = find_result(json.loads(output))
+    except ValueError:
+        result = None
+    if result is None:
+        return False, [f'The proof printed no result (exit status {code}).']
+    cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
+    lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
+    lines += [f"| {case.get('command', '')} | {os.path.basename(str(case.get('program', '')))} | {case.get('verdict', '')} |"
+              for case in cases]
+    if not cases:
+        lines.append('No case ran.')
+    for path in result.get('uncovered') or []:
+        if isinstance(path, dict):
+            lines.append(f"Uncovered: {path.get('path', '')} ({path.get('reason', '')})")
+    if isinstance(result.get('receipt_url'), str) and result['receipt_url']:
+        lines.append(f"Receipt: {result['receipt_url']}")
+    passed = code == 0 and all(case.get('verdict') == 'passed' for case in cases)
+    return passed, lines
+
+
+def run(sha, key, orbit):
+    child = subprocess.Popen([orbit, 'proof:run', sha, '--json', '--idempotency-key', key],
+                             stdout=subprocess.PIPE, text=True)
+    # A cancelled job gets SIGINT, then SIGTERM. Orbit cancels its run on both.
+    for name in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(name, lambda number, frame: child.send_signal(number))
+    try:
+        output, _ = child.communicate(timeout=WAIT)
+    except subprocess.TimeoutExpired:
+        child.send_signal(signal.SIGINT)
+        output, _ = child.communicate()
+        return 1, output
+    return child.returncode, output
+
+
+def main():
+    sha = os.environ.get('PROOF_SHA', '')
+    if not SHA.fullmatch(sha):
+        sys.exit('PROOF_SHA must be the full lowercase commit SHA of the pull request head.')
+    orbit = shutil.which('orbit')
+    if orbit is None:
+        sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
+    key = f"ci-proof.{os.environ.get('GITHUB_RUN_ID', 'local')}.{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"
+    code, output = run(sha, key, orbit)
+    passed, lines = evaluate(code, output)
+    text = '\n'.join([f"## Proof run of `{sha[:12]}`: {'passed' if passed else 'failed'}", '', *lines, ''])
+    print(text)
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+            summary.write(text)
+    sys.exit(0 if passed else code or 1)
+
+
+if __name__ == '__main__':
+    main()
