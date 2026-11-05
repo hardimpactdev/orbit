@@ -1,4 +1,7 @@
-"""Disposable Vaultwarden service and credentials for the minimal topology only."""
+"""Disposable Vaultwarden service and credentials for the minimal topology only.
+
+Old path: do not extend; target: the case runner (swamp/proof/runner) and cases files, docs/reference/verification-cases.mdx. Listed in docs/reference/old-paths.md.
+"""
 
 import json
 import os

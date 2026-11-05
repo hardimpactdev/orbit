@@ -27,9 +27,9 @@ runs:
         SCOPE_JOB: ${{ inputs.job }}
         SWAMP_BASE: ${{ inputs.swamp-base }}
         SCOPE_ENABLED: ${{ inputs.enabled }}
-        BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         EVENT_SHA: ${{ github.sha }}
-        MAIN: ${{ github.ref == 'refs/heads/main' || github.event.merge_group.base_ref == 'refs/heads/main' }}
+        MAIN: ${{ github.ref == 'refs/heads/main' }}
       run: |
         if [ "$SCOPE_ENABLED" != true ]; then echo 'selected=true' >> "$GITHUB_OUTPUT"; exit 0; fi
         if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then

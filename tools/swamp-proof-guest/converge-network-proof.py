@@ -1,4 +1,7 @@
-"""Disposable network state for node.converge; never prints private keys."""
+"""Disposable network state for node.converge; never prints private keys.
+
+Old path: do not extend; target: the case runner (swamp/proof/runner) and cases files, docs/reference/verification-cases.mdx. Listed in docs/reference/old-paths.md.
+"""
 import json
 import subprocess
 import sys

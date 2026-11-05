@@ -62,13 +62,13 @@ The `node.role_add` flow provides these shared parts:
 
 ## Prove it
 
-1. Start a proof topology (`bin/swamp-proof up`) and admit the command once, so you have a real intent.
+1. Reset a proof fleet in your task VM (`bin/proof-fleet reset GROUP`, see [swamp/proof/README.md](../../../swamp/proof/README.md)) and admit the command once, so you have a real intent.
 2. On the Swamp Node, run the phases directly from the run folder that the build step made: `ansible-playbook -i inventory.yml -e @vars.yml --tags <phase> <playbook>`.
 3. Run it again. The second run must report zero changes on every host.
-4. Run the fixture's parity script against the result.
-5. Run the fixture through Swamp (`bin/swamp-proof run <kind>`), and attach the receipt as [swamp-flow](../swamp-flow/SKILL.md) asks.
+4. Run the command's cases against the result (`bin/proof-fleet verify GROUP CASE...`).
+5. Run the whole path through Swamp with the command's cases, and attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks. `bin/swamp-proof` and the `swamp/proof/<kind>.json` fixtures are gone or read-only: see [old paths](../../../docs/reference/old-paths.md).
 
-Report the time on fresh Nodes, the time with nothing to change, and the phase times from the receipt.
+Report the time on fresh Nodes, the time with nothing to change, and the phase times from the case run.
 
 ## Improve this skill
 

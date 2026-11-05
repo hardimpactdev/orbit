@@ -16,8 +16,6 @@ on:
         required: true
       SWAMP_SIGNIN_TOKEN:
         required: true
-  merge_group:
-    types: [checks_requested]
   schedule:
     - cron: '17 3 * * *'
 permissions:
@@ -28,8 +26,6 @@ concurrency:
 
 jobs:
   shape:
-    # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
-    if: github.event_name != 'merge_group' || github.workflow == 'CI'
     name: Swamp shape gate
     runs-on: [self-hosted, hardimpact]
     # The gate takes a few minutes; a hung step fails here instead of holding main for hours.
@@ -88,7 +84,7 @@ jobs:
       - name: Reject new violations with current and base rules
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
         run: |
           base="$SHAPE_BASE"
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
@@ -105,8 +101,6 @@ jobs:
           path: ${{ runner.temp }}/shape.json
 
   validate:
-    # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
-    if: github.event_name != 'merge_group' || github.workflow == 'CI'
     name: Swamp workflow validate
     runs-on: ubuntu-26.04
     timeout-minutes: 20
@@ -136,8 +130,8 @@ jobs:
       - name: Native workflow validation with dedicated registry-read credentials
         if: steps.scope.outputs.selected == 'true'
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
       - name: Check first-contact Node enrollment trust
         if: steps.scope.outputs.selected == 'true'
@@ -150,8 +144,8 @@ jobs:
       - name: Validate release grants with pinned serve check-config
         if: steps.scope.outputs.selected == 'true'
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: |
           python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
       - name: Check placement on every step
@@ -166,8 +160,6 @@ jobs:
             ${{ runner.temp }}/grant-validation.json
 
   tests:
-    # CI calls this workflow for queue batches; suppress the duplicate direct trigger.
-    if: github.event_name != 'merge_group' || github.workflow == 'CI'
     name: Swamp Deno tests
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
     defaults:

@@ -1,4 +1,7 @@
-"""Create a disposable Vaultwarden account for the optional real-CLI test."""
+"""Create a disposable Vaultwarden account for the optional real-CLI test.
+
+Old path: do not extend; target: the case runner (swamp/proof/runner) and cases files, docs/reference/verification-cases.mdx. Listed in docs/reference/old-paths.md.
+"""
 
 import base64
 import hashlib

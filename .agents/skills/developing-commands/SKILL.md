@@ -29,7 +29,7 @@ Three things are in place before you change code, in the first commit of the dra
 2. **The docs page of the ideal state:** `docs/cli/<family>/<command>.mdx`: description, usage, how it works, errors. Update it first if it is behind. Use [writing-documentation](../writing-documentation/SKILL.md).
 3. **The chart:** `docs/cli/<family>/<command>.mmd`, updated to the ideal flow with [flow-tighten](../flow-tighten/SKILL.md): the main path uses only required parameters, one `opt` block per optional flag, minimal, real steps only.
 
-The cases file (`swamp/proof/<family>/<command>.cases.md`) belongs to the same first commit. Call Recall `resolve` for the command and its family first. Current decisions override older instructions.
+The cases file (`swamp/proof/<family>/<command>.cases.yaml`, [format](../../../docs/reference/verification-cases.mdx)) belongs to the same first commit. A command that still has the old table `<command>.cases.md` converts it; do not extend the table ([old paths](../../../docs/reference/old-paths.md)). Call Recall `resolve` for the command and its family first. Current decisions override older instructions.
 
 ## The checklist
 

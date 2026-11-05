@@ -2,8 +2,6 @@ name: CI
 
 on:
   pull_request:
-  merge_group:
-    types: [checks_requested]
   push:
     branches: [main, 'task-*-handoff']
   workflow_dispatch:
@@ -50,7 +48,7 @@ jobs:
       - name: Check changed PHP syntax
         if: steps.scope.outputs.selected == 'true'
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
@@ -128,7 +126,7 @@ jobs:
       - name: Check flow charts
         if: steps.scope.outputs.selected == 'true'
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: node bin/check-flows
 
   api-reference:
@@ -220,7 +218,7 @@ jobs:
         if: steps.scope.outputs.selected == 'true'
         run: bun run build && test -s dist/index.html && test -s dist/version.json
       - name: Publish web build
-        if: steps.scope.outputs.selected == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event.merge_group.base_ref == 'refs/heads/main')
+        if: steps.scope.outputs.selected == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist-${{ github.sha }}
@@ -252,8 +250,8 @@ jobs:
       - name: Select changed build inputs
         id: plan
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
-          MAIN: ${{ github.ref == 'refs/heads/main' || github.event.merge_group.base_ref == 'refs/heads/main' }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          MAIN: ${{ github.ref == 'refs/heads/main' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
@@ -282,7 +280,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/proof-tools"
           "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
-          "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/reset swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest tools/swamp_proof.py tools/orbit_nested.py
+          "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/reset swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest tools/orbit_nested.py
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: steps.scope.outputs.selected == 'true'
         with:
@@ -292,8 +290,8 @@ jobs:
         if: steps.scope.outputs.selected == 'true'
         working-directory: swamp
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --workflows-from proof/reset --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/proof-workflow-validation.json"
 
   # REPORT-ONLY: this job is not in `required.needs`, so it cannot block a merge. proof:run has no passing end-to-end
@@ -342,8 +340,8 @@ jobs:
       working-directory: swamp
       changed-only: false
     secrets:
-      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
-      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
     name: Gateway release inputs
     needs: changes

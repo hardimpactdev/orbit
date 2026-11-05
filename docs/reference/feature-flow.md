@@ -32,7 +32,7 @@ The PR starts as a draft. Its first commit holds the spec, which is written befo
    - Each optional flag gets its own `opt` block.
    - The chart is minimal and shows real steps only.
 3. **The docs of the ideal state:** update `docs/cli/<family>/<command>.mdx` with the finished feature's description, usage, behavior and errors.
-4. **The verification cases:** `swamp/proof/<family>/<command>.cases.md`, derived from the chart and the page.
+4. **The verification cases:** `swamp/proof/<family>/<command>.cases.yaml`, derived from the chart and the page. Commands not converted yet keep the old table `<command>.cases.md` ([old paths](/reference/old-paths)).
 
 The Orbit App, through Swamp and a Gateway-minted App token, opens the draft PR with these files as its first commit (not built yet; see [Pull request](#3-pull-request)).
 

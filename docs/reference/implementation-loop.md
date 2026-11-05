@@ -114,7 +114,7 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 The job follows these rules for pull requests:
 
 - The job runs on every push of a pull request from a branch of this repository.
-- A fork pull request never runs it. There is no `merge_group` run and no run after the merge.
+- A fork pull request never runs it. There is no merge queue, so no `merge_group` run, and no run after the merge.
 - A new push cancels the proof run of the previous push on the same pull request. The job uses `concurrency` with `cancel-in-progress`.
 - A cancelled job signals `bin/ci-proof-run`. The script passes the signal to `orbit`, and Orbit cancels its run.
 

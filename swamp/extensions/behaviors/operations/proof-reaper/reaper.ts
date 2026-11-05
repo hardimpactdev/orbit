@@ -12,7 +12,9 @@ import { z } from "npm:zod@4.4.3";
 export const IDLE_SECONDS = 3600;
 /** A group this old is cancelled unless its lane renewed it with a fresh heartbeat. */
 export const AGE_CAP_SECONDS = 5400;
-// `bin/swamp-proof` titles a group `swamp-proof <host>:<session> <topology>@<version>`.
+// Old path: the removed `bin/swamp-proof` titled the groups this reaper reads; it now only catches leftovers. Delete it with
+// the Project 62 branch of TaskProvisionIntent once no Project 62 group is open. Listed in docs/reference/old-paths.md.
+// `bin/swamp-proof` titled a group `swamp-proof <host>:<session> <topology>@<version>`.
 const LANE = /^swamp-proof (\S+)/;
 
 const Id = z.number().int().positive();

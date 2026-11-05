@@ -1,4 +1,4 @@
-"""Keep fast required CI gates and merge-queue coverage while slow jobs are paused."""
+"""Keep fast required CI gates while slow jobs are paused."""
 import unittest
 from pathlib import Path
 
@@ -7,28 +7,22 @@ SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
 class RequiredGateTest(unittest.TestCase):
-    def test_merge_queue_has_required_checks_and_batch_scopes(self):
+    def test_there_is_no_merge_queue_trigger_or_handling(self):
+        # PRs merge straight into main after their gate (2026-11-05); no workflow, action or job reads a queue event.
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        self.assertIn('  merge_group:\n    types: [checks_requested]', caller)
-        self.assertIn('  merge_group:\n    types: [checks_requested]', SOURCE)
+        scope = (ROOT / '.github/actions/ci-scope/action.yml').read_text()
         self.assertIn('    name: Required checks\n    if: always()', caller)
-        for source in [caller, SOURCE, (ROOT / '.github/actions/ci-scope/action.yml').read_text()]:
-            self.assertNotIn('github.event.pull_request.base.sha || github.event.before', source)
-            self.assertIn('github.event.merge_group.base_sha', source)
-        for job in ['shape', 'validate', 'tests']:
-            block = SOURCE.split(f'  {job}:\n')[1].split('    name:')[0]
-            self.assertIn("if: github.event_name != 'merge_group' || github.workflow == 'CI'", block)
-        secrets = caller.split('  swamp:\n')[1].split('  gateway-release:\n')[0]
-        self.assertEqual(secrets.count("github.event_name == 'merge_group'"), 2)
+        for source in [caller, SOURCE, scope]:
+            self.assertNotIn('merge_group', source)
+            self.assertIn('github.event.pull_request.base.sha || github.event.before', source)
 
-    def test_merge_queue_run_for_main_builds_and_publishes_the_release_web_build(self):
-        # Required checks pass in the merge queue run first, so it must hold the Gateway release's web build.
-        main = "github.ref == 'refs/heads/main' || github.event.merge_group.base_ref == 'refs/heads/main'"
+    def test_run_on_main_builds_and_publishes_the_release_web_build(self):
+        # Required checks pass in the run on main, so that run must hold the Gateway release's web build.
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         for source in [caller.split('  changes:\n')[1].split('\n  swamp:\n')[0], (ROOT / '.github/actions/ci-scope/action.yml').read_text()]:
-            self.assertIn(f'MAIN: ${{{{ {main} }}}}', source)
+            self.assertIn("MAIN: ${{ github.ref == 'refs/heads/main' }}", source)
         publish = caller.split('      - name: Publish web build\n')[1].split('\n')[0]
-        self.assertEqual(publish, f"        if: steps.scope.outputs.selected == 'true' && github.event_name != 'pull_request' && ({main})")
+        self.assertEqual(publish, "        if: steps.scope.outputs.selected == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'")
 
     def test_slow_jobs_are_absent_from_required_ci(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()

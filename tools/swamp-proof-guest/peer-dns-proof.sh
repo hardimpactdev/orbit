@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Old path: do not extend; target: the case runner (swamp/proof/runner) and cases files, docs/reference/verification-cases.mdx. Listed in docs/reference/old-paths.md.
 # Peer DNS fixture, root on the task VM from the staged checkout. Args: target and peer Node ids.
 # The target is the VPN hub: tunnel address 10.231.0.201 and a DNS server there that answers gateway.orbit.
 # The peer runs its orbit tunnel to the hub with no DNS hook, no marker and no DNS policy. Never prints a private key.

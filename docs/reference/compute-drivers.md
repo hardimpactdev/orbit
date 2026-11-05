@@ -1086,6 +1086,8 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 ### Build the base image
 
+**Old path.** Stage 6 of the [command development pipeline](/reference/command-development-pipeline) replaces this per-release recipe image build with a refresh of the topology seed by converge. Keep the build working until that refresh exists, and do not extend it ([old paths](/reference/old-paths)).
+
 The Gateway compiles image input from the stored machine recipe and the pinned agent delivery. This compilation selects architecture-specific tools, separates PHP and Rust inputs, and keeps empty tool maps as JSON objects. A mismatched agent pin refuses the build before a guest phase starts.
 
 Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; start another stock attempt for a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.

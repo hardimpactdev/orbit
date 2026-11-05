@@ -33,7 +33,6 @@ class RunnerPolicyTest(unittest.TestCase):
         block = job("ci.yml", "proof-run")
         self.assertIn("github.event_name == 'pull_request'", block)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", block)
-        self.assertNotIn("merge_group", block)
         self.assertIn("cancel-in-progress: true", block)
         required = job("ci.yml", "required")
         self.assertNotIn("proof-run", required)

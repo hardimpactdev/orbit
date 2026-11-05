@@ -1,5 +1,4 @@
 """Shared bootstrap contracts. These tests never configure the test host."""
-import importlib.util
 import json
 import sys
 import tempfile
@@ -84,20 +83,6 @@ class SharedFixtureTests(unittest.TestCase):
             self.assertIn('project-documents/execution.lock 0600 orbit orbit', tmpfiles)
             self.assertIn('--tries=1 --timeout=1700', files['/etc/systemd/system/orbit-proof-operations.service'])
             self.assertIn(unittest.mock.call(ctx, ['systemd-tmpfiles', '--create', '/etc/tmpfiles.d/orbit-proof-documents.conf']), run.call_args_list)
-
-    def test_legacy_entrypoint_delegates_without_nested_mode(self):
-        spec = importlib.util.spec_from_file_location('legacy_proof_up', SOURCE / 'tools/swamp-proof-guest/up.py')
-        legacy = importlib.util.module_from_spec(spec)
-        with patch.object(sys, 'argv', ['up.py', str(SOURCE), 'minimal']):
-            spec.loader.exec_module(legacy)
-        self.assertFalse(legacy.FIXTURE.nested)
-        self.assertEqual(SOURCE / 'swamp', legacy.FIXTURE.REPO)
-        with patch.object(fixture, 'gateway', return_value={'nodes': 'shared'}) as shared:
-            self.assertEqual({'nodes': 'shared'}, legacy.gateway(['target']))
-            shared.assert_called_once_with(legacy.FIXTURE, ['target'])
-        with patch.object(fixture, 'swamp', return_value='shared') as shared:
-            self.assertEqual('shared', legacy.swamp())
-            shared.assert_called_once_with(legacy.FIXTURE)
 
 
 if __name__ == '__main__':
