@@ -1,9 +1,33 @@
 ---
 title: "orbit route:list"
 sidebarTitle: "route:list"
-description: "List the Routes on the Nodes you may address, with domain, kind (`app`, `custom_proxy`, or `analytics_tracking`), provenance, publication, scope, target or upstream, and status."
+description: "List the Routes you can reach with their domain, kind, provenance, publication, scope, target or upstream, and status."
 ---
 
 ```bash
 orbit route:list [--json]
 ```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the Routes as JSON. |
+
+The list shows what Orbit has recorded for each Route. It does not contact any Node, so it works while a Node is unreachable. The Gateway Node, and any Node with a grant to it, sees every Route. Any other caller sees a Node-scoped Route when it has a grant to that Node, a Cluster-scoped app or analytics Route when it has a grant to any member Node, and a public custom proxy Route only when it has grants to both the Process Node and the Ingress Node. Routes are sorted by domain.
+
+| Column | Meaning |
+| --- | --- |
+| `ID`, `DOMAIN` | The Route's ID and its domain. |
+| `KIND` | `app`, `custom_proxy`, or `analytics_tracking`. |
+| `PROVENANCE` | `generated` or `explicit`. |
+| `PUBLICATION` | `private` or `public`. |
+| `SCOPE` | The Node, or the Cluster, that serves the Route, by name. |
+| `TARGET` | The target Instances of an app Route, or the upstream and its Process of a custom proxy Route. An analytics tracking Route has none. |
+| `STATUS` | `pending`, `active`, `activating`, `retiring`, or `failed`. |
+
+A missing value shows `—`. An empty list says `No Routes found.`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node_access.required` | The caller has no access grant to any Node and no Gateway authority. |
