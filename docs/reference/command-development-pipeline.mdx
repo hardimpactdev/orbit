@@ -9,7 +9,7 @@ The command development pipeline is the stages every command goes through during
 
 | Stage | Status |
 | --- | --- |
-| [1. Prep](#1-prep) | Built |
+| [1. Prep](#1-prep) | Partly built |
 | [2. Proof environment](#2-proof-environment) | Built, slot pool not built |
 | [3. Proof](#3-proof) | Built, one case so far |
 | [4. PR with fast CI](#4-pr-with-fast-ci) | Built |
@@ -19,7 +19,7 @@ The command development pipeline is the stages every command goes through during
 
 ## 1. Prep
 
-**Built.** A command is ready when its chart, docs page and verification cases are approved and merged. Preparation changes no code.
+**Partly built.** A command is ready when its chart, docs page and verification cases are merged; preparation changes no code. Swamp owns the whole flow and its state and the Gateway only authorizes it: an author agent drafts in a task VM, a separate review agent checks, and Swamp opens the PR as the Orbit App. Then one of two modes, set per flow, turns on auto-merge. In manual mode, Nick's approving review on the exact PR head is the gate, after an optional review in a development Instance on the PR branch; in automatic mode, CI and a final self-review by a fresh review agent are the gate. Not built: the Swamp prep flow, PRs opened by the App, the approval-triggered continuation, and App-enabled auto-merge into the merge queue.
 
 <div className="flow-at" data-chart="reference/pipeline/1-prep"></div>
 
