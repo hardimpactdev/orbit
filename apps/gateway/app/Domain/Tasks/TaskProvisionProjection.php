@@ -10,7 +10,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessLifecycleInput;
-use App\Domain\Proof\ProofRunContinuation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
@@ -109,7 +108,6 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             }
 
             app(TaskMaintenanceContinuation::class)->apply($projected);
-            app(ProofRunContinuation::class)->apply($projected);
 
             return $projected;
         });

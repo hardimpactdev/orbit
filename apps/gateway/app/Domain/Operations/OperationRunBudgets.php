@@ -16,14 +16,6 @@ final class OperationRunBudgets
     private const int AdmissionSeconds = 600;
 
     /**
-     * The proof reset `bin/proof-fleet reset GROUP --from-ready`: the history of short scripts gave 120 s, which timed out the
-     * first real reset (op 10861). Basis: the measured parts on a fresh VM, the restore from the ready copies, the rsync sync,
-     * `composer install` where lock files differ from the seed (31 to 35 s for five) and the memory snapshot `base` (about 19 s),
-     * plus margin; 360 s. Replace with the 14-day p95 after the first passing runs. Other scripts keep the history-derived budget.
-     */
-    private const int ProofResetSeconds = 360;
-
-    /**
      * Kinds whose admission captures `input.run_budget_seconds` and hands it to their SSH steps as the step time limit. The
      * captured number wins over the kind's history, so the Gateway deadline and the step limits agree.
      *
@@ -92,9 +84,9 @@ final class OperationRunBudgets
         'task_vm.fill_package_cache' => 2100,
         'task_vm.image_build' => 2400,
         // No successful run yet. Basis: two live runs on beast with the host at load 5 to 9, 7 min 31 s and 10 min 2 s. The host
-        // steps are bounded by 340 s (cleanup), 640 s (clone), 310 s (start), 310 s (fetch), 910 s (dependencies), 1,710 s
-        // (the proof reset), 610 s (copies), 910 s (check), 210 s (stop) and 410 s (promote). A loaded host stretches the reset
-        // and the boot checks, so the budget is 1 h, not 2 x the longer run. Replace with the 14-day p95 after the first successes.
+        // steps are bounded by 340 s (cleanup), 640 s (clone), 310 s (start), 310 s (fetch), 910 s (dependencies),
+        // 610 s (copies), 910 s (check), 210 s (stop) and 410 s (promote). A loaded host stretches the boot checks, so the
+        // budget is 1 h, not 2 x the longer run. Replace with the 14-day p95 after the first successes.
         'task_vm.seed_refresh' => 3600,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
@@ -114,25 +106,13 @@ final class OperationRunBudgets
     ];
 
     /**
-     * The budget that the admission of a `tasks.script` captures in `input.run_budget_seconds`, or null for a script with no explicit budget.
-     *
-     * @param  list<string>  $args
+     * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the budget of the history. The workflow sets
+     * it as the time limit of each of its SSH steps, so a step against a VM that is gone ends with the Operation. The Gateway does
+     * not re-read the history after admission.
      */
-    public static function scriptSeconds(string $script, array $args): ?int
+    public static function scriptBudget(): int
     {
-        return $script === 'bin/proof-fleet' && ($args[0] ?? null) === 'reset' ? self::ProofResetSeconds : null;
-    }
-
-    /**
-     * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the explicit budget, else the budget of the
-     * history. The workflow sets it as the time limit of each of its SSH steps, so a step against a VM that is gone ends with the
-     * Operation. The Gateway does not re-read the history after admission.
-     *
-     * @param  list<string>  $args
-     */
-    public static function scriptBudget(string $script, array $args): int
-    {
-        return self::scriptSeconds($script, $args) ?? self::historySeconds(OperationKinds::TasksScript);
+        return self::historySeconds(OperationKinds::TasksScript);
     }
 
     public static function seconds(Operation $operation): int

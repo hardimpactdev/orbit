@@ -4,9 +4,9 @@
 #
 # It never starts a ready copy. For each role it starts a throwaway copy of `fleet-ready-<role>` and requires two things:
 # 1. The copy boots and its Incus agent answers, so the ready copy is a VM that starts.
-# 2. The Swamp Club key of the build is nowhere in it: not at the path the reset pushes it to, and not by value anywhere
+# 2. The Swamp Club key of the build is nowhere in it: not at the path the fleet build pushes it to, and not by value anywhere
 #    in /home, /root, /etc or /opt. The seed is cloned into every task VM of the host, so a key in it would reach all of them.
-# `bin/proof-fleet ready` deletes the key from the Gateway and scans for it; this is the seed's own check on the copies it
+# The step that makes the copies deletes the key from the Gateway and scans for it; this is the seed's own check on the copies it
 # will hand to every task VM. The key is also searched for in the volume `ready-source`. A ready copy stays unbooted.
 # Everything but the last line goes to standard error. The last line is the JSON list of the roles that passed.
 set -euo pipefail

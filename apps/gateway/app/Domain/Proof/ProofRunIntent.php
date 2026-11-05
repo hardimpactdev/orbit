@@ -29,7 +29,7 @@ use App\Models\Operation;
 final readonly class ProofRunIntent
 {
     public function __construct(private ProofCommitTrust $trust, private ProofCommitSource $source, private ProofSettings $settings,
-        private OperationIdempotency $idempotency, private OperationStore $store, private ProofRunContinuation $chain) {}
+        private OperationIdempotency $idempotency, private OperationStore $store, private ProofGroup $groups) {}
 
     public function start(string $commit, bool $all, string $caller, ?string $requestId): Operation
     {
@@ -60,7 +60,7 @@ final readonly class ProofRunIntent
             'Prove commit '.$commit.' with the selected cases.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
                 'The Swamp workflow proof-fleet-verify runs the selected cases in the task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
         try {
-            $this->chain->admit($group, 'tasks.provision', fn () => app(StartTaskProvisionAction::class)->execute($group, 'proof-run', null, $commit));
+            $this->groups->admit($group, 'tasks.provision', fn () => app(StartTaskProvisionAction::class)->execute($group, 'proof-run', null, $commit));
         } catch (ResourceOperationException $exception) {
             app(CancelTaskGroupAction::class)->execute($group);
 

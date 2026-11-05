@@ -8,7 +8,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Proof\ProofRunContinuation;
 use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
@@ -77,10 +76,7 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
                 $this->failed($operation, ValidatedData::nullableString($data['error_code'] ?? null));
             }
 
-            $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            app(ProofRunContinuation::class)->apply($projected);
-
-            return $projected;
+            return app(DirectOperation::class)->project($operation, $data, $result);
         });
     }
 

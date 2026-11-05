@@ -60,7 +60,7 @@ sequenceDiagram
     %%> - keeps the old image and seed as `-previous`, the rollback copy; cleanup always runs
     %%> - a failed step keeps the old image and seed
     %%> Not built:
-    %%> - the whole refresh from a running task VM; today the seed refresh boots a builder from the image and runs `proof-fleet reset` and `ready`, and the image is built from the recipe
+    %%> - the whole refresh from a running task VM; today the seed refresh boots a builder from the image and has no topology build or ready copies (the old reset was removed), and the image is built from the recipe
     SW->>SL: Replace old ready slots<br/>one at a time
     %%> Target, not built:
     %%> - destroys a ready slot made from the old image, enrols a new one from the new image, then takes the next

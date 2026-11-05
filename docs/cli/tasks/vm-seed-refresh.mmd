@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: B3 (migration-dashboard/public/task-vms.html, "What is baked in" and the decision log), docs/reference/compute-drivers.md (The topology seed), swamp/proof/reset/README.md.
+  %% Target design: B3 (migration-dashboard/public/task-vms.html, "What is baked in" and the decision log), docs/reference/compute-drivers.md (The topology seed).
   %% Tightened: flow-tighten rules 1, 3, 6, 9, 20, 22 (the host work is one placed step per action group; the build is the proof reset of the release, not a second builder; the swap is renames in one step; one end check).
   %% status: draft
   %% command: none · refresh the topology seed of a task VM host
@@ -73,20 +73,8 @@ sequenceDiagram
   SW->>B: Install the dependencies<br/>incus exec · composer install
   %%> What it does:
   %%> - installs the Composer packages of the SDK, the CLI, the harness and the Gateway, in that order
-  SW->>B: Build the topology<br/>incus exec · bin/proof-fleet
-  %%> What it does:
-  %%> - adopts the seed clone as the Incus pool `topology-seed`
-  %%> - runs the proof reset of the release: Gateway with Swamp, app-dev and app-prod, real WireGuard on 10.45.0.0/24
-  %%> - the reset ends when the fleet is healthy, its agents are online and Doctor is clean
-  %%> Measured:
-  %%> - 6 min 33 s to 7 min 26 s on beast at host load 5 to 9, in whole runs of 7 min 31 s and 10 min 2 s; the S3 measurement of the reset alone is 232 s on a quiet host
-  SW->>B: Make the ready copies<br/>incus exec · proof-fleet
-  %%> What it does:
-  %%> - runs `bin/proof-fleet ready` of the release: it copies the healthy fleet to `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`
-  %%> - the copies carry no Swamp Club key: the command deletes it from the Gateway, scans for it, and discards the freed blocks
-  %%> - then runs `bin/proof-fleet release`, which deletes the guests of the build and leaves the copies
-  %%> The contract:
-  %%> - names, `user.ready.*` keys, no NIC, no source mount and no generation label are in `swamp/proof/README.md`, "Ready copies: the contract"
+  %%> Not built:
+  %%> - the build of the nested fleet and the ready copies; the old proof reset was removed, and these steps are rebuilt as Swamp steps
   SW->>B: Keep the ready state<br/>incus exec · ready-state.sh
   %%> What it does:
   %%> - checks that the pool holds `node-template` and the three complete, stopped copies of one set, with the keys `minted`, `attempt` and `inputs`, and nothing else

@@ -271,29 +271,15 @@ jobs:
         id: scope
         with:
           job: proof
-      - name: Unit tests of the reset, its guest programs and the case runner
+      - name: Unit tests of the case runner
         if: steps.scope.outputs.selected == 'true'
-        run: |
-          python3 -m unittest discover -s swamp/proof/reset/tests
-          python3 -m unittest discover -s swamp/proof/runner/tests
+        run: python3 -m unittest discover -s swamp/proof/runner/tests
       - name: Lint the proof programs
         if: steps.scope.outputs.selected == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/proof-tools"
           "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
-          "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/reset swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest tools/orbit_nested.py
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.scope.outputs.selected == 'true'
-        with:
-          path: ~/.cache/orbit-shape-runtime
-          key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
-      - name: Native validation of the proof workflows
-        if: steps.scope.outputs.selected == 'true'
-        working-directory: swamp
-        env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
-        run: python3 bin/validate-swamp-workflows.py --workflows-from proof/reset --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/proof-workflow-validation.json"
+          "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest
 
   # REPORT-ONLY: this job is not in `required.needs`, so it cannot block a merge. proof:run has no passing end-to-end
   # run yet. Add it to `required.needs` (and to JOBS in bin/ci-build-plan) once a run passes end to end.

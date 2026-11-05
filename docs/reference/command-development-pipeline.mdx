@@ -33,19 +33,19 @@ About 74 commands have a chart and a page from earlier docs-only PRs. Their old 
 
 **Built, with a slot pool still to come.** A task VM, started with `tasks:provision`, holds a nested topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. They share a real nested WireGuard network, `10.45.0.0/24`, and the outer VM is the operator. Each task VM host keeps ready copies of this topology in its topology seed, so a reset takes about 75 seconds instead of a 230-second build. An agent, or Nick, develops a command here, and the proof cases run here too.
 
-The target: the nested VMs hold their own checkout, with no code share from the outer VM. `orbit-nested` syncs the author's changes into them before each call. At task start, Swamp takes an Incus memory snapshot `base` of the three VMs; restoring it takes about 16 seconds until the fleet is healthy. Built: the sync, the snapshot and the restore. A call that syncs nothing adds about 0.3 seconds; a change that reaches the Gateway adds about 1 more second for the apply step. `orbit-nested exec NODE -- CMD` syncs and then runs a direct command in a nested VM. Not built: the converge step for playbook and pin changes.
+The target: the nested VMs hold their own checkout, with no code share from the outer VM. A sync brings the author's changes into them before each call. At task start, Swamp takes an Incus memory snapshot `base` of the three VMs. Not built: the sync, the snapshot and the restore; the old tool for them was removed. Not built: the converge step for playbook and pin changes.
 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
-- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), the [proof reset](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/reset/reset.mmd), and the [seed refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd) that makes the ready copies.
+- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), and the [seed refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd) that makes the ready copies.
 - Not built: the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd), a draft. A slot is a normal task VM, enrolled ahead of time and kept stopped; a claim starts it, a release destroys it, and the pool refills by enrolling a new one.
 - Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
-- Files: [`swamp/proof/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md), [`swamp/proof/reset/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/reset/README.md), [`bin/proof-fleet`](https://github.com/hardimpactdev/orbit/blob/main/bin/proof-fleet).
+- Files: [`swamp/proof/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md).
 
 ## 3. Proof
 
-**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the proof directly and reaches into the task VM over SSH, like every other step. A run restores `base`, syncs the author's code and takes `base` again when something changed. Each batch then restores `base` once, and its cases run one after another without undo, each on its own resources. A case that does not pass triggers a restore. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Not built: that direct Swamp run; today `bin/proof-fleet verify` starts a local Swamp in the VM.
+**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the proof directly and reaches into the task VM over SSH, like every other step. A run restores `base`, syncs the author's code and takes `base` again when something changed. Each batch then restores `base` once, and its cases run one after another without undo, each on its own resources. A case that does not pass triggers a restore. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Not built: that direct Swamp run and the reset of the fleet in the VM.
 
 <div className="flow-at" data-chart="reference/pipeline/3-proof"></div>
 

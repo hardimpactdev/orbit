@@ -1197,10 +1197,9 @@ The workflow `operation-task-vm-seed-refresh` runs these steps on the host over 
 2. It creates the builder `tvm-seed-refresh`. This is a [large](#size-of-a-task-vm) VM from the promoted task image. The clone is its `topology-seed` disk.
 3. It clones the release repository in the builder at the release commit.
 4. It installs the proof Swamp Club key and the Composer packages.
-5. It runs `bin/e2e-topology-host-setup` and `bin/proof-fleet reset 1`.
-6. It runs `bin/proof-fleet ready` and `release` of the release. [`ready-state.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/ready-state.sh) then checks the copies and keeps the source state.
-7. [`check-ready.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/check-ready.sh) boots a throwaway copy of each ready copy and searches it for the club key.
-8. It stops the builder cleanly. [`promote-seed.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/promote-seed.sh) then promotes the clone.
+5. [`ready-state.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/ready-state.sh) checks the copies and keeps the source state. Not built: the steps that build the topology and make the copies; the old ones were removed.
+6. [`check-ready.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/check-ready.sh) boots a throwaway copy of each ready copy and searches it for the club key.
+7. It stops the builder cleanly. [`promote-seed.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/promote-seed.sh) then promotes the clone.
 Cleanup always runs, after success, failure and cancellation.
 
 The builder has no fleet identity: no WireGuard address, Node, token or model key. The checkout is on the branch `seed-refresh/task-1`, because the harness refuses a branch that does not name its task. The GitHub read header and the club key come from the vault on standard input. The ready copies step also deletes the operator VM that the harness still makes.
@@ -1231,7 +1230,7 @@ A host’s seed is refreshed after each release, and at least daily. The Swamp t
 
 ##### The ready copies
 
-`bin/proof-fleet ready` makes them, and its contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the MAC, the IP, the subnet, the mounts, when the credentials were minted, the attempt and a digest of the inputs. `user.ready.complete` is written last.
+One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the MAC, the IP, the subnet, the mounts, when the credentials were minted, the attempt and a digest of the inputs. `user.ready.complete` is written last.
 
 The age of a set counts from `user.ready.minted`, and a set older than 20 hours is stale. A different inputs digest also makes it stale. `ready-state.sh` requires all of these keys on the three copies.
 

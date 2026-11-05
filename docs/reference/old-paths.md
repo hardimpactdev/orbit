@@ -15,7 +15,6 @@ Check this page before you build on something. Each row is code that still runs,
 | --- | --- | --- |
 | Recipe image build: `RecipeImageBuilds`, `RecipeImageBuildSteps`, `BuildTaskVmRecipeCommand`, `task-vms:build-*`, and the seed refresh that an operator starts with `task-vms:refresh-seed` | The per-host refresh by converge ([stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh)); a recipe build stays only for a new host or a new base OS | Stage 6 |
 | `proof-reaper`, and the Project 62 branch of `TaskProvisionIntent` and `ProofReaper` | Nothing: only the removed `bin/swamp-proof` made Project 62 groups | When no Project 62 group is open |
-| `bin/e2e-topology` and the per-issue topology of a subtask that declares `topology`, with its virtiofs share of the worktree | The nested fleet and `orbit-nested` ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When no subtask declares a topology |
-| `bin/proof-fleet` (`reset`, `ready`, `verify`, `release`) and the `proof-fleet-*` workflows | `orbit proof` and `proof:run` ([stage 3](/reference/command-development-pipeline#3-proof)) | Stage 3 |
+| `bin/e2e-topology` and the per-issue topology of a subtask that declares `topology`, with its virtiofs share of the worktree | The nested fleet ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When no subtask declares a topology |
 
 `apps/agent/**` is frozen. Its image-build commands (`image_build`, `image_recipe`) belong to the recipe path and wait for the agent strip.

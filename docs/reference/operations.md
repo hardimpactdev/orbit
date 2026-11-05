@@ -94,7 +94,7 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `gateway.release` has a provisional 3,000 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A first success replaces it with a p95.
 
-A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. The proof reset `bin/proof-fleet reset GROUP --from-ready` captures 360 seconds. Every other script and every check captures the budget of its kind's history. The history of short scripts had set 120 seconds, which timed out the first real reset twice.
+A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. Every script and every check captures the budget of its kind's history.
 
 The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
 
