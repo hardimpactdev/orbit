@@ -319,7 +319,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 ## Automatic releases
 
-The Gateway scheduler runs `gateway:release:auto` every minute through `GatewaySchedule::command`. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
+The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
 ```bash
 orbit gateway:release:auto:enable
@@ -327,7 +327,7 @@ orbit gateway:release:auto:status
 orbit gateway:release:auto:disable
 ```
 
-A Gateway that ran the release unit still has `orbit-gateway-release.timer` until its [gateway role convergence](/cli/node/role-add) runs. Until then the timer runs the same tick every minute; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. The convergence stops and disables the timer, then removes it and the release services. Converge only while the current release runs the tick from the scheduler: a rollback to an older release then has no tick until a newer release goes live.
+A Gateway that ran the release unit still has `orbit-gateway-release.timer` until its [gateway role convergence](/cli/node/role-add) runs. Until then the timer runs the same tick every minute, more often than the scheduler; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. The convergence stops and disables the timer, then removes it and the release services. Converge only while the current release runs the tick from the scheduler: a rollback to an older release then has no tick until a newer release goes live.
 
 
 ### What a tick does
