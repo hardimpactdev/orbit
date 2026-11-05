@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Orbit\Sdk\Responses\Schedules\ScheduleCompletionResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
@@ -194,12 +193,10 @@ it('bounds error and request identifiers without retaining invalid values', func
     $data = schedule_response_data();
     $data['error_code'] = "token={$credential}";
     $response = ScheduleResponse::fromGatewayData($data, "token={$credential}");
-    $completion = ScheduleCompletionResponse::fromRequestId("token={$credential}");
 
     expect($response->errorCode)->toBeNull()
         ->and($response->requestId)->toBeEmpty()
-        ->and($completion->requestId)->toBeEmpty()
-        ->and(json_encode([$response->toArray(), $completion->toArray()], JSON_THROW_ON_ERROR))
+        ->and(json_encode($response->toArray(), JSON_THROW_ON_ERROR))
         ->not->toContain($credential);
 });
 
@@ -213,11 +210,10 @@ it('keeps Schedule response values immutable behind private constructors', funct
         'truncated' => false,
     ], schedule_response_request_id());
     $collection = SchedulesResponse::fromGatewayData([], schedule_response_request_id());
-    $completion = ScheduleCompletionResponse::fromRequestId(schedule_response_request_id());
 
     expect(fn (): mixed => $item->name = 'changed')->toThrow(Error::class);
 
-    foreach ([$item, $logs, $collection, $completion] as $response) {
+    foreach ([$item, $logs, $collection] as $response) {
         expect(new ReflectionMethod($response, '__construct')->isPrivate())->toBeTrue();
     }
 });

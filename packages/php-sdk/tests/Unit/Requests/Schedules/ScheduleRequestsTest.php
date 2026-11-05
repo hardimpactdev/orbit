@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
@@ -15,7 +14,6 @@ use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
-use Orbit\Sdk\Responses\Schedules\ScheduleCompletionResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
@@ -101,7 +99,6 @@ it('maps every UUID operation to the exact method path query and body', function
         'show' => [new ShowScheduleRequest($id), Method::GET, '', [], null],
         'run' => [new RunScheduleRequest($id), Method::POST, '/run', [], null],
         'logs with explicit invalid lines' => [new ScheduleLogsRequest($id, 0), Method::GET, '/logs', ['lines' => 0], null],
-        'complete with explicit invalid status' => [new CompleteScheduleRequest($id, 'invalid'), Method::POST, '/complete', [], ['status' => 'invalid']],
         'remove' => [new DestroyScheduleRequest($id), Method::DELETE, '', [], null],
         'activate' => [new EnableScheduleRequest($id), Method::POST, '/activate', [], null],
     ];
@@ -149,21 +146,6 @@ it('returns typed DTOs for the seven JSON envelopes', function (): void {
 
         expect($dto)->toBeInstanceOf($expectedClass);
     }
-});
-
-it('keeps completion bodyless and exposes only its validated response header request ID', function (): void {
-    $mock = new MockClient([
-        MockResponse::make('', 204, ['X-Orbit-Request-Id' => schedule_request_id()]),
-    ]);
-    $request = new CompleteScheduleRequest(schedule_request_uuid(), 'success');
-    $dto = schedule_request_connector($mock)->send($request)->dto();
-
-    expect($dto)
-        ->toBeInstanceOf(ScheduleCompletionResponse::class)
-        ->and($dto->toArray())
-        ->toBe(['request_id' => schedule_request_id()])
-        ->and($mock->getLastPendingRequest()?->body()?->all())
-        ->toBe(['status' => 'success']);
 });
 
 it('rejects malformed nested collection members instead of inventing responses', function (): void {
