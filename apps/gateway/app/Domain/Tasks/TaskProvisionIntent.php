@@ -59,79 +59,100 @@ final readonly class TaskProvisionIntent
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
         return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit): Operation {
-            $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
                 return $replay;
             }
-            $this->assertProvisionable($group);
-            $project = $group->project;
-            // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) get the proof club key, and no other task.
-            $proof = ($project->id === 62 && $project->slug === 'swamp-proof') || $commit !== null;
-            $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
-            if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
-                throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
-            }
-            try {
-                $vm = $this->allocate->capture($group);
-            } catch (TaskCapacityException $exception) {
-                throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
-                    previous: $exception, details: ['reason' => $exception->wait->value]);
-            }
-            $input = $this->vms->capture($vm);
-            $node = $vm->node;
-            assert($node !== null);
-            $account = new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
-            $apps = $this->roots->resolveApps($this->settings->fromStored($node->settings), $account);
-            $sourceRoot = $apps->append($project->slug);
-            $checkout = $sourceRoot->append(TaskVmWorkspaceGuard::WorkspaceCheckout);
-            $this->overlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
-            $instance = Instance::query()->create([
-                'project_id' => $project->id, 'node_id' => $node->id, 'name' => TaskWorkspaceName::for($group),
-                'source_layout' => InstanceSourceLayout::Checkout, 'source_prepare_id' => (string) Str::uuid(),
-                'checkout_path' => $checkout->value, 'root' => null, 'branch_override' => TaskWorkspaceName::for($group),
-                'task_workspace_routed' => $routed = $project->type->isWebServing() && $project->task_workspace_routed, 'task_workspace_owner_id' => $group->id,
-                'status' => InstanceState::Reserved, 'first_setup_pending' => true,
-            ]);
-            // The guest's host key is pinned only by this run's VM step; its SSH targets carry `host_keys: null`
-            // until the workflow binds them. The Route comes first: it changes how Process units render.
-            [$route, $routeInput, $members] = app(PendingSshHostKey::class)->during($node->id, function () use ($instance, $routed, $node): array {
-                $route = $routed ? app(CreateRouteAction::class)->ensureForInstance($instance, null) : null;
-                app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-
-                return [$route, $route === null ? null : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id),
-                    app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members']];
-            });
-            $values = app(LogRedactor::class)->valuesFor($instance);
-            $setup = array_map(function ($step) use ($values): array {
-                if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
-                    throw new ResourceOperationException('tasks.provision_refused', 'Setup commands must contain no credential values.', 422);
-                }
-                $command = $step->toArray();
-
-                return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
-            }, $this->steps->ordered($project, LifecyclePhase::Setup));
-            // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
-            $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-                'swamp-proof-club-api-key', $proofClub) : null;
-            $git = app(RepositoryReadAccess::class)->for($project->repository_url, $project->source_access);
-            $gitAuthorization = $git->isEmpty() ? null : app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-                'task-provision-git-'.$vm->id, $git->variables['GIT_CONFIG_VALUE_0']);
-            $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
-                'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
-                'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization,
-                'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
-                    'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
-                    'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,
-                    'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
-                    'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
-                    'setup' => $setup],
-                'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
-                'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
-            $group->taskable()->associate($instance);
-            $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
+            $input = $this->capture($group, $commit, $startCommit);
 
             return $this->start->execute('tasks.provision', 'task_group', $group->id, ValidatedData::integer($input['node_id']), $input, $caller, $request);
         }));
+    }
+
+    /**
+     * The full admitted input of a proof's provision, for the one Swamp run that carries it. Starts no Operation: the group is
+     * reserved and its VM, Node and workspace Instance are recorded, as the admission records them.
+     *
+     * @return array<string,mixed>
+     */
+    public function captureForProof(Task $group, string $commit): array
+    {
+        $this->assertProvisionable($group);
+
+        return $this->enrollment->admit(fn (): array => DB::transaction(fn (): array => $this->capture($group, $commit, $commit)));
+    }
+
+    /** @return array<string,mixed> */
+    private function capture(Task $group, ?string $commit, string $startCommit): array
+    {
+        $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
+        $this->assertProvisionable($group);
+        $project = $group->project;
+        // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) get the proof club key, and no other task.
+        $proof = ($project->id === 62 && $project->slug === 'swamp-proof') || $commit !== null;
+        $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
+        if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
+            throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
+        }
+        try {
+            $vm = $this->allocate->capture($group);
+        } catch (TaskCapacityException $exception) {
+            throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
+                previous: $exception, details: ['reason' => $exception->wait->value]);
+        }
+        $input = $this->vms->capture($vm);
+        $node = $vm->node;
+        assert($node !== null);
+        $account = new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
+        $apps = $this->roots->resolveApps($this->settings->fromStored($node->settings), $account);
+        $sourceRoot = $apps->append($project->slug);
+        $checkout = $sourceRoot->append(TaskVmWorkspaceGuard::WorkspaceCheckout);
+        $this->overlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
+        $instance = Instance::query()->create([
+            'project_id' => $project->id, 'node_id' => $node->id, 'name' => TaskWorkspaceName::for($group),
+            'source_layout' => InstanceSourceLayout::Checkout, 'source_prepare_id' => (string) Str::uuid(),
+            'checkout_path' => $checkout->value, 'root' => null, 'branch_override' => TaskWorkspaceName::for($group),
+            'task_workspace_routed' => $routed = $project->type->isWebServing() && $project->task_workspace_routed, 'task_workspace_owner_id' => $group->id,
+            'status' => InstanceState::Reserved, 'first_setup_pending' => true,
+        ]);
+        // The guest's host key is pinned only by this run's VM step; its SSH targets carry `host_keys: null`
+        // until the workflow binds them. The Route comes first: it changes how Process units render.
+        [$route, $routeInput, $members] = app(PendingSshHostKey::class)->during($node->id, function () use ($instance, $routed, $node): array {
+            $route = $routed ? app(CreateRouteAction::class)->ensureForInstance($instance, null) : null;
+            app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
+
+            return [$route, $route === null ? null : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id),
+                app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members']];
+        });
+        $values = app(LogRedactor::class)->valuesFor($instance);
+        $setup = array_map(function ($step) use ($values): array {
+            if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
+                throw new ResourceOperationException('tasks.provision_refused', 'Setup commands must contain no credential values.', 422);
+            }
+            $command = $step->toArray();
+
+            return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
+        }, $this->steps->ordered($project, LifecyclePhase::Setup));
+        // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
+        $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+            'swamp-proof-club-api-key', $proofClub) : null;
+        $git = app(RepositoryReadAccess::class)->for($project->repository_url, $project->source_access);
+        $gitAuthorization = $git->isEmpty() ? null : app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+            'task-provision-git-'.$vm->id, $git->variables['GIT_CONFIG_VALUE_0']);
+        $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
+            'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
+            'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization,
+            'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
+                'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
+                'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,
+                'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
+                'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
+                'setup' => $setup],
+            'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
+            'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
+        $group->taskable()->associate($instance);
+        $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
+
+        return $input;
     }
 
     private function assertProvisionable(Task $group): void

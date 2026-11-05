@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
-use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\GitHub\GitHubApiException;
@@ -17,19 +17,27 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskProvisionIntent;
+use App\Infrastructure\Swamp\PendingSshHostKey;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Task;
+use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Admits `proof:run`: it checks that the commit is trusted, selects the cases from the diff and the selection list of
- * the commit, and records the intent. The Gateway reads GitHub and fetches no code; the task operations of a proof group do the work. See
+ * the commit, and records the intent. The Gateway reads GitHub and fetches no code; the one Swamp run `operation-proof-run` does the work and the Gateway records its result once. See
  * docs/cli/proof/run.mmd.
  */
 final readonly class ProofRunIntent
 {
     public function __construct(private ProofCommitTrust $trust, private ProofCommitSource $source, private ProofSettings $settings,
-        private OperationIdempotency $idempotency, private OperationStore $store, private ProofRunContinuation $chain) {}
+        private OperationIdempotency $idempotency, private OperationStore $store, private StartOperationAction $start) {}
 
     public function start(string $commit, bool $all, string $caller, ?string $requestId): Operation
     {
@@ -41,6 +49,9 @@ final readonly class ProofRunIntent
         $swamp = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($roles) => $roles
             ->where('role', RoleName::Swamp)->where('status', LifecycleStatus::Active))->first()
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
+        if (count($this->commands($selection->cases)) > ProofRunProjection::MaximumCommands) {
+            throw new ResourceOperationException('proof.too_many_commands', 'A proof run covers at most '.ProofRunProjection::MaximumCommands.' commands.', 422);
+        }
         $intent = ['commit' => $commit, 'all' => $all, 'everything_because' => $selection->everythingBecause,
             'cases' => $selection->cases, 'uncovered' => $selection->uncovered];
         if ($selection->nothingToProve()) {
@@ -58,20 +69,57 @@ final readonly class ProofRunIntent
         }
         $group = app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof '.substr($commit, 0, 12),
             'Prove commit '.$commit.' with the selected cases.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
-                'The Swamp workflow proof-fleet-verify runs the selected cases in the task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
+                'The Swamp workflow operation-proof-run runs the selected cases in the task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
         try {
-            $this->chain->admit($group, 'tasks.provision', fn () => app(StartTaskProvisionAction::class)->execute($group, 'proof-run', null, $commit));
+            return DB::transaction(fn (): Operation => $this->admit($group, $swamp, $intent, $selection, $caller, $requestId));
         } catch (ResourceOperationException $exception) {
             app(CancelTaskGroupAction::class)->execute($group);
 
             throw $exception;
         }
-        // The group's own operations carry the run, so this Operation is not a task_group target: the cancel of the group refuses to start while an Operation holds it.
-        // It closes with the verdicts after the group is cancelled.
-        $operation = $this->store->create(OperationKinds::ProofRun, 'proof', $group->id, $swamp->id, [...$intent, 'group_id' => $group->id], $caller, $requestId);
-        $this->store->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()]);
+    }
 
-        return $operation;
+    /**
+     * Records the group, its VM and its workspace, captures the provision and the cancel of that VM, and starts the one Swamp run that
+     * carries them. The Operation is not a task_group target: the run cancels the group itself, and a cancel of the group refuses to
+     * start while an Operation holds it.
+     *
+     * @param  array<string,mixed>  $intent
+     */
+    private function admit(Task $group, Node $swamp, array $intent, ProofSelectionResult $selection, string $caller, ?string $requestId): Operation
+    {
+        $provision = app(TaskProvisionIntent::class)->captureForProof($group, ValidatedData::string($intent['commit']));
+        $instance = Instance::query()->with('node')->findOrFail(ValidatedData::integer($provision['instance_id']));
+        $group->refresh();
+        // The guest's host key is read from its VM by the run; until then its SSH target carries `host_keys: null`.
+        [$cancel, $ssh] = app(PendingSshHostKey::class)->during($instance->node_id, fn (): array => [
+            app(TaskCancelIntent::class)->captureForProof($group), app(SwampSshExecutionInput::class)->forNode($instance->node)]);
+        $vm = ValidatedData::object($cancel['provider_input']);
+        if (! is_array($vm['vm'] ?? null) || ! is_array($vm['host_ssh_execution'] ?? null)) {
+            throw new ResourceOperationException('proof.vm_unavailable', 'A proof needs an Incus task VM, and none was placed.', 503);
+        }
+
+        return $this->start->execute(OperationKinds::ProofRun, 'proof', $group->id, $swamp->id, [...$intent, 'group_id' => $group->id,
+            'commands' => $this->commands($selection->cases), 'checkout_path' => $instance->checkout_path, 'ssh_execution' => $ssh,
+            'vm' => ['name' => $vm['name'], 'project' => ValidatedData::object($vm['vm'])['project'], 'host_ssh_execution' => $vm['host_ssh_execution']],
+            'provision' => $provision, 'cancel' => $cancel], $caller, $requestId);
+    }
+
+    /**
+     * Each command of the selection once, with the cases file that the runner reads. The selection names a command by its case programs.
+     *
+     * @param  list<array{program: string, command: string}>  $cases
+     * @return list<array{command:string,file:string}>
+     */
+    private function commands(array $cases): array
+    {
+        $commands = [];
+        foreach ($cases as $case) {
+            [$family, $name] = explode(':', $case['command'], 2) + [1 => ''];
+            $commands[$case['command']] ??= ['command' => $case['command'], 'file' => 'swamp/proof/'.$family.'/'.str_replace(':', '-', $name).'.cases.yaml'];
+        }
+
+        return array_values($commands);
     }
 
     private function select(string $commit, bool $all): ProofSelectionResult

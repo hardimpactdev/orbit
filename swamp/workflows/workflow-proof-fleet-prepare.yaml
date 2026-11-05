@@ -1,0 +1,301 @@
+id: d19a369e-b816-4a59-b6b1-fd40e19e05f2
+name: proof-fleet-prepare
+description: Reset the nested proof fleet of the task VM from its ready copies, sync the commit, and take base. Every phase is one official SSH exec of phases.py on the VM, from Orbit's own Swamp.
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    ssh_execution:
+      type: object
+    checkout_path:
+      type: string
+    group_id:
+      type: integer
+      minimum: 1
+  required:
+  - ssh_execution
+  - checkout_path
+  - group_id
+  additionalProperties: false
+jobs:
+- name: reset
+  labels: {role: swamp}
+  steps:
+  # The request: the proof root, its owner marker and request.json under the checkout. The generation is this run's id, so every phase below names the same file.
+  - name: request
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &ssh_args
+        name: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/request.py" }}
+        - ${{ string(inputs.group_id) }}
+        - ${{ run.id.split("-").join("") }}
+  - name: inventory
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: request
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - inventory
+  - name: snapshot-ready
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: inventory
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - snapshot-ready
+  - name: restore-ready
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: snapshot-ready
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - restore-ready
+  - name: candidate
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: restore-ready
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - candidate
+  - name: ready-wait
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: candidate
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - ready-wait
+  - name: operator
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: ready-wait
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - operator
+  - name: ready-check
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: operator
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - ready-check
+  - name: base-take
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: ready-check
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - base-take
+  - name: publish
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: base-take
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - publish
+  - name: prune-generations
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: publish
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - prune-generations
+- name: failure
+  labels: {role: swamp}
+  dependsOn:
+  - job: reset
+    condition: {type: failed}
+  steps:
+  # A reset that failed leaves a half-built generation; release it, as the local reset did.
+  - name: failure-cleanup
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 600
+        argv:
+        - env
+        - ${{ "PROOF_REQUEST=" + inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/reset/" + run.id.split("-").join("") + "/request.json" }}
+        - ${{ "PROOF_CANDIDATE=" + inputs.checkout_path }}
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/reset/phases.py" }}
+        - failure-cleanup

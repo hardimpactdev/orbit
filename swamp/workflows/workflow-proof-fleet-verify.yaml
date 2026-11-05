@@ -85,7 +85,7 @@ jobs:
         group_id: ${{ inputs.intent.group_id }}
         file: ${{ inputs.intent.file }}
         batch: ${{ self.batch.batch }}
-        first: ${{ self._index == 0 }}
+        first: '${{ self._index == 0 && !inputs.intent.?restore_first.orValue(false) }}'
         setup: ${{ self.batch.setup }}
         cases: ${{ self.batch.cases }}
 - name: report

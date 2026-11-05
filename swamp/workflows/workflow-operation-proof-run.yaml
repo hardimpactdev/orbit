@@ -1,0 +1,185 @@
+id: 3b7f0c52-6e1d-4a9b-8d24-c5e19a7f40b6
+name: operation-proof-run
+description: Prove one commit on a task VM from Orbit's own Swamp on Node 209. Provision the VM, reset the nested fleet from its ready copies, verify each selected command, destroy the VM always, and report one verdict list per command. With `intent.existing` the run uses a task VM that already exists and neither provisions nor destroys one.
+vaults:
+- orbit-control-inputs
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: proof.run}
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: provision
+  labels: {role: swamp}
+  steps:
+  # The same task provision every task uses: clone the image, boot, enrol, check out the commit. Its input is the one the Gateway captured at admission.
+  - name: provision
+    labels: {role: swamp}
+    guard: ${{ inputs.intent.existing }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-provision
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: '${{ inputs.intent.existing ? 1 : inputs.intent.provision.node_id }}'
+        kind: tasks.provision
+        intent: '${{ inputs.intent.existing ? {} : inputs.intent.provision.intent }}'
+        execution_secrets: '${{ inputs.intent.existing ? {} : inputs.intent.provision.execution_secrets }}'
+  # The Gateway leaves the guest's host key unpinned until the VM exists. The Incus host reads it from the VM, as the provision does.
+  - name: host-key
+    labels: {role: swamp}
+    guard: '${{ inputs.intent.ssh_execution.target.host_keys != null }}'
+    dependsOn:
+    - step: provision
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-host-ssh-" + string(inputs.intent.vm.host_ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("proof-host-ssh-" + string(inputs.intent.vm.host_ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.vm.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.vm.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.vm.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.vm.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.vm.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - incus
+        - exec
+        - --project
+        - ${{ inputs.intent.vm.project }}
+        - ${{ inputs.intent.vm.name }}
+        - --
+        - cut
+        - -d
+        - ' '
+        - -f
+        - 1,2
+        - /etc/ssh/ssh_host_ed25519_key.pub
+- name: prepare
+  labels: {role: swamp}
+  dependsOn:
+  - job: provision
+    condition:
+      type: or
+      conditions:
+      - type: succeeded
+      - type: skipped
+  steps:
+  # Reset the nested fleet from the ready copies, sync the commit, take base.
+  - name: prepare
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-prepare
+      inputs:
+        ssh_execution: &guest '${{ {"identity_file": inputs.intent.ssh_execution.identity_file, "target": {"name": "target", "node_id": inputs.intent.ssh_execution.target.node_id, "host": inputs.intent.ssh_execution.target.host, "user": inputs.intent.ssh_execution.target.user, "port": inputs.intent.ssh_execution.target.port, "host_keys": inputs.intent.ssh_execution.target.host_keys != null ? inputs.intent.ssh_execution.target.host_keys : [steps["host-key"].outputs.stdout.trim()]}} }}'
+        checkout_path: ${{ inputs.intent.checkout_path }}
+        group_id: ${{ inputs.intent.group_id }}
+- name: verify
+  labels: {role: swamp}
+  concurrency: 1
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  steps:
+  # One child per selected command, one at a time. A command that fails does not stop the next; the report names every case.
+  - name: verify-${{ self._index }}
+    labels: {role: swamp}
+    forEach:
+      item: command
+      in: ${{ inputs.intent.commands }}
+    allowFailure: true
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-verify
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: proof.verify
+        execution_secrets: {}
+        intent:
+          ssh_execution: *guest
+          checkout_path: ${{ inputs.intent.checkout_path }}
+          group_id: ${{ inputs.intent.group_id }}
+          file: ${{ self.command.file }}
+          restore_first: ${{ self._index > 0 }}
+- name: cancel
+  labels: {role: swamp}
+  dependsOn:
+  - job: provision
+    condition: &always {type: always}
+  - job: prepare
+    condition: *always
+  - job: verify
+    condition: *always
+  steps:
+  # Always, also after a failure: no proof VM is left behind. The Gateway captured this input with the VM.
+  - name: cancel
+    labels: {role: swamp}
+    guard: ${{ inputs.intent.existing }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-cancel
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: '${{ inputs.intent.existing ? 1 : inputs.intent.cancel.node_id }}'
+        kind: tasks.cancel
+        intent: '${{ inputs.intent.existing ? {} : inputs.intent.cancel.intent }}'
+        execution_secrets: '${{ inputs.intent.existing ? {} : inputs.intent.cancel.execution_secrets }}'
+- name: report
+  labels: {role: swamp}
+  dependsOn:
+  - job: cancel
+    condition: *always
+  steps:
+  # One step per command, so each verdict list has its own 4,096 bytes: the Gateway reads `report-N` for command N. The lines come from the verify child.
+  - name: report-${{ self._index }}
+    labels: {role: swamp}
+    forEach:
+      item: command
+      in: ${{ inputs.intent.commands }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: proof-run-report
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$LINES"
+        env:
+          LINES: '${{ steps.filter(k, k == "verify-" + string(self._index)).map(k, steps[k].?outputs.?report.?stdout.orValue("").trim()).join("") }}'
