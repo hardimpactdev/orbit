@@ -23,7 +23,7 @@ Run the generator from the repository root:
 bin/docs-openapi
 ```
 
-`composer docs-openapi` runs the same script. `bin/docs-openapi --check` fails when `docs/openapi.json` or those API groups differ from a fresh run. The check prints a unified diff and the regeneration command when an output is stale. It leaves the files unchanged. Continuous integration and the local candidate gate run the check.
+`composer docs-openapi` runs the same script. `docs/openapi.json` and `docs/docs.json` are ignored build outputs, so nothing compares them with a stored copy. The script fails when the sources disagree with the API contract. Continuous integration and the local candidate gate run it, then `bin/mcp-tools` and `bin/api-fixtures --check`.
 
 Group assistance comments have separate collection and create schemas: `GET /api/v1/task-groups/{group}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
 
@@ -137,8 +137,6 @@ Task group and subtask updates expose `status` in the API, MCP, PHP SDK, and gen
 | PHP version | The interpreter for the route list. The API reference job uses PHP 8.5. |
 
 ## Why it works this way
-
-`bin/docs-openapi --check` compares the committed document with a fresh run. That comparison means the checkout changed only when the pinned route-list environment matches. A different Gateway `.env` or a different PHP version changes the route list while the Git tree stays the same.
 
 Command text does not. `orbit list` hides extension commands, such as the `tasks`, `ai-router`, and `vault` commands, unless the active Gateway profile reports those extensions as enabled, and the command fails when `apps/cli/vendor` is absent. A machine with the extensions on would add request-field descriptions such as the task title and the ai-router cache connection, and continuous integration would leave them out. Reading the command classes keeps those descriptions in the document on every machine. Framework options such as `--version` are not part of the signature, so they are not copied onto a request field.
 

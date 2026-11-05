@@ -40,6 +40,8 @@
             "cli/tasks/turn",
             "cli/tasks/check",
             "cli/tasks/publish",
+            "cli/tasks/pr-ready",
+            "cli/tasks/pr-merge",
             "cli/tasks/park"
           ]
         }

@@ -195,7 +195,7 @@ printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
-        for name in ('docs-nav', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
+        for name in ('check-operation-kinds', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
             check = self.root / 'bin' / name
             check.write_text('#!/bin/sh\nexit 0\n')
             check.chmod(0o755)
@@ -262,11 +262,10 @@ fi
         self.assertEqual('builder', report['role'])
         self.assertEqual(git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
         self.assertEqual(self.commit, report['base'])
-        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit]),
-                    ('repository', ['bin/docs-nav'])]
+        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit])]
         for project in PROJECTS:
             expected.extend((project, command) for command in [['composer', 'check']])
-        expected.extend(('repository', [f'bin/{name}', '--check']) for name in ('docs-openapi', 'mcp-tools'))
+        expected.extend(('repository', [f'bin/{name}']) for name in ('check-operation-kinds', 'docs-openapi', 'mcp-tools'))
         expected.append(('repository', ['bin/api-fixtures', '--check']))
         self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']
                                     if item['project'] != 'swamp'])
@@ -320,7 +319,7 @@ fi
                     self.assertTrue(1 <= int(line.split('|')[1]) <= int(budget), line)
         gate = self.gate_module(runner)
         groups = gate.lanes([('apps/gateway', ()), ('apps/cli', ()), ('repository', ()), ('apps/web', ())])
-        # The repository checks share the Gateway lane, because bin/docs-openapi --check boots the Gateway.
+        # The repository checks share the Gateway lane, because the contract checks boot the Gateway.
         self.assertEqual([['apps/gateway', 'repository', 'apps/web'], ['apps/cli']],
                          [[project for _order, project, _commands in group] for group in groups])
         self.assertEqual([1, 1, 3, 3, 5, 5], [gate.lane_count([[()]] * 5, budget) for budget in (1, 2, 4, 5, 8, 16)])
@@ -436,20 +435,13 @@ fi
         gate_spec = importlib.util.spec_from_loader(gate_loader.name, gate_loader)
         gate = importlib.util.module_from_spec(gate_spec)
         gate_loader.exec_module(gate)
+        # The rule of CI's Generated contracts job selects them.
         for path in ('apps/gateway/routes/api.php', 'apps/cli/app/Commands/Example.php',
-                     'packages/php-sdk/src/Requests/Example.php', 'bin/docs-openapi', 'bin/mcp-tools',
-                     'docs/openapi.json', 'docs/docs.json', 'apps/gateway/resources/mcp/tools.json'):
+                     'packages/php-sdk/src/Requests/Example.php', 'packages/php-sdk/fixtures/example.json',
+                     'apps/web/fixtures/example.json', 'bin/docs-openapi', 'bin/api-fixtures',
+                     'docs/cli/node/add.mmd', 'swamp/config/gateway-workflow-grants.json'):
             with self.subTest(path=path):
-                commands = [command for project, commands in gate.selected_projects([path], self.root)
-                            if project == 'repository' for command in commands]
-                self.assertIn(('bin/docs-openapi', '--check'), commands)
-                self.assertIn(('bin/mcp-tools', '--check'), commands)
-        for path in ('packages/php-sdk/fixtures/example.json', 'apps/web/fixtures/example.json',
-                     'docs/openapi.json', 'bin/api-fixtures', 'bin/review-check'):
-            with self.subTest(fixture=path):
-                commands = [command for project, commands in gate.selected_projects([path], self.root)
-                            if project == 'repository' for command in commands]
-                self.assertIn(('bin/api-fixtures', '--check'), commands)
+                self.assertIn(('repository', gate.CONTRACT_COMMANDS), gate.selected_projects([path], self.root))
         for path in ('docs/reference/example.md', 'apps/web/src/App.tsx', 'apps/pi-server/src/index.ts'):
             with self.subTest(path=path):
                 self.assertNotIn('repository', dict(gate.selected_projects([path], self.root)))
@@ -477,29 +469,6 @@ fi
         self.assertEqual(['cargo', 'fmt', '--all', '--', '--check'], check['command'])
         self.assertEqual(7, check['exit_code'])
         self.assertFalse(report['passed'])
-
-    def test_gate_rejects_real_stale_mcp_outputs_and_names_the_regeneration_command(self):
-        runner = self.gate_fixture()
-        shutil.copyfile(BIN / 'mcp-tools', self.root / 'bin/mcp-tools')
-        (self.root / 'docs').mkdir()
-        (self.root / 'docs/openapi.json').write_text('{"paths": {}}')
-        git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit_change('generator fixture'))
-        manifest = self.root / 'apps/gateway/resources/mcp/tools.json'
-        manifest.parent.mkdir(parents=True)
-        manifest.write_text('{"stale": true}')
-        status = git(self.root, 'status', '--porcelain')
-        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
-        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
-        self.assertIn('apps/gateway/resources/mcp/tools.json', result.stdout)
-        self.assertIn('Run bin/mcp-tools.', result.stdout)
-        self.assertIn('--- apps/gateway/resources/mcp/tools.json', result.stdout)
-        self.assertIn('+++ generated/apps/gateway/resources/mcp/tools.json', result.stdout)
-        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
-        check = next(item for item in report['checks'] if item['command'] == ['bin/mcp-tools', '--check'])
-        self.assertEqual(1, check['exit_code'])
-        self.assertFalse(report['passed'])
-        self.assertEqual('{"stale": true}', manifest.read_text())
-        self.assertEqual(status, git(self.root, 'status', '--porcelain'))
 
     def test_openapi_check_reports_the_generated_diff_without_writing_outputs(self):
         fixture = Path(self.temporary.name) / 'openapi fixture'

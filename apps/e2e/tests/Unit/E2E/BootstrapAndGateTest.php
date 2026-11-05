@@ -43,5 +43,5 @@ it('runs bin/bootstrap and the candidate gate against real repositories', functi
 })->with(bootstrapAndGateCases());
 
 it('finds every case in the fixture', function (): void {
-    expect(bootstrapAndGateCases())->toHaveCount(22);
+    expect(bootstrapAndGateCases())->toHaveCount(21);
 });

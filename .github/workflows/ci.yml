@@ -166,11 +166,12 @@ jobs:
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: bin/check-operation-kinds
-      - name: Check OpenAPI and MCP tools
+      - name: Generate OpenAPI and MCP tools, then check the recorded fixtures
         if: steps.scope.outputs.selected == 'true'
         run: |
-          bin/docs-openapi --check
-          bin/mcp-tools --check
+          bin/docs-openapi
+          bin/mcp-tools
+          bin/api-fixtures --check
       - name: Generate web schema
         if: steps.scope.outputs.selected == 'true'
         run: bun run --cwd apps/web types
