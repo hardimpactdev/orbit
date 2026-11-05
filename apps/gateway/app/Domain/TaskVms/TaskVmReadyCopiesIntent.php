@@ -20,7 +20,7 @@ use App\Models\TaskVm;
 final readonly class TaskVmReadyCopiesIntent
 {
     /** The nested VMs in a task VM, by role. The stage 2 steps create them under these names. */
-    public const array Guests = ['gateway' => 'nested-gateway', 'app_dev' => 'nested-app-dev', 'app_prod' => 'nested-app-prod'];
+    public const array Guests = ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'];
 
     /** The nested network of a task VM. The stage 2 steps create it from the subnet the ready copies store. */
     public const string Network = 'nested';
