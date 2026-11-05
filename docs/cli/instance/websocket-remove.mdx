@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:websocket:remove"
 sidebarTitle: "instance:websocket:remove"
-description: "Remove the Reverb app from an Instance and clear its stored keys. Other stored keys stay in place."
+description: "Remove the Reverb app from an Instance and clear its keys from the stored environment configuration."
 ---
 
 ```bash
@@ -10,15 +10,39 @@ orbit instance:websocket:remove <app> --instance=SELECTOR [--force] [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `app` | yes | Name of the app on the Instance. |
+| `app` | yes | Name of the app on the Instance. A terminal asks for it when it is omitted. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
-| `--force` | off | Confirm removal without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `websocket.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
+| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. A terminal asks for it when it is omitted. |
+| `--force` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the result as JSON. |
 
 ```bash
 orbit instance:websocket:remove hauzer --instance=12 --force
 ```
 
-An app that is not on the Instance returns `websocket.attachment_missing`.
+In a terminal, an omitted app is the one the Instance holds, and an omitted Instance is chosen from an interactive list. The CLI first checks that the Instance holds the app, then asks to confirm with the app, the Instance by name and the effect, that the seven keys leave the stored configuration, that a public app's Reverb paths are withdrawn, and that the workload `.env` stays unchanged, with No selected. An unknown Instance or app, a missing grant, and an app that is not on the Instance are refused (`http.404`, `node_access.required`, `websocket.attachment_missing`) before any prompt, also in a noninteractive call without `--force`. Declining, Ctrl-C or end of input ends with `input.cancelled` and removes nothing. A noninteractive or `--json` call without the app or the Instance is refused with `websocket.name_required` or `websocket.instance_required`, and one without `--force` with `websocket.confirmation_required`; neither removes anything.
+
+The command removes the attachment and the keys `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT` and `REVERB_SCHEME` from the Instance's stored configuration. Other keys stay, and the app stays registered. It starts no task. When the app was published on a public Route, the Gateway also rebuilds that Route's Caddy sites on its serving Nodes before the call returns, which withdraws the public Reverb paths. When the rebuild fails, the removal stays and the call fails with `websocket.route_publication_failed`; run `orbit node:converge NODE --force` on each serving Node. Run `orbit env:sync --instance=SELECTOR` to write the change to the workload `.env`. The caller needs an access grant to the Instance's Node. A repeat after a success is refused with `websocket.attachment_missing`. See [Add an app on an Instance](/reference/websocket-apps#add-an-app-on-an-instance).
+
+The Instance must be active, and its placement and Route must be usable (`env.owner_unavailable`). An Instance without a recorded source profile is refused with `instance.source_profile_missing`, and a remaining stored configuration that is already invalid with `env.configuration_invalid`.
+
+The command prints a detail titled `WebSocket app [<name>] removed from Instance [<id>].` with Instance ID, Name, Keys (the seven key names), Operation (`detach`), Changed, Stored keys (the number of keys the Instance holds afterwards), `Workload file: unchanged` and the request ID. With `--json`, stdout holds `instance_id`, `name`, `keys`, `operation`, `changed`, `key_count` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `websocket.name_required` | The app name is missing in a call that cannot prompt. |
+| `websocket.name_invalid` | The app name is not a valid app name. |
+| `websocket.instance_required` | The Instance is missing in a call that cannot prompt. |
+| `websocket.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, the input ended, or you cancelled a list. |
+| `websocket.attachment_missing` | The app is not on the Instance. |
+| `http.404` | The Instance or the app is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
+| `env.owner_unavailable` | The Instance is not active, or its placement or Route is not usable. |
+| `instance.source_profile_missing` | The Instance has no recorded source profile. |
+| `env.configuration_invalid` | The remaining stored configuration is invalid. |
+| `websocket.route_publication_failed` | The removal was saved, but the Caddy rebuild of the public Route failed. Run `orbit node:converge NODE --force` on each serving Node. |
