@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:deployment:list"
 sidebarTitle: "instance:deployment:list"
-description: "List the deployment history the Gateway recorded for a production Instance, newest first. The Gateway writes one row when a worker starts a deploy or rollback operation and fills it in when the run finishes, and keeps the last 50 rows per Instance."
+description: "List the deploys and rollbacks the Gateway recorded for an Instance, newest first."
 ---
 
 ```bash
@@ -12,8 +12,35 @@ orbit instance:deployment:list <instance> [--json]
 | --- | --- | --- |
 | `instance` | yes | Numeric Instance ID. |
 
-The table shows Started, Release, Branch, Commit, By, Duration, and Status. `By` is the calling Node's name, since the Gateway authorizes every command as a Node. A row still running when read shows `running` and an empty Finished, Duration, and Release until the run completes.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the history as JSON. |
 
 ```bash
 orbit instance:deployment:list 15
 ```
+
+In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
+
+The list shows what the Gateway recorded. It does not contact any Node, so it works while a Node is unreachable. The Gateway writes one row when it admits a deploy or a rollback and fills it in when the run ends. It keeps the 50 newest finished rows for each Instance, plus any run still in flight. A development `default` Instance has rows too; any other development Instance has none. Rows are ordered newest first, by start time and then by ID.
+
+| Column | Meaning |
+| --- | --- |
+| `STARTED` | The timestamp when the run started. |
+| `KIND` | `deploy` or `rollback`. |
+| `RELEASE` | For a deploy, the new release. For a rollback, the retained release it chose. Empty while the run is in flight, and after a run that failed before it had one. |
+| `BRANCH`, `COMMIT` | The branch, which is set at the start, and the commit, which is empty while the run is in flight. |
+| `BY` | The caller, which is a Node and not a person: the Node's name, or `swamp:auto-deploy` for an automatic deployment. |
+| `DURATION` | The run time in seconds, such as `42s`. Empty until the run finishes. |
+| `STATUS` | `running`, `succeeded`, or `failed`. A cancelled run is `failed` with the error code `deployment.cancelled`, and a refused or timed-out run is `failed` too. |
+
+A missing value shows `—`. An empty history says `No deployment history found.`. The human output ends with the request ID. With `--json`, stdout holds `{ deployments, request_id }`, and each row has `id`, `instance_id`, `kind`, `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status`, `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id` and `caller_node_name`. The Gateway sets the caller Node for every run. See [`instance:deployment:show`](/cli/instance/deployment-show) for one run.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
+| `input.cancelled` | You cancelled the Instance list. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
