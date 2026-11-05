@@ -83,7 +83,7 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
                 $this->input->setOption('node', (string) $nodeId);
             }
         } catch (PromptAborted|ConsoleInterrupted) {
-            $this->renderGatewayFailure('input.cancelled', 'Firewall rule creation was cancelled.');
+            $this->renderGatewayFailure('input.cancelled', 'Firewall rule creation was cancelled (input.cancelled).');
 
             return false;
         }
