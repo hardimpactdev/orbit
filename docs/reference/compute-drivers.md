@@ -137,7 +137,7 @@ The base also holds the nested Incus packages, so a task VM [runs a topology](#p
 
 Zabbly bundles QEMU, qemu-img, virtiofsd, and firmware with Incus. No separate Ubuntu packages provide them. The recipe installs packages without recommended packages. The `base` profile is amd64 only, because Pi is. The topology Nodes start from the same base and carry these packages unused.
 
-The base also holds two packages for a topology's `gateway` VM. `dnsmasq` is the `vpn` role's DNS service, because that VM holds the `vpn` role. `fcgiwrap` serves the topology's Git repositories over HTTP, with Git's own `git-http-backend`. The `dnsmasq` package enables its unit, but the unit fails at boot: systemd-resolved starts first and holds port 53. Name resolution and nested Incus bridges are not affected. On the `gateway` VM, the `vpn` role's DNS configuration binds dnsmasq to `127.0.0.55`, the private DNS backend address, and restarts it, as on a production `vpn` Node.
+The base also holds `fcgiwrap` for a topology's `gateway` VM. It serves the topology's Git repositories over HTTP, with Git's own `git-http-backend`. The base does not hold the `dnsmasq` service: no topology VM holds the `vpn` role, and the package's own unit fails at boot on any other Node, because systemd-resolved holds port 53. A `vpn` Node gets `dnsmasq` from its role. `dnsmasq-base` stays, for the nested Incus bridges.
 
 After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `image.clean` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
 
