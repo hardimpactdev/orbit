@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design: stage 7 of the command pipeline (feature-flow section 7). After each release and at least daily, every task VM host refreshes its own task image and topology seed, in parallel; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
+  %% Target design: stage 7 of the command development pipeline (feature-flow section 7). After each release and at least daily, every task VM host refreshes its own task image and topology seed, in parallel; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
   %% status: draft
-  %% command: pipeline stage 7 · per-host task image and seed refresh
+  %% command: development pipeline stage 7 · per-host task image and seed refresh
   %% kind: pipeline.7-task-image-seed-refresh
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue

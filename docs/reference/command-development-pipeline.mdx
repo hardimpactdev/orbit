@@ -1,11 +1,11 @@
 ---
-title: "Command pipeline"
-description: "The stages every Orbit command goes through, from preparation to a refreshed fleet, with the status of each stage and links to its charts, pages, skill and files."
+title: "Command development pipeline"
+description: "The stages every Orbit command goes through during development, from preparation to a refreshed fleet, with the status of each stage and links to its charts, pages, skill and files."
 ---
 
-# Command pipeline
+# Command development pipeline
 
-Every command goes through these stages, one command at a time. Each stage below shows its status on `main`, its flow chart, and links to its pages, skill and key files. The stage charts are drafts of the target design; they live in `docs/reference/pipeline/`. The [feature flow](/reference/feature-flow) holds the detail of the whole change flow.
+The command development pipeline is the stages every command goes through during development, from prep to a per-host refresh after release. A command goes through them one at a time. Each stage below shows its status on `main`, its flow chart, and links to its pages, skill and key files. The stage charts are drafts of the target design; they live in `docs/reference/pipeline/`. The [feature flow](/reference/feature-flow) holds the detail of the whole change flow.
 
 | Stage | Status |
 | --- | --- |
@@ -95,11 +95,11 @@ Every command goes through these stages, one command at a time. Each stage below
 - Docs: [Build the base image](/reference/compute-drivers#build-the-base-image), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
 - Files: [`tools/task-vm-seed`](https://github.com/hardimpactdev/orbit/tree/main/tools/task-vm-seed), [`swamp/workflows/workflow-operation-task-vm-seed-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-seed-refresh.yaml).
 
-## Change the pipeline
+## Change the development pipeline
 
 Change a stage in the place that owns it, and update this page in the same PR.
 
-- **This page:** the stages, their order, their status and their links. Edit `docs/reference/command-pipeline.md`. A stage that gets built changes its status here.
+- **This page:** the stages, their order, their status and their links. Edit `docs/reference/command-development-pipeline.mdx`. A stage that gets built changes its status here.
 - **The charts:** edit the `.mmd` file next to the command page, chart first. The stage charts are `docs/reference/pipeline/<n>-<stage>.mmd`, placed on this page with a `flow-at` placement, as the CLI pages rules describe. Run `bin/check-flows`. The rules are in [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
 - **The skills:** `.agents/skills/preparing-commands` for stage 1, `developing-commands` for the order a command takes, and `verifying-commands` for stages 2, 3 and 5.
 - **The detail of the flow:** [Feature flow](/reference/feature-flow) for the target flow after the release, and the CI job.
