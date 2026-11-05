@@ -3,9 +3,6 @@
 Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run the
 tests that cover the change for red, green, and refactor. CI runs checks across all projects.
 
-- Run `composer guidance:check` first. It must fail when the rule index, an
-  indexed file, or material path coverage is missing. The failure must give the
-  repository restoration command.
 - Test exact methods, endpoints, query and body omission, explicit empty input,
   headers, DTO bounds, request IDs, error envelopes, redaction, object-state
   diagnostics, TLS verification, redirects, and root-CA one-shot behavior.

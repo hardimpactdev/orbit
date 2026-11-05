@@ -57,9 +57,10 @@ class BootstrapTest(RepositoryFixture):
         root = Path(self.temporary.name) / 'bootstrap-cache-writers'
         (root / 'bin').mkdir(parents=True)
         (root / 'bin/bootstrap').write_bytes((BIN / 'bootstrap').read_bytes())
+        git(root, 'init', '-b', 'main')
         for project in PROJECTS:
             (root / project).mkdir(parents=True)
-        for name in ('gateway-app-key', 'worktree-cache'):
+        for name in ('gateway-app-key',):
             script = root / 'bin' / name
             script.write_text('#!/bin/sh\nexit 0\n')
             script.chmod(0o755)
@@ -113,7 +114,6 @@ if sys.argv[1] == 'install':
         self.calls = root / 'calls'
         for name, script in {
             'composer': '#!/bin/sh\nif [ "$1" = install ]; then test "$COMPOSER_CACHE_DIR" = "$BOOTSTRAP_TEST_COMPOSER_CACHE" || exit 8; fi\necho "composer $*" >> "$BOOTSTRAP_TEST_CALLS"\nif [ "$1" = "$BOOTSTRAP_TEST_FAIL" ]; then exit 7; fi\n',
-            'worktree-cache': '#!/bin/sh\necho "worktree-cache $*" >> "$BOOTSTRAP_TEST_CALLS"\n',
         }.items():
             path = root / 'bin' / name
             path.write_text(script)
@@ -130,16 +130,16 @@ if sys.argv[1] == 'install':
         return subprocess.run(['bash', str(root / 'bin/bootstrap'), *arguments], capture_output=True, text=True,
                               env={**self.bootstrap_env, **environment})
 
-    def test_bootstrap_seeds_quality_caches_then_runs_each_projects_full_tests_and_quality_checks(self):
+    def test_bootstrap_installs_then_runs_each_projects_full_tests_and_quality_checks(self):
         root = self.bootstrap_fixture()
         result = self.bootstrap(root)
         self.assertEqual(0, result.returncode, result.stderr)
         driver = subprocess.run(['git', 'config', '--local', '--get', 'merge.orbit-generated.driver'], cwd=root)
         self.assertEqual(1, driver.returncode)
         lines = self.calls.read_text().splitlines()
-        self.assertEqual(['composer install --no-interaction --prefer-dist'] * 5 + ['worktree-cache '], lines[:6])
+        self.assertEqual(['composer install --no-interaction --prefer-dist'] * 5, lines[:5])
         # Without test impact analysis, the stock full suite is the only test command.
-        self.assertEqual(['composer guidance:check'] * 5 + ['composer test', 'composer check'] * 5, lines[6:])
+        self.assertEqual(['composer test', 'composer check'] * 5, lines[5:])
 
     def test_bootstrap_with_skipped_checks_installs_dependencies_only(self):
         root = self.bootstrap_fixture()
@@ -164,13 +164,13 @@ if sys.argv[1] == 'install':
                           'cargo src-tauri fetch --locked'],
                          [line for line in self.calls.read_text().splitlines() if line.startswith(('bun ', 'cargo '))])
 
-    def test_bootstrap_fails_when_any_step_fails_and_runs_no_tests_before_guidance_passes(self):
+    def test_bootstrap_fails_when_any_step_fails_and_runs_no_tests_before_install_passes(self):
         root = self.bootstrap_fixture()
-        for failure in ('install', 'guidance:check', 'test', 'check'):
+        for failure in ('install', 'test', 'check'):
             with self.subTest(failure=failure):
                 result = self.bootstrap(root, BOOTSTRAP_TEST_FAIL=failure)
                 self.assertNotEqual(0, result.returncode)
-                if failure in ('install', 'guidance:check'):
+                if failure == 'install':
                     self.assertNotIn('composer test', self.calls.read_text())
 
 
@@ -185,16 +185,17 @@ class ReviewGateTest(RepositoryFixture):
         processes = self.root / 'bin/check-processes'
         processes.write_bytes((BIN / 'check-processes').read_bytes())
         processes.chmod(0o755)
-        seed = self.root / 'bin/worktree-cache'
-        seed.write_text('#!/bin/sh\nprintf "worktree-cache %s\\n" "$*" >> "$GATE_TEST_SEEDS"\n')
-        seed.chmod(0o755)
+        (self.root / 'bin/ci-build-plan').write_bytes((BIN / 'ci-build-plan').read_bytes())
+        # A root file selects every CI job, Swamp included; its workflow validation passes here.
+        (self.root / 'swamp/bin').mkdir(parents=True)
+        (self.root / 'swamp/bin/validate-swamp-workflows.py').write_text('')
         docs_impact = self.root / 'bin/docs-impact'
         docs_impact.write_text("""#!/bin/sh
 printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
-        for name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
+        for name in ('docs-nav', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
             check = self.root / 'bin' / name
             check.write_text('#!/bin/sh\nexit 0\n')
             check.chmod(0o755)
@@ -246,19 +247,12 @@ fi
         composer.chmod(0o755)
         self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
                          'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root),
-                         'GATE_TEST_SEEDS': str(self.common / 'seeds'), 'GATE_TEST_DOCS': str(self.common / 'docs'),
+                         'GATE_TEST_DOCS': str(self.common / 'docs'),
                          'GATE_TEST_SCOPES': str(self.common / 'scopes'),
                          'GATE_TEST_PROCESSES': str(self.common / 'processes')}
         for name in ('ORBIT_CHECK_PROCESSES', 'ORBIT_CHECK_SCOPE', 'ORBIT_CHECK_BASE'):
             self.gate_env.pop(name, None)
         return runner
-
-    def test_gate_seeds_quality_caches_before_checks(self):
-        runner = self.gate_fixture()
-        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertEqual([f'worktree-cache --worktree {self.root.resolve()}'],
-                         (self.common / 'seeds').read_text().splitlines())
 
     def test_gate_runs_all_five_projects_and_records_builder_and_exact_candidate(self):
         runner = self.gate_fixture()
@@ -270,21 +264,19 @@ fi
         self.assertEqual(git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
         self.assertEqual(self.commit, report['base'])
         expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit]),
-                    ('repository', ['bin/project-vocabulary']),
-                    ('repository', ['bin/env-docs']),
-                    ('repository', ['bin/tooling-baseline']),
                     ('repository', ['bin/docs-nav'])]
         for project in PROJECTS:
-            expected.extend((project, command) for command in [['composer', 'validate', '--strict'], ['composer', 'check']])
+            expected.extend((project, command) for command in [['composer', 'check']])
         expected.extend(('repository', [f'bin/{name}', '--check']) for name in ('docs-openapi', 'mcp-tools'))
         expected.append(('repository', ['bin/api-fixtures', '--check']))
-        self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']])
+        self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']
+                                    if item['project'] != 'swamp'])
         for check in report['checks']:
             self.assertIn(f'[{check["project"]}] {" ".join(check["command"])}: passed ({check["seconds"]:.3f}s;',
                           result.stdout)
         self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit}'],
                          (self.common / 'docs').read_text().splitlines())
-        self.assertEqual(10, len((self.common / 'calls').read_text().splitlines()))
+        self.assertEqual(5, len((self.common / 'calls').read_text().splitlines()))
 
     def test_gate_shards_split_every_lane_once_and_only_shard_one_runs_repository_checks(self):
         runner = self.gate_fixture()
@@ -296,8 +288,9 @@ fi
             self.assertEqual(f'{index}/3', report['shard'])
             repository = [item['command'][0] for item in report['checks'] if item['project'] == 'repository' and item['command'][0].startswith('bin/') and '--check' not in item['command']]
             self.assertEqual(index == 1, bool(repository), repository)
-            ran.extend((item['project'], tuple(item['command'])) for item in report['checks'] if item['project'] != 'repository')
-        expected = [(project, command) for project in PROJECTS for command in (('composer', 'validate', '--strict'), ('composer', 'check'))]
+            ran.extend((item['project'], tuple(item['command'])) for item in report['checks']
+                       if item['project'] not in ('repository', 'swamp'))
+        expected = [(project, ('composer', 'check')) for project in PROJECTS]
         self.assertEqual(sorted(expected), sorted(ran))
 
     def test_gate_base_option_compares_with_the_given_commit(self):
@@ -434,7 +427,7 @@ fi
         self.assertTrue(report['passed'])
         self.assertFalse(report['committed'])
         self.assertNotEqual(git(self.root, 'rev-parse', 'HEAD^{tree}'), report['tree'])
-        self.assertEqual(10, len((self.common / 'calls').read_text().splitlines()))
+        self.assertEqual(5, len((self.common / 'calls').read_text().splitlines()))
         self.assertEqual(status, git(self.root, 'status', '--porcelain'))
 
     def test_generated_checks_follow_inputs_and_outputs_without_running_for_unrelated_paths(self):
@@ -460,12 +453,8 @@ fi
         for path in ('docs/reference/example.md', 'apps/web/src/App.tsx', 'apps/pi-server/src/index.ts'):
             with self.subTest(path=path):
                 self.assertNotIn('repository', dict(gate.selected_projects([path], self.root)))
-        profiles = dict(gate.selected_projects(['bin/check-classification-fakes'], self.root))
-        for project in PROJECTS:
-            self.assertEqual((('php', '../../bin/check-classification-fakes', 'tests'),), profiles[project])
         for paths, projects in ((['apps/agent/src/main.rs'], ['apps/agent']),
-                                (['apps/desktop/src/main.ts'], ['apps/desktop/src-tauri']),
-                                (['.github/workflows/ci.yml'], ['apps/agent', 'apps/desktop/src-tauri'])):
+                                (['apps/desktop/src/main.ts'], ['apps/desktop/src-tauri'])):
             profiles = dict(gate.selected_projects(paths, self.root))
             for project in projects:
                 self.assertEqual((('cargo', 'fmt', '--all', '--', '--check'),), profiles[project])

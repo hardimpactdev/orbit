@@ -76,14 +76,13 @@ intent, or manager state implicitly during role removal.
 
 `AGENTS.md`, `.ai/rules`, `.agents/skills`,
 `.codex/config.toml`, `boost.json`, and `config/boost.php` are required repository state.
-Run `composer guidance:check` before planning or editing. Missing, unreadable,
-empty, malformed, incomplete, or out-of-sync guidance is an incomplete checkout
-or bootstrap. Make no product-code edits while this check fails.
+Missing, unreadable, empty, malformed, incomplete, or out-of-sync guidance is an
+incomplete checkout or bootstrap. Make no product-code edits while it is.
 
 Restore only the affected tracked guidance path from the current branch. If the
 current branch does not contain it, replace the incomplete checkout. Then run
-`composer install` and `composer guidance:check`. After the check passes, run
-`composer guidance:update` to regenerate Boost-managed guidance and skills.
+`composer install` and `composer guidance:update` to regenerate Boost-managed
+guidance and skills.
 Boost cannot recreate deleted project-owned rules. Never silently continue when
 the required project guidance is incomplete.
 

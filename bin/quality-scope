@@ -192,7 +192,7 @@ function quality_scope_php_files(string $project, array $paths): array
 }
 
 /**
- * The paths that rector.php lists in withPaths(), relative to the project. bin/tooling-baseline reads them the same way.
+ * The paths that rector.php lists in withPaths(), relative to the project.
  *
  * @return list<string>
  */
