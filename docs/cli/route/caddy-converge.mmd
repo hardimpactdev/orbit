@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design: complete captured Caddy publication, official cfgmgmt file and pinned SSH argv.
+  %% Target design: complete captured Caddy publication, official cfgmgmt file and pinned SSH argv. docs/reference/caddy-configuration.md#native-publication.
   %% Tightened: flow-tighten rules 9, 14, 22. No result printer. The official file check feeds the native end assertion.
-  %% status: draft
+  %% status: reviewed
   %% command: none · Node Caddy build
   %% kind: route.caddy_converge
   autonumber
@@ -9,26 +9,37 @@ sequenceDiagram
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
   participant GW as Gateway<br/>Laravel
-  participant SW as Swamp<br/>Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>over SSH
-  Note over GW: Record the Caddy intent<br/>full public configuration
+  Note over GW: Render, record intent<br/>whole-Node Caddyfile
+  %%> When:
+  %%> - an operator runs `orbit:caddy-build NODE` on the Gateway; there is no CLI command
+  %%> Refused before a task starts:
+  %%> - the Node is unknown, the render has a problem (`caddy.render_failed`), or the Node has no SSH address, user or host key, or the control identity is missing (`swamp.ssh_target_unavailable`, `swamp.ssh_identity_unavailable`)
   GW->>SW: Start run, full intent<br/>operation-route-caddy
+  %%> What the operator gets:
+  %%> - the Operation ID at once; completion is read from the Operation
   Note over SW: Read the input
-  %%> Verify the captured content hash before contacting the Node.
+  %%> Why first:
+  %%> - the captured content hash is verified before the Node is contacted
   SW->>N: Check the connection
-  %%> Official SSH verifies the admitted host keys before cfgmgmt changes the file.
-  %%> Enrolled Nodes already have their pinned host keys in the worker's known_hosts.
   SW->>N: Write the Caddyfile
-  %%> Official cfgmgmt file converges /etc/caddy/Caddyfile, root:caddy, mode 0640, replacing a symlink.
+  %%> What it does:
+  %%> - converges `/etc/caddy/Caddyfile` to the rendered bytes, `root:caddy`, mode 0640, replacing a symlink
   SW->>N: Validate the Caddyfile
-  %%> One bounded SSH argv runs caddy validate as the caddy user.
+  %%> Why:
+  %%> - `caddy validate` runs as the `caddy` user; a failed validation skips the reload
   SW->>N: Reload Caddy
-  %%> One bounded SSH argv reloads the active service. A failed validation skips this step.
   SW->>N: Check the Caddyfile
-  %%> The official file check verifies content, owner and mode after reload.
   Note over SW: Check the publication
-  %%> Native assert requires a compliant file check. No printer or custom failure step.
-  SW-->>GW: Native terminal status<br/>captured publication
-  Note over GW: Record the version<br/>after the end check
-  %%> The Gateway reads one native history response and records ready, published and the captured content version.
-  %%> Failure keeps the captured Operation and file for a safe rerun, with no rollback.
+  alt every step succeeds
+    SW-->>GW: Native terminal status<br/>captured publication
+    Note over GW: Record the version<br/>after the end check
+  else a step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Record the failure
+    %%> On the Node:
+    %%> - the new bytes stay, also when the end check fails; there is no rollback
+    %%> Retry:
+    %%> - fix the cause and run `orbit:caddy-build NODE` again; a Caddyfile that fails validation needs the stored intent corrected first
+  end
