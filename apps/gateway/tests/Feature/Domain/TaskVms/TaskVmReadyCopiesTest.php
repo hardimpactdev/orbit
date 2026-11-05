@@ -165,3 +165,7 @@ it('refuses to project a save whose VM is no longer the admitted one', function 
 
     expect(readyCopiesRefusal(fn () => app(TaskVmReadyCopiesProjection::class)->input($operation)))->toBe('operation.execution_forbidden');
 })->group('ready-copies');
+
+it('registers the operator command that admits the save', function (): void {
+    expect(array_keys(Illuminate\Support\Facades\Artisan::all()))->toContain('task-vms:save-ready-copies');
+})->group('ready-copies');
