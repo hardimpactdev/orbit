@@ -94,7 +94,11 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `gateway.release` has a provisional 3,000 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A first success replaces it with a p95.
 
-A `tasks.script` has the budget of its history, like any kind without a fixed budget, unless its admission captures one in `input.run_budget_seconds`. Only the proof reset `bin/proof-fleet reset GROUP --from-ready` captures one: 360 seconds. The history of short scripts had set 120 seconds, which timed out the first real reset twice.
+A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. The proof reset `bin/proof-fleet reset GROUP --from-ready` captures 360 seconds. Every other script and every check captures the budget of its kind's history. The history of short scripts had set 120 seconds, which timed out the first real reset twice.
+
+The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
+
+The other task VM workflows (`task-workspace-source`, `task-vm-workspace`, `task-approved-push` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
 
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, `composer install` where lock files differ from the seed (31 to 35 seconds for five) and the memory snapshot `base` (about 19 seconds); 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
@@ -120,7 +124,9 @@ A projection that implements `DirectOperationTimeout` records its documented fai
 
 For an unbound timed-out admission, the existing exact lookup by Operation identity releases the hold only when Serve proves there is no matching run. A matching run binds without reopening the timeout; ambiguity or an unavailable lookup keeps the hold. A valid native terminal with `completedAt` at or before the deadline wins in the shared history read, even when its projection arrives late, so it causes no timeout or timeout alert.
 
-This is the Gateway's budget result, not proof that the native run or its descendants stopped. Cancellation still requires the native operator path; shared run credentials gain no admin authority. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
+This is the Gateway's budget result, not proof that the native run or its descendants stopped. At expiry the Gateway records `state.native_cancel_requested_at` once and queues `CancelNativeRun`, which asks Swamp's native cancellation endpoint to cancel the bound run, as an operator cancel does. Swamp stops the run; the Gateway only forwards the request, and the job tries again when Swamp does not confirm. An Operation with no bound run has nothing to cancel.
+
+The SSH step limits above end the steps of a run whose cancel did not arrive. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
 
 ## Native failure detail and live steps
 
@@ -334,6 +340,8 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
 A parent that waits for children passes the request to every nonterminal child in the same transaction.
+
+An Operation that the Gateway timed out is terminal, yet its native run may still be going. Cancelling it asks Swamp again to cancel the run. Ending a task group (`tasks:cancel`) asks Swamp to cancel the runs of the group's timed-out Operations before it destroys the VM, so no run keeps waiting on a VM that is gone.
 
 When a `tasks.publish` has started its push, cancellation keeps the group held until the push records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
 

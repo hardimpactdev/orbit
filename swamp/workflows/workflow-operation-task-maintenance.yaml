@@ -1,5 +1,6 @@
 id: 005e43f4-02fc-4bca-b43a-5e2456cb4258
 name: operation-task-maintenance
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
 description: Run captured package/routine maintenance as official SSH exec argv from
   Node 209, without a guest worker or shipped scripts.
 vaults: []
@@ -90,10 +91,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh_args
-        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -106,6 +107,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         okExitCodes: any
         argv:
         - git
@@ -125,11 +127,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - git
         - -c

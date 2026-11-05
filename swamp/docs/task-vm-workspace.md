@@ -2,7 +2,7 @@
 
 `task-vm-workspace` prepares an already reachable Task VM's captured checkout directory. Every step runs on Node209. Guest actions use official `@swamp/ssh`; the VM needs no Swamp binary, worker or worker token.
 
-The owning parent supplies its original `operation_id`, `node_id` and `kind`, plus `intent.task_vm_id`, `intent.checkout_path` and the full `intent.ssh_execution` map from `SwampSshExecutionInput::forNode`. The workspace path comes from the parent's managed apps/project/workspace capture. This child does not choose a filesystem layout or allocate a VM. Optional `group_id`, `instance_id` and `project_id` remain public context.
+The owning parent supplies its original `operation_id`, `node_id` and `kind`, plus `intent.task_vm_id`, `intent.checkout_path` and the full `intent.ssh_execution` map from `SwampSshExecutionInput::forNode`, whose `target.node_id` names the SSH behaviors of the VM. The workspace path comes from the parent's managed apps/project/workspace capture. This child does not choose a filesystem layout or allocate a VM. Optional `group_id`, `instance_id` and `project_id` remain public context.
 
 The child history locator is job `workspace`, step `result`. Its typed output is native child data, not a standalone Gateway admission. The owning root keeps its own terminal stdout/result selector. The public metadata step checks the input. The official SSH steps check the managed account, create the directory as that account, then inspect the directory and return `{task_vm_id,checkout_path,ready:true}`. A failed connection or directory action fails normally; resume uses native workflow resume. No custom retry, lease, supervisor or lock is added.
 

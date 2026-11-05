@@ -55,6 +55,7 @@ sequenceDiagram
   SW->>N: execute
   %%> What it does:
   %%> - Run the tracked script with literal arguments; keep stdout and stderr in private files.
+  %%> - Every SSH step ends at the run budget that the admission captured, so a step against a VM that is gone ends.
   SW->>N: output-copy
   %%> What it does:
   %%> - Download private script output with official SSH copy.
@@ -96,6 +97,13 @@ sequenceDiagram
     %%> - the Operation fails with the native refusal or transport error code
     %%> Retry:
     %%> - inspect the failed Operation before admitting a fresh script run
+  else run budget ended
+    GW->>SW: Cancel the run<br/>native cancel request
+    %%> What it does:
+    %%> - the Gateway fails the Operation with operation.timed_out and asks Swamp to cancel the bound run
+    %%> - ending the task group asks again for a run that outlived its timeout, before the VM is destroyed
+    %%> Result:
+    %%> - Swamp stops the run and releases its SSH behavior lock; the behavior is named by the VM's Node id, so the next VM never shares it
   end
   loop until terminal
     CLI->>GW: operation:show<br/>Operation number

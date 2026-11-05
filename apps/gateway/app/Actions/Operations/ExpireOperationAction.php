@@ -6,13 +6,14 @@ namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-/** Records Gateway budget expiry and an operator cancel request, never native termination. */
+/** Records Gateway budget expiry and a cancel request, and asks Swamp to stop the bound run; Swamp ends it. */
 final readonly class ExpireOperationAction
 {
     public function execute(Operation $operation): Operation
@@ -51,6 +52,8 @@ final readonly class ExpireOperationAction
             if ($projection instanceof DirectOperationTimeout) {
                 $projection->timedOut($current);
             }
+            // A run that outlives its Operation holds its behavior locks and its SSH session; a dead VM would hold them forever.
+            app(NativeRunCancellation::class)->request($current);
 
             return $current;
         });

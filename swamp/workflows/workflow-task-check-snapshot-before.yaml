@@ -59,10 +59,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -75,6 +75,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + inputs.run_id + "/index" }}
@@ -89,10 +90,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -105,6 +106,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + inputs.run_id + "/index" }}
@@ -123,10 +125,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -139,6 +141,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + inputs.run_id + "/index" }}
@@ -156,10 +159,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -172,6 +175,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - git
         - -C

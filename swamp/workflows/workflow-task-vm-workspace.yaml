@@ -1,5 +1,6 @@
 id: 1b007f31-5cfe-4dc3-bb6e-1fa9bcda3738
 name: task-vm-workspace
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
 description: Prepare the captured directory on an already reachable plain Task VM through official SSH from209.
 vaults: []
 inputs:
@@ -44,10 +45,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -60,6 +61,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/id
         - -un
@@ -72,11 +74,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/mkdir
         - -p
@@ -91,11 +94,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-workspace-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/python3
         - -B

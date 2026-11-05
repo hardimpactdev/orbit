@@ -1,5 +1,6 @@
 id: 97cafe64-2c19-4eec-9087-b65fefa3a22c
 name: task-approved-push
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
 description: Push one approved task commit to its task branch without force; the VM bundles it, 209 pushes it with the admitted token.
 vaults:
 - orbit-control-inputs
@@ -53,10 +54,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh_args
-        name: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -69,6 +70,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - git
         - -C
@@ -82,11 +84,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - git
         - -C
@@ -104,11 +107,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         src: ${{ "/tmp/orbit-task-approved-" + run.id + ".bundle" }}
         dst: ${{ "/tmp/orbit-task-approved-" + run.id + "-local.bundle" }}
         direction: from
@@ -186,11 +190,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-approved-push-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - rm
         - -f

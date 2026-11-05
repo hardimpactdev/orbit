@@ -36,8 +36,14 @@ it('gives a script its captured budget and every other script the budget of the 
     expect(OperationRunBudgets::seconds($other))->toBe(120)->and(OperationRunBudgets::seconds($reset))->toBe(360);
 });
 
-it('ignores a captured budget on any other kind', function (): void {
-    $operation = scriptOperation(['run_budget_seconds' => 5], 'tasks.check');
+it('ignores a captured budget on a kind that does not capture one', function (): void {
+    $operation = scriptOperation(['run_budget_seconds' => 5], 'tasks.publish');
 
     expect(OperationRunBudgets::seconds($operation))->not->toBe(5);
+});
+
+it('captures the budget of every script and check for the step time limits of their workflows', function (): void {
+    expect(OperationRunBudgets::scriptBudget('bin/proof-fleet', ['reset', '3246', '--from-ready']))->toBe(360)
+        ->and(OperationRunBudgets::scriptBudget('scripts/dependencies', ['routine']))->toBe(1800)
+        ->and(OperationRunBudgets::seconds(scriptOperation(['run_budget_seconds' => 90], 'tasks.check')))->toBe(90);
 });

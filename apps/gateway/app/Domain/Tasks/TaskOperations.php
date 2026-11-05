@@ -8,6 +8,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -99,6 +100,9 @@ final readonly class TaskOperations
 
     public function cancelOpen(Task $group, ?int $subtask = null): void
     {
+        if ($subtask === null) {
+            $this->cancelTimedOutRuns($group);
+        }
         $operation = $this->holders($group)
             ->when($subtask !== null, fn ($query) => $query->where('input->subtask', $subtask))->first();
         if ($operation instanceof Operation) {
@@ -108,6 +112,23 @@ final readonly class TaskOperations
                 throw new ResourceOperationException('operation.target_busy', 'The task publish job must finish before this group can end.', 409, details: ['operation_id' => $operation->id]);
             }
         }
+    }
+
+    /**
+     * An Operation the Gateway timed out is terminal, so it holds no group, yet its native run may still be going and holds
+     * the SSH session of a VM that this ending is about to destroy. Ask Swamp to stop it; Swamp ends the run.
+     */
+    private function cancelTimedOutRuns(Task $group): void
+    {
+        $cancellation = app(NativeRunCancellation::class);
+        Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')
+            ->whereIn('kind', array_keys(app(DirectOperation::class)->definitions()))
+            ->each(function (Operation $operation) use ($cancellation): void {
+                if ($cancellation->outlivesTimeout($operation)) {
+                    $cancellation->request($operation);
+                }
+            });
     }
 
     /** @return Builder<Operation> */

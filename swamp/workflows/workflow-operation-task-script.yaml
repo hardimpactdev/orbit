@@ -64,10 +64,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh_args
-        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -80,6 +80,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         okExitCodes: any
         argv:
         - git
@@ -98,11 +99,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
@@ -120,11 +122,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
@@ -142,11 +145,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
@@ -163,11 +167,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - git
         - -C
@@ -201,13 +206,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
         okExitCodes: any
-        timeoutSec: 3600
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv: ${{ steps.prepare.outputs.argv }}
     dependsOn:
     - step: gate
@@ -219,7 +224,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *ssh_args
       inputs:
@@ -241,11 +246,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
@@ -267,11 +273,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
@@ -293,11 +300,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - env
         - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
@@ -318,11 +326,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: ${{ inputs.intent.run_budget_seconds }}
         argv:
         - git
         - -C
@@ -370,11 +379,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 60
         argv:
         - rm
         - -rf

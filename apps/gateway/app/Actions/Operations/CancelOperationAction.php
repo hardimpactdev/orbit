@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\NativeOperationProjection;
+use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -14,7 +14,7 @@ use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-/** Cancels unstarted intent; a bound native workflow owns its terminal result. */
+/** Cancels unstarted intent; a bound native workflow owns its terminal result, and Swamp stops it. */
 final readonly class CancelOperationAction
 {
     public function __construct(private OperationStore $store) {}
@@ -42,10 +42,12 @@ final readonly class CancelOperationAction
             app(ProofRunContinuation::class)->cancelled($operation);
         }
         if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
-            $projection = app(DirectOperation::class)->projection($operation);
-            if ($projection instanceof NativeOperationProjection && $projection->native($operation)) {
+            if (DirectOperation::owns($operation) && app(DirectOperation::class)->usesNativeTerminal($operation)) {
                 app(CancelSwampRun::class)->execute($operation);
             }
+        } elseif (app(NativeRunCancellation::class)->outlivesTimeout($operation)) {
+            // The Gateway ended it at its budget; the native run may still be going. Ask Swamp again.
+            app(NativeRunCancellation::class)->request($operation, again: true);
         }
 
         return $operation;

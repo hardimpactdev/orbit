@@ -37,10 +37,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
