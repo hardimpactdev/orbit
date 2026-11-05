@@ -1,9 +1,8 @@
 ---
 title: "orbit instance:websocket:add"
 sidebarTitle: "instance:websocket:add"
+description: "Add a Reverb app on an Instance and write its credentials into the Instance's stored environment configuration. An Instance holds one app."
 ---
-
-Add a [Reverb app](/reference/websocket-apps) on an Instance and write its credentials into the stored environment configuration. An Instance has one app. Adding another app replaces it.
 
 ```bash
 orbit instance:websocket:add <app> --instance=SELECTOR [--public] [--json]
@@ -11,17 +10,47 @@ orbit instance:websocket:add <app> --instance=SELECTOR [--public] [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `app` | yes | App name from `websocket:app:list`. |
+| `app` | yes | Name of a [Reverb app](/reference/websocket-apps), as `websocket:app:list` shows it. A terminal asks for it when it is omitted. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
-| `--public` | omitted | Publish on the existing public app Route and project its domain. Requires a production Laravel Instance with no `/app` or `/apps` route collisions. |
-
-The Gateway writes `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. The response names the keys and never returns their values. The Gateway's own app, `gateway`, returns `websocket.app_reserved`.
+| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. A terminal asks for it when it is omitted. |
+| `--public` | off | Publish the app on the Instance's existing public app Route and write that Route's domain as the host. Needs a production Laravel Instance with an active public app Route that has a live public edge and no unfinished transition. |
+| `--json` | off | Print the result as JSON. |
 
 ```bash
 orbit instance:websocket:add hauzer --instance=12
+orbit instance:websocket:add hauzer --instance=12 --public
 ```
 
-With `--public`, the Gateway also rebuilds Caddy on the existing app Route. Reattaching the same app without the flag preserves its public Route. See [public Reverb](/reference/websocket-apps#publish-on-the-existing-public-app-route). Add changes the stored environment; it does not write the workload `.env`. Run `orbit env:sync --instance=SELECTOR` to install it in the workload `.env`.
+In a terminal, an omitted app is chosen from the registered apps, and an omitted Instance from an interactive list. A noninteractive or `--json` call without them is refused with `websocket.name_required` or `websocket.instance_required`, and sends no request.
+
+The command writes `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT` and `REVERB_SCHEME` into the Instance's stored configuration. It prints the key names and never a value. An Instance holds one app, so adding another app replaces the first one's values, and the public Reverb paths of the app it replaces are withdrawn. Without `--public`, `REVERB_HOST` is `reverb.orbit`; port 443 and scheme `https` are the same in both modes. Adding the app the Instance already holds changes nothing and is skipped: it succeeds with `Skipped — nothing to change (websocket.attachment_unchanged)` and `Changed: false`. The Gateway's own app, `gateway`, cannot be added (`websocket.app_reserved`). See [Add an app on an Instance](/reference/websocket-apps#add-an-app-on-an-instance).
+
+A private add changes only the Instance's stored configuration. A change that touches a public Route rebuilds that Route's Caddy sites on its serving Nodes before the call returns. No task starts. Run `orbit env:sync --instance=SELECTOR` to write the keys to the workload `.env`. The caller needs an access grant to the Instance's Node.
+
+With `--public`, the app is published on the Instance's public app Route, `REVERB_HOST` is that Route's domain with port 443 and scheme `https`, and the Gateway rebuilds the Route's Caddy sites. Adding the same app again without `--public` keeps the public choice and checks the Route again, so the refusals below also apply. To go back to the private endpoint, remove the app and add it again without `--public`. The public choice is refused when the Instance is not a production Laravel Instance with an active public app Route (`websocket.public_route_invalid`), when the Route already publishes another app (`websocket.route_app_conflict`), when the application declares routes under `/app` or `/apps` (`websocket.route_collision`), or when its routes cannot be inspected (`websocket.route_inspection_failed`). When the Caddy rebuild fails, the stored change stays and the call fails with `websocket.route_publication_failed`; repeat the add, or run `orbit node:converge NODE --force` on each serving Node. See [Publish on the existing public app Route](/reference/websocket-apps#publish-on-the-existing-public-app-route).
+
+The Instance must be active, and its placement and Route must be usable (`env.owner_unavailable`). An Instance without a recorded source profile is refused with `instance.source_profile_missing`, and a stored configuration that would be invalid with the new keys with `env.configuration_invalid`.
+
+The command prints a detail titled `WebSocket app [<name>] added to Instance [<id>].` with Instance ID, Name, Keys (the seven key names), Operation (`attach`), Changed, Stored keys (the number of keys the Instance holds afterwards), `Workload file: unchanged` and the request ID. With `--json`, stdout holds `instance_id`, `name`, `keys`, `operation`, `changed`, `key_count` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `websocket.name_required` | The app name is missing in a call that cannot prompt. |
+| `websocket.name_invalid` | The app name is not a valid app name. |
+| `websocket.instance_required` | The Instance is missing in a call that cannot prompt. |
+| `input.cancelled` | You pressed Ctrl-C, the input ended, or you cancelled a list. |
+| `http.404` | The Instance or the app is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
+| `websocket.app_reserved` | The app is the Gateway's own app. |
+| `env.owner_unavailable` | The Instance is not active, or its placement or Route is not usable. |
+| `instance.source_profile_missing` | The Instance has no recorded source profile. |
+| `env.configuration_invalid` | The stored configuration with the new keys would be invalid. |
+| `websocket.public_route_invalid` | `--public` needs an active public app Route on a production Laravel Instance. |
+| `websocket.route_app_conflict` | The Route already publishes another Reverb app. |
+| `websocket.route_collision` | The application declares Laravel routes under `/app` or `/apps`. |
+| `websocket.route_inspection_failed` | The current Laravel routes could not be inspected for collisions. |
+| `websocket.route_publication_failed` | The stored change was saved, but the Caddy rebuild of the public Route failed. Retry the add, or run `orbit node:converge NODE --force` on each serving Node. |
