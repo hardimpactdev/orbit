@@ -39,15 +39,10 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations, TaskVmSlotReleaseIntent $intent): void
     {
+        // A slot of an ended task: the ending run first when the task still owns its workspace, otherwise the release.
         foreach (TaskVm::query()->whereNotNull('slot')->whereNotNull('group_id')->get() as $slot) {
-            if (! $intent->sweepable($slot)) {
-                continue;
-            }
-            try {
-                app(StartTaskVmSlotReleaseAction::class)->execute($slot->id);
-            } catch (ResourceOperationException $refused) {
-                // Admission refused this slot; the next sweep asks again.
-                Log::warning('A task VM slot was not released.', ['task_vm_id' => $slot->id, 'error_code' => $refused->errorCode, 'details' => $refused->details]);
+            if ($intent->sweepable($slot) || $intent->endable($slot)) {
+                app(StartTaskVmSlotReleaseAction::class)->admit($slot->id);
             }
         }
         foreach (TaskVm::query()->whereNull('slot')->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {

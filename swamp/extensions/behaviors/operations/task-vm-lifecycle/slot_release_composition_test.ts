@@ -46,6 +46,6 @@ Deno.test("tasks.cancel does not destroy a slot, and its end check no longer ask
   const text = Deno.readTextFileSync(`${ROOT}/workflows/workflow-operation-task-cancel.yaml`);
   const steps = read("operation-task-cancel").jobs.flatMap((job) => job.steps);
   const destroy = steps.find((step) => step.name === "Destroy the task VM")!;
-  assert(destroy.guard!.includes("inputs.intent.slot"));
-  assert(text.includes("TASK_VM: ${{ string(inputs.intent.task_vm_id != null && !inputs.intent.slot) }}"));
+  assert(destroy.guard!.includes("inputs.intent.?slot.orValue(false)"));
+  assert(text.includes("TASK_VM: ${{ string(inputs.intent.task_vm_id != null && !inputs.intent.?slot.orValue(false)) }}"));
 });

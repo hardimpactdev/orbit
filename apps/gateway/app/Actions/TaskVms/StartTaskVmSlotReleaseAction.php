@@ -8,9 +8,11 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\TaskVms\TaskVmSlotReleaseIntent;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -50,17 +52,27 @@ final readonly class StartTaskVmSlotReleaseAction
     }
 
     /**
-     * Starts the release once the caller's transaction commits, for a task that just ended. A refused or failed start is
-     * reported and leaves the slot as the caller recorded it (`destroying` or `failed`); the host sweep admits it again.
+     * Ends the slot's task once the caller's transaction commits, for a task that just ended. A task that still owns its
+     * workspace gets its ending run first (`tasks.cancel`: push, Route withdrawal, teardown), which admits the release
+     * when it succeeds. Any other slot is released now. A refused or failed start is reported and leaves the slot as the
+     * caller recorded it; the host sweep admits it again.
      */
     public function afterCommit(int $taskVmId): void
     {
-        DB::afterCommit(function () use ($taskVmId): void {
-            try {
+        DB::afterCommit(fn () => $this->admit($taskVmId));
+    }
+
+    public function admit(int $taskVmId): void
+    {
+        try {
+            $vm = TaskVm::query()->with('group')->find($taskVmId);
+            if ($vm instanceof TaskVm && $vm->group instanceof Task && $this->intent->endable($vm)) {
+                app(TaskCancelIntent::class)->start($vm->group, 'task-vm', null);
+            } else {
                 $this->execute($taskVmId);
-            } catch (Throwable $error) {
-                report($error);
             }
-        });
+        } catch (Throwable $error) {
+            report($error);
+        }
     }
 }

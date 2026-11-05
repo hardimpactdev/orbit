@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\TaskVm;
 
 /**
@@ -25,14 +27,24 @@ final readonly class TaskVmSlotReleaseIntent
     /**
      * Whether a task still holds the slot: its group is open, or it ended with its workspace still in place. Such a
      * workspace needs the ending run first (push of approved work, Route withdrawal, Project teardown in the guest). A
-     * failed group never got past provisioning, so its workspace has nothing to tear down.
+     * failed claim can have published its Route, so it needs that run too.
      */
     public function held(TaskVm $vm): bool
     {
         $group = $vm->group;
 
-        return $group === null || ! in_array($group->status, TaskGroupStatus::endedStatuses(), true)
-            || ($group->taskable_id !== null && $group->status !== TaskGroupStatus::Failed);
+        return $group === null || ! in_array($group->status, TaskGroupStatus::endedStatuses(), true) || $group->taskable_id !== null;
+    }
+
+    /**
+     * Whether the slot's task ended but still owns its workspace. The ending run (`tasks.cancel`) removes the workspace
+     * and then admits the release, so such a slot is ended, not released.
+     */
+    public function endable(TaskVm $vm): bool
+    {
+        $group = $vm->group;
+
+        return $this->enrolled($vm) && $group !== null && in_array($group->status, TaskGroupStatus::endedStatuses(), true) && $group->taskable_id !== null;
     }
 
     /**
@@ -41,7 +53,12 @@ final readonly class TaskVmSlotReleaseIntent
      */
     public function sweepable(TaskVm $vm): bool
     {
-        return $vm->slot !== null && $vm->identity_revision !== null && $vm->group_id !== null && in_array($vm->state, self::Releasable, true) && ! $this->held($vm);
+        return $this->enrolled($vm) && ! $this->held($vm);
+    }
+
+    private function enrolled(TaskVm $vm): bool
+    {
+        return $vm->slot !== null && $vm->identity_revision !== null && $vm->group_id !== null && in_array($vm->state, self::Releasable, true);
     }
 
     /** @return array<string,mixed> */
@@ -54,6 +71,14 @@ final readonly class TaskVmSlotReleaseIntent
         }
         if ($this->held($vm)) {
             throw new ResourceOperationException('task_vm.slot_held', 'A task still holds this slot. Release it after the task ends.', 409);
+        }
+        // The ending run of the task, or another slot Operation, must settle first: the release deletes what they work on.
+        $busy = Operation::query()->whereNotIn('status', OperationStatus::terminalValues())->where(static fn ($q) => $q
+            ->where(static fn ($q) => $q->where('target_type', 'task_vm')->where('target_id', $vm->id))
+            ->orWhere(static fn ($q) => $q->where('target_type', 'task_group')->where('target_id', $vm->group_id))
+            ->orWhere(static fn ($q) => $q->where('target_type', 'node')->where('target_id', $vm->node_id)))->exists();
+        if ($busy) {
+            throw new ResourceOperationException('operation.target_busy', 'The slot, its task group or its Node has an Operation that must settle first.', 409);
         }
         $location = $this->settings->host($host->id);
 

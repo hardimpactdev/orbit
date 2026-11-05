@@ -569,7 +569,7 @@ Then Swamp runs the child workflow `task-vm-slot-claim` in the task's own `tasks
    The step is skipped while `task_vms.nested_reset` is off, which is the default.
    While the setting is on, the claim is refused at admission, so no slot is taken; a placeholder workflow would fail the run otherwise.
 
-The slot becomes `ready` when the run succeeded and the slot Node has reported a `host` fact since `claimed_at`. If the run succeeded and no report arrived, the task fails with `task_vm.slot_not_reporting`. A failed step fails the task, and the [release](#release) of the slot starts at once. It deletes the half-made VM and its seed clone, and the slot becomes `free`. If the release cannot start or fails, the slot stays `failed` or `destroying`, and the host sweep releases it again.
+The slot becomes `ready` when the run succeeded and the slot Node has reported a `host` fact since `claimed_at`. If the run succeeded and no report arrived, the task fails with `task_vm.slot_not_reporting`. A failed step fails the task, and the task ends like any other: the ending run tears its workspace down, and the [release](#release) of the slot follows. The release deletes the half-made VM and its seed clone, and the slot becomes `free`. If a run cannot start or fails, the slot stays `failed` or `destroying`, and the host sweep tries again.
 
 Enrolling the slot again clears the task from it. A task that ends does not destroy its slot: see the [release](#release).
 
@@ -581,7 +581,7 @@ When all slots of all listed hosts are taken, and no other host has room, the ta
 
 When a task on a slot ends, the slot goes back to `free` with its identity kept. A task ends by completion, by cancel, by the cleanup after its merge, or by a failed claim. Nothing destroys a slot: `task_vm.destroy` refuses one with `task_vm.slot_not_destroyable`.
 
-The release has two parts. For a task that ran, the ending run (`tasks.cancel` or `tasks.maintenance_finish`) comes first. It pushes approved work, withdraws the workspace Route and runs the Project's teardown steps in the guest, as it does for any task VM. It does not destroy the VM. After it succeeded, and its workspace Instance and Route records are gone, the Gateway admits the `task_vm.slot_release` kind for the slot. A failed claim has no workspace worth tearing down, so its release starts as soon as the claim fails.
+The release has two parts. For a task that ran, the ending run (`tasks.cancel` or `tasks.maintenance_finish`) comes first. It pushes approved work, withdraws the workspace Route and runs the Project's teardown steps in the guest, as it does for any task VM. It does not destroy the VM. After it succeeded, and its workspace Instance and Route records are gone, the Gateway admits the `task_vm.slot_release` kind for the slot. A failed claim starts the same ending run as soon as the claim fails, because it can have published its Route.
 
 The `task_vm.slot_release` kind then runs in four steps. It records the VM name and the seed clone name, and the slot becomes `destroying`, so no claim can take it.
 
@@ -607,7 +607,7 @@ If a host step fails or the run expires, the slot stays `destroying` with the er
 
 The task VM host sweep runs every thirty minutes. It releases a slot again when the slot is `provisioning`, `ready`, `parked`, `failed` or `destroying`, its task has ended, and the task does not own a workspace. The forced deletes make a repeated release safe.
 
-A task that ended with its workspace still in place waits for the ending run first, because only that run can push the approved work and tear the workspace down. A failed claim never got past provisioning, so it needs no ending run. A slot with no recorded task is `free` or still enrolling, and has nothing to release.
+A task that ended with its workspace still in place, such as a failed claim, gets its ending run from the sweep first. Only that run can push the approved work, withdraw the Route and tear the workspace down. The release waits while an Operation of the task group, the slot or its Node is open. A slot with no recorded task is `free` or still enrolling, and has nothing to release.
 
 #### Network and firewall
 

@@ -351,23 +351,28 @@ it('makes the slot ready and the task running when the new VM has reported', fun
 it('fails the claim and the slot when the new VM never reported', function (): void {
     [$vm, $operation, $group] = claimedProvision();
 
+    app(TaskExtensionState::class)->enable();
+
     app(TaskProvisionProjection::class)->apply($operation, claimRun($vm, 'succeeded'));
 
-    // The failed claim frees its slot: the release is admitted, so the slot is `destroying` and no claim takes it.
-    expect($vm->refresh()->state)->toBe(TaskVmState::Destroying);
+    // The failed claim ends like any task: its ending run comes first, and the release follows that run. The slot stays failed meanwhile.
+    expect($vm->refresh()->state)->toBe(TaskVmState::Failed);
     expect($vm->error_code)->toBe('task_vm.slot_not_reporting');
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
     expect($operation->refresh()->status->value)->toBe('failed');
-    expect(Operation::query()->where('kind', 'task_vm.slot_release')->where('target_id', $vm->id)->count())->toBe(1);
+    $cancel = Operation::query()->where('kind', 'tasks.cancel')->where('target_id', $group->id)->sole();
+    expect($cancel->input)->toMatchArray(['slot' => true, 'task_vm_id' => $vm->id]);
 })->group('slots');
 
-it('releases the slot of a failed claim, and no claim can take it meanwhile', function (): void {
+it('ends the task of a failed claim before its slot is released, and no claim can take the slot meanwhile', function (): void {
     [$vm, $operation, $group] = claimedProvision();
+    app(TaskExtensionState::class)->enable();
 
     app(TaskProvisionProjection::class)->apply($operation, [...claimRun($vm, 'failed'), 'result' => ['receipt' => ['result_json' => json_encode(['error_code' => 'tasks.provision_failed', 'failed_step' => 'vm'])]], 'error_code' => 'operation.native_failed']);
 
-    expect($vm->refresh()->state)->toBe(TaskVmState::Destroying);
+    expect($vm->refresh()->state)->toBe(TaskVmState::Failed);
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+    expect(Operation::query()->where('kind', 'tasks.cancel')->where('target_id', $group->id)->count())->toBe(1);
     expect(fn () => app(AllocateTaskVmAction::class)->capture(claimGroup()))->toThrow(TaskCapacityException::class);
 })->group('slots');
 
@@ -462,10 +467,21 @@ it('refuses to release a slot that a task holds, a free slot, and a slot that is
     $group->fill(['status' => TaskGroupStatus::Completed])->save();
     expect($code())->toBe('task_vm.slot_held');
     expect($intent->sweepable($vm))->toBeFalse();
-    // A failed claim never got past provisioning, so its workspace has nothing to tear down.
+    // A failed claim can have published its Route, so it needs the ending run too: the sweep ends it, then releases.
     $group->update(['status' => TaskGroupStatus::Failed]);
+    expect($code())->toBe('task_vm.slot_held');
+    expect([$intent->sweepable($vm), $intent->endable($vm)])->toBe([false, true]);
+    // Once the ending run removed the workspace, the slot can be released.
+    $group->taskable()->dissociate();
+    $group->save();
     expect($code())->toBeNull();
-    expect($intent->sweepable($vm))->toBeTrue();
+    expect([$intent->sweepable($vm), $intent->endable($vm)])->toBe([true, false]);
+    // An Operation of the task group, the slot or its Node must settle first.
+    $running = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $vm->host_node_id,
+        'status' => 'running', 'sequence' => 1, 'attempts' => 1, 'input' => []]);
+    expect($code())->toBe('operation.target_busy');
+    $running->update(['status' => 'succeeded']);
+    expect($code())->toBeNull();
     // A free slot and an enrolling slot (no task) have nothing to release.
     $vm->update(['state' => TaskVmState::Free, 'group_id' => null]);
     expect($code())->toBe('task_vm.slot_invalid');
@@ -496,12 +512,11 @@ it('admits one release per slot, marks the slot destroying, and leaves a free sl
 
 it('frees the slot after a passed end check: scrubs the facts and the workspace records, keeps the identity, and clears the task', function (): void {
     [$vm, $group, $instance] = endedSlot();
-    // A failed claim: the group ended `failed` and still names its workspace.
-    $group->taskable()->associate($instance);
-    $group->fill(['status' => TaskGroupStatus::Failed])->save();
-    $other = TaskVm::query()->where('slot', 1)->whereKeyNot($vm->id)->first();
     $vm->update(['state' => TaskVmState::Destroying]);
     $operation = releaseOperation($vm);
+    // A group that ended `failed` can still name its removed workspace.
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Failed])->save();
     $keys = [$vm->node_id, $vm->pi_token, $vm->model_key, $vm->identity_revision, $vm->wireguard_ip, $vm->bridge_address, $vm->bridge_mac, $vm->node->ssh_host_key];
 
     app(TaskVmSlotReleaseProjection::class)->apply($operation, releaseRun('succeeded'));
@@ -521,7 +536,6 @@ it('frees the slot after a passed end check: scrubs the facts and the workspace 
     // The Node stays active with its role and its pi-server Process.
     expect(Process::query()->where('owner_type', Node::class)->where('owner_id', $vm->node_id)->pluck('name')->all())->toBe(['pi-server']);
     expect($vm->node->status->value)->toBe('active');
-    expect($other)->toBeNull();
     // The group keeps its status, and no group points at the removed workspace.
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
     expect(Task::query()->withoutGlobalScopes()->whereNotNull('taskable_id')->count())->toBe(0);
