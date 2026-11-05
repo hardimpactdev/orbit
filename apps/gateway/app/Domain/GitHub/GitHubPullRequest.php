@@ -11,6 +11,8 @@ final readonly class GitHubPullRequest
 {
     /**
      * @param  bool|null  $mergeable  null while GitHub still computes whether the pull request merges
+     * @param  bool  $draft  whether the pull request is still a draft
+     * @param  string|null  $authorLogin  the GitHub login that opened the pull request
      */
     public function __construct(
         public GitHubPullRequestState $state,
@@ -21,6 +23,8 @@ final readonly class GitHubPullRequest
         public ?string $body = null,
         public ?string $mergeCommitSha = null,
         public ?string $mergedAt = null,
+        public bool $draft = false,
+        public ?string $authorLogin = null,
     ) {}
 
     /** Whether GitHub reports that the pull request conflicts with its base branch. */

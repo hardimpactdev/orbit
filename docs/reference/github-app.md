@@ -185,6 +185,8 @@ GitHub refuses a token that asks for a permission the installation has not accep
 
 For an external group, [`tasks.publish`](/reference/tasks#publish-an-external-group) uses the same Gateway push and token. Its optional pull request step looks for an open pull request before creating one or updating its title and body. It requests no reviewers.
 
+For an external group, the [ready and merge steps](/reference/tasks#ready-and-merge-a-task-pull-request) read the pull request, its checks and its reviews with read-only tokens (`pull_requests: read`, `checks: read`). The read includes the draft flag and the author login. Each step then mints one write token for the one repository: `pull_requests: write` for the ready step, and `contents: write` with `pull_requests: write` for the merge step. The Gateway stores the token in the vault. Swamp calls GitHub with it and revokes it at the end of the run. The merge step gets a fresh token because an approval can take longer than the hour that a token lives.
+
 ## How Orbit watches a task pull request
 
 Each scheduler tick reads a settling group's pull request. While it is open, the Gateway also asks for a token with only `checks: read` and lists the check runs of the head commit, at most once a minute. With a non-empty repository entry in `orbit.tasks.github_reviewers`, it reads submitted GitHub reviews through a separate token with only `pull_requests: read`. This permission is already covered by the App's `Pull requests: write` grant; the registration, installation permissions, and webhook policy do not change. The watcher never uses the maintainer's CLI identity. [Fix a settling pull request](/reference/tasks#execution-ownership) describes conflicts, failed checks, and trusted requested changes.

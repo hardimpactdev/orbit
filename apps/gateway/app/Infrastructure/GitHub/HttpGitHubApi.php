@@ -481,6 +481,8 @@ final readonly class HttpGitHubApi implements GitHubApi
             body: is_string($response->json('body')) ? $response->json('body') : null,
             mergeCommitSha: $this->text($response->json('merge_commit_sha')),
             mergedAt: $this->text($response->json('merged_at')),
+            draft: $response->json('draft') === true,
+            authorLogin: $this->text($response->json('user.login')),
         );
     }
 

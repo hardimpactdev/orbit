@@ -2,12 +2,12 @@
 title: "Tasks"
 description: "How the optional Gateway Tasks extension runs tasks. It covers the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
-  - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/swamp.php}"
+  - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/{swamp,task_pull_requests}.php}"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
-  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
+  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**,proof-reaper/**},swamp/workflows/{workflow-proof-reaper,workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**,proof-reaper/**},swamp/workflows/{workflow-proof-reaper,workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields}.php"
 ---
@@ -970,6 +970,47 @@ Thread observations retain usage and cost. Workspace observations retain line ch
 ### Thread token metrics
 
 The agent driver reports input, output and cached token usage on each thread. Group metrics aggregate those observations.
+
+## Ready and merge a task pull request
+
+**Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and mints; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `tasks-pr-ready` and `tasks-pr-merge`. Both need Gateway access, as the other task operations do.
+
+Both steps hold the group execution lock and refuse a second task on the group with `operation.target_busy`. A step that fails records an error code and changes no group state. A repeat with a new key starts a new task with a new token. The charts [`tasks/pr-ready`](/cli/tasks/pr-ready) and [`tasks/pr-merge`](/cli/tasks/pr-merge) show the steps.
+
+### Ready step
+
+`POST /api/v1/task-groups/{group}/pr-ready` takes `{head_sha, mode}` and an `Idempotency-Key`. `mode` is `manual` or `automatic`. Admission reads GitHub with read-only App tokens and requires:
+
+- an open external group whose published pull request is open, with a head that is exactly `head_sha`
+- a pass of the Project's merge check, normally `Required checks`, on that head
+- in manual mode, a pull request whose author is not the reviewer
+
+The check follows the rule of the [review-and-merge gate](#handoff-ci): a missing, pending or failed run refuses. GitHub refuses a review request from the author of the pull request, so the author check refuses early.
+
+The Gateway then mints one token with only `pull_requests: write`, stores it in the vault as `pr-ready-write-<uuid>` and records `tasks.pr_ready` with the full intent.
+
+Swamp takes the pull request out of draft with the GraphQL `markPullRequestReadyForReview` mutation. In manual mode it also requests the review of `task_pull_requests.reviewer` (`nckrtl`). If the pull request is already out of draft, Swamp skips the first step, so a rerun after a refused review request is safe. The result holds the pull request number, head, draft flag and requested reviewers.
+
+### Merge step
+
+`POST /api/v1/task-groups/{group}/pr-merge` takes `{head_sha}` and an `Idempotency-Key`. Admission makes the same reads as the ready step and requires the pull request to be out of draft. It then checks the manual gate.
+
+The gate is the reviewer's latest review that approves, requests changes or is dismissed. It passes only when that review is an approval whose commit is exactly `head_sha`. A comment changes no decision, and an approval of an older head does not count. A failed gate refuses with `tasks_pr.approval_missing`, and `error.details.state` is `waiting`, `changes_requested` or `head_moved`. The Gateway has no webhooks, so a caller that polls the command sees the approval. A refusal starts no task.
+
+After the gate, the Gateway mints a new token with `contents: write` and `pull_requests: write`. An approval can take longer than the hour that a token lives, so the merge never reuses the ready token. The token goes to the vault as `pr-merge-write-<uuid>` and the Gateway records `tasks.pr_merge`.
+
+Swamp reads the pull request again, refuses a moved head, and merges with a squash merge that carries the expected `sha`. If the head moved or the pull request conflicts with the base branch, the merge is refused and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
+
+### Not built
+
+These parts of stage 4 do not exist yet:
+
+- The automatic gate: a fresh self-review agent with at most 3 review rounds.
+- The continuation that starts the merge when the approval arrives.
+- An `orbit` command for each step, and a proof case for each step.
+- Pull requests that the Orbit App opens.
+
+Until the App opens the pull request, its author is `nckrtl`. GitHub refuses `nckrtl` as its reviewer, and an author cannot approve their own pull request. Manual mode therefore needs another reviewer login, or the App as author.
 
 ## Review and merge
 

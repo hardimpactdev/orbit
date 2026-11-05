@@ -1,0 +1,192 @@
+id: 129e8c85-7b81-4202-bc2c-3e463c51160b
+name: operation-task-pr-merge
+description: Squash one admitted, approved task pull request on its expected head with native GitHub commands.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, enum: [tasks.pr_merge]}
+    intent:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+        project_id:
+          type: integer
+          minimum: 1
+        group_id:
+          type: integer
+          minimum: 1
+        pr_number:
+          type: integer
+          minimum: 1
+        repository:
+          type: string
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+        head_sha:
+          type: string
+          minLength: 1
+          pattern: ^[a-f0-9]{40}$
+      required:
+      - node_id
+      - project_id
+      - group_id
+      - pr_number
+      - repository
+      - head_sha
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        write_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^pr-merge-write-[a-f0-9-]{36}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - write_token
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+vaults:
+- orbit-control-inputs
+jobs:
+- name: merge
+  labels:
+    role: swamp
+  steps:
+  - name: Read the PR
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-merge-read" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 gh api "$ORBIT_PATH" --jq '[.state, (.draft | tostring), .head.sha] | join(" ")'
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) }}
+  - name: Check the PR head
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: assert
+      expr: 'steps["Read the PR"].outputs.stdout.trim() == "open false " + inputs.intent.head_sha'
+      message: tasks_pr.head_moved
+      severity: high
+    dependsOn:
+    - step: Read the PR
+      condition:
+        type: succeeded
+  - name: Squash on expected head
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-merge-put" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 gh api --method PUT "$ORBIT_PATH" -f merge_method=squash -f sha="$ORBIT_HEAD"
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) + "/merge" }}
+          ORBIT_HEAD: ${{ inputs.intent.head_sha }}
+    dependsOn:
+    - step: Check the PR head
+      condition:
+        type: succeeded
+    writes: true
+- name: cleanup
+  labels:
+    role: swamp
+  dependsOn:
+  - job: merge
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  steps:
+  - name: Revoke the token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-merge-revoke" }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+    writes: true
+    allowFailure: true
+  - name: Remove CLI config
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-merge-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_GH_DIRECTORY"
+        env:
+          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-pr-merge-" + run.id + "-gh" }}
+    writes: true
+  - name: Confirm the merge
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: assert
+      expr: '"Squash on expected head" in steps && steps["Squash on expected head"].status == "succeeded" && steps["Remove CLI config"].status == "succeeded"'
+      message: tasks_pr.merge_refused
+      severity: high
+    dependsOn:
+    - step: Revoke the token
+      condition:
+        type: completed
+    - step: Remove CLI config
+      condition:
+        type: completed

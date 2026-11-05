@@ -9,6 +9,8 @@ use App\Domain\Tasks\TaskMaintenanceProjection;
 use App\Domain\Tasks\TaskParkProjection;
 use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\Tasks\TaskPublishProjection;
+use App\Domain\Tasks\TaskPullRequestMergeProjection;
+use App\Domain\Tasks\TaskPullRequestReadyProjection;
 use App\Domain\Tasks\TaskScriptProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
@@ -29,6 +31,16 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the merge', 'native' => true, 'captures' => ['merge_receipt' => ['job' => 'squash', 'step' => 'Read merge result', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^dependency-merge-(read|write)-[a-f0-9-]{36}$']],
+        ], 'tasks.pr_ready' => [
+            'workflow' => 'operation-task-pr-ready', 'projection' => TaskPullRequestReadyProjection::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the ready step', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'ready', 'step' => 'Read the PR result', 'field' => 'stdout']]],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-ready-write-[a-f0-9-]{36}$']],
+        ], 'tasks.pr_merge' => [
+            'workflow' => 'operation-task-pr-merge', 'projection' => TaskPullRequestMergeProjection::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the merge', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'merge', 'step' => 'Squash on expected head', 'field' => 'stdout']]],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-merge-write-[a-f0-9-]{36}$']],
         ], 'tasks.park' => [
             'workflow' => 'operation-task-park',
             'projection' => TaskParkProjection::class,
