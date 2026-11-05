@@ -70,6 +70,7 @@ sequenceDiagram
   SW->>H: Start a proof VM<br/>workflow · task-vm-slot-boot
   %%> What it does:
   %%> - runs the same boot steps as a claim: remove a stale VM and seed clone, clone the seed, create the VM with the identity volume, start it, wait for the guest
+  %%> - the instance user-data sets `ssh_deletekeys: false`, so cloud-init cannot replace the slot host keys, whatever the order of cloud-init and the identity unit
   %%> - a VM or clone left by an earlier attempt is never reused
   %%> Why:
   %%> - the slot counts as enrolled only when a VM with this identity comes up
