@@ -241,7 +241,8 @@ hook() {
 # and reuse a checkout too. Run this on their host; it needs sudo, and it does not restart the service.
 proof_hook() {
   local runner=${ORBIT_PROOF_RUNNER_DIR:-/var/lib/orbit-proof/actions-runner}
-  sudo -n -u orbit-proof install -m 0755 "$REPOSITORY/tools/ci-runners/job-started-hook.sh" "$runner/job-started-hook.sh"
+  # Root reads the operator checkout, which orbit-proof may not be able to traverse.
+  sudo -n install -o orbit-proof -g orbit-proof -m 0755 "$REPOSITORY/tools/ci-runners/job-started-hook.sh" "$runner/job-started-hook.sh"
   sudo -n -u orbit-proof bash -euo pipefail -s "$runner" <<'SH'
 env_file=$1/.env
 touch "$env_file"

@@ -59,11 +59,16 @@ class JobStartedHookTest(unittest.TestCase):
     def test_empties_a_sparse_cone_checkout_with_stale_files(self):
         (self.workspace / 'sub').mkdir()
         (self.workspace / 'sub/kept.txt').write_text('in cone\n')
+        (self.workspace / 'other').mkdir()
+        (self.workspace / 'other/tracked.txt').write_text('outside the cone\n')
         self.git('add', '.')
         self.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', '-c', 'commit.gpgsign=false',
                  'commit', '-qm', 'Cone file')
         self.git('sparse-checkout', 'set', '--cone', 'sub')
-        (self.workspace / 'tracked.txt').write_text('stale, outside the cone\n')
+        (self.workspace / 'other').mkdir(exist_ok=True)
+        (self.workspace / 'other/tracked.txt').write_text('stale, outside the cone\n')
+        self.assertEqual(subprocess.check_output(['git', 'config', 'core.sparseCheckout'], cwd=self.workspace,
+                                                 text=True).strip(), 'true')
         result = self.hook()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(list(self.workspace.iterdir()), [])
@@ -103,7 +108,8 @@ class JobStartedHookTest(unittest.TestCase):
         shims = self.work / 'shims'
         shims.mkdir()
         sudo = shims / 'sudo'
-        sudo.write_text('#!/bin/bash\n[ "$1 $2 $3" = "-n -u orbit-proof" ]\nshift 3\nexec "$@"\n')
+        sudo.write_text('#!/bin/bash\nshift  # -n\n[ "$1" != -u ] || shift 2\n'
+                        '[ "$1" != install ] || { shift; exec install -m 0755 "${@: -2}"; }\nexec "$@"\n')
         sudo.chmod(0o755)
         program = 'proof_hook() {' + SETUP.split('\nproof_hook() {', 1)[1].split('\n}\n', 1)[0] + '\n}\nproof_hook'
         env = {**os.environ, 'PATH': f'{shims}:{os.environ["PATH"]}', 'REPOSITORY': str(HOOK.parents[2]),

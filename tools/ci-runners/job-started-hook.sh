@@ -12,7 +12,7 @@ WORK=${ORBIT_RUNNER_WORK:-/home/runner/work}
 # Sparse mode is set in the config or left behind as skip-worktree entries in the index.
 is_sparse() {
   [ "$(git -C "$1" config --bool --get core.sparseCheckout 2>/dev/null)" = true ] \
-    || git -C "$1" ls-files -v 2>/dev/null | grep -q '^S'
+    || git -C "$1" ls-files -v 2>/dev/null | grep -q '^[Ss]'
 }
 
 reset_workspace() {
