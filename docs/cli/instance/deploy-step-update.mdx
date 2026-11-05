@@ -1,26 +1,48 @@
 ---
 title: "orbit instance:deploy-step:update"
 sidebarTitle: "instance:deploy-step:update"
-description: "Change one named deploy step. Options you omit stay unchanged."
+description: "Change the command, phase, timeout, or position of one deploy step."
 ---
 
 ```bash
-orbit instance:deploy-step:update <instance> <name> [options]
+orbit instance:deploy-step:update <instance> <name> [--command=COMMAND] [--phase=before_activation|after_activation] [--timeout=SECONDS] [--before=NAME | --after=NAME] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Numeric Instance ID. |
-| `name` | yes | Existing step name. |
+| `instance` | yes | Numeric Instance ID of a production Instance. |
+| `name` | yes | Name of the step to change. A terminal asks for it when it is omitted. |
 
-| Option | Meaning |
-| --- | --- |
-| `--command=COMMAND` | New command. |
-| `--phase=PHASE` | `before_activation` or `after_activation`. |
-| `--timeout=SECONDS` | Timeout from 1 through 900 seconds. |
-| `--before=NAME` | Place before this step in the same phase. Exclusive with `--after`. |
-| `--after=NAME` | Place after this step in the same phase. Exclusive with `--before`. |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--command=COMMAND` | unchanged | Replacement shell command, with the limits of [`instance:deploy-step:create`](/cli/instance/deploy-step-create). |
+| `--phase=PHASE` | unchanged | Move the step to `before_activation` or `after_activation`. |
+| `--timeout=SECONDS` | unchanged | Timeout from 1 through 900 seconds. |
+| `--before=NAME` | unchanged | Move the step before this step of the same phase. Exclusive with `--after`. |
+| `--after=NAME` | unchanged | Move the step after this step of the same phase. Exclusive with `--before`. |
+| `--json` | off | Print the step as JSON. |
 
 ```bash
 orbit instance:deploy-step:update 15 migrate --timeout=600
 ```
+
+In a terminal, an omitted Instance is chosen from an interactive list, and an omitted name from the Instance's deploy steps. A noninteractive or `--json` call without the Instance or the name is refused with `instance.id_invalid` or `deploy_step.name_required`, and sends no request. An empty `--command=`, `--phase=`, `--before=` or `--after=` is read as omitted, so alone it counts as no change option. A `--timeout` that is not an integer, also an empty `--timeout=`, is refused with `deploy_step.timeout_invalid` before any request.
+
+At least one of `--command`, `--phase`, `--timeout`, `--before` or `--after` is required; a call with none is refused with `deploy_step.update_required` before any request. The name of a step never changes: remove the step and create it again to rename it. The Gateway checks the whole change against the limits of the create command, and a placement step must be in the phase the step ends up in. It stores nothing when a rule fails; a refusal is `validation.failed` with the reason. The command changes the Instance's list only and runs nothing; the next [`instance:deploy`](/cli/instance/deploy) uses the new values. Updating a step to the values it has succeeds and changes nothing, `--phase` included. A change locks the Instance row, so a competing change waits for it.
+
+The command prints a detail titled `Deploy step: <name>` with Phase, Command, Timeout (seconds) and the request ID. With `--json`, stdout holds the step with `name`, `phase`, `command`, `timeout_seconds` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `deploy_step.name_required` | The name is missing in a call that cannot prompt. |
+| `deploy_step.update_required` | No change option was given. |
+| `deploy_step.timeout_invalid` | `--timeout` is not an integer. |
+| `input.cancelled` | You cancelled a list or a prompt. |
+| `validation.failed` | A value is outside the limits, `--before` and `--after` were both given or name no step of the step's phase or the step itself, or the timeouts would add up to more than 3,600 seconds. |
+| `deploy_step.not_found` | The Instance has no deploy step of that name. |
+| `deployment_config.unavailable` | The Instance is not a production Instance that is source-resolved or active with a valid branch. |
+| `http.404` | The Instance is unknown, or the name is not a valid step name. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |

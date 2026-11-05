@@ -1,0 +1,25 @@
+# instance:deploy-step:update verification cases
+
+`instance:deploy-step:update` changes a step of a production Instance and has no chart. The proof runs the built CLI against a fresh nested topology with production Instances that have steps in both phases and a development Instance, and compares the output with the Gateway records. See [verifying-commands](../../../.agents/skills/verifying-commands/SKILL.md).
+
+| Case | Setup and action | Required observations |
+| --- | --- | --- |
+| Change the command | Update only `--command`. | The command changes. The phase, timeout and position stay. The result is at once, with no task and no file written on any Node. |
+| Change the timeout | `--timeout=1`, `--timeout=900`, `--timeout=0`, `--timeout=901` and `--timeout=abc`. | The first two are stored. `0` and `901` give `validation.failed`. `abc` gives `deploy_step.timeout_invalid` before any request. |
+| Change the phase | Move a step to the other phase, with and without `--before` or `--after`, and with an invalid phase. | The step lands at the end of the new phase, or at the named place of that phase. An invalid phase gives `validation.failed`. |
+| Move within a phase | Move a step with `--before` and with `--after`, then with both, with one naming no step, one naming a step of the other phase, and one naming the step itself. | The first two move it and the others keep their order. The others give `validation.failed`. Nothing is stored for a refusal. |
+| Instance cap | A change that raises the total over 3,600 seconds. | `validation.failed`, with nothing stored. Fails today: every refusal says only `The request data is invalid.` with the reason under `body`, and this one gives the generic reason `The deployment configuration is invalid.`. |
+| No change option | The Instance and name only, and with only an empty `--command=`. | `deploy_step.update_required` before any request. Nothing changes. Fails today: an empty value counts as given and is sent, so the second call ends with `validation.failed`. |
+| Same values | Update a step to the values it has, also with `--phase` set to its own phase. | The command succeeds and changes nothing. Fails today: with `--phase` the step moves to the end of its phase. |
+| Empty values | An empty `--command=`, `--phase=`, `--before=` and `--after=` alongside a real change, and an empty `--timeout=`. | The first four are read as omitted. The empty `--timeout=` gives `deploy_step.timeout_invalid`. Fails today: the first four are sent as empty strings and end with `validation.failed`. |
+| Command limits | A blank command, a 16 KiB one, one over 16 KiB, with a NUL byte, and not valid UTF-8. | The 16 KiB one is stored. The others give `validation.failed`. Fails today: a blank command passes the Gateway and is stored. |
+| Unknown step | A name the Instance does not hold, and a name that is not a valid step name. | `deploy_step.not_found` for the first, with nothing changed. The last gives `http.404`. Fails today: that case is not `deploy_step.not_found`. |
+| Rename | Try to change the name. | There is no option. Remove the step and create it again. |
+| Not available | A development Instance, and a production Instance that is neither source-resolved nor active. | `deployment_config.unavailable`. Nothing changes. |
+| Competing changes | Update a step while another change to the Instance's steps runs, and while a deploy is admitted. | The update waits for the Instance row lock. A deploy admitted before the update refuses to start when the step's command differs from the admitted one. |
+| Used by the next deploy | After an update, run `instance:deploy`. | The step runs with the new values in its phase and order. The update itself ran nothing. |
+| Output forms | A wide and a narrow terminal, a 16 KiB command, output piped to a file, and `--json`. | A detail `Deploy step: <name>` with Phase, Command, Timeout (seconds) and the request ID at the wide width, and labeled records at the narrow one, with the command wrapped and never cut. The piped output has no animation or escape codes. With `--json`, stdout holds the step with `request_id`. |
+| Activity | After a successful update and a failed one. | Activity and the error hold no command text. |
+| Missing input | In a terminal, run the command with no arguments and cancel each list. Then run it noninteractively and with `--json`. | The terminal lists Instances and then the Instance's deploy steps by name. Cancel ends with `input.cancelled` and no request. The noninteractive calls are refused with `instance.id_invalid` or `deploy_step.name_required`, with no request. Fails today: both are required arguments, so every call without them is refused by the parser. |
+| IDs only | An Instance by name, the ID `0`, the ID `-1` passed after `--`, and `abc`. | `instance.id_invalid`, with no request. Fails today: `-1` without `--` is read as an option and gives a parser error. |
+| Unknown and access | An ID that does not exist, and a caller without a grant to the Instance's Node. | `http.404` and `node_access.required`. Nothing changes. |
