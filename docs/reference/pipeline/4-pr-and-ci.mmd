@@ -74,8 +74,10 @@ sequenceDiagram
     %%> - in manual mode, also requests Nick's review, so GitHub notifies him that the PR waits for him
     %%> Why:
     %%> - a draft means the work is still moving; leaving draft says the spec, code and proof cases are done
+    %%> Built:
+    %%> - the operation `tasks:pr-ready`, with its chart; no flow calls it yet
     %%> Not built:
-    %%> - Swamp leaving draft and requesting the review; today the author runs `gh pr ready` as `nckrtl`
+    %%> - a flow that calls it; today the author runs `gh pr ready` as `nckrtl`
     alt manual mode
       GW->>GH: Read the PR reviews<br/>short poll · approval on head
       %%> What it does:
@@ -83,6 +85,8 @@ sequenceDiagram
       %%> Why:
       %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the approval
       %%> - a push moves the PR head, so the approval must follow the last push
+      %%> Built:
+      %%> - the read, as the gate of the operation `tasks:pr-merge`: a caller that polls it sees the approval
       %%> Not built:
       %%> - the approval-triggered continuation
       GH-->>GW: Approval on the head
@@ -105,8 +109,10 @@ sequenceDiagram
     %%> - a merge conflict with main refuses the merge; the author rebases, which reruns CI and the proof, and the gate starts again
     %%> History:
     %%> - no merge queue and no GitHub auto-merge (Nick, 2026-11-05): the queue only reran the 2-minute fast checks, because the proof is not run twice
+    %%> Built:
+    %%> - the operation `tasks:pr-merge`, with its chart; no flow calls it yet
     %%> Not built:
-    %%> - Swamp merging the PR; today the author runs `gh pr merge --auto --squash` as `nckrtl` (the interim)
+    %%> - a flow that calls it; today the author runs `gh pr merge --auto --squash` as `nckrtl` (the interim)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one

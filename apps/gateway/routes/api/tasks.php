@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DependencyBatchMergeController;
 use App\Http\Controllers\Api\ProofRunsController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskInsightsController;
+use App\Http\Controllers\Api\TaskPullRequestController;
 use App\Http\Controllers\Api\TaskQuestionsController;
 use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\TaskSwampRunsController;
@@ -67,6 +68,10 @@ Route::middleware([
             ->whereNumber('group')->name('tasks:park');
         Route::post('task-groups/{group}/dependency-merge', [DependencyBatchMergeController::class, 'store'])
             ->whereNumber('group')->name('tasks:dependency-merge');
+        Route::post('task-groups/{group}/pr-ready', [TaskPullRequestController::class, 'ready'])
+            ->whereNumber('group')->name('tasks:pr-ready');
+        Route::post('task-groups/{group}/pr-merge', [TaskPullRequestController::class, 'merge'])
+            ->whereNumber('group')->name('tasks:pr-merge');
         Route::post('task-groups/{group}/publish', [TaskGroupsController::class, 'publish'])
             ->whereNumber('group')->name('tasks:publish');
         Route::post('task-groups/{group}/script', [TaskGroupsController::class, 'script'])

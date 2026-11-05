@@ -40,6 +40,10 @@ final readonly class OperationKinds
 
     public const string TasksPark = 'tasks.park';
 
+    public const string TasksPrReady = 'tasks.pr_ready';
+
+    public const string TasksPrMerge = 'tasks.pr_merge';
+
     public const string ProofRun = 'proof.run';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */

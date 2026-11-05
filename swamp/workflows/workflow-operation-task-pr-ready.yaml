@@ -1,0 +1,265 @@
+id: 7df691d6-2ab4-48e7-89ba-f973561eb9a7
+name: operation-task-pr-ready
+description: Take one admitted task pull request out of draft and, in manual mode, request the reviewer's review, with native GitHub commands.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, enum: [tasks.pr_ready]}
+    intent:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+        project_id:
+          type: integer
+          minimum: 1
+        group_id:
+          type: integer
+          minimum: 1
+        pr_number:
+          type: integer
+          minimum: 1
+        repository:
+          type: string
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+        head_sha:
+          type: string
+          minLength: 1
+          pattern: ^[a-f0-9]{40}$
+        mode:
+          type: string
+          enum: [manual, automatic]
+        reviewer:
+          type: string
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$
+      required:
+      - node_id
+      - project_id
+      - group_id
+      - pr_number
+      - repository
+      - head_sha
+      - mode
+      - reviewer
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        write_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^pr-ready-write-[a-f0-9-]{36}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - write_token
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+vaults:
+- orbit-control-inputs
+jobs:
+- name: ready
+  labels:
+    role: swamp
+  steps:
+  - name: Read the PR
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-ready-read" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 gh api "$ORBIT_PATH" --jq '[.state, (.draft | tostring), .head.sha, .node_id] | join(" ")'
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) }}
+  - name: Check the PR head
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: assert
+      expr: 'steps["Read the PR"].outputs.stdout.startsWith("open ") && steps["Read the PR"].outputs.stdout.contains(" " + inputs.intent.head_sha + " ")'
+      message: tasks_pr.head_moved
+      severity: high
+    dependsOn:
+    - step: Read the PR
+      condition:
+        type: succeeded
+  - name: Take the PR out of draft
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-ready-draft" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 gh api graphql -f query="mutation { markPullRequestReadyForReview(input: {pullRequestId: \"${ORBIT_READ##* }\"}) { pullRequest { isDraft } } }" >/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_READ: ${{ steps["Read the PR"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Check the PR head
+      condition:
+        type: succeeded
+    writes: true
+    guard: ${{ steps["Read the PR"].outputs.stdout.startsWith("open false ") }}
+  - name: Request the review
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-ready-review" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api --method POST "$ORBIT_PATH" -f "reviewers[]=$ORBIT_REVIEWER" >/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) + "/requested_reviewers" }}
+          ORBIT_REVIEWER: ${{ inputs.intent.reviewer }}
+    dependsOn:
+    - step: Check the PR head
+      condition:
+        type: succeeded
+    - step: Take the PR out of draft
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    writes: true
+    guard: ${{ inputs.intent.mode != "manual" }}
+  - name: Read the PR result
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-ready-result" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 gh api "$ORBIT_PATH" --jq '{pull_request: .number, head: .head.sha, draft: .draft, reviewers: [.requested_reviewers[].login]}'
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) }}
+    dependsOn:
+    - step: Check the PR head
+      condition:
+        type: succeeded
+    - step: Take the PR out of draft
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Request the review
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+- name: cleanup
+  labels:
+    role: swamp
+  dependsOn:
+  - job: ready
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  steps:
+  - name: Revoke the token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-ready-revoke" }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+    writes: true
+    allowFailure: true
+  - name: Remove CLI config
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-ready-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_GH_DIRECTORY"
+        env:
+          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
+    writes: true
+  - name: Confirm the ready step
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: assert
+      expr: '"Read the PR result" in steps && steps["Read the PR result"].status == "succeeded" && steps["Remove CLI config"].status == "succeeded"'
+      message: tasks_pr.ready_refused
+      severity: high
+    dependsOn:
+    - step: Revoke the token
+      condition:
+        type: completed
+    - step: Remove CLI config
+      condition:
+        type: completed

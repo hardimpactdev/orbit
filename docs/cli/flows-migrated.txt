@@ -61,6 +61,8 @@ tasks.check
 tasks.dependency_merge
 tasks.maintenance
 tasks.park
+tasks.pr_merge
+tasks.pr_ready
 tasks.provision
 tasks.publish
 tasks.script

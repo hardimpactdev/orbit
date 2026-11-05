@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Tasks;
+
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\GitHubReviewOverflowException;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\GitHub\RequiredCheckState;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Task;
+
+/** Read-only evidence for the ready and merge steps. The Gateway reads GitHub here and changes nothing on it. */
+final readonly class TaskPullRequestEvidence
+{
+    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github) {}
+
+    public static function reviewer(): string
+    {
+        $login = config('task_pull_requests.reviewer');
+
+        return is_string($login) && $login !== '' ? $login : throw new ResourceOperationException('tasks_pr.reviewer_missing', 'The Gateway has no reviewer for task pull requests.', 409);
+    }
+
+    public function ready(Task $group, string $head, string $mode): TaskPullRequestTarget
+    {
+        $target = $this->target($group, $head);
+        if ($mode === 'manual' && strcasecmp($target->pull->authorLogin ?? '', self::reviewer()) === 0) {
+            throw new ResourceOperationException('tasks_pr.reviewer_is_author', 'GitHub refuses a review request from the author of the pull request.', 409);
+        }
+
+        return $target;
+    }
+
+    public function merge(Task $group, string $head): TaskPullRequestTarget
+    {
+        $target = $this->target($group, $head);
+        if ($target->pull->draft) {
+            throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft; take it out of draft first.', 409);
+        }
+        try {
+            $reviews = $this->github->reviews($this->access->reviewsToken($target->repository), $target->repository, $target->number);
+        } catch (GitHubApiException|GitHubReviewOverflowException $exception) {
+            throw $this->unreadable($exception);
+        }
+        $gate = PullRequestGate::manual($reviews, $head, self::reviewer());
+        if ($gate !== PullRequestGateState::Approved) {
+            throw new ResourceOperationException('tasks_pr.approval_missing', 'The reviewer has not approved this head.', 409, details: ['state' => $gate->value]);
+        }
+
+        return $target;
+    }
+
+    private function target(Task $group, string $head): TaskPullRequestTarget
+    {
+        $group->loadMissing('project');
+        $project = $group->project;
+        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $number = $group->watched_pr_number;
+        $url = $group->watched_pr_url;
+        if ($group->parent_id !== null || $group->orchestration !== TaskOrchestration::External || ! $repository instanceof GitHubRepository
+            || ! is_int($number) || $number < 1 || ! is_string($url) || $repository->pullRequestNumber($url) !== $number) {
+            throw new ResourceOperationException('tasks_pr.no_pull_request', 'The group needs a published pull request.', 409);
+        }
+        try {
+            $pull = $this->github->pullRequest($this->access->reviewsToken($repository), $repository, $number);
+            if ($pull->state !== GitHubPullRequestState::Open) {
+                throw new ResourceOperationException('tasks_pr.no_pull_request', 'The pull request of the group is not open.', 409);
+            }
+            if ($pull->headSha !== $head) {
+                throw new ResourceOperationException('tasks_pr.head_moved', 'The pull request head is not the admitted head.', 409);
+            }
+            $name = $project->mergeCheckName();
+            $token = $name === null ? null : $this->access->checksToken($repository);
+            $state = $name === null ? 'not_configured' : ($token === null ? 'unreadable' : RequiredCheckState::of($this->github->checkRuns($token, $repository, $head, $name), $head, $name)->value);
+        } catch (GitHubApiException $exception) {
+            throw $this->unreadable($exception);
+        }
+        if ($state !== RequiredCheckState::Passed->value) {
+            throw new ResourceOperationException('tasks_pr.checks_not_passed', 'The Project merge check did not pass on this head.', 409, details: ['state' => $state]);
+        }
+
+        return new TaskPullRequestTarget($repository, $number, $pull);
+    }
+
+    private function unreadable(GitHubApiException|GitHubReviewOverflowException $exception): ResourceOperationException
+    {
+        report($exception);
+
+        return new ResourceOperationException('tasks_pr.github_unreadable', 'The Gateway could not read the pull request from GitHub.', 502);
+    }
+}
