@@ -1,8 +1,11 @@
 """Build private Ansible input from the Gateway's admitted role intent."""
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
+
+TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build')
 
 
 def unsafe(value):
@@ -16,8 +19,38 @@ def unsafe(value):
     return json.dumps(value)
 
 
+def known_host_lines(target):
+    name = target['host'] if target['port'] == 22 else f'[{target["host"]}]:{target["port"]}'
+    return [f'{name} {key}' for key in target['host_keys']]
+
+
+def build_task_vm(folder, kind):
+    """The inventory, known hosts and variables of the task VM role. A builder behind its host is reached through a jump."""
+    folder = Path(folder)
+    intent = json.loads((folder / 'intent.json').read_text())
+    ssh = intent['ssh']
+    target = ssh['target']
+    known = set(known_host_lines(target))
+    host = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
+            'ansible_ssh_private_key_file': ssh['identity_file']}
+    jump = intent.get('jump')
+    if jump:
+        known.update(known_host_lines(jump['target']))
+        # The jump asks the same pinned host keys as the build, so it never trusts a key on first use.
+        command = ['ssh', '-W', '%h:%p', '-i', jump['identity_file'], '-p', str(jump['target']['port']), '-o', 'IdentitiesOnly=yes',
+                   '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null', '-o', f'UserKnownHostsFile={folder}/known_hosts',
+                   f'{jump["target"]["user"]}@{jump["target"]["host"]}']
+        host['ansible_ssh_common_args'] = '-o ProxyCommand=' + shlex.quote(' '.join(shlex.quote(part) for part in command))
+    inventory = {'all': {'children': {'task_vm': {'hosts': {'vm': host}}}}}
+    (folder / 'inventory.yml').write_text(json.dumps(inventory))
+    (folder / 'known_hosts').write_text(''.join(line + '\n' for line in sorted(known)))
+    (folder / 'vars.yml').write_text(unsafe({'intent': intent, 'kind': kind}) + '\n')
+
+
 def build(folder, kind):
     os.umask(0o077)
+    if kind in TASK_VM_KINDS:
+        return build_task_vm(folder, kind)
     folder = Path(folder)
     intent = json.loads((folder / 'intent.json').read_text())
     hosts, known = {}, set()

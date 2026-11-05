@@ -1,0 +1,80 @@
+---
+# Packages install from the pinned Ubuntu snapshot through their own apt configuration; the VM's sources stay as they are.
+- name: Read installed packages
+  ansible.builtin.package_facts: { manager: apt }
+- name: Find the packages that miss their pin
+  vars:
+    installed: "{{ ansible_facts.packages }}"
+  ansible.builtin.set_fact:
+    ubuntu_missing: >-
+      {%- set out = [] -%}
+      {%- for tool in ubuntu_tools -%}
+      {%- if tool.version not in (installed[tool.package] | default([]) | map(attribute='version') | list) -%}
+      {%- set _ = out.append(tool.package ~ '=' ~ tool.version) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+    deb_missing: >-
+      {%- set out = [] -%}
+      {%- for tool in deb_tools -%}
+      {%- if tool.version not in (installed[tool.name] | default([]) | map(attribute='version') | list) -%}
+      {%- set _ = out.append(tool) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Install what misses its pin
+  when: ubuntu_missing | length > 0 or deb_missing | length > 0
+  block:
+    - { name: Configure apt, ansible.builtin.import_tasks: task-vm-apt-config.yml }
+    - name: Install the Ubuntu packages
+      when: ubuntu_missing | length > 0
+      ansible.builtin.command:
+        argv: "{{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades', '--'] + ubuntu_missing }}"
+      environment: "{{ apt_environment }}"
+      changed_when: true
+    - name: Create the package cache
+      ansible.builtin.file: { path: /var/cache/orbit/debs, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Fetch the packages that a mirror holds
+      when: item.sha256 != ''
+      ansible.builtin.include_tasks: artifact-fetch.yml
+      vars:
+        artifact:
+          urls: "{{ [recipe.artifact_mirror ~ '/' ~ item.name ~ '_' ~ item.sha256 ~ '.deb', item.url] }}"
+          path: "{{ item.path }}"
+          sha256: "{{ item.sha256 }}"
+      loop: "{{ deb_missing }}"
+      loop_control: { label: "{{ item.name }}" }
+    - name: Fetch the packages that only upstream holds
+      when: item.sha256 == ''
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "{{ item.path }}"
+        checksum: "sha512:{{ item.sha512 }}"
+        mode: "0644"
+      loop: "{{ deb_missing }}"
+      loop_control: { label: "{{ item.name }}" }
+    - name: Install the packages that come as files
+      when: deb_missing | length > 0
+      ansible.builtin.command:
+        argv: >-
+          {{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades', '-o', 'Dpkg::Options::=--force-confold', '--']
+          + deb_missing | map(attribute='path') | list }}
+      environment: "{{ apt_environment }}"
+      changed_when: true
+- name: Keep the file packages where they are
+  ansible.builtin.dpkg_selections: { name: "{{ item.name }}", selection: hold }
+  loop: "{{ deb_tools }}"
+  loop_control: { label: "{{ item.name }}" }
+- name: Enable the services of the tools
+  ansible.builtin.systemd: { name: "{{ item.unit }}", enabled: true }
+  loop: >-
+    {{ [{'tool': 'openssh-server', 'unit': 'ssh'}, {'tool': 'docker.io', 'unit': 'docker'}, {'tool': 'containerd', 'unit': 'containerd'}]
+    | selectattr('tool', 'in', tool_by_name) | list }}
+  loop_control: { label: "{{ item.unit }}" }
+- name: Let the account use Incus
+  when: "'incus' in tool_by_name"
+  ansible.builtin.user: { name: "{{ orbit_user }}", groups: incus-admin, append: true }
+- name: Keep PHP-FPM off an image
+  when: intent.image | default(false)
+  ansible.builtin.systemd: { name: "php{{ item }}-fpm.service", enabled: false, state: stopped }
+  loop: "{{ php_versions }}"

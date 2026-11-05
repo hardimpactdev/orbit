@@ -1,0 +1,71 @@
+---
+# The Rust components of the recipe, installed by their own install.sh into /opt/orbit/rust and linked for root and the account.
+- name: Read the Rust versions
+  ansible.builtin.command: { argv: ["/opt/orbit/rust/bin/{{ item }}", --version] }
+  loop: [rustc, cargo]
+  register: rust_versions
+  changed_when: false
+  failed_when: false
+- name: Read the Rust executables
+  ansible.builtin.stat: { path: "/opt/orbit/rust/bin/{{ item }}" }
+  loop: [clippy-driver, rustfmt]
+  register: rust_executables
+- name: Find the Rust components that miss their pin
+  ansible.builtin.set_fact:
+    rust_current: >-
+      {{ ('rustc ' ~ recipe.tools.rust.version) in rust_versions.results[0].stdout
+      and ('cargo ' ~ recipe.tools.cargo.version) in rust_versions.results[1].stdout
+      and rust_executables.results | map(attribute='stat') | map(attribute='exists') | min }}
+- name: Install Rust
+  when: not rust_current
+  vars:
+    components: "{{ ['rust', 'rust-std', 'cargo', 'clippy', 'rustfmt'] | map('extract', recipe.tools) | list }}"
+  block:
+    - name: Create the Rust folders
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop: [/opt/orbit, /opt/orbit/rust, /var/cache/orbit/rust]
+    - name: Download the components
+      ansible.builtin.get_url:
+        url: "{{ item.artifacts.amd64.url }}"
+        dest: "/var/cache/orbit/rust/{{ item.artifacts.amd64.url | basename }}"
+        checksum: "sha256:{{ item.artifacts.amd64.sha256 }}"
+        mode: "0644"
+      loop: "{{ components }}"
+      loop_control: { label: "{{ item.artifacts.amd64.url | basename }}" }
+    - name: Unpack the components
+      ansible.builtin.unarchive:
+        src: "/var/cache/orbit/rust/{{ item.artifacts.amd64.url | basename }}"
+        dest: /var/cache/orbit/rust
+        remote_src: true
+        creates: "/var/cache/orbit/rust/{{ (item.artifacts.amd64.url | basename).removesuffix('.tar.xz') }}/install.sh"
+      loop: "{{ components }}"
+      loop_control: { label: "{{ item.artifacts.amd64.url | basename }}" }
+    - name: Install the components
+      ansible.builtin.command:
+        argv:
+          - "/var/cache/orbit/rust/{{ (item.artifacts.amd64.url | basename).removesuffix('.tar.xz') }}/install.sh"
+          - --prefix=/opt/orbit/rust
+          - --disable-ldconfig
+      loop: "{{ components }}"
+      loop_control: { label: "{{ item.artifacts.amd64.url | basename }}" }
+      changed_when: true
+    - name: Find the Rust executables
+      ansible.builtin.find: { paths: /opt/orbit/rust/bin, file_type: any }
+      register: rust_links
+    - name: Create the account's cargo folder
+      ansible.builtin.file: { path: "{{ orbit_home }}/.cargo/bin", state: directory, owner: "{{ orbit_user }}", group: "{{ orbit_user }}", mode: "0755" }
+    - name: Link the Rust executables
+      ansible.builtin.file:
+        src: "{{ item.0.path }}"
+        dest: "{{ item.1 }}/{{ item.0.path | basename }}"
+        state: link
+        force: true
+      loop: "{{ rust_links.files | product(['/usr/local/bin', orbit_home ~ '/.cargo/bin']) }}"
+      loop_control: { label: "{{ item.1 }}/{{ item.0.path | basename }}" }
+    - name: Give the account its links
+      ansible.builtin.file:
+        path: "{{ orbit_home }}/.cargo"
+        state: directory
+        recurse: true
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"

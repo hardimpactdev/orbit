@@ -1,0 +1,15 @@
+---
+- name: Read the Swamp binary
+  when: "'swamp' in tool_by_name"
+  ansible.builtin.stat: { path: /usr/local/bin/swamp, checksum_algorithm: sha256 }
+  register: swamp_binary
+- name: Install the Swamp binary
+  when: "'swamp' in tool_by_name and swamp_binary.stat.checksum | default('') != recipe.tools.swamp.artifacts.amd64.sha256"
+  ansible.builtin.get_url:
+    url: "{{ recipe.tools.swamp.artifacts.amd64.url }}"
+    dest: /usr/local/bin/swamp
+    checksum: "sha256:{{ recipe.tools.swamp.artifacts.amd64.sha256 }}"
+    force: true
+    owner: root
+    group: root
+    mode: "0755"

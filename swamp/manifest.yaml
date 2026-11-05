@@ -24,6 +24,20 @@ additionalFiles:
   - ansible/tasks/firewall-port.yml
   - ansible/tasks/firewall.yml
   - ansible/tasks/ci.yml
+  - ansible/task-vm-role.yml
+  - ansible/shape-gate-requirements.txt
+  - ansible/tasks/task-vm-recipe.yml
+  - ansible/tasks/task-vm-software.yml
+  - ansible/tasks/task-vm-apt.yml
+  - ansible/tasks/task-vm-apt-config.yml
+  - ansible/tasks/task-vm-javascript.yml
+  - ansible/tasks/task-vm-rust.yml
+  - ansible/tasks/task-vm-swamp.yml
+  - ansible/tasks/task-vm-pi.yml
+  - ansible/tasks/task-vm-tools.yml
+  - ansible/tasks/task-vm-nfs.yml
+  - ansible/tasks/task-vm-shape-gate.yml
+  - ansible/tasks/task-vm-check.yml
   - ansible/requirements.txt
   - ansible/requirements.yml
   - ansible/build_vars.py

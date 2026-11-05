@@ -9,10 +9,12 @@ before you push; commit first, because the checkers compare committed HEAD with 
 --only shape       run only the shape group; --only validate runs only the validation group
 --reports DIR      write the JSON reports here (default: a per-user directory in the temp directory)
 --cache DIR        Swamp runtime cache for the validation (default: ~/.cache/orbit-shape-runtime)
---tools DIR        cache of the pinned tool venvs (default: ~/.cache/orbit-shape-gate)
+--tools DIR        cache of the pinned tool venvs (default: /opt/orbit-shape-gate when the task image holds tools
+                   for these pins, else ~/.cache/orbit-shape-gate)
 --strict           fail instead of skipping a step that needs a credential or a tool
 
-The linters are pinned in bin/swamp-shape-gate-requirements.txt, the only place that names them.
+The linters are pinned in swamp/ansible/shape-gate-requirements.txt, the only place that names them.
+The task VM role playbook builds them into /opt/orbit-shape-gate, so a task VM runs the gate without a download.
 Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN.
 Without them it is skipped and reported as skipped, not passed. `--only validate` then exits 78."""
 import argparse
@@ -29,13 +31,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SWAMP = ROOT / 'swamp'
-REQUIREMENTS = ROOT / 'bin/swamp-shape-gate-requirements.txt'
+REQUIREMENTS = SWAMP / 'ansible/shape-gate-requirements.txt'
 COLLECTIONS = SWAMP / 'ansible/requirements.yml'
+SYSTEM_TOOLS = Path('/opt/orbit-shape-gate')
 CREDENTIALS = ('SWAMP_API_KEY', 'SWAMP_SIGNIN_TOKEN')
 CREDENTIALS_MISSING = 78
 BASES = ('origin/main', 'main')
 
-ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py')
+ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py',
+                 'tests/ansible_shape_gate_tools_test.py', 'tests/ansible_task_vm_role_test.py')
 DENO_UNIT_TESTS = (
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-shape_test.ts'),
     ('--allow-read', '--allow-run', 'bin/lint-behavior-names_test.ts'),
@@ -64,7 +68,7 @@ def plan(base, reports, cache, collections):
     steps = [
         Step('shape', 'ansible collections', ['ansible-galaxy', 'collection', 'install', '-r', 'ansible/requirements.yml', '-p', str(collections)],
              env=ansible_env),
-        Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-node-role-add.yml'], env=ansible_env),
+        Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-node-role-add.yml', 'ansible/task-vm-role.yml'], env=ansible_env),
     ]
     steps += [Step('shape', test, ['python3', '-I', test]) for test in ANSIBLE_TESTS]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py',
@@ -104,19 +108,36 @@ def resolve_base(base):
     raise SystemExit('No merge base with origin/main. Fetch it, or pass --base REF.')
 
 
+def venv_name():
+    """The venv folder of these pins. The task VM role playbook derives the same name from the same two files."""
+    pins = REQUIREMENTS.read_text() + (SWAMP / 'ansible/requirements.txt').read_text()
+    return f'venv-{hashlib.sha256(pins.encode()).hexdigest()[:16]}'
+
+
+def collections_path(tools):
+    return tools / f'collections-{hashlib.sha256(COLLECTIONS.read_bytes()).hexdigest()[:16]}'
+
+
+def default_tools():
+    """The tools of the task image when they are built for these pins, else the per-user cache."""
+    if (SYSTEM_TOOLS / venv_name() / '.complete').exists():
+        return SYSTEM_TOOLS
+    return Path.home() / '.cache/orbit-shape-gate'
+
+
 def tool_path(tools):
-    """The bin directory of the pinned venv, built once per pin set under a lock."""
-    pins = REQUIREMENTS.read_text() + (SWAMP / 'ansible/requirements.txt').read_text() + sys.version
-    venv = tools / f'venv-{hashlib.sha256(pins.encode()).hexdigest()[:16]}'
-    tools.mkdir(parents=True, exist_ok=True)
-    with (tools / 'lock').open('w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not (venv / '.complete').exists():
-            shutil.rmtree(venv, ignore_errors=True)
-            print(f'Installing the pinned shape tools into {venv}', flush=True)
-            subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True)
-            subprocess.run([str(venv / 'bin/pip'), 'install', '--disable-pip-version-check', '-q', '-r', str(REQUIREMENTS)], check=True)
-            (venv / '.complete').write_text('')
+    """The bin directory of the pinned venv, built once per pin set under a lock. A built venv needs no write access."""
+    venv = tools / venv_name()
+    if not (venv / '.complete').exists():
+        tools.mkdir(parents=True, exist_ok=True)
+        with (tools / 'lock').open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if not (venv / '.complete').exists():
+                shutil.rmtree(venv, ignore_errors=True)
+                print(f'Installing the pinned shape tools into {venv}', flush=True)
+                subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True)
+                subprocess.run([str(venv / 'bin/pip'), 'install', '--disable-pip-version-check', '-q', '-r', str(REQUIREMENTS)], check=True)
+                (venv / '.complete').write_text('')
     return venv / 'bin'
 
 
@@ -134,18 +155,19 @@ def main(argv=None):
     parser.add_argument('--only', choices=('shape', 'validate'))
     parser.add_argument('--reports', type=Path, default=Path(tempfile.gettempdir()) / f'orbit-shape-gate-{os.getuid()}')
     parser.add_argument('--cache', type=Path, default=Path.home() / '.cache/orbit-shape-runtime')
-    parser.add_argument('--tools', type=Path, default=Path.home() / '.cache/orbit-shape-gate')
+    parser.add_argument('--tools', type=Path)
     parser.add_argument('--strict', action='store_true')
     args = parser.parse_args(argv)
     # CI's umask; a looser one changes file modes that the Ansible artifact tests compare.
     os.umask(0o022)
     # The validation group needs neither the base nor the pinned linters, so its CI job can check out one commit.
+    args.tools = args.tools or default_tools()
     base = resolve_base(args.base) if args.only != 'validate' else ''
     args.reports.mkdir(parents=True, exist_ok=True)
     environment = {**os.environ}
     if args.only != 'validate':
         environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
-    collections = args.tools / f'collections-{hashlib.sha256(COLLECTIONS.read_bytes()).hexdigest()[:16]}'
+    collections = collections_path(args.tools)
     steps = [step for step in plan(base, args.reports, args.cache, collections) if args.only in (None, step.group)]
     print('Swamp shape gate' + (f' against {base[:12]}' if base else '') + f'; reports in {args.reports}', flush=True)
     results = []

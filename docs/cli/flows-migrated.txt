@@ -49,6 +49,7 @@ route.target_set
 route.update
 schedule.install_instance_definitions
 schedule.run
+task_vm.converge
 task_vm.destroy
 task_vm.fill_package_cache
 task_vm.hub_converge

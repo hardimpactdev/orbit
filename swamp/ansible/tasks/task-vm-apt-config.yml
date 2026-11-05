@@ -1,0 +1,35 @@
+---
+- name: Create the apt configuration folder
+  ansible.builtin.file: { path: "{{ apt_directory }}", state: directory, owner: root, group: root, mode: "0755" }
+- name: Point apt at the Ubuntu snapshot
+  ansible.builtin.copy:
+    dest: "{{ apt_directory }}/ubuntu.sources"
+    content: |
+      Types: deb
+      URIs: https://snapshot.ubuntu.com/ubuntu/{{ recipe.ubuntu.snapshot }}/
+      Suites: {{ ansible_facts.distribution_release }} {{ ansible_facts.distribution_release }}-updates {{ ansible_facts.distribution_release }}-security
+      Components: main universe restricted multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+      Check-Valid-Until: no
+    owner: root
+    group: root
+    mode: "0644"
+- name: Write the apt configuration
+  ansible.builtin.copy:
+    dest: "{{ apt_directory }}/apt.conf"
+    content: |
+      Dir::Etc::parts "";
+      Dir::Etc::main "";
+      Dir::Etc::sourcelist "{{ apt_directory }}/ubuntu.sources";
+      Dir::Etc::sourceparts "";
+      APT::Get::Always-Include-Phased-Updates "true";
+      APT::Get::List-Cleanup "false";
+      APT::Update::Error-Mode "any";
+      DPkg::Lock::Timeout "300";
+    owner: root
+    group: root
+    mode: "0644"
+- name: Read the package indexes
+  ansible.builtin.command: { argv: [apt-get, update] }
+  environment: "{{ apt_environment }}"
+  changed_when: false

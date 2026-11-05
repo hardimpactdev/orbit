@@ -1,0 +1,35 @@
+---
+# The linters of bin/swamp-shape-gate, built once into /opt/orbit-shape-gate so a task VM runs the gate offline.
+# The gate names the venv and the collections by the digest of their pins; this file derives the same names from the same files.
+- name: Create the shape gate folder
+  ansible.builtin.file: { path: /opt/orbit-shape-gate, state: directory, owner: root, group: root, mode: "0755" }
+- name: Write the shape gate pins
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/opt/orbit-shape-gate/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: shape-gate-requirements.txt, dest: shape-gate-requirements.txt }
+    - { src: requirements.txt, dest: requirements.txt }
+    - { src: requirements.yml, dest: requirements.yml }
+  loop_control: { label: "{{ item.dest }}" }
+- name: Build the shape gate venv
+  ansible.builtin.pip:
+    requirements: /opt/orbit-shape-gate/shape-gate-requirements.txt
+    virtualenv: "{{ shape_venv }}"
+    virtualenv_command: python3 -m venv
+- name: Mark the venv complete
+  ansible.builtin.copy: { dest: "{{ shape_venv }}/.complete", content: "", owner: root, group: root, mode: "0644", force: false }
+- name: Install the Ansible collections of the gate
+  ansible.builtin.command:
+    argv: ["{{ shape_venv }}/bin/ansible-galaxy", collection, install, -r, /opt/orbit-shape-gate/requirements.yml, -p, "{{ shape_collections }}"]
+    creates: "{{ shape_collections }}/ansible_collections"
+- name: Find the tools of other pins
+  ansible.builtin.find: { paths: /opt/orbit-shape-gate, patterns: ["venv-*", "collections-*"], file_type: directory }
+  register: shape_old
+- name: Remove the tools of other pins
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: "{{ shape_old.files | rejectattr('path', 'in', [shape_venv, shape_collections]) | list }}"
+  loop_control: { label: "{{ item.path }}" }

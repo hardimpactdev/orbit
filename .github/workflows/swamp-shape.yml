@@ -52,7 +52,7 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           python-version: "3.13"
-      # One script holds the steps, their order and the pinned linters (bin/swamp-shape-gate-requirements.txt),
+      # One script holds the steps, their order and the pinned linters (swamp/ansible/shape-gate-requirements.txt),
       # so a local run before a push checks what this job checks.
       - name: Run the shape gate
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
