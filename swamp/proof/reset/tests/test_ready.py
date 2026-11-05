@@ -98,8 +98,14 @@ class MakeTests(unittest.TestCase):
             self.assertEqual(role != 'app-prod', ['config', 'device', 'remove', target, 'orbit-source'] in calls)
         # The set is not complete until the caller says so, after the restarted fleet passed its checks.
         self.assertFalse(any(any(a.startswith('user.ready.complete=') for a in call) for call in calls))
-        for role in ready.ROLES:
-            self.assertIn(['config', 'unset', ready.name(role), 'user.ready.complete'], calls)
+        # A guest that was itself restored from a set carries that set's complete key; a fresh build has none to unset.
+        self.assertFalse(any(call[:2] == ['config', 'unset'] and call[3] == 'user.ready.complete' for call in calls))
+        restored = [guest_row(role) for role in ready.ROLES]
+        for row in restored:
+            row['config']['user.ready.complete'] = 'old'
+        again = FakeIncus(restored)
+        self.make(again)
+        self.assertEqual(3, sum(1 for call in again.calls if call[:2] == ['config', 'unset'] and call[3] == 'user.ready.complete'))
         self.assertEqual(['start', *GUESTS.values()], calls[-1])
         self.assertEqual({'set', 'made', 'subnet', 'copies', 'started_at'}, set(result))
 
@@ -126,13 +132,26 @@ class MakeTests(unittest.TestCase):
         self.assertEqual({ready.name(role) for role in ready.ROLES}, deleted)
         self.assertTrue(all('ready3-gateway' not in call for call in incus.calls))
 
-    def test_the_fleet_starts_again_and_no_set_completes_when_a_copy_fails(self):
+    def test_the_fleet_starts_again_and_the_half_made_copies_are_deleted_when_a_copy_fails(self):
         incus = FakeIncus([guest_row(role) for role in ready.ROLES], fail_on=['copy', GUESTS['app-dev']])
+        incus.rows.append({'name': ready.name('gateway'), 'status': 'Stopped', 'config': {}, 'devices': {}})
         with self.assertRaisesRegex(RuntimeError, 'copy'):
             self.make(incus)
         self.assertEqual(['start', *GUESTS.values()], incus.calls[-1])
-        self.assertFalse(any('user.ready.complete=set' in ' '.join(call) for call in incus.calls))
+        # The copies go before the originals start: a copy that still holds the NIC would stop the start.
+        self.assertLess(max(i for i, c in enumerate(incus.calls) if c[:2] == ['delete', '--force']), len(incus.calls) - 1)
         self.assertFalse(any(any(a.startswith('user.ready.complete=') for a in call) for call in incus.calls))
+
+    def test_the_copy_error_is_reported_even_when_the_start_fails_too(self):
+        incus = FakeIncus([guest_row(role) for role in ready.ROLES], fail_on=['copy', GUESTS['app-dev']])
+        original = incus.__call__
+
+        def both(args, **kwargs):
+            if list(map(str, args))[0] == 'start':
+                raise RuntimeError('MAC address already defined')
+            return original(args, **kwargs)
+        with self.assertRaisesRegex(RuntimeError, 'incus exited 1: copy'):
+            self.make(both)
 
     def test_a_guest_without_a_static_nic_is_not_copied(self):
         rows = [guest_row(role) for role in ready.ROLES]
@@ -632,6 +651,16 @@ class ReadyMakePhaseTests(unittest.TestCase):
         self.assertEqual({'scanned': ['gateway']}, result['key'])
         self.assertEqual({'minted': 1793836800, 'attempt': 'a' * 32, 'inputs': 'digest1'}, make.call_args.kwargs)
 
+    def test_the_unused_operator_vm_is_stopped_before_the_scan_to_leave_memory(self):
+        record = self.record()
+        record['prepare']['construction']['nodes']['operator'] = {'instance': 'op'}
+        guests = self.guests() + [{'name': 'op', 'status': 'Running', 'metadata': {}}]
+        order = []
+        with patch.object(phases, 'incus', side_effect=lambda argv, **kw: order.append(' '.join(map(str, argv))) or b''):
+            self.run_make(order, fleet_record=patch.object(phases, 'fleet_record', return_value=record),
+                          inventory=patch.object(phases, 'inventory', return_value={'guests': guests}))
+        self.assertEqual(['stop op', 'check', 'scrub', 'make', 'deliver'], order)
+
     def test_an_unhealthy_fleet_is_never_copied_and_the_key_stays(self):
         order = []
         with self.assertRaisesRegex(RuntimeError, 'Doctor'):
@@ -645,6 +674,12 @@ class ReadyMakePhaseTests(unittest.TestCase):
             self.run_make(order, scrub_key=patch.object(phases, 'scrub_key', side_effect=RuntimeError('The proof club key is still on a guest disk')))
         self.assertEqual(['check', 'deliver'], order)
         self.make.assert_not_called()
+
+    def test_the_first_error_is_reported_even_when_the_key_cannot_be_delivered_either(self):
+        order = []
+        with self.assertRaisesRegex(RuntimeError, 'still on a guest disk'):
+            self.run_make(order, scrub_key=patch.object(phases, 'scrub_key', side_effect=RuntimeError('The proof club key is still on a guest disk')),
+                          deliver_key=patch.object(phases, 'deliver_key', side_effect=RuntimeError('Timeout for condition: agent')))
 
     def test_a_guest_with_foreign_labels_is_never_copied(self):
         order = []
@@ -707,7 +742,8 @@ class ClubKeyTests(unittest.TestCase):
         for call in scans:
             command = ' '.join(map(str, call.args[0]))
             self.assertNotIn('-size', command)
-            self.assertIn('[ $? -le 1 ]', command)  # a grep error (exit 2) fails the scan
+            self.assertIn('[ "$s" -le 1 ]', command)  # a grep error (exit 2) fails the scan
+            self.assertIn('drop_caches', command)  # the guests' memory is the outer VM's shared memory
             self.assertEqual(b'club-secret-value\n', call.kwargs['data'])  # on stdin, never an argument
             self.assertNotIn('club-secret-value', command)
         self.assertLess(self.calls.index(scans[-1]), next(i for i, c in enumerate(self.calls) if 'fstrim' in ' '.join(map(str, c.args[0]))))

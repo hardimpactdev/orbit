@@ -130,6 +130,7 @@ def make(guests, network, nodes, *, minted, attempt, inputs):
     running = [guests[role] for role in ROLES if details[role].get('status') == 'Running']
     identity = secrets.token_hex(8)
     made = stamp()
+    failure = None
     try:
         if running:
             incus(['stop', *running], timeout=300)
@@ -148,16 +149,27 @@ def make(guests, network, nodes, *, minted, attempt, inputs):
             if role == 'gateway':
                 settings['user.ready.nodes'] = json.dumps(nodes)
             incus(['config', 'set', target, *(f'{key}={value}' for key, value in settings.items())])
-            incus(['config', 'unset', target, 'user.ready.complete'])
+            if 'user.ready.complete' in (details[role].get('config') or {}):
+                incus(['config', 'unset', target, 'user.ready.complete'])
             for label in LABELS:
                 incus(['config', 'unset', target, 'user.orbit.e2e.' + label])
             for device in (NIC, MOUNT):
                 if device in (details[role].get('devices') or {}):
                     incus(['config', 'device', 'remove', target, device])
-    finally:
-        # The fleet runs again whether or not the copies succeeded.
-        started = time.time()
+    except Exception as error:
+        failure = error
+    if failure is not None:
+        # A half-made copy would still hold the original's MAC and IP and keep it from starting.
+        for existing in copies():
+            incus(['delete', '--force', existing])
+    # The fleet runs again whether or not the copies succeeded. The first error is the one reported.
+    started = time.time()
+    try:
         incus(['start', *(guests[role] for role in ROLES)], timeout=300)
+    except Exception as error:
+        raise (failure or error) from (error if failure else None)
+    if failure is not None:
+        raise failure
     return {'set': identity, 'made': made, 'subnet': subnet, 'copies': [name(role) for role in ROLES], 'started_at': started}
 
 

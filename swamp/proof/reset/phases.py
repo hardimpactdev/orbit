@@ -659,7 +659,8 @@ def deliver_key(request, gateway):
 def scrub_key(request, guests):
     """Delete the club key from the running Gateway, prove no file on any of the three guests holds it, trim the freed blocks.
 
-    The scan has no size limit, and a grep error fails it. The file list names paths only. The fstrim output goes into the
+    The scan has no size limit, and a grep error fails it. It drops the guest's page cache after every batch of files: the
+    guests' memory is shared memory of the outer VM, and a scan that fills it killed the nested VMs. The file list names paths only. The fstrim output goes into the
     receipt: a filesystem that cannot discard (fstrim exits 64 when others were trimmed) does not fail the step, but the
     root filesystem must report a trim.
     """
@@ -669,7 +670,7 @@ def scrub_key(request, guests):
         raise RuntimeError('The proof club key file is empty; nothing to scan for.')
     incus(['exec', gateway, '--', 'rm', '-f', CLUB_KEY])
     scan = ('umask 077; cat > /run/club-key-scan; '
-            "find / -xdev -type f -exec sh -c 'grep -lF -f /run/club-key-scan \"$@\"; [ $? -le 1 ]' sh {} + ; "
+            "find / -xdev -type f -exec sh -c 'grep -lF -f /run/club-key-scan \"$@\"; s=$?; echo 1 > /proc/sys/vm/drop_caches; [ \"$s\" -le 1 ]' sh {} + ; "
             'status=$?; rm -f /run/club-key-scan; [ "$status" -eq 0 ]')
     found = []
     for instance in guests.values():
@@ -796,15 +797,30 @@ def ready_make(request):
     for instance in guests.values():
         if instance not in observed or observed[instance]['metadata'] != expected:
             raise RuntimeError('Guest ownership mismatch, nothing copied: ' + instance)
+    # The harness creates an operator VM the proof does not use. Its 1 GiB of shared memory is what a scan of the three guests
+    # needs on an 8 GiB task VM: with it running, the kernel killed nested VMs. A stopped guest is still released by name.
+    operator = record['prepare']['construction']['nodes'].get('operator', {}).get('instance')
+    if operator and operator in observed and observed[operator]['status'] == 'Running':
+        incus(['stop', operator], timeout=300)
     # Nothing is copied from a fleet that is not healthy.
     ready_check(request)
+    failure = None
     try:
         scrubbed = scrub_key(request, guests)
         made = ready.make(guests, ready.network_of(guests['gateway']), record['nodes'], minted=minted_at(guests['gateway']),
                           attempt=construction['attempt_id'], inputs=inputs_digest(request))
-    finally:
-        # The running fleet goes on with its key, as after any start of a Gateway, also when the scan or the trim failed.
+    except Exception as error:
+        failure = error
+    # The running fleet goes on with its key, as after any start of a Gateway, also when the scan or the trim failed.
+    # The first error is the one reported.
+    try:
         deliver_key(request, guests['gateway'])
+    except Exception as error:
+        if failure is None:
+            raise
+        raise failure from error
+    if failure is not None:
+        raise failure
     return {**made, 'key': scrubbed}
 
 
