@@ -12,10 +12,10 @@ final readonly class StartTaskProvisionAction
 {
     public function __construct(private RequireTasksExtensionAction $extension, private TaskProvisionIntent $intent) {}
 
-    public function execute(Task $group, string $triggeredBy, ?string $requestId): Operation
+    public function execute(Task $group, string $triggeredBy, ?string $requestId, ?string $commit = null): Operation
     {
         $this->extension->execute();
 
-        return $this->intent->start($group, $triggeredBy, $requestId);
+        return $this->intent->start($group, $triggeredBy, $requestId, $commit);
     }
 }

@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Proof\ProofRunContinuation;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -30,6 +31,9 @@ final readonly class TaskScriptProjection implements DirectOperationProjection
             $result['output'] = app(TaskCheckOutputBuilder::class)->tail(ValidatedData::string($result['output']));
         }
 
-        return app(DirectOperation::class)->project($operation, $data, $result);
+        $projected = app(DirectOperation::class)->project($operation, $data, $result);
+        app(ProofRunContinuation::class)->apply($projected);
+
+        return $projected;
     }
 }

@@ -16,6 +16,11 @@ final readonly class ProofSettings
         return Config::boolean('proof.execution');
     }
 
+    public function projectId(): int
+    {
+        return Config::integer('proof.project');
+    }
+
     public function repository(): GitHubRepository
     {
         return GitHubRepository::fromOrigin('https://github.com/'.Config::string('proof.repository'))

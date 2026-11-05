@@ -47,7 +47,8 @@ final readonly class TaskProvisionIntent
         private ProjectLifecycleStepStore $steps, private InstancePhpVersionCatalog $php,
         private TaskStartCommit $startCommit) {}
 
-    public function start(Task $group, string $caller, ?string $request): Operation
+    /** A proof starts its group at the commit it proves; any other group starts at the newest green commit of the default branch. */
+    public function start(Task $group, string $caller, ?string $request, ?string $commit = null): Operation
     {
         if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
             return $replay;
@@ -55,7 +56,7 @@ final readonly class TaskProvisionIntent
         // A group that cannot be provisioned is refused before any GitHub read; the locked recheck below stays.
         $this->assertProvisionable($group);
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
-        $startCommit = $this->startCommit->resolve($group->project()->firstOrFail());
+        $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
         return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
