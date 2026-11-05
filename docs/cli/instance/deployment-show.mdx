@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:deployment:show"
 sidebarTitle: "instance:deployment:show"
-description: "Show one recorded deployment: a detail tree of its identity and outcome, then the phases and steps it went through as a table, then its log."
+description: "Show one recorded deploy or rollback: its outcome and the phases and steps it went through."
 ---
 
 ```bash
@@ -10,10 +10,31 @@ orbit instance:deployment:show <deployment> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `deployment` | yes | Numeric deployment ID from `instance:deployment:list`. |
+| `deployment` | yes | Numeric deployment ID from [`instance:deployment:list`](/cli/instance/deployment-list). |
 
-The detail tree shows the Instance ID, release, branch, commit, started and finished times, duration, status, failed step, error code, selected release, and who triggered it. The phases table repeats the `phase` and `step_name` values the run recorded. The log reproduces the run's standard output and standard error lines in order.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the record as JSON. |
 
 ```bash
 orbit instance:deployment:show 42
 ```
+
+A call without the deployment ID is refused with `deployment.id_invalid` and sends no request, and so is a value that is not a positive integer. Run `instance:deployment:list` first. Deployments belong to one Instance, so a prompt would need an Instance and then a deployment; the command takes the ID directly.
+
+The command shows what the Gateway recorded. It does not contact any Node, so it works while a Node is unreachable. Human output has two parts:
+
+- A detail titled `Deployment: <id>` with the fields Instance ID, Kind, Release, Branch, Commit, Started, Finished, Duration, Status, Failed step, Error code, Selected release, Triggered by, Caller Node and Request ID. Kind is `deploy` or `rollback`. Caller Node shows the Node's name, or `Removed Node (<id>)` when the Node has been removed. A missing value shows `—`, as in a run that is still in flight.
+- A table of the phases the run went through, with Phase and Step, or `No recorded phases.`. A phase name shows its underscores as spaces. The Gateway saves the phases after each step, so a running deploy shows the steps that have ended.
+
+The run history keeps no command output, so that application secrets cannot enter it. A failed step is named in Failed step and the error code, and its output stays on the Node.
+
+With `--json`, stdout holds one flat record: the keys described under [`instance:deployment:list`](/cli/instance/deployment-list), plus `request_id` and `events`. Each event has `type` `phase`, a `phase` and a `step_name`. `events` is an empty list when nothing was recorded.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `deployment.id_invalid` | The deployment is missing or is not a positive integer. |
+| `http.404` | The deployment is unknown. |
+| `node_access.required` | The caller has no access grant to the Node of the deployment's Instance. |
