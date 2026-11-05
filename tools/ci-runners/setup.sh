@@ -8,6 +8,7 @@
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh actions NAME           # cache pinned actions; restart the service only when idle
 #   tools/ci-runners/setup.sh hook NAME              # job-started hook that resets the checkout; restart only when idle
+#   tools/ci-runners/setup.sh proof_hook             # the same hook for the orbit-proof runner on this host (sudo)
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
 # A registration token comes from `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`
@@ -236,6 +237,21 @@ hook() {
   echo "$name: job-started hook installed; restart its runner service when idle to load it"
 }
 
+# The host-level proof runners (beast-orbit-proof, shark-orbit-proof) run as the system user orbit-proof outside Incus
+# and reuse a checkout too. Run this on their host; it needs sudo, and it does not restart the service.
+proof_hook() {
+  local runner=${ORBIT_PROOF_RUNNER_DIR:-/var/lib/orbit-proof/actions-runner}
+  sudo -n -u orbit-proof install -m 0755 "$REPOSITORY/tools/ci-runners/job-started-hook.sh" "$runner/job-started-hook.sh"
+  sudo -n -u orbit-proof bash -euo pipefail -s "$runner" <<'SH'
+env_file=$1/.env
+touch "$env_file"
+sed -i "/^ACTIONS_RUNNER_HOOK_JOB_STARTED=/d;/^ORBIT_RUNNER_WORK=/d" "$env_file"
+echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=$1/job-started-hook.sh" >> "$env_file"
+echo "ORBIT_RUNNER_WORK=$1/_work" >> "$env_file"
+SH
+  echo "proof runner: job-started hook installed; restart its runner service when idle to load it"
+}
+
 register() {
   local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}} labels=$LABELS
   case $name in ci-sabre-*) labels=$labels,sabre ;; esac
@@ -276,6 +292,6 @@ verify() {
 }
 
 case "${1:-}" in
-  container | actions | hook | register | verify) "$@" ;;
-  *) sed -n '2,18p' "$0" >&2; exit 2 ;;
+  container | actions | hook | proof_hook | register | verify) "$@" ;;
+  *) sed -n '2,19p' "$0" >&2; exit 2 ;;
 esac
