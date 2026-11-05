@@ -1,9 +1,9 @@
 ---
 name: preparing-commands
-description: Use when preparing an Orbit command for the command pipeline, before any code changes. Covers drafting the chart, the docs page and the verification cases, the review with Nick, and landing them.
+description: Use when preparing an Orbit command for the command development pipeline, before any code changes. Covers drafting the chart, the docs page and the verification cases, the review with Nick, and landing them.
 ---
 
-# Prepare a command for the pipeline
+# Prepare a command for the development pipeline
 
 A command is **ready** when three things are approved by Nick and merged on main:
 

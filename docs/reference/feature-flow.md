@@ -3,7 +3,7 @@ title: "Feature flow"
 description: "The target flow for an Orbit change, from idea to deployed."
 ---
 
-This is the target flow for an Orbit change. The [command pipeline](/reference/command-pipeline) lists the stages of a command with their status and links to every chart. The `developing-commands` skill (`.agents/skills/developing-commands/SKILL.md`) applies this flow to one command at a time. The `verifying-commands` skill defines the VM proof used during development and in CI.
+This is the target flow for an Orbit change. The [command development pipeline](/reference/command-development-pipeline) lists the stages of a command with their status and links to every chart. The `developing-commands` skill (`.agents/skills/developing-commands/SKILL.md`) applies this flow to one command at a time. The `verifying-commands` skill defines the VM proof used during development and in CI.
 
 ## Words used here
 
@@ -262,7 +262,7 @@ The nightly build checks that the topology seed matches a fresh installation.
 
 `firewall:allow` is the first command to complete this whole flow. The existing `node:role:add` work continues through its conversion, shared Ansible setup and proofs. That work is reused where needed; it does not own the new CI, per-host refresh or scoped rollout work. Firewall uses native Swamp steps, so its preparation can proceed while the role conversion finishes.
 
-Build the missing parts in dependency order. This order prepares the pipeline; a release still follows steps 6 through 9 above.
+Build the missing parts in dependency order. This order prepares the development pipeline; a release still follows steps 6 through 9 above.
 
 1. **Agree the command contract and cases.** Align the documented contract with the implementation. Extend the existing harness with chart-path cases. Verify the CLI output and intended Node state, including Doctor and unchanged reruns.
 2. **Establish the proof environment.** Verify that the topology seed of a host holds the ready Gateway with Swamp, app-dev and app-prod copies. Record their release identity. Development and CI reset from the same copies.
@@ -275,7 +275,7 @@ These stages can ship in focused PRs, but `firewall:allow` is complete only afte
 
 ## What is built today
 
-The [command pipeline](/reference/command-pipeline) shows the status of the stages from preparation to the per-host refresh. This table covers the rest of the flow.
+The [command development pipeline](/reference/command-development-pipeline) shows the status of the stages from preparation to the per-host refresh. This table covers the rest of the flow.
 
 | Step | State |
 | --- | --- |

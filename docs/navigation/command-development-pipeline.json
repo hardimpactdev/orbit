@@ -1,0 +1,18 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 4,
+      "pages": [
+        "reference/command-development-pipeline"
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/reference/command-pipeline",
+      "destination": "/reference/command-development-pipeline"
+    }
+  ]
+}
