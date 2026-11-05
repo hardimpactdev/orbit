@@ -366,7 +366,7 @@ A blocked commit does not deploy automatically again. A new commit deploys at on
 
 #### Pause
 
-A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not, also while it still runs. A rollback writes its history row at admission, so it pauses the Instance before its run starts. The Instance stays paused until you set `--auto-deploy=true` again; a new commit does not resume it.
+A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not, also while it still runs. A rollback writes its history row at admission, so it pauses the Instance before its run starts. The Instance stays paused until you run `orbit instance:auto-deploy:enable` again; a new commit does not resume it.
 
 Resuming continues from the commit that is live then. The commit a rollback moved away from is blocked. The tick reads it from the deployment history, so it counts also when you resume or deploy by hand before a tick saw the rollback. The tick also keeps it in `auto_deploy_state.blocked`, so it stays blocked after its rows leave the history.
 
