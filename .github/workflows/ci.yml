@@ -50,7 +50,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: |
-          if [[ "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
+          if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
 
   gateway-static:
