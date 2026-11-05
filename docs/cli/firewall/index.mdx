@@ -101,7 +101,7 @@ A rule's identity on a Node is its port, protocol, and source ([ADR 0245](/decis
 - an allow and a deny with the same identity: `firewall.rule_conflict`;
 - a rule for both protocols beside a `tcp` or `udp` rule on the same port and source: `firewall.rule_overlap`.
 
-Repeating `firewall:allow` or `firewall:deny` reuses the rule record and checks the Node. Correct entries are skipped; missing or misplaced entries are repaired. If the whole rule is already correct, the command succeeds with skip reason `firewall.rule_exists`. A failed rule can be retried with the same identity and action. A running firewall change still excludes another change on the same Node.
+Repeating `firewall:allow` or `firewall:deny` reuses the rule record and checks the Node. Correct entries are skipped; missing or misplaced entries are repaired. If the whole rule is already correct, the command succeeds with skip reason `firewall.rule_exists`. The same skip applies to an allow on a protected port: its ports lie inside one port Orbit already opens, and its source is one that port already admits (see [`firewall:allow`](/cli/firewall/allow)). A failed rule can be retried with the same identity and action. A running firewall change still excludes another change on the same Node.
 
 The port is one number from 1 through 65535, such as `25`, or an ordered range, such as `8000:8100`. Service names are not accepted. The CLI checks the port, source, and protocol before it sends a request.
 

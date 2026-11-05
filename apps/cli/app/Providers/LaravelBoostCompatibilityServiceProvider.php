@@ -14,8 +14,8 @@ use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\BoostManager;
 use Laravel\Boost\Install\GuidelineAssist;
 use Laravel\Boost\Install\GuidelineComposer;
+use Laravel\Boost\Mcp\Resources\ApplicationInfo;
 use Laravel\Boost\Mcp\ToolExecutor;
-use Laravel\Boost\Mcp\Tools\ApplicationInfo;
 use Laravel\Roster\ProjectManager;
 
 final class LaravelBoostCompatibilityServiceProvider extends ServiceProvider

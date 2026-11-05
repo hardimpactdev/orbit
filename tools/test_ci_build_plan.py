@@ -34,7 +34,29 @@ class BuildPlanTest(unittest.TestCase):
                     self.assertIn('gateway-static', self.selected([path], main))
 
     def test_sdk_changes_build_both_consumers(self):
-        self.assertEqual({'php', 'cli', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
+        self.assertEqual({'php', 'cli', 'cli-static', 'sdk-static', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
+
+    def test_a_composer_manifest_or_lock_selects_the_static_analysis_of_its_project(self):
+        # Dependabot bumped laravel/boost in apps/cli/composer.lock and nothing analysed the CLI against it.
+        for project, job in (('apps/cli', 'cli-static'), ('packages/php-sdk', 'sdk-static'), ('apps/e2e', 'e2e-static')):
+            for name in ('composer.json', 'composer.lock', 'src/Thing.php', 'tests/ThingTest.php'):
+                for main in (False, True):
+                    with self.subTest(project=project, name=name, main=main):
+                        self.assertIn(job, self.selected([f'{project}/{name}'], main))
+
+    def test_the_static_analysis_of_one_project_is_not_selected_by_another(self):
+        self.assertNotIn('cli-static', self.selected(['apps/e2e/composer.lock']))
+        self.assertNotIn('cli-static', self.selected(['apps/gateway/composer.lock']))
+        self.assertNotIn('sdk-static', self.selected(['apps/cli/composer.lock']))
+        self.assertNotIn('e2e-static', self.selected(['apps/cli/composer.lock']))
+        self.assertEqual(set(), self.selected(['docs/reference/ci.md']) & {'cli-static', 'sdk-static', 'e2e-static'})
+
+    def test_the_sdk_selects_the_cli_analysis_because_the_cli_uses_it(self):
+        self.assertIn('cli-static', self.selected(['packages/php-sdk/composer.lock']))
+
+    def test_a_dependabot_bump_of_three_projects_selects_all_three_analyses(self):
+        paths = ['apps/cli/composer.lock', 'apps/e2e/composer.lock', 'apps/gateway/composer.lock']
+        self.assertTrue({'cli-static', 'e2e-static', 'gateway-static'} <= self.selected(paths))
 
     def test_flow_charts_run_the_kind_coverage_and_step_name_checks(self):
         self.assertEqual({'docs', 'api-reference'}, self.selected(['docs/cli/firewall/allow.mmd']))
