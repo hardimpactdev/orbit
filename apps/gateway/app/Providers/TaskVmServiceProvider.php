@@ -13,6 +13,7 @@ use App\Console\Commands\PrepareTaskVmHostCommand;
 use App\Console\Commands\PrepareTaskVmHubCommand;
 use App\Console\Commands\RefreshTaskVmSeedCommand;
 use App\Console\Commands\ResumeTaskVmCommand;
+use App\Console\Commands\SaveTaskVmReadyCopiesCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\TaskVmProviders;
@@ -45,6 +46,7 @@ final class TaskVmServiceProvider extends ServiceProvider
             PrepareTaskVmHubCommand::class,
             RefreshTaskVmSeedCommand::class,
             ResumeTaskVmCommand::class,
+            SaveTaskVmReadyCopiesCommand::class,
         ]);
     }
 }
