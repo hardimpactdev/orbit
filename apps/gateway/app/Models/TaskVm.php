@@ -60,6 +60,10 @@ use Throwable;
  * @property string|null $error_message
  * @property string|null $recipe_identity the recipe of the image the VM got, which is older than the current recipe on a fallback
  * @property int|null $image_build_id the promoted image build the VM got
+ * @property int|null $slot the number of a slot on its host, or null for a task VM that is not a slot
+ * @property string|null $identity_revision the hash of the identity tree that the slot's volume holds in `REVISION`
+ * @property string|null $bridge_address a slot's static bridge address
+ * @property string|null $bridge_mac a slot's fixed MAC
  * @property bool $image_fallback whether the VM got the host's last promoted image instead of the current recipe's
  * @property Carbon|null $ready_at when the VM last became `ready`: its first preparation, or its last resume
  * @property Carbon|null $stop_confirmed_at
@@ -85,6 +89,7 @@ final class TaskVm extends Model
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at',
+        'slot', 'identity_revision', 'bridge_address', 'bridge_mac',
     ];
 
     /** @var list<string> */
@@ -114,6 +119,7 @@ final class TaskVm extends Model
             'provider_bootstrap' => 'encrypted:array',
             'worker_stop_required' => 'boolean',
             'image_build_id' => 'integer',
+            'slot' => 'integer',
             'image_fallback' => 'boolean',
             'claimed_at' => 'datetime',
             'warmed_at' => 'datetime',
@@ -139,7 +145,8 @@ final class TaskVm extends Model
     #[Scope]
     protected function countedAgainstCap(Builder $query, TaskVmProviderKind $provider): void
     {
-        $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
+        // A slot is not a task's VM: it holds no machine of its own, and its capacity is its own.
+        $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)->whereNull('slot')
             ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed));
     }
 

@@ -3,13 +3,13 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
-  - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
+  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/EnrollTaskVmSlotCommand.php,database/migrations/2027_01_15_000000_add_task_vm_slots.php}
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-slot-enroll,workflow-task-vm-slot-identity,workflow-task-vm-slot-boot}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -427,7 +427,7 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### Task VM slots
 
-This section describes the target design. Only the [identity unit](#the-identity-volume) in the task image is built. Everything else is not: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
+This section describes the target design. Built so far: the [identity unit](#the-identity-volume) in the task image and the [enrol](#enrol-once). The claim, the release and the slot count per host are not: today every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
 
 A task VM host has a fixed number of slots. Each slot is a task VM identity that Orbit enrols once. A task takes a free slot. It does not enrol a new Node.
 
@@ -453,7 +453,7 @@ A slot is in one of these states:
 | `ready` | A task holds the slot, and Pi runs |
 | `parked` | A task holds the slot, and its VM is stopped. See [Park and resume](#park-and-resume) |
 | `destroying` | The task ended and Orbit is deleting the VM |
-| `failed` | A step failed. No claim can take the slot, and an alert fires |
+| `failed` | A step failed. No claim can take the slot. The failed Operation shows the cause; no alert fires |
 
 A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, but no VM runs, so its observer shows offline. Doctor skips a `free` slot, as it skips a `parked` one. Fleet rollout and Metrics skip every task VM Node already.
 
@@ -490,6 +490,12 @@ The Gateway computes `identity_revision` from the fleet-wide inputs, such as the
 #### Enrol once
 
 The `task_vm.slot_enroll` kind creates the slot. It makes the identity volume and the keys on the host. The private keys never leave the host. It adds the hub peer, issues the model key, and boots a proof VM that must reach the observer and Pi. The slot becomes `free` only after the proof passes. A rerun keeps the keys that exist.
+
+There is no CLI command of its own. An operator runs `php artisan task-vms:enroll-slot <host> <n>` on the Gateway, one slot at a time. The Gateway records the slot as a `task_vms` row in the state `provisioning`, with its Node, the `pi-server` Process, its WireGuard address, its static bridge address and its fixed MAC. It makes the Pi token and the model key once, keeps both encrypted on the row, and pushes both to the vault. 
+
+The model key stays on the row because the router teardown fence and the revoke at slot retire read it there. The workflow registers the model key with the router before the identity phase writes it into `models.json`.
+
+A failed enrolment makes the slot `failed`. No claim can take it. The proof VM and its seed clone are deleted also after a failure, and the next boot removes any that a crash left. The keys, the volume and the hub peer stay, and running the command again for the same slot continues from them. A `free` slot is not counted in the host capacity of today's task VMs, and Doctor reports nothing for it.
 
 #### Claim
 

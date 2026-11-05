@@ -18,20 +18,21 @@ sequenceDiagram
   Note over GW: Validate, record the slot
   %%> Started by:
   %%> - `node:update` when it raises the slot count of a task VM host, and the host-add flow
-  %%> - there is no CLI command of its own
+  %%> - there is no CLI command of its own; an operator runs `php artisan task-vms:enroll-slot HOST N` on the Gateway
   %%> Requirements:
   %%> - the host is an active task VM host
   %%> - the reserved WireGuard range has a free address
   %%> - no other task holds the slot
   %%> Result:
   %%> - a slot row named `HOST-tvm-N`, state `provisioning`, with its WireGuard address, static bridge address and fixed MAC
-  %%> - a Node with the `app-dev` role, the `pi-server` Process and a Pi token
+  %%> - a Node with the `app-dev` role, the `pi-server` Process, a Pi token and a model key, made once and kept encrypted on the row
   %%> - a task is recorded with the full intent
-  GW->>SW: Push the Pi token<br/>vault: Pi token
+  GW->>SW: Push the secrets<br/>vault: Pi token, model key
   %%> Why:
   %%> - secrets go Gateway → vault → step; the run inputs hold only vault key names
-  %%> Not included:
-  %%> - the model key: the workflow step issues it (below), so the Gateway never makes, holds or pushes it
+  %%> - the Gateway also pushes the model router credentials, as the model issue needs them
+  %%> The model key:
+  %%> - the Gateway makes and holds it, because the router teardown fence (`ai_router.keys_outstanding`) and the revoke at slot retire read it from the row
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-enroll
   %%> Inputs:
   %%> - the slot name, host, project, pool and addresses
@@ -39,10 +40,10 @@ sequenceDiagram
   %%> - the identity revision, and the pinned observer and Pi digests
   SW->>SW: Issue the model key<br/>workflow · task-vm-model-issue
   %%> What it does:
-  %%> - makes the slot's model key and registers it with the model router
-  %%> - the key stays in the run and goes only into the identity volume, as part of `models.json`
+  %%> - registers the slot's model key with the model router; the key comes from the vault copy of the step above
+  %%> - the key goes into the identity volume as part of `models.json`
   %%> Why first:
-  %%> - the identity step below writes the key; the Gateway pushes no model key to the vault
+  %%> - the identity step below writes the key, so the router must know it before a VM can use it
   %%> Revoke:
   %%> - the key is revoked when the slot is retired, not when a task ends
   SW->>H: Create the identity<br/>ansible phase · identity
@@ -63,11 +64,13 @@ sequenceDiagram
   %%> What it does:
   %%> - writes the slot's peer file from the public key of the identity step and reloads the hub
   %%> - the peer stays: a claim or a release never touches the hub
-  %%> When:
-  %%> - a `guard` skips it when the peer file already matches
+  %%> Idempotent:
+  %%> - one step writes the peer file only when it differs; `wg addconf` accepts a peer it already has
+  %%> - the peer list it prints is the read-back for the end check
   SW->>H: Start a proof VM<br/>workflow · task-vm-slot-boot
   %%> What it does:
-  %%> - runs the same boot steps as a claim: clone the seed, create the VM with the identity volume, start it
+  %%> - runs the same boot steps as a claim: remove a stale VM and seed clone, clone the seed, create the VM with the identity volume, start it, wait for the guest
+  %%> - a VM or clone left by an earlier attempt is never reused
   %%> Why:
   %%> - the slot counts as enrolled only when a VM with this identity comes up
   SW->>VM: Check the slot VM<br/>ssh exec · pinned host key
@@ -82,6 +85,8 @@ sequenceDiagram
   %%> What it does:
   %%> - deletes the VM and its seed clone
   %%> - keeps the identity volume
+  %%> When:
+  %%> - it runs also when the boot or the check failed, so a failed run leaves no proof VM behind
   Note over SW: Check the slot<br/>assert
   %%> End check:
   %%> - a native `assert` over the step results
@@ -105,11 +110,11 @@ sequenceDiagram
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Mark the slot failed
     %%> Result:
-    %%> - the slot is `failed`, so no claim can take it, and an alert fires
+    %%> - the slot is `failed`, so no claim can take it; the failed Operation is the signal, and no alert fires
     %%> - the task fails
     %%> On the host:
     %%> - the volume, the hub peer and the keys stay; there is no rollback
-    %%> - a proof VM that is left is a stray, and the host sweep removes it
+    %%> - the proof VM and its seed clone are deleted; one left by a crash is removed by the next boot, and the sweep does not report slot names as strays
     %%> Retry:
     %%> - run the enrolment again after fixing the cause; it keeps the keys and skips finished steps
   end

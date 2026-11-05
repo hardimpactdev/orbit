@@ -8,6 +8,7 @@ use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
+use App\Domain\TaskVms\TaskVmSlotEnrollProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
@@ -39,6 +40,15 @@ return ['task_vm.hub_converge' => [
     'private_material' => [],
     'secret_outputs' => [],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
+], 'task_vm.slot_enroll' => [
+    'workflow' => 'operation-task-vm-slot-enroll',
+    'projection' => TaskVmSlotEnrollProjection::class,
+    'workflow_inputs' => true,
+    // No result step: the projector reads the end check's status and the proof VM's own identity report, captured below.
+    'terminal_result' => ['job' => 'check', 'step' => TaskVmSlotEnrollProjection::EndCheck, 'native' => true, 'captures' => TaskVmSlotEnrollProjection::captures()],
+    // The Pi token and the model key of the slot, and the router credentials that issue the key.
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$']],
 ], 'task_vm.fill_package_cache' => [
     'workflow' => 'operation-task-vm-cache-fill',
     'projection' => TaskVmPackageCacheProjection::class,

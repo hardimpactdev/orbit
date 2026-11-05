@@ -1,0 +1,196 @@
+---
+# Task VM slot enrolment. The identity phase writes the identity tree of one slot into its Incus volume
+# (docs/reference/compute-drivers.md, What a slot holds).
+# - A key or secret that the volume holds is read back and kept, so a rerun never rotates the slot identity.
+# - Private keys are made in a private staging folder on the host and are never printed.
+# - The volume is written only when the staged tree differs from it, and REVISION last.
+- name: Create the slot identity
+  hosts: slot_host
+  gather_facts: false
+  become: true
+  tags: [identity]
+  vars:
+    incus_command: [incus, --project, "{{ identity.project }}"]
+    tree_files:
+      - {path: etc/wireguard/orbit.key, mode: "0600"}
+      - {path: etc/wireguard/orbit.conf, mode: "0600"}
+      - {path: etc/wireguard/orbit.dns-link, mode: "0644"}
+      - {path: etc/ssh/ssh_host_ed25519_key, mode: "0600"}
+      - {path: etc/ssh/ssh_host_ed25519_key.pub, mode: "0644"}
+      - {path: etc/ssh/ssh_host_ecdsa_key, mode: "0600"}
+      - {path: etc/ssh/ssh_host_ecdsa_key.pub, mode: "0644"}
+      - {path: etc/ssh/ssh_host_rsa_key, mode: "0600"}
+      - {path: etc/ssh/ssh_host_rsa_key.pub, mode: "0644"}
+      - {path: etc/cloud/cloud.cfg.d/99-orbit-slot.cfg, mode: "0644"}
+      - {path: etc/orbit/agent/secret, mode: "0600"}
+      - {path: home/orbit/.pi/agent/orbit-token, mode: "0600"}
+      - {path: home/orbit/.pi/agent/models.json, mode: "0600"}
+      - {path: REVISION, mode: "0644"}
+    tree_folders: [etc/wireguard, etc/ssh, etc/cloud/cloud.cfg.d, etc/orbit/agent, home/orbit/.pi/agent]
+  tasks:
+    - name: Look for the identity volume
+      ansible.builtin.command:
+        argv: "{{ incus_command + ['storage', 'volume', 'show', identity.pool, identity.volume] }}"
+      register: slot_volume
+      changed_when: false
+      failed_when: false
+
+    - name: Create the identity volume
+      ansible.builtin.command:
+        argv: "{{ incus_command + ['storage', 'volume', 'create', identity.pool, identity.volume, '--type', 'filesystem'] }}"
+      when: slot_volume.rc != 0
+      changed_when: true
+
+    - name: Make a private staging folder
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: orbit-slot-
+      register: stage
+      changed_when: false
+
+    - name: Stage and write the identity
+      block:
+        - name: Read the files of the volume
+          ansible.builtin.command:
+            argv: >-
+              {{ incus_command + ['storage', 'volume', 'file', 'pull', '--create-dirs', identity.pool,
+                 identity.volume ~ '/' ~ item.path, stage.path ~ '/new/' ~ item.path] }}
+          loop: "{{ tree_files }}"
+          loop_control:
+            label: "{{ item.path }}"
+          register: pulled
+          changed_when: false
+          # A file that is missing is made below. Any other failure stops the phase: a key must never be remade by mistake.
+          failed_when: pulled.rc != 0 and 'file does not exist' not in pulled.stderr
+
+        - name: Make the folders of the tree
+          ansible.builtin.file:
+            path: "{{ stage.path }}/new/{{ item }}"
+            state: directory
+            mode: "0700"
+          loop: "{{ tree_folders }}"
+          changed_when: false
+
+        - name: Keep a copy of what the volume holds
+          ansible.builtin.copy:
+            src: "{{ stage.path }}/new/"
+            dest: "{{ stage.path }}/old/"
+            remote_src: true
+            mode: preserve
+          changed_when: false
+
+        - name: Make the WireGuard key
+          ansible.builtin.shell: umask 077 && wg genkey > "{{ stage.path }}/new/etc/wireguard/orbit.key"
+          args:
+            creates: "{{ stage.path }}/new/etc/wireguard/orbit.key"
+
+        - name: Rebuild a missing public host key
+          ansible.builtin.shell: >-
+            ssh-keygen -y -f "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key"
+            > "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key.pub"
+          args:
+            creates: "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key.pub"
+            removes: "{{ stage.path }}/new/etc/ssh/ssh_host_{{ item }}_key"
+          loop: [ed25519, ecdsa, rsa]
+
+        - name: Make the SSH host keys
+          ansible.builtin.command:
+            argv: [ssh-keygen, -A, -f, "{{ stage.path }}/new"]
+          register: host_keys
+          changed_when: "'generating new host keys' in host_keys.stdout"
+
+        - name: Make the observer secret
+          ansible.builtin.shell: umask 077 && openssl rand -hex 32 > "{{ stage.path }}/new/etc/orbit/agent/secret"
+          args:
+            creates: "{{ stage.path }}/new/etc/orbit/agent/secret"
+
+        - name: Write the files that the Gateway renders
+          ansible.builtin.copy:
+            content: "{{ item.value | replace(identity.model_key_mark, secrets.model_key) }}"
+            dest: "{{ stage.path }}/new/{{ item.key }}"
+            mode: "0600"
+          loop: "{{ identity.files | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          changed_when: false
+          no_log: true
+
+        - name: Write the Pi token
+          ansible.builtin.copy:
+            content: "{{ secrets.pi_token }}"
+            dest: "{{ stage.path }}/new/home/orbit/.pi/agent/orbit-token"
+            mode: "0600"
+          changed_when: false
+          no_log: true
+
+        - name: Write the revision
+          ansible.builtin.copy:
+            content: "{{ identity.revision }}"
+            dest: "{{ stage.path }}/new/REVISION"
+            mode: "0644"
+          changed_when: false
+
+        - name: Compare the staged tree with the volume
+          ansible.builtin.command:
+            argv: [diff, -rq, "{{ stage.path }}/old", "{{ stage.path }}/new"]
+          register: tree_diff
+          changed_when: tree_diff.rc == 1
+          failed_when: tree_diff.rc > 1
+
+        - name: Write the tree into the volume
+          ansible.builtin.command:
+            argv: >-
+              {{ incus_command + ['storage', 'volume', 'file', 'push', '--create-dirs', '--mode', item.mode, '--uid', '0', '--gid', '0',
+                 stage.path ~ '/new/' ~ item.path, identity.pool, identity.volume ~ '/' ~ item.path] }}
+          loop: "{{ tree_files }}"
+          loop_control:
+            label: "{{ item.path }}"
+          when: tree_diff.rc == 1
+          changed_when: true
+
+        - name: Read the revision of the volume
+          ansible.builtin.command:
+            argv: "{{ incus_command + ['storage', 'volume', 'file', 'pull', identity.pool, identity.volume ~ '/REVISION', '-'] }}"
+          register: volume_revision
+          changed_when: false
+
+        - name: Check the revision of the volume
+          ansible.builtin.assert:
+            that: volume_revision.stdout == identity.revision
+            quiet: true
+
+        - name: Read the WireGuard public key
+          ansible.builtin.shell: wg pubkey < "{{ stage.path }}/new/etc/wireguard/orbit.key"
+          register: wireguard_public
+          changed_when: false
+
+        - name: Read the SSH host key
+          ansible.builtin.slurp:
+            src: "{{ stage.path }}/new/etc/ssh/ssh_host_ed25519_key.pub"
+          register: host_key
+
+        - name: Read the observer digest
+          ansible.builtin.stat:
+            path: "{{ stage.path }}/new/etc/orbit/agent/secret"
+            checksum_algorithm: sha256
+          register: observer_secret
+
+        # The public result for the workflow: no private key and no secret, only what the Gateway records.
+        - name: Write the public result
+          ansible.builtin.copy:
+            content: >-
+              {{ {'wireguard_public_key': wireguard_public.stdout,
+                  'ssh_host_key': (host_key.content | b64decode).split()[0:2] | join(' '),
+                  'observer_digest': observer_secret.stat.checksum,
+                  'revision': volume_revision.stdout} | to_json }}
+            dest: "{{ run_folder }}/public.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+      always:
+        - name: Remove the staging folder
+          ansible.builtin.file:
+            path: "{{ stage.path }}"
+            state: absent
+          changed_when: false

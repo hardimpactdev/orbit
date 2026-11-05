@@ -68,11 +68,12 @@ jobs:
           ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/ansible-collections
         run: |
           ansible-galaxy collection install -r ansible/requirements.yml -p "$ANSIBLE_COLLECTIONS_PATH"
-          ansible-lint ansible/operation-node-role-add.yml
+          ansible-lint ansible/operation-node-role-add.yml ansible/operation-task-vm-slot-enroll.yml
           python3 -I tests/ansible_artifact_test.py
           python3 -I tests/ansible_inputs_test.py
+          python3 -I tests/ansible_slot_identity_test.py
           python3 -I tests/ansible_firewall_test.py
-          ruff check ansible/build_vars.py ansible/library/orbit_artifact.py tests/ansible_artifact_test.py tests/ansible_inputs_test.py tests/ansible_firewall_test.py
+          ruff check ansible/build_vars.py ansible/build_slot_vars.py ansible/library/orbit_artifact.py tests/ansible_artifact_test.py tests/ansible_inputs_test.py tests/ansible_slot_identity_test.py tests/ansible_firewall_test.py
       - name: Check shape regression fixtures
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
