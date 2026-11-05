@@ -8,6 +8,7 @@ export const Ssh = z.object({
     public_key: z.string().min(1),
     target: z.object({
         name: z.string().min(1),
+        node_id: Id.optional(),
         host: z.string().min(1),
         user: z.string().min(1),
         port: z.number().int().min(1).max(65535),

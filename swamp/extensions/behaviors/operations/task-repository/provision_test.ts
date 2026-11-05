@@ -59,6 +59,7 @@ Deno.test("provision source uses the trusted child pin with captured WG/account 
     assertEquals(workspace.checkout_path, intent.workspace.checkout_path);
     assertEquals(workspace.ssh_execution.target, {
         name: "target",
+        node_id: 20,
         host: "10.44.0.20",
         port: 22,
         user: "orbit",

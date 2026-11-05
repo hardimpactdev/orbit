@@ -115,6 +115,7 @@ export function connection(raw: unknown, receipt: unknown) {
         ...intent.ssh_identity,
         target: {
             name: "target",
+            node_id: intent.guest_node_id,
             host: intent.wireguard_ip,
             user: intent.workspace.user,
             port: 22,

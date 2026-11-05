@@ -18,6 +18,8 @@ covers:
 
 Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.update` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge, SSH access and rekey use official `@swamp/cfgmgmt` behaviors and ship no script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
+The public SSH intent of a Node carries its target `name`, `node_id`, `host`, `user`, `port` and pinned `host_keys`. Steps that reach a task VM name their SSH behaviors by `node_id`: the VM's address returns to the pool and the next VM reuses it, but its Node id is never reused.
+
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
 Native role prerequisites retain a complete Docker CE installation instead of installing `docker.io` over it. One bounded APT command installs missing prerequisites with removal and upgrades disabled. The end check verifies the retained provider packages or the normal Ubuntu packages. Exporter children use bounded fan-out so a single control worker does not exhaust their native queue timeout.

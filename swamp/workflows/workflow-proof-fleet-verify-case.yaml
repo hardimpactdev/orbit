@@ -46,10 +46,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh_args
-        name: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -85,7 +85,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
@@ -109,7 +109,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:

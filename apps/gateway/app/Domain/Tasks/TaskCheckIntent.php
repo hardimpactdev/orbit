@@ -8,6 +8,8 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
@@ -78,6 +80,8 @@ final readonly class TaskCheckIntent
                 'repository' => $repository === null ? null : $repository->owner.'/'.$repository->name,
                 'check_name' => $ci, 'branch' => TaskRemoteBranch::handoff($group),
                 'ssh_execution' => $ssh, 'execution_secrets' => $copies, 'admitted_at' => now()->toISOString(),
+                // The time limit of each SSH step of the check workflows, so a step against a VM that is gone ends with the Operation.
+                'run_budget_seconds' => OperationRunBudgets::historySeconds(OperationKinds::TasksCheck),
             ], $caller, $request);
         });
     }

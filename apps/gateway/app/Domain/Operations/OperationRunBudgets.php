@@ -23,6 +23,14 @@ final class OperationRunBudgets
      */
     private const int ProofResetSeconds = 360;
 
+    /**
+     * Kinds whose admission captures `input.run_budget_seconds` and hands it to their SSH steps as the step time limit. The
+     * captured number wins over the kind's history, so the Gateway deadline and the step limits agree.
+     *
+     * @var list<string>
+     */
+    private const array CapturedKinds = [OperationKinds::TasksScript, OperationKinds::TasksCheck];
+
     /** @var array<string,int>|null One observer pass, never a cross-request cache. */
     private static ?array $history = null;
 
@@ -115,13 +123,25 @@ final class OperationRunBudgets
         return $script === 'bin/proof-fleet' && ($args[0] ?? null) === 'reset' ? self::ProofResetSeconds : null;
     }
 
+    /**
+     * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the explicit budget, else the budget of the
+     * history. The workflow sets it as the time limit of each of its SSH steps, so a step against a VM that is gone ends with the
+     * Operation. The Gateway does not re-read the history after admission.
+     *
+     * @param  list<string>  $args
+     */
+    public static function scriptBudget(string $script, array $args): int
+    {
+        return self::scriptSeconds($script, $args) ?? self::historySeconds(OperationKinds::TasksScript);
+    }
+
     public static function seconds(Operation $operation): int
     {
         if (! isset($operation->state['swamp_run_id']) && $operation->attempts === 0) {
             return self::AdmissionSeconds;
         }
         $captured = $operation->input['run_budget_seconds'] ?? null;
-        if ($operation->kind === OperationKinds::TasksScript && is_int($captured) && $captured > 0) {
+        if (in_array($operation->kind, self::CapturedKinds, true) && is_int($captured) && $captured > 0) {
             return $captured;
         }
         $budget = self::SecondsByKind[$operation->kind] ?? null;
@@ -133,11 +153,18 @@ final class OperationRunBudgets
 
             return is_int($seconds) && $seconds > 0 ? $seconds : 60;
         }
-        if (isset(self::$history[$operation->kind])) {
-            return self::$history[$operation->kind];
+
+        return self::historySeconds($operation->kind);
+    }
+
+    /** The longest successful run of the kind in the last 14 days x 1.5, rounded up to a minute; 30 minutes without a success. */
+    public static function historySeconds(string $kind): int
+    {
+        if (isset(self::$history[$kind])) {
+            return self::$history[$kind];
         }
         $longest = null;
-        foreach (Operation::query()->where('kind', $operation->kind)->where('status', OperationStatus::Succeeded)
+        foreach (Operation::query()->where('kind', $kind)->where('status', OperationStatus::Succeeded)
             ->whereNotNull('started_at')->where('finished_at', '>=', now()->subDays(14))->where('finished_at', '<=', now())
             ->whereNotNull('state->swamp_run_id')->select(['started_at', 'finished_at'])->cursor() as $success) {
             if ($success->started_at === null || $success->finished_at === null) {
@@ -150,7 +177,7 @@ final class OperationRunBudgets
         }
         $seconds = $longest === null ? self::UnmeasuredSeconds : max(60, (int) ceil($longest * 1.5 / 60) * 60);
         if (self::$history !== null) {
-            self::$history[$operation->kind] = $seconds;
+            self::$history[$kind] = $seconds;
         }
 
         return $seconds;

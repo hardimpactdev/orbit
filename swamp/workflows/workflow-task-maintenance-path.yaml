@@ -1,5 +1,6 @@
 id: 85856d40-df44-408b-92dd-7769c6e6fed3
 name: task-maintenance-path
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
 description: One captured maintenance directory; every task VM action is one official SSH
   exec argv, visible in native history.
 vaults: []
@@ -27,10 +28,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id) + "-" + self.item).split(".").join("-") }}'
       methodName: exec
       globalArgs: &read_ssh_args
-        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
+        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id) + "-" + self.item).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -43,6 +44,7 @@ jobs:
             hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         okExitCodes: any
         argv:
         - cat
@@ -53,10 +55,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh_args
-        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -69,6 +71,7 @@ jobs:
             hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         okExitCodes: any
         argv:
         - test
@@ -98,7 +101,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
@@ -240,7 +243,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
@@ -262,11 +265,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - tee
         - --
@@ -285,7 +289,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
@@ -308,11 +312,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id) + "-" + self.item).split(".").join("-") }}'
       methodName: exec
       globalArgs: *read_ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         okExitCodes: any
         argv:
         - cat
@@ -342,7 +347,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
@@ -433,11 +438,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - tee
         - --
@@ -454,7 +460,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh_args
       inputs:
@@ -478,11 +484,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.node_id) + "-" + self.item).split(".").join("-") }}'
       methodName: exec
       globalArgs: *read_ssh_args
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         okExitCodes: any
         argv:
         - cat

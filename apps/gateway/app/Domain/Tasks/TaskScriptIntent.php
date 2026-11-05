@@ -44,7 +44,7 @@ final readonly class TaskScriptIntent
             ...$input->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'checkout_path' => $instance->checkout_path, 'ssr_port' => $instance->ssr_port,
-            ...(($budget = OperationRunBudgets::scriptSeconds($input->script, $input->args)) === null ? [] : ['run_budget_seconds' => $budget]),
+            'run_budget_seconds' => OperationRunBudgets::scriptBudget($input->script, $input->args),
         ], $caller, $request);
     }
 }

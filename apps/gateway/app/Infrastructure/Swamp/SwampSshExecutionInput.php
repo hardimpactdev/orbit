@@ -28,7 +28,10 @@ final readonly class SwampSshExecutionInput
     }
 
     /** A Node in {@see PendingSshHostKey} gets `host_keys: null`, which its run binds before use.
-     * @return array{control_node_id:209,identity_file:string,public_key:string,target:array{name:string,host:string,user:string,port:int,host_keys:?list<string>}}
+     * `node_id` names the target for Swamp: a task VM's WireGuard address returns to the pool, its Node id never does,
+     * so a behavior named by `node_id` is never shared with the next VM at that address (docs/cli/README.md#behavior-names).
+     *
+     * @return array{control_node_id:209,identity_file:string,public_key:string,target:array{name:string,node_id:int,host:string,user:string,port:int,host_keys:?list<string>}}
      */
     public function forNode(Node $node): array
     {
@@ -41,7 +44,7 @@ final readonly class SwampSshExecutionInput
         $identity = $this->identity();
 
         return [...$identity,
-            'target' => ['name' => 'target', 'host' => $node->wireguard_ip, 'user' => $node->user, 'port' => 22,
+            'target' => ['name' => 'target', 'node_id' => $node->id, 'host' => $node->wireguard_ip, 'user' => $node->user, 'port' => 22,
                 'host_keys' => $pending ? null : [$node->ssh_host_key_type.' '.$node->ssh_host_key]],
         ];
     }

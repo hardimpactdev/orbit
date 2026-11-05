@@ -179,7 +179,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -187,7 +187,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -195,6 +195,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/mkdir
         - -p
@@ -212,7 +213,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
@@ -220,7 +221,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -228,6 +229,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         src: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
           }}
         dst: ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
@@ -245,7 +247,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -253,7 +255,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -261,6 +263,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/git
         - clone
@@ -280,7 +283,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -288,7 +291,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -296,6 +299,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/git
         - -C
@@ -314,7 +318,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -322,7 +326,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -330,6 +334,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/git
         - -C
@@ -348,7 +353,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -356,7 +361,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -364,6 +369,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/git
         - -C
@@ -382,7 +388,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -390,7 +396,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -398,6 +404,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         okExitCodes: any
         argv:
         - /usr/bin/env
@@ -419,7 +426,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
@@ -427,7 +434,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -514,7 +521,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
@@ -522,7 +529,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -577,7 +584,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -585,7 +592,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -593,6 +600,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         sudo: true
         argv:
         - timeout
@@ -620,7 +628,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -628,7 +636,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -636,6 +644,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         sudo: true
         argv:
         - timeout
@@ -657,7 +666,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -665,7 +674,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -673,6 +682,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         sudo: true
         argv:
         - timeout
@@ -785,7 +795,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -793,7 +803,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -801,6 +811,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
+        timeoutSec: 3900
         argv:
         - /usr/bin/rm
         - -rf
@@ -813,5 +824,6 @@ jobs:
     allowFailure: true
   labels: {role: swamp}
 name: task-workspace-source
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
 vaults:
 - orbit-control-inputs

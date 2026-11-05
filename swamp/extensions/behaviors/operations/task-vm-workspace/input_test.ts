@@ -10,6 +10,7 @@ const intent = {
         public_key: "ssh-ed25519 PUBLIC",
         target: {
             name: "target",
+            node_id: 212,
             host: "10.44.0.212",
             user: "orbit",
             port: 22,
