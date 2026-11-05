@@ -35,6 +35,17 @@ swamp/extensions/behaviors/operations/firewall/**          firewall:allow firewa
 swamp/ansible/tasks/firewall*.yml                          firewall:allow firewall:deny firewall:remove
 swamp/proof/firewall/**                                    firewall:allow firewall:deny firewall:remove
 swamp/proof/firewall/*.md                                  skip
+# The Gateway and CLI code of the firewall commands. firewall:list has no case yet, but the cases read it (`record`).
+apps/cli/app/Commands/Firewall/**                          firewall:allow firewall:deny firewall:remove
+apps/cli/app/Support/CommandVocabulary/firewall.php        firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Actions/Firewall/**                       firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Data/Firewall/**                          firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Domain/Firewall/**                        firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Domain/Firewall/RouterLanIngress*.php     skip
+apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php  firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Http/Requests/Firewall/**                 firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Models/FirewallRule.php                   firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Providers/Domains/FirewallServiceProvider.php  firewall:allow firewall:deny firewall:remove
 
 # The proof tooling is shared code of every case.
 swamp/proof/selection.txt                        *
