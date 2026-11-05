@@ -1,10 +1,35 @@
 ---
 title: "orbit instance:list"
 sidebarTitle: "instance:list"
+description: "List the Instances you can reach with their Project, Node, source, Route domain, status, and removal progress."
 ---
-
-List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress. JSON includes the [assigned SSR port](/reference/assigned-ssr-ports) as `ssr_port`, which is null when none is assigned.
 
 ```bash
 orbit instance:list [--json]
 ```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the Instances as JSON. |
+
+The list shows what Orbit has recorded for each Instance. It does not contact any Node, so it works while a Node is unreachable. The Gateway Node, and any Node with a grant to it, sees every Instance. Any other caller sees the Instances on the Nodes it has a grant to. Rows are ordered by name, then by ID. A caller with no Gateway authority and no grant to any Node, which includes the Gateway's own serving Node, gets `node_access.required`.
+
+| Column | Meaning |
+| --- | --- |
+| `ID` | The Instance's ID. |
+| `PROJECT`, `NODE` | The Project and the Node, by name. |
+| `VITE PORT` | The assigned Vite port. |
+| `NAME` | The Instance's name. |
+| `SOURCE LAYOUT`, `ROOT` | How the source is laid out, and the effective web root. |
+| `SELECTED BRANCH`, `BRANCH OVERRIDE` | The selected branch, and the branch override if one is set. |
+| `ROUTE DOMAIN`, `URL` | The domain and the URL of the Instance's Route. |
+| `STATUS` | `reserved`, `checkout_prepared`, `source_resolved`, `active`, or `removing`. |
+| `REMOVAL` | The progress of a removal in the form `normal 2/5 completed; 3 remaining; <step>`. `forced` replaces `normal` for a forced removal, the step shows `—` when there is none, and a failed removal appends `; failed <step> (<error code or —>)`. |
+
+With `--json`, stdout holds `{"instances": [...], "request_id": ...}`, with an empty list when none is visible. Each Instance is the full record: its `project` and `node` objects with `id`, `name` and `slug`, the table fields under their JSON keys (`selected_branch`, `branch_override`, `effective_root`, `vite_port`, `domain`, `url`, `status`), the checkout and production fields, `route`, `routes`, `deploy_steps`, `auto_deploy`, the [assigned SSR port](/reference/assigned-ssr-ports) as `ssr_port` (null when none is assigned), and `removal`, which is null or an object with `operation_id`, `name`, `force`, `status`, `current_step`, `total`, `completed`, `remaining`, `failed_step` and `error_code`. A missing value shows `—`. An empty list says `No Instances found.`. The human output ends with the request ID.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node_access.required` | The caller has no access grant to any Node and no Gateway authority. |
