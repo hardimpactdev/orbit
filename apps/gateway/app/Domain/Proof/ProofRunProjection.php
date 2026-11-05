@@ -35,7 +35,7 @@ final readonly class ProofRunProjection implements DirectOperationProjection, Di
         $provision = ValidatedData::object($input['provision']);
         $cancel = ValidatedData::object($input['cancel']);
         $envelope = app(TaskProvisionProjection::class)->input((new Operation)->forceFill([
-            'kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $input['group_id'], 'node_id' => $provision['node_id'], 'input' => $provision]));
+            'id' => $operation->id, 'kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $input['group_id'], 'node_id' => $provision['node_id'], 'input' => $provision]));
 
         return ['intent' => ['existing' => false, 'group_id' => $input['group_id'], 'checkout_path' => $input['checkout_path'], 'ssh_execution' => $input['ssh_execution'],
             'vm' => $input['vm'], 'commands' => $input['commands'],

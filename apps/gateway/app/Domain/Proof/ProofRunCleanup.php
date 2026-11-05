@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -33,7 +34,13 @@ final readonly class ProofRunCleanup
      */
     public function cancelGroup(Operation $proof): void
     {
-        $group = Task::topLevel()->find($proof->input['group_id'] ?? 0);
+        $this->cancelGroupById(ValidatedData::integer($proof->input['group_id'] ?? 0));
+    }
+
+    /** @throws ResourceOperationException as {@see self::cancelGroup()} does */
+    public function cancelGroupById(int $groupId): void
+    {
+        $group = Task::topLevel()->find($groupId);
         if (! $group instanceof Task || $group->status === TaskGroupStatus::Cancelled) {
             return;
         }

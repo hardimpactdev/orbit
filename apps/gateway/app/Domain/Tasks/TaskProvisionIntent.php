@@ -59,6 +59,7 @@ final readonly class TaskProvisionIntent
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
         return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit): Operation {
+            Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
                 return $replay;
             }

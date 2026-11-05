@@ -75,13 +75,21 @@ jobs:
         hosts: name:target
         timeoutSec: 60
         argv:
-        - incus
-        - exec
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/incus
         - --project
         - ${{ inputs.intent.vm.project }}
-        - ${{ inputs.intent.vm.name }}
+        - exec
+        - --mode=non-interactive
+        - --user
+        - '0'
+        - --group
+        - '0'
         - --
-        - cut
+        - ${{ inputs.intent.vm.name }}
+        - /usr/bin/cut
         - -d
         - ' '
         - -f

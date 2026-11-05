@@ -71,24 +71,37 @@ final readonly class ProofRunIntent
             'Prove commit '.$commit.' with the selected cases.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
                 'The Swamp workflow operation-proof-run runs the selected cases in the task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
         try {
-            return DB::transaction(fn (): Operation => $this->admit($group, $swamp, $intent, $selection, $caller, $requestId));
+            // The provision takes its own locks, so it commits before the run is admitted.
+            $provision = app(TaskProvisionIntent::class)->captureForProof($group, ValidatedData::string($intent['commit']));
         } catch (ResourceOperationException $exception) {
             app(CancelTaskGroupAction::class)->execute($group);
+
+            throw $exception;
+        }
+        try {
+            return DB::transaction(fn (): Operation => $this->admit($group, $swamp, $intent, $selection, $provision, $caller, $requestId));
+        } catch (ResourceOperationException $exception) {
+            // The group is reserved with its VM: the normal cancel ends it.
+            try {
+                app(ProofRunCleanup::class)->cancelGroupById($group->id);
+            } catch (ResourceOperationException) {
+                // The group stays for `tasks:cancel`.
+            }
 
             throw $exception;
         }
     }
 
     /**
-     * Records the group, its VM and its workspace, captures the provision and the cancel of that VM, and starts the one Swamp run that
+     * Captures the cancel of the VM that the provision recorded, and starts the one Swamp run that
      * carries them. The Operation is not a task_group target: the run cancels the group itself, and a cancel of the group refuses to
      * start while an Operation holds it.
      *
      * @param  array<string,mixed>  $intent
+     * @param  array<string,mixed>  $provision
      */
-    private function admit(Task $group, Node $swamp, array $intent, ProofSelectionResult $selection, string $caller, ?string $requestId): Operation
+    private function admit(Task $group, Node $swamp, array $intent, ProofSelectionResult $selection, array $provision, string $caller, ?string $requestId): Operation
     {
-        $provision = app(TaskProvisionIntent::class)->captureForProof($group, ValidatedData::string($intent['commit']));
         $instance = Instance::query()->with('node')->findOrFail(ValidatedData::integer($provision['instance_id']));
         $group->refresh();
         // The guest's host key is read from its VM by the run; until then its SSH target carries `host_keys: null`.
