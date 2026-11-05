@@ -45,13 +45,11 @@
             "@rector",
             "@format",
             "@docs:lint",
-            "@fixtures:check",
             "@analyse"
         ],
         "context": "@php artisan orbit:docs-context",
         "context:build": "@php artisan orbit:docs-index",
         "docs:lint": "@php artisan orbit:docs-lint --format=agent --strict",
-        "fixtures:check": "python3 ../../bin/api-fixtures --check",
         "issue:lint": "@php artisan orbit:issue-lint",
         "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
         "rector": "vendor/bin/rector process --no-progress-bar",

@@ -87,7 +87,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Gateway static analysis | Run the complete Gateway PHPStan configuration and collect all Gateway tests whenever a PR changes any file under `apps/gateway/`, including tests |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
-| Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
+| Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
@@ -322,7 +322,7 @@ A budget of 2 or less runs one group at a time. The budget counts workers, not e
 
 With a budget of 4, the Gateway's checks run with two processes while two other groups run with one each. A budget of 1 checks one project at a time. The gate prints each result when the command ends. The receipt lists the checks in the gate's own order.
 
-The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
+The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. The contract checks boot the Gateway application. The other groups share no files that a check writes.
 
 #### Formatters run in fix mode
 
@@ -330,9 +330,7 @@ Each project's `composer check` runs Rector and Pint in fix mode first, then PHP
 
 #### Generated artifacts
 
-Changes under `apps/gateway`, `apps/cli`, or `packages/php-sdk`, to the gate or either API generator, to `docs/openapi.json` or `docs/docs.json`, or to the generated MCP outputs run `bin/docs-openapi --check` and `bin/mcp-tools --check`. These checks generate the expected bytes in memory and print a unified diff when files are stale. They leave the candidate files unchanged. A stale-artifact failure names the exact regeneration command: `bin/docs-openapi` or `bin/mcp-tools`. Regenerate OpenAPI first when both are stale, then run `cd apps/web && bun run types` to update the web schema.
-
-Changes to `docs/openapi.json`, `packages/php-sdk/fixtures`, `apps/web/fixtures`, the fixture checker, or the gate also run `bin/api-fixtures --check` explicitly. Docs’ `composer check` continues to validate the SDK and web fixtures on every run.
+When `bin/ci-build-plan` selects CI's Generated contracts job, the gate runs the same checks: `bin/check-operation-kinds`, then `bin/docs-openapi` and `bin/mcp-tools`, then `bin/api-fixtures --check`. The generators write ignored build outputs and fail when the sources disagree with the API contract. The fixture check validates the SDK and web fixtures against the fresh OpenAPI document.
 
 The gate checks the local candidate tree. CI runs the builds and static checks listed above on the PR merge tree. Test suites remain available for focused local verification.
 
