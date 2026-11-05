@@ -70,10 +70,10 @@ Swamp's own skill (`swamp`, installed by `swamp repo upgrade`) explains how to b
 ## The loop
 
 1. For a new command, draft the chart by the README rules first. Then read the chart and the kind's live facts: its workflow in `swamp/workflows/`, its Gateway declaration, and recent runs (`operation-list --kind <kind>`). Use `gh api` only; never `git clone` or `git fetch`.
-2. Walk the steps in order and test each one against rules 1–28. Note the step number, the rule and the change.
+2. Walk the steps in order and test each one against rules 1–29. Note the step number, the rule and the change.
 3. Write the proposal: each change with its step numbers and the reason in one line. Add the step count of the common path before and after, and what you keep on purpose and why.
-4. Ask before applying to a reviewed chart. Show Nick the chart rendered (a local docs preview, see the README's "Edit, render and preview") and explain by step number. Change one chart at a time.
-5. Apply the agreed changes:
+4. Apply what the rules settle. Ask Nick only about a choice that no rule or Recall decision settles: one plain question, context first, and a rendered chart (a local docs preview, see the README's "Edit, render and preview") explained by step number. Change one chart at a time.
+5. Then:
    - a step that moves to another command is added to that command's chart in the same PR;
    - run `bin/check-flows`;
    - check it in the local docs preview;

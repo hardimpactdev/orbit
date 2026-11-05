@@ -415,7 +415,7 @@ MCP has an experimental Tasks primitive for long tool calls. An operation alread
 
 ## Swamp execution
 
-Author native workflows in `hardimpactdev/orbit-swamp`. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader.
+Author native workflows under `swamp/` in this repository. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader.
 
 A kind declared with `executor: swamp` is admitted through the same Operation store and idempotency boundary. Admission returns `202`. The Gateway never dispatches a PHP job for it. Swamp owns its steps and retries; the Gateway keeps intent, target exclusion, steps, output and the final receipt.
 

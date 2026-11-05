@@ -1,8 +1,0 @@
-{
-  "kind": "node.role_add.no-drift",
-  "defaults": "node-role-add-defaults.json",
-  "request": {"method": "POST", "path": "nodes/${node.peer}/roles", "body": {"role": "app-dev", "converge_existing": true}},
-  "parity": ["swamp/proof/node.role_converge/parity.py", "peer", "app-dev", "no-drift"],
-  "after_prepare": [["python3", "swamp/proof/node.role_converge/capture.py", "peer", "app-dev", "stable"]],
-  "observer_wait_seconds": 0
-}

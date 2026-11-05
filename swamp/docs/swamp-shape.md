@@ -1,6 +1,6 @@
 # The Swamp shape: how every Orbit operation must look
 
-Read this before you port, write or review any Orbit operation in Swamp. It replaces the per-family contracts in orbit-swamp `docs/` that say "no shell", "private bytes on stdin" or "never a workflow argument". Where this guide and an older doc disagree, this guide wins. The source of truth is the Swamp manual: https://swamp-club.com/manual (Workflows, Behavior Definitions, Vaults, Data, Remote Execution).
+Read this before you port, write or review any Orbit operation in Swamp. It replaces the per-family contracts of the old, frozen `orbit-swamp` repository that say "no shell", "private bytes on stdin" or "never a workflow argument". Where this guide and an older doc disagree, this guide wins. The source of truth is the Swamp manual: https://swamp-club.com/manual (Workflows, Behavior Definitions, Vaults, Data, Remote Execution).
 
 Decided by Nick, 2026-10-31.
 

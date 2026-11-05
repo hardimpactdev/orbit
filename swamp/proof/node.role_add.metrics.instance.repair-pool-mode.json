@@ -1,7 +1,0 @@
-{
-  "kind": "node.role_add.metrics.instance.repair-pool-mode",
-  "defaults": "node-role-add-defaults.json",
-  "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "metrics", "converge_existing": true}},
-  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "metrics", "instance"],
-  "before_node": {"peer": [["python3", "-c", "from pathlib import Path; import os,pwd; pools=list(Path('/etc/orbit/php-fpm').glob('*/generated/pool.conf')); assert len(pools)==1; account=pwd.getpwnam('orbit'); os.chown(pools[0],account.pw_uid,account.pw_gid); pools[0].chmod(0o600)"]]}
-}

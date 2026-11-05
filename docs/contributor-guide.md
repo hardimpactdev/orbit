@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, build a feature, and submi
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
   - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
-  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,pr-head-check,deploy-verify,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
+  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
@@ -19,7 +19,7 @@ Submit a complete feature: its implementation, tests, documentation, and any arc
 
 New to Orbit? [Your first contribution](/first-contribution) is the short path for a person who works by hand. It also lists the parts of this guide that Orbit's maintainers and agents handle.
 
-The order is always the same: architecture, documentation, implementation, a complete pull request, review, maintainer approval, and merge.
+The order is always the same: architecture, documentation, implementation, a complete pull request, review, the gate, and merge ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)).
 
 From the repository root, install the project dependencies:
 
@@ -199,15 +199,13 @@ Recorded fixtures contain real generator output for the base, combined ADR addit
 
 Run the merge generators in sequence. Give each independent freshness gate its own Python case for each recorded fixture: OpenAPI, MCP tools, Docs lint, navigation, and web types. Each gate checks that all recorded artifacts remain unchanged. The quality check runs these cases sequentially, without a nested worker pool. Another case rejects generators that run on a different thread. The real merge and freshness cases remain separate.
 
-Use the [delivery-line commands](/reference/delivery-line) to check the current pull-request head and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not merge, deploy, or roll back.
-
 GitHub CI runs Composer validation, changed-PHP syntax checks, CLI and web builds, the Docs build and generated-contract freshness, as [CI](/reference/implementation-loop#ci) lists. It builds agent delivery only when the published agent's `apps/agent` tree differs; otherwise it reuses the verified published artifacts.
 
 Required checks target five minutes for pull requests; the fast checks take about 2 minutes. Project checks are removed from CI for now; run tests for the changed behavior locally. Keep Orbit TypeScript coverage in fast unit tests; do not add native workflow suites. Nick decides which checks return. Keep the remaining fast gates.
 
 The target: after the gate, Swamp merges the PR straight into `main` with a squash merge, using a Gateway-minted App token. The gate is Nick's approving review on the exact head in manual mode, or green CI plus a fresh self-review agent in automatic mode. There is no merge queue and no GitHub auto-merge. CI then runs on `main`; a red `main` is fixed forward and never released. The proof runs only on the PR head. Two PRs for the same command normally conflict, and the second rebases, which reruns CI and the proof.
 
-The interim, until Swamp's merge step is built: whoever opens a pull request runs `gh pr merge <n> -R hardimpactdev/orbit --auto --squash` as `nckrtl`. GitHub then merges it once Required checks pass. Auto-merge turned on by `github-actions[bot]` does not merge, so no workflow does this. Open a draft to hold a change back.
+The interim, until Swamp's merge step is built: whoever opens a pull request squash-merges it as `nckrtl`, with `gh pr merge <n> -R hardimpactdev/orbit --squash`, once CI is green on the head. Open a draft to hold a change back.
 
 Root `composer check` runs `bin/review-check`. It runs `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, and the web and Pi server profiles. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff; CI omits the Project check for now. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
@@ -263,11 +261,7 @@ Request maintainer review when the feature is complete. You can use a draft pull
 
 Orbit's independent reviewer checks the code, the documentation, and the ADRs, and reproduces the feature on an [Incus topology](/reference/incus-topologies). The reviewer records the commit, the environment, the actions, the results, and the limits. The [feature delivery reference](/reference/implementation-loop) lists that evidence.
 
-Address the review findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. A merge needs passing CI, a successful independent code and Incus review, resolved findings, and the maintainer's approval.
-
-For Orbit task pull requests whose final review and merge the maintainer delegates, a Tasks engine subtask approval is not the final review of the whole pull request. The DevOps reviewer submits a formal GitHub `APPROVED` review for the exact head and merges that commit through the maintainer's GitHub CLI profile.
-
-The review body records the full head SHA, the checks and results, limitations, evidence links, and the verdict. A plain comment alone does not satisfy the gate. Follow the [final review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) for the delegated consent, the reviewer's identity and `commit_id`, successful `Required checks` on that head, the immediate merge with `--match-head-commit`, and a new formal approval after the head changes.
+Address the review findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. The gate and the merge are [stage 4](/reference/command-development-pipeline#4-pr-and-ci).
 
 ## Use an agent
 
@@ -277,9 +271,10 @@ The skills in the repository guide an agent through the work.
 | --- | --- |
 | Shape the feature and prepare its ADRs and documentation | [grill-with-docs](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/grill-with-docs/SKILL.md) |
 | Prepare, implement, or review work tracked by Orbit Tasks | [orbit-tasks](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) |
-| Implement, verify, and submit the feature | [developing-features](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-features/SKILL.md) |
+| Prepare a command: chart, page and cases (stage 1) | [preparing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/preparing-commands/SKILL.md) |
+| Prove a command on the nested fleet (stages 2 and 3) | [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md) |
+| Build and submit the feature or command (stage 4) | [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md) |
 | Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
-| Merge an approved pull request and clean up | [merging-pull-requests](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
 
 For focused work, use [writing-documentation](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
 

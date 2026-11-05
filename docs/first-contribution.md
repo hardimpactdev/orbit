@@ -111,9 +111,9 @@ After you mark the pull request ready, these steps follow:
 1. CI runs the quality checks and tests of the projects that your change reaches. Fix any failure.
 2. Orbit's independent reviewer checks the code, the documentation, and any ADRs. It also reproduces the change on Orbit's Incus machines and records the results.
 3. You address the review findings and push the fixes. The reviewer checks them.
-4. The maintainer approves the pull request, and it merges into `main`.
+4. The gate of [stage 4](/reference/command-development-pipeline#4-pr-and-ci) passes, and the pull request is squash-merged into `main`.
 
-A merge needs passing CI, a successful independent code and Incus review, resolved findings, and the maintainer's approval. [Review and merge](/contributor-guide#review-and-merge) describes the review evidence.
+A merge needs passing CI, a successful independent code and Incus review, and resolved findings. [Review and merge](/contributor-guide#review-and-merge) describes the review evidence.
 
 ## What you can skip
 
@@ -122,7 +122,6 @@ Orbit's maintainers and Orbit's own agents do the following work. A person who c
 - Orbit Tasks and their docs subtasks. The rule that each Orbit group starts with a docs subtask applies only there.
 - Docs impact waivers in `.git/orbit/docs-unaffected/`. A reviewer confirms them for Orbit task branches.
 - The Incus review. Orbit's reviewer reproduces your change on Incus, so you do not need Incus machines.
-- The delegated final review and merge through the maintainer's GitHub CLI profile.
 - The agent skills in `.agents/skills`. They guide an agent through the same steps as this page.
 - Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. CI's Project check runs the same gate. The root checks in step 5 still apply to you.
 

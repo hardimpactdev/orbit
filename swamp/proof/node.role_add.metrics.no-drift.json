@@ -1,8 +1,0 @@
-{
-  "kind": "node.role_add.metrics.no-drift",
-  "defaults": "node-role-add-defaults.json",
-  "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "metrics", "converge_existing": true}},
-  "parity": ["swamp/proof/node.role_converge/parity.py", "metrics", "metrics", "no-drift"],
-  "after_prepare": [["python3", "swamp/proof/node.role_converge/capture.py", "metrics", "metrics", "stable"]],
-  "observer_wait_seconds": 0
-}

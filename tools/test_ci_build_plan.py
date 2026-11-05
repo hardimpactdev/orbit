@@ -107,7 +107,7 @@ class BuildPlanTest(unittest.TestCase):
                      'swamp/proof/reset/phases.py', 'bin/proof-fleet', 'swamp/proof/selection.txt'):
             with self.subTest(path=path):
                 self.assertTrue(self.proof_run([path], selection))
-        for path in ('docs/cli/firewall/allow.mmd', 'swamp/proof/firewall/allow.cases.md', 'README.md', 'apps/web/src/a.ts',
+        for path in ('docs/cli/firewall/allow.mmd', 'docs/cli/firewall/allow.mdx', 'README.md', 'apps/web/src/a.ts',
                      'swamp/workflows/workflow-vault-sync.yaml', 'swamp/proof/reset/README.md', 'bin/ci-build-plan'):
             with self.subTest(path=path):
                 self.assertFalse(self.proof_run([path], selection))

@@ -62,11 +62,11 @@ The `node.role_add` flow provides these shared parts:
 
 ## Prove it
 
-1. Reset a proof fleet in your task VM (`bin/proof-fleet reset GROUP`, see [swamp/proof/README.md](../../../swamp/proof/README.md)) and admit the command once, so you have a real intent.
+1. Use the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)) and admit the command once, so you have a real intent.
 2. On the Swamp Node, run the phases directly from the run folder that the build step made: `ansible-playbook -i inventory.yml -e @vars.yml --tags <phase> <playbook>`.
 3. Run it again. The second run must report zero changes on every host.
-4. Run the command's cases against the result (`bin/proof-fleet verify GROUP CASE...`).
-5. Run the whole path through Swamp with the command's cases, and attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks. `bin/swamp-proof` and the `swamp/proof/<kind>.json` fixtures are gone or read-only: see [old paths](../../../docs/reference/old-paths.md).
+4. Run the command's cases against the result, as stage 3 describes.
+5. Run the whole path through Swamp with the command's cases, and attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks.
 
 Report the time on fresh Nodes, the time with nothing to change, and the phase times from the case run.
 

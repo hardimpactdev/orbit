@@ -4,6 +4,8 @@ Database-free Laravel console application for Incus topology verification.
 
 Use Pest for tests. Keep commands thin. Do not add HTTP, database, queue, or web features.
 
+This harness composes the per-issue topology of a task subtask. The proof of a command runs on the nested fleet of [stages 2 and 3](../../docs/reference/command-development-pipeline.mdx), not here.
+
 ===
 
 <laravel-boost-guidelines>

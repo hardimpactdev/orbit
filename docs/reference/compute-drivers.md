@@ -1183,6 +1183,8 @@ Published images and shared topology seeds remain subject to normal image prunin
 
 #### Refresh the topology seed
 
+**Old path.** This per-release refresh from a builder VM is the interim. [Stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh) replaces it with a refresh from a running task VM, and the release starts it ([old paths](/reference/old-paths)).
+
 The seed that the image build leaves holds only the stopped `node-template`. A **seed refresh** adds the ready nested topology of the running release. That is three stopped VMs: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They have real nested WireGuard on 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
 
 Each task VM host refreshes its own seed. Nothing is copied between hosts. The hosts have different CPUs, and a copy between machines loses the reflink sharing of the pool inside the seed (14.8 GiB instead of 6.8 GiB). The release flow starts the refresh for every host in parallel once the release is live. An operator runs one with `php artisan task-vms:refresh-seed <host>` on the Gateway. There is no CLI command of its own.
@@ -1439,7 +1441,6 @@ These alternatives were also rejected:
 | Subscription sign-ins copied into VMs | They expose the subscriptions. Rotating OAuth refresh tokens fail when several copies refresh |
 | A task VM outside the fleet for every Project | Project work needs real Routes, deployment, and previews. Enrollment with no access grants and the hub filter support those features within the VM boundary |
 | A finished task VM as the next image | Agents and Project install scripts can change any file. Cleanup cannot prove that disk clean |
-| Stateful snapshots of a running topology | The workspace uses virtiofs, which Incus cannot migrate statefully. Restored memory also carries old addresses and a clock jump |
 
 ## UpCloud overflow
 

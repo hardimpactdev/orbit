@@ -36,7 +36,7 @@ sequenceDiagram
   Note over VM: Read first<br/>Recall · page · chart · code
   %%> What it does:
   %%> - Recall `resolve` for the command and its family, and `decisions` for the family; current decisions override older text
-  %%> - reads the existing page, chart and old fixture; reads the code only to learn what exists, never as the target
+  %%> - reads the existing page and chart; reads the code only to learn what exists, never as the target
   %%> - for a command that already has a spec from a docs-only PR, starts from it and updates it
   %%> - for a sibling of an approved command, starts from the sibling's chart, page and cases
   Note over VM: Draft the chart<br/>flow-tighten rules
@@ -51,7 +51,7 @@ sequenceDiagram
   %%> - states the rerun behavior, with the reason code of a skip
   Note over VM: Draft the cases<br/>one row per case
   %%> What it does:
-  %%> - writes `swamp/proof/FAMILY/COMMAND.cases.md` from the chart and the page, never from the code
+  %%> - writes `swamp/proof/FAMILY/COMMAND.cases.yaml` from the chart and the page, never from the code; each case names its chart path and its batch from `swamp/proof/batches.yaml`
   %%> - covers required arguments only, each flag, each error on the chart, a repeat, and a failure after a partial change
   %%> - marks a case that the code fails today; never weakens a case to fit the code
   Note over VM: Check the draft<br/>bin/check-flows · docs lint

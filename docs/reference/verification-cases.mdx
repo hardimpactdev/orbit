@@ -5,7 +5,7 @@ description: "How the cases that prove an Orbit command are written, checked and
 
 # Verification cases
 
-**Design draft.** This page describes the target. The runner, the Swamp workflows that run the batches and every step that the 14 cases of `firewall:allow` use are built; [what is built](#what-exists-and-what-is-new) is listed at the end.
+**Design draft.** The case format, the runner and the steps that the cases of `firewall:allow` use are built. `bin/check-cases` is not built.
 
 A verification case proves one behavior of one command on the nested test fleet of [stage 3](/reference/command-development-pipeline#3-proof). A case is a specification, not code: a short YAML block built from a fixed set of steps. One shared runner executes every case. Code is written only for a new kind of check, and then once, as a new step.
 
@@ -18,7 +18,7 @@ The design has four aims:
 
 ## The case file
 
-Each command has one file, `swamp/proof/<family>/<command>.cases.yaml`. It replaces `<command>.cases.md`. The draft for `firewall:allow` is [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml); it converted every case of the deleted `allow.cases.md`. `orbit proof:run` selects a command with the [selection list](/reference/feature-flow#choose-the-cases) and runs this file; a selected command without it is uncovered (`no cases file for COMMAND`).
+Each command has one file, `swamp/proof/<family>/<command>.cases.yaml`. The cases come from the command's chart and page, never from the code. The draft for `firewall:allow` is [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml). `orbit proof:run` selects a command with the [selection list](/reference/feature-flow#choose-the-cases) and runs this file; a selected command without it is uncovered (`no cases file for COMMAND`).
 
 YAML, because:
 
@@ -213,19 +213,7 @@ A batch costs a restore, so keep few. `firewall:allow` needs two:
 
 <div className="flow-at" data-chart="reference/pipeline/3-proof-runner"></div>
 
-Orbit's own Swamp runs the runner over SSH in the task VM. The runner is part of the "Run the proof" child of [`proof:run`](/cli/proof/run#how-it-works). There is no `bin/proof-fleet` and no second Swamp in the VM.
-
-The workflow `proof-fleet-verify` is built, in `swamp/workflows/`. The Gateway starts it as the operation `proof.verify` with the full intent as inputs: the SSH target of the task VM, the checkout path and the cases file. Every step is an official `@swamp/ssh` exec of the runner on the task VM, placed on Orbit's own Swamp, with `okExitCodes: any`: a verdict of `failed` or `unrun` is an exit code of the runner, not a fault of the step.
-
-- A `plan` step runs `runner plan --lines`, which prints one line a batch, `BATCH SETUP CASE...`, in the order of the batch file.
-- A `forEach` over the batches, one at a time, runs one child workflow, `proof-fleet-verify-batch`, per batch.
-- The batch child runs `runner restore --group N`, guarded so the first batch skips it. It is the phase `base-restore` with its own 45 s limit and no retry. Then it runs `runner setup BATCH` when the batch declares setup steps. Then a `forEach` over its cases, one at a time, runs one child workflow, `proof-fleet-verify-case`, per case. Last, a `report` step joins the verdict lines of the batch.
-- The case child runs `runner case ID` with `allowFailure`, so a failed case does not stop its batch. A verdict other than `passed` triggers `runner restore` and the batch setup through `guard`. The last case of a batch skips them, because the next batch restores anyway.
-- A `report` step of the parent joins the reports of the batches. Every case of the plan has one line: a case that printed no line is `failed` with cause `infrastructure`, and a case that did not run is `unrun` with cause `infrastructure`. The Gateway reads this step once, when the run ends, and records the verdicts. No step calls back to the Gateway.
-
-Swamp drops the outputs of a failed child workflow, and a guarded step leaves no entry in `steps`. So no step fails on purpose to stop the run. The restore and the setup print one line (`{"restore": "failed", ...}` or `{"setup": "failed", ...}`) and exit with any code; every later `guard` and the reports read that line. A restore or a setup that failed makes the rest of the batch, and every later batch, `unrun`. The dual-stack batch declares `ipv6_addresses`, which is not built, so today its setup fails and its cases are `unrun`.
-
-A case is one step because its steps share state: its ports and the state that `unchanged` compares. That is one action group in the sense of the [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Batches, resets, order and failure handling are native Swamp controls, not a loop inside the runner. The runner is a Python file that ships with the workflow, linted with the other scripts.
+The flow of a proof is [stage 3](/reference/command-development-pipeline#3-proof); in CI, [`proof:run`](/cli/proof/run#how-it-works) starts it. This page does not restate them. The shared runner is `swamp/proof/runner/`.
 
 Each case ends with one JSON line of at most 1 KB, because Swamp cuts step output at 4096 bytes:
 
@@ -241,7 +229,7 @@ Each case ends with one JSON line of at most 1 KB, because Swamp cuts step outpu
 | `unrun` | `precondition` | A `setup` step failed, such as a port that was not blocked before the command. |
 | `unrun` | `infrastructure` | A failed restore stopped the run before the case. |
 
-Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns `orbit proof` in their own task VM for the full receipt.
+Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns the proof in their own task VM for the full receipt.
 
 A case marked `fails_today` runs like any other and reports its real verdict. The build PR removes the mark when the command passes.
 
@@ -285,34 +273,6 @@ negative:
 
 The Swamp workflow restores `base` and runs `runner case ID --negative`, which runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest still run and are listed in the receipt. A case where they pass is not a test. The verdict is `passed` with `"negative": true` when every one of them failed. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
 
-## What exists and what is new
+## Where the code is
 
-The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py`, the fleet access `fleet.py`, the programs that run on a Node (`listener.py`, `probe.py`) and the tests. The terminal driver `terminal.py` and the `ufw` shim `ufw-shim.sh` loop by nature, so they live in `tools/swamp-proof-guest/`, outside the Swamp-shape rules for step code. On the nested fleet of a task VM all 16 verdicts of `allow.cases.yaml` run. 9 are `passed`: `new-restricted-allow`, `partial-application`, `conflict`, `busy-target`, `protocols[tcp]`, `protocols[udp]`, `protocols[both]`, `port-range` and `missing-input-noninteractive`. The other 7 are `failed` with the cause `assertion`, and each one fails on what the command does, not on a step. `runner.py case ID --negative` proves that a case can fail. `proof:run` selects a command and runs its cases file; the old case script `allow-fresh-ipv4-tcp.sh` and its helpers are deleted. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
-
-| Piece | State |
-| --- | --- |
-| Loader: unknown step, batch, fixture, var or placeholder refused; fixtures, `"@name"` lists, variants, stages | Built. All 16 cases of `allow.cases.yaml` load. |
-| `runner.py plan --file F [--steps]` | Built. Prints the batches and cases in order, and with `--steps` the resolved steps. No fleet. |
-| `runner.py case ID`, verdict line, receipt in the evidence directory | Built. Exit 0 passed, 1 failed, 2 unrun, 3 file refused. |
-| `cli` with JSON and `expect` (`exit`, `status`, `code`) | Built. |
-| `cli` with `forms: human`, `tty`, and `expect` of `skipped`, `request` and `human` | Built. The terminal driver uses the standard `pty` module and answers Laravel Prompts lists. A `skipped` reason is searched in the JSON document under a key with `skip` in its name; the command that skips does not exist yet, so that shape is a guess to check when it does. |
-| `listener` for TCP over IPv4, UDP, IPv6 and `block` | Built. |
-| `ufw_rule` (above, below, bound by `as`) | Built. |
-| `probe` for TCP over IPv4 | Built. Expanded probes run in parallel. |
-| `probe` for UDP and IPv6 | Built. |
-| `ufw` rows, order and `absent` | Built. |
-| `record` for `firewall:list` | Built, with a list as the wanted value. Other list commands are new. |
-| `doctor` | Built. |
-| `unchanged` (`ufw`, `firewall_records`, `listeners`, `operations`) | Built. |
-| `negative` and `ufw_delete` | Built. |
-| `fault` | Built. A `ufw` shim on the Node that passes reads. Proved live: in `interrupted-reorder` and `failure-after-partial-change` the first round ends as the case says. |
-| `busy_node` | Built. The shim stalls ufw writes behind a lock, and a real `firewall:allow` holds the Node. Proved live: `busy-target` passes. |
-| `ipv6_addresses` | Built. Static ULA addresses on the existing bridge, no change to the host, and an IPv6 twin of the `proof-network` allowance. Proved live: the blocked-port fixture holds over IPv6. |
-| Batch setup (`batches.yaml` `setup`) | Built. `runner case` runs it before the setup of the case. |
-| A step that is new fails the case with cause `infrastructure` and the message `... is not built` | Built. |
-| `runner.py plan --lines`, `restore --group N` and `setup BATCH` | Built. `restore` runs the phase `base-restore` for the newest reset of the group; `setup` runs the setup steps of a batch. |
-| Restore of `base` per batch and after a case that did not pass | Built, as the `restore` step of the batch and the case child. Measured on tvm-554 with stock Incus: about 15 seconds until healthy. The Gateway of the restored fleet answers `node:list` about 15 seconds later, so the restore waits for that; nothing retries. |
-| `bin/check-cases` and the `check-flows` marker rule | New. |
-| Workflows `proof-fleet-verify` and the per-batch and per-case children | Built, with the operation `proof.verify` that starts them. `proof:run` resets the fleet through `bin/proof-fleet reset`, then runs them for each selected command. `proof-command-verification` and the reset workflows still build the fleet. |
-
-Still to build, to be removed once built: `bin/check-cases` about 150 lines. The runner and its steps are about 1,200 lines with the Node programs, and its tests about 900. After that a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.
+The runner is `swamp/proof/runner/`: `runner.py plan|case|restore|setup`, the loader `spec.py`, the steps `steps.py`, the fleet access `fleet.py`, the programs that run on a Node (`listener.py`, `probe.py`) and the tests. The terminal driver and the `ufw` shim are in `tools/swamp-proof-guest/`. A step that is not built fails the case with cause `infrastructure` and the message `... is not built`. `bin/check-cases` (about 150 lines) is not built. After it, a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.
