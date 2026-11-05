@@ -559,6 +559,8 @@ A `pending` replacement renders a site only after its certificate step completes
 
 ### Change an Instance Route domain
 
+`instance:rename --domain` is not available: it returns `operation.kind_unavailable`, also when `--branch` is supplied, and changes nothing. The rest of this section describes the replacement path that an Instance-owned domain change will use.
+
 [`instance:rename INSTANCE --domain=DOMAIN`](/cli/instance/rename) changes the domain of an active development checkout's own single-target Project Route. The API is `POST /api/v1/instances/{instance}/rename` with `{"domain":"login-redirect.orbit-website.test"}`. It can also record a branch already checked out by supplying `branch` in the same request. This operation does not rename the Instance, move its checkout, or change its placement.
 
 Unlike an ordinary operator-requested `route:update`, Instance rename permits a domain change when the Route has `provenance=generated`. It uses the same replacement and convergence path as an [explicit domain change](#change-an-explicit-domain): reserve the new domain, prepare certificates and Caddy, synchronize the Laravel URL, publish DNS, cut over, and clean up the old projections. A successful rename returns the Instance with the new Route and URL; the old domain stops serving it. The replacement has a new Route ID.

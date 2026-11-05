@@ -25,7 +25,7 @@ This page follows an Instance from creation to removal. Each step links to the p
 | Run application commands | `instance:setup` | [Instance setup and teardown](/reference/instance-setup) |
 | Clone development source | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
 | Deploy production code | `instance:deploy` | [Production release layout](/reference/deployments) |
-| Record a renamed branch or move its domain | `instance:rename` | [Record a renamed branch](#record-a-renamed-branch) |
+| Record a renamed branch | `instance:rename` | [Record a renamed branch](#record-a-renamed-branch) |
 | Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
 | Remove | `instance:destroy` | [Instance removal](/reference/instance-removal) |
 
