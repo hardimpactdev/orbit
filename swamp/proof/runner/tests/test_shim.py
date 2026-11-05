@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SHIM = Path(__file__).resolve().parents[1] / 'ufw-shim.sh'
+SHIM = Path(__file__).resolve().parents[4] / 'tools/swamp-proof-guest/ufw-shim.sh'
 
 
 class ShimTest(unittest.TestCase):

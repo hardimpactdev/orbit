@@ -6,15 +6,20 @@ import json
 import random
 import re
 import shlex
+import sys
 import time
 from pathlib import Path
 
 import spec
-import terminal
+
+# The prompt driver and the ufw shim loop by nature, so they live with the guest programs, outside the Swamp-shape
+# rules for step code.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/swamp-proof-guest'))
+import terminal  # noqa: E402
 
 LISTENER = (Path(__file__).resolve().parent / 'listener.py').read_text()
 PROBE = (Path(__file__).resolve().parent / 'probe.py').read_text()
-UFW_SHIM = (Path(__file__).resolve().parent / 'ufw-shim.sh').read_text()
+UFW_SHIM = (Path(__file__).resolve().parents[3] / 'tools/swamp-proof-guest/ufw-shim.sh').read_text()
 UFW_ROW = re.compile(r'^\[\s*(\d+)\]\s+(.+?)\s{2,}(ALLOW|DENY|REJECT|LIMIT)(?: IN| OUT| FWD)?\s{2,}(.+?)(?:\s+#\s*(.*))?$')
 PROBE_SECONDS = 3
 SHIM_DIR = '/var/tmp/proof-ufw'

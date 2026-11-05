@@ -8,7 +8,10 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import terminal
+# The prompt driver and the ufw shim loop by nature, so they live with the guest programs, outside the Swamp-shape
+# rules for step code.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/swamp-proof-guest'))
+import terminal  # noqa: E402
 
 ORBIT = '/usr/local/bin/orbit-nested'
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}

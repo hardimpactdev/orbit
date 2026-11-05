@@ -10,6 +10,7 @@ esac
 [ -e "$d/stall" ] && flock "$d/stall" true
 # fault: after AFTER calls that contain WORD, every write fails.
 if [ -e "$d/fault" ]; then
+  # shellcheck source=/dev/null
   . "$d/fault"
   if [ "$SEEN" -ge "$AFTER" ]; then
     echo 'ufw: injected fault' >&2
