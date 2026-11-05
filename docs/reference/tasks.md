@@ -198,7 +198,7 @@ The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tre
 
 `POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement and execution. The script does not create a check, agent turn, commit, or dependency record.
 
-A script captures its run budget at admission: the history of the kind, except the proof reset, which has 360 seconds (see [Native run budgets](/reference/operations#native-run-budgets)). Every SSH step of the workflow ends at that budget. When the Gateway times the script out, it asks Swamp to cancel the run, and the proof that started it still goes on: it cancels its group and leaves the cases `unrun`. Ending the group asks Swamp again for any run of the group that outlived its timeout.
+A script captures its run budget at admission: the history of the kind (see [Native run budgets](/reference/operations#native-run-budgets)). Every SSH step of the workflow ends at that budget. When the Gateway times the script out, it asks Swamp to cancel the run. Ending the group asks Swamp again for any run of the group that outlived its timeout.
 
 `script` is a relative repository path with no empty, `.` or `..` components. HEAD must track it as an executable file (mode `100755`); `git ls-tree` reads that mode before anything runs. Swamp then snapshots the whole workspace and runs the script with the admitted literal arguments. It does not inherit Gateway or worker dispatch credentials.
 
