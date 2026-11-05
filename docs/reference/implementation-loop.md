@@ -59,7 +59,7 @@ Before the immediate merge, read GitHub's review records and verify the final re
 
 The reviewer also confirms that `Required checks` succeeded on that same head, that blocking findings are resolved, that required verification is complete, and that the pull request head still matches the reviewed SHA. The reviewer then runs `gh pr merge <pr-url> --merge --match-head-commit <reviewed-sha>` from the maintainer profile. If the head changes, stop. Review the new commit, repeat the affected checks, and submit a new formal approval before trying again. A failed, pending, missing, or unreadable required check prevents the merge.
 
-This workflow merges immediately after those checks pass. It does not enable GitHub auto-merge. After the merge, verify the merged state and record the merge commit. The Tasks scheduler observes the merged pull request and completes the task on its next tick.
+This workflow merges immediately after those checks pass. It does not enable GitHub auto-merge. This is the interim. The target is that Swamp turns on auto-merge with a GitHub App token that the Gateway mints, on a PR that the Orbit App opened; see [PR and CI](/reference/command-development-pipeline#4-pr-and-ci). After the merge, verify the merged state and record the merge commit. The Tasks scheduler observes the merged pull request and completes the task on its next tick.
 
 The maintainer profile is an admin profile. It bypasses GitHub enforcement of the `Required checks` status rule, including on `gh pr merge`. GitHub does not require this approval and does not enforce it for that account, so the reviewer checks the formal approval and the successful `Required checks` result before invoking the merge. This workflow keeps that bypass and does not change the ruleset. It adds no `tasks:merge` command, Gateway merge endpoint, SDK contract, MCP contract, or API contract, and it changes no App permission.
 
@@ -128,7 +128,7 @@ Two checks guard the flow charts. Generated contracts requires a chart or a `doc
 
 Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Validation keeps its read-only key and signed sign-in proof on pull requests and pushes to main. Shape and ordinary Operation test jobs receive no secret environment.
 
-CI never uses `pull_request_target`, except the planned label workflow `proofs-outside.yml`, which checks out nothing and passes only a commit SHA to Orbit ([the VM job](/reference/feature-flow#the-vm-job)). The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
+CI never uses `pull_request_target`, except the planned label workflow `proofs-outside.yml`, which checks out nothing and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
 Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. CI builds no Rust agent; the [release workflow](#agent-delivery) does. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
@@ -138,7 +138,7 @@ Installed Gateway runtime and CLI build dependencies use lock-based caches. Comp
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The planned VM job `Proofs` is a second required status and is not built yet; [the VM job](/reference/feature-flow#the-vm-job) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
+The planned proof CI job `Proofs` will be part of the one CI result and is not built yet; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
@@ -376,7 +376,7 @@ Main caches let a new checkout start with warm Pint and PHPStan result caches fr
 
 ### CI cache refs
 
-The fast CI workflow publishes no new quality-cache artifacts or refs. Existing `refs/orbit/ci-cache/<sha>` snapshots remain readable by task workspaces. These parentless Git commits contain cache payloads, not source history; the suffix names the code commit they came from.
+The CI workflow publishes no new quality-cache artifacts or refs. Existing `refs/orbit/ci-cache/<sha>` snapshots remain readable by task workspaces. These parentless Git commits contain cache payloads, not source history; the suffix names the code commit they came from.
 
 Each retained project snapshot has a schema-3 manifest and optional Pint and PHPStan caches. The manifest records the code SHA, project, CI run and attempt, each cache checksum, each configuration checksum and the PHP minor version. Consumers check these facts before importing; a ref name alone is not evidence that a payload fits. PHPStan caches contain executable PHP.
 
@@ -396,7 +396,7 @@ The Gateway removes upstream-deleted refs only from its mirror's cache namespace
 
 ### CI artifacts
 
-The fast CI workflow uploads no `ci-cache-<index>-<commit>` artifacts. Older runs retained these staging exports for 14 days. They are not a workspace transport: the Gateway reads Git refs for `@orbit/ci-caches`, without downloading artifacts or putting their contents in a setup command.
+The CI workflow uploads no `ci-cache-<index>-<commit>` artifacts. Older runs retained these staging exports for 14 days. They are not a workspace transport: the Gateway reads Git refs for `@orbit/ci-caches`, without downloading artifacts or putting their contents in a setup command.
 
 | File | Content |
 | --- | --- |
@@ -453,11 +453,11 @@ The cost is a smaller fallback when the newest run fails. The release resolver e
 
 ### Main caches come only from clean main
 
-A feature checkout can hold unmerged code or working edits, so its tool caches cannot stand for main. The fast CI workflow publishes no new quality-cache refs; and `bin/worktree-cache` copies only from a clean primary checkout on `main`. Each checkout writes to its own private copy. One writable cache shared across worktrees is a rejected alternative, because concurrent features would overwrite each other's results.
+A feature checkout can hold unmerged code or working edits, so its tool caches cannot stand for main. The CI workflow publishes no new quality-cache refs; and `bin/worktree-cache` copies only from a clean primary checkout on `main`. Each checkout writes to its own private copy. One writable cache shared across worktrees is a rejected alternative, because concurrent features would overwrite each other's results.
 
 ### Only main CI publishes
 
-The fast CI workflow produces no quality caches. A deployment never runs a test suite.
+The CI workflow produces no quality caches. A deployment never runs a test suite.
 
 Running the checks on a development machine to fill a cache is a rejected alternative. It repeated the work of CI, competed with other agents for the processors, and inside a deployment it exceeded the deployment's deadline. Its results also depended on the host: a test that passes in CI failed on a host with other file ACLs, and that failure held merges as a correctness failure on main. Publishing the caches of a clean bootstrap on `main` is rejected for the same reason, and because two producers would race.
 

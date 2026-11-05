@@ -1,8 +1,8 @@
 sequenceDiagram
-  %% Target design: stage 7 of the command development pipeline (feature-flow section 7). After each release and at least daily, every task VM host refreshes its own task image and topology seed, in parallel; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
+  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). After each release and at least daily, every task VM host refreshes its own task image and topology seed, in parallel; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
   %% status: draft
-  %% command: development pipeline stage 7 · per-host task image and seed refresh
-  %% kind: pipeline.7-task-image-seed-refresh
+  %% command: development pipeline stage 6 · per-host task image and seed refresh
+  %% kind: pipeline.6-task-image-seed-refresh
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
@@ -14,7 +14,7 @@ sequenceDiagram
   participant SL as Ready slots<br/>stopped task VMs
   Note over GW: Start the refresh<br/>after a release · daily
   %%> Triggers:
-  %%> - a release that went live and passed its check (stage 6)
+  %%> - a release that went live and passed its check (stage 5)
   %%> - a daily schedule, so a seed never gets older than a day: the Swamp tokens in the ready copies last 24 hours and a ready copy expires after 20
   %%> Not built:
   %%> - both triggers (B8); today an operator runs `php artisan task-vms:refresh-seed HOST`

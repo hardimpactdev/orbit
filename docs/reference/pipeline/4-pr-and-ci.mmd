@@ -1,0 +1,106 @@
+sequenceDiagram
+  %% Target design: stage 4 of the command development pipeline (feature-flow sections 3 and 4). There is one CI: the fast checks plus, for command code, the proof CI (proof:run for the affected commands). The merge queue requires that one CI result. Swamp opens the PR as the Orbit App and turns on auto-merge with a Gateway-minted App token; the Gateway only admits and mints.
+  %% status: draft
+  %% command: development pipeline stage 4 · PR and CI
+  %% kind: pipeline.4-pr-and-ci
+  autonumber
+  %% lane AG icon=terminal pill=author tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=PR tone=purple
+  %% lane CI icon=workflow pill=checks tone=amber
+  participant AG as Task VM<br/>author · reviewer
+  participant GW as Gateway<br/>authorizes only
+  participant SW as Swamp<br/>owns flow · state
+  participant GH as GitHub<br/>PR · merge queue
+  participant CI as CI<br/>fast · proof CI
+  AG->>GH: Push the branch<br/>proof passed first
+  %%> Requirements:
+  %%> - the cases passed on the nested fleet (stage 3)
+  Note over GW: Admit the PR request<br/>one change
+  %%> What it does:
+  %%> - authorizes the request, records the operation, and mints a short-lived GitHub App token
+  GW->>SW: Start the PR flow<br/>token as vault key name
+  %%> Not built:
+  %%> - the PR flow as a Swamp workflow
+  SW->>GH: Open the PR<br/>as the Orbit App
+  %%> What it does:
+  %%> - one PR per change, with the chart, page and cases already merged for a command (stage 1)
+  %%> Not built:
+  %%> - PRs opened by the App; today the author opens the PR as `nckrtl`
+  GH->>CI: Start CI<br/>on the PR head
+  %%> What it does:
+  %%> - GitHub runs `ci.yml` for the PR head; there is one CI, and the merge queue requires its one result
+  Note over CI: Scope the change<br/>changed files pick the jobs
+  %%> Rules:
+  %%> - documentation only (`docs/`, `*.md`, charts): docs checks only, never the proof CI
+  %%> - Gateway code: fast checks and the Gateway Pest suite
+  %%> - web or CLI code: fast checks and that build
+  %%> - command code (workflows, extensions, playbooks, roles, versions): fast checks and the proof CI
+  Note over CI: Fast checks<br/>about 1 minute
+  %%> What it does:
+  %%> - runs the required job set `Required checks`; every main commit also builds the web artifact and `Gateway release inputs` for the release (stage 5)
+  opt command code changed
+    opt the PR is from outside
+      GH->>CI: Review + run-proofs label<br/>maintainer
+      %%> What it does:
+      %%> - a maintainer approves the head and adds the label `run-proofs`; the workflow passes that head SHA to `proof:run`
+      %%> Why:
+      %%> - a new push removes the label; the new head needs a new approval
+    end
+    CI->>GW: Run the proof CI<br/>proof:run COMMIT
+    %%> What it does:
+    %%> - a job on the beast or shark runner passes only the full SHA and an idempotency key; it checks out nothing and chooses no cases
+    %%> - the Gateway checks the commit, selects the cases and starts one Swamp run, as in the chart of `proof:run`
+    %%> Not built:
+    %%> - the CI job that calls `proof:run`, and the proof CI as a job of the one CI result; today the queue needs `Required checks` alone
+    GW-->>CI: Verdict per case
+    %%> Result:
+    %%> - the job reads the operation until it ends; a missing result or a failed assertion fails the CI result
+  end
+  alt every check passes
+    CI-->>GH: One CI result<br/>green
+    %%> Result:
+    %%> - the merge queue requires this one result
+    alt manual mode
+      GW->>GH: Read the PR reviews<br/>short poll · approval on head
+      %%> What it does:
+      %%> - Nick's approving review on the exact PR head is the gate; the Gateway sees it with a token that has only `pull_requests: read`
+      %%> Why:
+      %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the approval
+      %%> Not built:
+      %%> - the approval-triggered continuation
+      GH-->>GW: Approval on the head
+    else automatic mode
+      SW->>AG: Final self-review<br/>fresh review agent
+      %%> What it does:
+      %%> - a new review agent, which took no part in the drafts or the earlier reviews, reads the PR head and the CI result
+      AG-->>SW: Pass<br/>or findings
+    end
+    GW->>SW: Admit the merge step<br/>fresh token key name
+    %%> Why:
+    %%> - a token lives one hour and an approval can take longer, so the Gateway mints a new one for this step
+    SW->>GH: Turn on auto-merge<br/>as the Orbit App
+    %%> What it does:
+    %%> - Swamp turns on auto-merge through GitHub's `enablePullRequestAutoMerge`, with the Gateway-minted App token passed by vault key name
+    %%> - the PR joins the merge queue
+    %%> History:
+    %%> - GitHub ignores auto-merge turned on with the built-in Actions token, so #2550 removed that workflow; an App token is different
+    %%> Not built:
+    %%> - Swamp turning on auto-merge; App-enabled auto-merge still has to be proven to join the queue; today the author runs `gh pr merge --auto` as `nckrtl`
+    GH->>CI: Test the combined commit<br/>merge queue run
+    %%> What it does:
+    %%> - the queue builds the PR on top of the newest main and runs the same selection rule
+    %%> - a batch needs the proof CI only for PRs that change command code
+    CI-->>GH: Combined commit green
+    %%> Result:
+    %%> - the queue run tested the exact commit it now puts on main
+    Note over GH: Land the PR<br/>merge queue
+    %%> Result:
+    %%> - the commit is on main; the Gateway release (stage 5) finds it
+  else a check fails
+    CI--xGH: One CI result<br/>red
+    %%> Result:
+    %%> - the PR stays out of the queue; the author fixes and pushes again, and the gate starts again on the new head
+    %%> - a red combined commit removes the PR from the queue
+  end

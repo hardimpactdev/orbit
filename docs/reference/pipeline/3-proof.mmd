@@ -1,63 +1,87 @@
 sequenceDiagram
-  %% Target design: stage 3 of the command development pipeline (verifying-commands skill). The author runs the command's cases on the nested fleet of the proof environment, before pushing. The same runner and assertions run in CI (stage 5).
+  %% Target design: stage 3 of the command development pipeline (verifying-commands skill). The author runs the command's cases on the nested fleet of the development environment, before pushing. Orbit's own Swamp runs the reset and verify workflows (workflow-proof-fleet-reset, -ready, -verify) and reaches into the task VM over SSH, like every other step. The Gateway only admits the request and mints tokens. The same cases and assertions run in CI (stage 4).
   %% status: draft
   %% command: development pipeline stage 3 · proof
   %% kind: pipeline.3-proof
   autonumber
   %% lane AG icon=terminal pill=caller tone=gray
-  %% lane VM icon=server pill=operator tone=purple
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=server pill=target tone=purple
   %% lane NT icon=server pill=fleet tone=amber
   participant AG as Author agent<br/>in the task VM
-  participant VM as Task VM<br/>proof-fleet
+  participant GW as Gateway<br/>authorizes only
+  participant SW as Swamp<br/>owns flow · state
+  participant VM as Task VM<br/>outer VM
   participant NT as Nested fleet<br/>Gateway · 2 Nodes
-  AG->>VM: Run the proof<br/>bin/proof-fleet verify
+  AG->>GW: Ask for the proof<br/>orbit proof:run COMMIT
   %%> Command:
-  %%> - `bin/proof-fleet verify` for one command's cases
+  %%> - `orbit proof:run COMMIT` for the command's cases
   %%> Built or not:
   %%> - built, with one case so far: the `firewall:allow` traffic case; every other command's cases are not built
-  VM->>NT: Reset fleet to the branch<br/>from the ready copies
+  %%> Not built:
+  %%> - the request from a branch that is not pushed yet; `proof:run` takes only a commit on a branch of the repository today
+  Note over GW: Admit the request<br/>trust check · cases
   %%> What it does:
+  %%> - checks the commit and selects the cases, as in the chart of `proof:run`
+  %%> - records the operation for the CLI and web, and mints the tokens the run needs
+  %%> Why:
+  %%> - the Gateway only authorizes; Swamp owns the flow and its state
+  GW->>SW: Start the proof run<br/>operation-proof-run
+  %%> Not built:
+  %%> - Orbit's own Swamp running the reset and verify workflows directly; today `bin/proof-fleet` starts a local Swamp inside the task VM
+  SW->>VM: Reset the fleet<br/>workflow: proof-fleet-reset
+  %%> What it does:
+  %%> - Swamp reaches into the task VM over SSH, like every other step; there is no `bin/proof-fleet` and no controller Swamp in the VM
   %%> - starts each independent run on a fresh nested fleet (stage 2), with the branch's code applied
   %%> - falls back to a full build when no ready copy is usable
+  %%> - pushes the proof Swamp Club key from its vault into the nested Gateway, which runs its own Swamp as part of the Orbit under test
+  %%> Why:
+  %%> - the key is copied in at boot and never baked into an image; it is never stored on the outer task VM
+  SW->>VM: Run the cases<br/>workflow: proof-fleet-verify
+  %%> What it does:
+  %%> - the verify workflow runs each selected case against the nested fleet through the task VM, over SSH
   loop each case, in order
-    VM->>NT: Check the starting state<br/>control probe
+    SW->>NT: Check the starting state<br/>control probe
     %%> What it does:
     %%> - confirms the test setup works before the command runs, for example a healthy listener and a port that is blocked
     %%> Why:
     %%> - a broad unmanaged allowance must not let a case pass without the rule under test
-    VM->>NT: Run the real CLI<br/>built from the tested commit
+    SW->>NT: Run the real CLI<br/>built from the tested commit
     %%> What it does:
     %%> - calls the command through its real interface: required arguments only, each flag, each error path
-    NT-->>VM: Result<br/>exit status · output
+    NT-->>SW: Result<br/>exit status · output
     %%> Result:
     %%> - the public result in human and JSON output
-    VM->>NT: Check the real effect<br/>record · Node · behavior
+    SW->>NT: Check the real effect<br/>record · Node · behavior
     %%> What it checks:
     %%> - the Gateway record, the observed Node state, and the promised effect, such as traffic that passes or stays blocked
     %%> - Doctor reports no drift for the records the case touched
     %%> - what must stay unchanged, including unmanaged resources
-    VM->>NT: Repeat the request<br/>nothing changes
+    SW->>NT: Repeat the request<br/>nothing changes
     %%> What it checks:
     %%> - a repeat adds no managed resource and changes no configuration; a documented skip returns its reason code
-    VM->>NT: Clean up the case<br/>compare with the baseline
+    SW->>NT: Clean up the case<br/>compare with the baseline
     %%> What it does:
     %%> - scoped cleanup, then compares the case's own database and firewall state with its start
     %%> - residue fails the case; an infrastructure failure is reported apart and never counts as a pass
   end
   alt every case passes
-    VM-->>AG: Receipt<br/>PASS per case
+    SW-->>GW: Receipt<br/>PASS per case
+    GW-->>AG: Receipt<br/>PASS per case
     %%> Result:
-    %%> - one verdict per case with observations, Doctor findings and timings; the author may push (stage 4)
+    %%> - one verdict per case with observations, Doctor findings and timings; the Gateway records it once; the author may push (stage 4)
   else a case fails or did not run
-    VM--xAG: Receipt<br/>FAIL with output
+    SW--xGW: Receipt<br/>FAIL with output
+    GW--xAG: Receipt<br/>FAIL with output
     %%> Result:
     %%> - the failed case with its output, without secrets; the author fixes and runs again
   end
   opt a new case is added
-    Note over AG,NT: Prove the case can fail<br/>on an isolated checkout
+    Note over SW,NT: Prove the case can fail<br/>on an isolated checkout
     %%> What it does:
     %%> - removes the mutation on an isolated checkout and confirms the functional assertion fails
     %%> - never mutates a live installation
     %%> Not built:
-    %%> - exercising the CI gate with a known failing case (stage 5)
+    %%> - exercising the CI gate with a known failing case (stage 4)
   end

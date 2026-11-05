@@ -78,7 +78,7 @@ sequenceDiagram
   %%> - PRs opened by the App from the prep flow; the Gateway already opens task PRs as the App with `tasks:publish`, but today the prep author opens this PR as `nckrtl`
   Note over GH: Docs checks only<br/>no VM job
   %%> Why:
-  %%> - a documentation-only change runs fast CI and never a VM job
+  %%> - a documentation-only change runs the docs checks of CI and never the proof CI
   alt manual mode
     opt Nick reviews in an Instance
       NK->>GW: Create an Instance<br/>instance:create --branch=BRANCH
@@ -119,9 +119,11 @@ sequenceDiagram
   %%> - a token lives one hour and an approval can take longer, so the Gateway mints a new one for this step
   SW->>GH: Turn on auto-merge<br/>as the Orbit App
   %%> What it does:
-  %%> - enables auto-merge on the PR with the new App token
+  %%> - Swamp turns on auto-merge through GitHub's `enablePullRequestAutoMerge`, with the Gateway-minted App token passed by vault key name
+  %%> History:
+  %%> - GitHub ignores auto-merge turned on with the built-in Actions token, so #2550 removed that workflow; an App token is different
   %%> Not built:
-  %%> - App-enabled auto-merge; it still has to be proven that the PR joins the merge queue, because an earlier bot auto-merge did not (#2550)
+  %%> - Swamp turning on auto-merge; App-enabled auto-merge still has to be proven to join the queue; today the author runs `gh pr merge --auto` as `nckrtl`
   Note over GH: The queue and CI decide<br/>Required checks
   %%> What it does:
   %%> - the merge queue lands the PR when `Required checks` pass

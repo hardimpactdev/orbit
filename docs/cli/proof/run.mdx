@@ -24,7 +24,7 @@ orbit proof:run 0123456789abcdef0123456789abcdef01234567
 
 In a terminal, an omitted commit is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.commit_invalid`, and so is a value that is not a full lowercase SHA. A refused call sends no request.
 
-The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the VM job](/reference/feature-flow#the-vm-job).
+The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
 
 Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. Not built yet: the receipt store and the CI job.
 
@@ -42,7 +42,7 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 Orbit creates a task group on the Orbit Project and provisions it with the same `tasks.provision` operation as any task. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the provision waits as it does for a task.
 
-Orbit then runs `bin/proof-fleet verify` in the VM as a `tasks.script` operation, and cancels the group whatever the cases did.
+Orbit then runs `bin/proof-fleet verify` in the VM as a `tasks.script` operation, and cancels the group whatever the cases did. This is the interim: the target is that Orbit's own Swamp runs the reset and verify workflows directly over SSH, with no `bin/proof-fleet` and no second Swamp in the VM.
 
 Orbit builds a fresh test fleet in the VM from the ready snapshot: a Gateway, an `app-dev` Node and an `app-prod` Node. It runs the selected cases one after another with the CLI built from the commit. Each case asserts the command's promised effect, the recorded state and the Node state, and removes what it created. After each case, Orbit compares the state that the case touched with its state before the case. A leftover fails the case. A case that needs a clean fleet gets a new one.
 

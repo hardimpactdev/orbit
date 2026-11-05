@@ -9,7 +9,7 @@ Take one command at a time through the full development and release flow, using 
 
 The target flow, from idea to deployed, is in [the feature flow](../../../docs/reference/feature-flow.md). Write only to `hardimpactdev/orbit`.
 
-For the first complete pass, follow the feature flow's build order: establish the verified proof topology before wiring the VM CI job that resets from it. Reuse the same command cases for development and CI. A manual proof or seed refresh helps build the pipeline, but does not complete its automatic release stages.
+For the first complete pass, follow the feature flow's build order: establish the verified proof topology before wiring the proof CI job that resets from it. Reuse the same command cases for development and CI. A manual proof or seed refresh helps build the pipeline, but does not complete its automatic release stages.
 
 ## Before code
 
@@ -39,8 +39,8 @@ Work through it in order. Each item ends with evidence in the PR.
    - Gateway Pest tests only for what this command's Gateway code needs: admission, refusals, intent rendering, projection. The old suite was deleted; for how things were set up, read git history at tag `pest-before-rewrite`. Keep them fast.
 6. **Proof.** Run the cases on the shared proof topology. Record fresh and no-drift times against the old workflow.
 7. **The whole release flow.** The command is not done until it has gone through all of it:
-   1. PR, with auto-merge as `nckrtl` (`gh pr merge <n> -R hardimpactdev/orbit --auto`).
-   2. CI: fast checks plus the VM job for this command, selected by the changed files.
+   1. PR, with auto-merge as `nckrtl` (`gh pr merge <n> -R hardimpactdev/orbit --auto`). This is the interim: the target is that Swamp turns on auto-merge with a GitHub App token that the Gateway mints, on a PR that the Orbit App opened ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
+   2. CI: fast checks plus the proof CI for this command, selected by the changed files.
    3. Merge through the queue.
    4. Release as a Swamp run.
    5. Per-host refresh: each task VM host refreshes its task image and topology seed.
