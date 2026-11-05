@@ -6,14 +6,11 @@ import json
 import os
 import secrets
 import signal
-import ssl
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
-import urllib.error
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -635,21 +632,6 @@ def restore_ready(request):
     return ready.restore(state['guests'], state['network'], source_for(request, request['generation']), labels)
 
 
-def gateway_answers(address):
-    """The Gateway's Caddy and PHP answer on its private address; any status below 500 is an answer."""
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    try:
-        urllib.request.urlopen('https://' + address + '/', context=context, timeout=3).close()
-    except urllib.error.HTTPError as error:
-        error.close()
-        if error.code >= 500:
-            raise RuntimeError(f'The Gateway answered {error.code}.') from error
-    except urllib.error.URLError as error:
-        raise RuntimeError('The Gateway does not answer: ' + str(error.reason)) from error
-
-
 def apply_candidate(request):
     """Apply the candidate in the restored Gateway as soon as it has mounted the new source, while the Nodes still boot."""
     gateway = prepared(request)['construction']['nodes']['gateway']['instance']
@@ -666,7 +648,7 @@ def apply_candidate(request):
 
 
 def ready_wait(request):
-    """Wait, within a fixed bound, for the started guests: guest agents, tunnel, Gateway, Node agents online."""
+    """Wait, within a fixed bound, for the started guests: guest agents, tunnel, Node agents online (which needs the Gateway)."""
     topology = prepared(request)['construction']
     network = wireguard(topology)
     address = network['nodes']['gateway']['ip']
@@ -683,7 +665,6 @@ def ready_wait(request):
             # The Gateway cannot read the old session; one packet starts the handshake at once.
             subprocess.run(['ping', '-c', '1', '-W', '1', address], capture_output=True, timeout=10, check=False)
             tunnel_ready(network, seconds=max(1.0, time.time() - since))
-            gateway_answers(address)
             state = gateway_state(request)
             agents = state.get('agents')
             if agents is None:

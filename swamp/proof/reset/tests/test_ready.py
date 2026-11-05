@@ -443,7 +443,7 @@ class ReadyWaitTests(unittest.TestCase):
         replies = iter([{'facts': facts, 'agents': agents} for agents in states])
         with patch.object(phases, 'wireguard', return_value=network), patch.object(phases, 'incus', return_value=b'') as incus, \
                 patch.object(phases.subprocess, 'run'), patch.object(phases, 'tunnel_ready', return_value=1.0) as tunnel, \
-                patch.object(phases, 'gateway_answers'), patch.object(phases, 'gateway_state', side_effect=lambda r: next(replies)), \
+                patch.object(phases, 'gateway_state', side_effect=lambda r: next(replies)), \
                 patch.object(phases.time, 'sleep'), patch.object(phases.time, 'time', return_value=1010.0):
             if monotonic:
                 with patch.object(phases.time, 'monotonic', side_effect=monotonic):
@@ -472,7 +472,7 @@ class ReadyWaitTests(unittest.TestCase):
             request = {**self.request(temporary), 'mode': 'ready-make'}
             facts = [{'node_id': node, 'kind': kind, 'enabled': True, 'received_at': '2026-11-05T00:00:00+00:00'} for node in (1, 2) for kind in ('host', 'ufw', 'units')]
             with patch.object(phases, 'wireguard', return_value={'nodes': {'gateway': {'ip': '10.45.0.1'}}}), patch.object(phases, 'incus', return_value=b''), \
-                    patch.object(phases.subprocess, 'run'), patch.object(phases, 'tunnel_ready'), patch.object(phases, 'gateway_answers'), \
+                    patch.object(phases.subprocess, 'run'), patch.object(phases, 'tunnel_ready'), \
                     patch.object(phases, 'gateway_state', return_value={'facts': facts}), \
                     patch.object(phases, 'local_cli', return_value=(0, {'agent': {'state': 'online'}})) as cli, patch.object(phases.time, 'time', return_value=1001.0):
                 phases.ready_wait(request)
@@ -579,20 +579,6 @@ class VendorReuseTests(unittest.TestCase):
             self.assertEqual((earlier / 'apps/cli/vendor/autoload.php').stat().st_ino, linked.stat().st_ino)
             self.assertEqual('candidate vendor', (source / 'apps/gateway/vendor/autoload.php').read_text())
             self.assertNotEqual((candidate / 'apps/gateway/vendor/autoload.php').stat().st_ino, (source / 'apps/gateway/vendor/autoload.php').stat().st_ino)
-
-
-class GatewayAnswerTests(unittest.TestCase):
-    def test_any_status_below_500_is_an_answer(self):
-        import urllib.error
-        import urllib.request
-        with patch.object(urllib.request, 'urlopen', side_effect=urllib.error.HTTPError('u', 404, 'nf', {}, None)):
-            phases.gateway_answers('10.45.0.1')
-        with patch.object(urllib.request, 'urlopen', side_effect=urllib.error.HTTPError('u', 502, 'bad', {}, None)):
-            with self.assertRaisesRegex(RuntimeError, '502'):
-                phases.gateway_answers('10.45.0.1')
-        with patch.object(urllib.request, 'urlopen', side_effect=urllib.error.URLError('refused')):
-            with self.assertRaisesRegex(RuntimeError, 'refused'):
-                phases.gateway_answers('10.45.0.1')
 
 
 class LauncherModeTests(unittest.TestCase):
