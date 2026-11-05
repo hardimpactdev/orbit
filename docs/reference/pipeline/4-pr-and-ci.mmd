@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design: stage 4 of the command development pipeline (feature-flow sections 3 and 4). There is one CI: the fast checks plus, for command code, the proof CI (proof:run for the affected commands). The merge queue requires that one CI result. Swamp opens the PR as the Orbit App and, once the gate has passed and CI is green, adds it to the merge queue with a Gateway-minted App token; the Gateway only admits and mints. GitHub auto-merge is not used.
+  %% Target design: stage 4 of the command development pipeline (feature-flow sections 3 and 4). It continues the one PR that stage 1 opened as a draft with the spec. The code and the runnable proof cases of the command are pushed to the same branch, so a reviewer can check that the chart, the docs, the cases, the code and the proof cases match. There is one CI: the fast checks plus, for command code, the proof CI (proof:run for the affected commands). It runs on every push. When everything is green the PR leaves draft; then comes the gate, and Swamp adds the PR to the merge queue with a Gateway-minted App token. The merge queue requires the one CI result. The Gateway only admits and mints. GitHub auto-merge is not used.
   %% status: draft
-  %% command: development pipeline stage 4 · PR and CI
+  %% command: development pipeline stage 4 · code, proof CI and merge in the same PR
   %% kind: pipeline.4-pr-and-ci
   autonumber
   %% lane AG icon=terminal pill=author tone=gray
@@ -14,26 +14,21 @@ sequenceDiagram
   participant SW as Swamp<br/>owns flow · state
   participant GH as GitHub<br/>PR · merge queue
   participant CI as CI<br/>fast · proof CI
-  AG->>GH: Push the branch<br/>proof passed first
+  AG->>GH: Push code and proof cases<br/>same branch as the draft PR
   %%> Requirements:
+  %%> - the draft PR of stage 1 exists and its first commit holds the spec: chart, page and cases
   %%> - the cases passed on the nested fleet (stage 3)
-  Note over GW: Admit the PR request<br/>one change
   %%> What it does:
-  %%> - authorizes the request, records the operation, and mints a short-lived GitHub App token
-  GW->>SW: Start the PR flow<br/>token as vault key name
+  %%> - pushes the command code and the runnable proof cases to the branch of the draft PR; no second PR is opened
+  %%> - the chart, page, cases, code and proof cases are now in one PR, so a reviewer can check that they match
   %%> Not built:
-  %%> - the PR flow as a Swamp workflow
-  SW->>GH: Open the PR<br/>as the Orbit App
+  %%> - PRs opened by the App; today the author opens the draft PR as `nckrtl`
+  GH->>CI: Start CI<br/>on the PR head, every push
   %%> What it does:
-  %%> - one PR per change, with the chart, page and cases already merged for a command (stage 1)
-  %%> Not built:
-  %%> - PRs opened by the App; today the author opens the PR as `nckrtl`
-  GH->>CI: Start CI<br/>on the PR head
-  %%> What it does:
-  %%> - GitHub runs `ci.yml` for the PR head; there is one CI, and the merge queue requires its one result
+  %%> - GitHub runs `ci.yml` for the PR head on every push, also while the PR is a draft; there is one CI, and the merge queue requires its one result
   Note over CI: Scope the change<br/>changed files pick the jobs
   %%> Rules:
-  %%> - documentation only (`docs/`, `*.md`, charts): docs checks only, never the proof CI
+  %%> - documentation only (`docs/`, `*.md`, charts): docs checks only, never the proof CI; this is the spec commit alone
   %%> - Gateway code: fast checks and the Gateway Pest suite
   %%> - web or CLI code: fast checks and that build
   %%> - command code (workflows, extensions, playbooks, roles, versions): fast checks and the proof CI
@@ -62,19 +57,34 @@ sequenceDiagram
     CI-->>GH: One CI result<br/>green
     %%> Result:
     %%> - the merge queue requires this one result
+    GW->>SW: Admit the ready step<br/>token key name
+    %%> What it does:
+    %%> - authorizes the step and mints a short-lived App token
+    %%> When:
+    %%> - the PR is a draft and its CI is green on the head
+    SW->>GH: Take the PR out of draft<br/>as the Orbit App
+    %%> What it does:
+    %%> - marks the PR ready for review with the App token, passed by vault key name
+    %%> Why:
+    %%> - a draft means the work is still moving; leaving draft says the spec, code and proof cases are done
+    %%> Not built:
+    %%> - Swamp leaving draft; today the author runs `gh pr ready` as `nckrtl`
     alt manual mode
       GW->>GH: Read the PR reviews<br/>short poll · approval on head
       %%> What it does:
       %%> - Nick's approving review on the exact PR head is the gate; the Gateway sees it with a token that has only `pull_requests: read`
       %%> Why:
       %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the approval
+      %%> - a push moves the PR head, so the approval must follow the last push
       %%> Not built:
       %%> - the approval-triggered continuation
       GH-->>GW: Approval on the head
     else automatic mode
       SW->>AG: Final self-review<br/>fresh review agent
       %%> What it does:
-      %%> - a new review agent, which took no part in the drafts or the earlier reviews, reads the PR head and the CI result
+      %%> - a new review agent, which took no part in the spec, the code or the earlier reviews, reads the whole PR head and the CI result
+      %%> Result:
+      %%> - findings go back to the author agent, which fixes them; the new head gets a new CI run and a new review
       AG-->>SW: Pass<br/>or findings
     end
     GW->>SW: Admit the merge step<br/>fresh token key name
@@ -91,17 +101,18 @@ sequenceDiagram
     %%> - the repository's auto-merge setting is switched off once Swamp enqueues PRs
     GH->>CI: Test the combined commit<br/>merge queue run
     %%> What it does:
-    %%> - the queue builds the PR on top of the newest main and runs the same selection rule
+    %%> - the queue builds the PR on top of the newest main and runs CI again with the same selection rule
     %%> - a batch needs the proof CI only for PRs that change command code
     CI-->>GH: Combined commit green
     %%> Result:
     %%> - the queue run tested the exact commit it now puts on main
     Note over GH: Land the PR<br/>merge queue
     %%> Result:
-    %%> - the commit is on main; the Gateway release (stage 5) finds it
+    %%> - the spec, the code and the proof cases are on main together; the Gateway release (stage 5) finds them
   else a check fails
     CI--xGH: One CI result<br/>red
     %%> Result:
-    %%> - the PR stays out of the queue; the author fixes and pushes again, and the gate starts again on the new head
+    %%> - the PR stays a draft and out of the queue; the author fixes and pushes again, and CI runs again on the new head
+    %%> - a PR that left draft and then goes red is fixed the same way, and the gate starts again on the new head
     %%> - a red combined commit removes the PR from the queue
   end

@@ -11,21 +11,31 @@ The target flow, from idea to deployed, is in [the feature flow](../../../docs/r
 
 For the first complete pass, follow the feature flow's build order: establish the verified proof topology before wiring the proof CI job that resets from it. Reuse the same command cases for development and CI. A manual proof or seed refresh helps build the pipeline, but does not complete its automatic release stages.
 
+## One PR per command change
+
+A command change has **one PR**. The chart, the docs page, the verification cases, the command code and the runnable proof cases all land in that PR, so a reviewer can check that they match. There are no separate docs-only prep PRs.
+
+1. The PR starts as a **draft**. Its first commit is the spec: chart, page and cases, from [preparing-commands](../preparing-commands/SKILL.md). In manual mode, Nick may review the spec in the draft before code is written; in automatic mode there is no checkpoint.
+2. You add the code and the runnable proof cases to the same branch, in later commits. Never open a second PR for them.
+3. Proof CI runs on every push. When everything is green, the PR leaves draft. Then the gate: Nick's approving review on the exact head in manual mode, or a separate final self-review in automatic mode. Swamp then adds the PR to the merge queue, which runs CI again and merges.
+
+A command that was prepared earlier through a docs-only PR already has its chart, page and cases on main. Open the draft PR with a first commit that reviews and updates them.
+
 ## Before code
 
-Three things are in place and agreed before you change code:
+Three things are in place before you change code, in the first commit of the draft PR or already approved in it:
 
 1. **Brief and acceptance criteria:** the Task and its group. The criteria decide when you are done.
 2. **The docs page of the ideal state:** `docs/cli/<family>/<command>.mdx`: description, usage, how it works, errors. Update it first if it is behind. Use [writing-documentation](../writing-documentation/SKILL.md).
 3. **The chart:** `docs/cli/<family>/<command>.mmd`, updated to the ideal flow with [flow-tighten](../flow-tighten/SKILL.md): the main path uses only required parameters, one `opt` block per optional flag, minimal, real steps only.
 
-Call Recall `resolve` for the command and its family first. Current decisions override older instructions.
+The cases file (`swamp/proof/<family>/<command>.cases.md`) belongs to the same first commit. Call Recall `resolve` for the command and its family first. Current decisions override older instructions.
 
 ## The checklist
 
 Work through it in order. Each item ends with evidence in the PR.
 
-1. **Docs match the ideal state.** Review the `.mdx` page, chart and command verification together. The page and chart agree with each other and with the brief. Decide the failure and cleanup contract during this review, using [flow-tighten rule 28](../flow-tighten/SKILL.md#what-a-good-flow-looks-like).
+1. **Docs match the ideal state.** Review the `.mdx` page, chart and command verification together, in the same PR as the code. The page and chart agree with each other and with the brief. Decide the failure and cleanup contract during this review, using [flow-tighten rule 28](../flow-tighten/SKILL.md#what-a-good-flow-looks-like).
 2. **The split is right.**
    - CLI: parse arguments, call the API, show the result. No logic.
    - Gateway: admission (validation, refusals, conflicts), intent rendering, recording the result. No execution.
@@ -35,13 +45,13 @@ Work through it in order. Each item ends with evidence in the PR.
 3. **Code is minimal.** Delete unused CLI and Gateway paths for this command, including old execution code and agent command calls it no longer needs. Report net lines.
 4. **The workflow matches the chart** step for step; Swamp lane labels equal step names. Build with [swamp-flow](../swamp-flow/SKILL.md) and the phases with [ansible-phase](../ansible-phase/SKILL.md).
 5. **Tests.**
-   - Use [verifying-commands](../verifying-commands/SKILL.md) to maintain and run the affected proof, including its reset boundary. Update cases for behavior changes; review existing cases for behavior-preserving changes. The same cases and assertions run during development and in CI.
+   - Use [verifying-commands](../verifying-commands/SKILL.md) to maintain and run the affected proof, including its reset boundary. Update cases for behavior changes; review existing cases for behavior-preserving changes. The runnable proof cases (`swamp/proof/<family>/cases/<command>-*.sh`) go into the same PR as the code and the spec. The same cases and assertions run during development and in CI.
    - Gateway Pest tests only for what this command's Gateway code needs: admission, refusals, intent rendering, projection. The old suite was deleted; for how things were set up, read git history at tag `pest-before-rewrite`. Keep them fast.
 6. **Proof.** Run the cases on the shared proof topology. Record fresh and no-drift times against the old workflow.
 7. **The whole release flow.** The command is not done until it has gone through all of it:
-   1. PR, with auto-merge as `nckrtl` (`gh pr merge <n> -R hardimpactdev/orbit --auto`). This is the interim: the target is that Swamp adds the PR to the merge queue with a GitHub App token that the Gateway mints, on a PR that the Orbit App opened ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
-   2. CI: fast checks plus the proof CI for this command, selected by the changed files.
-   3. Merge through the queue.
+   1. PR: the same draft PR that holds the spec. Push the code and proof cases to it; when everything is green it leaves draft (`gh pr ready <n> -R hardimpactdev/orbit`). After the gate, auto-merge as `nckrtl` (`gh pr merge <n> -R hardimpactdev/orbit --auto`). This is the interim, as it is today: the target is that Swamp opens the draft PR as the Orbit App, takes it out of draft, and adds it to the merge queue (`enqueuePullRequest`) with a GitHub App token that the Gateway mints, after Nick's approving review on the exact head (manual mode) or a separate final self-review (automatic mode) ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
+   2. CI: fast checks plus the proof CI for this command, selected by the changed files. It runs on every push.
+   3. Merge through the queue, which runs CI again on the merge group.
    4. Release as a Swamp run.
    5. Per-host refresh: each task VM host refreshes its task image and topology seed.
    6. Fleet: `node:converge` with the release scope (Orbit footprint plus changed roles).
@@ -52,4 +62,4 @@ Work through it in order. Each item ends with evidence in the PR.
 
 ## Report
 
-End with: the command, the PRs, net lines, fresh and no-drift times, which release-flow steps it went through, the gaps you filled, and the lessons you added here.
+End with: the command, the PR (one per command change), net lines, fresh and no-drift times, which release-flow steps it went through, the gaps you filled, and the lessons you added here.

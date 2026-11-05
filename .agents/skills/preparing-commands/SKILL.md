@@ -1,11 +1,11 @@
 ---
 name: preparing-commands
-description: Use when preparing an Orbit command for the command development pipeline, before any code changes. Covers drafting the chart, the docs page and the verification cases, the review with Nick, and landing them.
+description: Use when preparing an Orbit command for the command development pipeline. Covers drafting the chart, the docs page and the verification cases as the first commit of the command's draft PR, the optional spec checkpoint with Nick, and handing the PR on to the code.
 ---
 
 # Prepare a command for the development pipeline
 
-A command is **ready** when three things are approved by Nick and merged on main:
+A command has **one PR**. Preparation is its first commit, not its own PR. The first commit holds three things, the **spec**:
 
 | Item | File | Says |
 | --- | --- | --- |
@@ -13,7 +13,13 @@ A command is **ready** when three things are approved by Nick and merged on main
 | Docs page | `docs/cli/<family>/<command>.mdx` | The ideal behavior: description, usage, how it works, errors |
 | Cases | `swamp/proof/<family>/<command>.cases.md` | What a proof must observe to call the command correct |
 
-Preparation changes no code. It describes the ideal state, even where the current code differs. Those differences are the build work. Building starts only once the command is ready, with [developing-commands](../developing-commands/SKILL.md).
+The spec is **approved in the draft PR**. A merged docs-only PR no longer makes a command ready, and no docs-only prep PR is opened. The code and the runnable proof cases follow in the same PR, with [developing-commands](../developing-commands/SKILL.md), so a reviewer can check that all of it matches.
+
+The first commit changes no code. It describes the ideal state, even where the current code differs. Those differences are the build work.
+
+The target flow is in the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx) (stages 1 and 4). The orchestrator, through Swamp and a Gateway-minted App token, opens the draft PR as the Orbit App.
+
+About 74 commands were prepared through docs-only PRs before this flow. Their chart, page and cases stay as they are. When such a command's turn comes, read its existing spec first, then review and update it in the first commit of its draft PR.
 
 Prepare one command at a time. Take the next command from the review queue on the pipeline dashboard.
 
@@ -64,28 +70,37 @@ Derive every expectation from the chart and the page, never from the current cod
 
 ## 5. Check your own draft first
 
-Do this before you show Nick anything. He should only have to say "proceed". Fix every item you can settle yourself, and decide the rest with the rules and Recall decisions, stating the choice in one line so he can overrule it. Ask only about a choice that no rule or decision settles.
+Do this before you open the draft PR or show Nick anything. He should only have to say "proceed". Fix every item you can settle yourself, and decide the rest with the rules and Recall decisions, stating the choice in one line so he can overrule it. Ask only about a choice that no rule or decision settles.
 
 1. Read the code each claim relies on (planner, controller, CLI) and correct any claim it contradicts. Mark "fails today" from the code, never "unverified". Search the rest of the docs and Recall for the behavior you describe, especially failure, retry and removal, and settle any conflict between a page, a decision and the code before you show the draft.
 2. Run the rules once more: no implementation names on the page (Swamp, workflow, planner), placeholders only (no Node ids, task ids, hosts), minimal chart (rule 25), failure and retry (rule 28), the visible skip with its reason code, no names or dates.
 3. Walk the cases against the page: every error code, flag, repeat and refusal has a case, and every example on the page passes its own refusals. Check mechanically that each code on the page appears in the cases file. Give each optional flag its own row.
 4. Check the page and cases against the CLI design standard, one section at a time: input, consent, results, progress. Report a rule that looks outdated instead of copying it.
 5. Open the approved sibling's page beside yours and compare the usage line, option tables, section order and wording. Apply any difference to both commands and the family page.
-6. When no one reviews the draft before it lands, run one independent read-only sub-agent review (Sonnet at high effort) against these skills and the CLI standard, and fix what it finds.
+6. When no one reviews the spec before code follows (automatic mode, or a manual checkpoint that Nick skips), run one independent read-only sub-agent review (Sonnet at high effort) against these skills and the CLI standard, and fix what it finds.
 7. Open the preview yourself, run `bin/check-flows`, `composer docs-build` and `composer docs-lint`, and confirm the cases file is linked in your message.
 
-## 6. Review with Nick
+## 6. Open the draft PR
 
-Show Nick the review page, the chart and the cases. The docs dev server renders the review checkout, for example `http://192.168.6.20:3001/cli/firewall/allow`. Start it detached with `setsid`, because a background task is killed at its time limit, and open the page before you share the link. Apply each correction, then show the result again. Nick approves each of the three items separately.
+1. Commit the chart, page and cases as the first commit of the command's branch, and nothing else. Keep the files of the spec only; add no code.
+2. Open the PR as a **draft**. It stays a draft until the code, the proof cases and the proof CI are green. Docs-only commits run the docs checks of CI and no proof CI.
+3. Today the author opens the draft PR as `nckrtl`. The target is that Swamp opens it as the Orbit App, with a GitHub App token that the Gateway mints ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
 
-When a correction is a rule for every command, add it to the skill that owns it in the same change: flow-tighten for charts, writing-documentation for text, verifying-commands for cases.
+## 7. The spec checkpoint
 
-## 7. Land and record
+The flow has two modes.
 
-1. Mark the chart `%% status: reviewed`.
-2. Open one docs-only PR for the command: chart, page and cases. Docs-only changes run the docs checks of CI and no proof CI. Merge through the queue with `gh pr merge <n> -R hardimpactdev/orbit --auto`. This is the interim: the target is that Swamp adds the PR to the merge queue with a GitHub App token that the Gateway mints, on a PR that the Orbit App opened ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
-3. The orchestrator records each approval on the pipeline dashboard. The command then shows as ready.
+- **Manual mode:** an optional spec checkpoint. Nick reviews the chart, docs and cases in the draft before any code is written. He may check out a development Instance on the PR branch (`instance:create --branch=<branch>`) and review there with an agent. The docs dev server renders the review checkout, for example `http://192.168.6.20:3001/cli/firewall/allow`. Start it detached with `setsid`, because a background task is killed at its time limit, and open the page before you share the link. Apply each correction as a new commit on the same branch, then show the result again. Nick approves each of the three items separately. When he approves the spec, mark the chart `%% status: reviewed`.
+- **Automatic mode:** no checkpoint. The clean pass of the review agents approves the spec, and the final self-review before the merge reads the whole PR.
+
+When a correction is a rule for every command, add it to the skill that owns it in the same PR: flow-tighten for charts, writing-documentation for text, verifying-commands for cases.
+
+## 8. Hand on to the code
+
+The spec does not land on its own. Keep the PR a draft and go on in the same branch with [developing-commands](../developing-commands/SKILL.md): the code and the runnable proof cases join this PR, proof CI runs on every push, and the PR leaves draft when everything is green. The gate, the merge queue and the merge belong to that stage, not to this one.
+
+The orchestrator records the draft PR and the spec approval on the pipeline dashboard. The command is not ready after this step; its spec is approved.
 
 ## Report
 
-Name the command, the PR, the corrections Nick made, the cases marked "fails today", and any skill you changed. For each correction, name the skill line it changed, or say why it is specific to this command. Do this after every correction, not only at the end.
+Name the command, the draft PR, the corrections Nick made, the cases marked "fails today", and any skill you changed. For each correction, name the skill line it changed, or say why it is specific to this command. Do this after every correction, not only at the end.

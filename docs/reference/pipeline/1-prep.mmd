@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design: stage 1 of the command development pipeline (docs/reference/command-development-pipeline.mdx). Swamp owns the whole prep flow and its state; the Gateway only authorizes it: it admits each request, mints short-lived GitHub App tokens, passes them by vault key name, and records outcomes. An author agent drafts, a separate review agent checks, Swamp opens the PR as the Orbit App, and one of two modes (manual or automatic) decides when Swamp adds the PR to the merge queue. GitHub auto-merge is not used. No code changes in this stage.
+  %% Target design: stage 1 of the command development pipeline (docs/reference/command-development-pipeline.mdx). A command has one PR, and this stage starts it. Swamp owns the flow and its state; the Gateway only authorizes it: it admits each request, mints short-lived GitHub App tokens, passes them by vault key name, and records outcomes. An author agent drafts the spec (chart, docs page and cases), a separate review agent checks it, and Swamp opens a draft PR as the Orbit App. The spec is the first commit of that PR. In manual mode, Nick may review the spec in the draft before code is written; in automatic mode there is no checkpoint. The code and the runnable proof cases follow in the same PR (stages 2 to 4), and stage 4 holds the gate and the merge queue.
   %% status: draft
-  %% command: development pipeline stage 1 · prep a command
+  %% command: development pipeline stage 1 · start the command PR with its spec
   %% kind: pipeline.1-prep
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,31 +12,32 @@ sequenceDiagram
   participant GW as Gateway<br/>authorizes only
   participant SW as Swamp<br/>owns flow · state
   participant VM as Task VM<br/>author · reviewer
-  participant GH as GitHub<br/>PR · merge queue
+  participant GH as GitHub<br/>draft PR
   participant NK as Nick<br/>owner
-  Note over GW: Admit the prep request<br/>one command
+  Note over GW: Admit the request<br/>one command
   %%> What it does:
-  %%> - authorizes a prep request for one command
+  %%> - authorizes the request to start the PR of one command
   %%> - records the operation, so the CLI and web show its state
   %%> - mints a short-lived GitHub App token for the flow
   %%> Why:
   %%> - the Gateway only authorizes; Swamp owns the flow and all of its state
-  GW->>SW: Start the prep flow<br/>token as vault key name
+  GW->>SW: Start the flow<br/>token as vault key name
   %%> Inputs:
   %%> - the command and its family
   %%> - the vault key name of the token, never the token itself
   %%> Not built:
-  %%> - the prep flow as a Swamp workflow; today the orchestrator starts the agents by hand
-  SW->>VM: Draft the three files<br/>preparing-commands skill
+  %%> - the flow as a Swamp workflow; today the orchestrator starts the agents by hand
+  SW->>VM: Draft the spec<br/>preparing-commands skill
   %%> What it does:
   %%> - the author agent drafts the chart, the docs page and the verification cases in a task VM
-  %%> - preparation changes no code
+  %%> - this commit changes no code
   %%> Not built:
-  %%> - Swamp starting the task VM and the agent as part of the prep flow
+  %%> - Swamp starting the task VM and the agent as part of the flow
   Note over VM: Read first<br/>Recall · page · chart · code
   %%> What it does:
   %%> - Recall `resolve` for the command and its family, and `decisions` for the family; current decisions override older text
   %%> - reads the existing page, chart and old fixture; reads the code only to learn what exists, never as the target
+  %%> - for a command that already has a spec from a docs-only PR, starts from it and updates it
   %%> - for a sibling of an approved command, starts from the sibling's chart, page and cases
   Note over VM: Draft the chart<br/>flow-tighten rules
   %%> What it does:
@@ -58,10 +59,10 @@ sequenceDiagram
   %%> - runs `bin/check-flows`, `composer docs-build` and `composer docs-lint`
   %%> - walks every error code, flag and repeat of the page against the cases
   loop until the review has no findings
-    SW->>VM: Review the drafts<br/>fresh read-only agent
+    SW->>VM: Review the spec<br/>fresh read-only agent
     %%> What it does:
-    %%> - a separate review agent (Sonnet, high effort) checks the drafts against the skills and the CLI standard
-    %%> - it never wrote the drafts
+    %%> - a separate review agent (Sonnet, high effort) checks the spec against the skills and the CLI standard
+    %%> - it never wrote the spec
     VM-->>SW: Findings<br/>or none
     SW->>VM: Fix the findings<br/>author agent
     %%> When:
@@ -69,68 +70,47 @@ sequenceDiagram
     %%> Result:
     %%> - the author agent fixes every finding it can settle with the rules and Recall decisions
   end
-  SW->>GH: Open one docs-only PR<br/>as the Orbit App
+  SW->>GH: Open a draft PR<br/>as the Orbit App
   %%> What it does:
   %%> - reads the token from the vault by its key name
-  %%> - marks the chart `%% status: reviewed`
-  %%> - the PR holds the chart, page and cases of one command and nothing else
+  %%> - pushes the branch whose first commit holds the chart, page and cases of one command and nothing else
+  %%> - opens the PR as a draft; it stays a draft until stage 4
+  %%> - this is the one PR of the command: code and runnable proof cases join it later, and no separate docs PR exists
   %%> Not built:
-  %%> - PRs opened by the App from the prep flow; the Gateway already opens task PRs as the App with `tasks:publish`, but today the prep author opens this PR as `nckrtl`
+  %%> - PRs opened by the App from this flow; the Gateway already opens task PRs as the App with `tasks:publish`, but today the author opens the PR as `nckrtl`
   Note over GH: Docs checks only<br/>no VM job
   %%> Why:
-  %%> - a documentation-only change runs the docs checks of CI and never the proof CI
+  %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code
   alt manual mode
-    opt Nick reviews in an Instance
-      NK->>GW: Create an Instance<br/>instance:create --branch=BRANCH
+    opt spec checkpoint
+      opt Nick reviews in an Instance
+        NK->>GW: Create an Instance<br/>instance:create --branch=BRANCH
+        %%> What it does:
+        %%> - creates a development Instance that checks out the PR branch
+        %%> - Nick and an agent review and adjust the spec there
+        %%> Built or not:
+        %%> - built: `instance:create --branch` checks out an existing origin branch (`docs/cli/instance/create.mdx`, Branch selection)
+      end
+      NK->>GH: Review the spec<br/>chart · page · cases
       %%> What it does:
-      %%> - creates a development Instance that checks out the PR branch
-      %%> - Nick and an agent review and adjust the drafts there
-      %%> - a push moves the PR head, so the approval must follow the last push
-      %%> Built or not:
-      %%> - built: `instance:create --branch` checks out an existing origin branch (`docs/cli/instance/create.mdx`, Branch selection)
+      %%> - Nick reviews the chart, the page and the cases in the draft before any code is written
+      %%> - each correction is a new commit on the same branch
+      %%> - Nick approves the spec; the chart is then marked `%% status: reviewed`
+      %%> Why:
+      %%> - a wrong spec is cheapest to fix before code follows it
+      SW->>VM: Apply the corrections<br/>author agent
+      %%> When:
+      %%> - only when Nick asks for corrections
+      %%> Result:
+      %%> - the author agent applies them, checks the draft again and pushes
     end
-    NK->>GH: Approve the exact head<br/>review in Nick's name
-    %%> What it does:
-    %%> - Nick asks the agent to post the approving review in his name
-    %%> Why:
-    %%> - the approval of the exact PR head is the gate; it is the only signal the flow waits for
-    GW->>GH: Read the PR reviews<br/>short poll · approval on head
-    %%> What it does:
-    %%> - reads the review decisions with a token that has only `pull_requests: read`
-    %%> Why:
-    %%> - the Gateway is private and its App receives no webhooks, so GitHub cannot call it; a short poll sees the approval
-    %%> Built or not:
-    %%> - built: the Gateway already reads review decisions this way for task pull requests
-    %%> - not built: the approval-triggered continuation, which admits the next step of the prep flow
-    GH-->>GW: Approval on the head
   else automatic mode
-    SW->>VM: Final self-review<br/>fresh review agent
-    %%> What it does:
-    %%> - a new review agent, which took no part in the drafts or the earlier reviews, reads the PR head and its CI result
-    %%> Result:
-    %%> - findings go back to the author agent, which fixes them; the new head gets a new review
-    VM-->>SW: Pass<br/>or findings
+    Note over GH: No checkpoint<br/>the flow continues
+    %%> Why:
+    %%> - the review agents' clean pass is the spec approval; the final self-review in stage 4 reads the whole PR
   end
-  GW->>SW: Admit the merge step<br/>fresh token key name
-  %%> When:
-  %%> - manual mode: after the Gateway sees the approval on the exact head
-  %%> - automatic mode: after the final self-review passes
-  %%> - in both modes the PR's CI is green
-  %%> Why:
-  %%> - a token lives one hour and an approval can take longer, so the Gateway mints a new one for this step
-  SW->>GH: Add to the merge queue<br/>enqueuePullRequest (App token)
-  %%> What it does:
-  %%> - Swamp adds the PR to the merge queue through GitHub's `enqueuePullRequest` GraphQL mutation, with the Gateway-minted App token passed by vault key name
-  %%> - the Orbit App, through this Swamp step, decides whether the PR may merge; the merge queue then runs CI on the merge group and merges
-  %%> History:
-  %%> - GitHub auto-merge is no longer used
-  %%> Not built:
-  %%> - Swamp adding the PR to the merge queue; today the author runs `gh pr merge --auto` as `nckrtl` (the interim)
-  %%> - the repository's auto-merge setting is switched off once Swamp enqueues PRs
-  Note over GH: The queue and CI decide<br/>Required checks
-  %%> What it does:
-  %%> - the merge queue lands the PR when `Required checks` pass
-  SW-->>GW: Record the outcome<br/>command ready
+  SW-->>GW: Record the outcome<br/>spec in draft PR
   %%> Result:
-  %%> - chart, page and cases are merged; the Gateway records the command as ready for the CLI and web
-  %%> - building starts only now, with stage 2 onward
+  %%> - the Gateway records the draft PR with its spec commit, for the CLI and web
+  %%> - the command is not ready and not merged; building starts in the same PR with stage 2, and stages 3 and 4 follow in it
+  %%> - a command already prepared through a docs-only PR stays as it is; when its turn comes, this flow reviews and updates its spec

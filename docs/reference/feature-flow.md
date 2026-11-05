@@ -19,7 +19,9 @@ These terms distinguish the task images, topology seeds, their hosts and the sta
 
 ## 1. Idea
 
-Before an agent writes any code, three things are in place and agreed. The agent then codes against them.
+A command change is **one PR**. The chart, the docs page, the verification cases, the command code and the runnable proof cases all land in that PR, so a reviewer can check that they match. There are no separate docs-only prep PRs.
+
+The PR starts as a draft. Its first commit holds the spec, which is written before any code. The agent then codes against it in later commits of the same PR.
 
 1. **Brief and acceptance criteria:** a Task group or a Task in a group.
 
@@ -30,10 +32,19 @@ Before an agent writes any code, three things are in place and agreed. The agent
    - Each optional flag gets its own `opt` block.
    - The chart is minimal and shows real steps only.
 3. **The docs of the ideal state:** update `docs/cli/<family>/<command>.mdx` with the finished feature's description, usage, behavior and errors.
+4. **The verification cases:** `swamp/proof/<family>/<command>.cases.md`, derived from the chart and the page.
 
-For a bug, fix the chart and the docs first, then the code.
+The Orbit App, through Swamp and a Gateway-minted App token, opens the draft PR with these files as its first commit (not built yet; see [Pull request](#3-pull-request)).
 
-The agent that takes the Task gets the updated chart, the updated docs, the brief and the acceptance criteria. The test cases in step 2.3 come from the chart, and the acceptance criteria decide when the Task is done.
+- **Manual mode:** an optional spec checkpoint. Nick reviews the chart, docs and cases in the draft before code is written.
+  - He may check out a development Instance on the PR branch and review there with an agent.
+- **Automatic mode:** no checkpoint.
+
+For a bug, fix the chart and the docs first, in the first commit, then the code.
+
+The agent that takes the Task gets the updated chart, the updated docs, the cases, the brief and the acceptance criteria. The test cases in step 2.3 come from the chart, and the acceptance criteria decide when the Task is done. A merged docs PR does not make a command ready. The spec is approved in the draft.
+
+The commands that were already prepared through docs-only PRs keep their chart, page and cases. When a command's turn comes, its PR reviews and updates them through this same flow.
 
 ## 2. Develop
 
@@ -64,19 +75,21 @@ Use the chart to cover the command's paths.
 
 ## 3. Pull request
 
-The author prepares the PR for the merge queue.
+The author prepares the one PR of the command change for the merge queue. The PR already exists as a draft with the spec (step 1).
 
-1. Push the branch.
-2. Swamp opens the PR as the Orbit App.
-3. Swamp adds the PR to the merge queue.
+1. Swamp opens the draft PR as the Orbit App, with the spec as its first commit.
+2. Push the code and the runnable proof cases to the same branch. CI, with the proof CI for command code, runs on every push.
+3. When everything is green, the PR leaves draft.
+4. The gate passes: Nick's approving review on the exact head in manual mode, or a separate final self-review in automatic mode.
+5. Swamp adds the PR to the merge queue.
 
-This happens after a manual or automatic gate, once the PR's CI is green. The merge queue then runs CI on the merge group and merges. The Orbit App, through a Swamp step, decides whether a PR may merge. Swamp uses an App token that the Gateway mints and calls GitHub's `enqueuePullRequest` GraphQL mutation. The Gateway only admits the request and mints the token. GitHub auto-merge is not used.
+The merge queue then runs CI on the merge group and merges. The Orbit App, through a Swamp step, decides whether a PR may merge. Swamp uses an App token that the Gateway mints and calls GitHub's `enqueuePullRequest` GraphQL mutation. The Gateway only admits the request and mints the token. GitHub auto-merge is not used.
 
-Not built yet: PRs opened by the App, and Swamp adding PRs to the merge queue. The repository's auto-merge setting is switched off once Swamp enqueues PRs. Until then, the author opens the PR and runs `gh pr merge <n> --auto` as `nckrtl` (the interim).
+Not built yet: PRs opened by the App, and Swamp adding PRs to the merge queue. The repository's auto-merge setting is switched off once Swamp enqueues PRs. Until then (the interim), the author opens the draft PR as `nckrtl`, takes it out of draft and runs `gh pr merge <n> -R hardimpactdev/orbit --auto`.
 
 ## 4. CI
 
-CI is the only gate: if CI passes, the PR merges. There is one CI: the fast checks plus, for command code, the proof CI. The merge queue requires that one result. So CI must be strict about what matters and run nothing else. The changed files decide which jobs run:
+CI is the only gate: if CI passes, the PR merges. CI runs on every push to the PR, also while it is a draft; the jobs follow the changed files of the whole PR. There is one CI: the fast checks plus, for command code, the proof CI. The merge queue requires that one result. So CI must be strict about what matters and run nothing else. The changed files decide which jobs run:
 
 | Changed files | Jobs |
 | --- | --- |
@@ -177,7 +190,7 @@ The case programs of a command are `swamp/proof/<family>/cases/<command>-*.sh`. 
 - A change to the selection list selects every case. So do a file list that GitHub returns incomplete, and `--all`. A change cannot narrow its own selection.
 - List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
 - List a helper that several commands share with every one of them.
-- A command that becomes ready also maps the code that implements it, including its Gateway Action and CLI files. Until then, those files stay `skip`.
+- The PR of a command change maps the Gateway Action and CLI files of the command. Until then, they stay `skip`.
 - Case programs are code and select their command. Charts, pages and `*.cases.md` files are `skip`.
 
 A malformed line is refused with `proof.selection_invalid`. A commit without a selection list selects every case.
