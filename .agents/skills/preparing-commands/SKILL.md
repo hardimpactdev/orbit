@@ -97,7 +97,7 @@ When a correction is a rule for every command, add it to the skill that owns it 
 
 ## 8. Hand on to the code
 
-The spec does not land on its own. Keep the PR a draft and go on in the same branch with [developing-commands](../developing-commands/SKILL.md): the code and the runnable proof cases join this PR, proof CI runs on every push, and the PR leaves draft when everything is green. The gate, the merge queue and the merge belong to that stage, not to this one.
+The spec does not land on its own. Keep the PR a draft and go on in the same branch with [developing-commands](../developing-commands/SKILL.md): the code and the runnable proof cases join this PR, proof CI runs on every push, and the PR leaves draft when everything is green. The gate and the merge belong to that stage, not to this one.
 
 The orchestrator records the draft PR and the spec approval on the pipeline dashboard. The command is not ready after this step; its spec is approved.
 

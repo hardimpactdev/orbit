@@ -270,7 +270,7 @@ CI's `Required checks` needs the Web job, which uploads the artifact before it s
 
 ##### Accepted CI runs
 
-The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`, or a `merge_group` run on a `gh-readonly-queue/main/` branch. The merge queue run tests the exact commit the queue then puts on `main`, and `Required checks` passes there first. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
+The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`. There is no merge queue, so a red `main` commit is never released; `main` is fixed forward. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
 
 
 ### Migrations and the snapshot

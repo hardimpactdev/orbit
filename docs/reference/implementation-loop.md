@@ -57,7 +57,7 @@ Before the immediate merge, read GitHub's review records and verify the final re
 
 The reviewer also confirms that `Required checks` succeeded on that same head, that blocking findings are resolved, that required verification is complete, and that the pull request head still matches the reviewed SHA. The reviewer then runs `gh pr merge <pr-url> --merge --match-head-commit <reviewed-sha>` from the maintainer profile. If the head changes, stop. Review the new commit, repeat the affected checks, and submit a new formal approval before trying again. A failed, pending, missing, or unreadable required check prevents the merge.
 
-This workflow merges immediately after those checks pass. It does not enable GitHub auto-merge. This is the interim. The target is that Swamp adds the PR to the merge queue with a GitHub App token that the Gateway mints, on a PR that the Orbit App opened; see [PR and CI](/reference/command-development-pipeline#4-pr-and-ci). After the merge, verify the merged state and record the merge commit. The Tasks scheduler observes the merged pull request and completes the task on its next tick.
+This workflow merges immediately after those checks pass. It does not enable GitHub auto-merge. This is the interim. The target is that Swamp merges the PR straight into `main` with a squash merge, using a GitHub App token that the Gateway mints, on a PR that the Orbit App opened. There is no merge queue and no GitHub auto-merge; see [PR and CI](/reference/command-development-pipeline#4-pr-and-ci). After the merge, verify the merged state and record the merge commit. The Tasks scheduler observes the merged pull request and completes the task on its next tick.
 
 The maintainer profile is an admin profile. It bypasses GitHub enforcement of the `Required checks` status rule, including on `gh pr merge`. GitHub does not require this approval and does not enforce it for that account, so the reviewer checks the formal approval and the successful `Required checks` result before invoking the merge. This workflow keeps that bypass and does not change the ruleset. It adds no `tasks:merge` command, Gateway merge endpoint, SDK contract, MCP contract, or API contract, and it changes no App permission.
 
@@ -79,7 +79,7 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
-Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, merge queue batches, pushes to `main`, task handoff pushes and manual runs use the same gate.
+Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same gate.
 
 | Check | Work |
 | --- | --- |
@@ -89,7 +89,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
-| Gateway release inputs | Pass on every main commit and its merge queue run, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
+| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the reset unit tests, lint the proof programs with `ruff` and validate the `workflow-proof-*.yaml` files with the pinned Swamp runtime |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
@@ -100,7 +100,7 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
 
-Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The merge queue run for `main` selects builds the same way, because `Required checks` passes there first.
+Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The CI run on `main` selects builds the same way.
 
 The Swamp shape job runs its gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the role playbook and checks the private Ansible input builder. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
 
@@ -112,7 +112,7 @@ After native validation resolves the pinned extensions, the job runs `swamp/test
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants.
 
-Operation Deno unit tests and the shape gate run on every CI change. Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
+Operation Deno unit tests and the shape gate run on every CI change. Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.
 
 Workflow validation runs only when the change selects the Swamp checks, and validates every workflow on the nightly schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
 
@@ -142,7 +142,7 @@ The planned proof CI job `Proofs` will be part of the one CI result and is not b
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
-In the merge queue run for `main` and on `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. The merge queue run tests the exact commit the queue then puts on `main`, so the commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
+On `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. The commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
 
 ### Action pins and token permissions
 

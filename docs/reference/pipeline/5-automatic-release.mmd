@@ -16,7 +16,7 @@ sequenceDiagram
   %%> Built:
   %%> - the Gateway looks on a timer while automatic releases are on, and reads CI through its GitHub App
   %%> What it accepts:
-  %%> - a run of `ci.yml` on `main` or the merge queue branch, with `Required checks` and `Gateway release inputs` green
+  %%> - a run of `ci.yml` on `main`, with `Required checks` and `Gateway release inputs` green; there is no merge queue, so a red main commit is never released and main is fixed forward
   %%> - a run from a fork, a PR or another workflow does not count
   Note over GW: Admit the release<br/>one at a time
   %%> Requirements:

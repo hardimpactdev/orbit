@@ -60,4 +60,4 @@ sequenceDiagram
     CLI->>GW: operation:show TASK
     GW-->>CLI: status + verdicts
   end
-  %%> The CI job passes or fails on the verdict; the merge queue requires it.
+  %%> The CI job passes or fails on the verdict; the merge requires it, and the proof does not run again after the merge.
