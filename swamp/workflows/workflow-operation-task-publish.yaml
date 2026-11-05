@@ -26,8 +26,10 @@ inputs:
           type: integer
           minimum: 1
         check:
-          type: integer
-          minimum: 1
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
         checkout_path:
           type: string
           minLength: 1

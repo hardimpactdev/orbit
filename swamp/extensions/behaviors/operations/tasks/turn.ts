@@ -116,20 +116,34 @@ export function receiptInstruction(
     ].join("\n");
 }
 
-const PrepareArgs = z.object({ intent: Input, operation_id: Id, node_id: Id });
+/** One turn key per Pi message; a parent that runs several turns on one session names each of them. */
+const TurnKey = z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/);
+const PrepareArgs = z.object({
+    intent: Input,
+    operation_id: Id,
+    node_id: Id,
+    turn_key: z.union([TurnKey, z.literal("")]).optional(),
+    prompt_append: z.string().max(60000).optional(),
+});
 
 /** Public data shaping only. No filesystem, transport, process or credential reads. */
 export function prepare(raw: unknown) {
-    const { intent, operation_id, node_id } = PrepareArgs.parse(raw);
+    const { intent, operation_id, node_id, turn_key, prompt_append } =
+        PrepareArgs
+            .parse(raw);
     if (intent.node_id !== node_id) throw new Error("tasks.node_mismatch");
     const input = { ...intent, operation_id };
-    const prompt = input.prompt + "\n\n" + receiptInstruction(input) + "\n";
+    const key = turn_key ? turn_key : `operation-${operation_id}`;
+    const prompt = input.prompt +
+        (prompt_append ? "\n\n" + prompt_append : "") +
+        "\n\n" + receiptInstruction(input) + "\n";
     const error_code = prompt.length > 100000 ? "tasks.prompt_too_large" : null;
     const host = input.pi_host.includes(":")
         ? `[${input.pi_host}]`
         : input.pi_host;
     return {
         error_code,
+        turn_key: key,
         intent_json: JSON.stringify(input),
         pi_url: `http://${host}:${input.pi_port}`,
         create_json: JSON.stringify({
@@ -143,7 +157,7 @@ export function prepare(raw: unknown) {
                 }`,
         }),
         send_json: JSON.stringify({
-            key: `operation-${input.operation_id}`,
+            key,
             text: prompt,
         }),
     };
@@ -350,6 +364,60 @@ export async function difference(args: { counts: string; patch: string }) {
     }));
 }
 
+/** The outcomes a parent run reads from a finished turn: the receipt outcome and summary, and the commit the turn left. */
+const OutcomeResult = z.object({
+    state: z.string(),
+    receipt: z.object({
+        outcome: z.string().optional(),
+        summary: z.string().optional(),
+    }).passthrough().nullable(),
+    before: Snapshot.nullable(),
+    after: Snapshot.nullable(),
+}).passthrough();
+export function outcome(raw: { result_json: string }) {
+    const result = OutcomeResult.parse(JSON.parse(raw.result_json));
+    const { before, after } = result;
+    return {
+        outcome: result.receipt?.outcome ?? "",
+        approved: result.state === "done" &&
+            result.receipt?.outcome === "approved",
+        summary: result.receipt?.summary ?? "",
+        moved: before !== null && after !== null && before.head !== after.head,
+        head: after?.head ?? "",
+        tree: after?.tree ?? "",
+    };
+}
+
+/**
+ * The state of the review loop of a prep run after one review or one fix. A review sets whether the spec is approved
+ * and what the findings are; a fix sets the commit that the next review restores. A fix that left HEAD where it was
+ * ends the run, because the next review would restore a commit that holds none of the fix.
+ */
+export function settle(
+    raw: {
+        approved: boolean;
+        head: string;
+        tree: string;
+        review: string;
+        fix: string;
+    },
+) {
+    let { approved, head, tree } = raw;
+    let findings = "";
+    if (raw.review !== "") {
+        const reviewed = outcome({ result_json: raw.review });
+        approved = reviewed.approved;
+        findings = reviewed.summary;
+    }
+    if (raw.fix !== "") {
+        const fixed = outcome({ result_json: raw.fix });
+        if (!fixed.moved) throw new Error("tasks.prep_not_committed");
+        head = fixed.head;
+        tree = fixed.tree;
+    }
+    return { approved, head, tree, findings };
+}
+
 type PublicContext = {
     writeResource(
         spec: string,
@@ -364,6 +432,7 @@ export const turnDataResources = {
         description: "Public turn inputs serialized for the native steps",
         schema: z.object({
             error_code: z.string().nullable(),
+            turn_key: z.string(),
             intent_json: z.string(),
             pi_url: z.string(),
             create_json: z.string(),
@@ -381,6 +450,30 @@ export const turnDataResources = {
         description:
             "Redacted public JSON read from the run's private worker files",
         schema: z.object({ stdout: z.string() }),
+    },
+    turnOutcome: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        description: "What a parent run reads from one finished turn",
+        schema: z.object({
+            outcome: z.string(),
+            approved: z.boolean(),
+            summary: z.string(),
+            moved: z.boolean(),
+            head: z.union([Sha, z.literal("")]),
+            tree: z.union([Sha, z.literal("")]),
+        }),
+    },
+    reviewState: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        description: "Where the review loop of a prep run stands",
+        schema: z.object({
+            approved: z.boolean(),
+            head: z.union([Sha, z.literal("")]),
+            tree: z.union([Sha, z.literal("")]),
+            findings: z.string(),
+        }),
     },
     turnResult: {
         lifetime: "infinite",
@@ -470,6 +563,45 @@ export const turnDataMethods = {
                 await ctx.writeResource("publicOutput", "difference", {
                     stdout: await difference(args),
                 }),
+            ],
+        }),
+    },
+    outcome: {
+        description:
+            "Read the receipt outcome and the commit a finished turn left",
+        arguments: z.object({ result_json: z.string() }),
+        execute: async (args: { result_json: string }, ctx: PublicContext) => ({
+            dataHandles: [
+                await ctx.writeResource(
+                    "turnOutcome",
+                    "outcome",
+                    outcome(args),
+                ),
+            ],
+        }),
+    },
+    settle: {
+        description:
+            "Carry the review loop of a prep run through one review or fix",
+        arguments: z.object({
+            approved: z.boolean(),
+            head: z.string(),
+            tree: z.string(),
+            review: z.string(),
+            fix: z.string(),
+        }),
+        execute: async (
+            args: {
+                approved: boolean;
+                head: string;
+                tree: string;
+                review: string;
+                fix: string;
+            },
+            ctx: PublicContext,
+        ) => ({
+            dataHandles: [
+                await ctx.writeResource("reviewState", "state", settle(args)),
             ],
         }),
     },

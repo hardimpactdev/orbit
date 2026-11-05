@@ -1,0 +1,340 @@
+id: f4f30f87-85e7-49d5-80be-d3bca90132ab
+name: operation-task-prep
+description: >-
+  Prepare one command (stage 1 of the command development pipeline) in one run from full inputs on 209: the existing
+  provision, turn and publish workflows as children, a bounded review loop, and a draft pull request. No step calls the
+  Gateway.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: tasks.prep}
+    intent:
+      type: object
+      properties:
+        provision: {type: object}
+        draft: {type: object}
+        fix: {type: object}
+        reviews: {type: array, minItems: 3, maxItems: 3, items: {type: object}}
+        publish: {type: object}
+      required: [provision, draft, fix, reviews, publish]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+    publish_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+        git_authorization:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [github_token, git_authorization]
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - publish_secrets
+  additionalProperties: false
+jobs:
+- name: prep
+  labels: {role: swamp}
+  steps:
+  - name: Create the VM
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-provision
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: tasks.provision
+        intent: ${{ inputs.intent.provision }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  - name: Draft the spec
+    labels: {role: swamp}
+    dependsOn:
+    - step: Create the VM
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.draft.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-" + string(inputs.operation_id) + "-draft" }}'
+        intent: '${{ inputs.intent.draft }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+  - name: Read the draft
+    labels: {role: swamp}
+    dependsOn:
+    - step: Draft the spec
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: task-prep-read-the-draft
+      methodName: outcome
+      inputs:
+        result_json: ${{ steps["Draft the spec"].outputs.shape_result.result_json }}
+  - name: Check the draft
+    labels: {role: swamp}
+    dependsOn:
+    - step: Read the draft
+      condition:
+        type: succeeded
+    task: {type: assert, expr: 'steps["Read the draft"].outputs.moved', severity: high, message: tasks.prep_not_committed}
+  - name: Review the spec 1
+    labels: {role: swamp}
+    dependsOn:
+    - step: Check the draft
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.reviews[0].node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-1" }}'
+        intent: '${{ inputs.intent.reviews[0] }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        candidate: '${{ steps["Read the draft"].outputs.head }}'
+  - name: Settle review 1
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review the spec 1
+      condition:
+        type: or
+        conditions: [{type: completed}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: task-prep-settle-review-1
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Read the draft"].outputs.approved }}'
+        head: '${{ steps["Read the draft"].outputs.head }}'
+        tree: '${{ steps["Read the draft"].outputs.tree }}'
+        review: '${{ ("Review the spec 1" in steps && "outputs" in steps["Review the spec 1"] && "shape_result" in steps["Review the spec 1"].outputs) ? steps["Review the spec 1"].outputs.shape_result.result_json : "" }}'
+        fix: ''
+  - name: Fix the findings 1
+    labels: {role: swamp}
+    guard: '${{ steps["Settle review 1"].outputs.approved }}'
+    dependsOn:
+    - step: Settle review 1
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.fix.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-" + string(inputs.operation_id) + "-fix-1" }}'
+        intent: '${{ inputs.intent.fix }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        prompt_append: '${{ steps["Settle review 1"].outputs.findings }}'
+  - name: Settle fix 1
+    labels: {role: swamp}
+    dependsOn:
+    - step: Fix the findings 1
+      condition:
+        type: or
+        conditions: [{type: completed}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: task-prep-settle-fix-1
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Settle review 1"].outputs.approved }}'
+        head: '${{ steps["Settle review 1"].outputs.head }}'
+        tree: '${{ steps["Settle review 1"].outputs.tree }}'
+        review: ''
+        fix: '${{ ("Fix the findings 1" in steps && "outputs" in steps["Fix the findings 1"] && "shape_result" in steps["Fix the findings 1"].outputs) ? steps["Fix the findings 1"].outputs.shape_result.result_json : "" }}'
+  - name: Review the spec 2
+    labels: {role: swamp}
+    guard: '${{ steps["Settle fix 1"].outputs.approved }}'
+    dependsOn:
+    - step: Settle fix 1
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.reviews[1].node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-2" }}'
+        intent: '${{ inputs.intent.reviews[1] }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        candidate: '${{ steps["Settle fix 1"].outputs.head }}'
+  - name: Settle review 2
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review the spec 2
+      condition:
+        type: or
+        conditions: [{type: completed}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: task-prep-settle-review-2
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Settle fix 1"].outputs.approved }}'
+        head: '${{ steps["Settle fix 1"].outputs.head }}'
+        tree: '${{ steps["Settle fix 1"].outputs.tree }}'
+        review: '${{ ("Review the spec 2" in steps && "outputs" in steps["Review the spec 2"] && "shape_result" in steps["Review the spec 2"].outputs) ? steps["Review the spec 2"].outputs.shape_result.result_json : "" }}'
+        fix: ''
+  - name: Fix the findings 2
+    labels: {role: swamp}
+    guard: '${{ steps["Settle review 2"].outputs.approved }}'
+    dependsOn:
+    - step: Settle review 2
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.fix.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-" + string(inputs.operation_id) + "-fix-2" }}'
+        intent: '${{ inputs.intent.fix }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        prompt_append: '${{ steps["Settle review 2"].outputs.findings }}'
+  - name: Settle fix 2
+    labels: {role: swamp}
+    dependsOn:
+    - step: Fix the findings 2
+      condition:
+        type: or
+        conditions: [{type: completed}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: task-prep-settle-fix-2
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Settle review 2"].outputs.approved }}'
+        head: '${{ steps["Settle review 2"].outputs.head }}'
+        tree: '${{ steps["Settle review 2"].outputs.tree }}'
+        review: ''
+        fix: '${{ ("Fix the findings 2" in steps && "outputs" in steps["Fix the findings 2"] && "shape_result" in steps["Fix the findings 2"].outputs) ? steps["Fix the findings 2"].outputs.shape_result.result_json : "" }}'
+  - name: Review the spec 3
+    labels: {role: swamp}
+    guard: '${{ steps["Settle fix 2"].outputs.approved }}'
+    dependsOn:
+    - step: Settle fix 2
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.reviews[2].node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-3" }}'
+        intent: '${{ inputs.intent.reviews[2] }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        candidate: '${{ steps["Settle fix 2"].outputs.head }}'
+  - name: Settle review 3
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review the spec 3
+      condition:
+        type: or
+        conditions: [{type: completed}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: task-prep-settle-review-3
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Settle fix 2"].outputs.approved }}'
+        head: '${{ steps["Settle fix 2"].outputs.head }}'
+        tree: '${{ steps["Settle fix 2"].outputs.tree }}'
+        review: '${{ ("Review the spec 3" in steps && "outputs" in steps["Review the spec 3"] && "shape_result" in steps["Review the spec 3"].outputs) ? steps["Review the spec 3"].outputs.shape_result.result_json : "" }}'
+        fix: ''
+  - name: Review has no findings
+    labels: {role: swamp}
+    dependsOn:
+    - step: Settle review 3
+      condition:
+        type: succeeded
+    task: {type: assert, expr: 'steps["Settle review 3"].outputs.approved', severity: high, message: tasks.prep_review_unresolved}
+  - name: Open a draft PR
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review has no findings
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.publish.node_id }}
+        kind: tasks.publish
+        intent:
+          group_id: ${{ inputs.intent.publish.group_id }}
+          instance_id: ${{ inputs.intent.publish.instance_id }}
+          node_id: ${{ inputs.intent.publish.node_id }}
+          check: null
+          checkout_path: ${{ inputs.intent.publish.checkout_path }}
+          commit: ${{ steps["Settle review 3"].outputs.head }}
+          tree: ${{ steps["Settle review 3"].outputs.tree }}
+          repository: ${{ inputs.intent.publish.repository }}
+          base: ${{ inputs.intent.publish.base }}
+          branch: ${{ inputs.intent.publish.branch }}
+          remote: ${{ inputs.intent.publish.remote }}
+          refspec: '${{ steps["Settle review 3"].outputs.head + ":refs/heads/" + inputs.intent.publish.branch }}'
+          object_format: '${{ size(steps["Settle review 3"].outputs.head) == 64 ? "sha256" : "sha1" }}'
+          pull_head: ${{ inputs.intent.publish.pull_head }}
+          pull_request: ${{ inputs.intent.publish.pull_request }}
+          ssh_execution: ${{ inputs.intent.publish.ssh_execution }}
+        execution_secrets: '${{ {"github_token": inputs.publish_secrets.github_token, "git_authorization": inputs.publish_secrets.git_authorization} }}'

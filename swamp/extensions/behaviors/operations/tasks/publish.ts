@@ -13,7 +13,7 @@ export const PublishInput = z.object({
     group_id: Id,
     instance_id: Id,
     node_id: Id,
-    check: Id,
+    check: Id.nullable(),
     checkout_path: z.string().startsWith("/"),
     commit: Sha,
     tree: Sha,
