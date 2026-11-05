@@ -1,0 +1,31 @@
+# instance:rollback verification cases
+
+The proof runs the built CLI against a fresh nested topology with a Gateway and an `app-prod` Node whose production Instance deployed several times, with Processes that opt in and out of restarts. It checks the Gateway records, `current`, the PHP runtime, the Processes and real HTTPS responses. See [verifying-commands](../../../.agents/skills/verifying-commands/SKILL.md).
+
+| Case | Setup and action | Required observations |
+| --- | --- | --- |
+| Roll back | Deploy three times, then roll back to the previous release. | The task succeeds. `current` selects that release, the site serves that code, the PHP runtime was refreshed, and the opted-in Processes restarted while stopped ones stayed stopped. The deployment row has kind `rollback` and is `succeeded`. No Git fetch, environment write or deploy step ran. |
+| Older target | Roll back to the oldest retained release. | It is selected the same way. |
+| Non-PHP Instance | Roll back an Instance that serves no PHP. | There is no `Refresh PHP cache` step. |
+| Opt-out | A Process with `restart_on_deploy` off. | It is left running and not restarted. |
+| Pause | Roll back an Instance with automatic deployment on, once successfully and once with a failing step. | The running row pauses automatic deployment at once. It stays paused after success and after failure, and the commit it moved away from is blocked for automatic deploys. It stays paused until `instance:auto-deploy:enable`, and the block survives re-enabling. |
+| Same and newer | Roll back to the release that is already selected, then to a newer retained release. | Both are admitted and select that release. |
+| Consent | Run in a terminal, noninteractively and with `--json`. | No confirmation is asked in any mode. |
+| Not retained | A release name the history does not retain, and a release the Node lists but the history lacks. | `rollback.release_not_retained`. No task and nothing changes. |
+| Release format | `--release=../x`, a name of 129 characters, and an empty `--release=`. | `validation.failed` for the first two and `deployment.release_required` for the empty one. No task. |
+| Not production | A development Instance. | `deployment_config.unavailable`. No task. |
+| Supersede | Roll back while a deploy is queued and no run has started it. | The deploy ends `cancelled` with `operation.superseded`, and the rollback runs. Fails today: the rollback is refused with `operation.target_busy`. |
+| Busy | Roll back while a deploy runs, then while an environment change runs. | `operation.target_busy` with the other task's ID. The running task is unaffected. |
+| Dispatch | Make the Gateway unable to start the run. | The request is refused or the task fails at once with the error, and nothing is selected. Fails today: the code returns `operation.native_dispatch_failed`, and `operation.queue_unavailable` named by the reference is not emitted. |
+| Failure before the swap | Remove the release folder, then make the swap fail. | The task fails with `rollback.release_invalid` or `deployment.selection_invalid` and the failed step. `selected_release` is null and the recorded selection is unchanged. |
+| Failure after the swap | Make the PHP refresh, a Process restart, the read-back, then the selection check fail. | The task fails with `deployment.php_runtime_unconfirmed`, `process.restart_failed` or `deployment.selection_invalid` and the failed step. The rolled-back release stays selected; after a read-back or check failure `current` may not name it. A rerun succeeds. A lost SSH connection ends with `operation.native_failed`. |
+| Deadline and cancel | Make the run outlast 900 seconds after the swap, and cancel with `operation:cancel` before `Swap current` and after it. | The first fails with `operation.timed_out`, and `selected_release` is null although `current` already names the release. The cancel before the swap ends with `deployment.cancelled` and changes nothing. After the swap the rollback finishes the refresh and the restarts. |
+| Interrupt | Stop the run's executor mid-run. | The task ends like a failed step and a rerun succeeds. |
+| Ctrl-C | Press Ctrl-C while following, in human output and with `--json`. | The human CLI prints the `operation:show` command and exits 130; `--json` prints no line and exits 130. The rollback keeps running and finishes. |
+| Progress and output | Follow a rollback in a terminal, a narrow terminal and a pipe. | A tree of the task's steps with glyphs and color. On failure the failed step shows its error code and the final lines add the release, the task ID and the request ID. The piped output has no animation or escape codes. Fails today: one `native` row replaces the tree, and the summary prints only the failed step and the error code. |
+| JSON and exit status | A success, a failure and a refusal, with and without `--json`. | `0`, nonzero naming the failed step, and nonzero with the one-line error. With `--json`, nothing prints while it follows, then stdout holds only the final task document. |
+| Missing input | In a terminal, run the command with no argument, choose an Instance, choose a release, and cancel each list. Then run it noninteractively and with `--json` without the Instance and without the release. | The terminal lists Instances by name, then the retained releases. Cancel ends with `input.cancelled` and no request. The noninteractive calls are refused with `instance.id_invalid` or `deployment.release_required`, with no request. Fails today: the Instance is a required argument, and a missing release is refused even in a terminal. An empty candidate list fails with an explicit error and no default. |
+| IDs only | An Instance by name, the ID `0`, the ID `-1` passed after `--`, and `abc`. | `instance.id_invalid`, with no request. Fails today: `-1` without `--` is read as an option and gives a parser error. |
+| Idempotency option | Run with `--idempotency-key`. | The option is refused as unknown. Fails today: the CLI offers it. |
+| Lost response | Lose the response to the start, and repeat the command while the first task runs. | Exactly one task exists: the repeat is refused with `operation.target_busy`. |
+| Unknown and access | An ID that does not exist, and a caller without a grant to the Instance's Node. | `http.404` and `node_access.required`. Nothing starts. |
