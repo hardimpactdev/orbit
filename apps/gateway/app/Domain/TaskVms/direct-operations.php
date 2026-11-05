@@ -9,6 +9,7 @@ use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSlotEnrollProjection;
+use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
@@ -49,6 +50,12 @@ return ['task_vm.hub_converge' => [
     // The Pi token and the model key of the slot, and the router credentials that issue the key.
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$']],
+], 'task_vm.slot_release' => [
+    'workflow' => 'operation-task-vm-slot-release',
+    'projection' => TaskVmSlotReleaseProjection::class,
+    'workflow_inputs' => true,
+    // No result step: the projector reads the end check's status. The release rotates no secret, so it has no execution copy.
+    'terminal_result' => ['job' => 'check', 'step' => TaskVmSlotReleaseProjection::EndCheck, 'native' => true],
 ], 'task_vm.fill_package_cache' => [
     'workflow' => 'operation-task-vm-cache-fill',
     'projection' => TaskVmPackageCacheProjection::class,

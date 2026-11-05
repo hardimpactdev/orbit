@@ -75,6 +75,10 @@ final class OperationRunBudgets
         // reload, the proof VM's boot (about 17 s after `incus start`, M0) and its cleanup, x 3 for the first fresh-host runs,
         // rounded up to five minutes. Replace with the 14-day p95 after the first successes.
         'task_vm.slot_enroll' => 900,
+        // No successful run yet. Basis: the forced VM delete (180 s bound), the seed clone delete (180 s bound) and the two host
+        // reads (60 s bound each) run in turn, 600 s at their bounds, x 1.5 = 900 s, a multiple of five minutes. Replace with the
+        // 14-day p95 after the first successes.
+        'task_vm.slot_release' => 900,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
