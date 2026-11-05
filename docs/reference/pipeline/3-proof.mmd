@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 3 of the command development pipeline. The author proves the command in the development environment it already works in (task VM with its nested fleet). The nested VMs hold their own checkout, with no share from the outer VM, so Incus memory snapshots work. Each run restores the task's base snapshot, syncs the author's code once and takes base again. Each batch restores base once; its cases use their own resources and need no undo. A failed case triggers a restore before the next. Cases come from the command's cases file; each names its batch from swamp/proof/batches.yaml, which sets the order. One shared runner; the same cases and runner run in CI (stage 4, proof:run on a fresh VM).
+  %% Target design: stage 3 of the command development pipeline. The author proves the command in the development environment it already works in (task VM with its nested fleet). The nested VMs mount the task VM's checkout over NFS, so edits reach them at once and Incus memory snapshots still work. Each run restores the task's base snapshot and applies the code (migrations, service restart); base is taken again only after a converge or a token re-mint. Each batch restores base once; its cases use their own resources and need no undo. A failed case triggers a restore before the next. Cases come from the command's cases file; each names its batch from swamp/proof/batches.yaml, which sets the order. One shared runner; the same cases and runner run in CI (stage 4, proof:run on a fresh VM).
   %% status: draft
   %% command: development pipeline stage 3 · proof
   %% kind: pipeline.3-proof
@@ -32,22 +32,16 @@ sequenceDiagram
   %%> - every restore in this chart has a 45 s limit: a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
   %%> Time, measured on tvm-554:
   %%> - stock Incus restore and agent wait, no tuning: restore about 9 s, healthy about 16 s
-  SW->>VM: Sync the author's code<br/>same sync as orbit-nested
+  SW->>NT: Apply the code<br/>migrate · restart services
   %%> What it does:
-  %%> - rsync of the outer checkout into the nested Gateway and app-dev, only what changed since `base`
-  %%> - leaves out `vendor`, `node_modules`, `.git`, `.env`, `storage` and `bootstrap/cache`
-  %%> - `composer install` or `bun install` only when a lock file changed, from the cache in the VM; then migrations and a Swamp reload
-  %%> Time, measured on tvm-554:
-  %%> - rsync of both nested checkouts in parallel: 0.2 s with nothing changed, 2.1 s for 7,600 files
-  %%> - apply in the nested Gateway (package discovery, migrations, Swamp repository copy, restart of the two proof services): about 1 s
-  %%> - `composer install` takes about 10 s even with an unchanged lock file (its scripts regenerate the OpenAPI and MCP files), so it runs only on a lock change
-  %%> Not built:
-  %%> - the two proof services still wait up to 60 s for the old code share at start (`tools/swamp-proof-guest/boot.py`); that wait goes with the share
+  %%> - runs the migrations and restarts the long-running services (queue worker, Swamp worker) in the nested Gateway, so they run the checked-out code
+  %%> - the code itself needs no step: the nested VMs mount the task VM's checkout over NFS (stage 2), and PHP reads changed files on the next request
+  %%> - also runs after every restore below: a memory restore brings back processes that loaded older code
   opt playbooks or pins changed
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
     %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
-    %%> - runs after the sync, so the nested Orbit has the new playbooks
+    %%> - the nested Orbit reads the playbooks from the mounted checkout
     %%> Why:
     %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
     %%> - the base images are not touched; only the merge and the seed refresh change them
@@ -60,23 +54,23 @@ sequenceDiagram
     %%> - the tokens a build mints last 24 hours and its certificates 2 days; `base` inherits them, so a task older than a day would otherwise prove with an expired nested Swamp
     %%> - these tokens belong to the nested Orbit; the real Gateway mints nothing for them
   end
-  opt the sync, the converge or the re-mint changed something
+  opt the converge or the re-mint changed something
     SW->>NT: Take base again<br/>parallel · about 19 s
     %%> What it does:
-    %%> - skipped when rsync moved and deleted nothing, no lock file changed, nothing converged and no token was re-minted: the fleet is then still exactly `base`, as after a rerun without edits
+    %%> - skipped when nothing converged and no token was re-minted; a code change alone never needs a new `base`, because the code is read from the mount
     %%> - `incus snapshot create --stateful --reuse base` on the three nested VMs at once; `--reuse` replaces the old `base`
     %%> - the VMs keep running; their clocks lose about 1 s while memory is saved, which the normal time sync corrects
     %%> - `base` holds the proof Swamp Club key, on the nested Gateway's disk and in its Swamp serve's memory; accepted because `base` belongs to one task, never leaves its task VM and is destroyed with it; ready copies stay key-free
     %%> Time, measured on tvm-554:
     %%> - about 19 s; the Gateway's 660 MB memory state sets it (app-dev 12 s, app-prod 7 s)
     %%> Why:
-    %%> - every batch starts from it without another sync; the next proof run only syncs what changed since this one
+    %%> - every batch starts from it
     %%> - the task VM keeps its own state until the task merges; changes flow back only as code, through the release and the seed refresh
   end
   loop each batch, in the order of swamp/proof/batches.yaml
     SW->>NT: Restore base<br/>about 16 s
     %%> What it does:
-    %%> - one restore per batch; skipped when the fleet is still at `base`, as for the first batch
+    %%> - one restore per batch, followed by the apply step; skipped when the fleet is still at `base`, as for the first batch
     %%> - 45 s limit, as for every restore; a failed restore stops the run
       opt the batch declares a start state
       SW->>NT: Set up the batch<br/>its declared start state

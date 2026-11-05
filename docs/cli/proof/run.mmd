@@ -25,11 +25,11 @@ sequenceDiagram
   %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
-  SW->>VM: Reset and sync<br/>ready copies · the commit
+  SW->>VM: Reset and mount<br/>ready copies · the commit
   %%> What it does:
   %%> - Orbit's own Swamp reaches into the task VM over SSH, like every other step, and resets the nested topology from the ready copies
   %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
-  %%> - syncs the commit into the nested Gateway and app-dev, the same sync as `orbit-nested`; installs only when a lock file changed
+  %%> - the nested Gateway and app-dev mount the VM's checkout of the commit over NFS (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
   %%> Not built:
   %%> - the direct reset: today `bin/proof-fleet reset GROUP --from-ready` runs in the VM as a task script, starts a local Swamp there, builds the nested fleet from the ready copies and takes `base`
   %%> - the parent workflow `operation-proof-run`: today the Gateway admits provision, reset, verify and cancel as task operations and continues on each result
@@ -37,7 +37,7 @@ sequenceDiagram
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
     %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
-    %%> - runs after the sync, so the nested Orbit has the new playbooks; the proof never resets the outer VM, so this lasts the whole run
+    %%> - the nested Orbit reads the playbooks from the mounted checkout; the proof never resets the outer VM, so this lasts the whole run
     %%> - the base images are not touched; only the merge and the seed refresh change them
   end
   SW->>VM: Take base<br/>memory snapshot

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. The nested VMs hold their own checkout; orbit-nested syncs the author's changes into them, so memory snapshots work. Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
+  %% Target design: stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. The nested VMs mount the outer VM's checkout over NFS, so an edit reaches them at once with no sync, and memory snapshots still work (decided 2026-11-05). Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment
@@ -36,12 +36,24 @@ sequenceDiagram
   SW->>VM: Check out the commit<br/>git fetch · task token
   %%> What it does:
   %%> - checks out the commit or branch the task works on, with a read token from the vault
-  SW->>VM: Reset the nested fleet<br/>from the ready copies
+  SW->>VM: Start the nested fleet<br/>from the ready copies
   %%> What it does:
-  %%> - per Node: copies the ready copy, adds the saved NIC, starts all three
-  %%> - no code share from the outer VM: each ready copy holds its own checkout with `vendor` and `node_modules` at the seed's commit
+  %%> - creates the nested network from the subnet stored with the ready copies
+  %%> - per Node: copies the ready copy, adds its NIC with the stored MAC and address, starts all three
+  %%> - each ready copy is self-contained: its own `.env`, storage, `bootstrap/cache` and database on its own disk (stage 6 saves them so); the code comes from the outer VM's checkout
+  %%> - needs no earlier fleet in this VM and no state from the outer VM; the task owns the network and the three VMs
+  %%> - then pushes the proof Swamp Club key into the nested Gateway, as today
+  %%> Proposed 2026-11-05:
+  %%> - replaces today's reset, which takes `.env`, storage, the agent manifest and the lease from an earlier fleet in the same VM, so it fails on a fresh VM
   %%> Time:
   %%> - about 75 seconds to a checked fleet, of which the boot is about 50
+  SW->>NT: Join as operator<br/>this VM's WireGuard key
+  %%> What it does:
+  %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested VMs, so this needs no network yet)
+  %%> - the nested Gateway puts the key on its hub; the outer VM brings up WireGuard as the operator `10.45.0.10`
+  %%> - the private key never leaves this task VM; each task VM has its own
+  %%> Proposed 2026-11-05:
+  %%> - the ready copies hold the operator Node record without a key (stage 6), so the key of the VM that made them never works anywhere else
   opt no usable ready copies
     VM->>NT: Build the fleet<br/>then make ready copies
     %%> When:
@@ -49,21 +61,24 @@ sequenceDiagram
     %%> Time:
     %%> - about 230 seconds; the build ends by making the ready copies for the next reset
   end
-  VM->>NT: Boot the fleet<br/>real nested WireGuard
+  SW->>NT: Mount the checkout<br/>NFS from the outer VM
   %%> What it does:
-  %%> - the three Nodes share a real nested network; the outer VM is the operator
-  SW->>NT: Sync the task's code<br/>same sync as orbit-nested
-  %%> What it does:
-  %%> - rsync of the outer checkout into the nested Gateway and app-dev, only what differs from the seed's commit
-  %%> - leaves out `vendor`, `node_modules`, `.git`, `.env`, `storage` and `bootstrap/cache`
-  %%> - `composer install` or `bun install` only when a lock file changed, from the cache in the VM; then migrations and a Swamp reload
+  %%> - the outer VM exports its checkout over NFS to the nested network only; the nested Gateway and app-dev mount it as their checkout
+  %%> - `.env`, `storage` and `bootstrap/cache` stay on each VM's own disk, mounted over the shared checkout
+  %%> - then the apply step: migrations and a restart of the long-running services (queue worker, Swamp worker), so they run the checked-out code
+  %%> - stock NFS and systemd mount units, set up by the image and Node playbooks; no sync program
   %%> Why:
-  %%> - the seed is refreshed after each release, so the difference stays small
+  %%> - an edit on the outer VM is in the nested VMs at once; nothing can run against old code
+  %%> - Incus turns a shared folder into 9p when memory snapshots are on, and QEMU cannot snapshot a VM with 9p mounted; NFS is network traffic, so snapshots work
+  %%> Measured on tvm-554, 2026-11-05:
+  %%> - memory snapshot with NFS mounted: create 21 s, restore 10 s; an edit after the restore is visible at once
+  %%> - `artisan --version` 0.39 s against 0.23 s local; Gateway unit tests 3.9 s against 2.8 s; HTTP requests the same
+  %%> - installs and tests run on the outer VM against its local disk, so the slower NFS writes (a full `composer install` 17 s against 9 s) do not apply
   opt playbooks or pins changed, also after a rebase
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
     %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
-    %%> - runs after the sync, so the nested Orbit has the new playbooks
+    %%> - the nested Orbit reads the playbooks from the mounted checkout
     %%> - after a rebase onto main, a running task picks up the tools main added since its start
     %%> Why:
     %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
@@ -78,26 +93,22 @@ sequenceDiagram
   %%> - every proof batch starts from it (stage 3)
   %%> - holds the proof Swamp Club key, pushed in after the restore of the ready copies; accepted because `base` belongs to this task VM only and is destroyed with it; ready copies stay key-free
   %%> Why:
-  %%> - possible because no VM mounts a share from the outer VM
+  %%> - possible because the checkout is an NFS mount, not an Incus shared folder
   SW-->>GW: Environment ready<br/>terminal event
   %%> Result:
   %%> - the Gateway marks the group running and records the VM; the proof (stage 3) or the proof CI (stage 4) uses the fleet
   loop while the author develops
-    VM->>NT: Every orbit-nested call<br/>syncs changes first
+    VM->>NT: Edit, test, call the CLI<br/>the checkout is shared
     %%> What it does:
-    %%> - `orbit-nested` on the outer VM runs the same sync before each call; well under a second when nothing changed
-    %%> - `orbit-nested exec NODE -- CMD` does the same for direct commands, such as `artisan`; the task brief says to use it
-    %%> - when the sync moved files into the Gateway, the apply step follows: `composer install` only where a lock file changed, then migrations, the Swamp workflows and a restart of two proof services; about 1 second
-    %%> - a call that fails halfway leaves a marker; the next call repeats the whole sync and apply
-    %%> Target, not built:
-    %%> - when the change holds playbooks or pins, or after a rebase onto main, the sync also runs the converge step above once
-    %%> Why:
-    %%> - the agent never has to remember a sync; edits reach the fleet like the old share
+    %%> - the author edits and runs tests on the outer VM; PHP in the nested VMs sees the change on the next request
+    %%> - the candidate CLI on the outer VM talks to the nested Gateway as the operator
+    %%> - after a new migration or a change to a long-running service, the author runs the apply step again
+    %%> - when the change holds playbooks or pins, or after a rebase onto main, the converge step above runs once
   end
   opt the author wants a clean fleet
     SW->>NT: Restore the base snapshot<br/>about 16 s
     %%> What it keeps:
-    %%> - the outer VM, Pi and the checkout; the next orbit-nested call syncs the latest code again
+    %%> - the outer VM, Pi and the checkout; the apply step follows, so the restored fleet runs the current code
   end
   SW->>H: Destroy the task VM<br/>always · success or failure
   %%> Why:
