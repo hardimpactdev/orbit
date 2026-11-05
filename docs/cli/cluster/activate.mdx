@@ -1,7 +1,7 @@
 ---
 title: "orbit cluster:activate"
 sidebarTitle: "cluster:activate"
-description: "Activate a Cluster. An active Cluster serves its private domains and LAN ingress by itself, so this is an `activate` and `deactivate` pair, not an `update` option."
+description: "Activate a Cluster. It serves its private domains and LAN ingress."
 ---
 
 ```bash
@@ -12,4 +12,43 @@ orbit cluster:activate <cluster> [--json]
 | --- | --- | --- |
 | `cluster` | yes | Numeric Cluster ID. |
 
-Activating a Cluster that has a TLD runs the same checks as setting a TLD on an active Cluster: one active Router, no non-member Node that owns the TLD, and a valid domain, scope, and target for every affected Route. Activating an active Cluster changes nothing. The errors are those of [`cluster:update`](/cli/cluster/update), without `cluster.update_required`.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the final task as JSON. |
+
+```bash
+orbit cluster:activate 3
+```
+
+In a terminal, an omitted Cluster is chosen from an interactive list. A noninteractive or `--json` call that omits it is refused with `cluster.id_invalid` and sends no request.
+
+Activation is the routing cutover. Orbit first checks the whole change: a Cluster with a TLD needs exactly one active Router and no non-member Node that owns the TLD, and every affected Route must keep a valid domain, scope and target. One refusal leaves every Route in place. Then Orbit opens the LAN ingress rules and moves every affected Route to the Cluster scope, with generated domains in the Cluster TLD when the Cluster has one and on the Node TLDs otherwise. Custom proxy Routes keep their Node scope. An active public Route that the change would move is refused with `route.reconciliation_required`. Then private DNS selects the Router for Cluster names, and a last step prunes the rules and DNS selection the Cluster does not need. The CLI shows one progress indicator while the task runs, then prints the Cluster by its name with the task and request IDs.
+
+Activating a Cluster that is active, with no unfinished change, succeeds with `Skipped — already active (cluster.state_unchanged)` and changes nothing. The same command after a failure past the cutover is not skipped: it finishes the work.
+
+A failure before the cutover leaves the Cluster inactive and every Route as it was. A failure after it leaves the Cluster active, and the same command finishes the withdrawal and the prune. Finished steps stay; there is no rollback. After you fix the cause, run the same command again. See [Change a TLD, Cluster state, or Cluster membership](/reference/routes#change-a-tld-cluster-state-or-cluster-membership).
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `cluster.id_invalid` | The Cluster is missing in a call that cannot prompt, or is not a positive integer. |
+| `cluster.router_required` | The Cluster has a TLD but no active Router. |
+| `route.router_required` | The Cluster has no TLD, has affected Routes and no active Router. |
+| `cluster.tld_conflict` | A Node outside the Cluster already owns the Cluster TLD. |
+| `cluster.router_busy` | Another Router change holds the Cluster. Retry after it finishes. |
+| `route.reconciliation_required` | An active Route depends on the change and cannot be reconciled by it. |
+| `route.domain_conflict` | A new Route domain would collide with another Route. |
+| `route.tld_required` | A generated Route would have no effective TLD. |
+| `route.target_scope_conflict` | The targets of a Route would span routing scopes. |
+| `route.target_invalid` | A Route or tracking host has no valid target. |
+| `route.generation_basis_missing` | A generated Route has no generation basis. |
+| `route.generation_basis_invalid` | A generated Route cannot be reconciled from its stored basis. |
+| `route.scope_invalid` | A Route without a target cannot leave its Cluster scope. |
+| `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
+| `http.404` | The Cluster is unknown. |
+| `node_access.required` | The caller has no access grant to a member Node of the Cluster, or to the Gateway Node when the Cluster has no members. |
+
+## How it works
+
+<div className="flow-at" data-chart="cluster/activate"></div>
