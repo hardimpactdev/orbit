@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet as fleet_module
 import runner
 import spec
+import steps
 from fakes import BRIDGE, FakeFleet
 
 PROOF = Path(__file__).resolve().parents[2]
@@ -40,6 +41,11 @@ class RunnerTest(unittest.TestCase):
         self.assertNotIn('cause', result)
         self.assertEqual([step['step'] for step in receipt['steps'] if not step['ok']], [])
         self.assertTrue(any('firewall:allow' in call for call in map(' '.join, self.fleet.cli_calls)))
+
+    def test_what_a_case_started_on_a_node_ends_with_the_case(self):
+        self.spec.case(CASE).setup.append(spec.Step('busy_node', {'on': 'app-dev'}))
+        result, _ = self.execute()
+        self.assertEqual((self.fleet.stalled, self.fleet.shim, self.fleet.background[0].running), (set(), set(), False), result)
 
     def test_it_uses_the_address_the_kernel_route_gives(self):
         self.execute()
@@ -76,7 +82,8 @@ class RunnerTest(unittest.TestCase):
         self.assertIn('the CLI did not start', result['failed'][-1])
 
     def test_a_step_that_is_not_built_fails_the_case_as_infrastructure(self):
-        result, _ = self.execute('interrupted-reorder')
+        with patch.dict(steps.FUNCTIONS, {'doctor': steps.unbuilt('doctor')}):
+            result, _ = self.execute()
         self.assertEqual((result['verdict'], result['cause']), ('failed', 'infrastructure'))
         self.assertIn('is not built', result['failed'][-1])
 

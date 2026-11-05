@@ -5,17 +5,31 @@ A step that cannot run raises `Infra`. A failure of a `setup` step makes the cas
 import json
 import random
 import re
+import shlex
+import sys
 import time
 from pathlib import Path
 
 import spec
 
+# The prompt driver and the ufw shim loop by nature, so they live with the guest programs, outside the Swamp-shape
+# rules for step code.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/swamp-proof-guest'))
+import terminal  # noqa: E402
+
 LISTENER = (Path(__file__).resolve().parent / 'listener.py').read_text()
+PROBE = (Path(__file__).resolve().parent / 'probe.py').read_text()
+UFW_SHIM = (Path(__file__).resolve().parents[3] / 'tools/swamp-proof-guest/ufw-shim.sh').read_text()
 UFW_ROW = re.compile(r'^\[\s*(\d+)\]\s+(.+?)\s{2,}(ALLOW|DENY|REJECT|LIMIT)(?: IN| OUT| FWD)?\s{2,}(.+?)(?:\s+#\s*(.*))?$')
 PROBE_SECONDS = 3
+SHIM_DIR = '/var/tmp/proof-ufw'
+IPV6_PREFIX = 'fd42:232:2::'   # a ULA /64 for the proof bridge; the host part is the last octet of the IPv4 address
+BUSY_SECONDS = 120
+CLEANUP_SECONDS = 60
 # The agent reports the firewall at a host tick every 60 s, in a phase the runner cannot know after a restore of the base snapshot.
 # A report that follows the change needs at most one tick plus the time to deliver it: wait until this long after `act`.
 REPORT_SECONDS = 65
+CLI_EXPECT = {'exit', 'status', 'code', 'skipped', 'request', 'human'}
 LIST_ROWS = {'firewall:list': 'rules'}
 BASELINE_PROVIDERS = ('ufw', 'firewall_records', 'operations', 'listeners')
 
@@ -50,45 +64,74 @@ def family_rows(rows, family):
     return marked if int(family) == 6 else [row for row in rows if row not in marked]
 
 
-def tcp_ipv4(args, step):
-    protos = args.get('proto', 'tcp')
-    protos = protos if isinstance(protos, list) else [protos]
-    if set(protos) != {'tcp'} or int(args.get('family', 4)) != 4:
-        raise NotBuilt(f'{step}: only TCP over IPv4 is built')
+def protocols(args):
+    found = args.get('proto', 'tcp')
+    found = found if isinstance(found, list) else [found]
+    unknown = [item for item in found if item not in ('tcp', 'udp')]
+    if unknown:
+        raise Infra(f'protocol must be tcp or udp, not {unknown}')
+    return found
+
+
+def family_of(args, step, allowed=(4, 6)):
+    family = int(args.get('family', 4))
+    if family not in allowed:
+        raise NotBuilt(f'{step}: family {family} is not built')
+    return family
 
 
 def listener(run, args):
-    tcp_ipv4(args, 'listener')
-    if args.get('block'):
-        raise NotBuilt('listener block is not built')
-    node = args['on']
+    node, family = args['on'], family_of(args, 'listener')
+    block = args.get('block')
+    size = int(block.get('size', 0)) if block else 0
+    if block and not (block.get('as') and 2 <= size <= 50):
+        raise Infra('listener block needs as and a size of 2 to 50')
+    used = run.fleet.sh(node, 'ss -Htlun').stdout
+    avoid = {int(value) for value in run.names.values() if str(value).isdigit()}
+    ports = {}
     for name in args.get('ports') or []:
-        port = free_port(run, node)
+        ports[name] = free_run(used, avoid, 1)
+        avoid.add(ports[name])
+    numbers = list(ports.values())
+    if block:
+        low = free_run(used, avoid, size)
+        numbers += range(low, low + size)
+    for proto in protocols(args):
+        log = f'/tmp/proof-listen-{numbers[0]}-{proto}.log'
         run.fleet.sh(node, 'cat > /tmp/proof-listen.py', stdin_text=LISTENER)
-        log = f'/tmp/proof-listen-{port}.log'
-        # The listener detaches only after it listens, and prints its pid: no wait is needed.
-        started = run.fleet.sh(node, f'rm -f {log}; python3 /tmp/proof-listen.py {port} {log}')
+        # The listener detaches only after every port listens, and prints its pid: no wait is needed.
+        started = run.fleet.sh(node, f"rm -f {log}; python3 /tmp/proof-listen.py {log} {proto} {family} {' '.join(map(str, numbers))}")
         if started.returncode:
             raise Infra(f'listener on {node} did not start: {started.stderr.strip()[-200:]}')
-        local = run.fleet.sh(node, f"timeout 3 bash -c 'echo > /dev/tcp/127.0.0.1/{port}'").returncode
-        if local:
-            return [f'listener {name} on {node}:{port} does not accept connections locally']
-        run.names[name] = str(port)
+        refused = local_refusals(run, node, proto, family, numbers)
+        if refused:
+            return [f'listener on {node} does not accept {proto} connections locally on port {" ".join(refused)}']
+    run.names.update({name: str(port) for name, port in ports.items()})
+    if block:
+        run.names.update({f"{block['as']}.lo": str(low), f"{block['as']}.mid": str(low + size // 2),
+                          f"{block['as']}.hi": str(low + size - 1), f"{block['as']}.spec": f'{low}:{low + size - 1}'})
     return []
 
 
-def free_port(run, node):
+def free_run(used, avoid, count):
+    """The first of `count` consecutive ports that nothing listens on (`used` is `ss` output) and the case does not hold."""
     for _ in range(50):
-        port = random.randint(47000, 47900)
-        used = run.fleet.sh(node, 'ss -Htln').stdout
-        if f':{port} ' not in used and f':{port + 1} ' not in used and str(port) not in run.names.values():
-            return port
-    raise Infra(f'no free test port on {node}')
+        low = random.randint(47000, 47900 - count)
+        if not any(f':{port} ' in used or port in avoid for port in range(low, low + count)):
+            return low
+    raise Infra('no free test ports')
+
+
+def local_refusals(run, node, proto, family, numbers):
+    """The ports of a new listener that do not answer on the Node itself, found in one call."""
+    address = '::1' if family == 6 else '127.0.0.1'
+    check = f'python3 -c {shlex.quote(PROBE)} {address} "$port" {proto} {family} 3'
+    return run.fleet.sh(node, f"for port in {' '.join(map(str, numbers))}; do {check} || echo $port; done").stdout.split()
 
 
 def ufw_rule(run, args):
-    tcp_ipv4(args, 'ufw_rule')
-    node, port, proto = args['on'], args['port'], args['proto']
+    family_of(args, 'ufw_rule', (4,))
+    node, port, proto = args['on'], args['port'], protocols(args)[0]
     name = args.get('as') or 'rule'
     comment = 'proof:' + name
     source = args.get('from', 'any')
@@ -106,59 +149,142 @@ def ufw_rule(run, args):
         return [f'ufw_rule {name} failed: {(inserted.stdout + inserted.stderr).strip()[-200:]}']
     run.rules[name] = {'to': f'{port}/{proto}', 'action': args['action'].upper(), 'from': 'Anywhere' if source == 'any' else source, 'comment': comment}
     rows = family_rows(ufw_rows(run, node)[1], 4)
-    mine = [row['n'] for row in rows if row['comment'] == comment]
+    mine = [row['n'] for row in rows if row['comment'] == comment and row['to'] == f'{port}/{proto}']  # one name may stand for a row per protocol
     if len(mine) != 1:
         return [f'ufw_rule {name}: expected one row with the comment, found {len(mine)}']
     if anchor:
         other = [row['n'] for row in rows if row['comment'] == mark]
         if not other or (mine[0] > other[0]) == bool(args.get('above')):
             return [f'ufw_rule {name} is not {"above" if args.get("above") else "below"} {anchor}']
+        if args.get('above') and source == 'any':
+            return place_v6_line(run, node, {**args, 'proto': proto, 'comment': comment}, mark)
     return []
 
 
-def probe_result(run, source, target, port):
-    address = run.fleet.nodes[target]['bridge']
-    result = run.fleet.sh(source, f"timeout {PROBE_SECONDS} bash -c 'echo > /dev/tcp/{address}/{port}'", timeout=PROBE_SECONDS + 20)
+def place_v6_line(run, node, rule, mark):
+    """A rule for both families gets an IPv6 line, and ufw puts it at the end of the IPv6 rules, below the IPv6 allowance for the proof
+    network. Move it above the IPv6 line of the anchor, as the IPv4 line is."""
+    rows = ufw_rows(run, node)[1]
+    v4 = family_rows(rows, 4)
+    v6 = [row for row in rows if row not in v4]
+    anchor = [row['n'] for row in v6 if row['comment'] == mark]
+    mine = [row['n'] for row in v6 if row['comment'] == rule['comment'] and row['to'] == f"{rule['port']}/{rule['proto']} (v6)"]
+    if not anchor or not mine or mine[0] < anchor[0]:
+        return []
+    deleted = run.fleet.sh(node, f'ufw --force delete {mine[0]}')
+    words = f"{rule['action']} proto {rule['proto']} from ::/0 to ::/0 port {rule['port']} comment '{rule['comment']}'"
+    inserted = run.fleet.sh(node, f'ufw insert {anchor[0]} {words}') if not deleted.returncode else deleted
+    if inserted.returncode:
+        return [f"ufw_rule {rule.get('as') or 'rule'}: the IPv6 line did not move above {mark}: {(inserted.stdout + inserted.stderr).strip()[-200:]}"]
+    return []
+
+
+def probe_result(run, source, target, args):
+    family, proto = family_of(args, 'probe'), protocols(args)[0]
+    address = run.fleet.nodes[target]['bridge6' if family == 6 else 'bridge']
+    if proto == 'tcp' and family == 4:
+        result = run.fleet.sh(source, f"timeout {PROBE_SECONDS} bash -c 'echo > /dev/tcp/{address}/{args['port']}'", timeout=PROBE_SECONDS + 20)
+    else:
+        result = run.fleet.sh(source, f"python3 -c {shlex.quote(PROBE)} {address} {args['port']} {proto} {family} {PROBE_SECONDS}", timeout=PROBE_SECONDS + 20)
     if result.returncode == 0:
         return 'connected'
     return 'blocked' if result.returncode == 124 else 'refused'
 
 
 def probe(run, args):
-    tcp_ipv4(args, 'probe')
-    observed = probe_result(run, args['from'], args['to'], args['port'])
+    family = family_of(args, 'probe')
+    if family == 6 and 'bridge6' not in run.fleet.nodes[args['to']]:
+        raise Infra(f"probe over IPv6: {args['to']} has no IPv6 address; the batch needs ipv6_addresses")
+    observed = probe_result(run, args['from'], args['to'], args)
     expected = {'connect': 'connected', 'blocked': 'blocked'}.get(args['expect'])
     if expected is None:
         raise Infra(f"probe expect is connect or blocked, not {args['expect']}")
     if observed == expected:
         return []
-    return [f"probe{' ' + args['id'] if args.get('id') else ''}: {args['from']} to {args['port']}/{args.get('proto', 'tcp')} {observed}, expected {args['expect']}"]
+    return [f"probe{' ' + args['id'] if args.get('id') else ''}: {args['from']} to {args['port']}/{args.get('proto', 'tcp')}{' (v6)' if family == 6 else ''} {observed}, expected {args['expect']}"]
+
+
+def operation_ids(run):
+    return {item.get('id') for item in (run.cli(['operation:list'])['json'] or {}).get('operations', [])}
+
+
+def skip_reasons(node):
+    """The reason codes a JSON document gives under a key that names a skip, such as `skipped`."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if 'skip' in key.lower():
+                yield from (item for item in (value if isinstance(value, list) else [value]) if isinstance(item, str))
+            yield from skip_reasons(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from skip_reasons(item)
 
 
 def cli(run, args):
-    if args.get('forms') or 'tty' in args:
-        raise NotBuilt('cli forms and tty are not built')
     expect = args.get('expect') or {}
-    unsupported = set(expect) - {'exit', 'status', 'code'}
-    if unsupported:
-        raise NotBuilt(f'cli expect {sorted(unsupported)} is not built')
-    result = run.cli([str(item) for item in args['run']])
+    unknown = set(expect) - CLI_EXPECT
+    if unknown:
+        raise Infra(f'cli expect {sorted(unknown)} is unknown')
+    script = args.get('tty')
+    if script is not None and args.get('forms'):
+        raise Infra('cli tty runs in the human form: do not set forms')
+    forms = ['human'] if script is not None else args.get('forms') or ['json']
+    if not set(forms) <= {'json', 'human'}:
+        raise Infra(f'cli forms are json and human, not {forms}')
+    if expect.get('request', 'none') != 'none':
+        raise Infra('cli expect request is none')
+    if 'skipped' in expect and 'json' not in forms:
+        raise Infra('cli expect skipped is read from the JSON form: add json to forms')
+    argv = [str(item) for item in args['run']]
+    before = operation_ids(run) if 'request' in expect else None
     failures = []
-    label = 'cli ' + ' '.join(args['run'][:1])
+    for form in forms:
+        label = f'cli {argv[0]}' + ('' if len(forms) == 1 and script is None else f' ({"tty" if script is not None else form})')
+        try:
+            result = run.cli_tty(argv, script) if script is not None else run.cli(argv, form)
+        except terminal.TerminalError as error:  # the command did not prompt as the case expects: a finding, not a broken runner
+            failures.append(f'{label}: {error}')
+            continue
+        failures.extend(check_result(run, label, form, forms, result, expect))
+    if before is not None and (created := operation_ids(run) - before):
+        failures.append(f'cli {argv[0]}: created Operation {sorted(created)}, expected no request')
+    return failures
+
+
+def check_result(run, label, form, forms, result, expect):
+    failures = []
     if 'exit' in expect and result['rc'] != expect['exit']:
         failures.append(f"{label}: exit {result['rc']}, expected {expect['exit']}")
-    document = result['json'] if isinstance(result['json'], dict) else {}
-    if 'status' in expect and document.get('status') != expect['status']:
-        failures.append(f"{label}: status {document.get('status')}, expected {expect['status']}" + ('' if document else ' (no JSON)'))
-    if 'code' in expect:
-        code = document.get('error_code') or (document.get('error') or {}).get('code')
-        if code != expect['code']:
-            failures.append(f"{label}: code {code}, expected {expect['code']}")
+    if form == 'json':
+        document = result['json'] if isinstance(result['json'], dict) else {}
+        if 'status' in expect and document.get('status') != expect['status']:
+            failures.append(f"{label}: status {document.get('status')}, expected {expect['status']}" + ('' if document else ' (no JSON)'))
+        if 'code' in expect:
+            code = document.get('error_code') or (document.get('error') or {}).get('code')
+            if code != expect['code']:
+                failures.append(f"{label}: code {code}, expected {expect['code']}")
+        if 'skipped' in expect and expect['skipped'] not in skip_reasons(document):
+            failures.append(f"{label}: not skipped with {expect['skipped']}")
+        return failures
+    # The human form has no JSON: the code and the status are read from the JSON form when the call has one.
+    text = terminal.plain(result['stdout'] + result['stderr'])
+    for wanted in [expect['human']] if isinstance(expect.get('human'), str) else expect.get('human') or []:
+        if wanted not in text:
+            failures.append(f'{label}: the output lacks {wanted!r}')
+    if 'json' not in forms:
+        if 'code' in expect and expect['code'] not in text:
+            failures.append(f"{label}: the output lacks the code {expect['code']}")
+        if 'status' in expect:
+            found = re.search(r'Operation:\s*(\d+)', text)
+            status = (run.cli(['operation:show', found[1]])['json'] or {}).get('status') if found else None
+            if status != expect['status']:
+                failures.append(f"{label}: status {status}, expected {expect['status']}" + ('' if found else ' (no Operation in the output)'))
     return failures
 
 
 def matches(row, wanted):
-    return all(str(row.get(key)) == str(value) for key, value in wanted.items())
+    """Every key of `wanted` equals the row's value; a list as the wanted value matches any of its items."""
+    return all(str(row.get(key)) in (map(str, value) if isinstance(value, list) else [str(value)]) for key, value in wanted.items())
 
 
 def ufw(run, args):
@@ -172,7 +298,10 @@ def ufw(run, args):
             reference = run.rules.get(item['ref'])
             if reference is None:
                 raise Infra(f"ufw ref {item['ref']} was not bound by a ufw_rule")
-            return {key: reference[key] for key in ('to', 'action', 'from', 'comment')}
+            found = {key: reference[key] for key in ('to', 'action', 'from', 'comment')}
+            if args.get('family') is not None and int(args['family']) == 6:  # the IPv6 line of a rule for both families
+                found.update(to=found['to'] + ' (v6)', **{'from': found['from'] + ' (v6)'} if found['from'] == 'Anywhere' else {})
+            return found
         return {key: item[key] for key in ('to', 'action', 'from', 'comment') if key in item}
 
     failures, last = [], 0
@@ -235,7 +364,7 @@ def snapshot(run, provider):
     if provider == 'firewall_records':
         return [json.dumps(row, sort_keys=True) for row in record_rows(run, 'firewall:list', node)]
     if provider == 'listeners':
-        return [line.split()[3] for line in run.fleet.sh(node, 'ss -Htln').stdout.splitlines() if len(line.split()) > 3]
+        return [line.split()[-2] for line in run.fleet.sh(node, 'ss -Htlun').stdout.splitlines() if len(line.split()) > 3]
     result = run.cli(['operation:list'])
     return [str(item.get('id')) for item in (result['json'] or {}).get('operations', [])]
 
@@ -291,6 +420,105 @@ def ufw_delete(run, args):
     return []
 
 
+def ipv6_addresses(run, args):
+    """Give each Node an IPv6 address on the interface of its bridge address, then check that the Nodes reach each other."""
+    nodes = args['nodes']
+    unknown = [node for node in nodes if node not in run.fleet.nodes]
+    if unknown:
+        raise Infra(f'ipv6_addresses: unknown Nodes {unknown}')
+    for node in nodes:
+        bridge = run.fleet.nodes[node]['bridge']
+        address = IPV6_PREFIX + bridge.rsplit('.', 1)[1]
+        added = run.fleet.sh(node, f"ip -6 addr replace {address}/64 dev $(ip -4 -o addr show | awk '/ {bridge}\\//{{print $2}}') nodad")
+        if added.returncode:
+            return [f'ipv6_addresses {node}: {added.stderr.strip()[-200:]}']
+        run.fleet.nodes[node]['bridge6'] = address
+        # The IPv4 allowance for the proof network has no IPv6 twin: the default policy would block the control port.
+        allowed = run.fleet.sh(node, f"ufw allow from {IPV6_PREFIX}/64 comment 'proof-network'")
+        if allowed.returncode:
+            return [f'ipv6_addresses {node}: ufw: {(allowed.stdout + allowed.stderr).strip()[-200:]}']
+    failures = []
+    for node in nodes:
+        for other in nodes:
+            if other != node and run.fleet.sh(node, f"ping -6 -c 1 -W 3 {run.fleet.nodes[other]['bridge6']}").returncode:
+                failures.append(f'ipv6_addresses: {node} does not reach {other} over IPv6')
+    return failures
+
+
+def install_shim(run, node):
+    """Put the ufw shim in place on the Node, once. The real program is kept as ufw.real."""
+    if node in run.shimmed:
+        return
+    done = run.fleet.sh(node, f'mkdir -p {SHIM_DIR} && [ -e /usr/sbin/ufw.real ] || mv /usr/sbin/ufw /usr/sbin/ufw.real; cat > /usr/sbin/ufw && chmod 755 /usr/sbin/ufw',
+                        stdin_text=UFW_SHIM)
+    if done.returncode:
+        raise Infra(f'the ufw shim could not be installed on {node}: {done.stderr.strip()[-200:]}')
+    run.shimmed.add(node)
+
+
+def release_lock(run, node):
+    """End the lock that `busy_node` holds (its holder leads its own process group): the stalled writes go on."""
+    run.fleet.sh(node, f'kill -- -$(cat {SHIM_DIR}/holder.pid) 2>/dev/null; true')
+
+
+def remove_shim(run, node):
+    """Release the lock, drop the state and put the real ufw back."""
+    release_lock(run, node)
+    run.fleet.sh(node, f'rm -rf {SHIM_DIR}; [ -e /usr/sbin/ufw.real ] && mv -f /usr/sbin/ufw.real /usr/sbin/ufw; true')
+    run.shimmed.discard(node)
+
+
+def fault(run, args):
+    if args.get('clear'):
+        if set(args) != {'clear'}:
+            raise Infra('fault clear takes no other key')
+        for node in sorted(run.shimmed):
+            remove_shim(run, node)
+        return []
+    missing = {'on', 'command', 'fail_after'} - set(args)
+    if missing:
+        raise Infra(f'fault lacks {sorted(missing)}')
+    if args['command'] != 'ufw':
+        raise NotBuilt(f"fault of {args['command']} is not built: only ufw")
+    after = args['fail_after']
+    word, count = str(after.get('match', '')), int(after.get('count', 0))
+    if not re.fullmatch(r'[a-z-]+', word) or count < 1:
+        raise Infra('fault fail_after needs a match of lower-case letters and a count of 1 or more')
+    install_shim(run, args['on'])
+    run.fleet.sh(args['on'], f"printf 'WORD=%s\\nAFTER=%s\\nSEEN=0\\n' {word} {count} > {SHIM_DIR}/fault")
+    return []
+
+
+def busy_node(run, args):
+    """Hold one firewall write on the Node: the shim stalls its ufw writes behind a lock, and a real `firewall:allow` of a spare port
+    starts and waits there. The Gateway holds the Node's firewall target for that Operation until `cleanup` releases the lock."""
+    node, command = args['on'], args.get('command', 'firewall:allow')
+    if command not in ('firewall:allow', 'firewall:deny'):
+        raise NotBuilt(f'busy_node of {command} is not built')
+    seconds = int(args.get('seconds', BUSY_SECONDS))
+    install_shim(run, node)
+    holder = f'setsid nohup flock -x {SHIM_DIR}/stall sleep {seconds} >/dev/null 2>&1 </dev/null & echo $! > {SHIM_DIR}/holder.pid'
+    run.fleet.sh(node, f'touch {SHIM_DIR}/stall; {holder}')
+    port = free_run(run.fleet.sh(node, 'ss -Htlun').stdout, {int(value) for value in run.names.values() if str(value).isdigit()}, 1)
+    process = run.fleet.cli_background([command, str(port), '--node=' + str(run.fleet.nodes[node]['node_id']), '--protocol=tcp', '--label=proof-busy'])
+    run.background.append(process)
+    if not process.started(30):
+        return [f'busy_node: the {command} did not start in 30 s']
+    return []
+
+
+def cleanup(run):
+    """End what a case started on its own. The held write goes on when its lock ends, and the next case must not meet its Operation:
+    wait for the CLI of the held write to end, then put the real ufw back. A failed case also gets a restore of `base`."""
+    for node in sorted(run.shimmed):
+        release_lock(run, node)
+    for process in run.background:
+        process.finish(CLEANUP_SECONDS)
+    run.background.clear()
+    for node in sorted(run.shimmed):
+        remove_shim(run, node)
+
+
 def unbuilt(name):
     def step(run, args):
         raise NotBuilt(f'step {name} is not built')
@@ -298,5 +526,5 @@ def unbuilt(name):
 
 
 FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
-FUNCTIONS.update({'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
+FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
                   'unchanged': unchanged, 'ufw_delete': ufw_delete})

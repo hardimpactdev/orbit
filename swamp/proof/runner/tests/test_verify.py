@@ -16,6 +16,7 @@ import fleet as fleet_module
 import phases
 import runner
 import spec
+import steps
 from fakes import FakeFleet
 
 PROOF = Path(__file__).resolve().parents[2]
@@ -117,8 +118,13 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(lines[0])['setup'], 'ok')
 
-    def test_a_setup_step_that_is_not_built_fails_the_batch_setup(self):
+    def test_the_ipv6_setup_of_the_dual_stack_batch_is_ok(self):
         code, lines = self.setup_batch('dual-stack')
+        self.assertEqual((code, json.loads(lines[0])['setup']), (0, 'ok'))
+
+    def test_a_setup_step_that_is_not_built_fails_the_batch_setup(self):
+        with patch.dict(steps.FUNCTIONS, {'ipv6_addresses': steps.unbuilt('ipv6_addresses')}):
+            code, lines = self.setup_batch('dual-stack')
         self.assertEqual(code, 1)
         line = json.loads(lines[0])
         self.assertEqual((line['batch'], line['setup']), ('dual-stack', 'failed'))

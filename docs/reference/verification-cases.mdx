@@ -5,7 +5,7 @@ description: "How the cases that prove an Orbit command are written, checked and
 
 # Verification cases
 
-**Design draft.** This page describes the target. The runner, the first case, `new-restricted-allow`, and the Swamp workflows that run the batches are built; [what is built](#what-exists-and-what-is-new) is listed at the end.
+**Design draft.** This page describes the target. The runner, the Swamp workflows that run the batches and every step that the 14 cases of `firewall:allow` use are built; [what is built](#what-exists-and-what-is-new) is listed at the end.
 
 A verification case proves one behavior of one command on the nested test fleet of [stage 3](/reference/command-development-pipeline#3-proof). A case is a specification, not code: a short YAML block built from a fixed set of steps. One shared runner executes every case. Code is written only for a new kind of check, and then once, as a new step.
 
@@ -90,8 +90,8 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 | `use` | any | Insert a [fixture](#fixtures), with parameters. |
 | `listener` | setup | Start TCP or UDP listeners on a Node, on free ports, and bind each port to a name. `block` starts a run of consecutive ports. |
 | `ufw_rule` | setup | Add a rule that the test owns, straight on the Node, above or below another row. |
-| `fault` | setup, act | Make `ufw` on the Node fail after the n-th call that contains a word. `clear` removes it. A case with a fault needs its own batch. |
-| `busy_node` | setup | Keep one firewall write running on the Node, so its lock is held. A case with a held lock needs its own batch. |
+| `fault` | setup, act | Make `ufw` on the Node fail after the n-th call that contains a word. `clear` removes it. The runner also removes it when the case ends. |
+| `busy_node` | setup | Keep one firewall write running on the Node, so its lock is held. The runner releases it when the case ends. |
 | `agent_report` | setup | Wait until the agent of each listed Node has reported again, so the Gateway holds the state the case built. |
 | `node_down` | setup | Stop a Node, its agent and its SSH. A case that stops a Node needs its own batch. |
 | `node_access_remove` | batch setup | Remove the access grant of one Node to another. |
@@ -106,12 +106,25 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 
 Details that a case author needs:
 
-- **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form; use it only on calls that are safe to repeat, such as a refusal or a skip. `tty` runs the call in a terminal and answers prompts: `see` waits for text, `send` types it, `choose` picks a list item. `expect` takes `exit`, `status` (the Operation), `code` (an error code), `skipped` (a reason code), `request: none` (no Operation was created) and `human` (text).
-- **`probe`** in `setup` is a precondition: a mismatch makes the case `unrun`. In `expect` it is an assertion: a mismatch fails the case. A list in `from`, `proto` or `port` runs one probe for each combination. `family` is 4 or 6, and `proto` is `tcp` or `udp`.
+- **`listener`** starts listeners on free ports and binds each name in `ports`. `proto` is `tcp`, `udp` or a list of both: a list uses the same port for each protocol. `family` is 4 or 6; an IPv6 listener takes IPv6 only. `block: {as: range, size: 5}` starts `size` consecutive ports (2 to 50) and binds `${range.lo}`, `${range.mid}`, `${range.hi}` and `${range.spec}`. The step fails if a port does not answer on the Node itself.
+- **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
+  - `exit`: the exit code.
+  - `status`: the status of the Operation. In the JSON form it is the `status` of the document; in a human run it is read from the Operation named on the `Operation:` line.
+  - `code`: an error code, read from the JSON form. A human run that has no JSON form takes the text instead: the output must contain the code.
+  - `skipped`: a reason code that the JSON document gives under a key named `skipped` (or any key with `skip` in its name). It needs the JSON form.
+  - `request: none`: the call created no Operation. The runner lists the Operations before and after the call.
+  - `human`: a text, or a list of texts, that the output must contain. Escape codes are removed first.
+- **`tty`** is a list of steps. `see` waits for text in the output that came after the previous step; `send` types a text and Enter, and `^C` sends Ctrl-C; `choose` moves a list prompt (Laravel Prompts) to the item with that label and presses Enter. A command that never shows the text, or ends before it, fails the case with the end of its output: that is a finding about the command, not about the runner. The driver is `swamp/proof/runner/terminal.py`, built on the standard `pty` module.
+- **`probe`** in `setup` is a precondition: a mismatch makes the case `unrun`. In `expect` it is an assertion: a mismatch fails the case. A list in `from`, `proto` or `port` runs one probe for each combination. `family` is 4 or 6, and `proto` is `tcp` or `udp`. A TCP probe connects. A UDP probe sends one datagram and waits for the listener's answer, so `connect` means the answer came and `blocked` means nothing came in 3 seconds. A refusal (an ICMP error, or a closed TCP port) is neither: it is reported as `refused`. An IPv6 probe needs `ipv6_addresses` in the batch.
 - **`ufw`** checks that each row appears exactly once, in the order listed, top to bottom. `absent` rows must not appear. A row is `to`, `action`, `from` and an optional `comment`, or `ref` to a rule that `ufw_rule` bound with `as`.
-- **`record`** runs `list` with the node, then matches `where` against each row. `count` is exact; `min` is a lower bound. `args` adds options to the list call. `section` names the part of the JSON to read: `rules` (default), `managed`, `unmatched` or `live`. `order` lists rows that must appear in that sequence, not necessarily next to each other.
+- **`record`** runs `list` with the node, then matches `where` against each row. A list as a value matches any of its items. `count` is exact; `min` is a lower bound. `args` adds options to the list call. `section` names the part of the JSON to read: `rules` (default), `managed`, `unmatched` or `live`. `order` lists rows that must appear in that sequence, not necessarily next to each other.
 - **`doctor`** waits until 65 seconds after `act` ended, so that a report of the Node agent follows the change, then runs Doctor for the Node. The agent's tick has no fixed phase after a restore of `base`, so the wait does not use it. Use it in the main success case, not in every case.
 - **`unchanged`** compares the providers named in `what`, or all of `baseline` except `operations`. `operations` runs only when `what` names it, because the command under test creates an Operation. `except` leaves out rows for one port. `request: none` uses the `operations` provider.
+- **`fault`** puts a shim in place of `/usr/sbin/ufw` on the Node (the real program stays as `ufw.real`; a shell script of 20 lines, `tools/swamp-proof-guest/ufw-shim.sh`). `fail_after: {match: delete, count: 1}` lets the calls through until the 1st call whose arguments contain the word has run; every later call that writes then exits 1 with `ufw: injected fault`. Calls that read (`status`, `show`, `version`, `help`) always pass, so the runner's own reads and the Node's reports keep working. `fault: {clear: true}` removes the fault on every Node where the case set one. Only `command: ufw` exists.
+- **`busy_node`** holds a firewall write on the Node. It puts the same shim in place, holds a lock that the shim's writes wait on (`flock`), and starts a real `firewall:allow` of a spare port in the background. The step ends when the CLI prints its first line, which it does after the Gateway admitted the request, so the Gateway holds the Node's firewall for that Operation. `seconds` (default 120) bounds the lock. When the case ends, the runner releases the lock, waits for the held write to finish, and puts the real `ufw` back, so the next case does not meet an Operation that still runs. `command` is `firewall:allow` (the default) or `firewall:deny`.
+- **`ipv6_addresses`** gives each listed Node an address `fd42:232:2::<last octet of its IPv4 address>/64` on the interface of its bridge address, then pings every Node from every other over IPv6; a failed ping makes the case `unrun`. It binds `${<node>.src6}` and the IPv6 address that `probe` uses. It stands in the `setup` of a batch.
+
+A fault, a held write and the Node's IPv6 addresses live on the Node. The runner ends the fault and the held write when the case ends, so a later case in the batch does not see them. A restore of `base` removes everything else.
 
 Placeholders:
 
@@ -182,7 +195,7 @@ The check cannot read prose. The reviewer walks the `Requirements` of each chart
 A batch is a group of cases that run one after another after one restore. Every case names its batch. `swamp/proof/batches.yaml` defines each batch: a name, a summary, optional setup steps, and the order in which batches run. A run proves one command, so cases of different commands never share a batch; batch definitions such as `dual-stack` are shared.
 
 - The run starts on the task's `base` snapshot. The first batch needs no restore.
-- A later batch starts with a restore of `base`, about 16 seconds, then its setup steps.
+- A later batch starts with a restore of `base`, about 16 seconds, then its setup steps. The workflow runs it with `runner setup BATCH`; a later `runner case` finds the result on the fleet (for IPv6, the addresses that Incus reports for the guests).
 - Inside a batch, cases run one after another and undo nothing. Each uses its own resources, so it does not see the others.
 - A case that changes state all cases share gets its own batch: UFW turned off, an injected `fault`, a held lock (`busy_node`), network setup, or a check of the complete list.
 - A case that does not pass triggers a restore of `base` and the batch setup before the next case.
@@ -274,7 +287,7 @@ The Swamp workflow restores `base` and runs `runner case ID --negative`, which r
 
 ## What exists and what is new
 
-The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py` and the fleet access `fleet.py`. It runs `new-restricted-allow` of `allow.cases.yaml` on the nested fleet of a task VM and ends with `passed`: about 85 seconds after a restore of `base`, 65 of them the wait for Doctor. `runner.py case ID --negative` proves that the case can fail. The old case script `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh` stays until the other cases are in the runner. `proof:run` still selects a command through its case programs but runs the cases file of the command, so that script is only the selection key today. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
+The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`, the steps `steps.py`, the fleet access `fleet.py`, the programs that run on a Node (`listener.py`, `probe.py`) and the tests. The terminal driver `terminal.py` and the `ufw` shim `ufw-shim.sh` loop by nature, so they live in `tools/swamp-proof-guest/`, outside the Swamp-shape rules for step code. On the nested fleet of a task VM all 16 verdicts of `allow.cases.yaml` run. 9 are `passed`: `new-restricted-allow`, `partial-application`, `conflict`, `busy-target`, `protocols[tcp]`, `protocols[udp]`, `protocols[both]`, `port-range` and `missing-input-noninteractive`. The other 7 are `failed` with the cause `assertion`, and each one fails on what the command does, not on a step. `runner.py case ID --negative` proves that a case can fail. The old case script `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh` stays until `proof:run` stops selecting a command through its case programs. `proof:run` still selects a command through them but runs the cases file of the command, so that script is only the selection key today. The ready copies, the reset workflows and the per-case comparison of firewall records and rules in `swamp/proof/reset/phases.py` exist.
 
 | Piece | State |
 | --- | --- |
@@ -282,24 +295,24 @@ The runner is `swamp/proof/runner/`: `runner.py plan|case`, the loader `spec.py`
 | `runner.py plan --file F [--steps]` | Built. Prints the batches and cases in order, and with `--steps` the resolved steps. No fleet. |
 | `runner.py case ID`, verdict line, receipt in the evidence directory | Built. Exit 0 passed, 1 failed, 2 unrun, 3 file refused. |
 | `cli` with JSON and `expect` (`exit`, `status`, `code`) | Built. |
-| `cli` with `forms: human`, `tty`, and `expect` of `skipped`, `request` and `human` | New. The terminal driver is the largest piece. |
-| `listener` for TCP over IPv4 | Built. |
-| `listener` for UDP, IPv6 and `block` | New. |
+| `cli` with `forms: human`, `tty`, and `expect` of `skipped`, `request` and `human` | Built. The terminal driver uses the standard `pty` module and answers Laravel Prompts lists. A `skipped` reason is searched in the JSON document under a key with `skip` in its name; the command that skips does not exist yet, so that shape is a guess to check when it does. |
+| `listener` for TCP over IPv4, UDP, IPv6 and `block` | Built. |
 | `ufw_rule` (above, below, bound by `as`) | Built. |
 | `probe` for TCP over IPv4 | Built. Expanded probes run in parallel. |
-| `probe` for UDP and IPv6 | New. |
+| `probe` for UDP and IPv6 | Built. |
 | `ufw` rows, order and `absent` | Built. |
-| `record` for `firewall:list` | Built. Other list commands are new. |
+| `record` for `firewall:list` | Built, with a list as the wanted value. Other list commands are new. |
 | `doctor` | Built. |
 | `unchanged` (`ufw`, `firewall_records`, `listeners`, `operations`) | Built. |
 | `negative` and `ufw_delete` | Built. |
-| `fault` | New. A `ufw` shim on the Node that passes the runner's own reads. Needs a spike. |
-| `busy_node` | New. Needs a spike to hold the lock without a long write. |
-| `ipv6_addresses` | New. The nested fleet has no IPv6 today. Needs a spike. |
+| `fault` | Built. A `ufw` shim on the Node that passes reads. Proved live: in `interrupted-reorder` and `failure-after-partial-change` the first round ends as the case says. |
+| `busy_node` | Built. The shim stalls ufw writes behind a lock, and a real `firewall:allow` holds the Node. Proved live: `busy-target` passes. |
+| `ipv6_addresses` | Built. Static ULA addresses on the existing bridge, no change to the host, and an IPv6 twin of the `proof-network` allowance. Proved live: the blocked-port fixture holds over IPv6. |
+| Batch setup (`batches.yaml` `setup`) | Built. `runner case` runs it before the setup of the case. |
 | A step that is new fails the case with cause `infrastructure` and the message `... is not built` | Built. |
 | `runner.py plan --lines`, `restore --group N` and `setup BATCH` | Built. `restore` runs the phase `base-restore` for the newest reset of the group; `setup` runs the setup steps of a batch. |
 | Restore of `base` per batch and after a case that did not pass | Built, as the `restore` step of the batch and the case child. Measured on tvm-554 with stock Incus: about 15 seconds until healthy. The Gateway of the restored fleet answers `node:list` about 15 seconds later, so the restore waits for that; nothing retries. |
 | `bin/check-cases` and the `check-flows` marker rule | New. |
 | Workflows `proof-fleet-verify` and the per-batch and per-case children | Built, with the operation `proof.verify` that starts them. `proof:run` resets the fleet through `bin/proof-fleet reset`, then runs them for each selected command. `proof-command-verification` and the reset workflows still build the fleet. |
 
-Still to build, to be removed once built: `bin/check-cases` about 150 lines, the terminal driver and the other steps in the table. The runner and its steps are about 700 lines, and its tests about 640. After that a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.
+Still to build, to be removed once built: `bin/check-cases` about 150 lines. The runner and its steps are about 1,200 lines with the Node programs, and its tests about 900. After that a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.
