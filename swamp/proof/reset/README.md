@@ -30,7 +30,22 @@ once with `sudo bin/e2e-topology-host-setup`.
 
 ## Network and operator
 
-The nested fleet has a real WireGuard network, `10.45.0.0/24`. The nested Gateway is the hub (`10.45.0.1`), `app-dev` is `10.45.0.2` and `app-prod` is `10.45.0.3`. The outer VM joins as the roleless member `operator` (`10.45.0.10`) on its own interface, `wg-nested`. That interface never touches the real fleet's `orbit` interface or `10.44.0.0/24`. The native step `operator` sets up the outer VM's side. It installs the candidate CLI as `/usr/local/bin/orbit-nested`, so the real `orbit` on that VM is never replaced, and adds one profile, `nested`, that names the Gateway by address. It refuses to run when the CLI already has another profile, so it never switches a real default Gateway. Cases call `orbit-nested`. A release disables and stops `wg-quick@wg-nested`, and the next reset enables it again. The Gateway recognises the outer VM as a WireGuard member, so a command arrives as it does from an operator machine. Keys live on the outer VM, so every reset agrees with them.
+The nested fleet has a real WireGuard network, `10.45.0.0/24`. The nested Gateway is the hub (`10.45.0.1`), `app-dev` is `10.45.0.2` and `app-prod` is `10.45.0.3`. The outer VM joins as the roleless member `operator` (`10.45.0.10`) on its own interface, `wg-nested`. That interface never touches the real fleet's `orbit` interface or `10.44.0.0/24`. The native step `operator` sets up the outer VM's side. It installs the candidate CLI as `/usr/local/bin/orbit-nested`, so the real `orbit` on that VM is never replaced, and adds one profile, `nested`, that names the Gateway by address. It refuses to run when the CLI already has another profile, so it never switches a real default Gateway. Cases call `orbit-nested`. It syncs first (next section). A release disables and stops `wg-quick@wg-nested`, and the next reset enables it again. The Gateway recognises the outer VM as a WireGuard member, so a command arrives as it does from an operator machine. Keys live on the outer VM, so every reset agrees with them.
+
+## `orbit-nested` syncs before each call
+
+`/usr/local/bin/orbit-nested` runs `tools/orbit_nested.py` from the candidate. It lives outside `swamp/` because it is a tool the author runs, not a Swamp step: it passes any command through. The `operator` step also writes `~/.orbit/nested.json`: the checkout to sync from (the candidate, the author's own checkout) and the nested VMs to sync to. Every reset writes it again.
+
+Before each call, `orbit_nested.py` runs the sync of the reset (`phases.sync_source`: `rsync -a --checksum --delete` into the Gateway and app-dev, the same excludes, `composer install` only where a `composer.lock` changed). It needs no daemon and no file watcher. When rsync moved or deleted a file in the Gateway, it runs the apply step (`guest.py candidate`: package discovery, migrations, the Swamp repository, a restart of the two proof services). It then runs the CLI, or the command:
+
+```
+orbit-nested gateway:status --json
+orbit-nested exec gateway -- php artisan about
+```
+
+`exec NODE -- CMD` runs `CMD` as user `orbit` in the nested VM `gateway`, `app-dev` or `app-prod`, after the same sync. It starts in `apps/gateway` on the Gateway, in the checkout on app-dev and in `/home/orbit` on app-prod, which holds no checkout. Its exit code and output are the command's.
+
+Calls take a lock, so two calls never sync at once. A call that fails halfway leaves `~/.orbit/nested.pending`; the next call runs composer in every directory with a lock file and the apply step again before it does anything else. When a sync moved files, one line on stderr tells how long the sync and the apply step took. Measured on a task VM: a call that moves nothing adds about 0.3 s to the CLI call (0.18 s alone, 0.46 s through `orbit-nested`); a one-file change in the Gateway adds the sync (0.3 s) and the apply step (1 s).
 
 ## Ready copies and the fast reset
 

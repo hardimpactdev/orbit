@@ -33,7 +33,7 @@ About 74 commands were prepared through docs-only PRs before this flow. Their ch
 
 **Built, with a slot pool still to come.** A task VM, started with `tasks:provision`, holds a nested topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. They share a real nested WireGuard network, `10.45.0.0/24`, and the outer VM is the operator. Each task VM host keeps ready copies of this topology in its topology seed, so a reset takes about 75 seconds instead of a 230-second build. An agent, or Nick, develops a command here, and the proof cases run here too.
 
-The target: the nested VMs hold their own checkout, with no code share from the outer VM. `orbit-nested` syncs the author's changes into them before each call. At task start, Swamp takes an Incus memory snapshot `base` of the three VMs; restoring it takes about 16 seconds until the fleet is healthy. Not built: the sync, the snapshot and the restore; today the nested Gateway mounts the outer VM's source.
+The target: the nested VMs hold their own checkout, with no code share from the outer VM. `orbit-nested` syncs the author's changes into them before each call. At task start, Swamp takes an Incus memory snapshot `base` of the three VMs; restoring it takes about 16 seconds until the fleet is healthy. Built: the sync, the snapshot and the restore. A call that syncs nothing adds about 0.3 seconds; a change that reaches the Gateway adds about 1 more second for the apply step. `orbit-nested exec NODE -- CMD` syncs and then runs a direct command in a nested VM. Not built: the converge step for playbook and pin changes.
 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
