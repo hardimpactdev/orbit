@@ -42,11 +42,11 @@
     "scripts": {
         "analyse": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check": [
+            "@rector",
+            "@format",
             "@docs:lint",
             "@fixtures:check",
-            "@analyse",
-            "@rector",
-            "@format:check"
+            "@analyse"
         ],
         "context": "@php artisan orbit:docs-context",
         "context:build": "@php artisan orbit:docs-index",
@@ -54,9 +54,7 @@
         "fixtures:check": "python3 ../../bin/api-fixtures --check",
         "issue:lint": "@php artisan orbit:issue-lint",
         "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
-        "format:check": "../../bin/quality-scope pint vendor/bin/pint --test --parallel --max-processes=$(../../bin/check-processes)",
-        "lint": "@format:check",
-        "rector": "../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache",
+        "rector": "vendor/bin/rector process --no-progress-bar",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

@@ -247,7 +247,7 @@ The Gateway selects a code SHA before looking up its cache ref. For a checkout o
 
 The Gateway records the task baseline in `refs/worktree/orbit/ci-baseline`, a per-worktree ref that other linked workspaces cannot overwrite. Later main fetches preserve it while a task branch is checked out. The ref suffix and every manifest's tested commit must agree exactly. The cache commit's own object ID is not the tested code SHA.
 
-The importer checks each project's identity, manifest schema, file checksums, lock file, tool configuration, and PHP minor version before writing private caches. `bin/ci-cache-ref import` validates the whole cache tree, then imports compatible Pint and PHPStan caches into their tool cache paths under `vendor/`. The ref holds no test graph. Rector exports no cache because its checks use `--clear-cache`. An absent optional tool cache leaves that tool cold.
+The importer checks each project's identity, manifest schema, file checksums, lock file, tool configuration, and PHP minor version before writing private caches. `bin/ci-cache-ref import` validates the whole cache tree, then imports compatible Pint and PHPStan caches into their tool cache paths under `vendor/`. The ref holds no test graph. Rector exports no cache. An absent optional tool cache leaves that tool cold.
 
 The importer also checks the PHP version that each quality cache records, because each tool discards a cache from another PHP version:
 

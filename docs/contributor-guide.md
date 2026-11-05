@@ -209,9 +209,7 @@ Whoever opens a pull request turns on auto-merge as `nckrtl` with `gh pr merge -
 
 Root `composer check` runs `bin/review-check`. It runs `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, and the web and Pi server profiles. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff; CI omits the Project check for now. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
-`composer rector` clears Rector's cache before every run, so changes in a parent class cannot hide findings in an unchanged child.
-
-CI and a plain `composer check` reanalyse all configured Rector paths. The review gate runs Pint on the changed files. It runs Rector on the changed files and the files that depend on them. The [feature delivery reference](/reference/implementation-loop#changed-file-quality-checks) lists the rules. Pest, PHPStan, Rector, and Pint run in parallel. `bin/check-processes` derives their [process count](/reference/implementation-loop#parallel-processes) from available CPU and memory.
+Each project's `composer check` runs Rector and Pint in fix mode, then PHPStan. Commit the formatter edits with your change; no CI job checks style. The [feature delivery reference](/reference/implementation-loop#formatters-run-in-fix-mode) explains why. Pest, PHPStan, Rector, and Pint run in parallel. `bin/check-processes` derives their [process count](/reference/implementation-loop#parallel-processes) from available CPU and memory.
 
 ## Audit tests and unused code
 

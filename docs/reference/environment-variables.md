@@ -26,7 +26,7 @@ Incus hosts are configured through [Node `settings.task_vms`](/reference/node-se
 
 `ORBIT_PROOF_RUN_EXECUTION` switches [proof execution](/cli/proof/run#the-execution-switch) on in the Gateway's own environment (`proof.execution`). It is not an Instance key. It is `false` by default: `orbit proof:run` then checks the commit, selects the cases and refuses with `proof.execution_disabled`.
 
-`ORBIT_CHECK_SCOPE` and `ORBIT_CHECK_BASE` configure the repository's [local checks](/reference/implementation-loop#parallel-processes). They are not Instance keys. The candidate gate sets them so that Pint and Rector [check the changed files](/reference/implementation-loop#changed-file-quality-checks). `bin/quality-scope` checks every file when `CI` or `GITHUB_ACTIONS` is set. `ORBIT_CHECK_PROCESSES` is an internal lane or suite share passed by `bin/review-check` and `bin/test`. The shared helper derives the total budget from available CPU and memory; it is not an operator or Project setting.
+`ORBIT_CHECK_PROCESSES` is an internal lane or suite share passed by `bin/review-check` and `bin/test`. The shared helper derives the total budget from available CPU and memory; it is not an operator or Project setting.
 
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 

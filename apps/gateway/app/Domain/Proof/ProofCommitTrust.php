@@ -37,14 +37,8 @@ final readonly class ProofCommitTrust
 
     private function approvedPullRequest(string $sha): bool
     {
-        foreach ($this->source->pullRequestsWithHead($sha) as $pullRequest) {
-            if ($pullRequest->open && $pullRequest->headSha === $sha && in_array($this->settings->label(), $pullRequest->labels, true)
-                && $this->approvedByMaintainer($pullRequest->number, $sha)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($this->source->pullRequestsWithHead($sha), fn ($pullRequest) => $pullRequest->open && $pullRequest->headSha === $sha && in_array($this->settings->label(), $pullRequest->labels, true)
+            && $this->approvedByMaintainer($pullRequest->number, $sha));
     }
 
     /** Each reviewer's latest decision counts: a later change request or dismissal ends an approval. */
@@ -60,13 +54,8 @@ final readonly class ProofCommitTrust
                 $latest[$review->reviewerLogin] = $review;
             }
         }
-        foreach ($latest as $login => $review) {
-            if ($review->state === GitHubReviewState::Approved && $review->commitId === $sha && $this->source->canWrite((string) $login)) {
-                return true;
-            }
-        }
 
-        return false;
+        return array_any($latest, fn ($review, $login) => $review->state === GitHubReviewState::Approved && $review->commitId === $sha && $this->source->canWrite((string) $login));
     }
 
     private static function after(GitHubReview $review, GitHubReview $than): bool
