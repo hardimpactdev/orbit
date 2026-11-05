@@ -361,7 +361,7 @@ The command reuses what already exists.
 
 It refuses a path that exists but is not a registered worktree. Then it runs `bin/bootstrap` in the worktree.
 
-`bin/bootstrap` installs all five Composer projects, [seeds the quality caches](#seed-a-checkout), and validates each project's guidance. Then it runs `composer test`, the project's full suite, and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation.
+`bin/bootstrap` installs all five Composer projects. Then it runs `composer test`, the project's full suite, and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the installs.
 
 `bin/bootstrap --dependencies-only` installs dependencies, including any requested Bun and Rust dependencies, and the [pre-push docs gate](/contributor-guide). It prepares no application state and runs no checks.
 
@@ -369,7 +369,7 @@ It refuses a path that exists but is not a registered worktree. Then it runs `bi
 
 ## Main caches
 
-Main caches let a new checkout start with warm Pint and PHPStan result caches from `main`. Task VM workspaces import them from [CI cache refs](#ci-cache-refs). A local checkout copies them from the primary checkout, as [Seed a checkout](#seed-a-checkout) describes.
+Main caches let a new checkout start with warm Pint and PHPStan result caches from `main`. Task VM workspaces import them from [CI cache refs](#ci-cache-refs). A local checkout starts cold.
 
 ### CI cache refs
 

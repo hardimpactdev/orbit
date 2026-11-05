@@ -50,7 +50,7 @@ From the repository root, run:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. It also checks the project guidance and seeds the Pint and PHPStan caches. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
+`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
 
 Add `--skip-checks` to install without the checks. The default run includes the Gateway tests. On macOS, they need the extra tools that [Implement and verify](/contributor-guide#3-implement-and-verify) lists, so use `--skip-checks` until you install them. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
 
