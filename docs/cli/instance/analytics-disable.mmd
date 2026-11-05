@@ -1,7 +1,6 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp (disable keeps the Plausible site), DECISIONS, R1-R4. docs/reference/analytics.md.
-  %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 17, 22 (DNS first and only outside the TLD; sites and certificates withdrawn in one step, as route:destroy does).
-  %% status: draft
+  %% Target design: ADR 0244 task, one Swamp run; disable keeps the Plausible site. docs/reference/analytics.md#publish-a-tracking-host.
+  %% status: reviewed
   %% command: instance:analytics:disable
   %% kind: analytics.disable
   autonumber
@@ -11,102 +10,44 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as Node 12<br/>serves the host
-  CLI->>GW: instance:analytics:disable<br/>42
-  %%> Command:
-  %%> - `orbit instance:analytics:disable 42`
-  %%> - syntax: `<instance> [--yes] [--json]`
-  %%> Confirmation:
-  %%> - without `--yes`, the CLI asks first; the default is No
-  %%> - without a terminal, or with `--json`, `--yes` is required (`input.confirmation_required`)
-  %%> What it does:
-  %%> - removes every tracking host of Instance 42; Plausible keeps the site and its history
-  Note over CLI: Confirm host removal
-  %%> What it does:
-  %%> - asks for default-No consent before sending the disable request
-  Note over GW: Validate, find the hosts<br/>Instance lock
-  %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - no other analytics or Route change runs for Instance 42; the Gateway holds one lock
-  %%> Decides:
-  %%> - whether any tracking host exists
+  participant SW as Swamp<br/>workflow execution
+  participant N as Serving Node<br/>Instance or Router
+  Note over CLI: Confirm host removal<br/>default No
+  %%> Why:
+  %%> - visits stop being counted as soon as the hosts are gone
+  CLI->>GW: instance:analytics:disable<br/>INSTANCE
+  Note over GW: Validate, find hosts
   alt Instance has no hosts
-    Note over GW: Nothing to remove<br/>R1: no run
+    GW-->>CLI: Skipped<br/>no hosts · no run
     %%> Result:
-    %%> - nothing changes; no Swamp run starts (R1)
-    GW-->>CLI: Analytics disabled<br/>no hosts
-    %%> What you get:
-    %%> - the final result at once; there is nothing to follow
+    %%> - the command succeeds and changes nothing
   else hosts exist
     GW->>SW: Start run, full intent<br/>operation-analytics-disable
-    %%> What it does:
-    %%> - records task #5127 and starts one Swamp run on serve (Node 209)
-    %%> Inputs:
-    %%> - the tracking sites and certificates to remove, and their DNS records
-    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
-    %%> Not included:
-    %%> - Plausible credentials; disable does not call Plausible
-    GW-->>CLI: 202 Accepted<br/>task #5127
-    %%> What you get:
-    %%> - the task number, at once
-    %%> Next:
-    %%> - the CLI follows the task with `operation:show`
+    GW-->>CLI: 202 Accepted<br/>task ID
     opt host outside the TLD
-      Note over SW: Remove private DNS<br/>Node 1 over @swamp/ssh
-      %%> When:
-      %%> - only for a tracking host outside the Cluster or Node TLD; private DNS answers the whole TLD
-      %%> What it does:
-      %%> - removes the hosts' private DNS records and waits the 31-second grace
-      %%> How:
-      %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
+      Note over SW: Remove private DNS<br/>VPN Node over @swamp/ssh
       %%> Why first:
-      %%> - unpublish before removing: the name stops resolving before its site leaves
+      %%> - the name stops resolving before its site leaves
     end
     SW->>N: Withdraw sites, certs<br/>@swamp/cfgmgmt/file absent
-    %%> How:
-    %%> - over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt/file`; `caddy validate` as one `@swamp/ssh exec`, then a reload
-    %%> What it does:
-    %%> - removes only the tracking sections; other sites stay; validates, then reloads Caddy without a restart
-    %%> - on a Router, then removes the tracking certificates in the same step; tracking hosts on a Node-scoped Route have no Orbit certificate
     %%> Why one step:
-    %%> - the mirror of `instance:analytics:enable`, and of `route:destroy`; the site goes before its certificate, so no read of the loaded config runs first
+    %%> - the site goes before its certificate, as `route:destroy` does; other sites stay
     SW->>N: Check the hosts are gone<br/>@swamp/cfgmgmt/file check
-    %%> What it does:
-    %%> - reads the loaded Caddy config and checks no tracking site remains
-    alt every step passes
-      N-->>SW: no tracking sites
-      %%> Returns:
-      %%> - the check passed
+    alt every step succeeds
       SW-->>GW: Run succeeded<br/>terminal event
-      %%> How the Gateway learns it:
-      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-      Note over GW: Delete tracking Routes<br/>binding gone · task succeeded
+      Note over GW: Delete tracking Routes<br/>site binding deleted
       %%> Result:
-      %%> - the tracking Routes and the site binding are deleted
-      %%> - the Plausible site, its history and its goals stay
-      %%> - task #5127 succeeds
+      %%> - the Plausible site, its history and its goals stay; disable never calls Plausible
     else a step fails
-      N--xSW: exit ≠ 0 or site remains
-      %%> When:
-      %%> - Caddy refuses the config, SSH fails, or a tracking site is still loaded
       SW--xGW: Run failed<br/>error_code, failed step
-      %%> The Gateway reads:
-      %%> - which step failed and its error code
-      Note over GW: Keep Routes, mark failed<br/>task failed · rerun after a fix
-      %%> Result:
-      %%> - the tracking Routes and the site binding stay, marked failed; task #5127 fails
-      %%> On the Node:
+      Note over GW: Keep the Routes<br/>marked failed
+      %%> On the Nodes:
       %%> - sections already withdrawn stay withdrawn; there is no rollback
       %%> Retry:
       %%> - run the same command again; it skips what is already gone
     end
     loop every 2 s until terminal
-      CLI->>GW: operation:show #5127
-      %%> What it does:
-      %%> - asks for the task's status every 2 seconds until it has ended
+      CLI->>GW: operation:show TASK
       GW-->>CLI: status + result
-      %%> Returns:
-      %%> - the current status, and the result once the task has ended
     end
   end
