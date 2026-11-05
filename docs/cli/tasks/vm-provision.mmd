@@ -83,6 +83,8 @@ sequenceDiagram
   %%> What it does:
   %%> - `@swamp/cfgmgmt/file` writes the agent identity, `config.toml` and `ca.pem`; `@swamp/cfgmgmt/systemd` installs and starts `orbit-agent`
   %%> - today the steps are `observer-group` (one `groupadd -f --system orbit-env` argv, since the unit names that group) and `observer-unit`
+  %%> - `observer-identity-create` makes the secret with `openssl rand -hex`, and `observer-identity-trim` cuts the file to its 64 characters, because the agent trims the file and the Gateway checks `sha256` of the trimmed value; `observer-identity` records that digest
+  %%> - the Gateway makes the agent secret at admission, as for `node:add`, and keeps its hash; `observer-identity-create` writes the vault copy `agent-secret-node-<id>` on stdin of one `install` (0600, no newline), and `observer-identity` proves the file hashes to that value
   %%> - runs beside the Pi install
   %%> Replaces:
   %%> - `observer-identity`, `observer-configuration`, `observer-ca`, `observer-unit`, `observer-reload` and `observer-start` (inline Python writes)

@@ -40,7 +40,7 @@ return ['task_vm.hub_converge' => [
     'terminal_result' => ['job' => 'provision', 'step' => 'result'],
     'private_material' => [],
     'secret_outputs' => [],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
 ], 'task_vm.seed_refresh' => [
     'workflow' => 'operation-task-vm-seed-refresh',
     'projection' => TaskVmSeedRefreshProjection::class,

@@ -38,6 +38,8 @@ final readonly class TaskVmEnrollmentWorkflowInput
         $hub = Node::query()->findOrFail(ValidatedData::integer($network['hub_id']));
         $model = $this->models->capture($vm, $gateway->id, $this->shared->executionCopy(...));
         $identity = $this->ssh->identity();
+        // The guest's agent secret, made here as for node:add: the guest writes the vault copy as is, and the Gateway knows its hash.
+        $agentSecret = bin2hex(random_bytes(32));
         $installation = $this->enrollment->installation($vm);
         $runtime = ValidatedData::object($public['runtime']);
         $processInput = ValidatedData::object($runtime['process']);
@@ -54,7 +56,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
             // The guest's peer file on the hub, with a mark for the key the guest prepares, and the guest's own files.
             'hub' => NodeWireGuardHubInput::joining($hub, $guest->id, $guest->name, ValidatedData::string($vm->wireguard_ip)),
             'peer_files' => NodeNetworkConvergeInput::peerFiles(ValidatedData::object($network['peer'])),
-            'observer_digest' => $guest->agent_secret_hash,
+            'observer_digest' => hash('sha256', $agentSecret),
             'bootstrap' => [...ValidatedData::object($public['bootstrap']), 'public_key' => $identity['public_key']],
             'pi_artifact' => ['path' => $this->settings->piArtifactPath, 'sha256' => $this->settings->piArtifactSha256,
                 'ssh_execution' => $this->ssh->forNode($gateway)],
@@ -62,6 +64,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
             'certificate' => ValidatedData::string(ValidatedData::object($public['agent'])['certificate']),
             'pi_url' => $this->pi->baseUrl($guest),
             'execution_secrets' => [...$model['execution_secrets'],
+                'agent_secret' => $this->shared->executionCopy('orbit-control-inputs', 'agent-secret-node-'.$guest->id, $agentSecret),
                 // The whole Pi model file is one vault value: Swamp writes a secret as file content, never spliced into text.
                 'pi_models' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-models-'.$vm->id, $this->piModels($runtime, $vm)),
                 'pi_token' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token ?? throw new \LogicException('The VM has no Pi token.'))],
