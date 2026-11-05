@@ -24,9 +24,9 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-vm-ready-copies
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209); every step is one `incus` command over official `@swamp/ssh` to the VM, with literal argv
-  SW->>VM: Remove the operator key<br/>incus exec · artisan, perl
+  SW->>VM: Remove the operator key<br/>incus exec · sqlite3, perl
   %%> What it does:
-  %%> - sets the WireGuard key of the nested Gateway's `operator` Node record to null, and takes the operator peer (10.45.0.10) out of the Gateway hub file
+  %%> - sets the WireGuard key of the nested Gateway's `operator` Node record to null in the database its `.env` names, and takes the operator peer (10.45.0.10) out of the WireGuard files of the Gateway hub
   %%> Why:
   %%> - the key belongs to the VM that made the copies; a task VM that starts them makes its own (stage 2), so the old key works nowhere else
   SW->>VM: Delete and scan, trim<br/>incus exec · grep, fstrim
