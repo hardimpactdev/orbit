@@ -218,7 +218,6 @@ case "$1" in
     test) echo "The candidate gate runs no tests."; exit 1 ;;
 esac
 if [ "$1" = check ]; then
-    printf '%s|%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_SCOPE:-}" "${ORBIT_CHECK_BASE:-}" >> "$GATE_TEST_SCOPES"
     printf '%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_PROCESSES:-}" >> "$GATE_TEST_PROCESSES"
 fi
 if [ "$1" = check ] && [ -n "${GATE_TEST_BARRIER:-}" ]; then
@@ -240,7 +239,8 @@ fi
 if [ "$1" = check ] && [ "${PWD##*/}" = e2e ]; then
     case "$GATE_TEST_MODE" in
         fail) exit 7 ;;
-        mutate) echo changed > "$GATE_TEST_ROOT/source.php" ;;
+        format) echo formatted > "$GATE_TEST_ROOT/source.php" ;;
+        move) git -C "$GATE_TEST_ROOT" commit -q --allow-empty -m moved ;;
     esac
 fi
 """)
@@ -248,9 +248,8 @@ fi
         self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
                          'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root),
                          'GATE_TEST_DOCS': str(self.common / 'docs'),
-                         'GATE_TEST_SCOPES': str(self.common / 'scopes'),
                          'GATE_TEST_PROCESSES': str(self.common / 'processes')}
-        for name in ('ORBIT_CHECK_PROCESSES', 'ORBIT_CHECK_SCOPE', 'ORBIT_CHECK_BASE'):
+        for name in ('ORBIT_CHECK_PROCESSES',):
             self.gate_env.pop(name, None)
         return runner
 
@@ -299,19 +298,6 @@ fi
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
         self.assertEqual(self.commit, report['base'])
-
-    def test_gate_scopes_pint_and_rector_to_the_merge_base_in_composer_check_only(self):
-        runner = self.gate_fixture()
-        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        scopes = sorted((self.common / 'scopes').read_text().splitlines())
-        self.assertEqual(sorted(f'{Path(project).name}|changed|{self.commit}' for project in PROJECTS), scopes)
-        (self.common / 'scopes').unlink()
-        result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_CHECK_SCOPE': 'full'},
-                                capture_output=True, text=True)
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertEqual(sorted(f'{Path(project).name}|full|' for project in PROJECTS),
-                         sorted((self.common / 'scopes').read_text().splitlines()))
 
     def gate_module(self, runner):
         loader = importlib.machinery.SourceFileLoader('review_check_lanes', str(runner))
@@ -406,15 +392,29 @@ fi
     def test_a_budget_of_two_runs_one_project_at_a_time_so_a_2_gb_task_vm_runs_one_phpstan_or_rector(self):
         self.assert_one_project_at_a_time('2')
 
-    def test_gate_rejects_failed_checks_and_candidate_mutation(self):
+    def test_gate_rejects_failed_checks_and_a_moved_head(self):
         runner = self.gate_fixture()
-        for mode in ['docs', 'fail', 'mutate']:
+        for mode in ['docs', 'fail', 'move']:
             with self.subTest(mode=mode):
                 result = subprocess.run([str(runner)], env={**self.gate_env, 'GATE_TEST_MODE': mode},
                                         capture_output=True, text=True)
                 self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         for path in (self.common / 'orbit-checks').glob('*/*/result.json'):
             self.assertFalse(json.loads(path.read_text())['passed'])
+
+    def test_gate_accepts_formatter_edits_and_records_the_tree_they_leave(self):
+        runner = self.gate_fixture()
+        result = subprocess.run([str(runner)], env={**self.gate_env, 'GATE_TEST_MODE': 'format'},
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Formatters changed files', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertTrue(report['passed'])
+        self.assertTrue(report['formatted'])
+        self.assertFalse(report['committed'])
+        self.assertEqual('formatted\n', (self.root / 'source.php').read_text())
+        git(self.root, 'add', '--all')
+        self.assertEqual(git(self.root, 'write-tree'), report['tree'])
 
     def test_gate_checks_uncommitted_input_as_it_is(self):
         runner = self.gate_fixture()

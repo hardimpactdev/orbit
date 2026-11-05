@@ -256,10 +256,6 @@ def main(argv=None):
               f'{"passed" if result.returncode == 0 else "FAILED"} ({report["checks"][-1]["seconds"]:.3f}s; {log})', flush=True)
         if result.returncode:
             print(log.read_text(), flush=True)
-    # Pint and Rector check only the files the candidate changes; CI and plain runs check every file.
-    # ORBIT_CHECK_SCOPE=full in the environment makes the gate check every file too.
-    quality_scope = {} if 'ORBIT_CHECK_SCOPE' in os.environ else {
-        'ORBIT_CHECK_SCOPE': 'changed', 'ORBIT_CHECK_BASE': base or ''}
     lane_checks = []
     groups = lanes(selected_projects(paths, root))
     weights = {lane_key(entries): sum(lane_weight(root, project) for _order, project, _commands in entries) for entries in groups}
@@ -280,8 +276,6 @@ def main(argv=None):
             started = time.monotonic()
             command_environment = {**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0',
                                    'ORBIT_CHECK_PROCESSES': str(lane_processes)}
-            if project in PHP_PROJECTS and command == ('composer', 'check'):
-                command_environment.update(quality_scope)
             with log.open('w') as output:
                 try:
                     result = subprocess.run(command, cwd=root if project == 'repository' else root / project, stdout=output, stderr=subprocess.STDOUT,
@@ -317,7 +311,12 @@ def main(argv=None):
             future.result()
     # Lanes finish in any order; the receipt lists the checks in the order the gate selected them.
     report['checks'].extend(check for *_order, check in sorted(lane_checks, key=lambda item: item[:2]))
-    report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
+    # Formatters run in fix mode, so the checks may change files. The receipt names the tree they left.
+    report['unchanged'] = head == git(root, 'rev-parse', 'HEAD')
+    checked_tree = working_tree(root)
+    report['formatted'] = checked_tree != tree
+    tree = report['tree'] = checked_tree
+    committed = report['committed'] = not git(root, 'status', '--porcelain')
     report['shard'] = f'{shard_index}/{shard_count}'
     report['passed'] = report['unchanged'] and (bool(report['checks']) or shard_index != 1) and all(
         check['exit_code'] == 0 for check in report['checks'])
@@ -327,7 +326,9 @@ def main(argv=None):
     candidate = head if committed else f'{head} with uncommitted changes (tree {tree})'
     print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {candidate}; receipt: {path}', flush=True)
     if not report['unchanged']:
-        print('Candidate changed during checks; approval is not valid.', file=sys.stderr)
+        print('HEAD moved during checks; approval is not valid.', file=sys.stderr)
+    if report['formatted']:
+        print('Formatters changed files; commit them with your change.', flush=True)
     return 0 if report['passed'] else 1
 
 

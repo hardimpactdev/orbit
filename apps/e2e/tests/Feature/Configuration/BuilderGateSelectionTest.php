@@ -161,7 +161,6 @@ function orb277_run_gate(array $fixture, string $failInstall = '', int $expected
         'PATH' => $fixture['path'],
         // One process: the projects run one after another.
         'ORBIT_CHECK_PROCESSES' => '1',
-        'ORBIT_CHECK_SCOPE' => false,
     ]);
     $process->setTimeout(60);
     $process->run();

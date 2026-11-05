@@ -3,8 +3,8 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,pr-head-check,deploy-verify,test,ci-cache-ref,worktree-create,worktree-remove,check-processes,quality-scope,php-build}
-  - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows}.py,tools/{check-processes,rector-cache}.php}"
+  - bin/{review-check,pr-head-check,deploy-verify,test,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build}
+  - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows}.py,tools/check-processes.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
@@ -231,11 +231,11 @@ The floor of one can overcommit memory and OOM when less than the reserve plus o
 | Tool | How it reads the process count |
 | --- | --- |
 | Pest | `--processes=$(../../bin/check-processes)` in the `test` script |
-| Pint | `--parallel --max-processes=$(../../bin/check-processes)` in the `format:check` script |
+| Pint | `--parallel --max-processes=$(../../bin/check-processes)` in the `format` script |
 | PHPStan | `tools/phpstan/parallel.php`, which every `phpstan.neon` includes |
 | Rector | `->withParallel()` in `rector.php`, with the value from `tools/check-processes.php` |
 
-Each parallel Rector worker keeps its cache in its own directory under `vendor/rector/cache/workers/`. `tools/rector-cache.php` names the directory and removes it when the worker exits. The next run's `--clear-cache` removes a directory that a killed worker left. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
+Rector keeps its cache in `vendor/rector/cache` of each project.
 
 Gateway's `RunScheduledCommand` keeps an explicit default for its command arguments so jobs queued before that property existed can still deserialize. Its Rector configuration excludes that class from constructor promotion, which would lose the property default on those payloads. A queue regression test covers this deployment boundary.
 
@@ -260,7 +260,7 @@ Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`
 
 When the candidate selects the Swamp checks by the rule of `bin/ci-build-plan`, the gate also runs `swamp/bin/validate-swamp-workflows.py`, the native workflow validation of CI, as its own group. The validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the gate reports the check as skipped, not failed, because CI validates.
 
-For each Composer project, the gate runs `composer check`. CI runs `composer validate --strict`. Its `composer check` runs Pint and Rector only on the files that the candidate affects. [Changed-file quality checks](#changed-file-quality-checks) lists them.
+For each Composer project, the gate runs `composer check`. CI runs `composer validate --strict`. Its `composer check` runs Rector and Pint in fix mode, as [Formatters run in fix mode](#formatters-run-in-fix-mode) describes.
 
 #### Projects run at the same time
 
@@ -278,25 +278,9 @@ With a budget of 4, the Gateway's checks run with two processes while two other 
 
 The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
 
-#### Changed-file quality checks
+#### Formatters run in fix mode
 
-The gate's `composer check` sets `ORBIT_CHECK_SCOPE=changed` and `ORBIT_CHECK_BASE` to the merge base with `origin/main`. `bin/quality-scope` reads them and narrows Pint and Rector. PHPStan keeps its result cache and analyses the whole project, so `composer check` runs it before Rector. The changed files are the PHP files that differ from the merge base: committed on the branch, staged, unstaged, or untracked.
-
-| Tool | Files it checks in the gate |
-| --- | --- |
-| Pint | The changed PHP files that `pint.json` formats. With none, it logs `Pint: no changed PHP files to check` and passes. |
-| Rector | The changed files in its paths, the files that PHPStan records as depending on a changed file, and the files in its paths that PHPStan does not analyse |
-
-Rector reads the dependents from PHPStan's result cache, `vendor/phpstan/cache/resultCache.php`. It still runs with `--clear-cache`. The tool runs on all its files, and logs why, in these cases:
-
-- The result cache is missing or cannot be read.
-- Another PHPStan than the installed one wrote the result cache, or its format is not one that `bin/quality-scope` reads. The script lists the formats it knows.
-- The result cache does not describe the files as they are now: a file it records has another hash, or a file in PHPStan's paths is not in it.
-- The candidate deletes a PHP file that PHPStan analyses or records. After PHPStan runs again, nothing records the files that used it.
-- The candidate changes the tool's configuration, `composer.json`, or `composer.lock`.
-- The gate has no merge base.
-
-CI, a plain `composer check`, and a run with `CI` or `GITHUB_ACTIONS` set check every file. Only the gate sets the scope. To make the gate check every file, run it with `ORBIT_CHECK_SCOPE=full`.
+Each project's `composer check` runs Rector and Pint in fix mode first, then PHPStan on the fixed code. All three check every file in their paths; their caches keep a repeat run fast. A formatter edit becomes part of the candidate: the receipt names the tree the checks leave, and the gate prints `Formatters changed files; commit them with your change.` The gate fails only when HEAD moves during the run.
 
 #### Generated artifacts
 
@@ -526,19 +510,13 @@ Process fixtures acknowledge readiness from their final executable before a case
 
 Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. Each run starts from a fresh runner. On `main` it uploads the quality exports that the [CI cache refs](#ci-cache-refs) carry. Pint and PHPStan key their caches on paths relative to the project, so their CI caches work in any checkout.
 
-CI does not restore or save Rector's cache. Every project's `composer rector` uses `--clear-cache`, including runs through `composer check` in CI and the local review gate. Rector's unchanged-file cache does not track all class dependencies: a parent-only property change can leave an unchanged child's missing `#[Override]` undetected. Clearing the cache trades warm-run speed for a complete check of the configured Rector paths; Pint, PHPStan, and Pest keep their existing caches. The candidate gate narrows the files instead of keeping a cache, as [The gate checks changed files](#the-gate-checks-changed-files) explains.
+### Style is fixed, not reported
 
-Gateway timings were measured in the task workspace on Linux x86_64, with four CPUs, PHP 8.5.11, and Rector 2.6.7. They were 126.24 seconds for an uncached run and 0.65 seconds for a warm run before the fix. After adding `--clear-cache`, `composer rector` took 154.77 seconds on the first run and 118.92 seconds on the repeat. These are wall-clock samples, not a performance guarantee: checks now pay the full analysis cost on every run.
-
-### The gate checks changed files
-
-A new Orbit Instance or task VM starts at a `main` commit that CI already checked. Before this change, `composer check` there took about 10 minutes, almost all of it in the quality tools. Rector ran in one process without a cache, and Pint ran in one process. In the Gateway, Rector took about 155 seconds and a cold Pint about 288 seconds.
-
-The gate now checks with Pint only the files the candidate changes, because Pint judges each file on its own. Rector's findings in a file can depend on other files, such as a parent class. So Rector also checks every file that PHPStan records as depending on a changed file. PHPStan records these dependents for its own result cache, and the gate runs PHPStan first, so the record describes the files as they are. A record that does not match the files makes Rector check everything. The gate never checks less than it can prove covers the change.
+A formatter finding has one correct answer, so the gate applies it instead of reporting it. Agents never spend a turn on style, and no CI job checks style. Rector and Pint keep their default caches in each project's `vendor/`. On Beast, a cold Gateway Rector run takes about 12 seconds and a warm one about 1.4 seconds.
 
 CI builds the pull request merge result, checks generated contracts and validates changed PHP syntax. Its `Required checks` result decides the merge. The gate gives fast feedback at each handoff.
 
-All four tools run in parallel processes. The old limits of two PHPStan and Pest processes had no recorded reason. Rector ran in one process, and parallel workers that share its cache directory can fail on a half-written cache file, so each worker now has its own directory. With 16 processes on a 16-core machine, a full Rector run in the Gateway takes about 32 seconds with the same findings, and a cold Pint run about 37 seconds.
+All four tools run in parallel processes. The old limits of two PHPStan and Pest processes had no recorded reason. Rector ran in one process. With 16 processes on a 16-core machine, a full Rector run in the Gateway takes about 32 seconds with the same findings, and a cold Pint run about 37 seconds.
 
 Memory and CPU quotas bound the process count. The gate shares the resource-derived budget between the projects it runs at once. The Gateway is the largest project, so it gets the largest share. Each lane passes its share to every tool through `ORBIT_CHECK_PROCESSES`.
 

@@ -101,7 +101,7 @@ final readonly class ProofRunContinuation
     /** @return array<string,mixed> the one JSON line that `bin/proof-fleet verify` prints last, or nothing when the run printed none */
     private function lastLine(Operation $script): array
     {
-        $lines = array_values(array_filter(array_map('trim', explode("\n", ValidatedData::string($script->result['output'] ?? '')))));
+        $lines = array_values(array_filter(array_map(trim(...), explode("\n", ValidatedData::string($script->result['output'] ?? '')))));
         $line = json_decode($lines === [] ? '' : $lines[count($lines) - 1], true);
 
         return is_array($line) ? ValidatedData::object($line) : [];
