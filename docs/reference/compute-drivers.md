@@ -98,7 +98,7 @@ An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 
 
 Internal pins do not require publishing HTTPS releases. Third-party tools still require HTTPS artifact pins. Online validation fails clearly if a local file is missing or its digest differs. It never executes the binary. Existing installers keep their pre-install hash verification.
 
-The initial Pi pin comes from `apps/pi-server` at source commit `e5933d4c8696`, file `pi-server-e5933d4c8696-linux-x64`, SHA-256 `286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c`. It is an `amd64` build, like every recipe artifact.
+The Pi pin comes from `apps/pi-server` at source commit `23e7198f7c98`, file `pi-server-23e7198f7c98-linux-x64`, SHA-256 `df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438`. It is an `amd64` build, like every recipe artifact. It must equal `task_vms.pi.artifact_sha256`: a task VM slot keeps the Pi build of the image and the enrolment check compares it with that setting. The first pin was `e5933d4c8696`.
 
 A profile's effective set is the union of `common` and its own list, sorted by tool identifier. A `php:<version>` entry expands to that version's PHP set. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
 
