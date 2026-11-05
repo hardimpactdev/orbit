@@ -1,0 +1,9 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'actions' => ['run'],
+    'noun_endings' => [],
+    'route_exceptions' => [],
+];

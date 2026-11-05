@@ -72,6 +72,7 @@ use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
 use Orbit\Sdk\Requests\Projects\InspectProjectMaintenanceRequest;
 use Orbit\Sdk\Requests\Projects\ShowProjectDependenciesRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
+use Orbit\Sdk\Requests\Proof\RunProofRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
@@ -326,6 +327,9 @@ describe('repository guidance bootstrap', function (): void {
             ListTaskAgentsRequest::class,
             ShowTaskAgentRequest::class,
         ];
+        $proofRequests = [
+            RunProofRequest::class,
+        ];
         // Behaviors that keep acting by themselves get an enable and a disable request, never an update flag.
         $enableRequests = [
             'Orbit\\Sdk\\Requests\\Clusters\\ActivateClusterRequest',
@@ -374,7 +378,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($lifecycleRequests) + count($enableRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($lifecycleRequests) + count($enableRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($proofRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -551,6 +555,13 @@ describe('repository guidance bootstrap', function (): void {
             ->toHaveCount(count($taskRequests))
             ->toEqualCanonicalizing($taskRequests);
 
+        expect(array_values(array_filter(
+            $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\Proof\\'),
+        )))
+            ->toHaveCount(count($proofRequests))
+            ->toEqualCanonicalizing($proofRequests);
+
         foreach ([
             '.ai/rules/public-contract.md' => '/The SDK models exactly (\d+) concrete public Gateway API operations:/',
             'README.md' => '/The SDK exposes exactly (\d+) public Gateway operations\./',
@@ -568,6 +579,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($publicContract)
             ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, script, analyze, turn, publish, park, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.')
+            ->toContain('- Proof: run the cases that a commit selects.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')

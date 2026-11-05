@@ -1,0 +1,1 @@
+{"error":{"code":"proof.path_unmapped","message":"A changed path matches no line of the selection list.","details":{"path":"apps/cli/app/Commands/Proof/NewKind.php"},"request_id":null}}

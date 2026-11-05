@@ -5,9 +5,20 @@ an existing Project check hook on the allocated task VM:
 
 ```sh
 bin/proof-fleet reset 3187
-bin/proof-fleet verify 3187 swamp/proof/reset/cases/smoke.sh
+bin/proof-fleet verify 3187 swamp/proof/reset/cases/smoke.sh swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh
 bin/proof-fleet release 3187
 ```
+
+`verify` takes one or more case programs. It refuses an empty list, a duplicate, and a program that is not candidate source (outside the candidate, or ignored). It resets the fleet once and runs the programs in the order given against that fleet. A program exits `0` (passed), `1` (failed) or `2` (unrun).
+
+- After each case, the phase compares the firewall database records and the UFW rules on each Node with their state just before that case. A leftover fails that case, and its note names it. A failed case does not stop the next one.
+- The whole case phase has a budget of `PROOF_BUDGET_SECONDS` seconds (default 1800, at most 2100). Each case gets the remaining budget as its timeout. A case that hits it is killed and is `failed` ("exceeded the budget"); every later case is `unrun`.
+- If the fleet never becomes ready, no case starts and every case is `unrun` ("the test fleet was not ready").
+- Programs get `PROOF_RESULT`, `PROOF_SOURCE`, `PROOF_GENERATION`, `PROOF_EVIDENCE` and `PROOF_CASE_INDEX` (1 for the first program).
+- Evidence in the generation's evidence directory: `cases-N.log` for each case, `cases-started.json` (`{"generation", "programs"}`), `cases.json` and `status.json`. `cases.json` is `{"generation", "cases": [{"program", "verdict", "exit_code", "seconds", "note"}]}`, written after every case, so a failure keeps it.
+- The last stdout line is one compact JSON object: `status`, `summary`, `exit`, `cases_ran`, `generation` and `evidence`. `summary` holds one `[letter, seconds]` pair per program in order (`p` passed, `f` failed, `u` unrun; seconds with at most one decimal, 0 for unrun), for example `[["p",12.4],["f",3.1],["u",0]]`. The line holds no `cases` (they stay in `status.json` and `cases.json`), because Swamp cuts step output at 4096 bytes and the summary takes 12 bytes a case. The exit status is 0 only when every case passed, and 1 when a case failed or is unrun. Initialization and admission failures keep their own nonzero codes.
+
+A case that needs a clean fleet gets a new reset: that is a later step. Today every case shares the one generation and must clean its own fixtures.
 
 Do not call `bin/swamp-proof up` from a task VM. This entrypoint never provisions
 an outer VM, restages the candidate checkout, starts a production worker, or
@@ -55,7 +66,7 @@ snapshot, nested resource preparation, fixture configuration, readiness, and
 result publication. Its failure path collects diagnostics and releases only
 the generation it started. The shell/PHP programs perform individual bounded
 phases. A timed-out diagnostic (including inventory collection) is recorded and cannot skip the owned release. Null Incus configuration on unmanaged interfaces carries no ownership. `proof-command-verification` composes that workflow with the selected
-repository case program and records its actual exit status. Initialization
+repository case programs and records a verdict (`passed`, `failed` or `unrun`) for each. Initialization
 failure skips cases and is never a passing command proof.
 
 The persistent orchestration repository and run history live under
@@ -79,7 +90,7 @@ The harness prepares VM copies from the existing seed with its normal attempt
 lease, ownership metadata, host creation lock and capacity checks. This is not
 normal `acquire`: the retired Gateway bootstrap action is unavailable. Preparation
 explicitly does **not** claim a ready product topology. The combined nested Gateway/Swamp runtime needs 2560 MiB, not the ordinary Gateway catalog budget; preparation verifies its complete attempt ownership before stopping, resizing and booting that guest through the existing harness agent-readiness gate. Do not hotplug memory on its live virtiofs source mount. Other guests and the outer VM retain their limits. Use an allocated task VM with at least 8 GiB. Separate native steps use the shared `tools/swamp-proof-guest/fixture.py` bootstrap with explicit source, state and topology paths inside the nested Gateway. Swamp starts before Gateway seeding. The fixture installs its own RSA4096 CA, worker identity at the admitted role-worker path, matching agent secrets and observers, and publishes known-hosts. The same shared helper starts pinned Reverb, the agent-view subscriber and the real operations queue worker against the isolated SQLite database. The fixture uses the product firewall catalog to install the managed baseline, adds an unmanaged proof-network transport rule, and enables UFW before readiness. It never changes the outer host's services. Readiness has separate native steps: authenticated operator HTTP and a queued SSH probe using the admitted identity on each managed Node; one fresh host/ufw/units observation; then scoped Doctor and firewall baseline checks. The fact check requires generation-fresh real records and enabled UFW on every managed Node. It never polls or retries Gateway state: missing, stale or disabled facts fail closed, retain `facts-not-ready.json`, skip cases, and enter native owned cleanup. Native queueTimeout bounds worker admission. These are observations, not service-name-only checks. Test fixture seeding is setup, not command proof. Command
-cases must invoke the actual candidate CLI and independently inspect effects. After cases, the workflow compares real UFW output and firewall database records with the pre-case baseline. Any residue fails verification; it never silently repairs a failing case.
+cases must invoke the actual candidate CLI and independently inspect effects. After each case, the cases phase compares real UFW output and firewall database records with that case's own pre-case state. Any residue fails that case; it never silently repairs a failing case.
 
 Before deleting anything, scoped release validates the recorded network and all
 guest identities. It does not sweep by name prefix. Unrelated fixtures, template,

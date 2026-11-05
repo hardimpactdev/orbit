@@ -1,0 +1,292 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubReview;
+use App\Domain\GitHub\GitHubReviewState;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofChangedFile;
+use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofCommitSource;
+use App\Domain\Proof\ProofCommitTrust;
+use App\Domain\Proof\ProofPullRequest;
+use App\Domain\Proof\ProofRunIntent;
+use App\Domain\Proof\ProofSlot;
+use App\Domain\Proof\ProofSlotClaim;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
+use App\Models\Operation;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+
+uses(LazilyRefreshDatabase::class);
+
+const PROOF_SHA = 'b3f1c0de00000000000000000000000000000001';
+
+/** A repository that GitHub would describe: configure what the commit is, what it changes and who approved it. */
+function proofSource(): object
+{
+    return new class implements ProofCommitSource
+    {
+        public bool $exists = true;
+
+        /** @var list<string> */
+        public array $branches = ['feature'];
+
+        /** @var list<ProofPullRequest> */
+        public array $pullRequests = [];
+
+        /** @var list<string> */
+        public array $writers = ['maintainer'];
+
+        /** @var list<GitHubReview> */
+        public array $reviews = [];
+
+        /** @var list<ProofChangedFile> */
+        public array $files = [];
+
+        public bool $complete = true;
+
+        public ?string $list = "docs/**  skip\nswamp/workflows/workflow-firewall-*.yaml  firewall:allow\nswamp/proof/firewall/cases/**  firewall:allow\nswamp/workflows/workflow-vault-sync.yaml  none: no case yet\n";
+
+        /** @var list<string> */
+        public array $paths = ['swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh'];
+
+        public bool $down = false;
+
+        public int $reads = 0;
+
+        public function commitExists(string $sha): bool
+        {
+            $this->reads++;
+
+            return $this->down ? throw GitHubApiException::unavailable() : $this->exists;
+        }
+
+        public function branchesWithHead(string $sha): array
+        {
+            return $this->branches;
+        }
+
+        public function pullRequestsWithHead(string $sha): array
+        {
+            return $this->pullRequests;
+        }
+
+        public function canWrite(string $login): bool
+        {
+            return in_array($login, $this->writers, true);
+        }
+
+        public function reviews(int $pullRequest): array
+        {
+            return $this->reviews;
+        }
+
+        public function changes(string $sha): ProofChangedFiles
+        {
+            return new ProofChangedFiles(str_repeat('a', 40), $this->files, $this->complete);
+        }
+
+        public function file(string $sha, string $path): ?string
+        {
+            return $this->list;
+        }
+
+        public function proofPaths(string $sha): array
+        {
+            return $this->paths;
+        }
+    };
+}
+
+function proofReview(int $id, string $login, GitHubReviewState $state, string $commit = PROOF_SHA): GitHubReview
+{
+    return new GitHubReview($id, $id, $login, $state, $commit, new DateTimeImmutable('2026-11-05T10:00:00Z + '.$id.' minutes'), 'https://example.test', '');
+}
+
+function proofRefused(callable $callback): ResourceOperationException
+{
+    try {
+        $callback();
+    } catch (ResourceOperationException $exception) {
+        return $exception;
+    }
+    throw new LogicException('Expected a refusal.');
+}
+
+function proofWorld(object $source): void
+{
+    app()->instance(ProofCommitSource::class, $source);
+    $swamp = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'swamp', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit']));
+    $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+}
+
+describe('which commits Orbit proves', function (): void {
+    it('accepts the head of a branch of the repository, and the head of a merge queue branch', function (): void {
+        $source = proofSource();
+        $source->branches = ['gh-readonly-queue/main/pr-1-abc'];
+
+        expect(fn () => app(ProofCommitTrust::class, ['source' => $source])->assert(PROOF_SHA))->not->toThrow(ResourceOperationException::class);
+    });
+
+    it('refuses a commit that is not a head and has no pull request', function (): void {
+        $source = proofSource();
+        $source->branches = [];
+
+        expect(proofRefused(fn () => app(ProofCommitTrust::class, ['source' => $source])->assert(PROOF_SHA))->errorCode)->toBe('proof.commit_untrusted');
+    });
+
+    it('refuses an unknown commit', function (): void {
+        $source = proofSource();
+        $source->exists = false;
+
+        expect(proofRefused(fn () => app(ProofCommitTrust::class, ['source' => $source])->assert(PROOF_SHA))->errorCode)->toBe('proof.commit_not_found');
+    });
+
+    it('refuses a commit when GitHub cannot be read, and never as untrusted', function (): void {
+        $source = proofSource();
+        $source->down = true;
+
+        expect(proofRefused(fn () => app(ProofCommitTrust::class, ['source' => $source])->assert(PROOF_SHA))->errorCode)->toBe('proof.github_unavailable');
+    });
+
+    it('checks a pull request from outside: the label, a maintainer and exactly the head', function (
+        array $labels, array $reviews, bool $open, string $head, bool $accepted,
+    ): void {
+        $source = proofSource();
+        $source->branches = [];
+        $source->pullRequests = [new ProofPullRequest(7, $open, $head, $labels)];
+        $source->reviews = array_map(static fn (Closure $make): GitHubReview => $make(), $reviews);
+        $trust = app(ProofCommitTrust::class, ['source' => $source]);
+
+        if ($accepted) {
+            $trust->assert(PROOF_SHA);
+            expect(true)->toBeTrue();
+        } else {
+            expect(proofRefused(fn () => $trust->assert(PROOF_SHA))->errorCode)->toBe('proof.commit_untrusted');
+        }
+    })->with([
+        'unapproved, no label' => [[], [], true, PROOF_SHA, false],
+        'label without approval' => [['run-proofs'], [], true, PROOF_SHA, false],
+        'approval without label' => [[], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved)], true, PROOF_SHA, false],
+        'approval by a non-maintainer' => [['run-proofs'], [fn () => proofReview(1, 'stranger', GitHubReviewState::Approved)], true, PROOF_SHA, false],
+        'approved with the label' => [['run-proofs'], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved)], true, PROOF_SHA, true],
+        'approval of an older commit' => [['run-proofs'], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved, str_repeat('0', 40))], true, PROOF_SHA, false],
+        'a later change request' => [['run-proofs'], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved), fn () => proofReview(2, 'maintainer', GitHubReviewState::ChangesRequested)], true, PROOF_SHA, false],
+        'a later comment keeps the approval' => [['run-proofs'], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved), fn () => proofReview(2, 'maintainer', GitHubReviewState::Commented)], true, PROOF_SHA, true],
+        'a dismissed approval' => [['run-proofs'], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved), fn () => proofReview(2, 'maintainer', GitHubReviewState::Dismissed)], true, PROOF_SHA, false],
+        'the head moved on (stale approval)' => [['run-proofs'], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved)], true, str_repeat('1', 40), false],
+        'a closed pull request' => [['run-proofs'], [fn () => proofReview(1, 'maintainer', GitHubReviewState::Approved)], false, PROOF_SHA, false],
+    ]);
+});
+
+describe('proof:run admission', function (): void {
+    it('succeeds at once with nothing to prove when only documentation changed, and lists the uncovered paths', function (): void {
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('docs/a.md', 'modified'), new ProofChangedFile('swamp/workflows/workflow-vault-sync.yaml', 'modified')];
+        proofWorld($source);
+
+        $operation = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+
+        expect($operation->kind)->toBe('proof.run')->and($operation->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->result)->toBe(['commit' => PROOF_SHA, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
+                'uncovered' => [['path' => 'swamp/workflows/workflow-vault-sync.yaml', 'reason' => 'none: no case yet']], 'slot' => null, 'receipt_url' => null]);
+    });
+
+    it('refuses an unmapped path and records nothing', function (): void {
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('unknown/new.file', 'added')];
+        proofWorld($source);
+
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.path_unmapped')
+            ->and(Operation::query()->count())->toBe(0);
+    });
+
+    it('refuses an untrusted commit before it reads the diff', function (): void {
+        $source = proofSource();
+        $source->branches = [];
+        proofWorld($source);
+
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.commit_untrusted')
+            ->and(Operation::query()->count())->toBe(0);
+    });
+
+    it('selects the cases and refuses while execution is switched off, which is the default', function (): void {
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null));
+
+        expect(config('proof.execution'))->toBeFalse()
+            ->and($refusal->errorCode)->toBe('proof.execution_disabled')
+            ->and($refusal->details['cases'])->toBe(['swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh'])
+            ->and(Operation::query()->count())->toBe(0);
+    });
+
+    it('does not take a slot while execution is switched off', function (): void {
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+        app()->instance(ProofSlotClaim::class, new class implements ProofSlotClaim
+        {
+            public function claim(): ProofSlot
+            {
+                throw new LogicException('A disabled run must not claim a slot.');
+            }
+
+            public function release(string $name): void {}
+        });
+
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.execution_disabled');
+    });
+
+    it('refuses with proof.no_slot while no slot claim exists, once execution is on', function (): void {
+        config(['proof.execution' => true]);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.no_slot')
+            ->and(Operation::query()->count())->toBe(0);
+    });
+
+    it('gives the slot back when the run cannot be admitted after the claim', function (): void {
+        config(['proof.execution' => true]);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+        $claim = new class implements ProofSlotClaim
+        {
+            /** @var list<string> */
+            public array $released = [];
+
+            public function claim(): ProofSlot
+            {
+                return new ProofSlot('beast-tvm-1', Node::query()->value('id'), '/home/orbit/orbit');
+            }
+
+            public function release(string $name): void
+            {
+                $this->released[] = $name;
+            }
+        };
+        app()->instance(ProofSlotClaim::class, $claim);
+
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('swamp.ssh_target_unavailable')
+            ->and($claim->released)->toBe(['beast-tvm-1'])->and(Operation::query()->count())->toBe(0);
+    });
+
+    it('runs every case for --all and never lets a docs-only commit skip it', function (): void {
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('docs/a.md', 'modified')];
+        proofWorld($source);
+
+        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, true, 'tester', null));
+
+        expect($refusal->errorCode)->toBe('proof.execution_disabled')->and($refusal->details['cases'])->toHaveCount(1);
+    });
+});

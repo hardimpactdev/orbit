@@ -1,0 +1,19 @@
+Proof running...
+
+┌  Prove commit 0123456789ab
+│
+├  ● Proof complete
+│
+└  Proof passed.
+
+ ┌─────────────────┬─────────────────────────┬─────────┬──────────┐
+ │ COMMAND         │ CASE                    │ VERDICT │ DURATION │
+ ├─────────────────┼─────────────────────────┼─────────┼──────────┤
+ │ firewall:allow  │ allow-fresh-ipv4-tcp.sh │ passed  │ 12.4 s   │
+ │ firewall:remove │ remove-existing-rule.sh │ passed  │ 8.7 s    │
+ └─────────────────┴─────────────────────────┴─────────┴──────────┘
+Uncovered: swamp/workflows/workflow-vault-sync.yaml (none: no case yet)
+Slot: shark-tvm-1
+Receipt: https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844
