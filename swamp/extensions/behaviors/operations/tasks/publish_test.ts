@@ -1,11 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import {
-    imported,
-    PublishInput,
-    pullPlan,
-    pushed,
-    verify,
-} from "./publish.ts";
+import { imported, PublishInput, pullPlan, pushed, verify } from "./publish.ts";
 
 export function publishInput(withPr = true) {
     return PublishInput.parse({
@@ -156,7 +150,10 @@ Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
     assertEquals(plan(JSON.stringify([open("f".repeat(40))])).method, "PATCH");
     const wrongBase = open();
     wrongBase.base.ref = "other";
-    assertEquals(plan(JSON.stringify([wrongBase])).error_code, "tasks.head_moved");
+    assertEquals(
+        plan(JSON.stringify([wrongBase])).error_code,
+        "tasks.head_moved",
+    );
     assertEquals(
         plan(JSON.stringify([open(), open()])).error_code,
         "tasks.publish_failed",

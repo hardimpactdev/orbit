@@ -59,7 +59,11 @@ function catalog(
             const key of new Set(maps.flatMap((value) => Object.keys(value)))
         ) {
             if (top && key === "requesters") {
-                result[key] = requesters(maps[0][key], maps[1][key], maps[2][key]);
+                result[key] = requesters(
+                    maps[0][key],
+                    maps[1][key],
+                    maps[2][key],
+                );
                 continue;
             }
             const value = catalog(

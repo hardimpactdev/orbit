@@ -14,16 +14,39 @@ export const CliInstallInput = z.object({
     }).strict().nullable(),
     profile: z.string().max(1024 * 1024),
 }).strict();
-export const CliNativeResult = z.object({ installed: z.string().nullable(), configured: z.boolean(), version: z.string() }).strict();
-export const CliPlan = z.object({ install: z.boolean(), version: z.string(), path: z.string() }).strict();
-export const CliPlanInput = z.object({ release: CliInstallInput.shape.release, observed: z.string().nullable(), self_update: z.boolean() }).strict();
+export const CliNativeResult = z.object({
+    installed: z.string().nullable(),
+    configured: z.boolean(),
+    version: z.string(),
+}).strict();
+export const CliPlan = z.object({
+    install: z.boolean(),
+    version: z.string(),
+    path: z.string(),
+}).strict();
+export const CliPlanInput = z.object({
+    release: CliInstallInput.shape.release,
+    observed: z.string().nullable(),
+    self_update: z.boolean(),
+}).strict();
 export function cliPlan(raw: z.infer<typeof CliPlanInput>) {
     const { release, observed, self_update } = CliPlanInput.parse(raw);
     const line = observed?.trim().split("\n")[0] ?? null;
-    const current = line?.match(/^Orbit (0\.[1-9][0-9]{0,9}\.0|[a-f0-9]{40})$/)?.[1] ?? null;
+    const current =
+        line?.match(/^Orbit (0\.[1-9][0-9]{0,9}\.0|[a-f0-9]{40})$/)?.[1] ??
+            null;
     // An unrecognized version is not a valid Orbit release, so the admitted verified release replaces it.
-    const install = !current || !self_update || Boolean(release && current.startsWith("0.") && Number(current.split(".")[1]) < Number(release.version.split(".")[1]));
+    const install = !current || !self_update ||
+        Boolean(
+            release && current.startsWith("0.") &&
+                Number(current.split(".")[1]) <
+                    Number(release.version.split(".")[1]),
+        );
     if (install && !release) throw new Error("cli.release_needed");
     const version = install ? release!.version : current!;
-    return CliPlan.parse({ install, version, path: "/usr/local/bin/orbit-" + version });
+    return CliPlan.parse({
+        install,
+        version,
+        path: "/usr/local/bin/orbit-" + version,
+    });
 }

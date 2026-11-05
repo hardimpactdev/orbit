@@ -1,12 +1,16 @@
 /** Load the shipped embedded Python modules; observe refusals without expectations. */
 export async function python(source: string) {
-  const root = new URL(".", import.meta.url).pathname;
-  const result = await new Deno.Command("python3", {
-    args: ["-I", "-c", `ROOT=${JSON.stringify(root)}\n` + setup + source],
-    stdout: "piped", stderr: "piped", signal: AbortSignal.timeout(5000),
-  }).output();
-  if (!result.success) throw new Error(new TextDecoder().decode(result.stderr));
-  return JSON.parse(new TextDecoder().decode(result.stdout));
+    const root = new URL(".", import.meta.url).pathname;
+    const result = await new Deno.Command("python3", {
+        args: ["-I", "-c", `ROOT=${JSON.stringify(root)}\n` + setup + source],
+        stdout: "piped",
+        stderr: "piped",
+        signal: AbortSignal.timeout(5000),
+    }).output();
+    if (!result.success) {
+        throw new Error(new TextDecoder().decode(result.stderr));
+    }
+    return JSON.parse(new TextDecoder().decode(result.stdout));
 }
 const setup = String.raw`import io,json,os,tarfile,tempfile,types
 from pathlib import Path

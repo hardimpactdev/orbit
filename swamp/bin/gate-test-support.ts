@@ -1,77 +1,140 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { fromFileUrl, dirname } from "jsr:@std/path@1.1.4";
+import { dirname, fromFileUrl } from "jsr:@std/path@1.1.4";
 export const root = fromFileUrl(new URL("../", import.meta.url));
 export type Task = {
-  type?: string;
-  behaviorType?: string;
-  behaviorName?: string;
-  methodName?: string;
-  globalArgs?: Record<string, unknown>;
-  inputs?: Record<string, unknown>;
-  workflowIdOrName?: string;
+    type?: string;
+    behaviorType?: string;
+    behaviorName?: string;
+    methodName?: string;
+    globalArgs?: Record<string, unknown>;
+    inputs?: Record<string, unknown>;
+    workflowIdOrName?: string;
 };
-export type Step = { name: string; task: Task; labels?: unknown; writes?: unknown; [key: string]: unknown };
+export type Step = {
+    name: string;
+    task: Task;
+    labels?: unknown;
+    writes?: unknown;
+    [key: string]: unknown;
+};
 export type Flow = {
-  id?: string;
-  name?: string;
-  inputs?: unknown;
-  labels?: unknown;
-  jobs: { name: string; dependsOn?: unknown; labels?: unknown; steps: Step[] }[];
+    id?: string;
+    name?: string;
+    inputs?: unknown;
+    labels?: unknown;
+    jobs: {
+        name: string;
+        dependsOn?: unknown;
+        labels?: unknown;
+        steps: Step[];
+    }[];
 };
 export const ROOT = root.replace(/\/$/, "");
 /** Inspect a tracked workflow without starting the Swamp runtime. */
 export function trackedStep(workflow: string, name: string) {
-  const value = parse(Deno.readTextFileSync(`${ROOT}/workflows/workflow-${workflow}.yaml`)) as {
-    jobs: { steps: { name: string; task: { inputs: Record<string, unknown> } }[] }[];
-  };
-  const step = value.jobs.flatMap((job) => job.steps).find((step) => step.name === name);
-  if (!step) throw new Error(`${workflow} has no step ${name}`);
-  return step;
+    const value = parse(
+        Deno.readTextFileSync(`${ROOT}/workflows/workflow-${workflow}.yaml`),
+    ) as {
+        jobs: {
+            steps: {
+                name: string;
+                task: { inputs: Record<string, unknown> };
+            }[];
+        }[];
+    };
+    const step = value.jobs.flatMap((job) => job.steps).find((step) =>
+        step.name === name
+    );
+    if (!step) throw new Error(`${workflow} has no step ${name}`);
+    return step;
 }
 export const script = (name: string) => root + "bin/" + name;
-export async function run(command: string, args: string[], options: {cwd?: string; env?: Record<string, string>; input?: string; signal?: AbortSignal} = {}) {
-  const child = new Deno.Command(command, { args, cwd: options.cwd, env: options.env, signal: options.signal, stdin: options.input === undefined ? "null" : "piped", stdout: "piped", stderr: "piped" }).spawn();
-  const output = child.output();
-  if (options.input !== undefined) {
-    const writer = child.stdin.getWriter();
-    await writer.write(new TextEncoder().encode(options.input));
-    await writer.close();
-  }
-  const result = await output;
-  return { code: result.code, stdout: new TextDecoder().decode(result.stdout), stderr: new TextDecoder().decode(result.stderr) };
+export async function run(
+    command: string,
+    args: string[],
+    options: {
+        cwd?: string;
+        env?: Record<string, string>;
+        input?: string;
+        signal?: AbortSignal;
+    } = {},
+) {
+    const child = new Deno.Command(command, {
+        args,
+        cwd: options.cwd,
+        env: options.env,
+        signal: options.signal,
+        stdin: options.input === undefined ? "null" : "piped",
+        stdout: "piped",
+        stderr: "piped",
+    }).spawn();
+    const output = child.output();
+    if (options.input !== undefined) {
+        const writer = child.stdin.getWriter();
+        await writer.write(new TextEncoder().encode(options.input));
+        await writer.close();
+    }
+    const result = await output;
+    return {
+        code: result.code,
+        stdout: new TextDecoder().decode(result.stdout),
+        stderr: new TextDecoder().decode(result.stderr),
+    };
 }
-export async function command(argv: string[], cwd?: string, env?: Record<string, string>, success = true) {
-  const result = await run(argv[0], argv.slice(1), { cwd, env });
-  assertEquals(result.code === 0, success, result.stdout + result.stderr);
-  return result;
+export async function command(
+    argv: string[],
+    cwd?: string,
+    env?: Record<string, string>,
+    success = true,
+) {
+    const result = await run(argv[0], argv.slice(1), { cwd, env });
+    assertEquals(result.code === 0, success, result.stdout + result.stderr);
+    return result;
 }
 export async function temporary(body: (path: string) => Promise<void>) {
-  const path = await Deno.makeTempDir({prefix: "shape-fixture-"});
-  try { await body(path); } finally { await Deno.remove(path, {recursive: true}); }
+    const path = await Deno.makeTempDir({ prefix: "shape-fixture-" });
+    try {
+        await body(path);
+    } finally {
+        await Deno.remove(path, { recursive: true });
+    }
 }
 export async function write(path: string, source: string) {
-  await Deno.mkdir(dirname(path), {recursive: true});
-  await Deno.writeTextFile(path, source);
+    await Deno.mkdir(dirname(path), { recursive: true });
+    await Deno.writeTextFile(path, source);
 }
 export async function git(cwd: string, ...args: string[]) {
-  const result = await run("git", args, {cwd});
-  assertEquals(result.code, 0, result.stderr);
-  return result.stdout.trim();
+    const result = await run("git", args, { cwd });
+    assertEquals(result.code, 0, result.stderr);
+    return result.stdout.trim();
 }
 export async function init(path: string) {
-  await git(path, "init", "--quiet");
-  await git(path, "config", "user.name", "Shape fixture");
-  await git(path, "config", "user.email", "shape@example.invalid");
+    await git(path, "init", "--quiet");
+    await git(path, "config", "user.name", "Shape fixture");
+    await git(path, "config", "user.email", "shape@example.invalid");
 }
 export async function commit(path: string, message: string) {
-  await git(path, "add", ".");
-  await git(path, "commit", "--quiet", "-m", message);
-  return await git(path, "rev-parse", "HEAD");
+    await git(path, "add", ".");
+    await git(path, "commit", "--quiet", "-m", message);
+    return await git(path, "rev-parse", "HEAD");
 }
-export const policyFiles = ["check-swamp-shape.ts", "bounded-phase-scripts.ts", "swamp-shape-relocations.ts", "workflow-placement.ts", "swamp-shape-python.py", "swamp_shape_host_tools.py", "swamp_shape_polling.py"];
+export const policyFiles = [
+    "check-swamp-shape.ts",
+    "bounded-phase-scripts.ts",
+    "swamp-shape-relocations.ts",
+    "workflow-placement.ts",
+    "swamp-shape-python.py",
+    "swamp_shape_host_tools.py",
+    "swamp_shape_polling.py",
+];
 export async function copyPolicy(path: string) {
-  for (const name of policyFiles) await write(path + "/bin/" + name, await Deno.readTextFile(script(name)));
+    for (const name of policyFiles) {
+        await write(
+            path + "/bin/" + name,
+            await Deno.readTextFile(script(name)),
+        );
+    }
 }
 export const PHP_RUNTIME = String.raw`import contextlib
 import fcntl
@@ -111,7 +174,8 @@ def runtime_lock(h, user):
     finally:
         os.close(fd)
 `;
-export const PHP_ACTIONS = String.raw`from runtime_common import Host, Runtime, runtime_lock
+export const PHP_ACTIONS = String
+    .raw`from runtime_common import Host, Runtime, runtime_lock
 
 
 def context():

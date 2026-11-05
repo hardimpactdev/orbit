@@ -187,14 +187,27 @@ Deno.test("a seed refresh's builder, clone and previous seed are owned of a kept
         scope,
         false,
         [...rows(["tvm-seed-refresh", "tvm-seed-refresh-2"])],
-        [...rows(names), ...rows(["orbit-topology-seed-bbbbbbbbbbbb-refresh", "orbit-topology-seed-aaaaaaaaaaaa-old"])],
+        [
+            ...rows(names),
+            ...rows([
+                "orbit-topology-seed-bbbbbbbbbbbb-refresh",
+                "orbit-topology-seed-aaaaaaaaaaaa-old",
+            ]),
+        ],
         fingerprints,
     );
-    assertEquals(strays.instances, [{ project: "tasks", name: "tvm-seed-refresh-2" }]);
+    assertEquals(strays.instances, [{
+        project: "tasks",
+        name: "tvm-seed-refresh-2",
+    }]);
     assertEquals(strays.volumes.map((row) => row.name), [
         "orbit-topology-seed-bbbbbbbbbbbb-refresh",
         "orbit-topology-seed-aaaaaaaaaaaa-old",
     ]);
-    const orphans = selectIncusOrphans(scope, rows(["tvm-seed-refresh"]), rows(names));
+    const orphans = selectIncusOrphans(
+        scope,
+        rows(["tvm-seed-refresh"]),
+        rows(names),
+    );
     assertEquals([orphans.instances, orphans.volumes], [[], []]);
 });

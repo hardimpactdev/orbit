@@ -6,8 +6,7 @@ const intent = {
     checkout_path: "/home/orbit/apps/project/workspace",
     ssh_execution: {
         control_node_id: 209,
-        identity_file:
-            "/etc/orbit/swamp-role-worker/ssh-identity",
+        identity_file: "/etc/orbit/swamp-role-worker/ssh-identity",
         public_key: "ssh-ed25519 PUBLIC",
         target: {
             name: "target",

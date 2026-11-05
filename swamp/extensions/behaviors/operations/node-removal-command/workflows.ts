@@ -227,7 +227,15 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
     const guests = ssh(
         "Read CI guests",
         items("ci_host"),
-        ["timeout", "60", "incus", "list", "--project", "orbit-ci", "--format=json"],
+        [
+            "timeout",
+            "60",
+            "incus",
+            "list",
+            "--project",
+            "orbit-ci",
+            "--format=json",
+        ],
         { okExitCodes: [0, 1], timeoutSec: 70 },
     );
     delete guests.writes;
@@ -500,8 +508,12 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
     const inputs = structuredClone(schema) as Fields;
     // Task VM teardown shares this boundary and retains its parent Operation kind.
     inputs.properties.kind.enum = [
-        "node.remove", "task_vm.destroy", "task_vm.provision", "tasks.provision",
-        "tasks.cancel", "tasks.maintenance_finish",
+        "node.remove",
+        "task_vm.destroy",
+        "task_vm.provision",
+        "tasks.provision",
+        "tasks.cancel",
+        "tasks.maintenance_finish",
     ];
     return workflow(
         "operation-node-remove",
@@ -536,7 +548,9 @@ export function generatedRemovalWorkflows() {
                 /    kind:\n      type: string\n      enum:\n((?:        - [\w.]+\n)+)/,
                 (_match, kinds: string) =>
                     "    kind: {type: string, enum: [" +
-                    kinds.trim().split("\n").map((kind) => kind.trim().slice(2)).join(", ") + "]}\n",
+                    kinds.trim().split("\n").map((kind) => kind.trim().slice(2))
+                        .join(", ") +
+                    "]}\n",
             ),
     }));
 }

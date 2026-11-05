@@ -5,7 +5,10 @@ import type { Flow } from "../../../../bin/gate-test-support.ts";
 Deno.test("relocation behaviors name their target and every step runs on swamp", async () => {
     const flow = parse(
         await Deno.readTextFile(
-            new URL("../../../../workflows/workflow-operation-node-role-relocate.yaml", import.meta.url),
+            new URL(
+                "../../../../workflows/workflow-operation-node-role-relocate.yaml",
+                import.meta.url,
+            ),
         ),
     ) as Flow;
     const names: string[] = [];
@@ -19,7 +22,8 @@ Deno.test("relocation behaviors name their target and every step runs on swamp",
     }
     assert(
         names.every((s) =>
-            s.includes("inputs.intent.target_node_id") && !s.includes("run.id") && !s.includes("operation_id")
+            s.includes("inputs.intent.target_node_id") &&
+            !s.includes("run.id") && !s.includes("operation_id")
         ),
     );
     assertEquals(new Set(names).size, names.length);

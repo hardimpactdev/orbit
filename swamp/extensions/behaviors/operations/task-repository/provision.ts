@@ -1,14 +1,14 @@
 import { z } from "npm:zod@4.4.3";
 import {
-  classifyProvisioningProfile,
-  ProvisioningRefusal,
+    classifyProvisioningProfile,
+    ProvisioningRefusal,
 } from "../instance-lifecycle/source_profile.ts";
 import { WorkspaceInput } from "../task-vm-workspace/input.ts";
 import {
-  capturedArgv,
-  type PublicTail,
-  readCapture,
-  readPublicTail,
+    capturedArgv,
+    type PublicTail,
+    readCapture,
+    readPublicTail,
 } from "../../_lib/public_output.ts";
 import { lifecycleArgv } from "./lifecycle.ts";
 
@@ -16,114 +16,128 @@ const Id = z.number().int().positive();
 const Sha = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
 const Path = z.string().startsWith("/").min(2).refine((v) => !v.includes("\0"));
 const Workspace = z.object({
-  checkout_path: Path,
-  repository: z.string().min(1),
-  repository_identity: z.string().min(1),
-  branch: z.string().min(1),
-  default_branch: z.string().min(1),
-  start_commit: Sha,
-  user: z.string().min(1),
-  project_type: z.enum([
-    "monorepo",
-    "laravel-app",
-    "symfony-app",
-    "laravel-package",
-    "node-package",
-  ]),
-  entry_point: z.enum(["artisan", "bin/console"]),
-  skip_profile: z.boolean(),
-  php_versions: z.array(z.string()).min(1),
-  setup: z.array(
-    z.object({
-      name: z.string(),
-      command: z.string(),
-      timeout_seconds: Id,
-      input_json: z.string(),
-    }),
-  ).max(32),
+    checkout_path: Path,
+    repository: z.string().min(1),
+    repository_identity: z.string().min(1),
+    branch: z.string().min(1),
+    default_branch: z.string().min(1),
+    start_commit: Sha,
+    user: z.string().min(1),
+    project_type: z.enum([
+        "monorepo",
+        "laravel-app",
+        "symfony-app",
+        "laravel-package",
+        "node-package",
+    ]),
+    entry_point: z.enum(["artisan", "bin/console"]),
+    skip_profile: z.boolean(),
+    php_versions: z.array(z.string()).min(1),
+    setup: z.array(
+        z.object({
+            name: z.string(),
+            command: z.string(),
+            timeout_seconds: Id,
+            input_json: z.string(),
+        }),
+    ).max(32),
 });
 export const Intent = z.object({
-  task_vm_id: Id,
-  guest_node_id: Id,
-  group_id: Id,
-  instance_id: Id,
-  project_id: Id,
-  proof_club_required: z.boolean().default(false),
-  wireguard_ip: z.ipv4(),
-  ssh_identity: WorkspaceInput.shape.ssh_execution.omit({ target: true }),
-  workspace: Workspace,
+    task_vm_id: Id,
+    guest_node_id: Id,
+    group_id: Id,
+    instance_id: Id,
+    project_id: Id,
+    proof_club_required: z.boolean().default(false),
+    wireguard_ip: z.ipv4(),
+    ssh_identity: WorkspaceInput.shape.ssh_execution.omit({ target: true }),
+    workspace: Workspace,
 });
 const Vm = z.object({
-  task_vm_id: Id,
-  guest_node_id: Id,
-  ready: z.literal(true),
-  provider: z.record(z.string(), z.unknown()),
-  enrollment: z.object({
+    task_vm_id: Id,
+    guest_node_id: Id,
     ready: z.literal(true),
-    node: z.object({
-      ssh_host_key_type: z.literal("ssh-ed25519"),
-      ssh_host_key: z.string().min(1),
+    provider: z.record(z.string(), z.unknown()),
+    enrollment: z.object({
+        ready: z.literal(true),
+        node: z.object({
+            ssh_host_key_type: z.literal("ssh-ed25519"),
+            ssh_host_key: z.string().min(1),
+        }).passthrough(),
+        process: z.record(z.string(), z.unknown()),
     }).passthrough(),
-    process: z.record(z.string(), z.unknown()),
-  }).passthrough(),
 });
 const data = async (ctx: Context, value: Record<string, unknown>) => ({
-  dataHandles: [await ctx.writeResource("public", "output", value)],
+    dataHandles: [await ctx.writeResource("public", "output", value)],
 });
 type Context = {
-  extensionFile(name: string): string;
-  writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
+    extensionFile(name: string): string;
+    writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 /**
  * Fills each `host_keys: null` in the workspace's Route and Process intents with the key the VM step pinned. The
  * Gateway leaves only the guest's targets unpinned (PendingSshHostKey), so no other Node's key is touched.
  */
-export function bindHostKeys<T>(value: T, receipt: unknown, guestNodeId: number): T {
-  const vm = Vm.parse(receipt);
-  if (vm.guest_node_id !== guestNodeId) throw new Error("tasks.provision_refused");
-  const pinned = [vm.enrollment.node.ssh_host_key_type + " " + vm.enrollment.node.ssh_host_key];
-  const walk = (item: unknown): unknown => {
-    if (Array.isArray(item)) return item.map(walk);
-    if (item === null || typeof item !== "object") return item;
-    return Object.fromEntries(
-      Object.entries(item).map(([key, field]) => [key, key === "host_keys" && field === null ? pinned : walk(field)]),
-    );
-  };
-  return walk(value) as T;
-}
-export function connection(raw: unknown, receipt: unknown) {
-  const intent = Intent.parse(raw), vm = Vm.parse(receipt);
-  if (
-    vm.task_vm_id !== intent.task_vm_id ||
-    vm.guest_node_id !== intent.guest_node_id
-  ) throw new Error("tasks.provision_refused");
-  const ssh_execution = {
-    ...intent.ssh_identity,
-    target: {
-      name: "target",
-      host: intent.wireguard_ip,
-      user: intent.workspace.user,
-      port: 22,
-      host_keys: [
+export function bindHostKeys<T>(
+    value: T,
+    receipt: unknown,
+    guestNodeId: number,
+): T {
+    const vm = Vm.parse(receipt);
+    if (vm.guest_node_id !== guestNodeId) {
+        throw new Error("tasks.provision_refused");
+    }
+    const pinned = [
         vm.enrollment.node.ssh_host_key_type + " " +
         vm.enrollment.node.ssh_host_key,
-      ],
-    },
-  };
-  return WorkspaceInput.parse({
-    task_vm_id: intent.task_vm_id,
-    group_id: intent.group_id,
-    instance_id: intent.instance_id,
-    project_id: intent.project_id,
-    checkout_path: intent.workspace.checkout_path,
-    ssh_execution,
-  });
+    ];
+    const walk = (item: unknown): unknown => {
+        if (Array.isArray(item)) return item.map(walk);
+        if (item === null || typeof item !== "object") return item;
+        return Object.fromEntries(
+            Object.entries(item).map((
+                [key, field],
+            ) => [
+                key,
+                key === "host_keys" && field === null ? pinned : walk(field),
+            ]),
+        );
+    };
+    return walk(value) as T;
+}
+export function connection(raw: unknown, receipt: unknown) {
+    const intent = Intent.parse(raw), vm = Vm.parse(receipt);
+    if (
+        vm.task_vm_id !== intent.task_vm_id ||
+        vm.guest_node_id !== intent.guest_node_id
+    ) throw new Error("tasks.provision_refused");
+    const ssh_execution = {
+        ...intent.ssh_identity,
+        target: {
+            name: "target",
+            host: intent.wireguard_ip,
+            user: intent.workspace.user,
+            port: 22,
+            host_keys: [
+                vm.enrollment.node.ssh_host_key_type + " " +
+                vm.enrollment.node.ssh_host_key,
+            ],
+        },
+    };
+    return WorkspaceInput.parse({
+        task_vm_id: intent.task_vm_id,
+        group_id: intent.group_id,
+        instance_id: intent.instance_id,
+        project_id: intent.project_id,
+        checkout_path: intent.workspace.checkout_path,
+        ssh_execution,
+    });
 }
 const Source = z.object({
-  branch: z.string(),
-  commit: Sha,
-  php_version: z.string().nullable(),
-  laravel: z.boolean(),
+    branch: z.string(),
+    commit: Sha,
+    php_version: z.string().nullable(),
+    laravel: z.boolean(),
 });
 const Observation = z.object({ source: Source, analysis_base: Sha.nullable() });
 const COMPOSER_BYTES = 1048576;
@@ -133,18 +147,18 @@ const COMPOSER_BYTES = 1048576;
  * output to `<root>/output/setup-<index>` on the VM instead of the SSH session.
  */
 export function setupArgv(raw: unknown, root: string): string[][] {
-  const workspace = Intent.parse(raw).workspace;
-  return workspace.setup.map((item, index) =>
-    capturedArgv(
-      `${root}/output`,
-      `setup-${index}`,
-      lifecycleArgv(
-        workspace.checkout_path,
-        workspace.user,
-        item.command,
-      ),
-    )
-  );
+    const workspace = Intent.parse(raw).workspace;
+    return workspace.setup.map((item, index) =>
+        capturedArgv(
+            `${root}/output`,
+            `setup-${index}`,
+            lifecycleArgv(
+                workspace.checkout_path,
+                workspace.user,
+                item.command,
+            ),
+        )
+    );
 }
 
 const SETUP_OUTPUT_BYTES = 4096;
@@ -155,19 +169,19 @@ const SETUP_OUTPUT_BYTES = 4096;
  * that did not run has no entry.
  */
 export async function setupOutput(
-  raw: unknown,
-  directory: string,
+    raw: unknown,
+    directory: string,
 ): Promise<Record<string, PublicTail>> {
-  const outputs: Record<string, PublicTail> = {};
-  for (const index of Intent.parse(raw).workspace.setup.keys()) {
-    const name = `setup-${index}`;
-    const tail = await readPublicTail(
-      `${directory}/${name}`,
-      SETUP_OUTPUT_BYTES,
-    );
-    if (tail !== null) outputs[name] = tail;
-  }
-  return outputs;
+    const outputs: Record<string, PublicTail> = {};
+    for (const index of Intent.parse(raw).workspace.setup.keys()) {
+        const name = `setup-${index}`;
+        const tail = await readPublicTail(
+            `${directory}/${name}`,
+            SETUP_OUTPUT_BYTES,
+        );
+        if (tail !== null) outputs[name] = tail;
+    }
+    return outputs;
 }
 
 /**
@@ -178,287 +192,311 @@ export async function setupOutput(
  * `composer` the downloaded composer.json bytes, or null when no copy ran.
  */
 export function observe(
-  workspace: z.infer<typeof Workspace>,
-  read: {
-    identity: string;
-    base: string;
-    files: string;
-    composer: Uint8Array | null;
-  },
+    workspace: z.infer<typeof Workspace>,
+    read: {
+        identity: string;
+        base: string;
+        files: string;
+        composer: Uint8Array | null;
+    },
 ) {
-  const [commit = "", branch = ""] = read.identity.trim().split("\n");
-  const base = read.base.trim();
-  const files = new Map(
-    read.files.split("\n").filter((line) => line !== "").map((line) => {
-      const [name, type, size] = line.split("|");
-      return [name, {
-        regular: type === "regular file" ||
-          type === "regular empty file",
-        size: Number(size),
-      }];
-    }),
-  );
-  const composer = files.get("composer.json");
-  const entry = files.get(workspace.entry_point);
-  let profile: Record<string, unknown> = {
-    kind: "none",
-    composer: null,
-    entry_point: null,
-  };
-  if (workspace.skip_profile) {
-    // A monorepo's root metadata is irrelevant to its workspace.
-  } else if (composer === undefined) {
-    if (entry !== undefined) profile = { ...profile, kind: "partial" };
-  } else if (!composer.regular || composer.size > COMPOSER_BYTES) {
-    profile = { ...profile, kind: "unsafe" };
-  } else {
-    // inspect saw a regular composer.json, so its copy must have run.
-    if (read.composer === null) throw new Error("tasks.provision_failed");
-    const bytes = read.composer;
-    profile = {
-      kind: "composer",
-      composer: btoa(
-        Array.from(bytes, (b) => String.fromCharCode(b)).join(""),
-      ),
-      entry_point: entry === undefined
-        ? "absent"
-        : entry.regular
-        ? "regular"
-        : "unsafe",
+    const [commit = "", branch = ""] = read.identity.trim().split("\n");
+    const base = read.base.trim();
+    const files = new Map(
+        read.files.split("\n").filter((line) => line !== "").map((line) => {
+            const [name, type, size] = line.split("|");
+            return [name, {
+                regular: type === "regular file" ||
+                    type === "regular empty file",
+                size: Number(size),
+            }];
+        }),
+    );
+    const composer = files.get("composer.json");
+    const entry = files.get(workspace.entry_point);
+    let profile: Record<string, unknown> = {
+        kind: "none",
+        composer: null,
+        entry_point: null,
     };
-  }
-  return {
-    branch,
-    commit: Sha.parse(commit),
-    analysis_base: base === "" ? null : Sha.parse(base),
-    profile,
-  };
+    if (workspace.skip_profile) {
+        // A monorepo's root metadata is irrelevant to its workspace.
+    } else if (composer === undefined) {
+        if (entry !== undefined) profile = { ...profile, kind: "partial" };
+    } else if (!composer.regular || composer.size > COMPOSER_BYTES) {
+        profile = { ...profile, kind: "unsafe" };
+    } else {
+        // inspect saw a regular composer.json, so its copy must have run.
+        if (read.composer === null) throw new Error("tasks.provision_failed");
+        const bytes = read.composer;
+        profile = {
+            kind: "composer",
+            composer: btoa(
+                Array.from(bytes, (b) => String.fromCharCode(b)).join(""),
+            ),
+            entry_point: entry === undefined
+                ? "absent"
+                : entry.regular
+                ? "regular"
+                : "unsafe",
+        };
+    }
+    return {
+        branch,
+        commit: Sha.parse(commit),
+        analysis_base: base === "" ? null : Sha.parse(base),
+        profile,
+    };
 }
 function nativeOutputs(steps: Record<string, unknown>, name: string) {
-  const step = z.record(z.string(), z.unknown()).safeParse(steps[name]).data ??
-    {};
-  const outputs =
-    z.record(z.string(), z.unknown()).safeParse(step.outputs).data ?? {};
-  return { step, outputs };
+    const step =
+        z.record(z.string(), z.unknown()).safeParse(steps[name]).data ??
+            {};
+    const outputs =
+        z.record(z.string(), z.unknown()).safeParse(step.outputs).data ?? {};
+    return { step, outputs };
 }
 export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
-  const intent = Intent.parse(raw);
-  const profile = nativeOutputs(steps, "profile").outputs;
-  if (typeof profile.error_code === "string") {
-    return { error_code: profile.error_code, failed_step: "profile" };
-  }
-  // A guard skips `composer` when inspect found no regular composer.json; a
-  // skipped step has no entry in `steps`.
-  const optional = new Set(["composer"]);
-  for (
-    const name of [
-      "prepare",
-      "directory",
-      "control",
-      "clone",
-      "bundle",
-      "prepare_remote",
-      "copy_bundle",
-      "import",
-      "origin",
-      "branch",
-      "identity",
-      "analysis_base",
-      "inspect",
-      "composer",
-      "profile",
-      ...intent.workspace.setup.map((_, i) => `setup-${i}`),
-    ]
-  ) {
-    if (
-      (name === "clone"
-        ? !["clone_private", "clone_public"].some((key) =>
-          nativeOutputs(steps, key).step.status === "succeeded"
-        )
-        : nativeOutputs(steps, name).step.status !== "succeeded" &&
-          !(optional.has(name) && !(name in steps)))
-    ) {
-      return { error_code: "tasks.provision_failed", failed_step: name };
+    const intent = Intent.parse(raw);
+    const profile = nativeOutputs(steps, "profile").outputs;
+    if (typeof profile.error_code === "string") {
+        return { error_code: profile.error_code, failed_step: "profile" };
     }
-  }
-  return Observation.parse(nativeOutputs(steps, "profile").outputs);
+    // A guard skips `composer` when inspect found no regular composer.json; a
+    // skipped step has no entry in `steps`.
+    const optional = new Set(["composer"]);
+    for (
+        const name of [
+            "prepare",
+            "directory",
+            "control",
+            "clone",
+            "bundle",
+            "prepare_remote",
+            "copy_bundle",
+            "import",
+            "origin",
+            "branch",
+            "identity",
+            "analysis_base",
+            "inspect",
+            "composer",
+            "profile",
+            ...intent.workspace.setup.map((_, i) => `setup-${i}`),
+        ]
+    ) {
+        if (
+            (name === "clone"
+                ? !["clone_private", "clone_public"].some((key) =>
+                    nativeOutputs(steps, key).step.status === "succeeded"
+                )
+                : nativeOutputs(steps, name).step.status !== "succeeded" &&
+                    !(optional.has(name) && !(name in steps)))
+        ) {
+            return { error_code: "tasks.provision_failed", failed_step: name };
+        }
+    }
+    return Observation.parse(nativeOutputs(steps, "profile").outputs);
 }
 /** The provision receipt: the VM child's receipt, then the first failure, else the source. */
 export function result(
-  raw: unknown,
-  receipt: unknown,
-  steps: Record<string, unknown>,
+    raw: unknown,
+    receipt: unknown,
+    steps: Record<string, unknown>,
 ): Record<string, unknown> {
-  const intent = Intent.parse(raw);
-  const vm = Vm.safeParse(receipt);
-  const ready = vm.success && vm.data.task_vm_id === intent.task_vm_id &&
-      vm.data.guest_node_id === intent.guest_node_id
-    ? vm.data
-    : {};
-  if (nativeOutputs(steps, "guest").step.status !== "succeeded") {
-    return { ...ready, error_code: "tasks.provision_failed", failed_step: "guest" };
-  }
-  const source = sourceResult(intent, steps);
-  if (typeof (source as { error_code?: unknown }).error_code === "string") {
-    return { ...ready, ...source };
-  }
-  if (
-    intent.proof_club_required &&
-    nativeOutputs(steps, "proof_club").step.status !== "succeeded"
-  ) {
+    const intent = Intent.parse(raw);
+    const vm = Vm.safeParse(receipt);
+    const ready = vm.success && vm.data.task_vm_id === intent.task_vm_id &&
+            vm.data.guest_node_id === intent.guest_node_id
+        ? vm.data
+        : {};
+    if (nativeOutputs(steps, "guest").step.status !== "succeeded") {
+        return {
+            ...ready,
+            error_code: "tasks.provision_failed",
+            failed_step: "guest",
+        };
+    }
+    const source = sourceResult(intent, steps);
+    if (typeof (source as { error_code?: unknown }).error_code === "string") {
+        return { ...ready, ...source };
+    }
+    if (
+        intent.proof_club_required &&
+        nativeOutputs(steps, "proof_club").step.status !== "succeeded"
+    ) {
+        return {
+            ...ready,
+            error_code: "tasks.provision_failed",
+            failed_step: "proof_club",
+        };
+    }
+    const { source: observed, analysis_base: base } = Observation.parse(source);
     return {
-      ...ready,
-      error_code: "tasks.provision_failed",
-      failed_step: "proof_club",
+        ...ready,
+        source: observed,
+        instance_id: intent.instance_id,
+        node_id: intent.guest_node_id,
+        starting_commit: observed.commit,
+        analysis_base: base === null ? null : {
+            base,
+            instance_id: intent.instance_id,
+            repository: intent.workspace.repository,
+            branch: observed.branch,
+        },
     };
-  }
-  const { source: observed, analysis_base: base } = Observation.parse(source);
-  return {
-    ...ready,
-    source: observed,
-    instance_id: intent.instance_id,
-    node_id: intent.guest_node_id,
-    starting_commit: observed.commit,
-    analysis_base: base === null ? null : {
-      base,
-      instance_id: intent.instance_id,
-      repository: intent.workspace.repository,
-      branch: observed.branch,
-    },
-  };
 }
 export const behavior = {
-  type: "@nckrtl/task-provision-data",
-  version: "2026.11.03.1",
-  resources: {
-    public: {
-      schema: z.record(z.string(), z.unknown()),
-      lifetime: "infinite",
-      garbageCollection: 10,
-    },
-  },
-  methods: {
-    prepare: {
-      description:
-        "Validate public workspace intent and build each setup command's SSH exec argv",
-      arguments: z.object({ intent: Intent, root: Path }),
-      execute: (
-        args: { intent: z.infer<typeof Intent>; root: string },
-        ctx: Context,
-      ) => data(ctx, { setup: setupArgv(args.intent, args.root) }),
-    },
-    setup_output: {
-      description:
-        "Read, redact and delete each downloaded setup output file; return its bounded tail",
-      arguments: z.object({ intent: Intent, directory: Path }),
-      execute: async (
-        args: { intent: z.infer<typeof Intent>; directory: string },
-        ctx: Context,
-      ) =>
-        data(ctx, {
-          setup: await setupOutput(args.intent, args.directory),
-        }),
-    },
-    guest: {
-      description:
-        "Use the provision child's trusted observed pin for the admitted workspace",
-      arguments: z.object({ intent: Intent, vm: z.unknown() }),
-      execute: async (
-        args: { intent: unknown; vm: unknown },
-        ctx: Context,
-      ) => data(ctx, { workspace: connection(args.intent, args.vm) }),
-    },
-    bind: {
-      description:
-        "Pin the workspace Route and Process intents to the guest host key the VM step observed",
-      arguments: z.object({
-        vm: z.unknown(),
-        guest_node_id: z.number().int().positive(),
-        route: z.unknown(),
-        processes: z.array(z.unknown()),
-      }),
-      execute: async (
-        args: { vm: unknown; guest_node_id: number; route: unknown; processes: unknown[] },
-        ctx: Context,
-      ) => data(ctx, bindHostKeys({ route: args.route, processes: args.processes }, args.vm, args.guest_node_id)),
-    },
-    profile: {
-      description:
-        "Classify source with canonical Instance profile policy and retain its initial analysis pin; read and delete the downloaded composer.json, keeping only its facts",
-      arguments: z.object({
-        intent: Intent,
-        identity: z.string(),
-        analysis_base: z.string(),
-        files: z.string(),
-        composer: Path,
-      }),
-      execute: async (
-        args: {
-          intent: z.infer<typeof Intent>;
-          identity: string;
-          analysis_base: string;
-          files: string;
-          composer: string;
+    type: "@nckrtl/task-provision-data",
+    version: "2026.11.03.1",
+    resources: {
+        public: {
+            schema: z.record(z.string(), z.unknown()),
+            lifetime: "infinite",
+            garbageCollection: 10,
         },
-        ctx: Context,
-      ) => {
-        const workspace = Intent.parse(args.intent).workspace;
-        // The file never reaches history; only the parsed facts below do.
-        const composer = await readCapture(args.composer, COMPOSER_BYTES);
-        const observation = observe(workspace, {
-          identity: args.identity,
-          base: args.analysis_base,
-          files: args.files,
-          composer: composer?.bytes ?? null,
-        });
-        if (
-          observation.branch !== workspace.branch ||
-          observation.commit !== workspace.start_commit
-        ) {
-          throw new Error("instance.source_identity_changed");
-        }
-        let profile;
-        try {
-          profile = workspace.skip_profile
-            ? { php_version: null, laravel: false }
-            : classifyProvisioningProfile(
-              observation.profile,
-              workspace,
-            );
-        } catch (error) {
-          if (error instanceof ProvisioningRefusal) {
-            return data(ctx, {
-              error_code: error.code,
-              failed_step: "profile",
-            });
-          }
-          throw error;
-        }
-        return data(ctx, {
-          source: {
-            branch: observation.branch,
-            commit: observation.commit,
-            ...profile,
-          },
-          analysis_base: observation.analysis_base,
-        });
-      },
     },
-    result: {
-      description:
-        "Fold the VM receipt and the native source and setup outputs into the Tasks terminal receipt",
-      arguments: z.object({
-        intent: Intent,
-        vm: z.unknown(),
-        steps: z.record(z.string(), z.unknown()),
-      }),
-      execute: (
-        args: { intent: unknown; vm: unknown; steps: Record<string, unknown> },
-        ctx: Context,
-      ) =>
-        data(ctx, {
-          result_json: JSON.stringify(result(args.intent, args.vm, args.steps)),
-        }),
+    methods: {
+        prepare: {
+            description:
+                "Validate public workspace intent and build each setup command's SSH exec argv",
+            arguments: z.object({ intent: Intent, root: Path }),
+            execute: (
+                args: { intent: z.infer<typeof Intent>; root: string },
+                ctx: Context,
+            ) => data(ctx, { setup: setupArgv(args.intent, args.root) }),
+        },
+        setup_output: {
+            description:
+                "Read, redact and delete each downloaded setup output file; return its bounded tail",
+            arguments: z.object({ intent: Intent, directory: Path }),
+            execute: async (
+                args: { intent: z.infer<typeof Intent>; directory: string },
+                ctx: Context,
+            ) => data(ctx, {
+                setup: await setupOutput(args.intent, args.directory),
+            }),
+        },
+        guest: {
+            description:
+                "Use the provision child's trusted observed pin for the admitted workspace",
+            arguments: z.object({ intent: Intent, vm: z.unknown() }),
+            execute: async (
+                args: { intent: unknown; vm: unknown },
+                ctx: Context,
+            ) => data(ctx, { workspace: connection(args.intent, args.vm) }),
+        },
+        bind: {
+            description:
+                "Pin the workspace Route and Process intents to the guest host key the VM step observed",
+            arguments: z.object({
+                vm: z.unknown(),
+                guest_node_id: z.number().int().positive(),
+                route: z.unknown(),
+                processes: z.array(z.unknown()),
+            }),
+            execute: async (
+                args: {
+                    vm: unknown;
+                    guest_node_id: number;
+                    route: unknown;
+                    processes: unknown[];
+                },
+                ctx: Context,
+            ) => data(
+                ctx,
+                bindHostKeys(
+                    { route: args.route, processes: args.processes },
+                    args.vm,
+                    args.guest_node_id,
+                ),
+            ),
+        },
+        profile: {
+            description:
+                "Classify source with canonical Instance profile policy and retain its initial analysis pin; read and delete the downloaded composer.json, keeping only its facts",
+            arguments: z.object({
+                intent: Intent,
+                identity: z.string(),
+                analysis_base: z.string(),
+                files: z.string(),
+                composer: Path,
+            }),
+            execute: async (
+                args: {
+                    intent: z.infer<typeof Intent>;
+                    identity: string;
+                    analysis_base: string;
+                    files: string;
+                    composer: string;
+                },
+                ctx: Context,
+            ) => {
+                const workspace = Intent.parse(args.intent).workspace;
+                // The file never reaches history; only the parsed facts below do.
+                const composer = await readCapture(
+                    args.composer,
+                    COMPOSER_BYTES,
+                );
+                const observation = observe(workspace, {
+                    identity: args.identity,
+                    base: args.analysis_base,
+                    files: args.files,
+                    composer: composer?.bytes ?? null,
+                });
+                if (
+                    observation.branch !== workspace.branch ||
+                    observation.commit !== workspace.start_commit
+                ) {
+                    throw new Error("instance.source_identity_changed");
+                }
+                let profile;
+                try {
+                    profile = workspace.skip_profile
+                        ? { php_version: null, laravel: false }
+                        : classifyProvisioningProfile(
+                            observation.profile,
+                            workspace,
+                        );
+                } catch (error) {
+                    if (error instanceof ProvisioningRefusal) {
+                        return data(ctx, {
+                            error_code: error.code,
+                            failed_step: "profile",
+                        });
+                    }
+                    throw error;
+                }
+                return data(ctx, {
+                    source: {
+                        branch: observation.branch,
+                        commit: observation.commit,
+                        ...profile,
+                    },
+                    analysis_base: observation.analysis_base,
+                });
+            },
+        },
+        result: {
+            description:
+                "Fold the VM receipt and the native source and setup outputs into the Tasks terminal receipt",
+            arguments: z.object({
+                intent: Intent,
+                vm: z.unknown(),
+                steps: z.record(z.string(), z.unknown()),
+            }),
+            execute: (
+                args: {
+                    intent: unknown;
+                    vm: unknown;
+                    steps: Record<string, unknown>;
+                },
+                ctx: Context,
+            ) => data(ctx, {
+                result_json: JSON.stringify(
+                    result(args.intent, args.vm, args.steps),
+                ),
+            }),
+        },
     },
-  },
 };

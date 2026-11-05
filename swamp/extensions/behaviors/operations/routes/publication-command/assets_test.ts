@@ -273,23 +273,31 @@ Deno.test("PHP account and version-move policy are checked before any file opera
 
 Deno.test("empty enrollment PHP snapshots need no account migration or pool effects", () => {
     for (const direction of ["forward", "restore"] as const) {
-        assertEquals(planPhp({
-            ...placement,
-            direction,
-            user: direction === "forward" ? "newuser" : "orbit",
-            before: { account_user: "orbit", configurations: {} },
-            after: { account_user: "newuser", configurations: {} },
-        }), { versions: [], versions_json: "[]" });
+        assertEquals(
+            planPhp({
+                ...placement,
+                direction,
+                user: direction === "forward" ? "newuser" : "orbit",
+                before: { account_user: "orbit", configurations: {} },
+                after: { account_user: "newuser", configurations: {} },
+            }),
+            { versions: [], versions_json: "[]" },
+        );
     }
 });
 Deno.test("a Node without PHP pools may arrive as an empty JSON list", () => {
     const empty = { account_user: "orbit", configurations: [] };
-    assertEquals(planPhp({ ...placement, before: empty, after: empty }).versions, []);
+    assertEquals(
+        planPhp({ ...placement, before: empty, after: empty }).versions,
+        [],
+    );
 });
 
 Deno.test("a pool that route-create-site wrote with the account gid withdraws without a revision conflict", () => {
-    const section = "[orbit-app-instance-7]\nuser = orbit\ngroup = __ORBIT_NODE_GROUP__\nchdir = /srv/apps/a\n";
-    const live = "[orbit-app-instance-7]\nuser = orbit\ngroup = 1000\nchdir = /srv/apps/a\n";
+    const section =
+        "[orbit-app-instance-7]\nuser = orbit\ngroup = __ORBIT_NODE_GROUP__\nchdir = /srv/apps/a\n";
+    const live =
+        "[orbit-app-instance-7]\nuser = orbit\ngroup = 1000\nchdir = /srv/apps/a\n";
     const { files } = composePhp({
         ...placement,
         before: php(section),
@@ -297,9 +305,25 @@ Deno.test("a pool that route-create-site wrote with the account gid withdraws wi
         account,
         current: JSON.stringify({ "8.4": live }),
     });
-    assertEquals(files, [{ version: "8.4", path: "/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", content: "", ensure: "absent" }]);
+    assertEquals(files, [{
+        version: "8.4",
+        path: "/etc/php/8.4/fpm/pool.d/orbit-scopes.conf",
+        content: "",
+        ensure: "absent",
+    }]);
     assertThrows(
-        () => composePhp({ ...placement, before: php(section), after: php(""), account: JSON.stringify({ user: "orbit", home: "/home/orbit", group: "orbit" }), current: "{}" }),
+        () =>
+            composePhp({
+                ...placement,
+                before: php(section),
+                after: php(""),
+                account: JSON.stringify({
+                    user: "orbit",
+                    home: "/home/orbit",
+                    group: "orbit",
+                }),
+                current: "{}",
+            }),
         Error,
     );
 });

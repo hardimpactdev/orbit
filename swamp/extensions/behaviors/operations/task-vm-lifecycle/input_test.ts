@@ -195,14 +195,16 @@ Deno.test("inspect reports absence and running state without requesting mutation
 });
 
 Deno.test("power changes only for an unsettled desired state", () => {
-    for (const [action, state, change] of [
-        ["start", "Stopped", true],
-        ["start", "Running", false],
-        ["stop", "Running", true],
-        ["stop", "Stopped", false],
-        ["delete", "Stopped", true],
-        ["delete", null, false],
-    ] as const) {
+    for (
+        const [action, state, change] of [
+            ["start", "Stopped", true],
+            ["start", "Running", false],
+            ["stop", "Running", true],
+            ["stop", "Stopped", false],
+            ["delete", "Stopped", true],
+            ["delete", null, false],
+        ] as const
+    ) {
         const stdout = state === null ? "[]" : vm(state);
         assertEquals(observation(incus, action, stdout).change, change);
         if (!change) assertEquals(receipt(incus, action, stdout).settled, true);

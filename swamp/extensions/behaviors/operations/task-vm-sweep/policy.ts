@@ -115,16 +115,19 @@ export function incusStrays(
                 );
             return !excluded(row.project, row.name) &&
                 !(row.project === scope.project &&
-                    (/^tvm-[0-9]+$/.test(row.name) || row.name === "tvm-seed-refresh" ||
+                    (/^tvm-[0-9]+$/.test(row.name) ||
+                        row.name === "tvm-seed-refresh" ||
                         build !== null &&
                             scope.protected_build_ids.includes(
                                 Number(build[1]),
                             )));
         }),
         volumes: volumeRows.filter((row) => {
-            const seed = /^orbit-topology-seed-([a-f0-9]{12})(?:-new|-refresh|-previous)?$/.exec(
-                row.name,
-            );
+            const seed =
+                /^orbit-topology-seed-([a-f0-9]{12})(?:-new|-refresh|-previous)?$/
+                    .exec(
+                        row.name,
+                    );
             return !excluded(row.project, row.name) &&
                 !(row.project === scope.project &&
                     (/^tvm-[0-9]+-topology-seed$/.test(row.name) ||

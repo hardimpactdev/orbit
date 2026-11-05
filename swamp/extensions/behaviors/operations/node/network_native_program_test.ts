@@ -46,24 +46,24 @@ try:
 finally:shutil.rmtree(root)
 `;
 async function python(scenario: string) {
-  const program = NETWORK_PROGRAM.split("try:print(json.dumps(main()")[0];
-  const child = await new Deno.Command("/usr/bin/python3", {
-    args: [
-      "-c",
-      program +
-      driver.replace(
-        "    SCENARIO",
-        scenario.split("\n").map((line) => "    " + line).join("\n"),
-      ),
-    ],
-    stdout: "piped",
-    stderr: "piped",
-  }).output();
-  assertEquals(child.success, true, new TextDecoder().decode(child.stderr));
+    const program = NETWORK_PROGRAM.split("try:print(json.dumps(main()")[0];
+    const child = await new Deno.Command("/usr/bin/python3", {
+        args: [
+            "-c",
+            program +
+            driver.replace(
+                "    SCENARIO",
+                scenario.split("\n").map((line) => "    " + line).join("\n"),
+            ),
+        ],
+        stdout: "piped",
+        stderr: "piped",
+    }).output();
+    assertEquals(child.success, true, new TextDecoder().decode(child.stderr));
 }
 
 Deno.test("native peer key preparation preserves an existing key inode and refuses a lost retained key", () =>
-  python(`
+    python(`
 before=os.stat(WG+'/orbit.key').st_ino
 assert prepare({'existing':True})=={'public_key':K}
 assert os.stat(WG+'/orbit.key').st_ino==before
@@ -75,7 +75,7 @@ assert not any(name=='wg' and args==['genkey'] for name,args in calls)
 `));
 
 Deno.test("native peer key creation is private and retry reuses its inode", () =>
-  python(`
+    python(`
 remove('orbit.key');assert prepare({'existing':False})=={'public_key':K}
 before=os.stat(WG+'/orbit.key')
 assert stat.S_IMODE(before.st_mode)==0o600
@@ -85,7 +85,7 @@ assert sum(name=='wg' and args==['genkey'] for name,args in calls)==1
 `));
 
 Deno.test("native live hub publication synchronizes peers without restarting its active tunnel", () =>
-  python(`
+    python(`
 config='[Interface]\\nAddress = 10.44.0.1/24\\nPrivateKey = '+PRIVATE+'\\n'
 assert hub({'config':config})=={}
 assert read('orbit.conf')==config
@@ -96,7 +96,7 @@ assert read('orbit-candidate.conf',True) is None
 `));
 
 Deno.test("native hub activation failure restores exact prior config and service state", () =>
-  python(`
+    python(`
 broken=lambda name,args:name=='wg' and args[0]=='syncconf'
 try:hub({'config':'[Interface]\\nAddress = 10.44.0.1/24\\nPrivateKey = '+PRIVATE+'\\n'});assert False
 except Refusal as error:assert str(error)=='wireguard.hub_start_failed'
@@ -106,7 +106,7 @@ assert read('orbit-native-runtime.conf',True) is None
 `));
 
 Deno.test("native peer failed activation restores original resolver config and service state", () =>
-  python(`
+    python(`
 broken=lambda name,args:name=='systemctl' and args[0]=='start'
 try:publish(peer);assert False
 except Refusal as error:assert str(error)=='wireguard.peer_config_failed'
@@ -117,8 +117,8 @@ assert live=={'active':True,'enabled':'enabled'}
 `));
 
 for (const configWritten of [false, true]) {
-  Deno.test(`native resumed publication reapplies complete config and DNS after interruption (config written: ${configWritten})`, () =>
-    python(`
+    Deno.test(`native resumed publication reapplies complete config and DNS after interruption (config written: ${configWritten})`, () =>
+        python(`
 owner='peer-'+hashlib.sha256(json.dumps(peer,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 transaction(owner)
 ${configWritten ? "write('orbit.conf',render_peer(PRIVATE+'\\n',peer))" : ""}
@@ -135,7 +135,7 @@ assert resolvers['orbit']['domain']=='~orbit'
 }
 
 Deno.test("native DNS repair preserves unrelated config and never restarts the tunnel on success", () =>
-  python(`
+    python(`
 assert repair_dns({'dns_server':'10.44.0.1','domains':['orbit','test'],'public_key':K})=={}
 assert '[Peer]\\nPublicKey = '+'C'*43+'=\\n' in read('orbit.conf')
 assert '~test' in read('orbit.conf')
@@ -145,7 +145,7 @@ assert not any(name=='systemctl' and args[0] in ['start','stop','restart'] for n
 `));
 
 Deno.test("native DNS repair failure restores the prior bytes and resolver policy", () =>
-  python(`
+    python(`
 broken=lambda name,args:name=='resolvectl' and args==['domain','orbit','~orbit','~test']
 try:repair_dns({'dns_server':'10.44.0.1','domains':['orbit','test'],'public_key':K});assert False
 except Refusal as error:assert str(error)=='wireguard.peer_dns_apply_failed'
@@ -155,7 +155,7 @@ assert read('.orbit.native-network-transaction',True) is None
 `));
 
 Deno.test("native network lock rejects a writable preexisting lock before key generation", () =>
-  python(`
+    python(`
 remove('orbit.key')
 with open(LOCK,'w') as f:f.write('untrusted')
 os.chmod(LOCK,0o666)
@@ -167,7 +167,7 @@ assert not calls
 `));
 
 Deno.test("native failed-root recovery rolls back only its exact pending peer publication", () =>
-  python(`
+    python(`
 assert publish(peer)=={'public_key':K}
 assert read('.orbit.native-network-transaction',True) is not None
 public_peer=dict(peer);public_peer.pop('peer_public_key')
@@ -178,7 +178,7 @@ assert read('.orbit.native-network-transaction',True) is None
 `));
 
 Deno.test("native lost-commit recovery preserves a completed peer instead of undoing its live key", () =>
-  python(`
+    python(`
 publish(peer);commit({'public_key':K});calls.clear()
 public_peer=dict(peer);public_peer.pop('peer_public_key')
 assert recover_peer({'peer':public_peer})=={'restore_public_key':False}
@@ -187,7 +187,7 @@ assert not any(name=='systemctl' and args[0] in ['start','stop','restart'] for n
 `));
 
 Deno.test("native failed-root recovery refuses a different pending peer transaction without effects", () =>
-  python(`
+    python(`
 publish(peer);before=read('orbit.conf');calls.clear()
 public_peer=dict(peer,endpoint='different.example.test:51820');public_peer.pop('peer_public_key')
 try:recover_peer({'peer':public_peer});assert False

@@ -42,7 +42,11 @@ export async function issue(
         `nckrtl-conn-pairing-${modelId}-issue-issued-pairing-${args.intent.pairing_id}-credential`;
     const status = Number(args.http_status.trim());
     if (!(status >= 200 && status < 300)) {
-        throw new Error(status === 401 ? "conn.session_rejected" : "conn.pairing_outcome_unknown");
+        throw new Error(
+            status === 401
+                ? "conn.session_rejected"
+                : "conn.pairing_outcome_unknown",
+        );
     }
     let issued: z.infer<typeof Issued>;
     try {
@@ -58,7 +62,11 @@ export async function issue(
             value.includes(args.env.ORBIT_CONN_ADMIN_SESSION)
         )
     ) throw new Error("conn.response_invalid");
-    const handle = await ctx.writeResource("issued", `pairing-${args.intent.pairing_id}`, issued);
+    const handle = await ctx.writeResource(
+        "issued",
+        `pairing-${args.intent.pairing_id}`,
+        issued,
+    );
     const result = {
         backend: "issued",
         pairing_id: args.intent.pairing_id,

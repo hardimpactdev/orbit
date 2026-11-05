@@ -2,7 +2,7 @@ import { projectEnvironmentProgram } from "./project_environment.ts";
 
 /** Shared cache-baseline policy for Instance setup and Task baseline checks. */
 export const ciCacheImportProgram = String
-  .raw`# The task workspace's @orbit/ci-caches setup step: import the Pint and PHPStan caches of only the recorded code baseline's ref from the Gateway mirror.
+    .raw`# The task workspace's @orbit/ci-caches setup step: import the Pint and PHPStan caches of only the recorded code baseline's ref from the Gateway mirror.
 # Missing or invalid refs leave checks cold. Required tooling and cache writes remain setup failures.
 set -eu
 if [ ! -f bin/ci-cache-ref ]; then

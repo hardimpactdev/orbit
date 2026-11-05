@@ -100,18 +100,29 @@ for (const mode of ["goals", "login"]) {
 }
 
 Deno.test("failed site retry reauthenticates without duplicating the site", async () => {
-  await using provider = await PlausibleFixture.create();
-  const { context } = createModelTestContext();
-  const args = {
-    base_url: provider.url,
-    site: { domain: "shop.test", previous_domain: null, timezone: "UTC", goals: [] },
-    env: { ORBIT_ANALYTICS_CREDENTIALS: JSON.stringify(provider.credentials) },
-  };
-  provider.fail = "/api/v2/query";
-  await assertRejects(() => behavior.methods.site.execute(args, context), Error, "analytics.stats_unauthorized");
-  assertEquals(provider.count("GET", "/logout"), 1);
-  provider.fail = "";
-  await behavior.methods.site.execute(args, context);
-  assertEquals(provider.count("POST", "/sites"), 1);
-  assertEquals(provider.count("POST", "/login"), 2);
+    await using provider = await PlausibleFixture.create();
+    const { context } = createModelTestContext();
+    const args = {
+        base_url: provider.url,
+        site: {
+            domain: "shop.test",
+            previous_domain: null,
+            timezone: "UTC",
+            goals: [],
+        },
+        env: {
+            ORBIT_ANALYTICS_CREDENTIALS: JSON.stringify(provider.credentials),
+        },
+    };
+    provider.fail = "/api/v2/query";
+    await assertRejects(
+        () => behavior.methods.site.execute(args, context),
+        Error,
+        "analytics.stats_unauthorized",
+    );
+    assertEquals(provider.count("GET", "/logout"), 1);
+    provider.fail = "";
+    await behavior.methods.site.execute(args, context);
+    assertEquals(provider.count("POST", "/sites"), 1);
+    assertEquals(provider.count("POST", "/login"), 2);
 });

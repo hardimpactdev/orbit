@@ -248,11 +248,24 @@ Deno.test("an allow and a deny on one port match by tuple whatever their comment
         "7297/tcp DENY IN Anywhere",
     ];
     const compare = (rows: string[]) =>
-        inspectionResult({ stdout: "Status: active\n" + rows.join("\n"), expected });
-    assertEquals(compare(lines).live.map((r) => r.match), ["exact", "exact", "exact"]);
+        inspectionResult({
+            stdout: "Status: active\n" + rows.join("\n"),
+            expected,
+        });
+    assertEquals(compare(lines).live.map((r) => r.match), [
+        "exact",
+        "exact",
+        "exact",
+    ]);
     assertEquals(compare(lines).missing, []);
-    assertEquals(compare([lines[0], lines[2]]).missing.map((r) => r.source), ["10.44.0.9"]);
-    const changed = compare([lines[0], lines[1].replace("10.44.0.9", "10.44.0.7"), lines[2]]);
+    assertEquals(compare([lines[0], lines[2]]).missing.map((r) => r.source), [
+        "10.44.0.9",
+    ]);
+    const changed = compare([
+        lines[0],
+        lines[1].replace("10.44.0.9", "10.44.0.7"),
+        lines[2],
+    ]);
     assertEquals(changed.live[1].match, "unmanaged");
     assertEquals(changed.missing.map((r) => r.source), ["10.44.0.9"]);
 });

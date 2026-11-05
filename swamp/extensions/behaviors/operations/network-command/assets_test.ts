@@ -1,5 +1,12 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { behavior, dnsDecision, dnsResult, INSPECT, inspection, publicKey } from "./assets.ts";
+import {
+    behavior,
+    dnsDecision,
+    dnsResult,
+    INSPECT,
+    inspection,
+    publicKey,
+} from "./assets.ts";
 import { workflow } from "./workflows.ts";
 const key = "A".repeat(43) + "=";
 const policy = {
@@ -14,14 +21,22 @@ const hook = String
 const observed = (delta: Partial<Record<string, string>> = {}) => {
     const parts = {
         key,
-        servers: "Global:\nLink 2 (orbit): 10.44.0.1\nLink 3 (eth0): 192.0.2.53",
+        servers:
+            "Global:\nLink 2 (orbit): 10.44.0.1\nLink 3 (eth0): 192.0.2.53",
         domains: "Link 2 (orbit): ~orbit",
         route: "Link 2 (orbit): no",
         state: "orbit\n10.44.0.1\norbit",
         hooks: hook,
         ...delta,
     };
-    return [parts.key, parts.servers, parts.domains, parts.route, parts.state, parts.hooks]
+    return [
+        parts.key,
+        parts.servers,
+        parts.domains,
+        parts.route,
+        parts.state,
+        parts.hooks,
+    ]
         .join("\n@@\n") + "\n";
 };
 Deno.test("the read step prints six sections the parser splits", () => {
@@ -55,13 +70,21 @@ Deno.test("the uplink ignores the orbit link, loopback, the VPN server and the o
         );
     }
     assertEquals(
-        inspection(observed({ servers: "Link 3 (eth0): 192.0.2.53#dns.example" }), "10.44.0.1").uplink,
+        inspection(
+            observed({ servers: "Link 3 (eth0): 192.0.2.53#dns.example" }),
+            "10.44.0.1",
+        ).uplink,
         true,
     );
 });
 Deno.test("a missing marker means the orbit link; an unsafe marker link is refused", () => {
-    assertEquals(inspection(observed({ state: "" }), "10.44.0.1").old_link, "orbit");
-    assertThrows(() => inspection(observed({ state: "eth0;rm\n10.44.0.1" }), "10.44.0.1"));
+    assertEquals(
+        inspection(observed({ state: "" }), "10.44.0.1").old_link,
+        "orbit",
+    );
+    assertThrows(() =>
+        inspection(observed({ state: "eth0;rm\n10.44.0.1" }), "10.44.0.1")
+    );
 });
 Deno.test("matching DNS policy skips effects and native result strips helper fields", () => {
     assertEquals(dnsDecision(observed(), policy), {
@@ -74,10 +97,13 @@ Deno.test("matching DNS policy skips effects and native result strips helper fie
     assertEquals(result.uplink, true);
 });
 Deno.test("drift on old uplink is explicit; failed final comparison never reports success", () => {
-    assertEquals(dnsDecision(observed({ state: "eth0\n10.44.0.1\nold" }), policy), {
-        changed: true,
-        old_link: "eth0",
-    });
+    assertEquals(
+        dnsDecision(observed({ state: "eth0\n10.44.0.1\nold" }), policy),
+        {
+            changed: true,
+            old_link: "eth0",
+        },
+    );
     for (
         const delta of [
             { servers: "Link 2 (orbit): 10.44.0.1" },
@@ -102,10 +128,14 @@ Deno.test("both direct roots run on 209 with official behaviors only", () => {
         for (const step of w.jobs[0].steps) {
             assertEquals(step.labels, { role: "swamp" });
             assertEquals(Object.hasOwn(step, "target"), false);
-            const task = step.task as { behaviorType: string; methodName: string };
+            const task = step.task as {
+                behaviorType: string;
+                methodName: string;
+            };
             assertEquals(
                 task.behaviorType === "@nckrtl/network-command" ||
-                    task.behaviorType === "@swamp/ssh" && task.methodName === "exec" ||
+                    task.behaviorType === "@swamp/ssh" &&
+                        task.methodName === "exec" ||
                     task.behaviorType.startsWith("@swamp/cfgmgmt/"),
                 true,
                 step.name as string,
@@ -117,8 +147,11 @@ Deno.test("no WireGuard file content carries a private key", () => {
     const text = JSON.stringify(workflow(true));
     assertEquals(text.includes("PrivateKey = %s"), true);
     for (const step of workflow(true).jobs[0].steps) {
-        const args = (step.task as { globalArgs?: { content?: string } }).globalArgs;
-        if (args?.content) assertEquals(args.content.includes("PrivateKey"), false);
+        const args =
+            (step.task as { globalArgs?: { content?: string } }).globalArgs;
+        if (args?.content) {
+            assertEquals(args.content.includes("PrivateKey"), false);
+        }
     }
 });
 Deno.test("roleless operator DNS accepts its admitted private-only uplink exception", () => {
@@ -130,15 +163,37 @@ Deno.test("roleless operator DNS accepts its admitted private-only uplink except
 
 Deno.test("network decision repairs DNS drift without a digest change and skips a compliant hub", async () => {
     const decisions: unknown[] = [];
-    const ctx = { writeResource: (_spec: string, _name: string, value: unknown) => {
-        decisions.push(value);
-        return Promise.resolve({});
-    } };
-    const input = { required: false, observations: [{ public_key: key, port: null, exact: true, peers: [] }],
-        stdout: `interface: orbit\n  public key: ${key}\n`, hub_stdout: "", addresses: "", dns_stdout: observed(), policy: [policy] };
+    const ctx = {
+        writeResource: (_spec: string, _name: string, value: unknown) => {
+            decisions.push(value);
+            return Promise.resolve({});
+        },
+    };
+    const input = {
+        required: false,
+        observations: [{ public_key: key, port: null, exact: true, peers: [] }],
+        stdout: `interface: orbit\n  public key: ${key}\n`,
+        hub_stdout: "",
+        addresses: "",
+        dns_stdout: observed(),
+        policy: [policy],
+    };
     await behavior.methods.compare.execute(input, ctx);
-    await behavior.methods.compare.execute({ ...input, dns_stdout: observed({ domains: "Link 2 (orbit): ~old" }) }, ctx);
-    await behavior.methods.compare.execute({ ...input, policy: [], dns_stdout: "" }, ctx);
-    await behavior.methods.compare.execute({ ...input, policy: [], required: true }, ctx);
-    assertEquals(decisions, [{ changed: false }, { changed: true }, { changed: false }, { changed: true }]);
+    await behavior.methods.compare.execute({
+        ...input,
+        dns_stdout: observed({ domains: "Link 2 (orbit): ~old" }),
+    }, ctx);
+    await behavior.methods.compare.execute({
+        ...input,
+        policy: [],
+        dns_stdout: "",
+    }, ctx);
+    await behavior.methods.compare.execute({
+        ...input,
+        policy: [],
+        required: true,
+    }, ctx);
+    assertEquals(decisions, [{ changed: false }, { changed: true }, {
+        changed: false,
+    }, { changed: true }]);
 });
