@@ -19,7 +19,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - the calling Node has an access grant to a member Node, or to the Gateway Node when the Cluster has none
   %%> - a Cluster with a TLD has one active Router (`cluster.router_required`) and no non-member Node owns the TLD (`cluster.tld_conflict`); a Cluster without a TLD that has affected Routes needs a Router too (`route.router_required`)
-  %%> - every affected Route keeps a valid domain, scope and target; one refusal leaves every Route in place
+  %%> - every affected Route keeps a valid domain, scope and target; one refusal leaves every Route in place; an active public Route that the change would move is refused (`route.reconciliation_required`)
   %%> - no other Cluster change runs; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
   %%> Stored:
   %%> - the Cluster stays inactive; a pending replacement is stored for each domain change and the old placement for each scope change

@@ -22,7 +22,7 @@ orbit cluster:activate 3
 
 In a terminal, an omitted Cluster is chosen from an interactive list. A noninteractive or `--json` call that omits it is refused with `cluster.id_invalid` and sends no request.
 
-Activation is the routing cutover. Orbit first checks the whole change: a Cluster with a TLD needs exactly one active Router and no non-member Node that owns the TLD, and every affected Route must keep a valid domain, scope and target. One refusal leaves every Route in place. Then Orbit opens the LAN ingress rules and moves every affected Route to the Cluster scope, with generated domains in the Cluster TLD when the Cluster has one and on the Node TLDs otherwise. Custom proxy Routes keep their Node scope. An active public Route that the change would move is refused with `route.reconciliation_required`. Then private DNS selects the Router for Cluster names, and a last step prunes the rules and DNS selection the Cluster does not need. The CLI shows one progress indicator while the task runs, then prints the Cluster by its name with the task and request IDs.
+Activation is the routing cutover. Orbit first checks the whole change: a Cluster with a TLD needs exactly one active Router and no non-member Node that owns the TLD, and every affected Route must keep a valid domain, scope and target. One refusal leaves every Route in place. Then Orbit opens the LAN ingress rules and moves every affected Route to the Cluster scope, with generated domains in the Cluster TLD when the Cluster has one and on the Node TLDs otherwise. Custom proxy Routes keep their Node scope. An active public Route that the change would move is refused with `route.reconciliation_required`. Then private DNS selects the Router for Cluster names, and a last step prunes the rules and DNS selection the Cluster does not need. The cutover is the point where the Gateway records the new state: the Cluster active and the new domains and scopes in force. The CLI shows one progress indicator while the task runs, then prints the Cluster by its name with the task and request IDs.
 
 Activating a Cluster that is active, with no unfinished change, succeeds with `Skipped — already active (cluster.state_unchanged)` and changes nothing. The same command after a failure past the cutover is not skipped: it finishes the work.
 
@@ -36,8 +36,10 @@ A failure before the cutover leaves the Cluster inactive and every Route as it w
 | `cluster.router_required` | The Cluster has a TLD but no active Router. |
 | `route.router_required` | The Cluster has no TLD, has affected Routes and no active Router. |
 | `cluster.tld_conflict` | A Node outside the Cluster already owns the Cluster TLD. |
-| `cluster.router_busy` | Another Router change holds the Cluster. Retry after it finishes. |
-| `route.reconciliation_required` | An active Route depends on the change and cannot be reconciled by it. |
+| `input.cancelled` | You cancelled the Cluster list. |
+| `cluster.router_busy` | Another Cluster change holds the Cluster for more than 30 seconds. Retry after it finishes. |
+| `route.reconciliation_required` | An active public Route would change its domain or scope. |
+| `route.domain_change_conflict` | An affected Route already has another domain change in progress. |
 | `route.domain_conflict` | A new Route domain would collide with another Route. |
 | `route.tld_required` | A generated Route would have no effective TLD. |
 | `route.target_scope_conflict` | The targets of a Route would span routing scopes. |
@@ -45,7 +47,7 @@ A failure before the cutover leaves the Cluster inactive and every Route as it w
 | `route.generation_basis_missing` | A generated Route has no generation basis. |
 | `route.generation_basis_invalid` | A generated Route cannot be reconciled from its stored basis. |
 | `route.scope_invalid` | A Route without a target cannot leave its Cluster scope. |
-| `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed`, `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
 | `http.404` | The Cluster is unknown. |
 | `node_access.required` | The caller has no access grant to a member Node of the Cluster, or to the Gateway Node when the Cluster has no members. |
 
