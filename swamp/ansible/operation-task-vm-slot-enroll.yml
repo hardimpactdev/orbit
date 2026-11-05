@@ -29,9 +29,14 @@
       - {path: home/orbit/.pi/agent/models.json, mode: "0600"}
       - {path: REVISION, mode: "0644"}
     # The Pi unit and its drop-ins are named after the slot's Pi Process id, so they come from the rendered files.
-    tree_units: "{{ identity.files.keys() | select('match', '^etc/systemd/system/') | map('regex_replace', '^(.*)$', '{\"path\": \"\\1\", \"mode\": \"0644\"}') | map('from_json') | list }}"
+    tree_units: >-
+      {{ identity.files.keys() | select('match', '^etc/systemd/system/')
+         | map('regex_replace', '^', '{"mode": "0644", "path": "') | map('regex_replace', '$', '"}')
+         | map('from_json') | list }}
     tree_all: "{{ tree_files + tree_units }}"
-    tree_folders: "{{ ['etc/wireguard', 'etc/ssh', 'etc/cloud/cloud.cfg.d', 'etc/orbit/agent', 'home/orbit/.pi/agent', 'etc/systemd/system'] + (identity.files.keys() | select('match', '^etc/systemd/system/.+/') | map('dirname') | unique | list) }}"
+    tree_folders: >-
+      {{ ['etc/wireguard', 'etc/ssh', 'etc/cloud/cloud.cfg.d', 'etc/orbit/agent', 'home/orbit/.pi/agent', 'etc/systemd/system']
+         + (identity.files.keys() | select('match', '^etc/systemd/system/.+/') | map('dirname') | unique | list) }}
   tasks:
     - name: Look for the identity volume
       ansible.builtin.command:
