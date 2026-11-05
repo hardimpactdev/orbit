@@ -124,6 +124,7 @@
         - { name: package-lock.json, content: "{{ intent.vp_lock }}" }
       loop_control: { label: "{{ item.name }}" }
     - name: Install the Vite+ package
+      become: true
       become_user: "{{ orbit_user }}"
       ansible.builtin.command:
         argv:
@@ -155,6 +156,7 @@
         - { src: vp, dest: "{{ scope }}/bin/npx" }
       loop_control: { label: "{{ item.dest }}" }
     - name: Make the pinned Node the default
+      become: true
       become_user: "{{ orbit_user }}"
       ansible.builtin.command: { argv: ["{{ scope }}/bin/vp", env, default, "{{ node.version }}"] }
       environment: { VP_HOME: "{{ scope }}" }

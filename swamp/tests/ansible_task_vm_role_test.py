@@ -32,7 +32,7 @@ class TaskVmRoleTest(unittest.TestCase):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
             text = path.read_text()
             self.assertIsNone(re.search(r'\b\d+\.\d+\.\d+\b', text), f'{path.name} names a version; the recipe owns it')
-            self.assertNotIn('==', text, path.name)
+            self.assertIsNone(re.search(r'\w==\d', text), f'{path.name} pins a package; the recipe owns it')
 
     def test_a_task_vm_is_reached_directly(self):
         with tempfile.TemporaryDirectory() as folder:

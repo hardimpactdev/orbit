@@ -79,7 +79,7 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertEqual(pip['virtualenv'], '{{ shape_venv }}')
         self.assertEqual(pip['requirements'], '/opt/orbit-shape-gate/shape-gate-requirements.txt')
         self.assertEqual(str(self.gate.SYSTEM_TOOLS), '/opt/orbit-shape-gate')
-        self.assertNotIn('==', (ANSIBLE / 'tasks/task-vm-shape-gate.yml').read_text(), 'the playbook names no pin')
+        self.assertNotRegex((ANSIBLE / 'tasks/task-vm-shape-gate.yml').read_text(), r'\w==\d', 'the playbook names no pin')
 
 
 if __name__ == '__main__':

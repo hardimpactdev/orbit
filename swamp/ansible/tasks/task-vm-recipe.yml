@@ -34,8 +34,10 @@
     tool_by_name: "{{ dict(tool_list | map(attribute='name') | zip(tool_list)) }}"
 - name: Name the shape gate tools
   vars:
-    pins: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/shape-gate-requirements.txt', rstrip=False) ~ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.txt', rstrip=False) }}"
-    collections: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.yml', rstrip=False) }}"
+    pins: >-
+      {{ lookup('ansible.builtin.file', playbook_dir ~ '/shape-gate-requirements.txt', rstrip=False)
+      ~ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.txt', rstrip=False) }}
+    gate_collections: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.yml', rstrip=False) }}"
   ansible.builtin.set_fact:
     shape_venv: "/opt/orbit-shape-gate/venv-{{ pins | hash('sha256') | truncate(16, True, '') }}"
-    shape_collections: "/opt/orbit-shape-gate/collections-{{ collections | hash('sha256') | truncate(16, True, '') }}"
+    shape_collections: "/opt/orbit-shape-gate/collections-{{ gate_collections | hash('sha256') | truncate(16, True, '') }}"
