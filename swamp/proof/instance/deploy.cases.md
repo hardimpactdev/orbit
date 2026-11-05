@@ -22,7 +22,7 @@ The proof runs the built CLI against a fresh nested topology with a Gateway, an 
 | Source access | A Project whose source access cannot be used for a development deploy. | `deployment.source_access_unsupported`. No task. |
 | Release layout | A deploy with shared paths, a served web root, Schedules, a Process that is stopped, one with `restart_on_deploy` off, a non-PHP Instance and existing local PHP tuning. | The empty persistent directories are seeded and the admitted paths linked, Caddy gains access to each web root, the Schedule timers are installed, stopped Processes stay stopped, the Process with the opt-out is left running, the non-PHP Instance has no PHP runtime, and the local PHP tuning is left intact. |
 | Fetch credential | Make the fetch fail. | The fetch credential is removed anyway. |
-| Queue | Make the Gateway unable to queue the task. | `operation.queue_unavailable`. Nothing starts. |
+| Queue | Make the Gateway unable to queue the task. | `operation.queue_unavailable`. Nothing starts. Fails today: a manual deploy does not emit this code. |
 | Foreign keys | A `.env` that holds keys Orbit does not manage. | `env.sync_would_drop_keys`. Nothing is overwritten. |
 | Vite+ | A Project whose steps need Vite+, with a missing store and with invalid requirements. | The shared steps run once and the build succeeds, or the task fails with `deployment.vp_store_failed` or `deployment.vp_requirements_invalid` and `current` is unchanged. |
 | Missing configuration | A production Instance with no stored environment configuration. | `env.configuration_missing`. Nothing is recorded. |
