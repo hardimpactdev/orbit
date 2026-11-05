@@ -1,0 +1,91 @@
+"""The proof CI step fails unless `orbit proof:run` exits cleanly and every case passed."""
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).resolve().parents[1] / 'bin/ci-proof-run'
+loader = importlib.machinery.SourceFileLoader('ci_proof_run', str(SCRIPT))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+proof = importlib.util.module_from_spec(spec)
+loader.exec_module(proof)
+
+SHA = 'a' * 40
+
+
+def document(*verdicts, wrapper=None):
+    result = {'outcome': 'passed', 'cases': [{'command': 'firewall:allow', 'program': f'swamp/proof/firewall/cases/allow-{i}.sh',
+                                              'verdict': verdict} for i, verdict in enumerate(verdicts)]}
+    return json.dumps({wrapper: {'result': result}} if wrapper else {'result': result})
+
+
+class EvaluateTest(unittest.TestCase):
+    def test_all_cases_passed(self):
+        for wrapper in (None, 'data', 'operation'):
+            with self.subTest(wrapper=wrapper):
+                passed, lines = proof.evaluate(0, document('passed', 'passed', wrapper=wrapper))
+                self.assertTrue(passed)
+                self.assertIn('| firewall:allow | allow-0.sh | passed |', lines)
+
+    def test_any_other_verdict_fails(self):
+        for verdict in ('failed', 'unrun', 'skipped', ''):
+            with self.subTest(verdict=verdict):
+                self.assertFalse(proof.evaluate(0, document('passed', verdict))[0])
+
+    def test_a_nonzero_exit_fails_even_when_the_cases_passed(self):
+        self.assertFalse(proof.evaluate(1, document('passed'))[0])
+
+    def test_a_missing_or_unreadable_result_fails(self):
+        for output in ('', 'not json', '{}', '{"error": {"code": "proof.path_unmapped"}}', '[]'):
+            with self.subTest(output=output):
+                self.assertFalse(proof.evaluate(0, output)[0])
+
+    def test_nothing_to_prove_passes_and_lists_uncovered_paths(self):
+        output = json.dumps({'result': {'outcome': 'nothing_to_prove', 'cases': [],
+                                        'uncovered': [{'path': 'swamp/x.yaml', 'reason': 'none: no case yet'}]}})
+        passed, lines = proof.evaluate(0, output)
+        self.assertTrue(passed)
+        self.assertIn('Uncovered: swamp/x.yaml (none: no case yet)', lines)
+
+
+class RunTest(unittest.TestCase):
+    def run_script(self, orbit_body, env=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            orbit = Path(tmp, 'orbit')
+            orbit.write_text('#!/bin/sh\n' + orbit_body)
+            orbit.chmod(orbit.stat().st_mode | stat.S_IXUSR)
+            summary = Path(tmp, 'summary.md')
+            environment = {'PATH': tmp + os.pathsep + '/usr/bin:/bin', 'PROOF_SHA': SHA, 'GITHUB_RUN_ID': '7',
+                           'GITHUB_RUN_ATTEMPT': '2', 'GITHUB_STEP_SUMMARY': str(summary), **(env or {})}
+            done = subprocess.run(['python3', '-I', str(SCRIPT)], env=environment, capture_output=True, text=True, timeout=60)
+            return done, summary.read_text() if summary.exists() else ''
+
+    def test_passes_only_the_sha_and_the_run_key_and_writes_the_summary(self):
+        done, summary = self.run_script('printf "%s\\n" "$*" >&2\ncat <<\'JSON\'\n' + document('passed') + '\nJSON\n')
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn(f'proof:run {SHA} --json --idempotency-key ci-proof.7.2', done.stderr)
+        self.assertIn('passed', summary)
+
+    def test_a_failed_case_fails_the_job(self):
+        done, _ = self.run_script('cat <<\'JSON\'\n' + document('failed') + '\nJSON\n')
+        self.assertNotEqual(0, done.returncode)
+
+    def test_a_refusal_fails_the_job_with_its_status(self):
+        done, _ = self.run_script('echo \'{"error":{"code":"proof.path_unmapped"}}\'\nexit 3\n')
+        self.assertEqual(3, done.returncode)
+
+    def test_a_bad_sha_or_a_missing_cli_fails_before_running(self):
+        self.assertNotEqual(0, self.run_script('exit 0\n', {'PROOF_SHA': 'main'})[0].returncode)
+        done = subprocess.run(['python3', '-I', str(SCRIPT)], env={'PATH': '/usr/bin:/bin', 'PROOF_SHA': SHA},
+                              capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn('orbit CLI', done.stderr)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -48,13 +48,13 @@ sequenceDiagram
     end
     CI->>GW: Run the proof CI<br/>proof:run COMMIT
     %%> What it does:
-    %%> - a job on the beast or shark runner passes only the full SHA and an idempotency key; it checks out nothing and chooses no cases
+    %%> - a job on the beast or shark runner passes only the full SHA and an idempotency key; it checks out only its own script and chooses no cases
     %%> - a new push cancels the proof run of the previous push on the same PR (GitHub concurrency), so only the latest push finishes its proof
     %%> - the Gateway checks the commit, selects the cases and starts one Swamp run, as in the chart of `proof:run`
     %%> - the run starts a fresh task VM from the current images, syncs the commit, converges that VM once when the PR changes playbooks or pins, and takes `base`; each batch restores `base` once, nothing converges again
     %%> - the base images stay as they are; only the merge and the seed refresh (stage 6) change them
     %%> Not built:
-    %%> - the CI job that calls `proof:run`, and the proof CI as a job of the one CI result; today a merge needs `Required checks` alone
+    %%> - the proof CI as part of the one CI result: the job `proof-run` calls `proof:run` but is report-only; today a merge needs `Required checks` alone, and the job joins it once a run passes end to end
     GW-->>CI: Verdict per case
     %%> Result:
     %%> - the job reads the operation until it ends; a missing result or a failed assertion fails the CI result

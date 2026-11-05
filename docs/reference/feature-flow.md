@@ -116,16 +116,20 @@ CI is the only gate: if CI passes, the PR merges. CI runs on every push to the P
 
 ### The proof CI
 
-The proof CI is the target. Built so far: the `orbit proof:run` admission (trust check and case selection), the selection list, and the execution as a Gateway-started chain that moves to one Swamp flow next. Not built yet: the receipt store, the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+The proof CI is the target. Built so far: the `orbit proof:run` admission (trust check and case selection), the selection list, and the execution as a Gateway-started chain that moves to one Swamp flow next.
 
-The job is `Proofs`, a job of the one CI; the merge requires the one CI result. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
+The job `proof-run` is built but report-only. It is not part of `Required checks` until a run passes end to end. Not built yet: the receipt store and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+
+The job is `proof-run` (`Proof run (report-only)`), a job of the one CI. It will be part of the one CI result that the merge requires. Until then the merge does not wait for it. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
+
+A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on a self-hosted runner, waits for the verdict, and passes or fails. The runner reaches the Gateway over the private network as an enrolled Node. The job adds no runner and no access.
 
 **The job**
 
-- A hosted scope step reads the changed paths with `bin/proof-select`, run from `main` and not from the pull request. A path that needs a proof starts `Proofs`.
-- A path that matches no line fails the scope step. A change to documentation only never starts the proof CI.
-- `Proofs` passes one commit SHA to `orbit proof:run --json`: the pull request head.
-- It also passes an idempotency key built from the workflow run and its attempt. It checks out nothing and chooses no cases.
+- The `changes` job reads the changed paths with `bin/ci-build-plan`, which reads `swamp/proof/selection.txt`. A path that needs a proof starts `proof-run`.
+- A path that matches no line also starts the job, and `proof:run` refuses it. A change to documentation only never starts the proof CI.
+- `proof-run` passes one commit SHA to `orbit proof:run --json`: the pull request head.
+- It also passes an idempotency key built from the workflow run and its attempt. It checks out only its own script and chooses no cases.
 - Orbit fetches the commit and selects the cases with its own program.
 **The result**
 
@@ -159,7 +163,8 @@ The job is `Proofs`, a job of the one CI; the merge requires the one CI result. 
 
 **Required check**
 
-- `Proofs` is a job of the one CI. The merge requires the one CI result, `Required checks`, which will hold it.
+- `proof-run` is report-only for now. It is not in `Required checks`, because `proof:run` has no passing end-to-end run yet.
+- Once a run passes end to end, it joins `Required checks`, and the merge requires it.
 - Only the scope step may skip it, and only for a change that needs no proof.
 
 ### Choose the cases

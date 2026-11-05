@@ -236,6 +236,7 @@ jobs:
       jobs: ${{ steps.plan.outputs.jobs }}
       gateway_release: ${{ steps.plan.outputs.gateway_release }}
       swamp_base_ref: ${{ steps.plan.outputs.swamp_base_ref }}
+      proof_run: ${{ steps.plan.outputs.proof_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -292,6 +293,41 @@ jobs:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --workflows-from proof/reset --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/proof-workflow-validation.json"
+
+  # REPORT-ONLY: this job is not in `required.needs`, so it cannot block a merge. proof:run has no passing end-to-end
+  # run yet. Add it to `required.needs` (and to JOBS in bin/ci-build-plan) once a run passes end to end.
+  proof-run:
+    name: Proof run (report-only)
+    needs: changes
+    # Only a pull request from a branch of this repository. A fork or outside PR needs a maintainer's review and
+    # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job. There is no queue run, and no
+    # run after the merge: the proof tests the PR head once per push.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && needs.changes.outputs.proof_run == 'true'
+    # The runner must act as an enrolled Node that may reach the Gateway: the orbit CLI on its PATH calls the Gateway
+    # from its WireGuard address and uses no secret. Set the variable ORBIT_PROOF_RUNNER to a JSON list of labels to
+    # move the job to such a runner.
+    runs-on: ${{ fromJSON(vars.ORBIT_PROOF_RUNNER || '["self-hosted","hardimpact","orbit-shard"]') }}
+    # The VM wait plus the 30 minute run budget.
+    timeout-minutes: 45
+    # A new push cancels the proof run of the previous push on the same PR. A cancelled step cancels its Orbit run.
+    concurrency:
+      group: proof-run-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # The job checks out one file, the script. It passes the head SHA and an idempotency key, and Orbit chooses the cases.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: bin/ci-proof-run
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Run orbit proof:run on the pull request head
+        env:
+          PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -I bin/ci-proof-run
 
   swamp:
     name: Swamp
