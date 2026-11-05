@@ -42,7 +42,7 @@ The Gateway refuses before it reserves anything:
 | `instance.production_placement_conflict` | The Project already has a production Instance on the Node. |
 | `route.tld_required` | A web Project's Node has no TLD. |
 | `route.domain_conflict` | Another Route owns the preview domain. |
-| `operation.kind_unavailable` | The Node is a task VM or in an active Cluster, or the candidate has an attached Database connection. |
+| `operation.kind_unavailable` | A web Project's Node is in an active Cluster, the Node (or the candidate's Node) is a task VM, or the candidate has an attached Database connection. |
 
 Development [`instance:create`](/cli/instance/create) uses the same Route child, but answers a task VM Node with `instance.task_vm_node`.
 
