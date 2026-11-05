@@ -37,6 +37,17 @@ sequenceDiagram
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
   %%> Why redacted:
   %%> - setup output stays on the VM; only a redacted 4 KiB tail reaches history
+  opt the task declares a topology
+    SW->>VM: Start the nested fleet<br/>task-nested-fleet child
+    %%> What it does:
+    %%> - creates the nested network from the subnet that the ready copies of the seed store, copies the three ready copies, gives each its stored MAC and address, and starts them
+    %%> - joins as operator: the VM makes its own WireGuard key, writes the public key into the nested Gateway's operator record with `incus exec`, puts it on the hub and brings up `wg-nested` as 10.45.0.10
+    %%> - pushes the proof Swamp Club key from the VM into the nested Gateway and restarts its Swamp
+    %%> Why:
+    %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
+    %%> Not built yet in this step:
+    %%> - the NFS mount of the checkout, the apply step, the readiness check and the `base` snapshot
+  end
   opt the workspace has a Route or Processes
     Note over SW: Bind the workspace keys<br/>pin the guest host key
     %%> Why:

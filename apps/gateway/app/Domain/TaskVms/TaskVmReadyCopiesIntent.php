@@ -23,7 +23,17 @@ final readonly class TaskVmReadyCopiesIntent
     public const array Guests = ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'];
 
     /** The nested network of a task VM. The stage 2 steps create it from the subnet the ready copies store. */
-    public const string Network = 'nested';
+    public const string Network = 'oe-nested';
+
+    /**
+     * The nested fleet of a task VM: the names of its VMs and of its network, for the steps that start it and the steps that save it.
+     *
+     * @return array{guests:array<string,string>,network:string}
+     */
+    public static function fleet(): array
+    {
+        return ['guests' => self::Guests, 'network' => self::Network];
+    }
 
     public function __construct(private SwampSshExecutionInput $ssh, private SwampCommandStep $shared) {}
 
@@ -43,7 +53,7 @@ final readonly class TaskVmReadyCopiesIntent
         return [
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
-            'fleet' => ['guests' => self::Guests, 'network' => self::Network],
+            'fleet' => self::fleet(),
             'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
         ];
     }

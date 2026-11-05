@@ -26,6 +26,7 @@ use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
+use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -140,7 +141,7 @@ final readonly class TaskProvisionIntent
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
                     'setup' => $setup],
-                'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
+                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
                 'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
             $group->taskable()->associate($instance);
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();

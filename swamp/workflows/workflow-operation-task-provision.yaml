@@ -70,6 +70,23 @@ jobs:
     - step: Create and prepare the VM
       condition:
         type: succeeded
+  - name: Start the nested fleet
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ has(inputs.intent.create) && inputs.intent.create != null && inputs.intent.create.topology }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-nested-fleet
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+    dependsOn:
+    - step: Set up the workspace
+      condition:
+        type: succeeded
     # The Gateway left the guest's SSH targets unpinned; the VM step just pinned its key.
   - name: Bind the workspace keys
     labels: {role: swamp}
