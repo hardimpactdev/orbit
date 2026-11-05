@@ -268,6 +268,35 @@ Token revocation (`gh api --method DELETE installation/token`) and scratch clean
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
+#### Prepare a command
+
+`tasks:prep <group> --command=FAMILY:COMMAND` starts `tasks.prep` through `POST /api/v1/task-groups/{group}/prep`. It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs. A command that is not `family:command` in lower case returns `422 tasks.prep_command_invalid`.
+
+The group is an external `todo` group, made with `tasks:create`, of a Project that the GitHub App reads. It has no VM yet. The Gateway admits one run. In one transaction it captures the placement, VM, workspace and credentials the way [provision](#provision-an-external-group) does, and it captures the rest of the intent:
+
+- the author thread, and one reviewer thread for each review round, with model, effort, session and Pi address;
+- the prompts of the draft, review and fix turns;
+- the title and body of the draft pull request;
+- the repository, the base and the branch `task-{group}`.
+
+It mints the GitHub installation token for the pull request. The token and its Git authorization header travel as vault key names, never as values. Admission adds no child Operation. No step of the run calls the Gateway.
+
+The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
+
+| Step | Child workflow | Role and thread |
+| --- | --- | --- |
+| Create the VM | `operation-task-provision` | |
+| Draft the spec | `operation-task-turn` | implementer, new thread |
+| Review the spec | `operation-task-turn` | reviewer, new thread for each round |
+| Fix the findings | `operation-task-turn` | implementer, the draft's thread |
+| Open a draft PR | `operation-task-publish` with `draft` | |
+
+The child workflows gain only inputs that the parent needs. `operation-task-turn` takes an optional `turn_key`, because a thread that takes a draft turn and a fix turn must send two different Pi turn keys, and an optional `candidate`, because the commit a reviewer restores is the commit the author just made. `operation-task-publish` takes a commit and tree that no check recorded. These are values the Gateway cannot know at admission, so they pass from step to step in the run: the `after` snapshot that a turn reports becomes the next reviewer's candidate and the publish commit and tree.
+
+The author commits the three files as one commit. A draft that leaves HEAD where it was ends the run with `tasks.prep_not_committed` before any review. The review runs for at most `orbit.tasks.prep_review_rounds` rounds, three by default. A reviewer receipt with outcome `approved` ends the loop. With `changes_requested`, the reviewer's summary goes into the prompt of a fix turn on the author thread, and a new review follows. A finding left after the last round ends the run with `tasks.prep_review_unresolved`; nothing is published and the VM stays for the orchestrator, who cancels the group when done.
+
+The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
+
 ### Task lifecycle
 
 A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one subtask and a deliverable on every subtask. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.

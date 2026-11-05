@@ -1,0 +1,81 @@
+sequenceDiagram
+  %% Target design: docs/reference/tasks.md#prepare-a-command, the Gateway side of stage 1 of the command development pipeline (docs/reference/pipeline/1-prep.mmd). The pattern of proof:run: one admission, one parent Swamp run, existing workflows as children.
+  %% status: draft
+  %% command: tasks:prep
+  %% kind: tasks.prep
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=terminal pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>author · reviewer
+  participant GH as GitHub<br/>draft PR
+  CLI->>GW: tasks:prep 42<br/>--command=firewall:deny
+  %%> Command:
+  %%> - `orbit tasks:prep 42 --command=firewall:deny`
+  %%> - syntax: `[group] --command=FAMILY:COMMAND [--idempotency-key=KEY] [--json]`
+  Note over GW: Admit one prep run<br/>group 42 · capture the intent
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - group 42 is an open external `todo` group with no VM, of a Project that the GitHub App reads
+  %%> - the command is `family:command` in lower case
+  %%> What it does:
+  %%> - captures, in one transaction, the provision intent, the author and reviewer threads, the prompts, the pull request title and body, and the repository, base and branch `task-42`
+  %%> - mints the GitHub installation token for the pull request and pushes it to the vault under key names
+  %%> Result:
+  %%> - Operation recorded with the full intent
+  GW->>SW: Start one run, full intent<br/>operation-task-prep
+  %%> Inputs:
+  %%> - the whole intent above, and the vault key names of the model, Pi and GitHub credentials, never their values
+  %%> - no step of the run calls the Gateway
+  GW-->>CLI: 202 Accepted<br/>Operation recorded
+  %%> Next:
+  %%> - the CLI follows the Operation with `operation:show`
+  SW->>VM: Create the VM<br/>operation-task-provision
+  %%> What it does:
+  %%> - runs the provision workflow as a child, with its intent from the parent's inputs
+  %%> - the VM, the workspace and the checkout of the default branch
+  SW->>VM: Draft the spec<br/>operation-task-turn
+  %%> What it does:
+  %%> - the author agent drafts the chart, the page and the cases, checks them, and commits the three files as one commit
+  %%> - the turn reports the commit and tree it left
+  alt the draft moved HEAD
+    loop until the review has no findings, at most 3 rounds
+      SW->>VM: Review the spec<br/>operation-task-turn
+      %%> What it does:
+      %%> - a new reviewer thread restores the commit under review and reads the spec
+      %%> - its receipt is `approved` or `changes_requested` with the findings
+      VM-->>SW: Findings or none
+      SW->>VM: Fix the findings<br/>operation-task-turn
+      %%> When:
+      %%> - only when the review has findings
+      %%> Result:
+      %%> - the author thread fixes them and commits again
+    end
+    alt the last review has no findings
+      SW->>GH: Open a draft PR<br/>operation-task-publish
+      %%> What it does:
+      %%> - pushes the commit to `task-42` without force and opens the PR as the Orbit App, as a draft
+      SW-->>GW: Native terminal result<br/>PR number · URL · commit
+      Note over GW: Record the draft PR<br/>pr_url · watched PR
+      %%> Result:
+      %%> - the group keeps its VM; the pull request fields of the group are set for stage 4
+    else findings are left
+      SW--xGW: Native failed result<br/>tasks.prep_review_unresolved
+      %%> Result:
+      %%> - nothing is published; the VM stays for the orchestrator
+    end
+  else HEAD did not move
+    SW--xGW: Native failed result<br/>tasks.prep_not_committed
+    %%> Result:
+    %%> - no review runs; the VM stays for the orchestrator
+  end
+  loop until terminal
+    CLI->>GW: operation:show<br/>Operation number
+    %%> Returns:
+    %%> - the Operation status, and the pull request when the run succeeded
+  end
