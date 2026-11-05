@@ -36,7 +36,8 @@ def guest_row(role, status='Running'):
 
 def copy_row(role, **overrides):
     config = {'user.ready.set': 'set1', 'user.ready.complete': 'set1', 'user.ready.role': role,
-              'user.ready.made': '2026-11-05T10:00:00Z', 'user.ready.hwaddr': MACS[role], 'user.ready.ipv4': ADDRESSES[role],
+              'user.ready.made': '2026-11-05T10:00:00Z', 'user.ready.minted': '2026-11-05T09:00:00Z', 'user.ready.attempt': 'a' * 32,
+              'user.ready.inputs': 'digest1', 'user.ready.hwaddr': MACS[role], 'user.ready.ipv4': ADDRESSES[role],
               'user.ready.subnet': '10.232.2.1/24', 'user.ready.nodes': json.dumps({'gateway': 209, 'app-dev': 211}),
               'user.ready.mounts': json.dumps({} if role == 'app-prod' else {'orbit-source': '/home/orbit/orbit'})}
     row = {'name': ready.name(role), 'status': 'Stopped', 'config': config, 'devices': {'root': {'type': 'disk', 'path': '/'}}}
@@ -79,7 +80,7 @@ class FakeIncus:
 class MakeTests(unittest.TestCase):
     def make(self, incus):
         with patch.object(ready, 'incus', incus), patch.object(ready, 'stamp', return_value='2026-11-05T10:00:00Z'):
-            return ready.make(GUESTS, 'oe-net', {'gateway': 209, 'app-dev': 211})
+            return ready.make(GUESTS, 'oe-net', {'gateway': 209, 'app-dev': 211}, minted=1793836800, attempt='a' * 32, inputs='digest1')
 
     def test_copies_carry_no_label_nic_or_mount_and_complete_last(self):
         incus = FakeIncus([guest_row(role) for role in ready.ROLES])
@@ -95,9 +96,10 @@ class MakeTests(unittest.TestCase):
                 self.assertIn(['config', 'unset', target, 'user.orbit.e2e.' + label], calls)
             self.assertIn(['config', 'device', 'remove', target, 'eth0'], calls)
             self.assertEqual(role != 'app-prod', ['config', 'device', 'remove', target, 'orbit-source'] in calls)
-        completions = [i for i, call in enumerate(calls) if call[:2] == ['config', 'set'] and any(a.startswith('user.ready.complete=') for a in call)]
-        self.assertEqual(3, len(completions))
-        self.assertGreater(min(completions), max(i for i, call in enumerate(calls) if call[0] == 'copy'))
+        # The set is not complete until the caller says so, after the restarted fleet passed its checks.
+        self.assertFalse(any(any(a.startswith('user.ready.complete=') for a in call) for call in calls))
+        for role in ready.ROLES:
+            self.assertIn(['config', 'unset', ready.name(role), 'user.ready.complete'], calls)
         self.assertEqual(['start', *GUESTS.values()], calls[-1])
         self.assertEqual({'set', 'made', 'subnet', 'copies', 'started_at'}, set(result))
 
@@ -227,7 +229,7 @@ class InspectTests(unittest.TestCase):
             'wrong role': (edited('app-dev', **{'user.ready.role': 'gateway'}), 'another role'),
             'label': (carrying, 'labels'),
             'nic': (nic, 'generation device'),
-            'no time': (edited('gateway', **{'user.ready.made': ''}), 'creation time'),
+            'no mint time': (edited('gateway', **{'user.ready.minted': ''}), 'minted'),
             'no nodes': (edited('gateway', **{'user.ready.nodes': ''}), 'Node ids'),
         }
         for label, (rows, reason) in cases.items():
@@ -241,6 +243,35 @@ class InspectTests(unittest.TestCase):
         found = self.inspect(complete_set(), now=later)
         self.assertFalse(found['usable'])
         self.assertIn('expire', found['reason'])
+
+    def test_the_age_counts_from_the_mint_not_from_the_copy(self):
+        rows = complete_set()
+        # Copied one hour ago, from a fleet whose credentials were minted 21 h ago.
+        for row in rows.values():
+            row['config']['user.ready.made'] = '2026-11-05T11:00:00Z'
+            row['config']['user.ready.minted'] = '2026-11-04T15:00:00Z'
+        found = self.inspect(rows)
+        self.assertFalse(found['usable'])
+        self.assertIn('21 h old', found['reason'])
+        for row in rows.values():
+            row['config']['user.ready.minted'] = '2026-11-05T09:00:00Z'
+        self.assertTrue(self.inspect(rows)['usable'])
+
+    def test_a_set_is_complete_only_after_complete_and_a_failed_ready_leaves_nothing(self):
+        rows = [dict(row, config={k: v for k, v in row['config'].items() if k != 'user.ready.complete'}) for row in complete_set().values()]
+        incus = FakeIncus(rows)
+        with patch.object(ready, 'incus', incus):
+            ready.complete('set1')
+            self.assertEqual(3, sum(1 for call in incus.calls if call[:2] == ['config', 'set'] and call[3] == 'user.ready.complete=set1'))
+            with self.assertRaisesRegex(RuntimeError, 'not part of set other'):
+                ready.complete('other')
+            incus.calls.clear()
+            self.assertEqual(sorted(ready.name(role) for role in ready.ROLES), sorted(ready.discard_incomplete()))
+            self.assertEqual(3, sum(1 for call in incus.calls if call[:2] == ['delete', '--force']))
+        complete = FakeIncus(list(complete_set().values()))
+        with patch.object(ready, 'incus', complete):
+            self.assertEqual([], ready.discard_incomplete())
+            self.assertEqual(3, len(ready.drop()))
 
     def test_no_copies_is_not_an_error(self):
         self.assertFalse(ready.inspect({}, now=NOW)['usable'])
@@ -313,7 +344,7 @@ class ReadyStateTests(unittest.TestCase):
 
     def test_usable_only_for_the_subnet_and_addresses_of_the_active_generation(self):
         usable = ready.inspect(complete_set(), now=NOW)
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, patch.object(phases, 'inputs_digest', return_value='digest1'):
             request = self.setup(temporary)
             found = self.state(request, usable)
             self.assertTrue(found['usable'])
@@ -322,6 +353,8 @@ class ReadyStateTests(unittest.TestCase):
             moved = {**usable, 'addresses': {**usable['addresses'], 'app-dev': '10.232.9.11'}}
             self.assertIn('app-dev', self.state(request, moved)['reason'])
             self.assertEqual('nothing', self.state(request, {'usable': False, 'reason': 'nothing'})['reason'])
+            with patch.object(phases, 'inputs_digest', return_value='digest2'):
+                self.assertIn('changed since the ready copies were made', self.state(request, usable)['reason'])
 
     def test_no_generation_or_no_record_is_unusable_not_an_error(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -419,7 +452,20 @@ class SnapshotReadyTests(unittest.TestCase):
             with patch.object(phases, 'incus', return_value=listing), patch.object(phases, 'privileged') as remove:
                 result = phases.prune_generations(request)
             remove.assert_called_once_with(['rm', '-rf', '--', str(generations / old)], timeout=300)
-            self.assertEqual({'kept': sorted([previous, new]), 'removed': [old]}, result)
+            self.assertEqual({'kept': sorted([previous, new]), 'removed': [old], 'failed': {}}, result)
+
+    def test_a_directory_that_cannot_be_deleted_does_not_fail_a_healthy_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            request, root, previous, new = self.fleet(temporary)
+            old = 'c' * 32
+            (root / 'generations' / old).mkdir()
+            launcher.write_json(root / 'generations' / old / 'owner.json', {'candidate': '/c', 'group': '1'})
+            with patch.object(phases, 'incus', return_value=b'[]'), patch.object(phases, 'privileged', side_effect=RuntimeError('sudo: a password is required')):
+                result = phases.prune_generations(request)
+            self.assertEqual([], result['removed'])
+            self.assertIn(old, result['failed'])
+            with patch.object(phases, 'incus', side_effect=RuntimeError('incus is down')):
+                self.assertIn('listing', phases.prune_generations(request)['failed'])
 
 
 class PreservationTests(unittest.TestCase):
@@ -550,87 +596,147 @@ class ReadyWaitTests(unittest.TestCase):
 
 
 class ReadyMakePhaseTests(unittest.TestCase):
-    def test_a_guest_with_foreign_labels_is_never_copied(self):
-        record = {'prepare': {'construction': {'attempt_id': 'a' * 32, 'nodes': {role: {'instance': GUESTS[role]} for role in ready.ROLES}},
-                              'source': {'operation_id': 'b' * 32}}, 'nodes': {}}
-        guests = [{'name': GUESTS[role], 'status': 'Running', 'metadata': {k: v for k, v in LABELS.items()}} for role in ready.ROLES]
-        guests[1]['metadata'] = {**guests[1]['metadata'], 'user.orbit.e2e.attempt': 'foreign'}
-        with patch.object(phases, 'fleet_record', return_value=record), patch.object(phases, 'inventory', return_value={'guests': guests}), \
-                patch.object(ready, 'make') as make:
-            with self.assertRaisesRegex(RuntimeError, 'ownership mismatch'):
-                phases.ready_make({'issue': 'TASK-3187'})
-            make.assert_not_called()
-            guests[1]['metadata'] = dict(LABELS)
-            with patch.object(ready, 'network_of', return_value='oe-net'), patch.object(phases, 'scrub_key', return_value={}), patch.object(phases, 'deliver_key'):
-                phases.ready_make({'issue': 'TASK-3187', 'key_file': '/k'})
-            make.assert_called_once_with(GUESTS, 'oe-net', {})
-
-
     def record(self):
         return {'prepare': {'construction': {'attempt_id': 'a' * 32, 'nodes': {role: {'instance': GUESTS[role]} for role in ready.ROLES}},
                             'source': {'operation_id': 'b' * 32}}, 'nodes': {}}
 
-    def test_the_club_key_leaves_the_gateway_before_the_copy_and_returns_after_the_restart(self):
-        order = []
-        guests = [{'name': GUESTS[role], 'status': 'Running', 'metadata': dict(LABELS)} for role in ready.ROLES]
-        with patch.object(phases, 'fleet_record', return_value=self.record()), patch.object(phases, 'inventory', return_value={'guests': guests}), \
-                patch.object(phases, 'scrub_key', side_effect=lambda *args: order.append('scrub') or {'scanned': True}), \
-                patch.object(phases, 'deliver_key', side_effect=lambda *args: order.append('deliver')), \
-                patch.object(ready, 'network_of', return_value='oe-net'), patch.object(ready, 'make', side_effect=lambda *args: order.append('make') or {'set': 's'}):
-            result = phases.ready_make({'issue': 'TASK-3187', 'key_file': '/k'})
-        self.assertEqual(['scrub', 'make', 'deliver'], order)
-        self.assertEqual({'scanned': True}, result['key'])
+    def guests(self, attempt='a' * 32):
+        labels = {**LABELS, 'user.orbit.e2e.attempt': attempt, 'user.orbit.e2e.operation': 'b' * 32}
+        return [{'name': GUESTS[role], 'status': 'Running', 'metadata': dict(labels)} for role in ready.ROLES]
 
-    def test_a_key_that_stays_on_the_disk_stops_the_copy(self):
-        guests = [{'name': GUESTS[role], 'status': 'Running', 'metadata': dict(LABELS)} for role in ready.ROLES]
-        with patch.object(phases, 'fleet_record', return_value=self.record()), patch.object(phases, 'inventory', return_value={'guests': guests}), \
-                patch.object(phases, 'scrub_key', side_effect=RuntimeError('still on the Gateway disk')), patch.object(phases, 'deliver_key') as deliver, \
-                patch.object(ready, 'network_of', return_value='oe-net'), patch.object(ready, 'make') as make:
-            with self.assertRaisesRegex(RuntimeError, 'still on the Gateway disk'):
-                phases.ready_make({'issue': 'TASK-3187', 'key_file': '/k'})
-        make.assert_not_called()
-        deliver.assert_not_called()
+    def run_make(self, order, **patches):
+        defaults = {
+            'fleet_record': patch.object(phases, 'fleet_record', return_value=self.record()),
+            'inventory': patch.object(phases, 'inventory', return_value={'guests': self.guests()}),
+            'ready_check': patch.object(phases, 'ready_check', side_effect=lambda *a: order.append('check')),
+            'scrub_key': patch.object(phases, 'scrub_key', side_effect=lambda *a: order.append('scrub') or {'scanned': ['gateway']}),
+            'minted_at': patch.object(phases, 'minted_at', return_value=1793836800),
+            'inputs_digest': patch.object(phases, 'inputs_digest', return_value='digest1'),
+            'deliver_key': patch.object(phases, 'deliver_key', side_effect=lambda *a: order.append('deliver')),
+        }
+        defaults.update(patches)
+        with patch.object(ready, 'network_of', return_value='oe-net'), patch.object(ready, 'make', side_effect=lambda *a, **k: order.append('make') or {'set': 's'}) as make:
+            from contextlib import ExitStack
+            with ExitStack() as stack:
+                for item in defaults.values():
+                    stack.enter_context(item)
+                try:
+                    return phases.ready_make({'issue': 'TASK-3187', 'key_file': '/k'}), make
+                finally:
+                    self.make = make
+
+    def test_the_fleet_is_checked_before_the_copy_and_the_key_returns_after_it(self):
+        order = []
+        result, make = self.run_make(order)
+        self.assertEqual(['check', 'scrub', 'make', 'deliver'], order)
+        self.assertEqual({'scanned': ['gateway']}, result['key'])
+        self.assertEqual({'minted': 1793836800, 'attempt': 'a' * 32, 'inputs': 'digest1'}, make.call_args.kwargs)
+
+    def test_an_unhealthy_fleet_is_never_copied_and_the_key_stays(self):
+        order = []
+        with self.assertRaisesRegex(RuntimeError, 'Doctor'):
+            self.run_make(order, ready_check=patch.object(phases, 'ready_check', side_effect=RuntimeError('Doctor is not healthy')))
+        self.assertEqual([], order)
+        self.make.assert_not_called()
+
+    def test_a_key_that_stays_on_a_disk_stops_the_copy_and_the_running_fleet_gets_its_key_back(self):
+        order = []
+        with self.assertRaisesRegex(RuntimeError, 'still on a guest disk'):
+            self.run_make(order, scrub_key=patch.object(phases, 'scrub_key', side_effect=RuntimeError('The proof club key is still on a guest disk')))
+        self.assertEqual(['check', 'deliver'], order)
+        self.make.assert_not_called()
+
+    def test_a_guest_with_foreign_labels_is_never_copied(self):
+        order = []
+        with self.assertRaisesRegex(RuntimeError, 'ownership mismatch'):
+            self.run_make(order, inventory=patch.object(phases, 'inventory', return_value={'guests': self.guests(attempt='foreign')}))
+        self.assertEqual([], order)
+
+    def test_the_set_is_completed_by_its_own_step_from_the_recorded_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            launcher.write_json(Path(temporary) / 'ready-make.json', {'set': 'abc'})
+            with patch.object(ready, 'complete') as complete:
+                self.assertEqual({'set': 'abc', 'complete': True}, phases.ready_complete({'evidence': temporary}))
+            complete.assert_called_once_with('abc')
+
+    def test_the_inputs_digest_changes_with_the_boot_fixes_the_fixture_and_the_agent_pin(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative in ('tools/swamp-proof-guest/boot.py', 'tools/swamp-proof-guest/fixture.py', 'apps/gateway/resources/agent/frozen-manifest.json'):
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_text('one')
+            first = phases.inputs_digest({'candidate': temporary})
+            self.assertEqual(first, phases.inputs_digest({'candidate': temporary}))
+            for relative in ('tools/swamp-proof-guest/boot.py', 'tools/swamp-proof-guest/fixture.py', 'apps/gateway/resources/agent/frozen-manifest.json'):
+                (root / relative).write_text('two')
+                self.assertNotEqual(first, phases.inputs_digest({'candidate': temporary}), relative)
+                (root / relative).write_text('one')
 
 
 class ClubKeyTests(unittest.TestCase):
-    def scrub(self, found):
-        with tempfile.TemporaryDirectory() as temporary:
-            key = Path(temporary) / 'key'
-            key.write_text('club-secret-value\n')
-            with patch.object(phases, 'incus', side_effect=lambda argv, **kwargs: b'/: 1 GiB (1073741824 bytes) trimmed on /dev/sda2\n' if 'fstrim' in argv else found) as incus:
-                try:
-                    return phases.scrub_key({'key_file': str(key)}, 'gw'), incus
-                finally:
-                    self.calls = incus.call_args_list
+    NAMES = {'gateway': 'gw', 'app-dev': 'ad', 'app-prod': 'ap'}
 
-    def test_the_key_file_is_deleted_and_the_disk_scan_finds_nothing(self):
-        result, incus = self.scrub(b'')
-        self.assertEqual({'scanned': True, 'files_holding_the_key': 0, 'fstrim': ['/: 1 GiB (1073741824 bytes) trimmed on /dev/sda2']}, result)
-        self.assertEqual(['exec', 'gw', '--', 'rm', '-f', phases.CLUB_KEY], list(map(str, incus.call_args_list[0].args[0])))
-        scan = incus.call_args_list[1]
-        # The key travels on stdin to a file in /run (memory); it is never an argument.
-        self.assertEqual(b'club-secret-value\n', scan.kwargs['data'])
-        self.assertNotIn('club-secret-value', ' '.join(map(str, scan.args[0])))
-        self.assertIn('/run/club-key-scan', ' '.join(map(str, scan.args[0])))
-        # The trim comes after the delete and the scan, under timeout, and its failure is not swallowed.
-        self.assertEqual(['exec', 'gw', '--', 'timeout', '300', 'fstrim', '-av'], list(map(str, incus.call_args_list[2].args[0])))
+    def scrub(self, found=None, trim=b'/: 1 GiB (1073741824 bytes) trimmed on /dev/sda2\n', fail=None):
+        found = found or {}
 
-    def test_a_failed_trim_fails_ready(self):
         def run(argv, **kwargs):
-            if 'fstrim' in argv:
-                raise RuntimeError('incus exited 1: fstrim failed')
+            line = ' '.join(map(str, argv))
+            if fail and fail in line:
+                raise RuntimeError('incus exited 1: ' + fail)
+            if 'fstrim' in line:
+                return trim
+            if 'club-key-scan' in line:
+                return found.get(argv[1], b'')
             return b''
         with tempfile.TemporaryDirectory() as temporary:
             key = Path(temporary) / 'key'
-            key.write_text('k\n')
-            with patch.object(phases, 'incus', side_effect=run), self.assertRaisesRegex(RuntimeError, 'fstrim failed'):
-                phases.scrub_key({'key_file': str(key)}, 'gw')
+            key.write_text('club-secret-value\n')
+            with patch.object(phases, 'incus', side_effect=run) as incus:
+                try:
+                    return phases.scrub_key({'key_file': str(key)}, self.NAMES)
+                finally:
+                    self.calls = incus.call_args_list
 
-    def test_a_file_that_still_holds_the_key_fails_ready_and_names_only_paths(self):
+    def test_the_key_is_deleted_and_all_three_guests_are_scanned_without_a_size_limit(self):
+        result = self.scrub()
+        self.assertEqual(['app-dev', 'app-prod', 'gateway'], result['scanned'])
+        self.assertEqual(0, result['files_holding_the_key'])
+        self.assertEqual(['exec', 'gw', '--', 'rm', '-f', phases.CLUB_KEY], list(map(str, self.calls[0].args[0])))
+        scans = [call for call in self.calls if 'club-key-scan' in ' '.join(map(str, call.args[0]))]
+        self.assertEqual(['gw', 'ad', 'ap'], [call.args[0][1] for call in scans])
+        for call in scans:
+            command = ' '.join(map(str, call.args[0]))
+            self.assertNotIn('-size', command)
+            self.assertIn('[ $? -le 1 ]', command)  # a grep error (exit 2) fails the scan
+            self.assertEqual(b'club-secret-value\n', call.kwargs['data'])  # on stdin, never an argument
+            self.assertNotIn('club-secret-value', command)
+        self.assertLess(self.calls.index(scans[-1]), next(i for i, c in enumerate(self.calls) if 'fstrim' in ' '.join(map(str, c.args[0]))))
+
+    def test_a_file_that_holds_the_key_on_any_guest_fails_ready_and_names_only_paths(self):
         with self.assertRaises(RuntimeError) as raised:
-            self.scrub(b'/home/orbit/.orbit/proof-control/config/auth.json\n')
-        self.assertIn('/home/orbit/.orbit/proof-control/config/auth.json', str(raised.exception))
+            self.scrub(found={'ap': b'/var/lib/leftover\n'})
+        self.assertIn('ap:/var/lib/leftover', str(raised.exception))
         self.assertNotIn('club-secret-value', str(raised.exception))
+
+    def test_a_failed_scan_or_trim_fails_ready(self):
+        with self.assertRaisesRegex(RuntimeError, 'club-key-scan'):
+            self.scrub(fail='club-key-scan')
+
+    def test_fstrim_exit_64_for_a_mount_without_discard_does_not_fail_but_a_missing_root_trim_does(self):
+        result = self.scrub(trim=b'/boot/efi: 89.9 MiB (94236160 bytes) trimmed on /dev/sda1\n/: 169.7 MiB (177991680 bytes) trimmed on /dev/sda2\n')
+        self.assertEqual(2, len(result['fstrim']))
+        command = ' '.join(map(str, next(call for call in self.calls if 'fstrim' in ' '.join(map(str, call.args[0]))).args[0]))
+        self.assertIn('timeout 300 fstrim -av', command)
+        self.assertIn('-eq 64', command)
+        with self.assertRaisesRegex(RuntimeError, 'not trimmed'):
+            self.scrub(trim=b'/boot/efi: 1 MiB (1048576 bytes) trimmed on /dev/sda1\n')
+
+    def test_an_empty_key_file_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            key = Path(temporary) / 'key'
+            key.write_text('\n')
+            with self.assertRaisesRegex(RuntimeError, 'empty'):
+                phases.scrub_key({'key_file': str(key)}, self.NAMES)
 
     def test_the_restored_gateway_gets_the_key_before_swamp_starts(self):
         with patch.object(phases, 'incus', return_value=b'') as incus:
@@ -640,15 +746,14 @@ class ClubKeyTests(unittest.TestCase):
         self.assertTrue(calls[1].startswith('file push /home/orbit/.config/swamp/club-api-key gw/home/orbit/.config/swamp/club-api-key --mode=0600'))
         self.assertIn('systemctl restart orbit-swamp-serve orbit-node-worker', calls[2])
 
-    def test_the_fast_reset_delivers_the_key_first_and_the_copies_never_hold_it(self):
+    def test_the_fast_reset_delivers_the_key_first(self):
         with patch.object(phases, 'prepared', return_value={'construction': {'nodes': {'gateway': {'instance': 'gw'}}}}), \
                 patch.object(phases, 'incus', return_value=b'') as incus, patch.object(phases, 'guest', return_value={}):
             phases.apply_candidate({'key_file': '/k'})
         calls = [' '.join(map(str, call.args[0])) for call in incus.call_args_list]
-        self.assertEqual(['wait gw agent --timeout 150', 'file push /k gw' + phases.CLUB_KEY + ' --mode=0600 --uid=1000 --gid=1000'], calls[:2])
-        self.assertLess(calls.index('file push /k gw' + phases.CLUB_KEY + ' --mode=0600 --uid=1000 --gid=1000'), calls.index('exec gw -- systemctl start orbit-proof-operations'))
-        copies = ready.make.__code__.co_names
-        self.assertNotIn('club', ' '.join(copies))
+        push = 'file push /k gw' + phases.CLUB_KEY + ' --mode=0600 --uid=1000 --gid=1000'
+        self.assertEqual(['wait gw agent --timeout 150', push], calls[:2])
+        self.assertLess(calls.index(push), calls.index('exec gw -- systemctl start orbit-proof-operations'))
 
 
 class ReadyCheckTests(unittest.TestCase):
@@ -788,6 +893,66 @@ def choose(request):
     return launcher.choose(request)[:2]
 
 
+class FastPathRetryTests(unittest.TestCase):
+    def run_it(self, action, exits, cases_started=False):
+        """Run run_locked with a fake Swamp whose workflow runs return the given exits in order."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root, evidence = Path(temporary) / 'root', Path(temporary) / 'evidence'
+            evidence.mkdir()
+            request = {'root': str(root), 'evidence': str(evidence), 'candidate': '/c', 'group': '1', 'action': action, 'from_ready': action == 'reset', 'cases': [],
+                       'generation': 'a' * 32}
+            launcher.write_json(root / 'owner.json', {'candidate': '/c', 'group': '1'})
+            (root / 'controller').mkdir()
+            runs, results = [], iter(exits)
+
+            def native(request, args, name, cwd=None):
+                if args[:2] == ['workflow', 'run']:
+                    runs.append(args[2])
+                    if cases_started:
+                        launcher.write_json(evidence / 'cases-started.json', {})
+                    (evidence / 'run.json').write_text('{}')
+                    return next(results)
+                if args[:2] == ['workflow', 'history']:
+                    (evidence / 'history.json').write_text('{}')
+                return 0
+            with patch.object(phases, 'ready_state', return_value={'usable': True, 'reason': 'ready'}), patch.object(launcher, 'swamp', side_effect=native):
+                code = launcher.run_locked(request)
+            return code, runs, json.loads((evidence / 'status.json').read_text()), sorted(path.name for path in evidence.iterdir())
+
+    def test_a_failed_fast_verify_builds_once_and_keeps_the_fast_evidence(self):
+        code, runs, status, evidence = self.run_it('verify', [1, 0])
+        self.assertEqual(0, code)
+        self.assertEqual(['proof-command-verification-ready', 'proof-command-verification'], runs)
+        self.assertEqual('full', status['mode'])
+        self.assertEqual('ready', status['retried']['from'])
+        self.assertIn('fast-run.json', evidence)
+
+    def test_a_failed_fast_reset_builds_and_makes_copies_again(self):
+        _, runs, status, _ = self.run_it('reset', [1, 0])
+        self.assertEqual(['proof-fleet-reset-ready', 'proof-fleet-reset-build-ready'], runs)
+        self.assertEqual('build-ready', status['mode'])
+
+    def test_the_build_is_tried_once_only_and_never_after_a_case_started(self):
+        code, runs, _, _ = self.run_it('verify', [1, 1])
+        self.assertEqual((1, 2), (code, len(runs)))
+        code, runs, status, _ = self.run_it('verify', [1], cases_started=True)
+        self.assertEqual((1, 1), (code, len(runs)))
+        self.assertIsNone(status.get('retried'))
+
+
+class BuildReadyReadinessTests(unittest.TestCase):
+    def test_agents_are_checked_after_the_copy_in_a_build_that_makes_copies_too(self):
+        for mode, expected in (('ready-make', True), ('build-ready', True), ('full', False)):
+            with tempfile.TemporaryDirectory() as temporary, self.subTest(mode):
+                evidence = Path(temporary)
+                for name in ('transport-readiness', 'observer-facts'):
+                    launcher.write_json(evidence / (name + '.json'), {})
+                launcher.write_json(evidence / 'gateway-db.json', {'nodes': {}})
+                with patch.object(phases, 'agents_online') as online, patch.object(phases, 'case_baseline', return_value={}):
+                    phases.readiness({'evidence': temporary, 'mode': mode})
+                self.assertEqual(expected, online.called)
+
+
 class WorkflowDefinitionTests(unittest.TestCase):
     DIRECTORY = Path(__file__).resolve().parents[1]
 
@@ -825,6 +990,21 @@ class WorkflowDefinitionTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         for required in ('snapshot-ready', 'restore-ready', 'ready-wait', 'candidate', 'ready-check', 'prune-generations', 'failure-cleanup'):
             self.assertIn(required, text)
+
+    def test_the_ready_workflow_completes_last_and_discards_a_half_made_set(self):
+        text = self.definitions()['workflow-proof-fleet-ready.yaml']
+        self.assertLess(text.index('ready-make'), text.index('phases.py" readiness'))
+        self.assertLess(text.index('phases.py" readiness'), text.index('phases.py" ready-complete'))
+        self.assertEqual(1, text.count('phases.py" ready-complete'))
+        failure = text[text.index('  - name: failure'):]
+        self.assertIn('type: failed', failure)
+        self.assertIn('ready-discard', failure)
+        self.assertNotIn('phases.py" ready-complete', failure)
+
+    def test_a_full_reset_drops_the_old_copies_before_it_builds(self):
+        text = self.definitions()['workflow-proof-fleet-reset.yaml']
+        self.assertLess(text.index('release-previous'), text.index('ready-drop'))
+        self.assertLess(text.index('ready-drop'), text.index('phases.py" snapshot'))
 
     def test_the_command_usage_names_every_action(self):
         for action in launcher.ACTIONS:

@@ -25,7 +25,8 @@ LABELS = ('owner', 'issue', 'attempt', 'operation')
 # Devices that belong to one generation: the NIC (network, MAC, IP) and the source mount.
 NIC = 'eth0'
 MOUNT = 'orbit-source'
-# The swamp and agent tokens minted by a build last 24 h, and the Gateway leaf certificates 2 days.
+# The swamp and agent tokens minted by a build last 24 h, and the Gateway leaf certificates 2 days. The age counts from
+# the mint, not from the copy: a copy of an old fleet is as old as the fleet.
 MAX_AGE_SECONDS = 20 * 3600
 
 
@@ -86,26 +87,34 @@ def inspect(rows=None, *, now=None):
         if {NIC, MOUNT} & set(row.get('devices') or {}):
             return {'usable': False, 'reason': f'{name(role)} still carries a generation device'}
     made = configs['gateway'].get('user.ready.made', '')
+    minted = configs['gateway'].get('user.ready.minted', '')
     try:
-        age = ((now or datetime.now(timezone.utc)) - datetime.strptime(made, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)).total_seconds()
+        age = ((now or datetime.now(timezone.utc)) - datetime.strptime(minted, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)).total_seconds()
     except ValueError:
-        return {'usable': False, 'reason': 'the ready copies have no creation time'}
+        return {'usable': False, 'reason': 'the ready copies do not record when their credentials were minted'}
     if age > MAX_AGE_SECONDS:
-        return {'usable': False, 'reason': f'the ready copies are {int(age // 3600)} h old; their tokens and certificates expire'}
+        return {'usable': False, 'reason': f'the credentials of the ready copies are {int(age // 3600)} h old; their tokens and certificates expire'}
     try:
         nodes = json.loads(configs['gateway'].get('user.ready.nodes', ''))
     except ValueError:
         return {'usable': False, 'reason': 'the Gateway copy does not record the Node ids'}
-    return {'usable': True, 'reason': 'ready', 'set': sets.pop(), 'made': made, 'nodes': nodes,
+    return {'usable': True, 'reason': 'ready', 'set': sets.pop(), 'made': made, 'minted': minted, 'nodes': nodes,
+            'attempt': configs['gateway'].get('user.ready.attempt'), 'inputs': configs['gateway'].get('user.ready.inputs'),
             'subnet': configs['gateway'].get('user.ready.subnet'),
             'addresses': {role: configs[role].get('user.ready.ipv4') for role in ROLES}}
 
 
-def make(guests, network, nodes):
-    """Stop the running guests, copy them to ready copies, start them again.
+def stamp_of(epoch):
+    return datetime.fromtimestamp(int(epoch), timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def make(guests, network, nodes, *, minted, attempt, inputs):
+    """Stop the running guests and copy them to ready copies; start the originals again. The set is not complete yet.
 
     ``guests`` maps each role to the instance name, ``network`` is the generation's network and ``nodes`` the Gateway's
-    Node ids. The originals are started again even when a copy fails; the new set is complete only when every copy is.
+    Node ids. ``minted`` is the epoch second the fleet's credentials were minted, ``attempt`` the attempt of the fleet and
+    ``inputs`` the digest of the files baked into the guests. The originals are started again even when a copy fails.
+    The caller calls ``complete`` after the fleet passed its checks.
     """
     subnet = subnet_of(network)
     details = {role: json.loads(incus(['query', '/1.0/instances/' + guests[role]])) for role in ROLES}
@@ -133,23 +142,52 @@ def make(guests, network, nodes):
             target = name(role)
             incus(['copy', guests[role], target])
             settings = {'user.ready.set': identity, 'user.ready.role': role, 'user.ready.made': made,
+                        'user.ready.minted': stamp_of(minted), 'user.ready.attempt': attempt, 'user.ready.inputs': inputs,
                         'user.ready.hwaddr': saved[role]['hwaddr'], 'user.ready.ipv4': saved[role]['ipv4'],
                         'user.ready.subnet': subnet, 'user.ready.mounts': json.dumps(saved[role]['mounts'])}
             if role == 'gateway':
                 settings['user.ready.nodes'] = json.dumps(nodes)
             incus(['config', 'set', target, *(f'{key}={value}' for key, value in settings.items())])
+            incus(['config', 'unset', target, 'user.ready.complete'])
             for label in LABELS:
                 incus(['config', 'unset', target, 'user.orbit.e2e.' + label])
             for device in (NIC, MOUNT):
                 if device in (details[role].get('devices') or {}):
                     incus(['config', 'device', 'remove', target, device])
-        for role in ROLES:
-            incus(['config', 'set', name(role), 'user.ready.complete=' + identity])
     finally:
         # The fleet runs again whether or not the copies succeeded.
         started = time.time()
         incus(['start', *(guests[role] for role in ROLES)], timeout=300)
     return {'set': identity, 'made': made, 'subnet': subnet, 'copies': [name(role) for role in ROLES], 'started_at': started}
+
+
+def complete(identity):
+    """Mark the set usable. Only the last step of `ready` calls this, after the fleet it was copied from passed its checks."""
+    rows = copies()
+    for role in ROLES:
+        if (rows.get(name(role)) or {}).get('config', {}).get('user.ready.set') != identity:
+            raise RuntimeError(f'{name(role)} is not part of set {identity}; nothing completed.')
+    for role in ROLES:
+        incus(['config', 'set', name(role), 'user.ready.complete=' + identity])
+
+
+def discard_incomplete():
+    """Delete the copies that are not part of a complete set: what a failed `ready` leaves."""
+    removed = []
+    for existing, row in copies().items():
+        config = row.get('config') or {}
+        if not config.get('user.ready.complete') or config.get('user.ready.complete') != config.get('user.ready.set'):
+            incus(['delete', '--force', existing])
+            removed.append(existing)
+    return removed
+
+
+def drop():
+    """Delete every ready copy: a full reset builds a new fleet, so the old copies are stale."""
+    removed = list(copies())
+    if removed:
+        incus(['delete', '--force', *removed], timeout=300)
+    return removed
 
 
 def restore(guests, network, source, labels):

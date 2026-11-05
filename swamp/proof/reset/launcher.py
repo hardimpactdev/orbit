@@ -151,6 +151,22 @@ def durations(history):
     return found
 
 
+def run_workflow(request, workflow):
+    """Validate and run one native workflow; (exit code, seconds of the run or None when validation failed)."""
+    evidence = Path(request['evidence'])
+    code = swamp(request, ['workflow', 'validate', workflow], 'validate.json')
+    if code:
+        return code, None
+    started = time.monotonic()
+    code = swamp(request, ['workflow', 'run', workflow, '--input', 'request=' + str(evidence / 'request.json'),
+                          '--input', 'candidate=' + request['candidate']], 'run.json')
+    seconds = round(time.monotonic() - started, 1)
+    swamp(request, ['workflow', 'history', 'get', workflow], 'history.json')
+    if code:
+        swamp(request, ['report', 'get', '@swamp/workflow-summary', '--workflow', workflow], 'failure-report.json')
+    return code, seconds
+
+
 def run_locked(request):
     """Called only by the group's native proof-owner command/shell transaction."""
     root, evidence = Path(request['root']), Path(request['evidence'])
@@ -164,16 +180,19 @@ def run_locked(request):
     (controller / 'workflows').mkdir(exist_ok=True)
     for definition in (Path(request['candidate']) / 'swamp/proof/reset').glob('workflow-*.yaml'):
         shutil.copyfile(definition, controller / 'workflows' / definition.name)
-    code = swamp(request, ['workflow', 'validate', workflow], 'validate.json')
-    seconds = None
-    if not code:
-        started = time.monotonic()
-        code = swamp(request, ['workflow', 'run', workflow, '--input', 'request=' + str(evidence / 'request.json'),
-                              '--input', 'candidate=' + request['candidate']], 'run.json')
-        seconds = round(time.monotonic() - started, 1)
-        swamp(request, ['workflow', 'history', 'get', workflow], 'history.json')
-        if code:
-            swamp(request, ['report', 'get', '@swamp/workflow-summary', '--workflow', workflow], 'failure-report.json')
+    code, seconds = run_workflow(request, workflow)
+    retried = None
+    if code and mode == 'ready' and not (evidence / 'cases-started.json').exists():
+        # The fast path failed before any case ran. Its failure cleanup released the fleet, so build one instead, once.
+        for name in ('validate.json', 'run.json', 'history.json', 'failure-report.json'):
+            if (evidence / name).is_file():
+                (evidence / name).rename(evidence / ('fast-' + name))
+        retried = {'from': mode, 'exit': code, 'seconds': seconds}
+        mode, workflow = ('build-ready', 'proof-fleet-reset-build-ready') if request['action'] == 'reset' else ('full', 'proof-command-verification')
+        request = {**request, 'mode': mode}
+        write_json(evidence / 'request.json', request)
+        write_json(evidence / 'mode.json', {'mode': mode, 'workflow': workflow, 'reason': 'the fast reset failed before a case ran', 'retried_from': 'ready'})
+        code, seconds = run_workflow(request, workflow)
     jobs = {}
     if (evidence / 'history.json').is_file():
         try:
@@ -187,7 +206,7 @@ def run_locked(request):
         # Any case that did not pass makes the run exit 1; otherwise the workflow's own exit stands.
         code = 1 if any(case['verdict'] != 'passed' for case in verified['cases']) else code
     status = {'status': 'succeeded' if code == 0 else 'failed', 'summary': verified.get('summary'), 'exit': code, 'mode': mode,
-              'seconds': seconds, 'jobs': jobs, 'cases_ran': (evidence / 'cases-started.json').exists(), 'cases': verified.get('cases')}
+              'seconds': seconds, 'retried': retried, 'jobs': jobs, 'cases_ran': (evidence / 'cases-started.json').exists(), 'cases': verified.get('cases')}
     write_json(evidence / 'status.json', {key: value for key, value in status.items() if value is not None or key == 'exit'})
     return code
 

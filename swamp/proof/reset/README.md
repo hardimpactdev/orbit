@@ -50,10 +50,12 @@ is written last on all three, so a half made set is never used.
 
 **No secret in a copy.** `ready` deletes the proof Swamp Club key from the running Gateway, scans its files for the key, fails with the paths if any holds it, and trims the disk (`fstrim -av`) so the deleted key's blocks are discarded; it also fails unless all three guests report `Stopped` before the copy. A restore (and the end of `ready`) pushes the key back in once the Gateway agent is up, then restarts Swamp serve and the worker. The contract for other tools is in [`swamp/proof/README.md`](../README.md#ready-copies-the-contract).
 
+**Making copies.** `ready` first runs the readiness check on the fleet and stops if it is unhealthy. It scrubs and scans for the key, stops and copies, starts the originals, delivers the key again and repeats the checks on the restarted fleet. Only then does `ready-complete` write `user.ready.complete`; a failure runs `ready-discard`, which deletes the half-made set. A full reset runs `ready-drop` and deletes all copies, because it builds a new fleet.
+
 **When copies are usable.** All three exist, stopped, with one complete set identity and no label or generation device.
 They are for the subnet and the three addresses of the active generation, which also needs a fleet record (the
-generation was published healthy; one built before the record existed has the same facts in its evidence). They are
-younger than 20 h, because the Swamp tokens that a build mints last 24 h and its certificates 2 days. Otherwise
+generation was published healthy; one built before the record existed has the same facts in its evidence). Their credentials were
+minted less than 20 h ago, counted from `user.ready.minted` (the Swamp tokens that a build mints last 24 h and its certificates 2 days), and the digest of the boot fixes, the fixture and the agent pin is the candidate's. Otherwise
 `verify` builds as it always did, and `reset --from-ready` builds and then makes new copies.
 
 **The fast reset** is the workflow `proof-fleet-reset-ready`; every step is named there. Measured on a task VM, three runs took 78.7, 72.7 and 71.3 s from the command to a checked fleet, against 233 s for a build. Boot is about 50 s of it (`wait` ends 49 to 57 s after the start); the export of the candidate is about 10 s and the readiness check 3 s.
@@ -88,7 +90,7 @@ the build's check for facts received after the start does not apply. The presenc
 agent is alive, and the recorded facts must exist.
 
 A failure at any step runs the same failure cleanup as a build: it releases the active generation. The ready copies
-stay, but with no fleet they are unusable until the next build. `release` removes the generation and leaves them.
+stay, but with no fleet they are unusable until the next build. The launcher then runs the full build once (`reset --from-ready` builds and makes copies) when the fast path failed before a case started; the fast evidence is kept as `fast-*.json`. Pruning is best effort: a directory that cannot be deleted is reported in `prune-generations.json` and does not fail the run. `release` removes the generation and leaves them.
 
 `status.json` of a run records `mode` (`full`, `ready`, `ready-make` or `build-ready`), the run's seconds and the seconds of
 every job. `mode.json` records the workflow chosen and why.

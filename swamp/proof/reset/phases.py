@@ -56,7 +56,7 @@ ACL_DIRECTORIES = ('.', 'apps', 'apps/gateway', 'apps/gateway/public')
 READY_WAIT_SECONDS = 150
 ACTIONS = ('inventory', 'release-previous', 'snapshot', 'snapshot-ready', 'prepare', 'swamp-state', 'gateway-db',
            'gateway-runtime', 'restore-ready', 'ready-wait', 'agents-online', 'candidate', 'operator', 'transport-readiness',
-           'observer-facts', 'readiness', 'ready-check', 'ready-make', 'publish', 'prune-generations', 'failure-cleanup',
+           'observer-facts', 'readiness', 'ready-check', 'ready-make', 'ready-complete', 'ready-discard', 'ready-drop', 'publish', 'prune-generations', 'failure-cleanup',
            'release-active', 'cases')
 
 
@@ -538,7 +538,7 @@ def observer_facts(request):
 
 def readiness(request):
     evidence = Path(request['evidence'])
-    if request.get('mode') == 'ready-make':
+    if request.get('mode') in ('ready-make', 'build-ready'):
         agents_online(request)
     transport = json.loads((evidence / 'transport-readiness.json').read_text())
     facts = json.loads((evidence / 'observer-facts.json').read_text())
@@ -574,6 +574,8 @@ def ready_state(request):
         found = ready.inspect()
         if not found['usable']:
             return found
+        if found['inputs'] != inputs_digest(request):
+            return {'usable': False, 'reason': 'the boot fixes, the fixture or the agent pin changed since the ready copies were made'}
         network = ready.network_of(guests['gateway'])
         subnet = ready.subnet_of(network)
         if found['subnet'] != subnet:
@@ -654,20 +656,48 @@ def deliver_key(request, gateway):
           timeout=READY_WAIT_SECONDS + 30)
 
 
-def scrub_key(request, gateway):
-    """Delete the club key from the running Gateway, prove no file on its disks holds it, then trim the freed blocks.
+def scrub_key(request, guests):
+    """Delete the club key from the running Gateway, prove no file on any of the three guests holds it, trim the freed blocks.
 
-    The file list names paths only. The fstrim output goes into the receipt.
+    The scan has no size limit, and a grep error fails it. The file list names paths only. The fstrim output goes into the
+    receipt: a filesystem that cannot discard (fstrim exits 64 when others were trimmed) does not fail the step, but the
+    root filesystem must report a trim.
     """
+    gateway = guests['gateway']
+    key = Path(request['key_file']).read_bytes().strip()
+    if not key:
+        raise RuntimeError('The proof club key file is empty; nothing to scan for.')
     incus(['exec', gateway, '--', 'rm', '-f', CLUB_KEY])
-    scan = ('umask 077; cat > /run/club-key-scan; find / -xdev -type f -size -20M ! -path /run/club-key-scan '
-            '-exec grep -lF -f /run/club-key-scan {} + ; status=$?; rm -f /run/club-key-scan; [ "$status" -le 1 ]')
-    found = incus(['exec', gateway, '--', 'sh', '-c', scan], data=Path(request['key_file']).read_bytes(), timeout=600).decode().split()
+    scan = ('umask 077; cat > /run/club-key-scan; '
+            "find / -xdev -type f -exec sh -c 'grep -lF -f /run/club-key-scan \"$@\"; [ $? -le 1 ]' sh {} + ; "
+            'status=$?; rm -f /run/club-key-scan; [ "$status" -eq 0 ]')
+    found = []
+    for instance in guests.values():
+        found += [f'{instance}:{path}' for path in incus(['exec', instance, '--', 'sh', '-c', scan], data=key + b'\n', timeout=900).decode().split()]
     if found:
-        raise RuntimeError('The proof club key is still on the Gateway disk, nothing copied: ' + ', '.join(sorted(found)))
+        raise RuntimeError('The proof club key is still on a guest disk, nothing copied: ' + ', '.join(sorted(found)))
     # Deleting a file leaves its blocks in the disk image, and every task VM clones the image. Discard the freed blocks now.
-    trimmed = incus(['exec', gateway, '--', 'timeout', '300', 'fstrim', '-av'], timeout=330).decode().strip().splitlines()
-    return {'scanned': True, 'files_holding_the_key': 0, 'fstrim': trimmed}
+    trim = 'timeout 300 fstrim -av; status=$?; [ "$status" -eq 0 ] || [ "$status" -eq 64 ]'
+    trimmed = incus(['exec', gateway, '--', 'sh', '-c', trim], timeout=330).decode().strip().splitlines()
+    if not any(line.startswith('/:') and 'trimmed' in line for line in trimmed):
+        raise RuntimeError('The Gateway root filesystem was not trimmed: ' + ' | '.join(trimmed))
+    return {'scanned': sorted(guests), 'files_holding_the_key': 0, 'fstrim': trimmed}
+
+
+def minted_at(gateway):
+    """When the build minted the Gateway's credentials (the oldest of their files), in epoch seconds."""
+    out = incus(['exec', gateway, '--', 'sh', '-c', 'stat -c %Y /home/orbit/.orbit/proof-control/credentials/* | sort -n | head -n 1']).decode().strip()
+    return int(out)
+
+
+def inputs_digest(request):
+    """A digest of what is baked into the guests of a fleet: the boot fixes, the fixture, the pinned agent manifest."""
+    candidate = Path(request['candidate'])
+    digest = hashlib.sha256()
+    for relative in ('tools/swamp-proof-guest/boot.py', 'tools/swamp-proof-guest/fixture.py', 'apps/gateway/resources/agent/frozen-manifest.json'):
+        path = candidate / relative
+        digest.update(relative.encode() + b'\0' + (path.read_bytes() if path.is_file() else b'absent') + b'\0')
+    return digest.hexdigest()
 
 
 def start_units(instance, units):
@@ -756,7 +786,7 @@ def ready_check(request):
 
 
 def ready_make(request):
-    """Copy the healthy active generation to ready copies, then start it again."""
+    """Copy the healthy active generation to ready copies, then start it again. The set is completed by `ready-complete`."""
     record = fleet_record(request)
     construction = record['prepare']['construction']
     guests = generation_guests(record)
@@ -766,33 +796,53 @@ def ready_make(request):
     for instance in guests.values():
         if instance not in observed or observed[instance]['metadata'] != expected:
             raise RuntimeError('Guest ownership mismatch, nothing copied: ' + instance)
-    scrubbed = scrub_key(request, guests['gateway'])
-    made = ready.make(guests, ready.network_of(guests['gateway']), record['nodes'])
-    # The running fleet goes on with its key, as after any start of a Gateway.
-    deliver_key(request, guests['gateway'])
+    # Nothing is copied from a fleet that is not healthy.
+    ready_check(request)
+    try:
+        scrubbed = scrub_key(request, guests)
+        made = ready.make(guests, ready.network_of(guests['gateway']), record['nodes'], minted=minted_at(guests['gateway']),
+                          attempt=construction['attempt_id'], inputs=inputs_digest(request))
+    finally:
+        # The running fleet goes on with its key, as after any start of a Gateway, also when the scan or the trim failed.
+        deliver_key(request, guests['gateway'])
     return {**made, 'key': scrubbed}
+
+
+def ready_complete(request):
+    """The last step of `ready`: the fleet the copies came from passed its checks after the restart, so the set is usable."""
+    identity = json.loads((Path(request['evidence']) / 'ready-make.json').read_text())['set']
+    ready.complete(identity)
+    return {'set': identity, 'complete': True}
 
 
 def prune_generations(request):
     """Keep the active generation and the previous one; delete the other generation source directories of this group.
 
     A directory is deleted only when it is a generation of this candidate and group and no guest mounts it. The guests
-    wrote some of it as root (the agent manifest, Python caches), so the outer user needs sudo.
+    wrote some of it as root (the agent manifest, Python caches), so the outer user needs sudo. Best effort: a directory
+    that cannot be deleted is reported and does not fail a healthy run.
     """
     previous = json.loads((Path(request['evidence']) / 'inventory.json').read_text())['previous']
     keep = {request['generation'], previous}
     expected = {key: request[key] for key in ('candidate', 'group')}
-    mounted = incus(['list', '--format=json']).decode()
-    removed = []
-    for directory in sorted((Path(request['root']) / 'generations').iterdir()):
+    removed, failed = [], {}
+    try:
+        mounted = incus(['list', '--format=json']).decode()
+        directories = sorted((Path(request['root']) / 'generations').iterdir())
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+        return {'kept': sorted(name for name in keep if name), 'removed': [], 'failed': {'listing': str(error)}}
+    for directory in directories:
         owner = directory / 'owner.json'
-        if directory.name in keep or not re.fullmatch('[0-9a-f]{32}', directory.name) or directory.is_symlink() or not owner.is_file():
-            continue
-        if json.loads(owner.read_text()) != expected or str(directory) in mounted:
-            continue
-        privileged(['rm', '-rf', '--', str(directory)], timeout=300)
-        removed.append(directory.name)
-    return {'kept': sorted(name for name in keep if name), 'removed': removed}
+        try:
+            if directory.name in keep or not re.fullmatch('[0-9a-f]{32}', directory.name) or directory.is_symlink() or not owner.is_file():
+                continue
+            if json.loads(owner.read_text()) != expected or str(directory) in mounted:
+                continue
+            privileged(['rm', '-rf', '--', str(directory)], timeout=300)
+            removed.append(directory.name)
+        except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+            failed[directory.name] = str(error)[-300:]
+    return {'kept': sorted(name for name in keep if name), 'removed': removed, 'failed': failed}
 
 
 def preservation(request):
@@ -961,6 +1011,12 @@ def execute(request, action):
         return agents_online(request)
     if action == 'ready-make':
         return ready_make(request)
+    if action == 'ready-complete':
+        return ready_complete(request)
+    if action == 'ready-discard':
+        return {'removed': ready.discard_incomplete()}
+    if action == 'ready-drop':
+        return {'removed': ready.drop()}
     if action == 'ready-check':
         return ready_check(request)
     if action == 'prune-generations':

@@ -108,3 +108,37 @@ jobs:
           - step: observer-facts
             condition:
               type: succeeded
+      - name: complete
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-ready-complete
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" ready-complete'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
+        dependsOn:
+          - step: readiness
+            condition:
+              type: succeeded
+  - name: failure
+    dependsOn:
+      - job: ready
+        condition:
+          type: failed
+    steps:
+      - name: discard
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-ready-discard
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" ready-discard'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
