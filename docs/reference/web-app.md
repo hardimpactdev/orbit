@@ -89,7 +89,7 @@ The dashboard and Nodes page group Nodes by the existing Metrics status. Tracked
 
 ## Node detail pages
 
-A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux, with the existing operator rules, Orbit rules, live rules, and missing-state comparisons. macOS tool support does not enable firewall management.
+A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux. It reads [`firewall:list`](/cli/firewall/list) with Orbit's rules and the live comparison, `GET /api/v1/firewall-rules?node=<id>&managed=1&live=1`, in one request. The section lists the operator rules, Orbit's own rules as locked rows, and live rules that nothing explains. Rules the Node lacks come last, below a divider. macOS tool support does not enable firewall management.
 
 The menu chooses the URL. Overview is `/nodes/<id>`. Tools is `/nodes/<id>/tools`. Firewall is `/nodes/<id>/firewall` on Linux. On a narrow screen the menu is one row, so the list keeps the width of the page. A macOS Firewall URL returns to Overview and does not request Linux firewall rules. An [iPadOS peer](/reference/node-provisioning#ipados-peers) follows the same rule: its page shows the platform `ipados`, no metrics, and no Firewall section. Its Tools section reports that the Gateway refuses a tool scan, because Orbit does not manage the Node.
 
@@ -199,7 +199,7 @@ These views have no event. A view with an interval polls while the tab is visibl
 | Node metrics from Grafana | 10 seconds |
 | Quota (`ai-router`) status and provider pools | 60 seconds |
 
-The firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`. It returns only the Nodes that the browser's Node can reach.
+The fleet firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`, the same read as `firewall:list`. It returns only the Nodes that the browser's Node can reach.
 
 ## Live logs
 

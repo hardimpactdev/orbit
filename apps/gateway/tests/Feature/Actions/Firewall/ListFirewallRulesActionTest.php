@@ -1,0 +1,110 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\Firewall\ListFirewallRulesAction;
+use App\Domain\NodeFacts\NodeFactKind;
+use App\Domain\Shared\LifecycleStatus;
+use App\Models\Node;
+use App\Models\NodeFact;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+
+uses(LazilyRefreshDatabase::class);
+
+function list_node(string $name, string $ip): Node
+{
+    return Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => $ip,
+        'wireguard_ip' => $ip, 'user' => 'orbit',
+    ]));
+}
+
+function list_rule(Node $node, string $action, string $port, string $source = 'any', ?string $label = null): void
+{
+    $node->firewallRules()->create([
+        'action' => $action, 'port' => $port, 'protocol' => 'tcp', 'source' => $source, 'label' => $label, 'status' => LifecycleStatus::Active,
+    ]);
+}
+
+describe('ListFirewallRulesAction', function (): void {
+    it('lists the rules of each requested Node in UFW order and leaves out the others', function (): void {
+        $dev = list_node('app-dev', '10.44.0.2');
+        $prod = list_node('app-prod', '10.44.0.3');
+        $other = list_node('other', '10.44.0.4');
+        list_rule($dev, 'allow', '5432', label: 'office');
+        list_rule($dev, 'deny', '5432', '10.99.0.0/16');
+        list_rule($dev, 'allow', '5432', '10.99.1.7');
+        list_rule($prod, 'deny', '25');
+        list_rule($other, 'allow', '80');
+
+        $nodes = app(ListFirewallRulesAction::class)->execute([$dev->id, $prod->id], managed: false, live: false);
+
+        expect(array_column($nodes, 'node'))->toBe(['app-dev', 'app-prod'])
+            ->and(array_map(static fn (array $rule): string => $rule['source'], $nodes[0]['rules']))->toBe(['10.99.1.7', '10.99.0.0/16', 'any'])
+            ->and($nodes[0]['rules'][2]['label'])->toBe('office')
+            ->and($nodes[0]['rules'][0])->not->toHaveKeys(['backend_status', 'match'])
+            ->and($nodes[0])->not->toHaveKeys(['managed', 'live', 'agent'])
+            ->and($nodes[1]['rules'])->toHaveCount(1);
+    });
+
+    it('adds the orbit: rules with their role when asked', function (): void {
+        $node = list_node('app-dev', '10.44.0.2');
+
+        $entry = app(ListFirewallRulesAction::class)->execute([$node->id], managed: true, live: false)[0];
+
+        expect(array_column($entry['managed'], 'name'))->toContain('orbit:wireguard-members')
+            ->and($entry['managed'][0])->toHaveKeys(['name', 'role', 'action', 'source', 'port', 'protocol'])
+            ->and($entry['managed'][0])->not->toHaveKey('match');
+    });
+
+    it('marks every rule unverifiable until the agent reports UFW', function (): void {
+        $node = list_node('app-dev', '10.44.0.2');
+        list_rule($node, 'allow', '5432');
+
+        $entry = app(ListFirewallRulesAction::class)->execute([$node->id], managed: false, live: true)[0];
+
+        expect($entry['rules'][0]['match'])->toBe('unverifiable')
+            ->and($entry['live']['backend_status'])->toBe('unverifiable')
+            ->and($entry['live']['observed_at'])->toBeNull()
+            ->and($entry['live']['unmatched'])->toBe([]);
+    });
+
+    it('matches the rules with the UFW report: exact, missing and a rule added by hand', function (): void {
+        $node = list_node('app-dev', '10.44.0.2');
+        list_rule($node, 'allow', '5432', '10.99.1.7');
+        list_rule($node, 'deny', '25');
+        $rule = static fn (string $action, string $port, string $source, string $comment): array => [
+            'action' => $action, 'direction' => 'in', 'protocol' => 'tcp', 'port' => $port, 'source' => $source,
+            'destination' => 'any', 'comment' => $comment, 'family' => 'v4', 'in_interface' => null, 'out_interface' => null,
+        ];
+        NodeFact::query()->create([
+            'node_id' => $node->id, 'kind' => NodeFactKind::Ufw, 'digest' => 'a', 'observed_at' => now(), 'received_at' => now(),
+            'data' => ['installed' => true, 'enabled' => true, 'rules' => [
+                $rule('allow', '5432', '10.99.1.7', 'orbit'),
+                $rule('allow', '9999', 'any', ''),
+            ]],
+        ]);
+
+        $entry = app(ListFirewallRulesAction::class)->execute([$node->id], managed: false, live: true)[0];
+        $matches = array_column($entry['rules'], 'match', 'port');
+
+        expect($matches)->toBe(['5432' => 'exact', '25' => 'missing'])
+            ->and($entry['live']['backend_status'])->toBe('active')
+            ->and($entry['live']['observed_at'])->not->toBeNull()
+            ->and(array_column($entry['live']['unmatched'], 'match', 'port'))->toBe(['9999' => 'unmanaged']);
+    });
+
+    it('counts every rule as missing while UFW is off', function (): void {
+        $node = list_node('app-dev', '10.44.0.2');
+        list_rule($node, 'allow', '5432');
+        NodeFact::query()->create([
+            'node_id' => $node->id, 'kind' => NodeFactKind::Ufw, 'digest' => 'a', 'observed_at' => now(), 'received_at' => now(),
+            'data' => ['installed' => true, 'enabled' => false, 'rules' => []],
+        ]);
+
+        $entry = app(ListFirewallRulesAction::class)->execute([$node->id], managed: false, live: true)[0];
+
+        expect($entry['live']['backend_status'])->toBe('inactive')
+            ->and($entry['rules'][0]['match'])->toBe('missing');
+    });
+});

@@ -13,8 +13,7 @@ import type {
     Instance,
     InstanceAnalytics,
     InstanceAnalyticsStats,
-    LiveFirewallSnapshot,
-    ManagedFirewallRule,
+    NodeFirewall,
     Node,
     Process,
     Project,
@@ -64,7 +63,10 @@ export const lists = {
     // One request for every Node's rules; the per-Node list is for the CLI.
     firewall: queryOptions({
         queryKey: ["firewall"],
-        queryFn: () => get<FirewallRule[]>("/api/v1/firewall-rules"),
+        queryFn: async () =>
+            (await get<Array<{ rules: FirewallRule[] }>>("/api/v1/firewall-rules")).flatMap(
+                (node) => node.rules,
+            ),
     }),
 };
 
@@ -180,20 +182,17 @@ export const toolInventoryQuery = (nodeId: number) =>
         retry: false,
     });
 
-/** Orbit's own firewall rules for a Node. They change only when its roles do, so they reload rarely. */
-export const managedFirewallQuery = (nodeId: number) =>
+/** A Node's firewall: its rules, Orbit's own rules and how the live UFW compares with them. */
+export const nodeFirewallQuery = (nodeId: number) =>
     queryOptions({
-        queryKey: ["managed-firewall", nodeId],
-        queryFn: () => get<ManagedFirewallRule[]>(`/api/v1/nodes/${nodeId}/managed-firewall-rules`),
-        staleTime: 60_000,
-        retry: false,
-    });
+        queryKey: ["node-firewall", nodeId],
+        queryFn: async () => {
+            const nodes = await get<NodeFirewall[]>(
+                `/api/v1/firewall-rules?node=${nodeId}&managed=1&live=1`,
+            );
 
-/** Live UFW on a Node, classified against the desired managed set and operator records. */
-export const liveFirewallQuery = (nodeId: number) =>
-    queryOptions({
-        queryKey: ["live-firewall", nodeId],
-        queryFn: () => get<LiveFirewallSnapshot>(`/api/v1/nodes/${nodeId}/live-firewall-rules`),
+            return nodes[0] ?? null;
+        },
         refetchInterval: 15_000,
         retry: false,
     });

@@ -6,25 +6,17 @@ namespace Orbit\Sdk\Responses\Firewall;
 
 final readonly class FirewallRulesResponse
 {
-    /** @param list<FirewallRuleResponse> $rules */
+    /** @param list<FirewallNodeRulesResponse> $nodes */
     public function __construct(
-        public array $rules,
+        public array $nodes,
         public string $requestId,
     ) {}
 
-    /** @return array{rules: list<array<string, mixed>>, request_id: string} */
+    /** @return array{nodes: list<array<string, mixed>>, request_id: string} */
     public function toArray(): array
     {
         return [
-            'rules' => array_map(
-                static function (FirewallRuleResponse $rule): array {
-                    $data = $rule->toArray();
-                    unset($data['request_id']);
-
-                    return $data;
-                },
-                $this->rules,
-            ),
+            'nodes' => array_map(static fn (FirewallNodeRulesResponse $node): array => $node->toArray(), $this->nodes),
             'request_id' => $this->requestId,
         ];
     }

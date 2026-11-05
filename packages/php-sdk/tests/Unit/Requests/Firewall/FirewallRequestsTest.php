@@ -8,6 +8,7 @@ use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
+use Orbit\Sdk\Responses\Firewall\FirewallNodeRulesResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
@@ -59,35 +60,66 @@ it('omits firewall fields that the Gateway reads as any', function (): void {
         ->and(new RemoveFirewallRuleRequest(7, '443')->body()->all())->toBe(['port' => '443']);
 });
 
-it('lists rules and removes one by its port, source, and protocol', function (): void {
-    $list = new ListFirewallRulesRequest(7);
+it('lists the rules of every Node, or of one Node with Orbit\'s rules and the live comparison', function (): void {
+    $node = [
+        'node_id' => 7, 'node' => 'app-dev',
+        'agent' => ['state' => 'offline', 'since' => '2026-11-05T09:00:00Z'],
+        'rules' => [[...firewall_sdk_data('allow', backendStatus: null), 'match' => 'exact']],
+        'managed' => [['name' => 'orbit:wireguard-members', 'role' => null, 'action' => 'allow', 'source' => 'any',
+            'destination' => '10.44.0.2', 'port' => 'any', 'protocol' => 'any', 'interface' => 'orbit', 'match' => 'missing']],
+        'live' => ['backend_status' => 'active', 'observed_at' => '2026-11-05T09:00:00Z', 'possibly_outdated' => true, 'unmatched' => []],
+    ];
+    $all = new ListFirewallRulesRequest;
+    $one = new ListFirewallRulesRequest(7, managed: true, live: true);
     $listMock = new MockClient([
         ListFirewallRulesRequest::class => MockResponse::make([
-            'data' => [firewall_sdk_data('allow', backendStatus: null)],
+            'data' => [$node],
             'meta' => ['request_id' => firewall_sdk_request_id()],
         ]),
     ]);
-    $listResponse = firewall_sdk_connector($listMock)->send($list)->dto();
+    $listResponse = firewall_sdk_connector($listMock)->send($one)->dto();
 
-    expect($list->getMethod())
+    expect($all->getMethod())
         ->toBe(Method::GET)
-        ->and($list->resolveEndpoint())
-        ->toBe('/api/v1/nodes/7/firewall-rules')
+        ->and($all->resolveEndpoint())
+        ->toBe('/api/v1/firewall-rules')
+        ->and($all->query()->all())
+        ->toBe([])
+        ->and($one->query()->all())
+        ->toBe(['node' => 7, 'managed' => '1', 'live' => '1'])
         ->and($listResponse)
         ->toBeInstanceOf(FirewallRulesResponse::class)
-        ->and($listResponse->rules)
+        ->and($listResponse->nodes)
         ->toHaveCount(1)
-        ->and($listResponse->rules[0]->label)
+        ->and($listResponse->nodes[0]->rules[0]->label)
         ->toBe('office web')
-        ->and($listResponse->rules[0]->toArray())
+        ->and($listResponse->nodes[0]->rules[0]->match)
+        ->toBe('exact')
+        ->and($listResponse->nodes[0]->rules[0]->toArray())
         ->not->toHaveKey('name')
-        ->and($listResponse->rules[0]->backendStatus)
-        ->toBeNull()
+        ->and($listResponse->nodes[0]->agent?->label())
+        ->toBe('offline since 2026-11-05T09:00:00Z')
+        ->and($listResponse->nodes[0]->possiblyOutdated())
+        ->toBeTrue()
+        ->and($listResponse->nodes[0]->managed[0]['match'])
+        ->toBe('missing')
         ->and($listResponse->requestId)
         ->toBe(firewall_sdk_request_id())
         ->and($listMock->getLastPendingRequest()?->headers()->get('X-Orbit-Request-Id'))
         ->toBe('11111111-1111-4111-8111-111111111111');
+});
 
+it('leaves out the parts of a Node that the list was not asked for', function (): void {
+    $response = FirewallNodeRulesResponse::fromGatewayData(
+        ['node_id' => 7, 'node' => 'app-dev', 'rules' => [firewall_sdk_data('allow', backendStatus: null)]],
+        firewall_sdk_request_id(),
+    );
+
+    expect($response->toArray())->toHaveKeys(['node_id', 'node', 'rules'])->not->toHaveKeys(['managed', 'live', 'agent'])
+        ->and($response->toArray()['rules'][0])->not->toHaveKeys(['match', 'request_id']);
+});
+
+it('removes one rule by its port, source, and protocol', function (): void {
     $remove = new RemoveFirewallRuleRequest(7, '8000:8100', 'any', 'udp');
     $removeMock = new MockClient([
         RemoveFirewallRuleRequest::class => MockResponse::make(firewall_sdk_envelope('allow', backendStatus: 'absent')),

@@ -4,8 +4,7 @@ import type { Transport } from "../../src/api/client";
 import { footer, openApp, pane, row } from "./app";
 
 const linuxFirewall = (nodeId: number) => (path: string) =>
-    path === `/api/v1/nodes/${nodeId}/live-firewall-rules` ||
-    path === `/api/v1/nodes/${nodeId}/managed-firewall-rules`;
+    path === `/api/v1/firewall-rules?node=${nodeId}&managed=1&live=1`;
 
 it("moves among three node sections with the keyboard and the address", async () => {
     const app = await openApp("/nodes/2");
@@ -65,8 +64,7 @@ it("loads a section from its address and keeps firewall actions", async () => {
 /** Live inventory and Linux firewall reads. The stored tool list must not call them. */
 const liveInventory = (path: string) =>
     path.startsWith("/api/v1/tool-inventory") ||
-    path.includes("/live-firewall-rules") ||
-    path.includes("/managed-firewall-rules") ||
+    path.includes("/firewall-rules?node=") ||
     path.startsWith("/api/v1/tool-managers");
 
 it("shows stored tools for an unreachable node without a live inventory", async () => {

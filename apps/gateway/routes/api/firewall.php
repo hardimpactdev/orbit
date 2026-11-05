@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\FirewallRulesController;
-use App\Http\Controllers\Api\FleetFirewallRulesController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
@@ -12,16 +11,8 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
-    Route::get('firewall-rules', [FleetFirewallRulesController::class, 'index'])
-        ->name('firewall:fleet:list');
-    Route::get('nodes/{node}/firewall-rules', [FirewallRulesController::class, 'index'])
+    Route::get('firewall-rules', [FirewallRulesController::class, 'index'])
         ->name('firewall:list');
-    Route::get('nodes/{node}/managed-firewall-rules', [FirewallRulesController::class, 'managed'])
-        ->whereNumber('node')
-        ->name('firewall:managed:list');
-    Route::get('nodes/{node}/live-firewall-rules', [FirewallRulesController::class, 'live'])
-        ->whereNumber('node')
-        ->name('firewall:live:list');
     Route::post('nodes/{node}/firewall-rules/allow', [FirewallRulesController::class, 'allow'])
         ->defaults('firewall_action', 'allow')
         ->name('firewall:allow');

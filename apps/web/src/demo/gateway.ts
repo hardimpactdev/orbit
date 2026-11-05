@@ -161,8 +161,11 @@ export function createDemoGateway() {
     let tasksEnabled = true;
     const operations: Operation[] = [];
     let documentsEnabled = true;
-    const rules = (node: string) =>
-        list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
+    const firewallNodes = list<{ node_id: number; node: string; rules: FirewallRule[] }>(
+        "GET /api/v1/firewall-rules",
+    );
+    const rules = (node: string): FirewallRule[] =>
+        firewallNodes.find((entry) => String(entry.node_id) === node)?.rules ?? [];
     const tools = list<Tool>("GET /api/v1/tools");
     const nodeById = (id: string): Node | undefined =>
         nodes.find((candidate) => String(candidate.id) === id);
@@ -208,39 +211,36 @@ export function createDemoGateway() {
 
         return rows;
     };
-    const liveRules = (id: string) => {
-        const managed = managedRules(id);
-        const operator = rules(id);
+    const nodeFirewall = (
+        entry: (typeof firewallNodes)[number],
+        managed: boolean,
+        live: boolean,
+    ) => {
+        const id = String(entry.node_id);
+        const rules = entry.rules.map((rule) => (live ? { ...rule, match: "exact" } : rule));
 
         return {
-            backend_status: "active",
-            live: [
-                ...operator.map((rule) => ({
-                    name: firewallIdentity(rule),
-                    comment: rule.label === null ? "orbit" : `orbit ${rule.label}`,
-                    action: rule.action,
-                    source: rule.source,
-                    destination: "any",
-                    port: rule.port,
-                    protocol: rule.protocol,
-                    interface: null,
-                    family: "v4",
-                    match: "exact",
-                })),
-                ...managed.map((rule) => ({
-                    name: rule.name,
-                    comment: rule.name,
-                    action: rule.action,
-                    source: rule.source,
-                    destination: rule.destination,
-                    port: rule.port,
-                    protocol: rule.protocol,
-                    interface: rule.interface,
-                    family: "v4",
-                    match: "exact",
-                })),
-            ],
-            missing: [],
+            node_id: entry.node_id,
+            node: entry.node,
+            rules,
+            ...(managed
+                ? {
+                      managed: managedRules(id).map((rule) =>
+                          live ? { ...rule, match: "exact" } : rule,
+                      ),
+                  }
+                : {}),
+            ...(live
+                ? {
+                      agent: { state: "online", since: null },
+                      live: {
+                          backend_status: "active",
+                          observed_at: "2026-11-05T10:00:00Z",
+                          possibly_outdated: false,
+                          unmatched: [],
+                      },
+                  }
+                : {}),
         };
     };
 
@@ -789,15 +789,25 @@ export function createDemoGateway() {
             ],
             [
                 "GET",
-                /^\/api\/v1\/firewall-rules$/,
-                () =>
-                    ok(
-                        [...nodes]
-                            .sort((a, b) => a.id - b.id)
-                            .flatMap((node) => rules(String(node.id))),
-                    ),
+                /^\/api\/v1\/firewall-rules(?:\?(.*))?$/,
+                ([query = ""]) => {
+                    const params = new URLSearchParams(query);
+                    const only = params.get("node");
+
+                    return ok(
+                        [...firewallNodes]
+                            .sort((a, b) => a.node_id - b.node_id)
+                            .filter((entry) => only === null || String(entry.node_id) === only)
+                            .map((entry) =>
+                                nodeFirewall(
+                                    entry,
+                                    params.get("managed") === "1",
+                                    params.get("live") === "1",
+                                ),
+                            ),
+                    );
+                },
             ],
-            ["GET", /^\/api\/v1\/nodes\/(\d+)\/firewall-rules$/, ([node = ""]) => ok(rules(node))],
             [
                 "GET",
                 /^\/api\/v1\/nodes\/(\d+)$/,
@@ -805,16 +815,6 @@ export function createDemoGateway() {
                     const node = nodes.find((candidate) => String(candidate.id) === id);
                     return node === undefined ? notFound("Node") : ok(node);
                 },
-            ],
-            [
-                "GET",
-                /^\/api\/v1\/nodes\/(\d+)\/managed-firewall-rules$/,
-                ([node = ""]) => ok(managedRules(node)),
-            ],
-            [
-                "GET",
-                /^\/api\/v1\/nodes\/(\d+)\/live-firewall-rules$/,
-                ([node = ""]) => ok(liveRules(node)),
             ],
             [
                 "GET",

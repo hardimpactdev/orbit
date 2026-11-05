@@ -98,7 +98,9 @@ describe("the demo Gateway", () => {
             path: "/api/v1/nodes/2/firewall-rules/remove",
             body: identity,
         });
-        expect(await get("/api/v1/nodes/2/firewall-rules")).toHaveLength(1);
+        expect(await get("/api/v1/firewall-rules?node=2")).toMatchObject([
+            { node_id: 2, rules: [expect.anything()] },
+        ]);
     });
 
     it("returns every stored tool for the node, including failed rows", async () => {

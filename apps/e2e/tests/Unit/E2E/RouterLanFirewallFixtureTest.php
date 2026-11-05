@@ -34,14 +34,14 @@ function lanFixtureResponder(string $phase = 'narrowed', ?Closure $override = nu
                 ['id' => 4, 'name' => 'operator', 'status' => 'active', 'roles' => [], 'cluster_id' => null],
             ]], JSON_THROW_ON_ERROR), '', 0);
         }
-        if (str_ends_with(end($argv), '/managed-firewall-rules')) {
+        if (str_ends_with(end($argv), '/firewall-rules?node=2&managed=1')) {
             $data = [];
             foreach (['https' => ['tcp', '443'], 'dns-udp' => ['udp', '53'], 'dns-tcp' => ['tcp', '53']] as $name => [$proto, $port]) {
                 $data[] = ['name' => 'orbit:router-lan-'.$name.':3', 'role' => 'router', 'action' => 'allow',
                     'source' => '10.232.1.12', 'destination' => '10.232.1.11', 'port' => $port, 'protocol' => $proto, 'interface' => null];
             }
 
-            return new GuestCommandResult(json_encode(['data' => $data], JSON_THROW_ON_ERROR), '', 0);
+            return new GuestCommandResult(json_encode(['data' => [['node_id' => 2, 'node' => 'app-dev', 'rules' => [], 'managed' => $data]]], JSON_THROW_ON_ERROR), '', 0);
         }
         if (in_array('dig', $argv, true)) {
             if (in_array('gateway.orbit', $argv, true)) {

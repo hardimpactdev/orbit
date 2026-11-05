@@ -7,9 +7,7 @@ import { createDemoGateway } from "./gateway";
 export async function demoFleet(): Promise<Fleet> {
     setTransport(createDemoGateway().transport, "demo fleet");
     const nodes = await get<Node[]>("/api/v1/nodes");
-    const firewall = await Promise.all(
-        nodes.map((node) => get<FirewallRule[]>(`/api/v1/nodes/${node.id}/firewall-rules`)),
-    );
+    const firewall = await get<Array<{ rules: FirewallRule[] }>>("/api/v1/firewall-rules");
 
     return {
         nodes,
@@ -18,7 +16,7 @@ export async function demoFleet(): Promise<Fleet> {
         processes: await get("/api/v1/processes"),
         schedules: await get("/api/v1/schedules"),
         databases: await get("/api/v1/database-connections"),
-        firewall: firewall.flat(),
+        firewall: firewall.flatMap((node) => node.rules),
         processesLoaded: true,
         loading: false,
         error: null,

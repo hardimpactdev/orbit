@@ -139,15 +139,15 @@ it("shows no queue panel for an instance without Horizon", async () => {
     await expect.element(pane("Jobs")).not.toBeInTheDocument();
 });
 
-it("lists live UFW on a node and keeps Orbit's own rules without actions", async () => {
+it("lists Orbit's own rules as locked rows next to the live comparison, without actions", async () => {
     const app = await openApp("/nodes/2/firewall");
     const managed = row("Firewall", "orbit:wireguard-members");
 
     await expect.element(managed).toMatchTextContent("any on orbit");
-    await expect.element(managed).toMatchTextContent("live");
+    await expect.element(managed).toMatchTextContent("locked");
     await expect.element(row("Firewall", "orbit:public-ssh-recovery")).not.toBeInTheDocument();
 
-    // A managed live rule opens nothing and offers no menu; an operator rule still does both.
+    // A locked rule opens nothing and offers no menu; an operator rule still does both.
     await managed.click();
     expect(app.url()).toBe("/nodes/2/firewall");
     await managed.click({ button: "right" });

@@ -8,6 +8,7 @@ use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Firewall\LiveFirewallBackendStatus;
 use App\Domain\Firewall\LiveFirewallSnapshot;
 use App\Domain\NodeFacts\NodeFactKind;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeFact;
 use UnexpectedValueException;
@@ -47,5 +48,29 @@ final readonly class ListLiveFirewallRulesAction
         }
 
         return ['backend_status' => $snapshot['backend'], 'observed_at' => $fact?->observed_at->toIso8601ZuluString(), 'live' => $snapshot['live'], 'missing' => $snapshot['missing']];
+    }
+
+    /**
+     * Whether each operator rule has all its lines in the UFW report: `exact`, or `missing` when a line is absent.
+     * Only an active firewall can be compared; call it when `execute()` reported `active`.
+     *
+     * @param  iterable<FirewallRule>  $rules
+     * @return array<int, string> the match by rule ID
+     */
+    public function matchRules(Node $node, iterable $rules): array
+    {
+        $fact = NodeFact::query()->where('node_id', $node->id)->where('kind', NodeFactKind::Ufw)->first();
+        $matches = [];
+
+        foreach ($rules as $rule) {
+            try {
+                $matches[$rule->id] = $fact === null ? 'unverifiable'
+                    : (LiveFirewallSnapshot::compare($fact->data, $this->desired->forRule($rule))['missing'] === [] ? 'exact' : 'missing');
+            } catch (UnexpectedValueException) {
+                $matches[$rule->id] = 'unverifiable';
+            }
+        }
+
+        return $matches;
     }
 }

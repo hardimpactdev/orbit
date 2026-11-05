@@ -4,7 +4,7 @@ import recorded from "../../../../packages/php-sdk/fixtures/instances/instance-d
 import { createDemoGateway } from "../demo/gateway";
 import { setTransport } from "./client";
 import type { DeploymentEvent } from "./types";
-import { deploymentLogLines, lists, logLines } from "./queries";
+import { deploymentLogLines, lists, logLines, nodeFirewallQuery } from "./queries";
 
 describe("the fleet firewall list", () => {
     it("reads every Node's rules in one request", async () => {
@@ -15,6 +15,22 @@ describe("the fleet firewall list", () => {
 
         expect(gateway.requests.map((request) => request.path)).toEqual(["/api/v1/firewall-rules"]);
         expect(new Set(rules.map((rule) => rule.node_id)).size).toBeGreaterThan(1);
+    });
+});
+
+describe("a Node's firewall", () => {
+    it("reads its rules, Orbit's rules and the live comparison in one request", async () => {
+        const gateway = createDemoGateway();
+        setTransport(gateway.transport, "demo fleet");
+
+        const firewall = await new QueryClient().fetchQuery(nodeFirewallQuery(2));
+
+        expect(gateway.requests.map((request) => request.path)).toEqual([
+            "/api/v1/firewall-rules?node=2&managed=1&live=1",
+        ]);
+        expect(firewall?.rules.map((rule) => rule.match)).toEqual(["exact", "exact"]);
+        expect(firewall?.managed.map((rule) => rule.name)).toContain("orbit:wireguard-members");
+        expect(firewall?.live.backend_status).toBe("active");
     });
 });
 
