@@ -291,6 +291,8 @@ The native `operation-task-prep` workflow is one parent run. Each step runs an e
 | Fix the findings | `operation-task-turn` | implementer, the draft's thread |
 | Open a draft PR | `operation-task-publish` with `draft` | |
 
+The guest's host key is unknown at admission, so the intents of the later children carry `host_keys: null` for the VM. After the provision child, a `Pin the VM` step fills the key from the provision receipt, the way provision binds its own Route and Process targets.
+
 The child workflows gain only inputs that the parent needs. `operation-task-turn` takes three optional inputs:
 
 - `turn_key` names the Pi message, because a draft turn and a fix turn on one thread must send two different keys;

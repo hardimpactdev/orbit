@@ -39,6 +39,7 @@ sequenceDiagram
   %%> What it does:
   %%> - runs the provision workflow as a child, with its intent from the parent's inputs
   %%> - the VM, the workspace and the checkout of the default branch
+  %%> - the host key of the new VM is unknown at admission; a step pins it into the SSH targets of the later children
   SW->>VM: Draft the spec<br/>operation-task-turn
   %%> What it does:
   %%> - the author agent drafts the chart, the page and the cases, checks them, and commits the three files as one commit

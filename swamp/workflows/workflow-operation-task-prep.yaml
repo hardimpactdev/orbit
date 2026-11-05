@@ -85,10 +85,29 @@ jobs:
         kind: tasks.provision
         intent: ${{ inputs.intent.provision }}
         execution_secrets: ${{ inputs.execution_secrets }}
-  - name: Draft the spec
+  - name: Pin the VM
     labels: {role: swamp}
     dependsOn:
     - step: Create the VM
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: task-prep-pin
+      methodName: pin
+      inputs:
+        receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
+        guest_node_id: '${{ inputs.intent.draft.node_id }}'
+        intents:
+          draft: '${{ inputs.intent.draft }}'
+          fix: '${{ inputs.intent.fix }}'
+          reviews: '${{ inputs.intent.reviews }}'
+          publish: '${{ inputs.intent.publish }}'
+  - name: Draft the spec
+    labels: {role: swamp}
+    dependsOn:
+    - step: Pin the VM
       condition:
         type: succeeded
     task:
@@ -99,7 +118,7 @@ jobs:
         node_id: '${{ inputs.intent.draft.node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-draft" }}'
-        intent: '${{ inputs.intent.draft }}'
+        intent: '${{ steps["Pin the VM"].outputs.draft }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
   - name: Read the draft
     labels: {role: swamp}
@@ -135,7 +154,7 @@ jobs:
         node_id: '${{ inputs.intent.reviews[0].node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-1" }}'
-        intent: '${{ inputs.intent.reviews[0] }}'
+        intent: '${{ steps["Pin the VM"].outputs.reviews[0] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Read the draft"].outputs.head }}'
   - name: Settle review 1
@@ -171,7 +190,7 @@ jobs:
         node_id: '${{ inputs.intent.fix.node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-fix-1" }}'
-        intent: '${{ inputs.intent.fix }}'
+        intent: '${{ steps["Pin the VM"].outputs.fix }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         prompt_append: '${{ steps["Settle review 1"].outputs.findings }}'
   - name: Settle fix 1
@@ -207,7 +226,7 @@ jobs:
         node_id: '${{ inputs.intent.reviews[1].node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-2" }}'
-        intent: '${{ inputs.intent.reviews[1] }}'
+        intent: '${{ steps["Pin the VM"].outputs.reviews[1] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Settle fix 1"].outputs.head }}'
   - name: Settle review 2
@@ -243,7 +262,7 @@ jobs:
         node_id: '${{ inputs.intent.fix.node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-fix-2" }}'
-        intent: '${{ inputs.intent.fix }}'
+        intent: '${{ steps["Pin the VM"].outputs.fix }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         prompt_append: '${{ steps["Settle review 2"].outputs.findings }}'
   - name: Settle fix 2
@@ -279,7 +298,7 @@ jobs:
         node_id: '${{ inputs.intent.reviews[2].node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-3" }}'
-        intent: '${{ inputs.intent.reviews[2] }}'
+        intent: '${{ steps["Pin the VM"].outputs.reviews[2] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Settle fix 2"].outputs.head }}'
   - name: Settle review 3
@@ -336,5 +355,5 @@ jobs:
           object_format: '${{ size(steps["Settle review 3"].outputs.head) == 64 ? "sha256" : "sha1" }}'
           pull_head: ${{ inputs.intent.publish.pull_head }}
           pull_request: ${{ inputs.intent.publish.pull_request }}
-          ssh_execution: ${{ inputs.intent.publish.ssh_execution }}
+          ssh_execution: ${{ steps["Pin the VM"].outputs.publish.ssh_execution }}
         execution_secrets: '${{ {"github_token": inputs.publish_secrets.github_token, "git_authorization": inputs.publish_secrets.git_authorization} }}'
