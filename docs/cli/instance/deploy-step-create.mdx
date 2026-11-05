@@ -1,30 +1,47 @@
 ---
 title: "orbit instance:deploy-step:create"
 sidebarTitle: "instance:deploy-step:create"
-description: "Record one named deploy step on a production Instance. The Gateway stores it at the end of its phase unless you place it."
+description: "Record one named deploy step on a production Instance."
 ---
 
 ```bash
-orbit instance:deploy-step:create <instance> <name> --command=COMMAND [options]
+orbit instance:deploy-step:create <instance> <name> --command=COMMAND [--phase=before_activation|after_activation] [--timeout=SECONDS] [--before=NAME | --after=NAME] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Numeric Instance ID. |
-| `name` | yes | Step name: 1 through 63 lowercase letters, digits, or hyphens, unique within the Instance. |
+| `instance` | yes | Numeric Instance ID of a production Instance. |
+| `name` | yes | Step name, unique within the Instance: 1 to 63 lowercase letters, digits or hyphens, starting and ending with a letter or digit. A terminal asks for it when it is omitted. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--command=COMMAND` | required | Command the Gateway runs as the production user from the fresh release. |
+| `--command=COMMAND` | prompt | The shell command, at most 16 KiB of UTF-8 text with no NUL byte, and not blank. It runs at the release's repository root. |
 | `--phase=PHASE` | `before_activation` | `before_activation` or `after_activation`. |
 | `--timeout=SECONDS` | `300` | Timeout from 1 through 900 seconds. |
-| `--before=NAME` | none | Place before this step in the same phase. Exclusive with `--after`. |
-| `--after=NAME` | none | Place after this step in the same phase. Exclusive with `--before`. |
+| `--before=NAME` | none | Insert before this step of the same phase. Exclusive with `--after`. |
+| `--after=NAME` | none | Insert after this step of the same phase. Exclusive with `--before`. |
+| `--json` | off | Print the step as JSON. |
 
 ```bash
-orbit instance:deploy-step:create 15 install --command="composer install --no-dev --optimize-autoloader"
-orbit instance:deploy-step:create 15 migrate --command="php artisan migrate --force" --after=install
-orbit instance:deploy-step:create 15 restart-queue --command="php artisan queue:restart" --phase=after_activation
+orbit instance:deploy-step:create 15 migrate --command='cd apps/site && php artisan migrate --force'
+orbit instance:deploy-step:create 15 warm-cache --command='cd apps/site && php artisan optimize' --phase=after_activation --timeout=120
 ```
 
-The Gateway refuses a duplicate name, a placement that names an unknown step or a step in another phase, a thirty-third step, a timeout over 900 seconds, or a step-timeout sum over 3,600 seconds.
+In a terminal, an omitted Instance is chosen from an interactive list, and an omitted name and command are asked for as text. A noninteractive or `--json` call without the Instance, the name or the command is refused with `instance.id_invalid`, `deploy_step.name_required` or `deploy_step.command_required`, and sends no request. A `--timeout` that is not an integer, also an empty `--timeout=`, is refused with `deploy_step.timeout_invalid` before any request. An empty `--command=`, `--phase=`, `--before=` or `--after=` is read as omitted: a new step goes to the end of its phase.
+
+The command records one step on the Instance and writes no file into a release. The Gateway checks the whole change against the limits and stores nothing when one fails: an Instance has at most 32 steps, the names are unique, the timeouts add up to at most 3,600 seconds, and `--before` or `--after` must name a step of the same phase. A refusal is `validation.failed` with the reason, which names the failed rule. The step runs during the next [`instance:deploy`](/cli/instance/deploy); the command runs nothing. Creating a name that exists is refused for the same reason: the command has no skip. A change locks the Instance row, so a competing change waits for it. A deploy that has already been admitted refuses to start when a step's command differs from the one it admitted. See [Production deploy steps](/reference/deployments#production-deploy-steps).
+
+The command prints a detail titled `Deploy step: <name>` with Phase, Command, Timeout (seconds) and the request ID; a long command wraps and is never cut. With `--json`, stdout holds the step with `name`, `phase`, `command`, `timeout_seconds` and `request_id`. Activity and errors never contain a step command.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `deploy_step.name_required`, `deploy_step.command_required` | The name or command is missing in a call that cannot prompt. |
+| `deploy_step.timeout_invalid` | `--timeout` is not an integer. |
+| `input.cancelled` | You cancelled a list or a prompt. |
+| `validation.failed` | The name, command, phase or timeout is outside the limits, `--before` and `--after` were both given or name no step of the same phase, the names are not unique, the Instance would hold more than 32 steps, or the timeouts would add up to more than 3,600 seconds. |
+| `deployment_config.unavailable` | The Instance is not a production Instance that is source-resolved or active with a valid branch. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
