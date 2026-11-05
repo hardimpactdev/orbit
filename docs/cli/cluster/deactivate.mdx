@@ -1,15 +1,55 @@
 ---
 title: "orbit cluster:deactivate"
 sidebarTitle: "cluster:deactivate"
-description: "Deactivate a Cluster. Its private domains and LAN ingress stop. The Cluster, its members, and its Router stay."
+description: "Deactivate a Cluster. Its Routes return to Node scope, and the Router and its LAN ingress stop serving them."
 ---
 
 ```bash
-orbit cluster:deactivate <cluster> [--json]
+orbit cluster:deactivate <cluster> [--force] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `cluster` | yes | Numeric Cluster ID. |
 
-Deactivating an inactive Cluster changes nothing. Generated domains of the affected Routes fall back to their member Node TLDs, as the Gateway republishes DNS and Router projections before it stores the change.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--force` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the final task as JSON. |
+
+```bash
+orbit cluster:deactivate 3 --force
+```
+
+In a terminal, an omitted Cluster is chosen from an interactive list, and the CLI asks to confirm with the Cluster's name and the effect, that its Routes return to Node scope and the LAN ingress stops, with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled` and starts no change. A noninteractive or `--json` call that omits the Cluster is refused with `cluster.id_invalid`, and one without `--force` with `cluster.confirmation_required`; neither sends a request.
+
+Orbit first checks the whole change: every affected Route must keep a valid domain, scope and target, and a generated Route must still have an effective TLD from its Node. One refusal leaves every Route in place. Then Orbit returns every affected Route to its Node scope, with generated domains on the Node TLDs, stops private DNS from answering Cluster names with the Router, and prunes the LAN ingress rules the Cluster does not need. The rules go last, so members keep their path to the Router until the Routes and DNS have moved. Custom proxy Routes keep their Node scope. An active public Route that the change would move is refused with `route.reconciliation_required`. The Cluster, its members and its Router stay. The CLI shows one progress indicator while the task runs, then prints the Cluster by its name with the task and request IDs.
+
+Deactivating a Cluster that is inactive, with no unfinished change, succeeds with `Skipped — already inactive (cluster.state_unchanged)` and changes nothing. The same command after a failure past the cutover is not skipped: it finishes the work.
+
+The cutover is the point where the Gateway records the new state: the Cluster inactive and the new domains and scopes in force. A failure before the cutover leaves the Cluster active and every Route as it was. A failure after it leaves the Cluster inactive, and the same command finishes the withdrawal and the prune. Finished steps stay; there is no rollback. After you fix the cause, run the same command again. See [Change a TLD, Cluster state, or Cluster membership](/reference/routes#change-a-tld-cluster-state-or-cluster-membership).
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `cluster.id_invalid` | The Cluster is missing in a call that cannot prompt, or is not a positive integer. |
+| `cluster.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
+| `cluster.router_busy` | Another Cluster change holds the Cluster for more than 30 seconds. Retry after it finishes. |
+| `route.reconciliation_required` | An active public Route would change its domain or scope. |
+| `route.domain_change_conflict` | An affected Route already has another domain change in progress. |
+| `route.domain_conflict` | A new Route domain would collide with another Route. |
+| `route.tld_required` | A generated Route would have no effective TLD, because its Node has none. |
+| `route.target_scope_conflict` | The targets of a Route would span routing scopes. |
+| `route.target_invalid` | A Route or tracking host has no valid target. |
+| `route.generation_basis_missing` | A generated Route has no generation basis. |
+| `route.generation_basis_invalid` | A generated Route cannot be reconciled from its stored basis. |
+| `route.scope_invalid` | A Route without a target cannot leave its Cluster scope. |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed`, `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
+| `http.404` | The Cluster is unknown. |
+| `node_access.required` | The caller has no access grant to a member Node of the Cluster, or to the Gateway Node when the Cluster has no members. |
+
+## How it works
+
+<div className="flow-at" data-chart="cluster/deactivate"></div>

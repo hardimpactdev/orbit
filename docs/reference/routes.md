@@ -508,7 +508,7 @@ For a development Laravel source, the Gateway sets `APP_URL` in the environment 
 
 These changes reconcile every private Route that depends on the affected Node or Cluster before the change becomes authoritative: a Node TLD change, a Cluster TLD change, Cluster activation or deactivation, and a Node attach or detach. The Gateway checks every affected Route, and a Node's LAN address against the Cluster, before the first Route moves. It compares each proposed domain with every Route domain in the fleet. One invalid or occupied result refuses the whole change and leaves every Route in place.
 
-A Node attach or detach that would change the domain or scope of an active public Route is refused with `route.reconciliation_required`.
+A change that would alter the domain or scope of an active public Route is refused with `route.reconciliation_required`. That covers Cluster activation and deactivation, a Cluster TLD change, and a Node attach or detach.
 
 | Route | Result |
 | --- | --- |
