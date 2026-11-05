@@ -20,7 +20,7 @@ final class ConvergeTaskVmCommand extends Command
     public function handle(StartTaskVmConvergeAction $converge): int
     {
         $value = $this->argument('vm');
-        if (! is_string($value) || ! ctype_digit($value) || (int) $value < 1) {
+        if (! ctype_digit($value) || (int) $value < 1) {
             $this->error('A positive TaskVM ID is required.');
 
             return self::FAILURE;
@@ -33,7 +33,7 @@ final class ConvergeTaskVmCommand extends Command
             return self::FAILURE;
         }
         $interface = $this->option('nfs-interface');
-        if ($checkout !== null && (! is_string($checkout) || preg_match('#\A/[A-Za-z0-9._/-]+\z#', $checkout) !== 1
+        if ($checkout !== null && (preg_match('#\A/[A-Za-z0-9._/-]+\z#', $checkout) !== 1
             || ! is_string($subnet) || preg_match('#\A(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\z#', $subnet) !== 1
             || ! is_string($interface) || preg_match('/\A[a-z][a-z0-9_-]{0,14}\z/', $interface) !== 1)) {
             $this->error('The NFS checkout, subnet or interface is not valid.');

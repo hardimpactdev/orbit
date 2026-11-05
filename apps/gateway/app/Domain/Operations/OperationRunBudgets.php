@@ -78,6 +78,9 @@ final class OperationRunBudgets
         'node.prepare_php_packages' => 3600,
         'node.remove' => 2100,
         'node.role_add' => 2700,
+        // No run yet. Basis: the three Ansible phases at their step bounds, software 1,800 s, tools 900 s and the check 300 s, plus the
+        // short input steps and margin. A VM at its pins takes about a minute. Replace with the 14-day p95 after the first successes.
+        'task_vm.converge' => 3300,
         'task_vm.destroy' => 2700,
         // No native run yet. Basis: the legacy fill's one overall 1,700 s budget, plus margin for the run start and the
         // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
