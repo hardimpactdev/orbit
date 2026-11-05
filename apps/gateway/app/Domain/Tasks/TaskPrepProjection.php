@@ -7,7 +7,6 @@ namespace App\Domain\Tasks;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
