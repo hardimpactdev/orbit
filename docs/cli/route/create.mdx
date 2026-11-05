@@ -5,10 +5,10 @@ description: "Create an explicit app Route targeting an Instance, or create a cu
 ---
 
 ```bash
-orbit route:create <instance> <domain> [--publication=private|public] [--web-root=PATH] [--idempotency-key=KEY]
-orbit route:create <domain> --node=NODE --upstream=URL [--idempotency-key=KEY]
-orbit route:create <domain> --node=NODE --process=PROCESS [--idempotency-key=KEY]
-orbit route:create <domain> --process=PROCESS [--ingress=NODE] --publication=public [--idempotency-key=KEY]
+orbit route:create <instance> <domain> [--publication=private|public] [--web-root=PATH] [--json]
+orbit route:create <domain> --node=NODE --upstream=URL [--json]
+orbit route:create <domain> --node=NODE --process=PROCESS [--json]
+orbit route:create <domain> --process=PROCESS [--ingress=NODE] --publication=public [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -19,31 +19,32 @@ orbit route:create <domain> --process=PROCESS [--ingress=NODE] --publication=pub
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--publication=INTENT` | `private` | `private` or `public` for the app form. Public custom proxies require a Process and accept an Ingress. |
-| `--node=NODE` | none | Serving Node ID or name for a private custom proxy. |
-| `--ingress=NODE` | derived | Public Process Route Ingress Node name or ID; defaults to the Process Cluster Ingress or the single Ingress serving existing public app Routes. |
+| `--node=NODE` | none | Numeric ID of the serving Node for a private custom proxy. |
+| `--ingress=NODE` | derived | Numeric ID of the Ingress Node of a public Process Route; defaults to the Process Cluster Ingress or the single Ingress serving existing public app Routes. |
 | `--upstream=URL` | none | Loopback HTTP URL for a custom proxy Route, such as `http://127.0.0.1:4788`. |
-| `--process=PROCESS` | none | Name or ID of a Node Process on the serving Node, for a custom proxy Route. |
+| `--process=PROCESS` | none | Numeric ID of a Node Process on the serving Node, for a custom proxy Route. |
 | `--web-root=PATH` | none | A web root inside the Instance's checkout or release, such as `apps/docs/public`. The Route becomes another site of the Instance. A production Instance needs a deployed release. |
+| `--json` | off | Print the final task as JSON. |
 
 ```bash
 orbit route:create 12 shop.example.test
-orbit route:create 12 shop.example.com --publication=public
+orbit route:create 14 shop.example.com --publication=public
 orbit route:create 12 docs.shop.test --web-root=apps/docs/public
-orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
-orbit route:create executor.orbit --node=beast --process=executor
+orbit route:create executor.orbit --node=7 --upstream=http://127.0.0.1:4788
+orbit route:create executor.orbit --node=7 --process=21
 ```
 
-In a terminal, Orbit lists available Instances for an omitted Instance ID and prompts for an omitted domain. If no Instances are available or selection is cancelled, it creates nothing. In noninteractive or JSON mode, provide both arguments for the app form.
+In a terminal, Orbit lists available Instances for an omitted Instance ID and prompts for an omitted domain. If no Instances are available or you cancel (`input.cancelled`), it creates nothing. In noninteractive or JSON mode, provide both arguments for the app form: a missing Instance is refused with `instance.id_invalid` and a missing domain with `route.domain_required`, and nothing is sent. Node, Process and Ingress are numeric IDs.
 
-The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. With `--web-root`, the Instance keeps its own Route and gets another site. See [Create and change targets](/reference/routes#create-and-change-targets) and [Serve several web roots](/reference/routes#serve-several-web-roots).
+The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An Instance that is not active returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical repeat for an active Route succeeds with `route.exists` and changes nothing. With `--web-root`, the Instance keeps its own Route and gets another site. See [Create and change targets](/reference/routes#create-and-change-targets) and [Serve several web roots](/reference/routes#serve-several-web-roots).
 
-Your caller needs access to the target Node. A Cluster-scoped Route needs an active Router; public app publication needs production targets and a serving Ingress. Orbit waits up to 30 seconds for a busy projection lock before returning `app-dev.projection_busy`.
+For the app form the caller needs an access grant to the Instance's Node. For a public Process Route the caller needs a grant to both the Ingress Node and the Process Node. A Cluster-scoped Route needs an active Router; only a production Instance can be public (`route.publication_unsupported`), and the Route activates once an Ingress serves it. Orbit waits up to 30 seconds for a busy projection lock before returning `app-dev.projection_busy`.
 
-Orbit leaves private certificate keys on each Node and signs their CSRs with the Gateway's CA. The publication installs the certificate and its account copy, trusts the root, writes the PHP pools and Caddyfile, and sets `APP_URL` or the production environment. Private environment values come from the execution vault. Official cfgmgmt resources and pinned SSH commands apply the captured files; Caddy reloads after validation. The TLS probe checks the hostname and trusted chain from 209, without requiring a successful application HTTP response.
+Orbit leaves private certificate keys on each Node and signs their CSRs with the Gateway's CA. The publication installs the certificate and its account copy, trusts the root, writes the PHP pools and Caddyfile, and sets `APP_URL` or the production environment. Private environment values come from the execution vault. Caddy reloads after validation. The TLS probe checks the hostname and trusted chain, without requiring a successful application HTTP response. The CLI shows one progress indicator while the task runs, then prints the Route by its domain, the Instance by its name, and the task and request IDs.
 
-A failed validation leaves the candidate Caddyfile and stops the reload. Other changes also stay for convergence; Orbit does not roll them back. Fix the cause and rerun, or use `route:destroy` to remove the retained Route and its files. Follow the returned task with `operation:show` for its failed step and error code.
+A failed step leaves the Route `pending` with the failed step and its error code; `operation:show` for the returned task shows them. A failed validation leaves the candidate Caddyfile and stops the reload. Other changes stay; Orbit does not roll them back. Fix the cause and run the same command again to resume the Route, or use `route:destroy` to remove it and its files. A Route that is failed or being removed refuses the retry with `route.activation_unsupported`.
 
-`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain. Private publication requires `--node`. Public publication requires a numeric `--process`, with optional `--ingress`, without `--node` or `--upstream`. The Process can run on another Node outside the Cluster. See [public Process hostnames](/reference/routes#public-process-hostnames) for listener and firewall requirements.
+`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and exactly one of the two is given (`route.upstream_invalid`). Private publication requires `--node`. Public publication requires a numeric `--process`, with optional `--ingress`, without `--node` or `--upstream`. The Process can run on another Node outside the Cluster. See [public Process hostnames](/reference/routes#public-process-hostnames) for listener and firewall requirements.
 
 ## How it works
 
@@ -53,21 +54,35 @@ A failed validation leaves the candidate Caddyfile and stops the reload. Other c
 
 | Error code | Meaning |
 | --- | --- |
+| `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
+| `node.id_invalid` | `--node` or `--ingress` is not a positive integer. |
+| `process.id_invalid` | `--process` is not a positive integer. |
+| `route.domain_required` | The domain is missing and the CLI cannot prompt. |
 | `route.domain_invalid` | The domain is not a valid domain. |
 | `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.ai-router.orbit`. |
 | `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
+| `route.activation_unsupported` | The existing Route is failed or being removed, so it cannot resume. |
 | `route.scope_required` | A private custom proxy needs a Node; a public custom proxy needs a numeric Process ID and optional Ingress. |
+| `route.scope_conflict` | The app form got `--node` or `--ingress`. |
+| `route.publication_invalid` | `--publication` is empty or not `private` or `public`. |
+| `route.publication_unsupported` | A development Instance cannot be published publicly. |
 | `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already has a Route without a web root. |
+| `route.web_root_invalid` | The web root is not a relative path inside the checkout or release. |
 | `route.web_root_release_missing` | The production Instance has no selected release. Deploy it first. |
 | `route.web_root_unsafe` | The production web root would serve an application `.env`, or sits in the default directory without being the Instance root. |
 | `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
 | `route.web_root_unsupported` | A custom proxy Route got a web root. |
 | `route.router_required` | The Cluster has no active Router. |
-| `route.instance_inactive` | The Instance is neither being provisioned nor active. |
+| `route.ingress_required` | A public Process Route has no active Ingress to serve it. |
+| `route.ingress_ambiguous` | More than one Ingress could serve the public Process Route; name one with `--ingress`. |
 | `route.node_inactive` | The custom proxy's Node is not active, or has no WireGuard address. |
-| `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
-| `route.upstream_unresolved` | The Process has no single Node-local listener. |
+| `route.upstream_invalid` | The upstream is not a loopback HTTP URL, or both or neither of `--upstream` and `--process` were given. |
+| `route.upstream_unresolved` | The Process has no single Node-local listener, or the public Process or its Node is inactive. |
 | `route.process_conflict` | The Process is not a Node Process on the serving Node. |
+| `process.not_found` | The Process does not exist. |
 | `process.runtime_lock_failed` | Process Route creation could not acquire the Process runtime lock within its bounded wait. No Route was reserved. |
+| `app-dev.projection_busy` | The projection lock stayed busy for 30 seconds. No Route was reserved. |
+| `http.404` | The Instance or Node is unknown. |
+| `node_access.required` | The caller has no access grant to a Node the request needs. |

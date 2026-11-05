@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Target design: Nick 2026-11-03, single-swamp-node, rules 14-25.
-  %% status: draft
+  %% Target design: ADR 0244 task, one Swamp run, certificate signing is the one step-to-Gateway call. docs/reference/routes.md#create-and-change-targets.
+  %% status: reviewed
   %% command: route:create
   %% kind: route.create
   autonumber
@@ -11,43 +11,50 @@ sequenceDiagram
   %% lane V icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:create 12 shop.test
-  Note over GW: Validate, reserve domain<br/>Route 14 pending · task #5120
-  GW->>SW: Start run, full intent<br/>operation-route-create
-  GW-->>CLI: 202 Accepted<br/>task #5120
-  SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
-  SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
-  %%> The Orbit CA key stays in the Gateway.
-  GW-->>SW: Signed certificate
-  opt Cluster-scoped Route
-    SW->>N: Allow the Router on LAN<br/>@swamp/cfgmgmt/firewall
-    %%> The Router reaches workloads over LAN; there is no WireGuard fallback.
-  end
-  SW->>N: Install cert, publish site<br/>child route-create-site · reload
-  %%> A validation error stops the reload; the written candidate stays for convergence.
-  SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI shop.test
-  %%> Runs from 209; an HTTP 500 does not fail the TLS check.
-  opt --publication=public
-    SW->>N: Open the Ingress edge<br/>Ingress Caddy · ufw 80/443
-    %%> Public DNS is operator-managed. Caddy retries Let's Encrypt by itself.
-  end
-  opt domain outside the TLD
-    SW->>V: Publish private DNS<br/>records + catalog, then restart
-    %%> DNS goes last. Inside the TLD, private DNS already answers the whole zone.
-    %%> dnsmasq reads records only at startup.
-  end
-  alt every step succeeds
-    SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Record result<br/>Route 14 active · task succeeded
-  else a step fails
-    SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Record the failure<br/>domain kept · rerun after a fix
-    %%> There is no rollback. Rerun to converge, or route:destroy to remove what was added.
+  CLI->>GW: route:create<br/>INSTANCE DOMAIN
+  Note over GW: Validate, reserve domain<br/>Route pending
+  alt identical request, Route active
+    GW-->>CLI: Skipped<br/>route.exists · no run
+    %%> Result:
+    %%> - the command succeeds and changes nothing; a different request for the domain is refused with `route.retry_conflict`
+  else new or pending Route
+    GW->>SW: Start run, full intent<br/>operation-route-create
+    GW-->>CLI: 202 Accepted<br/>task ID
+    SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
+    SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
+    %%> Why a call to the Gateway:
+    %%> - certificate signing is the one allowed step-to-Gateway call; the Orbit CA stays in the Gateway
+    GW-->>SW: Signed certificate
+    opt Cluster-scoped Route
+      SW->>N: Allow the Router on LAN<br/>@swamp/cfgmgmt/firewall
+    end
+    SW->>N: Install cert, publish site<br/>child route-create-site · reload
+    SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI domain
+    %%> Why:
+    %%> - the probe checks the hostname and the trusted chain; it does not need a successful application HTTP response
+    opt --publication=public
+      SW->>N: Open the Ingress edge<br/>Ingress Caddy · ufw 80/443
+    end
+    opt domain outside the TLD
+      SW->>V: Publish private DNS<br/>records + catalog, then restart
+    end
+    alt every step succeeds
+      SW-->>GW: Run succeeded<br/>terminal event + outputs
+      Note over GW: Record result<br/>Route active
+    else a step fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      Note over GW: Record the failure<br/>Route pending · failed step
+      %%> On the Nodes:
+      %%> - a failed validation leaves the candidate Caddyfile and stops the reload; other changes stay; there is no rollback
+      %%> Retry:
+      %%> - fix the cause and run the same command again; it resumes the pending Route
+      %%> - `route:destroy` removes the Route and its files
+    end
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5120
+    CLI->>GW: operation:show TASK
     GW-->>CLI: status + result
   end
