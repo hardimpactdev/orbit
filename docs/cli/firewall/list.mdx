@@ -1,22 +1,67 @@
 ---
 title: "orbit firewall:list"
 sidebarTitle: "firewall:list"
-description: "List the operator rules recorded for one Node with their port, protocol, source, action, label, and status."
+description: "List the firewall rules of one Node or of every Node you may address, with Orbit's own rules and a comparison with the live firewall on request."
+covers:
+  - apps/cli/app/Commands/Firewall/ListFirewallRulesCommand.php
+  - apps/gateway/app/Actions/Firewall/ListFirewallRulesAction.php
+  - apps/gateway/app/Domain/Firewall/FirewallRuleOrder.php
+  - apps/gateway/app/Http/Requests/Firewall/ListFirewallRulesRequest.php
 ---
 
 ```bash
-orbit firewall:list --node=ID [--json]
+orbit firewall:list [--node=ID] [--managed] [--live] [--json]
 ```
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--node=ID` | required | Numeric target Node ID. |
+| `--node=ID` | every Node you may address | Numeric Node ID. List only that Node. |
+| `--managed` | off | Add the `orbit:` rules that Orbit keeps on each Node. |
+| `--live` | off | Compare the rules with the last UFW report of each Node agent. |
 | `--json` | off | Print the result as JSON. |
 
-The list shows what Orbit has recorded for the Node. It does not read the Node, so it works while the Node is unreachable, and it does not show a rule added on the Node by hand. Orbit's own `orbit:` rules are not in it; [the managed and live reads](/cli/firewall#read-the-managed-and-live-rules) show those.
+```bash
+orbit firewall:list
+orbit firewall:list --node=7 --managed --live
+```
 
-Rules are listed in the order UFW checks them, so the first matching row wins. A narrower rule comes before a broader one, as [rule ordering](/cli/firewall#order-on-the-node) describes. Other rules are in the order they were created. A rule for both protocols shows `any`. The table has the columns PORT, PROTOCOL, SOURCE, ACTION, LABEL and STATUS. A rule without a label shows `—`. An empty result says `No firewall rules.`. Long values wrap inside their cells; below the minimum width, each rule shows as labeled fields.
+The list shows what Orbit has recorded. It does not read the Node, so it works while the Node is unreachable. It does not show a rule added on the Node by hand, unless you ask for `--live`.
+
+Rules are listed in the order UFW checks them, so the first matching row wins. A narrower rule comes before a broader one, as [rule ordering](/cli/firewall#order-on-the-node) describes. Other rules are in the order they were created. A rule for both protocols shows `any`. The table has the columns PORT, PROTOCOL, SOURCE, ACTION, LABEL and STATUS. With several Nodes it also has a NODE column. A rule without a label shows `—`. An empty result says `No firewall rules.`. Long values wrap inside their cells; below the minimum width, each rule shows as labeled fields.
 
 A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a failed rule also has `failed_step` and `error_code`; repeat the command that created it once the cause is fixed.
 
-The command refuses a `--node` that is not a positive integer (`firewall.node_id_invalid`) and a Node that the calling Node has no access grant to (`node_access.required`).
+## Orbit's own rules
+
+`--managed` adds the `orbit:` rules Orbit intends on each Node: WireGuard member trust, public SSH recovery while no active role has closed it, the rules of each active role, and the Metrics rules. They come after the operator rules, as locked rows with the status `locked`. The LABEL cell names the rule and its role. No command changes these rules.
+
+## Compare with the live firewall
+
+`--live` adds a MATCH column. It compares the last `ufw` report of each Node agent with the recorded rules. With `--managed`, Orbit's own rules are compared too. The match is one of:
+
+| Match | Meaning |
+| --- | --- |
+| `exact` | The Node has the rule as recorded. |
+| `drift` | The Node has a rule with the same label, but it differs. |
+| `missing` | The Node lacks the rule. A rule counts as missing on a Node whose UFW is inactive or not installed. |
+| `unmanaged` | The Node has a rule that no recorded rule explains. It shows as a row with the status `live only`. |
+| `unverifiable` | The agent has not reported UFW, or reported a rule Orbit cannot compare. |
+
+For each Node, the list prints the backend status (`active`, `inactive` or `absent`) and when the agent observed it. The agent reports on change and every 10 minutes, so a new rule can take up to a minute to show.
+
+If a Node's agent is silent, the list prints `agent offline since <time>` for that Node and marks its matches `possibly outdated`. The other Nodes show as normal.
+
+Drift does not fail the command: it exits 0. [Doctor](/cli/doctor) is the check that fails on drift.
+
+## How it works
+
+<div className="flow-at" data-chart="firewall/list"></div>
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `firewall.node_id_invalid` | `--node` is not a positive integer. |
+| `node_access.required` | The calling Node has no access grant to the Node in `--node`. |
+
+Without `--node`, the list holds only the Nodes the calling Node may address.

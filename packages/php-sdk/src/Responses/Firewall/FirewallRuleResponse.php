@@ -23,6 +23,7 @@ final readonly class FirewallRuleResponse
         public ?string $failedStep,
         public ?string $errorCode,
         public string $requestId,
+        public ?string $match = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -46,6 +47,7 @@ final readonly class FirewallRuleResponse
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             requestId: $requestId,
+            match: is_string($data['match'] ?? null) ? $data['match'] : null,
         );
     }
 
@@ -65,6 +67,7 @@ final readonly class FirewallRuleResponse
             'backend_status' => $this->backendStatus,
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
+            ...($this->match === null ? [] : ['match' => $this->match]),
             'request_id' => $this->requestId,
         ];
     }

@@ -471,7 +471,7 @@
     },
     {
       "source": "/decisions/0093-show-live-ufw-and-desired-rules-that-match-converge",
-      "destination": "/cli/firewall#read-the-managed-and-live-rules"
+      "destination": "/cli/firewall/list"
     },
     {
       "source": "/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",

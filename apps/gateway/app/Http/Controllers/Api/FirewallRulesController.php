@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Firewall\ListFirewallRulesAction;
-use App\Actions\Firewall\ListLiveFirewallRulesAction;
-use App\Actions\Firewall\ListManagedFirewallRulesAction;
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
-use App\Data\Firewall\FirewallRuleData;
 use App\Data\Operations\OperationData;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Firewall\ListFirewallRulesRequest;
 use App\Http\Requests\Firewall\RemoveFirewallRuleRequest;
 use App\Http\Requests\Firewall\StoreFirewallRuleRequest;
 use App\Http\Requests\Operations\StartsOperation;
@@ -26,45 +25,38 @@ use Illuminate\Http\Request;
 #[RequiresNodeAccess(ServingNode::Target)]
 final class FirewallRulesController extends Controller
 {
+    /**
+     * The operator rules of one Node or of every Node the caller may address; `managed` adds Orbit's own rules and
+     * `live` compares the agents' last UFW reports with them. It reads Gateway state only.
+     */
+    #[RequiresNodeAccess(ServingNode::Collection)]
     public function index(
-        Request $request,
-        Node $node,
+        ListFirewallRulesRequest $request,
         ListFirewallRulesAction $action,
+        NodeAccessAuthorizer $access,
     ): JsonResponse {
-        return response()->json([
-            'data' => $action
-                ->execute($node)
-                ->map(static function (FirewallRule $rule): array {
-                    $data = FirewallRuleData::fromModel($rule)->toArray();
-                    unset($data['backend_status']);
+        $caller = $request->user();
+        if (! $caller instanceof Node) {
+            abort(403);
+        }
 
-                    return $data;
-                })
-                ->all(),
-            'meta' => $this->meta($request),
-        ]);
-    }
+        $nodeId = $request->nodeId();
+        $accessible = $access->accessibleNodeIds($caller);
 
-    /** Orbit's own rules for the Node, read-only: no request adds, changes, or removes one. */
-    public function managed(
-        Request $request,
-        Node $node,
-        ListManagedFirewallRulesAction $action,
-    ): JsonResponse {
-        return response()->json([
-            'data' => $action->execute($node),
-            'meta' => $this->meta($request),
-        ]);
-    }
+        if ($nodeId !== null) {
+            $node = Node::query()->findOrFail($nodeId);
 
-    /** Live UFW on the Node, classified against the desired managed set and operator records. */
-    public function live(
-        Request $request,
-        Node $node,
-        ListLiveFirewallRulesAction $action,
-    ): JsonResponse {
+            if (! $access->allows($caller, $node)) {
+                throw new ResourceOperationException('node_access.required', 'Node access is required.', 403, details: [
+                    'serving_node' => ['id' => $node->id, 'name' => $node->name],
+                ]);
+            }
+
+            $accessible = [$node->id];
+        }
+
         return response()->json([
-            'data' => $action->execute($node),
+            'data' => $action->execute($accessible, $request->managed(), $request->live()),
             'meta' => $this->meta($request),
         ]);
     }

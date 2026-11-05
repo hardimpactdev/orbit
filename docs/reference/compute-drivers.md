@@ -1302,7 +1302,7 @@ The table filters only the reserved range. Its first rule passes every packet th
 | From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
 | To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
 
-The209 SSH rule and Cluster Router web rules come from the same canonical definitions shown by `firewall-managed-list` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall-live-list` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
+The209 SSH rule and Cluster Router web rules come from the same canonical definitions shown by `firewall:list --managed` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall:list --live` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 

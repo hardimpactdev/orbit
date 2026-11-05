@@ -10,3 +10,13 @@ batches:
     summary: As fresh-fleet, and every Node also has an IPv6 address on the proof bridge.
     setup:
       - ipv6_addresses: {nodes: [gateway, app-dev, app-prod]}
+  full-list:
+    summary: As fresh-fleet, and no case of the same run has made an operator rule. For a case that checks the complete list.
+  ufw-fault:
+    summary: As fresh-fleet. A case makes `ufw` fail on a Node, so no other case may share it.
+  node-down:
+    summary: As fresh-fleet. A case stops a Node, its agent and SSH, so no other case may share it.
+  no-grant:
+    summary: As fresh-fleet, and app-prod has no access grant to app-dev.
+    setup:
+      - node_access_remove: {consumer: app-prod, serving: app-dev}

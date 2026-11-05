@@ -92,21 +92,24 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 | `ufw_rule` | setup | Add a rule that the test owns, straight on the Node, above or below another row. |
 | `fault` | setup, act | Make `ufw` on the Node fail after the n-th call that contains a word. `clear` removes it. A case with a fault needs its own batch. |
 | `busy_node` | setup | Keep one firewall write running on the Node, so its lock is held. A case with a held lock needs its own batch. |
+| `agent_report` | setup | Wait until the agent of each listed Node has reported again, so the Gateway holds the state the case built. |
+| `node_down` | setup | Stop a Node, its agent and its SSH. A case that stops a Node needs its own batch. |
+| `node_access_remove` | batch setup | Remove the access grant of one Node to another. |
 | `ipv6_addresses` | batch setup | Give Nodes an IPv6 address on the proof bridge. |
-| `cli` | setup, act | Run `orbit` built from the tested commit. Keys: `run`, `forms`, `tty`, `expect`. |
+| `cli` | setup, act | Run `orbit` built from the tested commit. Keys: `run`, `forms`, `tty`, `expect`, and `as` (the Node that runs the CLI; default `gateway`). |
 | `probe` | any | Open a connection from a Node to a port and expect `connect` or `blocked`. |
 | `ufw` | expect | Read `ufw status numbered` on a Node and check rows. |
 | `record` | expect | Run a read command and count the rows that match. |
 | `doctor` | expect | Run Doctor for a Node and check its drift count. |
 | `unchanged` | expect | Compare the baseline with the state at the start of `act`. |
-| `ufw_delete` | negative | Delete a row, to prove that a case can fail. |
+| `ufw_delete` | setup, negative | Delete a row by hand, to build drift or to prove that a case can fail. |
 
 Details that a case author needs:
 
 - **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form; use it only on calls that are safe to repeat, such as a refusal or a skip. `tty` runs the call in a terminal and answers prompts: `see` waits for text, `send` types it, `choose` picks a list item. `expect` takes `exit`, `status` (the Operation), `code` (an error code), `skipped` (a reason code), `request: none` (no Operation was created) and `human` (text).
 - **`probe`** in `setup` is a precondition: a mismatch makes the case `unrun`. In `expect` it is an assertion: a mismatch fails the case. A list in `from`, `proto` or `port` runs one probe for each combination. `family` is 4 or 6, and `proto` is `tcp` or `udp`.
 - **`ufw`** checks that each row appears exactly once, in the order listed, top to bottom. `absent` rows must not appear. A row is `to`, `action`, `from` and an optional `comment`, or `ref` to a rule that `ufw_rule` bound with `as`.
-- **`record`** runs `list` with the node, then matches `where` against each row. `count` is exact.
+- **`record`** runs `list` with the node, then matches `where` against each row. `count` is exact; `min` is a lower bound. `args` adds options to the list call. `section` names the part of the JSON to read: `rules` (default), `managed`, `unmatched` or `live`. `order` lists rows that must appear in that sequence, not necessarily next to each other.
 - **`doctor`** waits until 65 seconds after `act` ended, so that a report of the Node agent follows the change, then runs Doctor for the Node. The agent's tick has no fixed phase after a restore of `base`, so the wait does not use it. Use it in the main success case, not in every case.
 - **`unchanged`** compares the providers named in `what`, or all of `baseline` except `operations`. `operations` runs only when `what` names it, because the command under test creates an Operation. `except` leaves out rows for one port. `request: none` uses the `operations` provider.
 

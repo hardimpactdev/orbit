@@ -53,7 +53,7 @@ final readonly class RouterLanFirewallFixture
             || ($router['lan_ip'] ?? null) !== $plan['router'] || ($member['lan_ip'] ?? null) !== $plan['member']) {
             throw new RuntimeException('Prepare app-dev Router, app-prod member and operator nonmember through the Orbit CLI first.');
         }
-        $managed = $this->records($this->api('/nodes/'.$routerId.'/managed-firewall-rules'), 'data');
+        $managed = $this->records($this->records($this->api('/firewall-rules?node='.$routerId.'&managed=1'), 'data')[0] ?? [], 'managed');
         foreach (['https' => ['tcp', '443'], 'dns-udp' => ['udp', '53'], 'dns-tcp' => ['tcp', '53']] as $family => [$protocol, $port]) {
             $expected = [
                 'name' => 'orbit:router-lan-'.$family.':'.$memberId, 'role' => 'router', 'action' => 'allow',
@@ -65,7 +65,7 @@ final readonly class RouterLanFirewallFixture
                 throw new RuntimeException('The expected exact member managed rules are not published.');
             }
         }
-        $plan['operator_rules'] = $this->records($this->api('/firewall-rules'), 'data');
+        $plan['operator_rules'] = $this->operatorRules();
         $control = $operation === 'probe' ? 'inspect' : $operation;
         $script = file_get_contents(__DIR__.'/../../resources/guest/router-lan-firewall.py');
         if ($script === false) {
@@ -113,8 +113,7 @@ final readonly class RouterLanFirewallFixture
             $report = $afterProbe;
             $report['acceptance'] = $broad ? 'previous overlap exposure and continuity verified' : 'member-only UDP/TCP, HTTPS, bridge and VPN verified';
         }
-        $after = $this->records($this->api('/firewall-rules'), 'data');
-        if ($after !== $plan['operator_rules']) {
+        if ($this->operatorRules() !== $plan['operator_rules']) {
             throw new RuntimeException('Operator records changed during acceptance; retain diagnostics and inspect ownership.');
         }
 
@@ -186,6 +185,17 @@ final readonly class RouterLanFirewallFixture
         }
 
         return $text;
+    }
+
+    /** @return list<array<string, mixed>> The operator rules of every Node, in the order the Gateway lists them. */
+    private function operatorRules(): array
+    {
+        $rules = [];
+        foreach ($this->records($this->api('/firewall-rules'), 'data') as $node) {
+            array_push($rules, ...$this->records($node, 'rules'));
+        }
+
+        return $rules;
     }
 
     /** @param array<string, mixed> $value

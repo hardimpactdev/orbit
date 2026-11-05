@@ -164,14 +164,14 @@ it('reports inactive UFW with the exact safe JSON error envelope', function (
     ],
 ]);
 
-it('lists rules by port, protocol, and source with their label', function (): void {
-    firewall_cli_mock([
+it('lists the rules of one Node in the order the Gateway returns them', function (): void {
+    $mock = firewall_cli_mock([
         ListFirewallRulesRequest::class => MockResponse::make([
-            'data' => [
+            'data' => [firewall_cli_node_entry([
                 [...firewall_cli_payload(action: 'allow', backendStatus: null), 'port' => '8000:8100', 'label' => null],
                 [...firewall_cli_payload(action: 'deny', backendStatus: null), 'port' => '443', 'protocol' => 'udp'],
                 firewall_cli_payload(action: 'allow', backendStatus: null),
-            ],
+            ])],
             'meta' => ['request_id' => firewall_cli_request_id()],
         ]),
     ]);
@@ -179,9 +179,101 @@ it('lists rules by port, protocol, and source with their label', function (): vo
     expect(Artisan::call('firewall:list', ['--node' => '7']))->toBe(0);
     $output = Artisan::output();
     expect($output)->toMatch('/PORT[\s│]+PROTOCOL[\s│]+SOURCE[\s│]+ACTION[\s│]+LABEL[\s│]+STATUS/u')
-        ->not->toContain('NAME')
-        ->toMatch('/443[\s│]+tcp[\s│]+192\.0\.2\.0\/24[\s│]+allow[\s│]+office web.*443[\s│]+udp[\s│]+any[\s│]+deny.*8000:8100/su')
+        ->not->toContain('NODE')
+        ->not->toContain('MATCH')
+        ->toMatch('/8000:8100[\s│]+tcp.*—.*443[\s│]+udp[\s│]+any[\s│]+deny.*443[\s│]+tcp[\s│]+192\.0\.2\.0\/24[\s│]+allow[\s│]+office web/su')
         ->toContain('Request ID: '.firewall_cli_request_id());
+    $mock->assertSent(fn ($request): bool => $request instanceof ListFirewallRulesRequest
+        && $request->resolveEndpoint() === '/api/v1/firewall-rules'
+        && $request->query()->all() === ['node' => 7]);
+});
+
+it('lists every Node with a Node column when --node is omitted', function (): void {
+    $mock = firewall_cli_mock([
+        ListFirewallRulesRequest::class => MockResponse::make([
+            'data' => [
+                firewall_cli_node_entry([firewall_cli_payload(action: 'allow', backendStatus: null)]),
+                [...firewall_cli_node_entry([[...firewall_cli_payload(action: 'deny', backendStatus: null), 'node_id' => 8, 'node' => 'app-prod']]), 'node_id' => 8, 'node' => 'app-prod'],
+            ],
+            'meta' => ['request_id' => firewall_cli_request_id()],
+        ]),
+    ]);
+
+    expect(Artisan::call('firewall:list'))->toBe(0);
+    expect(Artisan::output())->toMatch('/NODE[\s│]+PORT[\s│]+PROTOCOL.*app-dev[\s│]+443.*app-prod[\s│]+9000/su');
+    $mock->assertSent(fn ($request): bool => $request instanceof ListFirewallRulesRequest && $request->query()->all() === []);
+});
+
+it('adds Orbit rules as locked rows that name their role with --managed', function (): void {
+    $mock = firewall_cli_mock([
+        ListFirewallRulesRequest::class => MockResponse::make([
+            'data' => [[...firewall_cli_node_entry([firewall_cli_payload(action: 'allow', backendStatus: null)]), 'managed' => [
+                ['name' => 'orbit:wireguard-members', 'role' => null, 'action' => 'allow', 'source' => '10.44.0.0/24', 'destination' => 'any', 'port' => 'any', 'protocol' => 'any', 'interface' => 'orbit'],
+                ['name' => 'orbit:database', 'role' => 'database', 'action' => 'allow', 'source' => 'any', 'destination' => 'any', 'port' => '3306', 'protocol' => 'tcp', 'interface' => null],
+            ]]],
+            'meta' => ['request_id' => firewall_cli_request_id()],
+        ]),
+    ]);
+
+    expect(Artisan::call('firewall:list', ['--node' => '7', '--managed' => true]))->toBe(0);
+    expect(Artisan::output())->toContain('orbit:wire')->toContain('baseline')->toContain('orbit:data')->toContain('role')->toContain('locked');
+    $mock->assertSent(fn ($request): bool => $request instanceof ListFirewallRulesRequest && $request->query()->all() === ['node' => 7, 'managed' => '1']);
+});
+
+it('shows the match, the backend and a silent agent with --live', function (): void {
+    $mock = firewall_cli_mock([
+        ListFirewallRulesRequest::class => MockResponse::make([
+            'data' => [
+                [...firewall_cli_node_entry([[...firewall_cli_payload(action: 'allow', backendStatus: null), 'match' => 'exact']]),
+                    'agent' => ['state' => 'online', 'since' => null],
+                    'live' => ['backend_status' => 'active', 'observed_at' => '2026-11-05T10:00:00Z', 'possibly_outdated' => false, 'unmatched' => [
+                        ['name' => 'unmanaged', 'comment' => '', 'action' => 'allow', 'source' => 'any', 'destination' => 'any', 'port' => '9999', 'protocol' => 'tcp', 'interface' => null, 'family' => 'v4', 'match' => 'unmanaged'],
+                    ]]],
+                [...firewall_cli_node_entry([[...firewall_cli_payload(action: 'deny', backendStatus: null), 'node_id' => 8, 'node' => 'app-prod', 'match' => 'exact']]), 'node_id' => 8, 'node' => 'app-prod',
+                    'agent' => ['state' => 'offline', 'since' => '2026-11-05T09:00:00Z'],
+                    'live' => ['backend_status' => 'active', 'observed_at' => '2026-11-05T09:00:00Z', 'possibly_outdated' => true, 'unmatched' => []]],
+            ],
+            'meta' => ['request_id' => firewall_cli_request_id()],
+        ]),
+    ]);
+
+    expect(Artisan::call('firewall:list', ['--live' => true]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toMatch('/MATCH/u')
+        ->toContain('app-prod: agent offline since 2026-11-05T09:00:00Z')
+        ->not->toContain('app-dev: agent')
+        ->toContain('app-dev: UFW active, observed 2026-11-05T10:00:00Z')
+        ->toMatch('/app-dev[\s│]+443.*exact/su')
+        ->toContain('live on')
+        ->toContain('unmanag')
+        ->toMatch('/app-prod[\s│]+9000.*exact[\s│]+\([\s│]*possibl/su');
+    $mock->assertSent(fn ($request): bool => $request instanceof ListFirewallRulesRequest && $request->query()->all() === ['live' => '1']);
+});
+
+it('prints one JSON document with the Nodes and their rules', function (): void {
+    firewall_cli_mock([
+        ListFirewallRulesRequest::class => MockResponse::make([
+            'data' => [firewall_cli_node_entry([firewall_cli_payload(action: 'allow', backendStatus: null)])],
+            'meta' => ['request_id' => firewall_cli_request_id()],
+        ]),
+    ]);
+
+    expect(Artisan::call('firewall:list', ['--json' => true]))->toBe(0);
+    $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($json['request_id'])->toBe(firewall_cli_request_id())
+        ->and($json['nodes'])->toHaveCount(1)
+        ->and($json['nodes'][0]['node_id'])->toBe(7)
+        ->and($json['nodes'][0]['rules'][0])->toHaveKeys(['port', 'protocol', 'source', 'action', 'label', 'status', 'failed_step', 'error_code'])
+        ->and($json['nodes'][0])->not->toHaveKeys(['managed', 'live']);
+});
+
+it('says there are no rules when no Node has one', function (): void {
+    firewall_cli_mock([
+        ListFirewallRulesRequest::class => MockResponse::make(['data' => [firewall_cli_node_entry([])], 'meta' => ['request_id' => firewall_cli_request_id()]]),
+    ]);
+
+    expect(Artisan::call('firewall:list', ['--node' => '7']))->toBe(0);
+    expect(Artisan::output())->toContain('No firewall rules.');
 });
 
 it('removes the one rule that matches the port, source, and protocol', function (): void {
@@ -314,6 +406,15 @@ function firewall_cli_backend_inactive_response(): MockResponse
         503,
         ['X-Orbit-Request-Id' => firewall_cli_request_id()],
     );
+}
+
+/**
+ * @param  list<array<string, mixed>>  $rules
+ * @return array<string, mixed>
+ */
+function firewall_cli_node_entry(array $rules): array
+{
+    return ['node_id' => 7, 'node' => 'app-dev', 'rules' => $rules];
 }
 
 /** @return array<string, mixed> */

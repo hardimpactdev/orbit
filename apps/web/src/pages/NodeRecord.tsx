@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
-import { type Fleet, liveFirewallQuery, managedFirewallQuery, useFleet } from "../api/queries";
+import { type Fleet, nodeFirewallQuery, useFleet } from "../api/queries";
 import type {
     FirewallRule,
     LiveFirewallMatch,
@@ -157,43 +157,45 @@ const firewallLineColumns: Column<FirewallLine>[] = [
 ];
 
 /**
- * A node's firewall: live UFW first, then desired rules that are missing from live. Drift is red.
- * When live UFW cannot be read, the page falls back to operator rules and the desired catalog.
+ * A node's firewall: the operator rules, Orbit's own rules and the live rules that nothing explains. Rules the
+ * Node lacks come last, below a divider. Drift is red. When live UFW cannot be read, the rows show no match.
  */
 function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
-    const managed = useQuery(managedFirewallQuery(node.id)).data;
-    const live = useQuery(liveFirewallQuery(node.id)).data;
+    const firewall = useQuery(nodeFirewallQuery(node.id)).data ?? undefined;
     const operator = useMemo(
         () => fleet.firewall.filter((rule) => rule.node_id === node.id),
         [fleet.firewall, node.id],
     );
     const lines = useMemo<FirewallLine[]>(() => {
-        if (live !== undefined && live.backend_status === "active") {
-            return [
-                ...live.live.map((rule, index) => liveLine(rule, operator, `live-${index}`)),
-                ...live.missing.map((rule, index) => liveLine(rule, operator, `missing-${index}`)),
-            ];
+        if (firewall === undefined) {
+            return operator.map((rule) => operatorLine(rule, rule.status, null));
         }
 
-        return [
-            ...operator.map((rule) => ({
-                key: `operator-${rule.id}`,
-                name: rule.label ?? firewallIdentity(rule),
-                port: firewallPort(rule.port, rule.protocol),
-                action: rule.action,
-                source: rule.source,
-                state: rule.status,
-                match: null,
-                rule,
-            })),
-            ...(managed ?? []).map((rule, index) => intendedLine(rule, index)),
+        const active = firewall.live.backend_status === "active";
+        const matched = (match: LiveFirewallMatch | undefined): LiveFirewallMatch | null =>
+            active ? (match ?? null) : null;
+        const all: FirewallLine[] = [
+            ...firewall.rules.map((rule) => {
+                const match = matched(rule.match);
+
+                return operatorLine(rule, match === "missing" ? "missing" : rule.status, match);
+            }),
+            ...firewall.managed.map((rule, index) =>
+                intendedLine(rule, index, matched(rule.match)),
+            ),
+            ...(active ? firewall.live.unmatched.map(unmatchedLine) : []),
         ];
-    }, [live, managed, operator]);
+
+        return [
+            ...all.filter((line) => line.match !== "missing"),
+            ...all.filter((line) => line.match === "missing"),
+        ];
+    }, [firewall, operator]);
 
     const tone = (line: FirewallLine) => firewallLineTone(line);
     const empty =
-        live !== undefined && live.backend_status !== "active" && lines.length === 0
-            ? `Live UFW is ${live.backend_status}.`
+        firewall !== undefined && firewall.live.backend_status !== "active" && lines.length === 0
+            ? `Live UFW is ${firewall.live.backend_status}.`
             : "No firewall rules.";
 
     return (
@@ -214,38 +216,49 @@ function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
     );
 }
 
-function liveLine(rule: LiveFirewallRule, operator: FirewallRule[], key: string): FirewallLine {
-    const record = operator.find((candidate) => firewallIdentity(candidate) === rule.name) ?? null;
-    const state =
-        rule.match === "missing"
-            ? "missing"
-            : rule.match === "exact" && record !== null
-              ? record.status
-              : rule.match === "exact"
-                ? "live"
-                : "drift";
-
+function operatorLine(
+    rule: FirewallRule,
+    state: string,
+    match: LiveFirewallMatch | null,
+): FirewallLine {
     return {
-        key,
-        name: record?.label ?? rule.name,
+        key: `operator-${rule.id}`,
+        name: rule.label ?? firewallIdentity(rule),
         port: firewallPort(rule.port, rule.protocol),
         action: rule.action,
-        source: firewallSource(rule.source, rule.interface),
+        source: rule.source,
         state,
-        match: rule.match,
-        rule: record,
+        match,
+        rule,
     };
 }
 
-function intendedLine(rule: ManagedFirewallRule, index: number): FirewallLine {
+function intendedLine(
+    rule: ManagedFirewallRule,
+    index: number,
+    match: LiveFirewallMatch | null,
+): FirewallLine {
     return {
         key: `orbit-${index}`,
         name: rule.name,
         port: firewallPort(rule.port, rule.protocol),
         action: rule.action,
         source: firewallSource(rule.source, rule.interface),
-        state: "locked",
-        match: null,
+        state: match === "missing" ? "missing" : match === "drift" ? "drift" : "locked",
+        match,
+        rule: null,
+    };
+}
+
+function unmatchedLine(rule: LiveFirewallRule, index: number): FirewallLine {
+    return {
+        key: `live-${index}`,
+        name: rule.comment === "" ? rule.name : rule.comment,
+        port: firewallPort(rule.port, rule.protocol),
+        action: rule.action,
+        source: firewallSource(rule.source, rule.interface),
+        state: "drift",
+        match: rule.match,
         rule: null,
     };
 }

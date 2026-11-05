@@ -131,7 +131,7 @@ The change cycle is: change the Gateway, re-record the fixtures, review the fixt
 
 ## Web app fixtures
 
-The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. The Gateway Node runs a release, so it is the only Node with an `updating` value. `bin/api-fixtures --check` validates them together with the recorded fixtures.
+The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. The Gateway Node runs a release, so it is the only Node with an `updating` value. `bin/api-fixtures --check` validates them together with the recorded fixtures. One file, `firewall-list.json`, answers `GET /api/v1/firewall-rules` for every Node; the demo Gateway derives the one-Node, `managed` and `live` forms from it.
 
 The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` not observed. Node 2 is a partial Linux read: `brew` not observed, `brew-cask` unsupported, and `vp` not observed, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
 

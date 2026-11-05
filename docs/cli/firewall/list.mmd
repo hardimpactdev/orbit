@@ -1,0 +1,72 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-05. firewall:list is the one read of firewall rules; it absorbs the three API reads that only the web app and MCP used (fleet list, managed list, live list) as flags. It reads Gateway state only: no Swamp run, no SSH (R1).
+  %% status: reviewed
+  %% command: firewall:list
+  %% kind: firewall.list
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
+  participant CLI as CLI / MCP<br/>orbit · web app
+  participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
+  loop every 60 s, sent on change
+    A->>GW: Report ufw<br/>with observed_at
+    %%> What it does:
+    %%> - the agent reads the UFW rules files on its 60 s host tick and sends them only when they changed, plus a full resend every 10 minutes; it does not listen for file changes
+    %%> - so a new rule can take up to 60 s to show in `--live`
+    %%> Result:
+    %%> - the Gateway stores the latest `ufw` fact per Node; the agent heartbeat says whether the fact is current
+  end
+  CLI->>GW: List the rules<br/>firewall:list
+  %%> Command:
+  %%> - `orbit firewall:list [--node=ID] [--managed] [--live] [--json]`
+  %%> Input:
+  %%> - without flags: the operator rules of every Node the caller may address, in one response (replaces the fleet list `GET /firewall-rules`)
+  %%> Refuses:
+  %%> - `firewall.node_id_invalid`: a `--node` that is not a positive integer
+  %%> - `node_access.required`: a Node the calling Node has no access grant to
+  Note over GW: Read the recorded rules<br/>per Node, in UFW order
+  %%> What it does:
+  %%> - reads the operator rules Orbit recorded: port, protocol, source, action, label, status
+  %%> - in the order UFW checks them, so the first matching row wins
+  %%> - never reads the Node; works while the Node is unreachable
+  opt --node=ID
+    %% path: node
+    Note over GW: One Node only<br/>the per-Node list
+    %%> What it does:
+    %%> - the rules of that one Node, as `firewall:list --node=ID` today
+  end
+  opt --managed
+    %% path: managed
+    Note over GW: Add Orbit's own rules<br/>orbit: · locked rows
+    %%> What it does:
+    %%> - adds the `orbit:` rules Orbit intends on each Node: WireGuard member trust, public SSH recovery while no active role closed it, each active role's rules, the Metrics rules; each names its role
+    %%> - shown as locked rows; no command changes them (replaces `GET /nodes/{node}/managed-firewall-rules`)
+  end
+  opt --live
+    %% path: live
+    Note over GW: Compare with the agent<br/>exact · drift · missing
+    %%> What it does:
+    %%> - matches the agent's last `ufw` fact against the intended rules: each live rule is `exact`, `drift` or `unmanaged`, and an intended rule the Node lacks is `missing` (replaces `GET /nodes/{node}/live-firewall-rules`)
+    %%> - shows the backend status (`active`, `inactive`, `absent`) and the fact's `observed_at`
+    %%> - `unverifiable` until the agent reports UFW, or for a rule Orbit cannot compare
+    %%> - with `--managed`, the managed rules are matched too
+    %%> - exit 0 even with drift: this is a list; Doctor is the check that fails on drift
+  end
+  alt agents online, or no --live
+    %% path: agents-online
+    GW-->>CLI: Rules<br/>table or JSON
+    %%> Result:
+    %%> - columns PORT, PROTOCOL, SOURCE, ACTION, LABEL, STATUS; with `--live` also MATCH; with several Nodes also NODE
+    %%> - a failed rule has `failed_step` and `error_code` in JSON
+  else --live and an agent offline
+    %% path: agent-offline
+    GW-->>CLI: Rules<br/>some possibly outdated
+    %%> Result:
+    %%> - per Node: a Node whose agent is silent gets the line "agent offline since <time>", and its live matches are marked "possibly outdated", as Doctor does; the other Nodes show as normal
+    %%> - exit 0
+  end
+  %%> Not built:
+  %%> - the flags and the Node-less default; today the CLI has only `--node`, and the three other reads exist only as API endpoints
+  %%> - one API read with the same options; the web app moves to it, and the three endpoints go

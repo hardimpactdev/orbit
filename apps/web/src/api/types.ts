@@ -80,29 +80,29 @@ export type QueueJob = Required<NonNullable<QueueBody["jobs"]>[number]>;
 export type QueueReport = Omit<QueueBody, "jobs"> & { jobs?: QueueJob[] };
 export type QueueState = QueueReport["state"];
 
+type NodeFirewallEntry = NonNullable<
+    operations["firewall-list"]["responses"][200]["content"]["application/json"]["data"]
+>[number];
+type LiveFirewallData = Required<NonNullable<NodeFirewallEntry["live"]>>;
+
+/** How a rule compares with the Node's last UFW report. Only a live rule that nothing explains is `unmanaged`. */
+export type LiveFirewallMatch = "exact" | "drift" | "missing" | "unverifiable" | "unmanaged";
+
 /** One of Orbit's own firewall rules on a Node. The Gateway has no request that changes one. */
-export type ManagedFirewallRule = Required<
-    NonNullable<
-        operations["firewall-managed-list"]["responses"][200]["content"]["application/json"]["data"]
-    >[number]
+export type ManagedFirewallRule = Omit<
+    Required<NonNullable<NodeFirewallEntry["managed"]>[number]>,
+    "match"
 >;
 
-type LiveFirewallData = Required<
-    NonNullable<
-        operations["firewall-live-list"]["responses"][200]["content"]["application/json"]["data"]
-    >
->;
+/** A live UFW rule that no recorded or managed rule explains. */
+export type LiveFirewallRule = Required<LiveFirewallData["unmatched"][number]>;
 
-export type LiveFirewallSnapshot = {
-    backend_status: LiveFirewallData["backend_status"];
-    live: Array<Required<NonNullable<LiveFirewallData["live"]>[number]>>;
-    missing: Array<Required<NonNullable<LiveFirewallData["missing"]>[number]>>;
+/** One Node's firewall from `firewall-list` with `managed` and `live`: its rules, Orbit's own rules and the live comparison. */
+export type NodeFirewall = {
+    rules: Array<FirewallRule & { match?: LiveFirewallMatch }>;
+    managed: Array<ManagedFirewallRule & { match?: LiveFirewallMatch }>;
+    live: Omit<LiveFirewallData, "unmatched"> & { unmatched: LiveFirewallRule[] };
 };
-
-export type LiveFirewallRule =
-    | LiveFirewallSnapshot["live"][number]
-    | LiveFirewallSnapshot["missing"][number];
-export type LiveFirewallMatch = LiveFirewallRule["match"];
 
 /** One tracking host an Instance publishes for the analytics role. */
 export type AnalyticsHost = {
