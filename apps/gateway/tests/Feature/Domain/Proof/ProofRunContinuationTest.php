@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofRunContinuation;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Jobs\Proof\AdvanceProofRun;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -29,7 +32,11 @@ function proofStep(Operation $proof, string $kind, array $fields = []): Operatio
 {
     $step = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
         'input' => [], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0, ...$fields]);
-    app(ProofRunContinuation::class)->apply($step);
+    try {
+        app(ProofRunContinuation::class)->advance($step);
+    } catch (ResourceOperationException) {
+        // The tasks extension is off in these tests, so the cancel is refused; the verdict is recorded before it.
+    }
 
     return $step;
 }
@@ -86,12 +93,36 @@ it('closes the proof as cases_failed when a case ran and failed', function (): v
 });
 
 it('does nothing for a group without a proof', function (): void {
+    Queue::fake();
     $proof = proofRunning();
     $other = Task::query()->create(['title' => 'Feature', 'brief' => 'Do it', 'status' => TaskGroupStatus::Running]);
     $step = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $other->id, 'node_id' => $proof->node_id,
         'input' => [], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0]);
 
     app(ProofRunContinuation::class)->apply($step);
+    app(ProofRunContinuation::class)->advance($step);
 
+    Queue::assertNothingPushed();
     expect($proof->refresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('queues one job when a task operation of a running proof ends', function (): void {
+    Queue::fake();
+    $proof = proofRunning();
+    $step = Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
+        'input' => [], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0]);
+
+    app(ProofRunContinuation::class)->apply($step);
+
+    Queue::assertPushed(AdvanceProofRun::class, static fn (AdvanceProofRun $job): bool => $job->operationId === $step->id);
+});
+
+it('closes the proof failed when the job gives up', function (): void {
+    $proof = proofRunning();
+    $step = Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
+        'input' => [], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0]);
+
+    (new AdvanceProofRun($step->id))->failed(new RuntimeException('refused'));
+
+    expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.run_failed');
 });
