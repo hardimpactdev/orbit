@@ -42,12 +42,13 @@ sequenceDiagram
     %%> - every command writes its output to `<run>/output/<step>` on the VM, never to the SSH session, so native history keeps only its exit code
     %%> - a failed step skips the rest and the Project check
   end
-  SW->>N: Snapshot the workspace
-  %%> How:
-  %%> - `git read-tree HEAD`, `git add --all`, `git write-tree` on the run's index file, and `git rev-parse HEAD`; the real index is untouched
   SW->>N: Run the Project check
   %%> How:
   %%> - one argv in the checkout; its output goes to its file on the VM, not to native history
+  %%> - its formatters run in fix mode, so their edits belong to the checked tree
+  SW->>N: Snapshot the workspace
+  %%> How:
+  %%> - `git read-tree HEAD`, `git add --all`, `git write-tree` on the run's index file, and `git rev-parse HEAD`; the real index is untouched
   opt handoff with deliverables
     SW->>N: Run each deliverable
     %%> How:
