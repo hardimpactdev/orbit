@@ -1,0 +1,73 @@
+sequenceDiagram
+  %% Target design: stage 6 of the command pipeline (feature-flow section 6, gateway-recovery "Automatic releases"). A merged green commit gets an automatic Swamp release run; a failed check switches back. The steps of the run itself are in the chart gateway:release:deploy. No fleet test follows a release.
+  %% status: draft
+  %% command: pipeline stage 6 · automatic Swamp release
+  %% kind: pipeline.6-automatic-release
+  autonumber
+  %% lane GH icon=server pill=CI tone=blue
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GN icon=server pill=target tone=amber
+  participant GH as GitHub<br/>main · CI
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>release run
+  participant GN as Gateway Node<br/>code · services
+  Note over GW,GH: Find newest green commit<br/>on main · CI
+  %%> Built:
+  %%> - the Gateway looks on a timer while automatic releases are on, and reads CI through its GitHub App
+  %%> What it accepts:
+  %%> - a run of `ci.yml` on `main` or the merge queue branch, with `Required checks` and `Gateway release inputs` green
+  %%> - a run from a fork, a PR or another workflow does not count
+  Note over GW: Admit the release<br/>one at a time
+  %%> Requirements:
+  %%> - no other release queued or running, and automatic releases not paused
+  %%> - the agent pin passes its Sigstore check; CI published the web build
+  %%> Why:
+  %%> - several merges can land during a release; the next run takes only the newest commit
+  %%> Result:
+  %%> - a running release record; the pin, artifact and targets are frozen as inputs
+  GW->>SW: Start run, full intent<br/>operation-gateway-release
+  %%> Why:
+  %%> - the Gateway records intent only; Swamp executes. Detail of every step: chart `gateway:release:deploy`
+  SW->>GN: Build the release<br/>composer · web build
+  %%> What it does:
+  %%> - refuses a commit that does not descend from the current release
+  %%> - installs dependencies and the web build, and seals the release
+  SW->>GN: Snapshot and migrate<br/>expand and contract
+  %%> What it does:
+  %%> - writes a database snapshot, then migrates while the old release still serves
+  %%> - old code must work with the new schema
+  SW->>GN: Load the new workflows<br/>Swamp reloads, no restart
+  %%> Why:
+  %%> - the switch then runs the new commit's own steps
+  SW->>GN: Switch to the new release<br/>gateway-rollback script
+  %%> What it does:
+  %%> - drains Horizon, switches the links, reloads PHP-FPM, restarts the running services
+  SW->>GN: Check the Gateway<br/>health · version
+  %%> What it does:
+  %%> - reads the health endpoint and the status version of the Gateway
+  alt the check passes
+    SW-->>GW: Run succeeded<br/>terminal result
+    %%> Result:
+    %%> - the run reports success once, as a terminal result
+    Note over GW: Record the release<br/>verified
+    %%> Result:
+    %%> - the release is recorded; the footprint rollout of stage 8 may follow
+    %%> - no fleet test follows a release
+    %%> Next:
+    %%> - each task VM host refreshes its image and seed (stage 7, not built)
+  else the check fails
+    SW->>GN: Switch back<br/>gateway-rollback previous
+    %%> What it does:
+    %%> - returns to the previous release without Swamp
+    SW--xGW: Run failed<br/>switched back · alert
+    %%> Result:
+    %%> - the Gateway records that it switched back and raises an alert; the next green commit releases
+  else a step from migrate on fails
+    SW--xGW: Run failed<br/>failed step
+    %%> On failure:
+    %%> - from migrate on, the old release may be live with a changed schema, so the run stops and names the snapshot
+    Note over GW: Pause automatic releases<br/>snapshot named · alert
+    %%> Result:
+    %%> - restoring the snapshot is an operator action; `gateway:release:auto:resume` clears the pause
+  end

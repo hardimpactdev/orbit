@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Write docs/flows-data.js: the flow charts the CLI pages place, for docs/flow.js.
+"""Write docs/flows-data.js: the flow charts the docs pages place, for docs/flow.js.
 
-A page places a chart with `<div className="flow-at" data-chart="<family>/<name>"></div>`, which names
-docs/cli/<family>/<name>.mmd. Charts that no page places are left out. bin/check-flows checks the placements.
+A CLI page places a chart with `<div className="flow-at" data-chart="<family>/<name>"></div>`, which names
+docs/cli/<family>/<name>.mmd. A reference page places a pipeline stage chart with
+`data-chart="reference/pipeline/<name>"`, which names docs/reference/pipeline/<name>.mmd.
+Charts that no page places are left out. bin/check-flows checks the placements.
 """
 import json
 import re
@@ -10,6 +12,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLACEMENT = re.compile(r'<div className="flow-at" data-chart="([a-z0-9-]+/[a-z0-9-]+)"></div>')
+REFERENCE_PLACEMENT = re.compile(r'<div className="flow-at" data-chart="(reference/pipeline/[a-z0-9-]+)"></div>')
+
+
+def chart(path):
+    src = path.read_text()
+    return {'kind': re.search(r'^\s*%% kind:\s*(\S+)', src, re.M).group(1), 'src': src}
 
 
 def placed(cli):
@@ -17,15 +25,23 @@ def placed(cli):
     charts = {}
     for page in sorted(cli.glob('*/*.mdx')):
         for name in PLACEMENT.findall(page.read_text()):
-            src = (cli / f'{name}.mmd').read_text()
-            charts[name] = {'kind': re.search(r'^\s*%% kind:\s*(\S+)', src, re.M).group(1), 'src': src}
+            charts[name] = chart(cli / f'{name}.mmd')
+    return charts
+
+
+def placed_reference(docs):
+    """Each pipeline chart that a reference page places, named by its path under docs/."""
+    charts = {}
+    for page in sorted((docs / 'reference').glob('*.mdx')):
+        for name in REFERENCE_PLACEMENT.findall(page.read_text()):
+            charts[name] = chart(docs / f'{name}.mmd')
     return charts
 
 
 if __name__ == '__main__':
-    charts = placed(ROOT / 'docs/cli')
+    charts = {**placed(ROOT / 'docs/cli'), **placed_reference(ROOT / 'docs')}
     (ROOT / 'docs/flows-data.js').write_text(
-        '// Built by bin/docs-flows from the charts that docs/cli pages place. Do not edit.\n'
+        '// Built by bin/docs-flows from the charts that docs pages place. Do not edit.\n'
         f'window.orbitFlows = {json.dumps({"charts": charts}, indent=1, ensure_ascii=False)}\n'
     )
-    print(f'docs/flows-data.js: {len(charts)} charts placed on docs/cli pages')
+    print(f'docs/flows-data.js: {len(charts)} charts placed on docs pages')

@@ -13,7 +13,10 @@ let bad = 0
 const fail = (msg) => { bad++; console.log(msg) }
 // Each chart names its operation kind once, and no two charts name the same kind.
 const charts = new Map()
-for (const f of files.filter((n) => n.endsWith('.mmd'))) {
+// The pipeline stage charts live in docs/reference/pipeline and are placed on reference pages; they are held to the same rules.
+const refDir = `${root}/docs/reference`
+const refCharts = readdirSync(`${refDir}/pipeline`).filter((n) => n.endsWith('.mmd')).map((n) => `pipeline/${n.slice(0, -4)}`)
+for (const f of [...files.filter((n) => n.endsWith('.mmd')), ...refCharts.map((n) => `../reference/${n}.mmd`)]) {
   const kinds = [...readFileSync(`${dir}/${f}`, 'utf8').matchAll(/^\s*%% kind: (\S+)\s*$/gm)].map((m) => m[1])
   if (kinds.length !== 1) fail(`${f}: needs exactly one '%% kind: <kind>' line`)
   else if (charts.has(kinds[0])) fail(`${f}: kind ${kinds[0]} already has chart ${charts.get(kinds[0])}`)
@@ -52,6 +55,18 @@ for (const f of charts.values()) {
   const name = f.slice(0, -4)
   if (files.includes(`${name}.mdx`) && placed.get(name) !== `${name}.mdx`) fail(`${name}.mdx: place its chart under '## How it works'`)
 }
+// A reference page places a pipeline chart as `data-chart="reference/pipeline/<name>"`, and each of them is placed once.
+const refPlaced = new Map()
+for (const page of readdirSync(refDir).filter((n) => n.endsWith('.mdx'))) {
+  for (const m of readFileSync(`${refDir}/${page}`, 'utf8').matchAll(/^.*className="flow-at".*$/gm)) {
+    const name = m[0].match(/^<div className="flow-at" data-chart="reference\/(pipeline\/[a-z0-9-]+)"><\/div>$/)?.[1]
+    if (!name) fail(`reference/${page}: write a placement as <div className="flow-at" data-chart="reference/pipeline/<name>"></div>`)
+    else if (!refCharts.includes(name)) fail(`reference/${page}: places reference/${name}, which is no chart`)
+    else if (refPlaced.has(name)) fail(`reference/${page}: places reference/${name}, which ${refPlaced.get(name)} places already`)
+    else refPlaced.set(name, page)
+  }
+}
+for (const name of refCharts) if (!refPlaced.has(name)) fail(`reference/${name}.mmd: place it on a reference page`)
 
 // flows-pending.txt names kinds without a chart. A kind leaves it when its chart lands; no kind joins it.
 const pending = list(readFileSync(`${dir}/flows-pending.txt`, 'utf8'))

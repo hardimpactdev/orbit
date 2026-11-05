@@ -1,0 +1,71 @@
+sequenceDiagram
+  %% Target design: stage 2 of the command pipeline. A task VM holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
+  %% status: draft
+  %% command: pipeline stage 2 · proof environment
+  %% kind: pipeline.2-proof-environment
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane VM icon=server pill=target tone=purple
+  %% lane NT icon=server pill=fleet tone=gray
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>provision run
+  participant H as Task VM host<br/>Incus over ssh
+  participant VM as Task VM<br/>outer · operator
+  participant NT as Nested fleet<br/>Gateway · 2 Nodes
+  Note over GW: Admit the task<br/>group at a commit
+  %%> Requirements:
+  %%> - an external task group in `todo` and a free task VM host
+  %%> Result:
+  %%> - the full intent is recorded; the group is reserved
+  GW->>SW: Start run, full intent<br/>tasks provision
+  %%> Why:
+  %%> - the same run for a person, an agent or a CI proof
+  SW->>H: Take a task VM<br/>ready slot, else clone
+  %%> Target, not built:
+  %%> - start a ready slot that was enrolled ahead of time and kept stopped; takes seconds (chart `task-vm.slots`)
+  %%> Built today:
+  %%> - clone the task image, boot, enrol (keys, WireGuard, observer), model key, Pi; takes minutes
+  SW->>H: Attach the topology seed<br/>clone under the host lock
+  %%> What it does:
+  %%> - clones the seed of the host's task image; on ZFS the clone costs only what the Nodes write
+  %%> - the VM sees it as the disk `topology-seed`
+  %%> Why:
+  %%> - each host keeps its own seed; nothing is copied between hosts
+  SW->>VM: Check out the commit<br/>git fetch · task token
+  %%> What it does:
+  %%> - checks out the commit or branch the task works on, with a read token from the vault
+  SW->>VM: Reset the nested fleet<br/>proof-fleet reset
+  %%> What it does:
+  %%> - per Node: copies the ready copy, adds the saved NIC, mounts the new source, starts all three
+  %%> - applies the commit's code to the Gateway as soon as it mounts
+  %%> Time:
+  %%> - about 75 seconds to a checked fleet, of which the boot is about 50
+  opt no usable ready copies
+    VM->>NT: Build the fleet<br/>then make ready copies
+    %%> When:
+    %%> - a new task image has a seed with only the Node template until its first seed refresh (stage 7)
+    %%> Time:
+    %%> - about 230 seconds; the build ends by making the ready copies for the next reset
+  end
+  VM->>NT: Boot the fleet<br/>real nested WireGuard
+  %%> What it does:
+  %%> - the three Nodes share a real nested network; the outer VM is the operator
+  VM->>NT: Check readiness<br/>agents · Swamp · Doctor
+  %%> What it does:
+  %%> - every Node agent online, the Swamp worker enrolled, the Gateway knows the operator, Doctor has no finding
+  %%> - records the baseline that each case compares against
+  SW-->>GW: Environment ready<br/>terminal event
+  %%> Result:
+  %%> - the Gateway marks the group running and records the VM; the proof (stage 3) or the VM job (stage 5) uses the fleet
+  opt a case needs a clean fleet, or cleanup failed
+    SW->>VM: Reset the fleet again<br/>in place · about 75 s
+    %%> What it keeps:
+    %%> - the outer VM, Pi and the checkout; only the three Nodes are replaced from the ready copies
+  end
+  SW->>H: Destroy the task VM<br/>always · success or failure
+  %%> Why:
+  %%> - no proof VM stays behind; diagnostics are kept, not running VMs
+  %%> Target, not built:
+  %%> - the Gateway then enrols a new slot to refill the pool of ready slots

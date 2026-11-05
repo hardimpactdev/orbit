@@ -1,0 +1,63 @@
+sequenceDiagram
+  %% Target design: stage 3 of the command pipeline (verifying-commands skill). The author runs the command's cases on the nested fleet of the proof environment, before pushing. The same runner and assertions run in CI (stage 5).
+  %% status: draft
+  %% command: pipeline stage 3 · proof
+  %% kind: pipeline.3-proof
+  autonumber
+  %% lane AG icon=terminal pill=caller tone=gray
+  %% lane VM icon=server pill=operator tone=purple
+  %% lane NT icon=server pill=fleet tone=amber
+  participant AG as Author agent<br/>in the task VM
+  participant VM as Task VM<br/>proof-fleet
+  participant NT as Nested fleet<br/>Gateway · 2 Nodes
+  AG->>VM: Run the proof<br/>bin/proof-fleet verify
+  %%> Command:
+  %%> - `bin/proof-fleet verify` for one command's cases
+  %%> Built or not:
+  %%> - built, with one case so far: the `firewall:allow` traffic case; every other command's cases are not built
+  VM->>NT: Reset fleet to the branch<br/>from the ready copies
+  %%> What it does:
+  %%> - starts each independent run on a fresh nested fleet (stage 2), with the branch's code applied
+  %%> - falls back to a full build when no ready copy is usable
+  loop each case, in order
+    VM->>NT: Check the starting state<br/>control probe
+    %%> What it does:
+    %%> - confirms the test setup works before the command runs, for example a healthy listener and a port that is blocked
+    %%> Why:
+    %%> - a broad unmanaged allowance must not let a case pass without the rule under test
+    VM->>NT: Run the real CLI<br/>built from the tested commit
+    %%> What it does:
+    %%> - calls the command through its real interface: required arguments only, each flag, each error path
+    NT-->>VM: Result<br/>exit status · output
+    %%> Result:
+    %%> - the public result in human and JSON output
+    VM->>NT: Check the real effect<br/>record · Node · behavior
+    %%> What it checks:
+    %%> - the Gateway record, the observed Node state, and the promised effect, such as traffic that passes or stays blocked
+    %%> - Doctor reports no drift for the records the case touched
+    %%> - what must stay unchanged, including unmanaged resources
+    VM->>NT: Repeat the request<br/>nothing changes
+    %%> What it checks:
+    %%> - a repeat adds no managed resource and changes no configuration; a documented skip returns its reason code
+    VM->>NT: Clean up the case<br/>compare with the baseline
+    %%> What it does:
+    %%> - scoped cleanup, then compares the case's own database and firewall state with its start
+    %%> - residue fails the case; an infrastructure failure is reported apart and never counts as a pass
+  end
+  alt every case passes
+    VM-->>AG: Receipt<br/>PASS per case
+    %%> Result:
+    %%> - one verdict per case with observations, Doctor findings and timings; the author may push (stage 4)
+  else a case fails or did not run
+    VM--xAG: Receipt<br/>FAIL with output
+    %%> Result:
+    %%> - the failed case with its output, without secrets; the author fixes and runs again
+  end
+  opt a new case is added
+    Note over AG,NT: Prove the case can fail<br/>on an isolated checkout
+    %%> What it does:
+    %%> - removes the mutation on an isolated checkout and confirms the functional assertion fails
+    %%> - never mutates a live installation
+    %%> Not built:
+    %%> - exercising the CI gate with a known failing case (stage 5)
+  end
