@@ -66,6 +66,7 @@ sequenceDiagram
   %%> Why typed, not cfgmgmt:
   %%> - `@swamp/cfgmgmt/firewall` cannot insert at a position (Lab #4334) or name a port range
   alt changes needed
+    %% path: changes-needed
     SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
     %%> What it does:
     %%> - adds one ufw allow line per port, protocol and family, commented with its label
@@ -73,6 +74,7 @@ sequenceDiagram
     %%> - moves a line that sits in the wrong place: deletes it, then inserts it again
     %%> - runs the planned commands one at a time; nothing is copied to the Node
   else already applied
+    %% path: already-applied
     Note over SW: Skipped — already applied<br/>firewall.rule_exists
     %%> Result:
     %%> - the plan contains no changes
@@ -86,6 +88,7 @@ sequenceDiagram
   %%> Why:
   %%> - the rule only counts as active when ufw shows it
   alt rules present and ordered
+    %% path: succeeded
     N-->>SW: ufw lines in order
     %%> Returns:
     %%> - the check passed for every line and its narrow-first order
@@ -99,6 +102,7 @@ sequenceDiagram
     %%> - if no changes were needed, reports `Skipped — already applied (firewall.rule_exists)`
     %%> - the skip reason is part of the successful result in human and machine output, not an error
   else adding or checking fails
+    %% path: failed
     N--xSW: exit ≠ 0
     %%> When:
     %%> - ufw refuses the line, SSH fails, or a line is missing after the add
