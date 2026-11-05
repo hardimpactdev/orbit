@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { ROOT } from "../../../../bin/gate-test-support.ts";
 import { parse } from "jsr:@std/yaml@1.0.12";
+import { bindHostKeys } from "../task-repository/provision.ts";
 /** Every job and step of a tracked workflow is placed on the swamp role. */
 function assertSwampLabels(name: string) {
   const workflow = parse(Deno.readTextFileSync(`${ROOT}/workflows/workflow-${name}.yaml`)) as {
@@ -53,4 +54,29 @@ Deno.test("tasks.provision runs the slot claim for a slot and the enrolment for 
   const reset = claim.jobs[0].steps.find((item) => item.name === "Reset the nested topology")!;
   assertEquals(reset.guard, "${{ inputs.intent.slot_claim.nested_reset == false }}");
   assertEquals(reset.task.workflowIdOrName, "task-vm-nested-reset");
+});
+
+Deno.test("the workspace steps accept the receipt that a slot claim returns, after the Operation's JSON round trip", () => {
+  // The Gateway builds this receipt in TaskVmSlotClaim::capture(); `process` names the slot's pi-server Process.
+  const receipt = JSON.parse(JSON.stringify({
+    task_vm_id: 7,
+    guest_node_id: 31,
+    ready: true,
+    provider: { provider_id: null, address: "10.251.77.253", image_fingerprint: "c1c2cf4051fb0123", running: true, settled: true },
+    enrollment: {
+      ready: true,
+      node: { ssh_host_key_type: "ssh-ed25519", ssh_host_key: "AAAAC3NzaC1lZDI1NTE5AAAAIEQ9Q5+auc2KFs6ebCBB3J9ROM+aIRnhyJwafKXHSCWT" },
+      process: { process_id: 12, status: "active" },
+    },
+  }));
+  const bound = bindHostKeys({ target: { host_keys: null } }, receipt, 31);
+  assertEquals(bound.target.host_keys, ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQ9Q5+auc2KFs6ebCBB3J9ROM+aIRnhyJwafKXHSCWT"]);
+  // An empty `process` is what an empty object becomes in the database: the step rejects it.
+  let rejected = false;
+  try {
+    bindHostKeys({}, { ...receipt, enrollment: { ...receipt.enrollment, process: [] } }, 31);
+  } catch {
+    rejected = true;
+  }
+  assertEquals(rejected, true);
 });

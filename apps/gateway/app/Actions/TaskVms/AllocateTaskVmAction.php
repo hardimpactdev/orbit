@@ -102,7 +102,8 @@ final readonly class AllocateTaskVmAction
                 return $existing;
             }
             $recipe = $this->images->currentRecipe();
-            $slot = $this->claimSlot($group, $recipe->identity);
+            // A slot has one size, and its VM holds no topology: a bigger group goes to a host that creates its own VMs.
+            $slot = $size === TaskVmSize::Normal ? $this->claimSlot($group, $recipe->identity) : null;
             if ($slot instanceof TaskVm) {
                 $admit?->__invoke($slot);
 
@@ -157,7 +158,13 @@ final readonly class AllocateTaskVmAction
      */
     private function ownHosts(array $hosts): array
     {
-        return array_values(array_filter($hosts, fn (array $pair): bool => ! $this->settings->claimsSlots($pair[0]->nodeId)));
+        return array_values(array_filter($hosts, fn (array $pair): bool => ! $this->claimsSlots($pair[0])));
+    }
+
+    /** The host claims slots: it is listed and has enrolled at least one. A listed host with no slot is served as an unlisted one. */
+    private function claimsSlots(TaskVmHost $host): bool
+    {
+        return $this->settings->claimsSlots($host->nodeId) && TaskVm::query()->live()->where('host_node_id', $host->nodeId)->whereNotNull('slot')->exists();
     }
 
     /**
@@ -166,13 +173,13 @@ final readonly class AllocateTaskVmAction
      *
      * @return null|array{build: TaskVmImageBuild, fingerprint: string, fallback: bool}
      */
-    private function image(TaskVmHost $host, Task $group, string $recipeIdentity): ?array
+    private function image(TaskVmHost $host, Task $group, string $recipeIdentity, bool $allowFallback = true): ?array
     {
         $promoted = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('state', TaskVmImageBuildState::Succeeded)
             ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id');
         $build = (clone $promoted)->where('recipe_identity', $recipeIdentity)->first();
         $fallback = false;
-        if (! $build instanceof TaskVmImageBuild && $group->current_recipe !== true) {
+        if (! $build instanceof TaskVmImageBuild && $allowFallback && $group->current_recipe !== true) {
             $build = $promoted->first();
             $build = $build?->promoted_at?->gte(now()->subDay()) === true ? $build : null;
             $fallback = true;
@@ -193,11 +200,12 @@ final readonly class AllocateTaskVmAction
     {
         $best = null;
         foreach ($this->capacity->activeHosts() as [$host]) {
-            if (! $this->settings->claimsSlots($host->nodeId)) {
+            if (! $this->claimsSlots($host)) {
                 continue;
             }
-            $slots = TaskVm::query()->where('host_node_id', $host->nodeId)->whereNotNull('slot')->where('state', TaskVmState::Free)->orderBy('slot')->get();
-            $image = $slots->isEmpty() ? null : $this->image($host, $group, $recipeIdentity);
+            // A slot without its Node cannot be claimed. Only the current recipe's image has the slot units, so no fallback image.
+            $slots = TaskVm::query()->where('host_node_id', $host->nodeId)->whereNotNull('slot')->whereNotNull('node_id')->where('state', TaskVmState::Free)->orderBy('slot')->get();
+            $image = $slots->isEmpty() ? null : $this->image($host, $group, $recipeIdentity, allowFallback: false);
             if ($image !== null && ($best === null || $slots->count() > $best[0]->count())) {
                 $best = [$slots, $image];
             }

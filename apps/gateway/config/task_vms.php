@@ -37,7 +37,7 @@ return [
     // it only after its slots are enrolled.
     'slot_claim_hosts' => json_decode((string) (env('ORBIT_TASK_VMS_SLOT_CLAIM_HOSTS') ?: '[]'), true),
     // Whether a slot claim runs the `task-vm-nested-reset` workflow. The workflow lands with B3/B4; until then it stays off.
-    'nested_reset' => (bool) env('ORBIT_TASK_VMS_NESTED_RESET', false),
+    'nested_reset' => filter_var(env('ORBIT_TASK_VMS_NESTED_RESET', false), FILTER_VALIDATE_BOOLEAN),
     'pi' => [
         'artifact_path' => env('ORBIT_TASK_VMS_PI_ARTIFACT_PATH'),
         'artifact_sha256' => env('ORBIT_TASK_VMS_PI_ARTIFACT_SHA256'),

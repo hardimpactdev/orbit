@@ -64,7 +64,8 @@ final readonly class TaskVmSlotEnrollIntent
                 'pi_token' => RecordTaskVmAction::piToken(), 'model_key' => bin2hex(random_bytes(32)), 'ai_router_origin' => $this->keys->origin(),
             ]);
         } elseif ($vm->state === TaskVmState::Failed) {
-            $vm->update(['state' => TaskVmState::Provisioning, 'error_code' => null, 'error_message' => null]);
+            // A slot that failed in a claim has no task any more: enrolling it again must leave capture() a slot with no group.
+            $vm->update(['state' => TaskVmState::Provisioning, 'error_code' => null, 'error_message' => null, 'group_id' => null, 'claimed_at' => null, 'ready_at' => null]);
         }
         $this->enrollment->reserve($vm);
 

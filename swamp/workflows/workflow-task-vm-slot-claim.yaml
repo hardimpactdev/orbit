@@ -42,9 +42,10 @@ jobs:
         name: '${{ ("task-vm-slot-claim-guest-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
         transport: {kind: ssh, user: '${{ inputs.intent.slot_claim.guest.user }}', port: 22, identityFile: '${{ inputs.intent.slot_claim.guest.identity_file }}', connectTimeoutSec: 10, extraOptions: [ConnectionAttempts=12]}
         hosts: [{name: slot, address: '${{ inputs.intent.slot_claim.guest.address }}', transport: {hostKeys: ['${{ inputs.intent.slot_claim.guest.host_key }}']}}]
-      # The identity unit installs the identity before ssh starts, so a connection means it finished and the connection attempts
-      # are the boot allowance (12 attempts, 10 s each). The command proves the unit did not fail, the pinned binaries, the
-      # observer and Pi.
+      # The identity unit installs the identity before ssh starts, so a connection means it finished, and the connection attempts
+      # are the boot allowance (12 attempts, 10 s each). `systemctl start` on the slot target blocks until its units are up
+      # (identity, observer, Pi; baked into the image by B6 M2b) and `is-active` proves the target stayed up. The command then proves the pinned binaries, the observer and
+      # Pi, which curl retries while it binds (8 tries, 1 s apart).
       inputs:
         hosts: name:slot
         sudo: true
@@ -55,10 +56,10 @@ jobs:
         - -c
         - |
           set -eu
-          systemctl is-active --quiet orbit-slot-identity.service
+          systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target
           printf '%s  %s\n%s  %s\n' "$1" /usr/local/bin/orbit-agent "$2" /home/orbit/.local/bin/pi-server | sha256sum -c --quiet
           systemctl is-active --quiet orbit-agent.service
-          curl -fsS -o /dev/null --max-time 10 -H @<(printf 'Authorization: Bearer %s' "$(cat /home/orbit/.pi/agent/orbit-token)") "$3/capabilities"
+          curl -fsS --retry 8 --retry-connrefused --retry-delay 1 -o /dev/null --max-time 10 -H @<(printf 'Authorization: Bearer %s' "$(cat /home/orbit/.pi/agent/orbit-token)") "$3/capabilities"
         - bash
         - '${{ inputs.intent.slot_claim.guest.agent_sha256 }}'
         - '${{ inputs.intent.slot_claim.guest.pi_sha256 }}'
@@ -93,7 +94,9 @@ jobs:
           set -eu
           [ -d "$1/.git" ] || exit 0
           IFS= read -r GIT_CONFIG_VALUE_0 || [ -n "$GIT_CONFIG_VALUE_0" ]
-          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0
+          export GIT_CONFIG_KEY_1=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_1=git@github.com:
+          export GIT_CONFIG_KEY_2=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_2=ssh://git@github.com/
           git -C "$1" fetch --no-tags --quiet origin "$2"
         - sh
         - '${{ inputs.intent.workspace.checkout_path }}'

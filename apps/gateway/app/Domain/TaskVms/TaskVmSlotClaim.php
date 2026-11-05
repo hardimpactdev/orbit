@@ -11,6 +11,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Models\Node;
 use App\Models\NodeFact;
+use App\Models\Process;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
@@ -40,12 +41,17 @@ final readonly class TaskVmSlotClaim
             || ! is_string($guest->ssh_host_key_type) || ! is_string($guest->ssh_host_key)) {
             throw new ResourceOperationException('task_vm.slot_invalid', 'A claim needs a slot that a task holds, with its recorded image and host key.', 409);
         }
+        // The placeholder nested reset fails the run. Refuse here, so the admission rolls back and no slot is burned.
+        if ($this->settings->nestedReset) {
+            throw new ResourceOperationException('task_vm.nested_reset_unavailable', 'task_vms.nested_reset needs the task-vm-nested-reset workflow, which lands with B3/B4.', 409);
+        }
         $location = $this->settings->host($host->id);
         $identity = $this->ssh->identity();
+        $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $guest->id)->where('name', 'pi-server')->value('id');
         $receipt = ['task_vm_id' => $vm->id, 'guest_node_id' => $guest->id, 'ready' => true,
             'provider' => ['provider_id' => null, 'address' => $vm->bridge_address, 'image_fingerprint' => $vm->image_fingerprint, 'running' => true, 'settled' => true],
             // The workspace steps pin the guest to this key. The slot's key is fixed, so the claim reports the recorded one.
-            'enrollment' => ['ready' => true, 'node' => ['ssh_host_key_type' => $guest->ssh_host_key_type, 'ssh_host_key' => $guest->ssh_host_key], 'process' => (object) []]];
+            'enrollment' => ['ready' => true, 'node' => ['ssh_host_key_type' => $guest->ssh_host_key_type, 'ssh_host_key' => $guest->ssh_host_key], 'process' => ['process_id' => $process, 'status' => 'active']]];
 
         return [
             'placement' => 'slot', 'task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $host->id, 'guest_node_id' => $guest->id,
@@ -75,6 +81,16 @@ final readonly class TaskVmSlotClaim
     {
         return $vm->claimed_at !== null && NodeFact::query()->where('node_id', $vm->node_id)->where('kind', NodeFactKind::Host->value)
             ->where('received_at', '>=', $vm->claimed_at)->exists();
+    }
+
+    /**
+     * Ends a claim without host work, for a task that is cancelled or merged: the slot becomes `failed` with no task,
+     * so no claim takes it and `task_vm.slot_release` (M5) can release it later. Its VM and workspace records stay.
+     */
+    public function detach(TaskVm $vm): void
+    {
+        $vm->update(['state' => TaskVmState::Failed, 'group_id' => null, 'claimed_at' => null, 'ready_at' => null,
+            'error_code' => 'task_vm.slot_detached', 'error_message' => 'The task ended; the slot waits for its release.']);
     }
 
     /**

@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
@@ -15,32 +17,39 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlot;
 use App\Domain\TaskVms\TaskVmSlotClaim;
+use App\Domain\TaskVms\TaskVmSlotEnrollIntent;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(LazilyRefreshDatabase::class);
 
 const CLAIM_HOST_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIEQ9Q5+auc2KFs6ebCBB3J9ROM+aIRnhyJwafKXHSCWT';
 
 /**
- * Two task VM hosts with a promoted image each. `$claims` lists the hosts whose tasks claim a slot.
+ * Two task VM hosts with a promoted image each, of the current recipe unless `$image` names another. `$claims` lists the
+ * hosts whose tasks claim a slot.
  *
  * @param  list<string>  $claims
  * @return array<string, Node>
  */
-function claimWorld(array $claims = ['beast', 'shark']): array
+function claimWorld(array $claims = ['beast', 'shark'], ?string $image = null): array
 {
+    $image ??= app(RecipeImageBuilds::class)->currentRecipe()->identity;
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $nodes = [];
     $hosts = [];
@@ -49,7 +58,7 @@ function claimWorld(array $claims = ['beast', 'shark']): array
             'public_ssh_host' => '10.44.0.'.($octet - 60), 'wireguard_ip' => '10.44.0.'.($octet - 60), 'user' => 'orbit',
             'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => CLAIM_HOST_KEY, 'ssh_host_fingerprint' => 'SHA256:fixture']));
         $hosts[] = new TaskVmHost($nodes[$name]->id, 'orbit-tasks', 'orbittask'.($octet - 77), "10.251.{$octet}.0/24", 5, 4, '8GiB', '40GiB');
-        TaskVmImageBuild::query()->create(['host_node_id' => $nodes[$name]->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
+        TaskVmImageBuild::query()->create(['host_node_id' => $nodes[$name]->id, 'recipe_identity' => $image, 'state' => TaskVmImageBuildState::Succeeded,
             'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => 'c1c2cf4051fb0123']]]);
     }
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', $hosts, 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'],
@@ -65,7 +74,10 @@ function claimSlot(Node $host, int $slot, TaskVmState $state = TaskVmState::Free
     $octet = $host->name === 'beast' ? 77 : 78;
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => "10.251.{$octet}.".(254 - $slot), 'wireguard_ip' => '10.44.0.'.(130 + $slot + ($host->name === 'beast' ? 0 : 10)), 'user' => 'orbit',
+        'cluster_id' => app(TaskVmSettings::class)->devClusterId, 'ssh_jump_node_id' => $host->id,
         'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => CLAIM_HOST_KEY, 'ssh_host_fingerprint' => 'SHA256:slot']));
+
+    Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'pi-server', 'runtime' => 'systemd', 'runtime_config' => '{}', 'status' => 'active']);
 
     return TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => $name, 'state' => $state,
         'slot' => $slot, 'address' => "10.251.{$octet}.".(254 - $slot), 'bridge_address' => "10.251.{$octet}.".(254 - $slot), 'bridge_mac' => TaskVmSlot::bridgeMac($name),
@@ -85,8 +97,9 @@ function claimHostFact(TaskVm $slot, string $receivedAt): void
 
 it('claims the lowest free slot of the host with the most free slots, and makes no Node, row or token', function (): void {
     $nodes = claimWorld();
-    claimSlot($nodes['beast'], 1);
+    $other = claimSlot($nodes['beast'], 1);
     claimSlot($nodes['beast'], 2);
+    claimHostFact($other, now()->subHour()->toDateTimeString());
     foreach ([1, 2, 3] as $n) {
         $shark = claimSlot($nodes['shark'], $n);
     }
@@ -98,12 +111,14 @@ it('claims the lowest free slot of the host with the most free slots, and makes 
 
     expect($vm->name)->toBe('shark-tvm-1');
     expect($vm->state)->toBe(TaskVmState::Provisioning);
-    expect([$vm->group_id, $vm->image_fingerprint, $vm->recipe_identity, $vm->image_fallback])->toBe([$group->id, 'c1c2cf4051fb0123', 'recipe-1', true]);
+    expect([$vm->group_id, $vm->image_fingerprint, $vm->recipe_identity, $vm->image_fallback])->toBe([$group->id, 'c1c2cf4051fb0123', app(RecipeImageBuilds::class)->currentRecipe()->identity, false]);
     expect($vm->claimed_at)->not->toBeNull();
     expect([TaskVm::query()->count(), Node::query()->count()])->toBe($rows);
     expect(TaskVm::query()->where('state', TaskVmState::Free)->count())->toBe(4);
     // The old facts of the slot Node go with the claim, so a `host` fact after it is the new VM's own.
     expect(NodeFact::query()->where('node_id', $vm->node_id)->count())->toBe(0);
+    // The facts of every other Node stay.
+    expect(NodeFact::query()->where('node_id', $other->node_id)->count())->toBe(1);
     // The same group gets the same slot again.
     expect(app(AllocateTaskVmAction::class)->capture($group)->id)->toBe($vm->id);
 })->group('slots');
@@ -136,6 +151,7 @@ it('waits for capacity when a claiming host has no free slot, and never creates 
     $nodes = claimWorld();
     claimSlot($nodes['beast'], 1, TaskVmState::Failed);
     claimSlot($nodes['beast'], 2, TaskVmState::Ready);
+    claimSlot($nodes['shark'], 1, TaskVmState::Failed);
 
     expect(fn () => app(AllocateTaskVmAction::class)->capture(claimGroup()))->toThrow(TaskCapacityException::class, 'Task VM: no capacity.');
     expect(TaskVm::query()->whereNull('slot')->count())->toBe(0);
@@ -144,6 +160,7 @@ it('waits for capacity when a claiming host has no free slot, and never creates 
 it('gives one free slot to one claim and makes the next claim wait', function (): void {
     $nodes = claimWorld();
     claimSlot($nodes['beast'], 1);
+    claimSlot($nodes['shark'], 1, TaskVmState::Failed);
 
     $first = app(AllocateTaskVmAction::class)->capture(claimGroup());
 
@@ -173,22 +190,82 @@ it('renders the claim as public input without a secret, and the provision still 
     $receipt = json_decode($input['slot_claim']['receipt_json'], true, flags: JSON_THROW_ON_ERROR);
     expect($receipt)->toMatchArray(['task_vm_id' => $vm->id, 'ready' => true]);
     expect($receipt['enrollment']['node'])->toBe(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => CLAIM_HOST_KEY]);
-    expect($encoded)->toContain('"process":{}');
+    $process = Process::query()->where('owner_id', $vm->node_id)->where('name', 'pi-server')->value('id');
+    expect($receipt['enrollment']['process'])->toBe(['process_id' => $process, 'status' => 'active']);
 
+    // The Operation goes through the database: an empty object would come back as an empty list, which the workspace steps reject.
     $operation = Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $nodes['beast']->id,
-        'status' => 'queued', 'sequence' => 1, 'attempts' => 0, 'input' => $input]);
+        'status' => 'queued', 'sequence' => 1, 'attempts' => 0, 'input' => $input])->fresh();
+    $stored = json_decode($operation->input['slot_claim']['receipt_json'], true, flags: JSON_THROW_ON_ERROR);
+    expect($stored['enrollment']['process'])->toBe(['process_id' => $process, 'status' => 'active']);
+    expect($operation->input['slot_claim']['receipt']['enrollment']['process'])->toBe(['process_id' => $process, 'status' => 'active']);
     expect(app(TaskVmProvisionIntent::class)->owned($operation)->id)->toBe($vm->id);
 })->group('slots');
 
-it('turns the nested reset on from the setting', function (): void {
+it('refuses the claim while the nested reset is on, and the admission rolls back so no slot is burned', function (): void {
     $nodes = claimWorld(['beast']);
-    claimSlot($nodes['beast'], 1);
-    $vm = app(AllocateTaskVmAction::class)->capture(claimGroup());
-    $on = clone app(TaskVmSettings::class);
+    $slot = claimSlot($nodes['beast'], 1);
+    $on = app(TaskVmSettings::class);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $on->devClusterId, $on->wireguardRange, $on->hosts, $on->modelProxyOrigin, $on->piArtifactPath,
         $on->piArtifactSha256, $on->piModels, slotClaimHosts: $on->slotClaimHosts, nestedReset: true));
 
-    expect(app(TaskVmSlotClaim::class)->capture($vm)['slot_claim']['nested_reset'])->toBeTrue();
+    $code = rescue(fn () => DB::transaction(function (): void {
+        app(TaskVmProvisionIntent::class)->capture(app(AllocateTaskVmAction::class)->capture(claimGroup()));
+    }), static fn (ResourceOperationException $error): string => $error->errorCode, false);
+
+    expect($code)->toBe('task_vm.nested_reset_unavailable');
+    expect($slot->refresh()->state)->toBe(TaskVmState::Free);
+    expect($slot->group_id)->toBeNull();
+})->group('slots');
+
+it('claims a slot only with the image of the current recipe, never the fallback image', function (): void {
+    $nodes = claimWorld(['beast'], image: 'recipe-old');
+    $slot = claimSlot($nodes['beast'], 1);
+
+    // The old image is the host's last promoted one, so the old path may use it; the slot stays free.
+    $vm = app(AllocateTaskVmAction::class)->capture(claimGroup());
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Free);
+    expect($vm->slot)->toBeNull();
+})->group('slots');
+
+it('gives a group with a bigger size no slot, and serves a listed host with no slot row as an unlisted one', function (): void {
+    $nodes = claimWorld(['beast']);
+    $slot = claimSlot($nodes['beast'], 1);
+    $settings = app(TaskVmSettings::class);
+    $project = Project::query()->create(['name' => 'Big', 'slug' => 'big', 'repository_url' => 'git@github.com:acme/big.git', 'repository_identity' => 'github.com/acme/big', 'root' => 'public']);
+    $group = claimGroup();
+    $group->update(['project_id' => $project->id]);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange, $settings->hosts, $settings->modelProxyOrigin,
+        $settings->piArtifactPath, $settings->piArtifactSha256, $settings->piModels, mediumProjectIds: [$project->id], slotClaimHosts: $settings->slotClaimHosts));
+
+    $medium = app(AllocateTaskVmAction::class)->capture($group);
+
+    expect([$medium->size, $medium->slot, $medium->host_node_id])->toBe([TaskVmSize::Medium, null, $nodes['shark']->id]);
+    expect($slot->refresh()->state)->toBe(TaskVmState::Free);
+
+    // A host that is listed but has no slot row is served as an unlisted one.
+    $none = app(AllocateTaskVmAction::class)->capture(claimGroup());
+    expect($none->slot)->toBe(1);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange, $settings->hosts, $settings->modelProxyOrigin,
+        $settings->piArtifactPath, $settings->piArtifactSha256, $settings->piModels, slotClaimHosts: [$nodes['beast']->id, $nodes['shark']->id]));
+    $own = app(AllocateTaskVmAction::class)->capture(claimGroup());
+    expect([$own->slot, $own->host_node_id])->toBe([null, $nodes['shark']->id]);
+})->group('slots');
+
+it('keeps the claim data when a failed slot is enrolled again, so capture() accepts it', function (): void {
+    $nodes = claimWorld(['beast']);
+    claimSlot($nodes['beast'], 1);
+    $vm = app(AllocateTaskVmAction::class)->capture(claimGroup());
+    $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'operation.native_failed']);
+
+    // The enrolment records the Pi Process itself.
+    Process::query()->where('owner_id', $vm->node_id)->where('name', 'pi-server')->delete();
+
+    $again = app(TaskVmSlotEnrollIntent::class)->reserve($nodes['beast'], 1);
+
+    expect($again->id)->toBe($vm->id);
+    expect([$again->state, $again->group_id, $again->claimed_at, $again->error_code])->toBe([TaskVmState::Provisioning, null, null, null]);
 })->group('slots');
 
 it('counts a host report after the claim as the new VM reporting, and an older one as none', function (): void {
@@ -219,6 +296,7 @@ function claimedProvision(): array
 {
     $nodes = claimWorld();
     claimSlot($nodes['beast'], 1);
+    claimSlot($nodes['shark'], 1, TaskVmState::Failed);
     $project = Project::query()->create(['name' => 'Blog', 'slug' => 'blog', 'repository_url' => 'git@github.com:acme/blog.git', 'repository_identity' => 'github.com/acme/blog', 'root' => 'public']);
     $group = claimGroup();
     $group->update(['project_id' => $project->id]);
@@ -279,6 +357,39 @@ it('leaves a failed claim as a failed slot that no claim can take', function ():
 
     expect($vm->refresh()->state)->toBe(TaskVmState::Failed);
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+    expect(fn () => app(AllocateTaskVmAction::class)->capture(claimGroup()))->toThrow(TaskCapacityException::class);
+})->group('slots');
+
+it('lets a cancelled task on a slot reach the run start, with no VM or workspace to clean', function (): void {
+    [, $operation, $group] = claimedProvision();
+    $operation->update(['status' => 'succeeded']);
+    app(TaskExtensionState::class)->enable();
+    // The cancellation runs on the Swamp Node when no VM is left to clean.
+    Node::withoutEvents(fn (): Node => Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.209', 'wireguard_ip' => '10.44.0.209', 'user' => 'orbit']));
+    $group->update(['status' => TaskGroupStatus::Running]);
+    $captured = null;
+    DB::listen(function ($query) use (&$captured): void {
+        if (str_starts_with($query->sql, 'insert into "operations"')) {
+            $captured = $query->bindings;
+        }
+    });
+
+    // No Swamp is configured here, so the start fails after the admission is complete; that is the part under test.
+    $code = rescue(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null), static fn (ResourceOperationException $error): string => $error->errorCode, false);
+
+    expect($code)->toBe('swamp.start_unavailable');
+    $input = collect($captured)->first(static fn (mixed $value): bool => is_string($value) && str_starts_with($value, '{"workspace_routes"'));
+    expect(json_decode((string) $input, true))->toMatchArray(['task_vm_id' => null, 'instance_id' => null, 'workspace_routes' => [], 'teardown' => [], 'push' => null]);
+})->group('slots');
+
+it('detaches a slot from its task as failed, with no host work, so its release can find it', function (): void {
+    [$vm] = claimedProvision();
+
+    app(TaskVmSlotClaim::class)->detach($vm);
+
+    expect($vm->refresh()->state)->toBe(TaskVmState::Failed);
+    expect([$vm->group_id, $vm->claimed_at, $vm->ready_at, $vm->error_code])->toBe([null, null, null, 'task_vm.slot_detached']);
     expect(fn () => app(AllocateTaskVmAction::class)->capture(claimGroup()))->toThrow(TaskCapacityException::class);
 })->group('slots');
 

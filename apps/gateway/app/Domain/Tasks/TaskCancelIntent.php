@@ -18,6 +18,7 @@ use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
+use App\Domain\TaskVms\TaskVmSlotClaim;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -87,6 +88,18 @@ final readonly class TaskCancelIntent
                 $commit = $kind === 'tasks.cancel' ? TaskFinalReview::unpublishedRemovalCommit($group) : null;
                 if ($commit !== null && ! is_array($token)) {
                     throw new ResourceOperationException('tasks.push_failed', 'Publish the approved work before removing this workspace.', 409);
+                }
+                if ($vm instanceof TaskVm && $vm->slot !== null) {
+                    // A slot outlives its task. It cannot be destroyed, so the task ends without host work: the slot is detached
+                    // as `failed` and waits for its release (M5), which removes the workspace records. Approved work that is not
+                    // published cannot be pushed from here, so it is refused as without a token.
+                    if ($commit !== null) {
+                        throw new ResourceOperationException('tasks.push_failed', 'Publish the approved work before removing this workspace.', 409);
+                    }
+                    app(TaskVmSlotClaim::class)->detach($vm);
+                    $group->taskable()->dissociate();
+                    $group->save();
+                    $workspace = $vm = null;
                 }
                 $capture = $workspace instanceof Instance ? $this->destroy->captureForWorkspace($vm, $workspace, $commit)
                     : ($vm instanceof TaskVm && $vm->state !== TaskVmState::Destroyed ? $this->destroy->capture($vm) : []);

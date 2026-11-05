@@ -21,11 +21,12 @@ sequenceDiagram
   %%> Requirements:
   %%> - an active task VM host has a `free` slot
   %%> - the task has no other slot
-  %%> - the host is listed in `task_vms.slot_claim_hosts` (none is by default); any other host enrols a new VM for the task, as before
+  %%> - the host is listed in `task_vms.slot_claim_hosts` (none is by default) and has at least one slot; any other host enrols a new VM for the task, as before
   %%> - one SQLite transaction takes the slot, so two claims never get the same one
   %%> Chooses:
   %%> - the host with the most free slots, then its lowest-numbered free slot
-  %%> - the current task image, or the one-day fallback image
+  %%> - the promoted image of the current recipe; never the one-day fallback image, because only the current image holds the slot units
+  %%> - a group of normal size; a medium or large group, or a declared topology, takes a host that creates its own VMs, or waits
   %%> - a host that claims slots never creates a VM of its own; a host that does not claim slots is used only when no claiming host has a free slot
   %%> Result:
   %%> - the slot becomes `provisioning` and records the task, `claimed_at` and the image
@@ -54,9 +55,9 @@ sequenceDiagram
   %%> - starts it, then waits until the guest has its address
   SW->>VM: Check the slot VM<br/>ssh exec · pinned host key
   %%> What it does:
-  %%> - runs `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`, within the boot allowance, then one command
+  %%> - connects within the boot allowance (the identity unit runs before ssh), runs `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`, then one command
   %%> - the observer and Pi binaries match their pinned digests
-  %%> - the observer answers, and Pi answers its capabilities probe
+  %%> - the observer answers, and Pi answers its capabilities probe, which curl retries while Pi binds (8 tries, 1 s apart)
   %%> Why:
   %%> - the identity unit installs the identity before ssh, WireGuard and the observer start, then reloads systemd and starts the target again; the target starts WireGuard, the observer and the Pi unit of the tree, with no per-VM write
   %%> - the target is bound to WireGuard and Pi, so a failed or skipped start of either fails the target, and a later stop of either takes it down
@@ -83,7 +84,7 @@ sequenceDiagram
   %%> - applies the candidate code: migrations, then a Swamp reload
   %%> - one readiness check: fresh agent facts from the nested Nodes, and the nested Gateway answers on `10.45.0.1`
   %%> When it runs:
-  %%> - only while the Gateway setting `nested_reset` is on; it is off, and the step is skipped, until the workflow lands with B3/B4 (a placeholder workflow fails if the setting is turned on early)
+  %%> - only while the Gateway setting `nested_reset` is on; it is off, and the step is skipped, until the workflow lands with B3/B4 (while the setting is on, the claim is refused at admission, so no slot is taken)
   %%> Why one call:
   %%> - one shared workflow keeps the claim short
   %%> - it touches only the three nested VMs
@@ -110,5 +111,7 @@ sequenceDiagram
     %%> On the host:
     %%> - the VM (with its nested VMs) and the seed clone stay until the release runs; there is no rollback
     %%> Retry:
-    %%> - cancel the group; `task_vm.slot_release` deletes the VM and frees the slot, and a new claim starts a new task
+    %%> - cancel the group: the slot is detached with no host work and stays `failed` with no task
+    %%> - `task_vm.slot_release` (M5) then deletes the VM and frees the slot, and a new claim starts a new task
+    %%> - enrolling the slot again also clears the task from it
   end
