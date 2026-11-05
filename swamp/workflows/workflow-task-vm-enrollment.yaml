@@ -38,7 +38,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$
         required:
         - vault
         - key
@@ -436,7 +436,8 @@ jobs:
       inputs:
         hosts: name:target
         sudo: ${{ inputs.intent.provider != "incus" }}
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/openssl","rand","-hex","-out","/etc/orbit/agent/secret","32"] : ["/usr/bin/openssl","rand","-hex","-out","/etc/orbit/agent/secret","32"] }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.agent_secret.vault, inputs.execution_secrets.agent_secret.key) }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-D","-m","0600","-o","root","-g","root","/dev/stdin","/etc/orbit/agent/secret"] : ["/usr/bin/install","-D","-m","0600","-o","root","-g","root","/dev/stdin","/etc/orbit/agent/secret"] }}'
     dependsOn:
     - step: observer-identity-folder
       condition:
@@ -444,7 +445,6 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ steps["observer-identity-find"].outputs.exitCode == 0 }}
   - name: observer-identity-trim
     labels:
       role: swamp
