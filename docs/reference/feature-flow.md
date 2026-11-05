@@ -79,16 +79,97 @@ CI is the only gate: if CI passes, the PR merges. So CI must be strict about wha
 
 1. Fast checks run in about 1 minute.
 2. The VM job runs only when command code changed:
-   1. A task VM host starts a copy of the templates, in seconds.
-   2. It converges the PR's code onto that copy, in about 2 to 3 minutes.
-   3. It runs only the test cases of the affected commands, in parallel, each on its own copy.
+   1. Orbit takes a free task VM slot and starts a fresh test fleet from the ready snapshot, in seconds.
+   2. It applies the PR's code to that fleet, in about 2 to 3 minutes.
+   3. It runs only the test cases of the affected commands, one after another in that fleet, and then releases the slot.
 
    Development and CI use the same cases and assertions. The required check identifies the tested commit and reports every selected case. A missing result or a failed assertion fails the check. A passing check confirms the defined cases; it does not prove behavior that the cases omit.
 
-   This adds about 5 to 8 minutes, and only to PRs that change commands.
+   This adds about 5 to 8 minutes, and only to PRs that change commands. The run budget is 30 minutes. See [the VM job](#the-vm-job).
 3. The merge queue applies the same selection rule.
 
    A batch needs the VM job only for PRs that change command code.
+
+### The VM job
+
+The VM job is the target and is not built yet: not the command, the selection list, the job or the label workflow. It is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
+
+**The job**
+
+- A hosted scope step reads the changed paths with `bin/proof-select`, run from `main` and not from the pull request. A path that needs a proof starts `Proofs`.
+- A path that matches no line fails the scope step. A change to documentation only never starts the VM job.
+- `Proofs` passes one commit SHA to `orbit proof:run --json`: the pull request head, or the merge queue commit.
+- It also passes an idempotency key built from the workflow run and its attempt. It checks out nothing and chooses no cases.
+- Orbit fetches the commit and selects the cases with its own program.
+**The result**
+
+- The job summary lists each case, the uncovered paths and the receipt link. It holds no command output and no host name. The receipt link needs access to the private network.
+- A run with uncovered paths and no case passes, and the summary says so. It never looks like a run that proved something.
+- The job exits with the verdict. The timeout is 45 minutes: the slot wait plus the run budget. A cancelled job cancels its run.
+- `Proofs` tests the pull request head, not its merge with `main`. The merge queue tests the merge.
+
+**Triggers**
+
+- A pull request from a branch of `hardimpactdev/orbit` runs the job automatically.
+- The merge queue runs it on the combined commit, with the same selection.
+- A pull request from a fork starts no proof by itself.
+
+**Outside pull requests**
+
+- A maintainer approves the pull request and adds the label `run-proofs`.
+- The workflow `proofs-outside.yml` passes the head SHA from the label event to `orbit proof:run`. It reports the verdict as the commit status `Proofs`, then runs the failed `Proofs` job of the pull request again.
+- Orbit accepts only the current head, with the label and a maintainer's approval of exactly that commit.
+- A new push removes the label. The new head needs a new approval and the label again.
+- In `ci.yml`, `Proofs` runs on a hosted runner for such a pull request. It fails until the head has that passing status.
+
+**Guards**
+
+- The runner group of beast and shark serves only this repository.
+- A GitHub setting requires a maintainer's approval for every workflow run of an outside collaborator. A maintainer does not approve a run whose diff touches `.github/`.
+- The workflow condition picks a self-hosted runner for a pull request from this repository and for the merge queue. It picks a hosted runner for every other pull request.
+- `tools/test_ci_runner_policy.py` pins the condition. A fork controls its own copy of the workflow, so the approval is the gate and the condition is the second layer.
+- The job passes no secret.
+- The CI proof slot holds no Pi token and no model key.
+- Orbit refuses a commit that is not on a branch of the repository, so a job that reaches a runner can still prove only trusted code.
+
+**Required check**
+
+- `Proofs` is a required status of the merge ruleset, next to `Required checks`.
+- Only the scope step may skip it, and only for a change that needs no proof.
+
+### Choose the cases
+
+This rule is the target and is not built yet. The file `swamp/proof/selection.txt` is the selection list: it maps changed paths to commands. Each line holds a path glob and the value it selects. The scope step and Orbit read the list of the tested commit.
+
+```text
+# path glob                                   selects
+docs/**                                       skip
+**/*.md                                       skip
+apps/web/**                                   skip
+swamp/workflows/workflow-firewall-*.yaml      firewall:allow firewall:deny firewall:remove
+swamp/proof/firewall/cases/**                 firewall:allow firewall:deny firewall:remove
+swamp/proof/reset/**                          *
+bin/proof-fleet                               *
+swamp/workflows/workflow-vault-sync.yaml      none: no case yet
+```
+
+| Value | Meaning |
+| --- | --- |
+| `skip` | The path needs no proof: documentation, charts, case descriptions, the web app. |
+| `<family>:<command>` | The cases of each listed command run. Without a case program, the command is listed as uncovered. |
+| `*` | Every case runs. Use it for shared code that every command consumes. |
+| `none: <reason>` | The path has no case yet. It is listed as uncovered and does not fail the run. |
+
+The case programs of a command are `swamp/proof/<family>/cases/<command>-*.sh`. Further colons of the command name become `-`.
+
+- The last matching line wins.
+- A path that matches no line is refused with `proof.path_unmapped`, so the author must classify every path.
+- A rename or a delete counts for the old path too.
+- A change to the selection list selects every case. So do a file list that GitHub returns incomplete, and `--all`. A change cannot narrow its own selection.
+- List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
+- List a helper that several commands share with every one of them.
+- A command that becomes ready also maps the code that implements it, including its Gateway Action and CLI files. Until then, those files stay `skip`.
+- Case programs are code and select their command. Charts, pages and `*.cases.md` files are `skip`.
 
 ## 5. Merge
 
@@ -201,7 +282,7 @@ This table separates the parts already built from the work still planned.
 | 2. Dev VM from templates | Not built: dev VMs use today's task VM image |
 | 3. Auto-merge by the author | Built |
 | 4. Fast CI and merge queue | Built (about 1 minute) |
-| 4. VM job in CI | Not built |
+| 4. VM job in CI | Designed (`proof:run` and the job above), not built |
 | 6. Release as a Swamp workflow | Built: manual and automatic releases use one Swamp run; the old release runner is removed |
 | 7. Templates | Designed (ADR 0247), not built |
 | 8. Rollout of the Orbit footprint | Built (`fleet.rollout`) |
@@ -216,7 +297,7 @@ These choices remain open.
 
 - Parallel rollout: dev Nodes first, or all Nodes at once.
 - The `node:converge` flag names for the release scope (footprint, changed roles).
-- The exact path rules that select CI jobs, and how a changed file maps to the affected commands.
+- The first content of `swamp/proof/selection.txt`: which Gateway and CLI files map to which command.
 - How Pi's PRs merge: check App-token auto-merge through the queue after task-VM development restarts.
 - Speed of nested VMs inside a task VM, for the nightly build.
 - The agent becomes an observer only after templates replace the image build and the remaining Gateway calls to agent commands are gone.

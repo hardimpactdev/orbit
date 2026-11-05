@@ -1,0 +1,87 @@
+---
+title: "orbit proof:run"
+sidebarTitle: "proof:run"
+description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in a disposable test fleet on a task VM slot, and reports a verdict for each case."
+---
+
+```bash
+orbit proof:run <commit> [--all] [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `commit` | yes | Full 40 or 64 character lowercase commit SHA. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--all` | off | Run every case, not only the cases that the commit selects. |
+| `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | Print the final result as JSON, with the verdict of each case. |
+
+```bash
+orbit proof:run 0123456789abcdef0123456789abcdef01234567
+```
+
+In a terminal, an omitted commit is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.commit_invalid`, and so is a value that is not a full lowercase SHA. A refused call sends no request.
+
+The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the VM job](/reference/feature-flow#the-vm-job).
+
+## Which commits Orbit proves
+
+Orbit proves only code that it can trust. The commit must be the head of a branch of the Orbit repository. A commit from a pull request from elsewhere is accepted only when it is the head of that open pull request, the pull request carries the label `run-proofs`, and a maintainer approved exactly that commit. A new push needs a new approval. Orbit fetches the commit itself, so a caller cannot change what runs.
+
+## Which cases run
+
+Orbit lists the files that differ between the commit and its merge base with `main`, and maps each path to commands with the selection list in the commit. The cases of those commands run. `--all` runs every case. A change to the selection list, or a file list that GitHub returns incomplete, also runs every case. [Choose the cases](/reference/feature-flow#choose-the-cases) holds the mapping rule.
+
+When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It takes no slot and starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a case program, are listed as uncovered in the result and do not fail the run.
+
+## The run
+
+Orbit takes one free [task VM slot](/reference/compute-drivers#task-vm-slots). A host gives at most 3 of its slots to proofs at once, and a slot that a task holds is never taken. When no slot is free, the run waits up to 10 minutes and then fails with `proof.no_slot`.
+
+The slot gets the commit and no credential. It has no Pi token, no model key, no GitHub token and no key of the real fleet, and it has no route to the real Gateway or to other Nodes.
+
+Orbit builds a fresh test fleet in the slot from the ready snapshot: a Gateway, an `app-dev` Node and an `app-prod` Node. It runs the selected cases one after another with the CLI built from the commit. Each case asserts the command's promised effect, the recorded state and the Node state, and removes what it created. After each case, Orbit compares the state that the case touched with its state before the case. A leftover fails the case. A case that needs a clean fleet gets a new one.
+
+The whole run has a budget of 30 minutes after the slot is taken.
+
+## Verdicts
+
+Each selected case ends `passed`, `failed` or `unrun`. A case that exceeds the budget is `failed`. A case is `unrun` when its setup could not start or the run stopped before it. Neither `failed` nor `unrun` counts as a pass. If the fleet never becomes ready, every selected case is `unrun`.
+
+The result names the commit, each case with its verdict and duration, the uncovered paths, the slot, and a receipt link. The receipt keeps for 14 days each case's result and observations, the Doctor findings, the timings, and, for a failure, the failed assertion and the command output. Secrets are removed. Opening the link needs access to the private network.
+
+| Outcome | Exit status |
+| --- | --- |
+| Every selected case passed, or nothing needed a proof. | `0` |
+| A selected case failed or did not run. | Nonzero. The command names each such case and the receipt link. |
+| Orbit refused the request. | Nonzero, with the one-line error envelope. |
+| You pressed Ctrl-C. | `130`. The run is cancelled. |
+| The process received SIGTERM. | `143`. The run is cancelled. |
+
+Unlike most commands, Ctrl-C and SIGTERM cancel the run, because a proof that nobody waits for only holds a slot. Cancelling during the slot wait starts nothing. Cancelling later ends the cases still to run as `unrun` and releases the slot. A process that is killed without a signal cannot cancel; its run ends at the budget.
+
+## After the run
+
+Orbit releases the test fleet and deletes the slot VM after success and after failure, and the slot becomes free again. Only the receipt remains. If the release fails, the slot is marked failed and no run can take it until it is released. The verdicts stay as they are.
+
+A repeat starts a new run, because a proof checks the commit as it is now. The same `--idempotency-key` returns the original run instead of starting another.
+
+## How it works
+
+<div className="flow-at" data-chart="proof/run"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `proof.commit_invalid` | The commit is missing or is not a full lowercase SHA, and the CLI cannot prompt. |
+| `proof.commit_not_found` | The Orbit repository has no such commit. |
+| `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |
+| `proof.path_unmapped` | A changed path matches no line of the selection list. The details name the path. |
+| `proof.no_slot` | No slot became free within 10 minutes. |
+| `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
+| `proof.run_failed` | The test fleet did not become ready. Every selected case is `unrun`; the details name the failed step. |
+| `node_access.required` | The calling Node has no access grant to the Gateway Node. |
+| `extension.disabled` | The tasks extension is off. |
