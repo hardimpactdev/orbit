@@ -198,7 +198,7 @@ These primitives retain the existing operation receipt, history, output, recover
 
 ### The deploy operation
 
-The Gateway validates the request and the access grant, checks that the Instance can be deployed, and answers `202`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is neither a production Instance nor an active development default, `operation.target_busy` (409) while another operation holds the Instance, and `operation.queue_unavailable` (503) without the Gateway queue.
+The Gateway validates the request and the access grant, checks that the Instance can be deployed, and answers `202`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is neither a production Instance nor an active development default, and `operation.target_busy` (409) while another operation holds the Instance.
 
 A production deploy holds the Instance, freezes the full intent and records a running deployment row, which [pauses automatic deployment](#pause) at once. It refuses an Instance without stored environment configuration with `env.configuration_missing` before it records anything.
 
@@ -310,7 +310,7 @@ Each policy tick reads the branch head through the Gateway with `git ls-remote` 
 - Pushes that arrive meanwhile wait for the next tick. That tick reads the newest head, so intermediate commits coalesce.
 - While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
 
-Operations need the [Gateway queue](/reference/gateway-queue#without-a-queue). Without it, the tick fails with `operation.queue_unavailable` for each Instance that has a commit to deploy, and changes nothing. A head the Gateway cannot read fails the tick for that Instance with `source.head_unavailable`. The other Instances still deploy.
+A head the Gateway cannot read fails the tick for that Instance with `source.head_unavailable`. The other Instances still deploy.
 
 ### Automatic development defaults
 
