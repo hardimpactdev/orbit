@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -167,5 +168,5 @@ it('refuses to project a save whose VM is no longer the admitted one', function 
 })->group('ready-copies');
 
 it('registers the operator command that admits the save', function (): void {
-    expect(array_keys(Illuminate\Support\Facades\Artisan::all()))->toContain('task-vms:save-ready-copies');
+    expect(array_keys(Artisan::all()))->toContain('task-vms:save-ready-copies');
 })->group('ready-copies');
