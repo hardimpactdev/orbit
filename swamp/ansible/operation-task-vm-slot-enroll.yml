@@ -179,11 +179,11 @@
             src: "{{ stage.path }}/new/etc/ssh/ssh_host_ed25519_key.pub"
           register: host_key
 
+        # The agent trims its secret file and the Gateway hashes the trimmed secret, so the digest is of the trimmed text.
         - name: Read the observer digest
-          ansible.builtin.stat:
-            path: "{{ stage.path }}/new/etc/orbit/agent/secret"
-            checksum_algorithm: sha256
+          ansible.builtin.shell: tr -d '[:space:]' < "{{ stage.path }}/new/etc/orbit/agent/secret" | sha256sum | cut -d' ' -f1
           register: observer_secret
+          changed_when: false
 
         # The public result for the workflow: no private key and no secret, only what the Gateway records.
         - name: Write the public result
@@ -191,7 +191,7 @@
             content: >-
               {{ {'wireguard_public_key': wireguard_public.stdout,
                   'ssh_host_key': (host_key.content | b64decode).split()[0:2] | join(' '),
-                  'observer_digest': observer_secret.stat.checksum,
+                  'observer_digest': observer_secret.stdout,
                   'revision': volume_revision.stdout} | to_json }}
             dest: "{{ run_folder }}/public.json"
             mode: "0600"

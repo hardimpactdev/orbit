@@ -141,7 +141,7 @@ jobs:
           curl -fsS -o /dev/null --max-time 10 -H @<(printf 'Authorization: Bearer %s' "$(cat /home/orbit/.pi/agent/orbit-token)") "$3/capabilities"
           key=$(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)
           [ "$key" = "$4" ]
-          printf '{"wireguard_public_key":"%s","ssh_host_key":"%s","observer_digest":"%s"}\n' "$(wg pubkey < /etc/wireguard/orbit.key)" "$key" "$(sha256sum /etc/orbit/agent/secret | cut -d' ' -f1)"
+          printf '{"wireguard_public_key":"%s","ssh_host_key":"%s","observer_digest":"%s"}\n' "$(wg pubkey < /etc/wireguard/orbit.key)" "$key" "$(tr -d '[:space:]' < /etc/orbit/agent/secret | sha256sum | cut -d' ' -f1)"
         - bash
         - '${{ inputs.intent.guest.agent_sha256 }}'
         - '${{ inputs.intent.guest.pi_sha256 }}'

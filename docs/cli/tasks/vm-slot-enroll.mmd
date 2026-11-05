@@ -51,7 +51,7 @@ sequenceDiagram
   %%> - creates the volume `HOST-tvm-N-identity`
   %%> - makes the WireGuard key pair, the SSH host keys and the observer secret in a private temporary folder, and moves them into the volume
   %%> - writes the identity tree and `REVISION` from the vault Pi token and the model key of the step above
-  %%> - prints only the WireGuard public key, the host key fingerprints and the sha256 of the observer secret
+  %%> - prints only the WireGuard public key, the host key fingerprints and the sha256 of the observer secret, trimmed of white space as the observer and the Gateway read it
   %%> Why one phase:
   %%> - volume, keys and files are idempotent state with lists (rule 22)
   %%> Retry:
