@@ -1,26 +1,46 @@
 ---
 title: "orbit instance:update"
 sidebarTitle: "instance:update"
+description: "Change the deployment branch or the shared paths of a production Instance."
 ---
-
-Change the deployment branch or shared paths of a production Instance. The Gateway stores these settings. It does not change deploy steps or start a deployment. Supply at least one option. Automatic deployment has its own commands: [`instance:auto-deploy:enable`](/cli/instance/auto-deploy-enable) and [`instance:auto-deploy:disable`](/cli/instance/auto-deploy-disable).
-
-The human result shows the stored deployment branch, the effective shared paths when changed, and the currently selected source branch. API, MCP, and CLI JSON responses include `deployment_branch`, the stored override for future deployments. A null override uses `selected_branch`. `selected_branch` describes the source checkout and does not change when you update deployment settings. Use `instance:show` to verify the stored setting before deploying.
 
 ```bash
 orbit instance:update <instance> [--branch=BRANCH] [--shared-paths=JSON] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID of a production Instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--branch=BRANCH` | unchanged | Deployment branch, a valid Git branch name of at most 255 bytes. Orbit does not check that the branch exists, so a typo is stored and fails at the deploy. A later Project default change does not replace it. No option clears the override. |
+| `--shared-paths=JSON` | unchanged | Replace the shared directory list with a JSON list. `[]` disables sharing, and `null` restores the Project-type default. |
+| `--json` | off | Print the Instance as JSON. |
+
+```bash
+orbit instance:update 71 --branch=release
 orbit instance:update 71 --shared-paths='["storage","var/uploads"]'
 orbit instance:update 71 --shared-paths='[]'
 orbit instance:update 71 --shared-paths=null
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `instance` | yes | Numeric Instance ID. |
+In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer. A call with neither option is refused with `instance.update_required`, an empty `--branch=` with `instance.branch_required` even when the shared paths are valid, and a `--shared-paths` value that is not a JSON list of strings or `null`, or is empty, with `instance.shared_paths_invalid`; none of them sends a request. An invalid `--shared-paths` is reported before an empty `--branch=`.
 
-| Option | Meaning |
+The command stores the settings on the Instance. It does not change deploy steps, start a deployment or touch a Node; the next [`instance:deploy`](/cli/instance/deploy) uses them. Automatic deployment has its own commands: [`instance:auto-deploy:enable`](/cli/instance/auto-deploy-enable) and [`instance:auto-deploy:disable`](/cli/instance/auto-deploy-disable). The Gateway checks the whole change and stores nothing when one rule fails. Shared paths are relative to the repository root: at most 32 distinct, non-overlapping directory paths of at most 255 bytes. Components use letters, digits, dots, underscores and hyphens and do not start with a dot; empty paths, a trailing `/`, spaces and non-ASCII are refused. The first component may not be `releases`, `current`, `env` or `database.sqlite`, and a hidden top-level path is refused. The symlink and web-root rules apply at the deploy, not at the update. [Shared paths](/reference/deployments#shared-paths) describes defaults, seeding, public storage and the path rules. A change holds the Instance's lock, so a competing change waits for it. Setting the stored override or the shared paths the Instance already has succeeds and changes nothing; setting `--branch` to the selected branch while no override is stored stores that override. The automatic deployment setting, its pause and its history are not touched, but the next automatic check reads the new branch head, and a head that does not descend from the deployed commit ends that check with `no_green_commit` or `commit_failed`.
+
+The human output is a detail titled `Instance: <name>` with ID, Project and Node by name, Status, the stored Deployment branch when `--branch` was given, the effective Shared paths when `--shared-paths` was given (`None` for `[]`, and the default list after `null`), the Selected branch and the request ID. `selected_branch` describes the source checkout and does not change when you update deployment settings. With `--json`, stdout holds the Instance with `deployment_branch`, the stored override for future deployments, which is null when the Instance uses `selected_branch`, the effective `shared_paths`, `selected_branch`, `branch_override` and `request_id`. Use [`instance:show`](/cli/instance/show) to verify the stored settings before deploying.
+
+## Errors
+
+| Code | Meaning |
 | --- | --- |
-| `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
-| `--shared-paths=JSON` | Replace the shared directory list. Use `[]` to disable sharing, or `null` to restore the Project-type default. Omit it to leave the setting unchanged. |
-
-The Gateway refuses a development Instance with a bounded conflict before it stores any setting. [Shared paths](/reference/deployments#shared-paths) describes defaults, seeding, public storage, and path rules.
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `input.cancelled` | You cancelled the Instance list. |
+| `instance.update_required` | Neither `--branch` nor `--shared-paths` was given. |
+| `instance.branch_required` | `--branch` is empty. |
+| `instance.shared_paths_invalid` | `--shared-paths` is not a JSON list of directory paths, or `null`. |
+| `validation.failed` | The branch is not a valid Git branch name or a shared path breaks a rule above, or the list has more than 32 paths: the reason is the generic `The deployment configuration is invalid.` under `body`. For an API or MCP caller it also covers a body that is not a JSON object with only `branch` and `shared_paths`, an empty body, a non-string or empty `branch`, and `auto_deploy`. |
+| `deployment_config.unavailable` | The Instance is not placed on a production Node, is not source-resolved or active, or has an invalid stored branch. An invalid stored branch cannot be repaired through this command. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |

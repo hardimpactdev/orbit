@@ -412,7 +412,7 @@ If admission is absent, this writes a retained cancelled operation with `operati
 
 If admission already exists, resolution returns its receipt without cancelling or rewriting it. Follow an active operation until it ends. Swamp clears its intent on the zero-attempt fenced receipt and may use a fresh key on its next tick. Other holds clear only from terminal effect evidence; resolution never starts a replacement deploy.
 
-A terminal worker-lost receipt without effect evidence still needs investigation: stop the old host writer, inspect the live release, then reconcile through a manual deploy or rollback before resuming. Do not clear Swamp storage by hand. After reconciliation, resume with `orbit instance:update <instance> --auto-deploy=true`; the rollback block remains. A missing receipt alone never permits resume or a new request key.
+A terminal worker-lost receipt without effect evidence still needs investigation: stop the old host writer, inspect the live release, then reconcile through a manual deploy or rollback before resuming. Do not clear Swamp storage by hand. After reconciliation, resume with `orbit instance:auto-deploy:enable <instance>`; the rollback block remains. A missing receipt alone never permits resume or a new request key.
 
 To switch policy back:
 
