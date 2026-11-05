@@ -291,9 +291,19 @@ The native `operation-task-prep` workflow is one parent run. Each step runs an e
 | Fix the findings | `operation-task-turn` | implementer, the draft's thread |
 | Open a draft PR | `operation-task-publish` with `draft` | |
 
-The child workflows gain only inputs that the parent needs. `operation-task-turn` takes an optional `turn_key`, because a thread that takes a draft turn and a fix turn must send two different Pi turn keys, and an optional `candidate`, because the commit a reviewer restores is the commit the author just made. `operation-task-publish` takes a commit and tree that no check recorded. These are values the Gateway cannot know at admission, so they pass from step to step in the run: the `after` snapshot that a turn reports becomes the next reviewer's candidate and the publish commit and tree.
+The guest's host key is unknown at admission, so the intents of the later children carry `host_keys: null` for the VM. After the provision child, a `Pin the VM` step fills the key from the provision receipt, the way provision binds its own Route and Process targets.
 
-The author commits the three files as one commit. A draft that leaves HEAD where it was ends the run with `tasks.prep_not_committed` before any review. The review runs for at most `orbit.tasks.prep_review_rounds` rounds, three by default. A reviewer receipt with outcome `approved` ends the loop. With `changes_requested`, the reviewer's summary goes into the prompt of a fix turn on the author thread, and a new review follows. A finding left after the last round ends the run with `tasks.prep_review_unresolved`; nothing is published and the VM stays for the orchestrator, who cancels the group when done.
+The child workflows gain only inputs that the parent needs. `operation-task-turn` takes three optional inputs:
+
+- `turn_key` names the Pi message, because a draft turn and a fix turn on one thread must send two different keys;
+- `candidate` is the commit a reviewer restores, which is the commit the author just made;
+- `prompt_append` adds the findings of a review to the prompt of a fix turn.
+
+`operation-task-publish` accepts a `null` check, because no check recorded the commit. The Gateway cannot know these values at admission, so they pass from step to step in the run. The `after` snapshot that a turn reports becomes the next reviewer's candidate and the publish commit and tree.
+
+The author commits the three files as one commit. A draft that leaves HEAD where it was ends the run with `tasks.prep_not_committed` before any review. The review runs for at most three rounds. A reviewer receipt with outcome `approved` ends the loop. With `changes_requested`, the reviewer's summary goes into the prompt of a fix turn on the author thread, and a new review follows.
+
+A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`, because the next review would restore a commit that holds none of the fix. A finding left after the last round ends the run with `tasks.prep_review_unresolved`. Nothing is published, and the VM stays for the orchestrator, who cancels the group when done.
 
 The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
 

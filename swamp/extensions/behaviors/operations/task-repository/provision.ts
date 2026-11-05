@@ -105,6 +105,17 @@ export function bindHostKeys<T>(
     };
     return walk(value) as T;
 }
+/**
+ * Pins the guest targets of the intents a prep run captured at admission to the host key the VM step observed. The
+ * receipt is the provision receipt as the run printed it.
+ */
+export function pinIntents<T>(
+    receipt: string,
+    guestNodeId: number,
+    intents: T,
+): T {
+    return bindHostKeys(intents, JSON.parse(receipt), guestNodeId);
+}
 export function connection(raw: unknown, receipt: unknown) {
     const intent = Intent.parse(raw), vm = Vm.parse(receipt);
     if (
@@ -338,7 +349,7 @@ export function result(
 }
 export const behavior = {
     type: "@nckrtl/task-provision-data",
-    version: "2026.11.03.1",
+    version: "2026.11.05.1",
     resources: {
         public: {
             schema: z.record(z.string(), z.unknown()),
@@ -375,6 +386,31 @@ export const behavior = {
                 args: { intent: unknown; vm: unknown },
                 ctx: Context,
             ) => data(ctx, { workspace: connection(args.intent, args.vm) }),
+        },
+        pin: {
+            description:
+                "Pin the guest targets of the intents of a prep run to the host key the VM step observed",
+            arguments: z.object({
+                receipt: z.string(),
+                guest_node_id: z.number().int().positive(),
+                intents: z.object({
+                    draft: z.unknown(),
+                    fix: z.unknown(),
+                    reviews: z.array(z.unknown()),
+                    publish: z.unknown(),
+                }),
+            }),
+            execute: (
+                args: {
+                    receipt: string;
+                    guest_node_id: number;
+                    intents: Record<string, unknown>;
+                },
+                ctx: Context,
+            ) => data(
+                ctx,
+                pinIntents(args.receipt, args.guest_node_id, args.intents),
+            ),
         },
         bind: {
             description:

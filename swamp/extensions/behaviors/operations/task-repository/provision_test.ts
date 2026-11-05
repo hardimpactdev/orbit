@@ -6,6 +6,7 @@ import {
     connection,
     Intent,
     observe,
+    pinIntents,
     result,
     setupArgv,
     sourceResult,
@@ -434,5 +435,31 @@ Deno.test("bind pins only the unpinned guest targets to the key the VM step obse
         () => bindHostKeys(value, vm, 21),
         Error,
         "tasks.provision_refused",
+    );
+});
+
+Deno.test("pin fills the host key of every guest target of a prep run from the printed receipt", () => {
+    const target = (key: unknown) => ({
+        ssh_execution: { target: { host: "10.44.0.20", host_keys: key } },
+    });
+    const intents = {
+        draft: target(null),
+        fix: target(null),
+        reviews: [target(null), target(null), target(null)],
+        publish: target(null),
+    };
+    const pinned = pinIntents(JSON.stringify(vm) + "\n", 20, intents);
+    const key = ["ssh-ed25519 PUBLIC"];
+    assertEquals(pinned.draft, target(key));
+    assertEquals(pinned.fix, target(key));
+    assertEquals(pinned.reviews, [target(key), target(key), target(key)]);
+    assertEquals(pinned.publish, target(key));
+    assertThrows(
+        () => pinIntents(JSON.stringify(vm), 21, intents),
+        Error,
+        "tasks.provision_refused",
+    );
+    assertThrows(() =>
+        pinIntents(JSON.stringify({ ...vm, ready: false }), 20, intents)
     );
 });

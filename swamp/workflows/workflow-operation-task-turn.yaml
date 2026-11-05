@@ -12,6 +12,17 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, enum: [tasks.turn]}
+    # A parent run that sends several turns names each Pi message, passes the commit a reviewer restores, and adds what
+    # it learned after admission to the prompt, such as a review's findings.
+    turn_key:
+      type: string
+      pattern: ^[A-Za-z0-9_.:-]{1,128}$
+    candidate:
+      type: string
+      pattern: ^(?:[a-f0-9]{40}|[a-f0-9]{64})$
+    prompt_append:
+      type: string
+      maxLength: 60000
     intent:
       type: object
     execution_secrets:
@@ -55,6 +66,8 @@ jobs:
         intent: ${{ inputs.intent }}
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
+        turn_key: '${{ has(inputs.turn_key) ? inputs.turn_key : "" }}'
+        prompt_append: '${{ has(inputs.prompt_append) ? inputs.prompt_append : "" }}'
       behaviorName: ${{ "task-turn-prepare" }}
   - name: prepare_local
     labels: {role: swamp}
@@ -382,7 +395,7 @@ jobs:
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_SESSION: ${{ inputs.intent.session_id }}
-          ORBIT_PI_TURN: ${{ "operation-" + string(inputs.operation_id) }}
+          ORBIT_PI_TURN: ${{ steps.prepare.outputs.turn_key }}
           ORBIT_TERMINAL: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
         timeout: 1800000
       behaviorName: ${{ "task-turn-observe" }}
@@ -399,7 +412,7 @@ jobs:
       methodName: terminal
       inputs:
         path: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
-        turn: ${{ "operation-" + string(inputs.operation_id) }}
+        turn: ${{ steps.prepare.outputs.turn_key }}
   - name: snapshot_after_index
     labels: {role: swamp}
     dependsOn:
@@ -783,7 +796,7 @@ jobs:
         - reset
         - --quiet
         - --hard
-        - ${{ inputs.intent.candidate }}
+        - '${{ has(inputs.candidate) ? inputs.candidate : inputs.intent.candidate }}'
         timeoutSec: 60
     writes: true
     guard: ${{ inputs.intent.role != "reviewer" }}

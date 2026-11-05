@@ -4,8 +4,10 @@ import {
     difference,
     finish,
     Input,
+    outcome,
     prepare,
     receipt,
+    settle,
     terminal,
 } from "./turn.ts";
 
@@ -412,4 +414,170 @@ Deno.test("private worker readers return fixed codes and never quote their input
     ]);
     assertEquals(shaped.diff, "token=[REDACTED]\n");
     await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("a named turn key replaces the operation key of one Pi message", () => {
+    const input = turnInput();
+    const named = prepare({
+        operation_id: 15,
+        node_id: 30,
+        intent: input,
+        turn_key: "prep-15-fix-1",
+    });
+    assertEquals(named.turn_key, "prep-15-fix-1");
+    assertEquals(JSON.parse(named.send_json).key, "prep-15-fix-1");
+    for (const turn_key of [undefined, ""]) {
+        const plain = prepare({
+            operation_id: 15,
+            node_id: 30,
+            intent: input,
+            turn_key,
+        });
+        assertEquals(plain.turn_key, "operation-15");
+        assertEquals(JSON.parse(plain.send_json).key, "operation-15");
+    }
+    assertThrows(() =>
+        prepare({
+            operation_id: 15,
+            node_id: 30,
+            intent: input,
+            turn_key: "a b",
+        })
+    );
+});
+Deno.test("a parent run reads the outcome and the commit a finished turn left", () => {
+    const moved = "c".repeat(40), newTree = "d".repeat(40);
+    const reviewed = (outcome_: string, state = "done") =>
+        JSON.stringify({
+            state,
+            receipt: { outcome: outcome_, summary: "Two findings." },
+            before: { head, tree },
+            after: { head: moved, tree: newTree },
+        });
+    assertEquals(outcome({ result_json: reviewed("approved") }), {
+        outcome: "approved",
+        approved: true,
+        summary: "Two findings.",
+        moved: true,
+        head: moved,
+        tree: newTree,
+    });
+    assertEquals(
+        outcome({ result_json: reviewed("changes_requested") }).approved,
+        false,
+    );
+    assertEquals(
+        outcome({ result_json: reviewed("approved", "failed") }).approved,
+        false,
+    );
+    const unmoved = outcome({
+        result_json: JSON.stringify({
+            state: "done",
+            receipt: null,
+            before: { head, tree },
+            after: { head, tree },
+        }),
+    });
+    assertEquals([unmoved.moved, unmoved.outcome, unmoved.head], [
+        false,
+        "",
+        head,
+    ]);
+    assertEquals(
+        outcome({
+            result_json: JSON.stringify({
+                state: "failed",
+                receipt: null,
+                before: null,
+                after: null,
+            }),
+        }).head,
+        "",
+    );
+});
+
+Deno.test("a prompt append reaches the Pi message before the receipt instruction", () => {
+    const prepared = prepare({
+        operation_id: 15,
+        node_id: 30,
+        intent: turnInput(),
+        prompt_append: "Findings: fix the title.",
+    });
+    const text: string = JSON.parse(prepared.send_json).text;
+    assertEquals(
+        text.indexOf("Fix the requested task") <
+            text.indexOf("Findings: fix the title."),
+        true,
+    );
+    assertEquals(
+        text.indexOf("Findings: fix the title.") <
+            text.indexOf("End your turn"),
+        true,
+    );
+});
+Deno.test("the review loop keeps its state across a review and a fix, and refuses a fix that made no commit", () => {
+    const next = "c".repeat(40), nextTree = "d".repeat(40);
+    const turn = (
+        receipt: Record<string, string> | null,
+        after: { head: string; tree: string },
+    ) => JSON.stringify({
+        state: "done",
+        receipt,
+        before: { head, tree },
+        after,
+    });
+    const state = { approved: false, head, tree };
+    const reviewed = settle({
+        ...state,
+        review: turn({
+            outcome: "changes_requested",
+            summary: "Fix the title.",
+        }, { head, tree }),
+        fix: "",
+    });
+    assertEquals(reviewed, {
+        approved: false,
+        head,
+        tree,
+        findings: "Fix the title.",
+    });
+    const fixed = settle({
+        ...reviewed,
+        review: "",
+        fix: turn({ outcome: "ready_for_review", summary: "Done." }, {
+            head: next,
+            tree: nextTree,
+        }),
+    });
+    assertEquals(fixed, {
+        approved: false,
+        head: next,
+        tree: nextTree,
+        findings: "",
+    });
+    assertEquals(
+        settle({
+            ...fixed,
+            review: turn({ outcome: "approved", summary: "Clean." }, {
+                head: next,
+                tree: nextTree,
+            }),
+            fix: "",
+        }).approved,
+        true,
+    );
+    assertEquals(settle({ ...fixed, review: "", fix: "" }), { ...fixed });
+    assertThrows(
+        () =>
+            settle({
+                ...state,
+                review: "",
+                fix: turn({ outcome: "ready_for_review", summary: "Done." }, {
+                    head,
+                    tree,
+                }),
+            }),
+        Error,
+        "tasks.prep_not_committed",
+    );
 });
