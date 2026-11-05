@@ -15,7 +15,7 @@ final class StartTaskPublishRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['check' => ['required', 'integer:strict', 'min:1'], 'pull_request' => ['sometimes', 'required', 'array:title,body'], 'pull_request.title' => ['required_with:pull_request', 'string', 'max:256'], 'pull_request.body' => ['required_with:pull_request', 'string', 'max:65536']];
+        return ['check' => ['required', 'integer:strict', 'min:1'], 'pull_request' => ['sometimes', 'required', 'array:title,body,draft'], 'pull_request.title' => ['required_with:pull_request', 'string', 'max:256'], 'pull_request.body' => ['required_with:pull_request', 'string', 'max:65536'], 'pull_request.draft' => ['sometimes', 'boolean']];
     }
 
     /** @return array<string, mixed> */

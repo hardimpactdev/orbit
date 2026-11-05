@@ -19,7 +19,7 @@ final class PublishTaskGroupRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param array{title: string, body: string}|null $pullRequest */
+    /** @param array{title: string, body: string, draft?: bool}|null $pullRequest */
     public function __construct(private readonly int $groupId, private readonly int $check, private readonly ?array $pullRequest = null, private readonly ?string $idempotencyKey = null) {}
 
     public function resolveEndpoint(): string
@@ -33,7 +33,7 @@ final class PublishTaskGroupRequest extends GatewayRequest implements HasBody
         return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{check: int, pull_request?: array{title: string, body: string}} */
+    /** @return array{check: int, pull_request?: array{title: string, body: string, draft?: bool}} */
     protected function defaultBody(): array
     {
         return $this->pullRequest === null ? ['check' => $this->check] : ['check' => $this->check, 'pull_request' => $this->pullRequest];

@@ -21,6 +21,7 @@ final class PublishTaskGroupCommand extends TaskCommand
         {--check= : Passed handoff check ID}
         {--title= : Pull request title (requires --body)}
         {--body= : Pull request body (requires --title)}
+        {--draft : Open the pull request as a draft (requires --title and --body)}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -44,6 +45,11 @@ final class PublishTaskGroupCommand extends TaskCommand
 
             return self::FAILURE;
         }
+        if ($this->option('draft') === true && $title === null) {
+            $this->renderGatewayFailure('tasks.pull_request_invalid', 'Supply --draft with --title and --body.');
+
+            return self::FAILURE;
+        }
         $profile = $this->activeGatewayProfile($repository);
         if ($profile === null) {
             return self::FAILURE;
@@ -64,7 +70,8 @@ final class PublishTaskGroupCommand extends TaskCommand
             }
         }
         $key = $this->option('idempotency-key');
-        $operation = $this->send($connector, new PublishTaskGroupRequest($groupId, $check, is_string($title) && is_string($body) ? ['title' => $title, 'body' => $body] : null, is_string($key) ? $key : null), OperationResponse::class);
+        $pullRequest = is_string($title) && is_string($body) ? ['title' => $title, 'body' => $body, ...($this->option('draft') === true ? ['draft' => true] : [])] : null;
+        $operation = $this->send($connector, new PublishTaskGroupRequest($groupId, $check, $pullRequest, is_string($key) ? $key : null), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Publish task group [{$groupId}]", 'Publish')

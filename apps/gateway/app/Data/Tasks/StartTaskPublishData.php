@@ -8,6 +8,6 @@ use Spatie\LaravelData\Data;
 
 final class StartTaskPublishData extends Data
 {
-    /** @param array{title: string, body: string}|null $pull_request */
+    /** @param array{title: string, body: string, draft?: bool}|null $pull_request */
     public function __construct(public int $check, public ?array $pull_request = null) {}
 }

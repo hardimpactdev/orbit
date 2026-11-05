@@ -248,7 +248,7 @@ Direct turn cancellation uses native Swamp cancellation and official SSH session
 
 #### Publish an external group
 
-`tasks:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input stays `{ check, pull_request?: { title, body } }`. Supply title and body together. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
+`tasks:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work before minting. It mints the existing GitHub installation token for that repository and supplies two small execution copies: the token for GitHub API calls and its Git authorization header. Intent contains only their vault descriptors.
 
@@ -1024,7 +1024,7 @@ These parts of stage 4 do not exist yet:
 
 - The automatic gate: a fresh self-review agent with at most 3 review rounds.
 - An `orbit` command for each step, and a proof case for each step.
-- Pull requests that the Orbit App opens.
+- The Swamp prep flow that opens the spec pull request as a draft with `tasks:publish --draft`.
 
 Until the App opens the pull request, its author is `nckrtl`. GitHub refuses `nckrtl` as its reviewer, and an author cannot approve their own pull request. Manual mode therefore needs another reviewer login, or the App as author.
 

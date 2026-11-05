@@ -77,7 +77,7 @@ sequenceDiagram
   %%> - opens the PR as a draft; it stays a draft until stage 4
   %%> - this is the one PR of the command: code and runnable proof cases join it later, and no separate docs PR exists
   %%> Not built:
-  %%> - PRs opened by the App from this flow; the Gateway already opens task PRs as the App with `tasks:publish`, but today the author opens the PR as `nckrtl`
+  %%> - the flow that calls it; the Gateway opens the task PR as the App, as a draft, with `tasks:publish --draft`, but today the author opens the spec PR as `nckrtl`
   Note over GH: Docs checks only<br/>no VM job
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code

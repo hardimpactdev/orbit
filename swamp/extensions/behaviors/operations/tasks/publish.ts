@@ -23,6 +23,7 @@ export const PublishInput = z.object({
     pull_request: z.object({
         title: z.string().min(1).max(256),
         body: z.string().max(65536),
+        draft: z.boolean().optional(),
     }).nullable(),
 });
 type Input = z.infer<typeof PublishInput>;
@@ -170,7 +171,10 @@ export function pullPlan(raw: unknown) {
     return {
         method: "PATCH",
         path: `${path}/${row.number}`,
-        body: JSON.stringify(input.pull_request),
+        body: JSON.stringify({
+            title: input.pull_request.title,
+            body: input.pull_request.body,
+        }),
         number: row.number,
         error_code: "",
     };
