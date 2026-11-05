@@ -1,0 +1,70 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, one Swamp run with the shared route reconcile child (route.reconcile). docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
+  %% status: reviewed
+  %% command: cluster:node:remove
+  %% kind: cluster.node_remove
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane V icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Cluster Nodes<br/>Router · members
+  participant V as VPN Node<br/>private DNS
+  CLI->>GW: cluster:node:remove<br/>CLUSTER NODE
+  %%> Consent:
+  %%> - the CLI resolves the Cluster and the Node, then asks to confirm with their names and the effect; `--force` skips the prompt (`cluster.confirmation_required` without it)
+  Note over GW: Validate, lock, plan<br/>transitions stored
+  %%> Requirements:
+  %%> - the calling Node has an access grant to the Node being detached
+  %%> - the Node is a member of this Cluster, or its detach is unfinished (`cluster.membership_missing`), has no `router` assignment that is active, being removed or failed (`cluster.router_detach_forbidden`), has no `ingress` role (`cluster.ingress_detach_forbidden`), and does not share the active Cluster TLD (`cluster.tld_conflict`)
+  %%> - every affected Route keeps a valid domain, scope and target; one refusal leaves every Route in place; an active public Route that the change would move is refused (`route.reconciliation_required`)
+  %%> - no other Cluster change runs; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
+  %%> Stored:
+  %%> - the Node stays a member with a pending detach, which lasts until a run succeeds; a pending replacement is stored for each domain change and the old placement for each scope change
+  alt Cluster is active, or an earlier detach is unfinished
+    GW->>SW: Start run, full intent<br/>operation-cluster-node-remove
+    GW-->>CLI: 202 Accepted<br/>task ID
+    opt Routes change
+      SW->>N: Reconcile the Routes<br/>child route-reconcile
+      %%> What it does:
+      %%> - returns the Node's Routes to Node scope, with generated domains on the Node TLD; custom proxy Routes keep their Node scope; the cutover is inside the child
+      %%> - the child moves the Routes' own DNS records and removes the Router's LAN rules to the workload; the steps below change only the per-requester answers and the member's LAN rules
+    end
+    SW->>V: Select the Node in DNS<br/>records + catalog, then reload
+    %%> What it does:
+    %%> - private DNS answers the Node's names with the Node instead of the Router
+    SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent
+    %%> Why last:
+    %%> - the Node keeps its LAN path to the Router until its Routes and DNS have moved
+    %%> Why it always runs:
+    %%> - it removes only what the stored state does not need, so after a failure before the cutover it removes nothing the member uses
+    alt every step succeeds
+      SW-->>GW: Run succeeded<br/>terminal event
+      Note over GW: End the membership<br/>Routes cut over
+      %%> When:
+      %%> - at the cutover when Routes change, and when the run succeeds when none do
+      %%> Result:
+      %%> - the Node leaves the Cluster, and the Gateway deletes its `router` assignment that never became active in the same transaction; the pending detach ends
+    else a step fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      Note over GW: Read the failed step<br/>cutover or not
+      %%> Result before the cutover:
+      %%> - the Node stays a member and every Route keeps its domain and scope
+      %%> Result after the cutover:
+      %%> - the Node has left and the pending detach stays; a rerun for the same Cluster finishes the withdrawal, the DNS selection and the prune
+      %%> Retry:
+      %%> - run the same command again; every step runs again and skips what already matches
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
+  else Cluster is inactive, nothing unfinished
+    GW-->>CLI: 200 OK<br/>Node detached
+    %%> Result:
+    %%> - the membership ends at once and a `router` assignment that never became active is deleted; no Node is contacted and no traffic changes
+  end
