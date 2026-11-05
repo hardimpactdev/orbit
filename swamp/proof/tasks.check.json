@@ -80,16 +80,16 @@
       "budget_seconds": 30
     },
     {
-      "name": "Snapshot the workspace",
-      "job": "check",
-      "step": "Snapshot the workspace",
-      "budget_seconds": 20
-    },
-    {
       "name": "Run the Project check",
       "job": "check",
       "step": "Run the Project check",
       "budget_seconds": 30
+    },
+    {
+      "name": "Snapshot the workspace",
+      "job": "check",
+      "step": "Snapshot the workspace",
+      "budget_seconds": 20
     },
     {
       "name": "Run each deliverable",

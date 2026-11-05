@@ -78,22 +78,6 @@ jobs:
     - step: Build every argv
       condition:
         type: succeeded
-  - name: Snapshot the workspace
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-check-snapshot-before
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        run_id: ${{ run.id }}
-    dependsOn:
-    - step: Run setup in order
-      condition:
-        type: succeeded
   - name: Run the Project check
     labels: {role: swamp}
     task:
@@ -109,7 +93,23 @@ jobs:
         prepared: '${{ steps["Build every argv"].outputs.prepare }}'
         setup: '${{ steps["Run setup in order"].outputs.setup_result }}'
     dependsOn:
-    - step: Snapshot the workspace
+    - step: Run setup in order
+      condition:
+        type: succeeded
+  - name: Snapshot the workspace
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-check-snapshot-before
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+    dependsOn:
+    - step: Run the Project check
       condition:
         type: succeeded
   - name: Run each deliverable
@@ -129,7 +129,7 @@ jobs:
         project: '${{ "Run the Project check" in steps && "outputs" in steps["Run the Project check"] && "project" in steps["Run the Project check"].outputs ? steps["Run the Project check"].outputs.project : {"exitCode": 0} }}'
         setup: '${{ steps["Run setup in order"].outputs.setup_result }}'
     dependsOn:
-    - step: Run the Project check
+    - step: Snapshot the workspace
       condition:
         type: succeeded
   - name: Snapshot the checked tree
