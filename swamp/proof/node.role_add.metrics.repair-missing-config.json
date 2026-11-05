@@ -1,7 +1,0 @@
-{
-  "kind": "node.role_add.metrics.repair-missing-config",
-  "defaults": "node-role-add-defaults.json",
-  "request": {"method": "POST", "path": "nodes/${node.metrics}/roles", "body": {"role": "metrics", "converge_existing": true}},
-  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "metrics"],
-  "before_node": {"metrics": [["rm", "/etc/orbit/metrics/prometheus.yml"]]}
-}
