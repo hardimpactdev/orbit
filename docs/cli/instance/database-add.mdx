@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:database:add"
 sidebarTitle: "instance:database:add"
-description: "Add a registered Database connection on an Instance and write prefixed keys into its stored environment configuration."
+description: "Add a registered Database connection on an Instance and write its prefixed keys into the Instance's stored environment configuration."
 ---
 
 ```bash
@@ -10,20 +10,47 @@ orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--netw
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `slug` | yes | Database connection slug from `database:list`. |
+| `slug` | yes | Slug of a registered Database connection, as `database:list` shows it. A terminal asks for it when it is omitted. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
-| `--prefix=PREFIX` | `DB` | Uppercase key prefix that starts with a letter, at most 32 characters. |
-| `--replace` | off | Allow the attachment to change or remove existing stored connection keys. Without it, a conflicting add returns `database.environment_conflict` and changes nothing. |
-| `--network=NETWORK` | `wireguard` | `lan` selects a managed server's LAN endpoint; both Nodes must be active with an IPv4 LAN address. Otherwise use the stored host. |
-
-For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. By default the Gateway writes the connection's stored host and port. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) is stored on this attachment and leaves other consumers on WireGuard.
+| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. A terminal asks for it when it is omitted. |
+| `--prefix=PREFIX` | `DB` | Uppercase key prefix: letters, digits and underscore, starting with a letter, at most 32 characters. |
+| `--network=NETWORK` | `wireguard` | `wireguard` writes the connection's stored host. `lan` writes the managed server's LAN address and needs a managed server. |
+| `--replace` | off | Allow the add to change or remove stored keys that already exist. Without it, a conflicting add changes nothing and returns `database.environment_conflict`. |
+| `--json` | off | Print the result as JSON. |
 
 ```bash
 orbit instance:database:add app --instance=12
-orbit instance:database:add reporting --instance=shop.example.test --prefix=REPORTING
+orbit instance:database:add reporting --instance=shop.example.test --prefix=REPORTING --network=lan
 ```
 
-Add changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` to install it in the workload `.env`.
+In a terminal, an omitted slug is chosen from the registered connections, and an omitted Instance from an interactive list. A noninteractive or `--json` call without them is refused with `database.slug_required` or `database.instance_required`, and sends no request.
+
+The command stores the connection's settings under the prefix, for example `DB_HOST` for the default prefix. It prints the host and port and never the database name, username or password. For mysql and pgsql it writes `<PREFIX>_CONNECTION`, `_HOST`, `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD`. For redis it writes the connection, host and port, and the database, username and password when they are stored. For sqlite it writes the connection and the absolute file path, and the username and password when they are stored. Other keys of the prefix are removed, for example the host when a sqlite connection replaces a mysql one. See [Add a connection on an Instance](/reference/database-connections#add-a-connection-on-an-instance).
+
+The add changes the Instance's stored configuration and nothing on a Node. It starts no task and returns at once. Run `orbit env:sync --instance=SELECTOR` to write the keys to the workload `.env`. The caller needs an access grant to the Instance's Node.
+
+An add that would change or remove a key that is already stored is refused with `database.environment_conflict` unless you pass `--replace`; nothing is written. An add that changes nothing is skipped: it succeeds with `Skipped — nothing to change (database.attachment_unchanged)` and `Changed: false`. A change of the network alone counts as a change. A sqlite connection can be added only to an Instance on the connection's Node (`database.node_mismatch`). `--network=lan` needs the managed server's Node and the Instance's Node both active with an IPv4 LAN address, and a connection on a managed server, so it is refused for sqlite and external connections (`database.lan_unavailable`). To switch back, add the connection again with `--network=wireguard --replace`; the host key changes, so `--replace` is required. See [Choose LAN for an Instance](/reference/database-connections#choose-lan-for-an-instance).
+
+The Instance must be active, and its placement and Route must be usable (`env.owner_unavailable`). An Instance without a recorded source profile is refused with `instance.source_profile_missing`, and a stored configuration that would be invalid with the new keys, for example more keys than the limit, with `env.configuration_invalid`.
+
+The command prints a detail titled `Database connection [<slug>] added to Instance [<id>].` with Instance ID, Slug, Prefix, Keys (the key names written), Host and Port (`—` for sqlite), Operation (`attach`), Changed, Stored keys (the number of keys the Instance holds afterwards), `Workload file: unchanged` and the request ID. With `--json`, stdout holds `instance_id`, `slug`, `prefix`, `keys`, `host`, `port`, `operation`, `changed`, `key_count` and `request_id`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `database.slug_required` | The slug is missing in a call that cannot prompt. |
+| `database.slug_invalid` | The slug is not a valid connection slug. |
+| `database.instance_required` | The Instance is missing in a call that cannot prompt. |
+| `database.prefix_invalid` | The prefix is not an uppercase name of at most 32 characters that starts with a letter. |
+| `validation.failed` | `--network` is not `wireguard` or `lan`. |
+| `http.404` | The Instance or the connection is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
+| `env.owner_unavailable` | The Instance is not active, or its placement or Route is not usable. |
+| `instance.source_profile_missing` | The Instance has no recorded source profile. |
+| `env.configuration_invalid` | The stored configuration with the new keys would be invalid. |
+| `database.node_mismatch` | A sqlite connection is not on the Instance's Node. |
+| `database.environment_conflict` | The add would change stored keys and `--replace` is not set. |
+| `database.lan_unavailable` | `--network=lan` is selected but the connection is not on a managed server, or a Node is not active or has no IPv4 LAN address. |
