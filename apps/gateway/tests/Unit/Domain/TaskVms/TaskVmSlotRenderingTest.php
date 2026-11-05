@@ -36,14 +36,18 @@ it('gives each slot the same static address and MAC every time, from the end of 
 
 it('renders the identity tree without a key or a secret, and the revision follows the rendered text', function (): void {
     $peer = ['config' => "[Interface]\nAddress = 10.44.0.130/24\n", 'dns_marker' => "orbit\n10.44.0.1\n"];
+    $pi = ['name' => 'orbit-process-42-pi-server.service', 'content' => "[Unit]\nDescription=Orbit process pi-server\n"];
     $agent = ['configuration' => "gateway_url = \"https://gateway.orbit\"\ngateway_address = \"10.44.0.2\"\n", 'certificate' => "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n"];
-    $files = TaskVmSlotIdentity::files($peer, 'http://10.44.0.3:8317/', ['gpt-6', 'sonnet-5'], $agent, '10.44.0.130', 3774);
+    $files = TaskVmSlotIdentity::files($peer, 'http://10.44.0.3:8317/', ['gpt-6', 'sonnet-5'], $agent, $pi);
 
-    expect(array_keys($files))->toBe(['etc/wireguard/orbit.conf', 'etc/wireguard/orbit.dns-link', 'etc/orbit/agent/config.toml', 'etc/orbit/agent/ca.pem', 'etc/orbit/pi.env',
+    expect(array_keys($files))->toBe(['etc/wireguard/orbit.conf', 'etc/wireguard/orbit.dns-link', 'etc/orbit/agent/config.toml', 'etc/orbit/agent/ca.pem', 'etc/systemd/system/orbit-process-42-pi-server.service',
+        'etc/systemd/system/orbit-process-42-pi-server.service.d/10-slot.conf', 'etc/systemd/system/orbit-slot.target.d/10-pi.conf',
         'etc/cloud/cloud.cfg.d/99-orbit-slot.cfg', 'home/orbit/.pi/agent/models.json']);
     expect($files['etc/orbit/agent/config.toml'])->toBe($agent['configuration']);
     expect($files['etc/orbit/agent/ca.pem'])->toBe($agent['certificate']);
-    expect($files['etc/orbit/pi.env'])->toBe("PI_HOST=10.44.0.130\nPI_PORT=3774\n");
+    expect($files['etc/systemd/system/orbit-process-42-pi-server.service'])->toBe($pi['content']);
+    expect($files['etc/systemd/system/orbit-process-42-pi-server.service.d/10-slot.conf'])->toBe("[Unit]\nAfter=wg-quick@orbit.service\n");
+    expect($files['etc/systemd/system/orbit-slot.target.d/10-pi.conf'])->toBe("[Unit]\nWants=orbit-process-42-pi-server.service\nAfter=orbit-process-42-pi-server.service\n");
     expect($files['etc/cloud/cloud.cfg.d/99-orbit-slot.cfg'])->toBe("ssh_deletekeys: false\n");
     $models = json_decode($files['home/orbit/.pi/agent/models.json'], true, flags: JSON_THROW_ON_ERROR);
     expect($models['providers']['orbit-task-vm']['apiKey'])->toBe(TaskVmSlotIdentity::ModelKeyMark);
@@ -55,8 +59,8 @@ it('renders the identity tree without a key or a secret, and the revision follow
     expect(TaskVmSlotIdentity::revision('beast-tvm-1', array_reverse($files, true)))->toBe($revision);
     expect(TaskVmSlotIdentity::revision('beast-tvm-2', $files))->not->toBe($revision);
     expect(TaskVmSlotIdentity::revision('beast-tvm-1', [...$files, 'etc/wireguard/orbit.dns-link' => "orbit\n10.44.0.9\n"]))->not->toBe($revision);
-    // A new Gateway address, CA or Pi port changes the revision, so a claim finds a stale volume.
-    expect(TaskVmSlotIdentity::revision('beast-tvm-1', [...$files, 'etc/orbit/pi.env' => "PI_HOST=10.44.0.130\nPI_PORT=3775\n"]))->not->toBe($revision);
+    // A new Gateway address, CA or Pi unit changes the revision, so a claim finds a stale volume.
+    expect(TaskVmSlotIdentity::revision('beast-tvm-1', [...$files, 'etc/systemd/system/orbit-process-42-pi-server.service' => "[Unit]\nDescription=other\n"]))->not->toBe($revision);
     expect(TaskVmSlotIdentity::revision('beast-tvm-1', [...$files, 'etc/orbit/agent/ca.pem' => 'other']))->not->toBe($revision);
 })->group('slots');
 

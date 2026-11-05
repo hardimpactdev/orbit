@@ -327,13 +327,18 @@ it('renders the full public intent of an enrolment and sends only vault names fo
     $vm = app(TaskVmSlotEnrollIntent::class)->reserve($host, 1);
 
     $input = app(TaskVmSlotEnrollIntent::class)->capture($vm);
+    $piId = Process::query()->where('owner_type', Node::class)->where('owner_id', $vm->node_id)->where('name', 'pi-server')->sole()->id;
 
     expect($input)->toMatchArray(['task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $host->id, 'slot' => 1, 'name' => 'beast-tvm-1',
         'bridge_address' => '10.251.77.254', 'gateway_node_id' => $gateway->id, 'model_router_node_id' => 3, 'model_origin' => 'http://10.44.0.3:8317']);
     expect($input['identity'])->toMatchArray(['project' => 'orbit-tasks', 'pool' => 'orbit-tasks', 'volume' => 'beast-tvm-1-identity', 'model_key_mark' => '@MODEL_KEY@']);
-    expect(array_keys($input['identity']['files']))->toBe(['etc/wireguard/orbit.conf', 'etc/wireguard/orbit.dns-link', 'etc/orbit/agent/config.toml', 'etc/orbit/agent/ca.pem', 'etc/orbit/pi.env',
+    expect(array_keys($input['identity']['files']))->toBe(['etc/wireguard/orbit.conf', 'etc/wireguard/orbit.dns-link', 'etc/orbit/agent/config.toml', 'etc/orbit/agent/ca.pem', 'etc/systemd/system/orbit-process-'.$piId.'-pi-server.service',
+        'etc/systemd/system/orbit-process-'.$piId.'-pi-server.service.d/10-slot.conf', 'etc/systemd/system/orbit-slot.target.d/10-pi.conf',
         'etc/cloud/cloud.cfg.d/99-orbit-slot.cfg', 'home/orbit/.pi/agent/models.json']);
-    expect($input['identity']['files']['etc/orbit/pi.env'])->toBe('PI_HOST='.$vm->wireguard_ip."\nPI_PORT=3774\n");
+    // The Pi unit is the Process unit the Gateway renders, under the name it reads in logs and facts, and the target pulls it in.
+    $unit = $input['identity']['files']['etc/systemd/system/orbit-process-'.$piId.'-pi-server.service'];
+    expect($unit)->toContain('--host='.$vm->wireguard_ip)->toContain('--port=3774')->toContain('X-Orbit-Process-ID='.$piId);
+    expect($input['identity']['files']['etc/systemd/system/orbit-slot.target.d/10-pi.conf'])->toContain('Wants=orbit-process-'.$piId.'-pi-server.service');
     expect($input['identity']['files']['etc/orbit/agent/config.toml'])->toContain('gateway_address = "10.44.0.2"');
     expect($input['identity']['files']['etc/orbit/agent/ca.pem'])->toContain('root-fixture');
     expect($input['identity']['files']['etc/wireguard/orbit.conf'])->toContain('PostUp = wg set %i private-key /etc/wireguard/orbit.key');

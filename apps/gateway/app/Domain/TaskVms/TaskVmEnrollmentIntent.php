@@ -162,6 +162,19 @@ final readonly class TaskVmEnrollmentIntent
         return new ProcessTarget(node: $node, user: 'orbit', checkoutPath: '/home/orbit');
     }
 
+    /**
+     * The unit of the VM's `pi-server` Process under the name the Gateway reads in observer facts and logs.
+     *
+     * @return array{name:string,content:string}
+     */
+    public function unit(TaskVm $vm): array
+    {
+        $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'The runtime has no admitted Node.');
+        $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
+
+        return ['name' => $this->systemd->unitName($process), 'content' => $this->systemd->render($process, $this->processTarget($node))];
+    }
+
     /** @return array{runtime:string,content:string,environment:string} Private material for the shared Process lower action. */
     public function installation(TaskVm $vm): array
     {

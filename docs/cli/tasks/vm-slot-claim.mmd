@@ -60,8 +60,8 @@ sequenceDiagram
   %%> - the observer and Pi binaries match their pinned digests
   %%> - the observer answers, and Pi answers its capabilities probe
   %%> Why:
-  %%> - the identity unit installs the identity before ssh, WireGuard, the observer and Pi start; the baked units start from it, with no per-VM write
-  %%> - the target is ordered after the identity unit, WireGuard, the observer and Pi, so it is active only when WireGuard, the observer and Pi have started
+  %%> - the identity unit installs the identity before ssh, WireGuard and the observer start, then reloads systemd and starts the target again; the target starts WireGuard, the observer and the Pi unit of the tree, with no per-VM write
+  %%> - the target is ordered after WireGuard, the observer and Pi, so it is active only when all three have started
   %%> - the Incus agent answers about 4 s earlier, so it is not the signal
   %%> - there is no repair: the task image is refreshed after every release, so a digest that differs fails the step
   VM-->>GW: First host report<br/>orbit-agent · host fact

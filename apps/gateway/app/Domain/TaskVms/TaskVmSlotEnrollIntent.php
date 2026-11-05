@@ -94,7 +94,7 @@ final readonly class TaskVmSlotEnrollIntent
         $hub = Node::query()->findOrFail(ValidatedData::integer($network['hub_id']));
         $files = TaskVmSlotIdentity::files(NodeNetworkConvergeInput::peerFiles(ValidatedData::object($network['peer'])),
             ValidatedData::string($model['intent']['model_origin']), $this->settings->piModels,
-            $this->agents->configurationForRoot($guest, null), ValidatedData::string($vm->wireguard_ip), $this->pi->port());
+            $this->agents->configurationForRoot($guest, null), $this->enrollment->unit($vm));
         $image = $this->image($host, $location);
         $identity = $this->ssh->identity();
 

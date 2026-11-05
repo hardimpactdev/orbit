@@ -1079,7 +1079,7 @@ jobs:
           Description=Install the Orbit slot identity
           DefaultDependencies=no
           After=local-fs.target
-          Before=sysinit.target sshd-keygen.service ssh.service wg-quick@orbit.service orbit-agent.service pi-server.service shutdown.target
+          Before=sysinit.target sshd-keygen.service ssh.service wg-quick@orbit.service orbit-agent.service shutdown.target
           Conflicts=shutdown.target
 
           [Service]
@@ -1098,11 +1098,13 @@ jobs:
           ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/cloud/cloud.cfg.d /run/orbit-slot/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg
           ExecStart=/usr/bin/install -m 0600 -o root -g root -t /etc/orbit/agent /run/orbit-slot/etc/orbit/agent/secret
           ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/orbit/agent /run/orbit-slot/etc/orbit/agent/config.toml /run/orbit-slot/etc/orbit/agent/ca.pem
-          ExecStart=/usr/bin/install -m 0644 -o root -g root -t /etc/orbit /run/orbit-slot/etc/orbit/pi.env
           ExecStart=/usr/sbin/groupadd -f --system orbit-env
           ExecStart=/usr/bin/install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent
           ExecStart=/usr/bin/install -m 0600 -o orbit -g orbit -t /home/orbit/.pi/agent /run/orbit-slot/home/orbit/.pi/agent/orbit-token /run/orbit-slot/home/orbit/.pi/agent/models.json
+          ExecStart=/usr/bin/cp -rT --preserve=mode /run/orbit-slot/etc/systemd/system /etc/systemd/system
           ExecStart=/usr/bin/umount /run/orbit-slot
+          ExecStart=/usr/bin/systemctl daemon-reload
+          ExecStart=/usr/bin/systemctl --no-block start orbit-slot.target
 
           [Install]
           WantedBy=sysinit.target
@@ -1183,46 +1185,10 @@ jobs:
           ConditionPathExists=/etc/orbit/agent/secret
           ConditionPathExists=/etc/orbit/agent/config.toml
           ConditionPathExists=/etc/orbit/agent/ca.pem
-  - name: slot-units-pi
-    labels: {role: swamp}
-    dependsOn:
-    - {step: slot-units-agent-dropin, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --create-dirs, --mode, '0644', --uid, '0', --gid, '0', --,
-          '-', '${{ inputs.intent.name + "/etc/systemd/system/pi-server.service" }}']
-        timeoutSec: 90
-        stdin: |
-          [Unit]
-          Description=Orbit Pi server
-          After=network-online.target wg-quick@orbit.service
-          Wants=network-online.target
-          ConditionPathExists=/etc/orbit/pi.env
-          ConditionPathExists=/home/orbit/.pi/agent/orbit-token
-
-          [Service]
-          Type=simple
-          User=orbit
-          WorkingDirectory=/home/orbit
-          Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
-          Environment=NODE_USE_SYSTEM_CA=1
-          EnvironmentFile=/etc/orbit/pi.env
-          ExecStart=/home/orbit/.local/bin/pi-server serve --host=${PI_HOST} --port=${PI_PORT} --token-file=/home/orbit/.pi/agent/orbit-token --allow-provider=orbit-task-vm
-          Restart=always
-          RestartSec=2
-
-          [Install]
-          WantedBy=multi-user.target
   - name: slot-units-wireguard-dropin
     labels: {role: swamp}
     dependsOn:
-    - {step: slot-units-pi, condition: {type: succeeded}}
+    - {step: slot-units-agent-dropin, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1255,10 +1221,10 @@ jobs:
         stdin: |
           [Unit]
           Description=Orbit task VM slot services
-          After=orbit-slot-identity.service wg-quick@orbit.service orbit-agent.service pi-server.service
+          After=orbit-slot-identity.service wg-quick@orbit.service orbit-agent.service
           Before=multi-user.target
-          Wants=wg-quick@orbit.service orbit-agent.service pi-server.service
-          ConditionPathExists=/etc/orbit/pi.env
+          Wants=wg-quick@orbit.service orbit-agent.service
+          ConditionPathExists=/etc/systemd/system/orbit-slot.target.d/10-pi.conf
 
           [Install]
           WantedBy=multi-user.target
@@ -1672,7 +1638,7 @@ jobs:
       inputs:
         hosts: name:target
         argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /bin/sh, -c, 'systemctl is-enabled --quiet orbit-slot.target && ! systemctl is-active --quiet orbit-slot.target orbit-agent.service pi-server.service wg-quick@orbit.service']
+          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /bin/sh, -c, 'systemctl is-enabled --quiet orbit-slot.target && ! systemctl is-active --quiet orbit-slot.target orbit-agent.service wg-quick@orbit.service']
         timeoutSec: 90
   - name: seed
     labels: {role: swamp}

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 /**
- * The public text of a slot's identity tree: the WireGuard config, the observer configuration and CA, the Pi address
- * file and `models.json`. The identity phase adds the files that hold a key or a secret (the WireGuard and SSH host
+ * The public text of a slot's identity tree: the WireGuard config, the observer configuration and CA, the Pi unit and
+ * `models.json`. The identity phase adds the files that hold a key or a secret (the WireGuard and SSH host
  * keys, the observer secret, the Pi token and the model key in `models.json`) on the host, so none of them passes
  * through the Gateway or Swamp. The tree and its `REVISION` are defined in
  * docs/reference/compute-drivers.md (What a slot holds).
@@ -20,10 +20,10 @@ final readonly class TaskVmSlotIdentity
      * @param  array{config:string,dns_marker:string}  $peerFiles  from NodeNetworkConvergeInput::peerFiles
      * @param  list<string>  $models
      * @param  array{configuration:string,certificate:string}  $agent  from NodeAgentSshExecutor::configurationForRoot
-     * @param  string  $piHost  the slot's WireGuard address, where Pi listens
+     * @param  array{name:string,content:string}  $piUnit  the slot's `pi-server` Process unit, from TaskVmEnrollmentIntent::unit
      * @return array<string,string> tree path => text; the key marks stay in place
      */
-    public static function files(array $peerFiles, string $origin, array $models, array $agent, string $piHost, int $piPort): array
+    public static function files(array $peerFiles, string $origin, array $models, array $agent, array $piUnit): array
     {
         return [
             'etc/wireguard/orbit.conf' => $peerFiles['config'],
@@ -31,8 +31,12 @@ final readonly class TaskVmSlotIdentity
             // The observer reads both; they are the same for every slot, so a change needs a new revision, not a new image.
             'etc/orbit/agent/config.toml' => $agent['configuration'],
             'etc/orbit/agent/ca.pem' => $agent['certificate'],
-            // The baked pi-server.service takes its address and port from this file, so the image holds neither.
-            'etc/orbit/pi.env' => "PI_HOST={$piHost}\nPI_PORT={$piPort}\n",
+            // Pi runs under the unit name the Gateway records, because `journalctl --unit` does not follow an alias. The unit
+            // and its ordering come with the tree, as the image cannot know the Process id. The identity unit installs them,
+            // reloads systemd and starts the baked orbit-slot.target again, which then pulls the Pi unit in.
+            "etc/systemd/system/{$piUnit['name']}" => $piUnit['content'],
+            "etc/systemd/system/{$piUnit['name']}.d/10-slot.conf" => "[Unit]\nAfter=wg-quick@orbit.service\n",
+            'etc/systemd/system/orbit-slot.target.d/10-pi.conf' => "[Unit]\nWants={$piUnit['name']}\nAfter={$piUnit['name']}\n",
             // Without it cloud-init deletes the slot's SSH host keys on the first boot of every clone.
             'etc/cloud/cloud.cfg.d/99-orbit-slot.cfg' => "ssh_deletekeys: false\n",
             'home/orbit/.pi/agent/models.json' => json_encode(['providers' => ['orbit-task-vm' => [

@@ -33,7 +33,6 @@ Deno.test("the unit orders before ssh and the key generator, never before ssh.so
       "ssh.service",
       "wg-quick@orbit.service",
       "orbit-agent.service",
-      "pi-server.service",
     ]
   ) assert(before.includes(name), `Before= lacks ${name}`);
   // Before=ssh.socket with default dependencies is an ordering cycle that deletes the socket job.
@@ -68,7 +67,6 @@ Deno.test("the unit installs the slot tree with owners and modes and shows no co
       "/etc/orbit/agent/secret",
       "/etc/orbit/agent/config.toml",
       "/etc/orbit/agent/ca.pem",
-      "/etc/orbit/pi.env",
       "/home/orbit/.pi/agent/orbit-token",
       "/home/orbit/.pi/agent/models.json",
     ]
