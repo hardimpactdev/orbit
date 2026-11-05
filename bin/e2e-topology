@@ -28,7 +28,7 @@ usage: bin/e2e-topology <action> ISSUE [...]
                                   probe, rollback, restore or inspect (no arbitrary privileged command)
   verify  ISSUE                   verify the topology
   status  ISSUE                   report the topology from <worktree>/.e2e/
-  release ISSUE                   release the topology
+  release ISSUE [--scoped]        release the topology; --scoped skips the host-wide orphan-network sweep
 
 Every action except acquire finds the issue among registered Git worktrees
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.

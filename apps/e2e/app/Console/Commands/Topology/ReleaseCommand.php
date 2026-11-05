@@ -11,7 +11,8 @@ use Throwable;
 final class ReleaseCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:release {issue} '.self::WORKTREE_OPTION.' {--json}';
+    protected $signature = 'topology:release {issue} '.self::WORKTREE_OPTION
+        .' {--scoped : Release only the recorded attempt, without the host-wide orphan-network sweep} {--json}';
 
     #[\Override]
     protected $description = 'Release the topology and sweep orphaned networks';
@@ -20,7 +21,7 @@ final class ReleaseCommand extends E2ECommand
     {
         try {
             $request = $this->request();
-            $result = $releaser->release($request);
+            $result = $releaser->release($request, sweepOrphans: ! $this->option('scoped'));
             $this->log($request, 'attempt='.$result['attempt_id'].' ok');
             $this->outputJson($result, 'released '.$result['attempt_id']);
 

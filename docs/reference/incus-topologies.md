@@ -219,7 +219,7 @@ Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSU
 | `verify ISSUE` | Verifies readiness and records the report |
 | `status ISSUE` | Reports the state files without touching Incus: `state` is `absent` or `acquired` |
 | `web ISSUE` | Runs the web development server in the operator, publishes it on the host's loopback, and streams output until stopped; see [Web session](#web-session) |
-| `release ISSUE` | Stops its web session, removes its loopback publication, removes the topology, and verifies that it is gone |
+| `release ISSUE [--scoped]` | Stops its web session, removes its loopback publication, removes the topology, and verifies that it is gone; `--scoped` skips the host-wide orphan-network sweep |
 
 `NODE` is a Node key of the topology: `gateway`, `operator`, or a declared workload Node. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
 
@@ -300,7 +300,7 @@ State directories and operation locks allow access only to their owner and ACL-n
 
 ### Order
 
-`release` checks every recorded guest against the attempt's ownership metadata. It stops the owned web session's dev-server process and removes its loopback publication. It force-stops any running recorded guests, deletes them, and verifies that every recorded guest is absent. It checks the network's ownership just before deleting it.
+`release` inventories every recorded guest and the recorded network, then checks their ownership metadata before stopping or deleting anything. Missing or conflicting ownership metadata refuses the whole release and keeps the lease. It stops the owned web session's dev-server process and removes its loopback publication. It force-stops any running recorded guests, deletes them, and verifies that every recorded guest is absent. It checks the network's ownership again just before deleting it.
 
 Only after web-session cleanup succeeds, every recorded guest is absent, and the network is removed does release drop the lease and topology record. It never drops topology state while a recorded guest remains. The output lists `released`, `already_absent`, and `networks_reaped`.
 
@@ -310,7 +310,9 @@ If an ownership mismatch or cleanup failure occurs, release stops and keeps ever
 
 ### Orphan networks
 
-Every network named `oe-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep. The sweep selects networks by that name prefix, not by ownership metadata. It deletes each one in the configured project whose `used_by` list is empty. It holds the `topology-create` lock, so it never deletes a network that a starting acquisition just created.
+Every network named `oe-*` belongs to the harness and never outlives its topology. By default, release ends with an orphan sweep. The sweep selects networks by that name prefix, not by ownership metadata. It deletes each one in the configured project whose `used_by` list is empty. It holds the `topology-create` lock, so it never deletes a network that a starting acquisition just created.
+
+Use `release ISSUE --scoped` when a verification workflow owns only that attempt. It releases only the recorded guests and network; it does not sweep other unused harness networks or change their forwarding rules. Its `networks_reaped` result is empty. `acquire --replace` still uses the default sweep, so a scoped workflow must call scoped release and acquisition as separate native steps.
 
 ### After a merge
 

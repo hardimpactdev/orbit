@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /*
  * Minimal proof Gateway driver, run in apps/gateway of the staged commit.
- *   seed     stdin {gateway, gateway_agent_secret_hash, operator, target}: fixture Node records and access, and the
+ *   seed     stdin {gateway, gateway_agent_secret_hash, operator, targets, subnet, wireguard?}: fixture Node records and access, and the
  *            swamp.orbit Route an operator records before the first swamp role (version 17).
  *   known-hosts the worker known-hosts publication, once swamp.orbit answers through Caddy (version 17).
  *   agent    stdin {node}: the Node agent's configuration, certificate and unit as node:converge renders them.
@@ -15,7 +15,7 @@ declare(strict_types=1);
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
  *   caddyfile stdin {node}: the Node's complete Caddyfile from the Gateway's own Caddy build renderer.
- *   fixture  stdin {roles: {node_id: [role]}, replace_roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
+ *   fixture  stdin {roles: {node_id: [role]}, replace_roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, wireguard_members: {node_id: {ip, public_key}}, vpn_subnet?, vpn_endpoint?, projects: [attributes],
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
  *            instances: [attributes], deployments: [attributes], task_vms: [attributes], operations: [attributes],
  *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}],
@@ -68,13 +68,13 @@ $app = require getcwd().'/bootstrap/app.php';
 $app->make(ConsoleKernel::class)->bootstrap();
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 
-function node(string $name, string $address, string $hostKey, array $roles = [], ?int $id = null, array $settings = []): Node
+function node(string $name, string $address, string $hostKey, array $roles = [], ?int $id = null, array $settings = [], ?string $wireguardIp = null, ?string $wireguardKey = null): Node
 {
     $bytes = base64_decode($hostKey, true);
     $node = (new Node)->forceFill([...($id === null ? [] : ['id' => $id]),
         'name' => $name, 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit',
-        'public_ssh_host' => $address, 'public_ssh_port' => 22, 'wireguard_ip' => $address,
-        'wireguard_public_key' => base64_encode(random_bytes(32)), 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $hostKey,
+        'public_ssh_host' => $address, 'public_ssh_port' => 22, 'wireguard_ip' => $wireguardIp ?? $address,
+        'wireguard_public_key' => $wireguardKey ?? base64_encode(random_bytes(32)), 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $hostKey,
         'ssh_host_fingerprint' => 'SHA256:'.rtrim(base64_encode(hash('sha256', $bytes, true)), '='), 'status' => 'active',
         ...($settings === [] ? [] : ['settings' => $settings]),
     ]);
@@ -86,6 +86,31 @@ function node(string $name, string $address, string $hostKey, array $roles = [],
     return $node;
 }
 
+// Non-secret reset baseline: real observer facts and the records cases may mutate.
+if ($argv[1] === 'proof-state') {
+    $facts = \App\Models\NodeFact::query()->orderBy('node_id')->orderBy('kind')->get()
+        ->map(static fn (\App\Models\NodeFact $fact): array => [
+            'node_id' => $fact->node_id, 'kind' => $fact->kind->value,
+            'received_at' => $fact->received_at->toIso8601String(), 'digest' => $fact->digest,
+            'enabled' => $fact->kind->value === 'ufw' ? ($fact->data['enabled'] ?? false) : null,
+        ])->all();
+    $rules = Node::query()->where('name', '!=', 'operator')->get()->mapWithKeys(
+        static fn (Node $node): array => [$node->name => app(\App\Domain\Firewall\FirewallInspectionInput::class)->expected($node)],
+    )->all();
+    $catalog = app(\App\Infrastructure\Firewall\NodeFirewallRuleCatalog::class);
+    $commands = [];
+    foreach (Node::query()->where('name', '!=', 'operator')->get() as $node) {
+        $managed = $catalog->desiredBaseline($node);
+        foreach ($node->roles()->get() as $assignment) {
+            array_push($managed, ...$catalog->forRole($node, $assignment->role));
+        }
+        $commands[$node->name] = array_map(static fn ($rule): array => $rule->arguments, $managed);
+    }
+    echo json_encode(['facts' => $facts, 'expected_firewall' => $rules, 'baseline_commands' => $commands,
+        'firewall_records' => \App\Models\FirewallRule::query()->orderBy('id')->get()->toArray()]), PHP_EOL;
+    exit(0);
+}
+
 if ($argv[1] === 'seed') {
     if (Node::query()->exists()) {
         throw new RuntimeException('proof.seed_database_not_empty');
@@ -93,20 +118,26 @@ if ($argv[1] === 'seed') {
     // Only the targets and this VM are reached over SSH. node() records a well-formed key, which the seed then clears for the operator.
     $unused = base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).random_bytes(32));
     // Records first, then one known-hosts publication with the complete pin snapshot, as after enrollment.
+    // With `wireguard`, every Node is a member of the topology's own WireGuard network (hub on the Gateway): the Gateway
+    // knows a caller by its WireGuard address and key, and SSH stays on the Incus address. The operator is the outer VM,
+    // a roleless caller-only member with no SSH identity (B2). Without it, the legacy bridge addresses stand in.
+    $wireguard = $input['wireguard'] ?? null;
+    $member = static fn (string $key): array => $wireguard === null ? [null, null]
+        : [$wireguard['nodes'][$key]['ip'], $wireguard['nodes'][$key]['public_key']];
+    // Records first, then one known-hosts publication with the complete pin snapshot, as after enrollment.
     [$gateway, $operator, $targets] = Node::withoutEvents(fn (): array => [
         // The Gateway hard-codes Node 209 as the Swamp Node; here this VM carries gateway and swamp together (F14).
-        node('gateway', $input['gateway'], $input['gateway_host_key'], ['gateway', 'swamp'], 209),
-        node('operator', $input['operator'], $unused),
+        node('gateway', $input['gateway'], $input['gateway_host_key'], ['gateway', 'swamp'], 209, wireguardIp: $member('gateway')[0], wireguardKey: $member('gateway')[1]),
+        node('operator', $input['operator'], $unused, wireguardIp: $member('operator')[0], wireguardKey: $member('operator')[1]),
         array_map(static fn (array $target): Node => node($target['key'], $target['address'], $target['host_key'],
-            $target['roles'] ?? [], settings: $target['settings'] ?? []), $input['targets']),
+            $target['roles'] ?? [], settings: $target['settings'] ?? [], wireguardIp: $member($target['key'])[0], wireguardKey: $member($target['key'])[1]), $input['targets']),
     ]);
     // The operator is a caller-only peer: an active WireGuard address with access, but no SSH identity, so nothing
     // treats it as a managed Node or reaches it over SSH (version 12).
     $operator->forceFill(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null])->saveQuietly();
     // The verifier of the agent key up.py wrote on each target, as after enrollment.
-    // No WireGuard in this topology: no target is a private DNS peer.
     foreach ($targets as $index => $target) {
-        $target->forceFill(['agent_secret_hash' => $input['targets'][$index]['agent_secret_hash'], 'wireguard_public_key' => null])->saveQuietly();
+        $target->forceFill(['agent_secret_hash' => $input['targets'][$index]['agent_secret_hash'], ...($wireguard === null ? ['wireguard_public_key' => null] : [])])->saveQuietly();
     }
     // This VM runs a second Node agent for Node 209 beside the task VM's own observer, so Doctor reads 209's facts (version 17).
     $gateway->forceFill(['agent_secret_hash' => $input['gateway_agent_secret_hash']])->saveQuietly();
@@ -118,7 +149,7 @@ if ($argv[1] === 'seed') {
     $swamp->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     app(GatewayServingHost::class)->remember($gateway);
     // The private network is this topology's, so Caddy listeners and peer checks use it (version 12).
-    app(VpnSettings::class)->configure(subnet: $input['subnet']);
+    app(VpnSettings::class)->configure(subnet: $input['subnet'], endpoint: $wireguard['endpoint'] ?? null);
     $operator->accessibleNodes()->attach([$gateway->id, ...array_map(static fn (Node $target): int => $target->id, $targets)]);
     $nodes = ['gateway' => $gateway->id, 'operator' => $operator->id];
     foreach ($targets as $target) {
@@ -206,11 +237,15 @@ if ($argv[1] === 'fixture') {
     foreach ($input['operations'] ?? [] as $operation) {
         (new Operation)->forceFill($operation)->save();
     }
+    // A Node's address and key on the topology's WireGuard network, recorded quietly as the seed records them (B2).
+    foreach ($input['wireguard_members'] ?? [] as $id => $member) {
+        Node::query()->findOrFail((int) $id)->forceFill(['wireguard_ip' => $member['ip'], 'wireguard_public_key' => $member['public_key']])->saveQuietly();
+    }
     foreach ($input['wireguard_keys'] ?? [] as $id => $key) {
         Node::query()->findOrFail((int) $id)->update(['wireguard_public_key' => $key]);
     }
     if (isset($input['vpn_subnet'])) {
-        app(VpnSettings::class)->configure(subnet: $input['vpn_subnet']);
+        app(VpnSettings::class)->configure(subnet: $input['vpn_subnet'], endpoint: $input['vpn_endpoint'] ?? null);
     }
     // Attributes a prepared Route needs for a kind, such as a failed Route whose sites stay published.
     foreach ($input['routes'] ?? [] as $route) {

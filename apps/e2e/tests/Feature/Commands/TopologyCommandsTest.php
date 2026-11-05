@@ -135,7 +135,7 @@ describe('topology commands', function () {
             ->and($options(new LogsCommand))->toBe(['worktree', 'since', 'lines', 'record', 'json'])
             ->and($arguments(new KillCommand))->toBe(['issue', 'node', 'name'])
             ->and($options(new SyncCommand))->toBe(['worktree', 'quick', 'json'])
-            ->and($options(new ReleaseCommand))->toBe(['worktree', 'json'])
+            ->and($options(new ReleaseCommand))->toBe(['worktree', 'scoped', 'json'])
             ->and($options(new ShellCommand))->toBe(['worktree', 'json']);
 
         foreach ([new SyncCommand, new VerifyCommand, new StatusCommand, new ReleaseCommand, new WebCommand] as $command) {
@@ -394,6 +394,66 @@ describe('topology commands', function () {
             ->and($incus->networks)->toBe([])
             ->and(commandJson('topology:status', ['issue' => 'TST-12'])['state'])->toBe('absent')
             ->and(file_get_contents($worktree.'/.e2e/log'))->toContain('topology:release attempt='.str_repeat('a', 32).' ok');
+    });
+
+    it('limits scoped release to the recorded attempt and preserves the candidate', function (bool $scoped) {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $topology = commandTopologyFixture('TST-12', $worktree);
+        $incus = commandIncusFixture($topology);
+        $fixtureNetwork = 'oe-fixture';
+        $fixtureConfig = ['config' => [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => 'TST-12',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+        ]];
+        $incus->networks[$fixtureNetwork] = $fixtureConfig;
+        $fixtureGuest = 'orbit-e2e-tst-99-bbbbbbbb-fixture';
+        $incus->instances[$fixtureGuest] = [
+            'type' => 'virtual-machine', 'status' => 'Running',
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.issue' => 'TST-99', 'user.orbit.e2e.attempt' => str_repeat('b', 32)],
+            'devices' => ['root' => ['type' => 'disk', 'pool' => IncusHost::POOL, 'path' => '/']],
+        ];
+        $fixture = $incus->instances[$fixtureGuest];
+        $template = $incus->instances[IncusHost::TEMPLATE];
+        file_put_contents($worktree.'/candidate.txt', 'staged candidate');
+        new Symfony\Component\Process\Process(['git', 'add', 'candidate.txt'], $worktree)->mustRun();
+        file_put_contents($worktree.'/candidate.txt', 'dirty candidate');
+        $git = static fn (array $argv): string => new Symfony\Component\Process\Process(['git', ...$argv], $worktree)->mustRun()->getOutput();
+        $head = $git(['rev-parse', 'HEAD']);
+        $index = trim($git(['rev-parse', '--path-format=absolute', '--git-path', 'index']));
+        $indexBytes = file_get_contents($index);
+        $status = $git(['status', '--porcelain=v1']);
+
+        $result = commandJson('topology:release', ['issue' => 'TST-12', ...($scoped ? ['--scoped' => true] : [])]);
+
+        expect($result['state'])->toBe('released');
+        expect($result['networks_reaped'])->toBe($scoped ? [] : [$fixtureNetwork]);
+        expect($incus->networks)->toBe($scoped ? [$fixtureNetwork => $fixtureConfig] : []);
+        expect($incus->instances)->toBe([IncusHost::TEMPLATE => $template, $fixtureGuest => $fixture]);
+        expect(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())->toBeFalse();
+        expect(file_get_contents($worktree.'/candidate.txt'))->toBe('dirty candidate');
+        expect(file_get_contents($index))->toBe($indexBytes);
+        expect($git(['rev-parse', 'HEAD']))->toBe($head);
+        expect($git(['status', '--porcelain=v1']))->toBe($status);
+        if ($scoped) {
+            expect(array_column($incus->firewall, 'network'))->not->toContain($fixtureNetwork);
+        }
+    })->with(['scoped' => true, 'default sweep' => false]);
+
+    it('reports scoped release failure without deleting guests or forgetting the attempt', function () {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $topology = commandTopologyFixture('TST-12', $worktree);
+        $incus = commandIncusFixture($topology);
+        unset($incus->networks[$topology->network]['config']['user.orbit.e2e.owner']);
+        $instances = $incus->instances;
+
+        $exit = Artisan::call('topology:release', ['issue' => 'TST-12', '--scoped' => true, '--json' => true]);
+
+        expect($exit)->toBe(1);
+        expect(Artisan::output())->toContain('ownership does not match the issue attempt');
+        expect($incus->instances)->toBe($instances);
+        expect(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())->toBeTrue();
+        expect(file_get_contents($worktree.'/.e2e/log'))->toContain('topology:release failed:');
     });
 
     it('prints the released attempt in text and names an absent one', function () {

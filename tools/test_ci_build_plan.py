@@ -74,6 +74,13 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual({'swamp'}, self.selected(paths))
         self.assertFalse(plan.select(paths)['gateway_release'])
 
+    def test_proof_harness_changes_select_the_proof_checks_and_nothing_else_selects_them(self):
+        self.assertEqual({'swamp', 'proof'}, self.selected(['swamp/proof/reset/phases.py']))
+        self.assertEqual({'swamp', 'proof'}, self.selected(['swamp/proof/firewall/cases/allow_fresh_ipv4_tcp.py']))
+        self.assertIn('proof', self.selected(['tools/swamp-proof-guest/up.py']))
+        for paths in (['swamp/workflows/x.yaml'], ['swamp/extensions/example.ts'], ['apps/gateway/app/Thing.php'], ['README.md']):
+            self.assertNotIn('proof', self.selected(paths))
+
     def test_swamp_only_main_commit_is_a_gateway_release_because_the_release_loads_swamp(self):
         paths = ['swamp/workflows/example.yaml']
         self.assertEqual({'swamp', 'docs', 'web'}, self.selected(paths, True))

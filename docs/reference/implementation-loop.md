@@ -93,6 +93,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit and its merge queue run, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
+| Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the reset unit tests, lint the proof programs with `ruff` and validate the `workflow-proof-*.yaml` files with the pinned Swamp runtime |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
 The Swamp Deno test job uses `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
