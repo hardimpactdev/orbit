@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; one parent workflow runs provision, verify, cancel as children; Gateway projects once.
+  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; each selected command gets its own parent run on its own proof VM, all in parallel; each run does provision, verify and cancel as children; Gateway projects each run once.
   %% status: draft
   %% command: proof:run
   %% kind: proof.run
@@ -21,7 +21,8 @@ sequenceDiagram
   Note over GW: Record intent<br/>proof group + full inputs
   %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
   GW-->>CLI: 202 Accepted<br/>task ID
-  GW->>SW: Start one run<br/>operation-proof-run
+  GW->>SW: Start one run per command<br/>operation-proof-run · parallel
+  %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
   SW->>VM: Reset and sync<br/>ready copies · the commit
@@ -52,7 +53,7 @@ sequenceDiagram
   %%> - the Gateway reads the `report` step once, when the run ends, and records the verdicts; no step calls back
   SW->>VM: Destroy the task VM<br/>child workflow · always
   %%> Runs after success or failure, so no proof VM is left behind.
-  alt every case passes
+  alt every case of every command passes
     SW-->>GW: Run succeeded<br/>verdicts + receipt
     Note over GW: Record the result once<br/>PASS
   else a case fails or did not run
