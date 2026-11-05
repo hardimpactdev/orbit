@@ -1,351 +1,93 @@
 ---
 title: "ADR 0223: Run one gate from handoff to merge"
 sidebarTitle: "0223 One gate"
-description: "In progress. The Gateway runs one local gate per handoff with the fast checks only, and the handoff's full test suite runs in CI on the handoff commit. The implementer runs only the affected tests. CI on the pull request merge ref is the only integration gate, so the local main-merge gate goes. One definition of the checks, one cache transport, and one process rule serve CI and the local gate."
+description: "In progress. One local gate per handoff and CI on the merge ref are built. One definition of the checks, check results and evidence, and the close step remain open."
 ---
 
 # ADR 0223: Run one gate from handoff to merge
 
-Between "the implementer says done" and "the pull request merged", a task change passes up to five gates that repeat the same work. This ADR keeps two: one local gate per handoff, which the Gateway runs, and CI `Required checks` on the pull request merge ref. The implementer runs only the affected tests of the projects it changed. The local gate runs the fast checks only; the handoff's full suite runs in CI on the handoff commit. The local main-merge gate, the `project-check` deliverable, the artifact cache worker, and the copied check lists go.
+Between "the implementer says done" and "the pull request merged", a task change used to pass up to five gates that repeat the same work. This ADR keeps two: one local gate per handoff, which the Gateway runs, and CI `Required checks` on the pull request merge ref. The implementer runs only the affected tests of the projects it changed. The local gate runs the fast checks only; the handoff's full suite runs in CI on the handoff commit.
 
 ## Status
 
 In progress.
 
-Principle: [One way, one name](/mission#principles). One local gate, one integration gate, one definition of the checks, one cache transport, and one rule for the process count. It also serves [Lean](/mission#principles): about 17 hours of main-merge gates in five days, and the implementer's duplicate run, are deleted. No principle exception is proposed.
+Parts 1, 2, 3, 5, 6 and 7 are built. Parts 4 and 8 and the close step are open.
 
-Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) owns the resulting rule. An audit of declaration data found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/hardimpactdev/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/hardimpactdev/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
+Principle: [One way, one name](/mission#principles). One local gate, one integration gate, one definition of the checks, one cache transport, and one rule for the process count. It also serves [Lean](/mission#principles). No principle exception is proposed.
 
-Nick amended this decision again on 2026-10-20:
+The decision was amended twice on 2026-10-20:
 
 - A handoff's full test suite runs in sharded GitHub Actions CI on the pushed handoff commit, not in the task VM. [Tasks: Handoff CI](/reference/tasks#handoff-ci) owns the rule.
-- The reason: on 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and TIA selected a median of the whole suite once its selection was correct.
-- It replaces item 3 and the local `composer test:affected` of item 4. Build step 4 deletes the test base instead of building it.
-
-Nick amended this decision a third time on 2026-10-20:
-
 - Orbit runs no test impact analysis (TIA). An implementer runs the tests of the files it touches with stock Pest filters, and CI runs the full suites.
-- The reason: once its selection was sound, TIA selected a median of the whole suite, and recording coverage added about 19% to test time.
-- `composer test:affected`, `bin/tia-cache` and the `@orbit/tia-baseline` setup step are gone. `@orbit/ci-caches` stays, and imports only Pint and PHPStan caches.
-
-Nick approved this decision on 2026-10-18. He left one choice open in item 3, between two test bases. This ADR chose the subtask start commit, from the data below, until the 2026-10-20 amendment removed the local test run.
 
 ## Context
 
-The data comes from the Gateway `task_checks` table: 321 checks from 2026-10-13 to 2026-10-18. A read-only review of the code merged in that week measured it on 2026-10-18.
+Data from the Gateway `task_checks` table, 321 checks from 2026-10-13 to 2026-10-18, showed the problem:
 
-| Stage | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 |
-| --- | --- | --- | --- | --- | --- | --- |
-| Baseline, median | 1058 s | 345 s | 300 s (p90 1675 s) | 120 s (cold: 1253 s) | 62 s | 74 s |
-| Handoff, median | 175 s (n=15) | 1669 s | 902 s | 871 s | 191 s (n=3) | 1466 s |
-| Main-merge gate (`base_merge`), median | – | – | 1135 s | 803 s | 2311 s (n=1 real) | no-op |
-
-- The checks used 85.8 hours of task VM time in five days: handoff 58.5 h, `base_merge` 16.8 h in 69 runs, and baseline 10.5 h.
-- The `base_merge` total excludes two rows, 1773 and 1790, of 5.6 h and 3.5 h. Their gates passed in about 20 minutes, and the rows closed the next morning, so that time was a Gateway stall. The task-lifecycle review counted 22.4 h of `base_merge` with those rows in part; this ADR uses the check-time figure.
-- Gateway `composer test:affected` is the cost driver. Its median over all checks is 812 s.
-- E2E `test:affected` has a median of 161 s. Gateway `composer check` has a median of 24 s.
-- The agents are fast. A subtask reviewer approves in a median of 2.5 minutes and requests changes in 4.6 minutes. A final review takes 7 minutes.
-- PR CI takes a median of 6 minutes, with a p90 of 15 minutes. A task pull request goes from open to merged in a median of 11 minutes.
-- So almost all of the wait is the local gates.
-
-### The same work runs several times
-
-A handoff in a review-and-merge Project passes these steps today:
-
-1. The implementer runs the full gate. `TaskTurnInstructions::implementer` tells it to hand off when "`<check>` passes".
-2. The Gateway runs the same gate on the same tree at handoff.
-3. The subtask reviewer reviews. It does not run the gate.
-4. Before the final review, Orbit merges main and runs the full gate on the merge (`base_merge`).
-5. When that gate fails, `classify_merge_gate` runs the gate again on each merge parent, in a fresh worktree.
-6. Before the push, Orbit merges main again and runs `base_merge` again.
-7. CI `Required checks` runs on `refs/pull/N/merge`, the same merged tree.
-
-Measured cases:
-
-- Tree `8cbe69bd`: the implementer's own gate ran Gateway `test:affected` for 2228 s. Handoff 1853 then ran the same command on the same tree for 2888 s.
-- Tree `3bbd50f0`: 67 s by the implementer, then 85 s in handoff 1870.
-- The `base_merge` gate passes no test base. So `bin/review-check` selects every change since the graph that the baseline imported: all main commits merged in, plus the whole branch.
-- The parent runs copy only `vendor` and `node_modules`. `.orbit-tia/` is ignored by Git, so each parent run records a fresh graph with the full suite. Check 1842 took 2697 s, and check 1786 took 1808 s.
-- The implementer's concurrent full-gate runs caused the OOM on 2026-10-17.
-- #1216 added the `project-check` deliverable reuse (`matches_task_check`, `TaskFinalReview.php:114`, `TaskSettlingFixup.php:122`) only so that this deliverable does not run the gate a third time.
-
-### The rework test base
-
-#1235 (2026-10-15) made a rework handoff test from the tree of the last passed handoff. Pest walks only commits, so `bin/review-check` wrote the tree into Pest's graph, and Pest rebuilt the graph with the full suite.
-
-- After #1235, rework handoffs had a median of 1427 s (n=32). First handoffs had a median of 480 s (n=68).
-- The same subtask shows it: 1797 ran 167 s and its rework 1799 ran 1107 s. 1780 ran 145 s and 1793 ran 1152 s.
-- Handoffs 1863 and 1864 changed eight documentation paths and no Gateway file. Gateway `test:affected` still ran 1919 s and 1926 s.
-- About 9 hours of VM time were lost in 3.5 days.
-
-#1335 fixed it by writing a content-hash snapshot of the tree into Pest's graph, with a PHP program in a Python string that calls `\Pest\Plugins\Tia\ContentHash`. It works, but it hand-writes the private format of the Pest fork that Orbit owns. The bug came from exactly that layer.
-
-- After #1335, rework 1874 took 550 s. Gateway `test:affected` took 439 s of it, on one process. Earlier handoffs of the same subtask took 2332 to 2491 s.
-- That is one sample. Its selection size was not read, because its receipt was gone with the VM.
-
-### Copies, transports, and settings
-
-- **Three copies of the check list.** The architecture tests are listed in `bin/review-check:25-45`, in `.github/workflows/ci.yml:321-324`, and in `apps/e2e/tests/Fixtures/tia-cache-tests.py:1458-1470`. The test copies the implementation instead of checking it against CI. #1234 exists because two copies drifted.
-- **Two cache transports.**
-  - Workspaces import `refs/orbit/ci-cache/<sha>` (#1226).
-  - Local stores still use the `gh` artifact worker in `bin/tia-cache` (1020 lines): `refresh`, `drain`, the queue and worker locks, and the registry.
-  - The worker keeps a ledger of failures on main that repeats GitHub's CI status.
-  - On task VMs, the gate's `tia-cache seed` step does nothing.
-- **Exact-commit caches only.** `apps/gateway/resources/instances/ci-caches.sh` imports only the ref of the exact baseline commit. When CI has not yet published that commit, the baseline records a fresh graph: 1770, 1771, 1775, 1821, and 1822 took 1253 to 1677 s against about 70 s warm. Pest accepts any ancestor graph.
-- **A process override.**
-  - Since 2026-10-17 the Orbit Project's task check is `ORBIT_CHECK_PROCESSES=1 composer check`, after an OOM.
-  - Every check now runs one lane and one Pest process. Gateway affected runs take about twice as long.
-  - The default in `bin/check-processes` and `tools/check-processes.php` allows four workers of up to 1 GB. Its comment cites 2 GB VMs.
-  - A normal task VM on beast and shark has 2 CPUs and 4 GiB.
-  - A medium task VM has 4 CPUs and 8 GiB.
-  - A large task VM has 6 CPUs and 12 GiB.
-  - A medium VM's topology takes about 2.7 GiB of that memory.
-- **An alias.** `bin/test` still reads `ORBIT_TEST_PROCESSES`.
-- **A Project special case.** `TaskSubtaskRunner::handoffCheck` sends `test_base` only when `$group->project->slug === 'orbit'`. The engine must stay generic.
-- **A result written on the read side.**
-  - `check` raises `SystemExit` on SIGTERM, and `run()` catches only `Exception`. So a cancelled supervisor writes no result.
-  - `status()` then builds a failed `causality_uncertain` result from systemd and cgroup state. That result is what releases the workspace lease after the supervisor dies.
-  - The start and status path without a run ID is still present, although every caller passes a run ID.
-- **Lost evidence.**
-  - The Gateway keeps a 16 KiB output tail. In 123 of 321 checks the line of the slow step is cut.
-  - The receipt `result.json` holds the seconds and selection of each command, but it lives only on the VM.
+- The checks used 85.8 hours of task VM time in five days: handoff 58.5 h, the local main-merge gate (`base_merge`) 16.8 h, and baseline 10.5 h.
+- Gateway `test:affected` was the cost driver, with a median of 812 s. PR CI took a median of 6 minutes.
+- So almost all of the wait was the local gates. The implementer ran the full gate, the Gateway ran it again at handoff, Orbit ran it twice more on main merges, and CI ran it on the same merged tree.
+- TIA, once its selection was correct, selected a median of the whole suite. Recording coverage added about 19% to test time.
 
 ## Decision
 
-The decision has eight parts. They change the Gateway, the root `bin` and `tools` scripts, `.github/workflows/ci.yml`, the agent guidance, and the Pest fork `nckrtl/pestphp-monorepo`. The third amendment removed that fork: Orbit requires stock `pestphp/pest`.
+The decision has eight parts. Six are built, and two are open.
 
-### 1. One local gate per handoff
+### Built
 
-- The Gateway handoff check is the only local run of the Project check in a task.
-- `TaskTurnInstructions::implementer` no longer says "and `<check>` passes". It says that Orbit runs the Project check when the implementer hands off.
-- The engine stays generic. The Orbit repository's guidance tells a task implementer to run the tests of the files it changed, and not to run `composer check` or `bin/review-check`. Work outside a task keeps the full checks, because no Gateway gate runs for it.
-- A failed handoff check returns to the implementer as a reminder with the end of the output, as today. A failed handoff CI result returns the same way, with the failed jobs and their log excerpts.
-- A failed handoff check gets its own failed-check budget: three failed handoff checks in a row for one subtask. The fourth asks for assistance. A passing check resets the count. Today one reminder per `completion_attempt` is allowed, so without this failed-check budget two failed handoffs in a row would stop the group.
-- The `project-check` deliverable goes. Every settling fixup gets the `review` deliverable `fixup-review`, also when the Project has a task check. A final-review fixup and a GitHub-review fixup keep their `review` deliverable. Their handoff check runs the Project check, as every handoff does.
+- **1. One local gate per handoff.** The Gateway handoff check is the only local run of the Project check in a task. A failed handoff check returns to the implementer with the end of the output and has its own budget of three failures in a row. The `project-check` deliverable is gone.
+- **2. CI on the merge ref is the only integration gate.** Orbit runs no Project check on a main merge and never merges main itself in a review-and-merge group. Only the implementer merges main, and only to resolve a conflict. Review and merge refuses a base branch that requires an up-to-date branch, and asks for assistance once when GitHub refuses a merge because the branch is behind. See [Review and merge](/reference/projects#review-and-merge).
+- **3. Each handoff's tests run in CI on the handoff commit.** The local gate runs the fast checks only. Orbit pushes the checked tree once to `task-{id}-handoff`, and the Project's `merge_check` on that commit is the handoff's test result. [Tasks: Handoff CI](/reference/tasks#handoff-ci) owns the rule.
+- **6. The process count comes from cores and memory.** `bin/check-processes` is the one rule, and `ORBIT_CHECK_PROCESSES` is only the share that `bin/review-check` and `bin/test` pass to each lane.
+- **7. No Project gets a test base.** The `slug === 'orbit'` case and `ORBIT_TASK_CHECK_BASE` are gone.
+- **5. One cache transport.** CI cache refs, `refs/orbit/ci-cache/<sha>`, are the only transport. A checkout imports the nearest ancestor ref with `bin/ci-cache-ref`. The artifact worker is gone.
 
-### 2. CI on the merge ref is the only integration gate
+### 4. One definition of the checks (open)
 
-- Nick chose full suites at merge rather than a declaration selector; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) defines the checks. The third amendment removed TIA from the task loop too.
-- Orbit runs no Project check on a main merge. `TaskCheckKind::BaseMerge` goes.
-- Orbit does not merge main before a final review. The first final review still starts at the merge base of `HEAD` and `origin/{default branch}`, so it reviews the whole branch.
-- Orbit does not merge main before a push.
-- In a review-and-merge group, Orbit never merges main itself. Only the implementer merges main, and only to resolve a conflict.
-- When GitHub reports that the pull request conflicts with its base, the group gets the settling fixup `Merge origin/{base}` from `TaskSettlingFixup::plans`. `healOpenPullRequest` already plans it for every group. The implementer merges and resolves. Its approval waits for a final review, as every approval in such a group does.
-- A failed `Required checks` already creates a `check:*` fixup. Its "merge the base first" variant (`mergingBaseFirst`) goes. CI tested the merge ref, so main at that time was already in the tested tree.
-- Merge on green requires final-review evidence on the head. A head inherits no review except a converted `base_merge` row with the migration’s stored `inherited_approval_sha`, as specified in build step 3.
-- Review and merge supports only base branches that do not require an up-to-date branch. Orbit's `main` does not: its ruleset has `strict_required_status_checks_policy: false`.
-- `project:update --review-and-merge=true` reads both sources of branch rules, because GitHub applies rulesets and classic branch protection together:
-  - the rulesets, with `GET /repos/{owner}/{repo}/rules/branches/{branch}`, which needs `Metadata: read`;
-  - the classic branch protection, with `GET /repos/{owner}/{repo}/branches/{branch}/protection`, which needs `Administration: read`. A 404 there means that the branch has no classic protection.
-- It refuses when either source requires an up-to-date branch: `strict_required_status_checks_policy` in a ruleset, or `required_status_checks.strict` in classic protection.
-- It also refuses when it cannot read either source, because then the policy is unknown.
-- The protection read and App manifest need `Administration: read` only. The App never receives Administration write, which permits repository deletion. [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) needs its own decision for runner registration: a user-owned repository has no narrower runner permission.
-- An installation that has not accepted the grant cannot turn review and merge on until it does. Projects that already have it on are not read again.
-- Rules can change after that. When GitHub refuses a merge because the branch is behind, Orbit records `refused`, merges nothing, and asks for assistance once, with that reason. So the pull request never waits without a signal.
-- Projects without review and merge keep GitHub's branch update, as today.
-
-When main moves after CI ran on a merge ref, the App can merge a head whose merged tree CI did not test. Today the same gap exists after the last local merge gate. The `push` run of CI on `main` tests the merge commit, and [Failures on main](/reference/implementation-loop#failures-on-main) and the red-main [baseline retry](/reference/tasks#baseline-check) handle a red result.
-
-### 3. Each handoff's tests run in CI on the handoff commit
-
-This item replaced, on 2026-10-20, the start-commit test base that it chose on 2026-10-18.
-
-- The local gate runs the fast checks only: `composer validate --strict`, `composer check`, the documentation, vocabulary and other `bin` checks, the generated-artifact checks, and the deliverables. It runs no test suite and no TIA selection.
-- After the local gate passes, Orbit commits exactly the checked tree and pushes it once to its branch `task-{id}-handoff`. The push starts CI: `ci.yml` runs on pushes to `task-*-handoff` with the same jobs and `Required checks` as a pull request, and a newer push to the same branch cancels the older run.
-- Handoff CI applies only to a review-and-merge Project, whose CI Orbit owns. Other Projects keep the task check alone, also with a `merge_check`.
-- Once the workspace at the end of the task is gone, Orbit deletes `task-{id}-handoff`. A 404 or 422 counts as deleted; any other failure asks for assistance once and never holds the removal. Only a repeated cancel or completion tries the delete again.
-- The handoff commit message holds no GitHub skip directive. A commit with no GitHub Actions suite 10 minutes after its push asks for assistance once.
-- The merge gate counts only merge-check runs of the pull request's own `pull_request` workflow run for the head, so CI on the merge ref stays the integration gate. A handoff push run on the same commit never counts.
-- The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed commit never reaches the task's pull request or an incoming author's branch.
-- The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. A job that did not run to completion asks for assistance instead, as settling judges it. Pending waits, and each tick reads it again through one shared check-run read per commit.
-- The handoff stays blocking: the reviewer starts only after CI passed.
-- Every handoff gets its own commit, an empty one when nothing changed, so every handoff is pushed and tested the same way.
-- While no merge-check run exists, the commit's GitHub Actions check suites decide. No suite yet, or an unfinished one, is pending. Orbit pushes the commit once, so GitHub makes no new suite for it after every suite completed, and every completed state is final: `startup_failure` or `failure` fails the check, `cancelled` asks for assistance as infrastructure, and any other conclusion asks for assistance that names the suites.
-- A merge-check run that did not fail, such as a skipped one, or a run of that name from another App, asks for assistance and is not charged to the implementer.
-- A conflict with main is not a handoff concern. The task's pull request, opened after the last approval, merges against the latest main through the full-suite merge gate.
-- One enum classifies GitHub's conclusions for check runs and suites, and states where the two differ.
-- The approval stores the commit CI passed and commits nothing. A HEAD that left that commit, or an Orbit-owned HEAD change during the review, reopens the handoff with its reason; the CI result stays as it is.
-- The merge still needs the full suite on the final head. Because the approval stores the handoff commit, a head whose handoff passed CI needs no further run.
-- `--tia-base`, the handoff cache, and `ORBIT_TASK_CHECK_BASE` go: no local test run needs a test base.
-
-The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selection needed a test base, a cache and fork internals, and once correct it selected a median of the whole suite.
-
-### 4. One definition of the checks
-
-- One file, `tools/checks.json`, lists each check: its project directory, its commands and their `budget_seconds`, its architecture tests, the paths that select it, and where it runs; the same file holds stage time budgets in `stage_budgets`.
+- One file, `tools/checks.json`, lists each check: its project directory, its commands and their `budget_seconds`, its architecture tests, the paths that select it, and where it runs. It also holds the stage budgets in `stage_budgets`: baseline 600 seconds, handoff 1200 seconds, review 900 seconds.
 - A check runs locally, in CI, or in both. The Rust agent runs only in CI.
-- For a PHP project, the file holds `composer validate --strict` and `composer check`, which both gates run. The tests, architecture tests included, run only in CI.
-- The test step of a PHP project in CI stays in `ci.yml`, because CI runs full sharded Pest on pull requests and selects tests separately on main.
-- `bin/review-check` reads it.
-- The Gateway reads `stage_budgets` from the same file to report baseline, handoff and review time overruns.
-- Path triggers select only the checks outside the PHP projects' commands: the web app, the Pi server, the generated artifacts, the fixtures, and the extra architecture triggers.
-- Path triggers never drop the commands of a PHP project. Every local gate, the baseline included, runs the commands of all five PHP projects, as `selected_projects` does today.
-- A handoff and a local `composer check` run a triggered check when a changed path matches its triggers.
-- The baseline check uses no path triggers. Its branch diff is empty, so triggers would select nothing.
-- CI reads the same file through `bin/review-check`.
-- A CI job runs a check's commands with `bin/review-check run CHECK`.
-- The architecture-test step runs `bin/review-check architecture PROJECT`.
-- CI path conditions read the triggers from the file.
-- CI runs every check that the file marks for CI.
-- Runner choice, Gateway shards, and process counts stay in `ci.yml`, because only CI has runners.
-- The E2E configuration test checks that every check job in `ci.yml` runs its commands through `bin/review-check`. It no longer holds its own copy.
+- For a PHP project, the file holds `composer validate --strict` and `composer check`, which both gates run. Tests, architecture tests included, run only in CI, and the test step stays in `ci.yml`.
+- `bin/review-check` reads the file. CI runs a check's commands with `bin/review-check run CHECK`, and the architecture-test step runs `bin/review-check architecture PROJECT`.
+- Path triggers select only the checks outside the PHP projects' commands. They never drop the commands of a PHP project, and the baseline check uses none.
+- Runner choice, Gateway shards, and process counts stay in `ci.yml`.
+- The E2E configuration test checks that every check job in `ci.yml` runs its commands through `bin/review-check`. It holds no copy of its own.
+- Delete `ARCHITECTURE_TESTS`, `ARCHITECTURE_TRIGGERS`, `WEB_CHECK_COMMANDS`, `PI_SERVER_COMMANDS`, and the other check and trigger constants in `bin/review-check`, and the copied commands and path conditions in `ci.yml`.
 
-### 5. One cache transport: Git refs
+### 8. Check results and evidence (open)
 
-- CI cache refs, `refs/orbit/ci-cache/<sha>`, are the only cache transport.
-- A checkout imports the ref of the nearest first-parent ancestor of its baseline commit that has a ref. It never imports a newer commit.
-- Pint and PHPStan recheck only the files changed since that commit. So a baseline is not cold for lack of a ref while any ancestor ref is retained.
-- A changed `composer.lock` or tool configuration between the ref and the baseline leaves that tool cold, because the importer checks both.
-- The Gateway sends that ref to a workspace, as it sends the exact ref today.
-- A local worktree fetches the refs from `origin` and imports its own nearest ancestor ref with `bin/ci-cache-ref import`. `bin/bootstrap` and `bin/worktree-cache` call it for the graph and the Pint and PHPStan caches.
-- The shared main cache store under `orbit-tia/v1` goes, with its seed, its registration, and its refresh.
-- `bin/ci-cache-ref` takes over the code it loads from `bin/tia-cache` today: `import_ci`, the graph validation, the checksums, the artifact layout, and the ancestor check.
-- The artifact worker, its queue, its registry, and its failure ledger go. GitHub's CI status on `main` is the only record of failures on main. The merge skill reads that status instead of `bin/tia-cache status --remote`.
-- CI keeps its artifacts only to stage the exports for `publish-ci-cache` in the same run.
+- Every check start has a run ID. `RemoteTaskCheckRunner::start` requires it, and the path without a run ID goes.
+- The check supervisor writes its own cancelled or failed result. It handles SIGTERM, SIGINT, and SIGHUP, stops its children, and writes `check.json` before it exits. `status()` only reads results.
+- A managed run that dies without a result reads as a terminal `lost` once systemd proves it ended: the exact unit is inactive or failed, and its cgroup is empty. The workspace lease releases its holder and marks the interval causality uncertain. A reading without that proof keeps the holder.
+- The check exports `ORBIT_CHECK_RECEIPT`, a file path. A Project check may write a JSON list to it: for each command, its name, directory, seconds, exit code, `budget_seconds`, a free `detail` text, and `selected_test_count` for test commands. Orbit records the same for each Project setup step in the baseline receipt, and stores the list in a new JSON column of the check row.
+- The Gateway stores each review turn's elapsed seconds on the review thread row.
+- Time budgets report overruns and never block or stop work. An overrun writes at most one Activity row per run with code `tasks.<stage>_over_budget`, where `<stage>` is `baseline`, `handoff`, `review` or `command`. `ProblemCollector` treats these codes as server-class, so existing fingerprints and the daily filing cap bound repeats.
+- Setup `timeout_seconds` stay hard limits. The 16 KiB output tail stays.
 
-### 6. Derive the process count from cores and memory
+### Close
 
-- `bin/check-processes` prints the smaller of two numbers, and at least 1: the core count, and the worker count that fits in available memory after subtracting the gate reserve.
-- It reads available memory when the check starts: the smaller of `MemAvailable` and each bounded cgroup's limit minus its working set (`memory.current` minus `memory.stat`'s reclaimable `inactive_file` pages), including ancestor bounds. It reads CPU affinity and cgroup CPU quotas.
-- CPU counts schedulable capacity, not idle cores: topology processes share that capacity, and transient load is not a core reservation. CPU contention can increase gate time.
-- Available memory already leaves out what the agent, the system, and a running topology use. So one rule fits every VM size, with or without a topology.
-- Step 2 measures worker peaks and whole-gate memory on normal, medium, and large task VMs, with their supported topologies running. It sets the per-worker allocation and gate reserve from those measurements. One allocator splits the total worker budget between every concurrent lane and suite.
-- The floor of one can still overcommit memory and OOM when less than the reserve plus one worker is available. The budget is a snapshot for one gate per task VM; it does not reserve resources across concurrent gates on a shared host.
-- [Measured gates](/reference/implementation-loop#the-gate-checks-changed-files) record the peaks, VM sizes, topologies, worker counts and times. Available memory determines the count at each gate start.
-- The OOM on 2026-10-17 came from the implementer's concurrent full-gate runs, which item 1 removes.
-- When `ORBIT_CHECK_PROCESSES` is set, `bin/check-processes` prints it, because it is the lane share below.
-- `tools/check-processes.php` runs `bin/check-processes` instead of its own copy of the rule.
-- `ORBIT_CHECK_PROCESSES` stays only as the share that `bin/review-check` and `bin/test` pass to each lane or suite. No Project or operator sets it.
-- CI keeps its counts per runner type in `ci.yml`. Shard runners share a host on purpose and see its cores ([ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role)).
-- The Orbit Project's task check goes back to `composer check`.
-- `ORBIT_TEST_PROCESSES` goes.
-
-### 7. No Project gets a test base
-
-The `slug === 'orbit'` case goes. Since the 2026-10-20 amendment, no handoff check gets `ORBIT_TASK_CHECK_BASE`: the local gate runs no tests, so it needs no test base. The handoff's tests run in CI for every review-and-merge Project.
-
-### 8. Check results and evidence
-
-- The check supervisor writes its own cancelled or failed result. It handles SIGTERM, SIGINT, and SIGHUP, stops its children, and writes `check.json` before it exits.
-- The supervisor also checks the tree after its last descendant stops. Today `status()` does that check.
-- A managed run that dies without a result, such as on SIGKILL, reads as a terminal `lost` once systemd proves it ended: the exact unit is inactive or failed, and its cgroup is empty.
-- The workspace lease releases its holder on a terminal `lost` and marks the interval causality uncertain. Today only a `finished` reading releases it, so this replaces the result that `status()` writes today.
-- Then the retry in `TaskSubtaskRunner` starts a new check, as it does for `lost` today. A second `lost` run asks for assistance, as today.
-- A `lost` reading without that proof keeps the holder, as today.
-- A reboot still reads as `interrupted`. An unreachable VM gives no reading, and the holder stays.
-- `status()` only reads results.
-- Every check start has a run ID. The path without a run ID goes, and `RemoteTaskCheckRunner::start` requires the run ID.
-- The check exports `ORBIT_CHECK_RECEIPT`, a file path.
-- A Project check may write a JSON list to that file: for each command, its name, directory relative to the Project, seconds, exit code, `budget_seconds`, a free `detail` text, and `selected_test_count` for test commands only.
-- Orbit records the name, seconds and exit code of each Project setup step in the baseline receipt.
-- Time budgets report overruns and can never block or stop work.
-- `tools/checks.json` owns both the command time budgets and the stage defaults in `stage_budgets`: baseline 600 seconds, handoff 1200 seconds and review 900 seconds.
-- The command time budgets in Orbit’s `tools/checks.json` are Gateway `test:affected` 600 seconds and every other command 300 seconds.
-- A Project receipt command without `budget_seconds` uses the time budget default of its baseline or handoff stage.
-- The Gateway stores each review turn’s elapsed seconds from dispatch to terminal observation on the review thread row, keyed by turn ID and separate from the check receipt.
-- A time budget overrun writes at most one Activity row per overrun per run with code `tasks.<stage>_over_budget`, where `<stage>` is `baseline`, `handoff`, `review` or `command`.
-- Baseline, handoff and review overrun rows use Activity `command: tasks:tick`.
-- Command overrun rows use Activity `command: <project-slug>:<project-directory>:<command-name>`, with a project-relative directory (`.` for a single-directory Project) and no task or run IDs, so distinct commands in one Project have stable, separate `command|code` fingerprints.
-- `ProblemCollector` treats `_over_budget` codes as server-class so the existing fingerprints and daily filing cap bound repeats without a new mechanism.
-- Setup `timeout_seconds` remain hard limits, separate from the report-only time budgets. Receipt entries for setup steps do not produce command overruns; their time is covered by the baseline stage time budget.
-- After step 7 is deployed and enough setup runs have recorded per-step timings for p90 values, propose exact Project 46 setup timeouts at about three times each p90 in a separate PR or note for Nick to apply, scaling them down to fit both the 540-second cap and the stored list total.
-- Orbit stores the list in a new JSON column of the check row.
-- Orbit's `bin/review-check` writes the list from `result.json`, including a selected test count for each test command.
-- The 16 KiB output tail stays.
-
-### Build order
-
-Each step is one small pull request. Docs change with the code in the same pull request.
-
-1. **One local gate.** Change the implementer instruction. Change the guidance in `AGENTS.md`, `apps/cli/AGENTS.md`, `apps/docs/AGENTS.md`, and the `developing-features` and `orbit-tasks` skills. Add the failed-check budget.
-   - Delete the `project-check` deliverable in `TaskFinalReview.php:114`, `TaskSettlingFixup::deliverables`, and `TaskSettlingFixup::reviewPlan`, with its fixture in `gateway-response-fixtures.md`.
-   - Delete `matches_task_check` and the `task_check` reuse in `verify_deliverables` of `check`.
-   - Delete the reuse note in `TaskCheckRunner` and the `project-check` paragraph of [Project check](/reference/tasks#project-check).
-2. **Process count.** Change `bin/check-processes` and `tools/check-processes.php`, with measured per-worker memory and a whole-gate reserve. Share one total budget between all concurrent lanes and suites, including `bin/test`. Then set the Orbit Project's task check to `composer check`.
-   - Delete `DEFAULT_LIMIT` and its 2 GB comment, and the 2 GB reason in `implementation-loop.md:737`.
-   - Delete the PHP copy of the rule.
-   - Delete `ORBIT_TEST_PROCESSES` from `bin/test`, `implementation-loop.md`, and `environment-variables.md`, and the operator text for `ORBIT_CHECK_PROCESSES` in `implementation-loop.md` and `environment-variables.md`.
-3. **No local main-merge gate.** The enum casts on `TaskCheck::kind` and `TaskReviewedCommit::source` refuse an old value, so a migration removes every `base_merge` value:
-   - It refuses to run while any `base_merge` check is running or a retired held lease has `remote_uncertain` or a pending workspace operation. It cancels queued and held `main_merge` leases and leases for the checks it deletes, then deletes every `base_merge` check row, of open and ended groups.
-   - It converts every `base_merge` reviewed commit to `orbit_push`. It records `inherited_approval_sha` only for converted rows whose review task has exactly one distinct approved commit in the group’s reviewed ledger. Only that stored approval can account for a converted head when the merged pull request returns. Native heads and ambiguous approval history still require exact approval.
-   - Step 8 reads the converted rows and their group status; once none belongs to an open group, it deletes `inherited_approval_sha` and the matching inherited-approval branch in `TaskPublication::checkReturningPullRequest`.
-   - It clears `base-merge-review` fixup identities so retired delta reviews no longer count against the group fixup limit. Deploy it when no `base_merge` check is running.
-   - Add the strict-base refusal to `project:update`, with both rule reads. Add only `administration: read` to `GitHubAppManifestPage`, and document the protection read on the [GitHub App](/reference/github-app) page. Runner registration needs its own decision.
-   - Add the assistance on a behind refusal to `mergeWhenReady`.
-   - Delete `TaskCheckKind::BaseMerge` and `TaskReviewedCommitSource::BaseMerge`.
-   - Delete `TaskPublication::appendBaseMerge`, `prepareBaseMerge`, `queueBaseMergeRetry`, `appendAgentBaseMerge`, `appendDeltaReview`, and `conflictOutput`, with the repair, retry, and lost states of the gate.
-   - Delete the main merge before the final review and before the push, and their callers: `StoreTaskCommentAction`, `TaskReviewOutcome` (`:303`, `:473`, `:489-493`), `TaskSettling` (`:110-121`), `TaskSubtaskRunner` (`:269`), `TaskScheduler` (`:231-249`), `TaskWorkspaceLease` (`:521`), and `TaskReviewBase` (`:58-73`), with their test fakes.
-   - Delete `TaskBaseMerge` and `TaskBaseBranchFetcher::mergeDefault`, which only the gate uses.
-   - Delete `TaskBaseBranchFetcher::overlappingPaths`, whose callers are gate paths (`TaskPublication.php:148`, `:409`), and `TaskPullRequestMerger::baseTipGreenAhead`, whose only caller is `TaskSettling.php:715`. Delete their implementations and fakes (`TaskSchedulerTickFixtures.php:632-637`, `ReviewAndMergeTest.php:264-269`).
-   - Delete the `base_merge` keys in the docblocks of `RemoteTaskCheckRunner.php:57` and `TaskCheckRunner.php:30`.
-   - Delete the `base_merge` values in `docs/openapi.json` and `apps/web/src/api/schema.d.ts`. Regenerate them with `bin/docs-openapi`, `bin/mcp-tools`, and the web types.
-   - Delete `TaskSettlingFixup::mergingBaseFirst` and its caller in `TaskSettling`.
-   - Delete the delta-only final review (`TaskFinalReview::BaseMergeReview`) and its cap.
-   - Delete `classify_merge_gate`, the `base_merge` mode, and `base_merge_passed_tree` in `check`.
-   - Delete the `behind` branch of `mergeWhenReady`.
-   - Rename the `main_merge` lease kind of `prepareResumedWorkspace`, which then only fast-forwards.
-   - Delete the docs of the main-merge gate in these sections of [Tasks](/reference/tasks): Final review, Every push is reviewed, Records and status, Fix a settling pull request, Review fixup lifecycle, the opening rules of Review and merge, item 1 of Merge on green, and "Orbit merges only what it reviewed".
-4. **Handoff tests in CI.** Built on 2026-10-20 instead of the start-commit test base; [Tasks: Handoff CI](/reference/tasks#handoff-ci) owns the rule. The local gate runs no test suite, and the start-commit plumbing below is deleted rather than kept.
-   - Delete the tree case of `task_test_base`, `scope_tia_graph`, `scope_tree_baseline`, `comparison_tree_snapshot`, the `TREE_BASELINE_*` messages, and the embedded PHP program in `bin/review-check`.
-   - Delete `keep_main_baseline`, because both forms of `--tia-base` ignore branch baselines.
-   - Delete what the 2026-10-20 amendment made dead: the start-commit selection, the handoff cache, the architecture-test step and the changed-test runs of `bin/review-check`, `test_base` in `TaskSubtaskRunner::handoffCheck` and the check program, and `ORBIT_TASK_CHECK_BASE`.
-   - Delete the passed-handoff-tree rule of `TaskReviewBase::testBase` and the `slug === 'orbit'` case.
-   - Delete the "A handoff tree is not a Pest commit" and "The gate selects against main" sections of [Feature delivery](/reference/implementation-loop#why-it-works-this-way).
-5. **One check definition.** Add `tools/checks.json`, including report-only `budget_seconds` per command and `stage_budgets` for the Gateway, and the `run` and `architecture` commands.
-   - Delete `ARCHITECTURE_TESTS`, `ARCHITECTURE_TRIGGERS`, `WEB_CHECK_COMMANDS`, `PI_SERVER_COMMANDS`, and the other check and trigger constants in `bin/review-check`.
-   - Delete the `case` list in the architecture-test step and the copied commands and path conditions of the check jobs in `ci.yml`.
-   - Delete the copied list in `tia-cache-tests.py`.
-6. **One cache transport.** Move the shared code into `bin/ci-cache-ref`. Import the nearest ancestor ref in workspaces and local worktrees. Switch the merge skill to GitHub's CI status.
-   - Delete `bin/tia-cache`, with `refresh`, `drain`, `seed`, `register`, `status`, the queue and its locks, the frozen runners, the registry links, and the failure ledger.
-   - Delete its callers: the seed in `bin/bootstrap`, the refresh in `bin/worktree-remove`, the store lookup in `bin/worktree-cache`, the tool check in `ci-caches.sh`, and the `status --remote` step of the `merging-pull-requests` skill.
-   - Delete the `tia-cache seed` step of the gate and the exact-SHA rule of `ci-caches.sh`.
-   - Delete the `bin/tia-cache` tests: `apps/e2e/tests/Unit/E2E/TiaCacheTest.php` and the worker tests in `tests/Fixtures/tia-cache-tests.py`. That fixture also holds the review-check gate tests, so move them to a fixture of their own.
-   - Change the tests that call `bin/tia-cache`: `WorktreeLifecycleTest.php:30`, `TestDatabaseGateTest.php:36`, `BuilderGateSelectionTest.php:105`, `ComposerConfigurationTest.php:371`, and the Gateway tests `CiCacheSetupTest.php` and `TiaBaselineSetupTest.php`.
-   - Delete the `bin/tia-cache` comment in `bin/tooling-baseline:18`.
-   - Delete [Refresh from CI](/reference/implementation-loop#refresh-from-ci), "Only main CI publishes", "Maintenance runs in the background", "Clones find the store through a registration", and the worker text of [Failures on main](/reference/implementation-loop#failures-on-main), with the text on legacy failure records. Failures on main keeps one line: GitHub's CI status is the record.
-7. **Check results.** Implement [§8: Check results and evidence](#8-check-results-and-evidence), including receipt storage, review-turn timing and report-only overruns.
-   - Delete the terminal-result synthesis and the after-result tree check in `status()`.
-   - Delete the start and status path without a run ID and the "Legacy check process identity" match in `managed_run`.
-   - Delete the optional `$runId` of `RemoteTaskCheckRunner::start`, of the `TaskCheckRunner` interface (`TaskCheckRunner.php:35`), and of `FakeTaskCheckRunner`.
-8. **Close.** Read the converted reviewed-commit rows joined to their task groups and prove that no converted row belongs to an open group; then delete `inherited_approval_sha` and its `TaskPublication` branch. Absorb this ADR into the pages below and retire it.
+Once no converted `base_merge` reviewed commit belongs to an open group, delete `inherited_approval_sha`, `TaskReviewedCommit::$inherited_approval_sha`, and the inherited-approval branch in `TaskPublication::checkReturningPullRequest`. Absorb this ADR into the pages below and retire it.
 
 ## Rejected alternatives
 
-- **A declaration-data selector.** Runtime coverage cannot reliably link all consumers of enum cases, constants, property or parameter defaults and attribute arguments. The audit fixture passed TIA while the full suite had four failures. Widening declaration changes would affect 496 of 580 Gateway app changes (85.5%, about 86%) in the measured main first-parent window. Full PR suites provide the merge gate while the task loop keeps fast feedback.
-
-- **Keep the main-merge gate, with a test base.** It still repeats CI on a slower machine, after CI already tests the same merged tree on four runners. The parent classification and the repair and retry states stay.
-- **Keep the implementer's full gate and skip Orbit's.** Orbit cannot trust an agent's report of its own run. The deterministic check must run where Orbit records it.
-- **A base-tree option in the Pest fork.** A rework would select fewer tests. No data shows how many fewer. It needs content-hash snapshots of a tree in the fork.
-- **Keep the tree base with the graph writes of #1335.** It edits the fork's private format from outside the fork, and that layer caused the 40-minute checks.
-- **CI runs `bin/review-check` as one job.** CI would lose its runner choice, its Gateway shards, and its parallel jobs, which keep a PR at a median of 6 minutes.
-- **Keep the artifact worker for local stores.** It is a second transport, a second failure record, and 1020 lines for caches that the Git refs already carry.
-- **Exact-commit caches only.** Five baselines ran cold for 1253 to 1677 s in five days.
-- **Require an up-to-date branch.** Each merge that follows a move of main would need one more main merge, pushed by Orbit, and one more CI run. That brings back the mechanical main merges that item 2 deletes.
-- **GitHub merge queue.** It tests merged trees in order and needs no up-to-date branch, so it would close the semantic-conflict gap below. GitHub offers merge queues only for repositories that an organization owns, and `hardimpactdev/orbit` belongs to a user. If the repository moves to an organization, a merge queue can replace the merge on green as its own decision.
-- **A process count per Project.** A Project setting does not know the machine. One rule from cores and memory fits every task VM and worktree.
-- **One reminder per attempt for a failed handoff check.** Without the implementer's own gate, two failed checks in a row would stop the group.
+- **A declaration-data selector.** Runtime coverage cannot reliably link enum cases, constants, defaults, and attribute arguments. Widening those changes would affect about 86% of Gateway app changes.
+- **Keep the main-merge gate, with a test base.** It repeats CI on a slower machine, after CI already tests the same merged tree.
+- **Keep the implementer's full gate and skip Orbit's.** Orbit cannot trust an agent's report of its own run.
+- **Keep the artifact worker for local stores.** It was a second transport and a second failure record for caches that Git refs already carry.
+- **Require an up-to-date branch.** It would bring back the mechanical main merges that part 2 deletes.
+- **GitHub merge queue.** GitHub offers it only for organization-owned repositories, and `hardimpactdev/orbit` belongs to a user.
+- **A process count per Project.** A Project setting does not know the machine.
 
 ## Consequences
 
-- In the measured week, this removes the 16.8 hours of `base_merge` gates and the implementer's run of the full gate before each handoff.
-- It removes the last main merge that Orbit makes in a workspace. The lease and #1297 to #1314 already fixed the incident in which groups 1632 and 1692 lost about 19 hours, so this saves no more of those hours.
-- A typical subtask costs one fast handoff gate, one CI run on the handoff commit, and one review. The Gateway CI runs as four shards in about five minutes, and the final head needs no extra run.
-- A formatting or static-analysis failure now reaches the implementer as a reminder after the handoff check, not before. That can cost one more correction turn, inside the new failed-check budget.
-- Each handoff push runs CI on the branch commit, not on a merge with main. The task's pull request tests the merge with main before it merges.
+- The 16.8 hours of `base_merge` gates and the implementer's run of the full gate before each handoff are gone.
+- A typical subtask costs one fast handoff gate, one CI run on the handoff commit, and one review.
+- A formatting or static-analysis failure reaches the implementer after the handoff check, not before. That can cost one more correction turn, inside the failed-check budget.
 - A semantic conflict between two pull requests that both passed CI can reach main. The `push` run of CI on main finds it.
-- Review and merge refuses to merge into a base branch that requires an up-to-date branch.
 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
-- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; 0223 needs only `Administration: read`, while runner registration needs its own decision because a user-owned repository has no narrower runner permission
-- Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Tasks: Outer loop](/reference/tasks#outer-loop). [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches): the setup step imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [Instance setup: Project 46](/reference/instance-setup#project-46). [Environment variables](/reference/environment-variables)
-- Verify: the tests and live reads below.
-  - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
-  - In apps/e2e, the `review-check`, `ci-cache-ref`, and CI configuration tests.
-  - In apps/gateway, `HandoffCiTest`: green, red, pending, every final suite state, an unchanged handoff, and a passed result on an earlier handoff commit that must not count. `ReviewAndMergeTest`: a moved HEAD and one commit from handoff to merge. In apps/e2e, the gate runs no test suite, and `ci.yml` treats only a `task-*-handoff` push as a change run, besides a pull request.
-  - In apps/gateway, the `project:update` preflight cases: a strict ruleset, strict classic protection, no protection, and an unreadable source.
-  - On the live Gateway, after the build, no new `base_merge` check row appears.
-  - No baseline records a fresh graph while an ancestor cache ref with the same TIA fingerprint exists.
-  - The check row of each handoff holds its command list.
-  - A time budget overrun leaves the check status unchanged and writes exactly one `_over_budget` Activity row for that overrun in the run.
+- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; 0223 needs only `Administration: read`, while runner registration needs its own decision
+- Detail: [Tasks](/reference/tasks), [Projects: Review and merge](/reference/projects#review-and-merge), [GitHub App](/reference/github-app), [Feature delivery](/reference/implementation-loop), [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches), [Environment variables](/reference/environment-variables)
+- Verify: in apps/e2e, the `review-check` and CI configuration tests. On the live Gateway, the check row of each handoff holds its command list, and a time budget overrun leaves the check status unchanged and writes exactly one `_over_budget` Activity row.
