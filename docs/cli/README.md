@@ -8,7 +8,7 @@ Read the kind's chart first. Any change to a command's flow starts by updating i
 
 Command verification assets live in [swamp/proof](https://github.com/hardimpactdev/orbit/tree/main/swamp/proof). Review them with the command page and chart. Once a command has an executable verification entrypoint, link to it from its page and chart.
 
-Edit charts here, never in a copy. A chart-only change arrives as a pull request that touches only charts, their placements, and `flows-pending.txt`. A chart Nick approved carries `%% status: reviewed`.
+Edit charts here, never in a copy. A command's chart arrives in the one PR of that command change, with its page, cases, code and runnable proof cases; the chart, page and cases are the first commit of the draft PR. A pull request that touches only charts, their placements, and `flows-pending.txt` is for a chart that belongs to no command change, such as a stage chart. A chart whose spec Nick approved carries `%% status: reviewed`.
 
 ## Where a chart lives
 

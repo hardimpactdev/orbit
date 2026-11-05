@@ -11,6 +11,8 @@ Use this with [developing-commands](../developing-commands/SKILL.md). The target
 
 ## Define the cases
 
+A command change has one PR. The cases file (`swamp/proof/<family>/<command>.cases.md`) is part of the spec in the first commit of the draft PR, with the chart and the page, and is reviewed there. The runnable proof cases (`swamp/proof/<family>/cases/<command>-*.sh`) join the same PR with the code, so a reviewer can check that the page, chart, cases and programs match. Proof CI runs on every push. Do not open a separate docs-only PR for cases.
+
 Review the command's page, chart and verification together. Cover the call with required arguments only, each optional flag, error paths and interactions that can change the outcome. Update cases when behavior changes; for behavior-preserving changes, review the existing cases without a mandatory file edit. For a bug, add a regression that fails before the fix. Do not weaken an expectation to match a bug.
 
 Keep verification assets version-controlled with the command in `swamp/proof/`: the current entry fixture is `swamp/proof/<family>.<command>.json`, with helpers under the family directory. Keep native verification workflows alongside those assets and stage and load them into the isolated proof controller. Do not improvise them at run time or install them in production for verification. Share reset and workflow phases when parameters suffice. Once an executable verification entrypoint exists, link to it from the command page and chart; do not add a dead link.
