@@ -19,7 +19,9 @@ final readonly class TaskVmSlotBoot
             'config' => [
                 'limits.cpu' => (string) $host->cpus, 'limits.memory' => $host->memory,
                 // Incus parses the user data as YAML, and go-yaml rejects the `\/` escape that json_encode writes for a slash.
-                'cloud-init.user-data' => "#cloud-config\n".json_encode(['users' => [$user]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
+                // `ssh_deletekeys: false` here, not only in the identity tree: cloud-init and the identity unit start together, and cloud-init
+                // can delete the installed host keys before the unit's `99-orbit-slot.cfg` is in place.
+                'cloud-init.user-data' => "#cloud-config\n".json_encode(['ssh_deletekeys' => false, 'users' => [$user]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
                 'raw.qemu.conf' => "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n",
             ],
             'devices' => [
