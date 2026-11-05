@@ -48,4 +48,8 @@ Deno.test("tasks.cancel does not destroy a slot, and its end check no longer ask
   const destroy = steps.find((step) => step.name === "Destroy the task VM")!;
   assert(destroy.guard!.includes("inputs.intent.?slot.orValue(false)"));
   assert(text.includes("TASK_VM: ${{ string(inputs.intent.task_vm_id != null && !inputs.intent.?slot.orValue(false)) }}"));
+  // The skipped destroy step has no entry in `steps`: reading it for a slot fails the run, so the slot test must come first.
+  const vm = text.split("\n").find((line) => line.trimStart().startsWith("VM: "))!;
+  assert(vm.indexOf("inputs.intent.?slot.orValue(false)") !== -1);
+  assert(vm.indexOf("inputs.intent.?slot.orValue(false)") < vm.indexOf('steps["Destroy the task VM"]'));
 });

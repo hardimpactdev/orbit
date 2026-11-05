@@ -52,7 +52,7 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         });
         $route = is_array($operation->input['route'] ?? null) ? $operation->input['route'] : null;
 
-        return [...$input, 'execution_secrets' => $copies === [] ? (object) [] : $copies, 'intent' => [...$intent,
+        return [...$input, 'execution_secrets' => $copies, 'intent' => [...$intent,
             'eligible' => ($intent['eligible'] ?? false) && $group->status === TaskGroupStatus::Reserved,
             'processes' => $members, 'route' => $route['route_create'] ?? null, 'route_secrets' => $route['execution_secrets'] ?? (object) []]];
     }

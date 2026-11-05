@@ -6,6 +6,7 @@ use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Actions\TaskVms\StartTaskVmSlotReleaseAction;
 use App\Domain\NodeFacts\NodeFactKind;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCancelProjection;
@@ -333,6 +334,15 @@ function claimRun(TaskVm $vm, string $status, array $change = []): array
     return ['run_id' => 'fixture-claim', 'status' => $status, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'result' => ['receipt' => ['result_json' => json_encode([...$receipt, ...$change], JSON_THROW_ON_ERROR)]]];
 }
+
+it('hands a slot claim to its workflow with an empty execution secrets object, as a claim holds no secret', function (): void {
+    [, $operation] = claimedProvision();
+
+    $inputs = app(DirectOperation::class)->workflowInputs($operation);
+
+    expect($inputs['execution_secrets'])->toEqual((object) []);
+    expect($inputs['intent']['placement'])->toBe('slot');
+})->group('slots');
 
 it('makes the slot ready and the task running when the new VM has reported', function (): void {
     [$vm, $operation, $group] = claimedProvision();
