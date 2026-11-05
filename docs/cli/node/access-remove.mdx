@@ -8,4 +8,32 @@ description: "Remove one access grant."
 orbit node:access:remove <consumer> <serving> [--force] [--json]
 ```
 
-Removing a grant to the Gateway Node also revokes Grafana access that depends on it. The CLI warns when you removed your own access to the Gateway Node.
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `consumer` | yes | Numeric ID of the Node that sends commands. |
+| `serving` | yes | Numeric ID of the Node that the commands act on. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--force` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the removed grant as JSON. |
+
+```bash
+orbit node:access:remove 4 7
+```
+
+In a terminal, an omitted Node is chosen from an interactive list, and the CLI asks to confirm with both Node names and the effect, with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--force`, a call that cannot prompt is refused with `node_access.confirmation_required`. An omitted Node is refused with `node_access.consumer_id_invalid` or `node_access.serving_id_invalid`, and so is an ID that is not a positive integer. A declined or refused call sends no removal request.
+
+The command changes the grant and contacts no Node, except for a grant to the Gateway Node when a Metrics role exists: then it reloads Caddy on the Gateway Node to revoke Grafana access, which needs that Node's agent. So it works while another Node is unreachable. Both Nodes must be active; an inactive or unknown Node is refused as not found. Removing a grant that is absent succeeds with `Skipped — already absent (node_access.absent)` and deletes nothing; for a grant to the Gateway Node the revocation is tried again.
+
+Removing a grant to the Gateway Node also revokes Grafana access that depends on it. If the reload fails (`metrics.caddy_publication_failed`), the grant is already deleted; run the same command again to finish the revocation. The CLI warns when you removed your own access to the Gateway Node, because you cannot act through the Gateway afterwards; JSON carries it as `self_lockout`. The Gateway Node and its serving host keep their authority without a grant.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node_access.consumer_id_invalid`, `node_access.serving_id_invalid` | A Node is missing or is not a positive integer, and the CLI cannot prompt. |
+| `node_access.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `http.404` | A Node is unknown or not active. |
+| `metrics.caddy_publication_failed` | The Gateway Node's Caddy reload failed (502). The grant is already deleted; run the command again. |
+| `node_access.required` | The caller is not the Gateway Node or its serving host and has no grant to the Gateway Node. |
