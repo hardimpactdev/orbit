@@ -325,7 +325,7 @@ Coverage declarations are optional, but docs-lint checks that their globs are sa
 
 ### Checks that need no network
 
-`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the built context index. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
+`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the built context index. It fails for a page that is in no navigation fragment, unless `MintlifyLinksRule::OUTSIDE_NAVIGATION` lists it with the reason. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
 
 Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. A lower number follows the same two rules only when the retirement table does not list its number. The open gaps are 0007 and 0020. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
 

@@ -283,11 +283,10 @@ The gate checks the working tree as it is, including uncommitted and untracked f
 API ownership matching removes the shared `api/v1` prefix, so a Form Request used by a grouped route maps to its versioned OpenAPI operation.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
-2. It runs `bin/docs-nav`.
-3. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 3 to 6 share the machine.
-4. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
-5. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
-6. When the candidate changes the Rust agent or the desktop app, it runs `cargo fmt --all -- --check` in the matching Rust project.
+2. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 2 to 5 share the machine.
+3. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
+4. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
+5. When the candidate changes the Rust agent or the desktop app, it runs `cargo fmt --all -- --check` in the matching Rust project.
 
 Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`, and test files beside their source (`*_test.ts`, `*_test.py`, `test_*.py`). A page's `covers:` glob over a source folder does not claim the test files in it. Nor does a change to the machine recipe that only bumps pinned values. A deleted CLI command needs no page either: step 1 does not ask for the page of a command whose source file is gone.
 

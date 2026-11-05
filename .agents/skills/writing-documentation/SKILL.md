@@ -46,4 +46,4 @@ The pull request that completes a decision absorbs it. Write the behavior into t
 
 Run `composer docs-build` when pages, titles, components, concepts, or ADR links change. The generated context index stays out of Git. Run `composer docs-lint` and fix its findings.
 
-Add each new page through its own `docs/navigation/*.json` fragment; `composer docs-nav` fails for a page that is missing from it. For navigation, link, or MDX changes, run `npx mint validate` and `npx mint broken-links` from `docs/`. Return the changed pages or findings and check results.
+Add each new page through its own `docs/navigation/*.json` fragment; `composer docs-lint` fails for a page that is missing from it. For navigation, link, or MDX changes, run `npx mint validate` and `npx mint broken-links` from `docs/`. Return the changed pages or findings and check results.

@@ -244,19 +244,6 @@ def main(argv=None):
                                  'exit_code': 1, 'seconds': 0, 'log': str(log)})
         print(f'[repository] bin/docs-impact --gate: FAILED (0.000s; {log})', flush=True)
         print(log.read_text(), flush=True)
-    for check_name in ('docs-nav',) if shard_index == 1 else ():
-        log = directory / f'{check_name}.log'
-        started = time.monotonic()
-        with log.open('w') as output:
-            result = subprocess.run([str(root / 'bin' / check_name)], cwd=root,
-                                    stdout=output, stderr=subprocess.STDOUT)
-        report['checks'].append({'project': 'repository', 'command': [f'bin/{check_name}'],
-                                 'exit_code': result.returncode,
-                                 'seconds': round(time.monotonic() - started, 3), 'log': str(log)})
-        print(f'[repository] bin/{check_name}: '
-              f'{"passed" if result.returncode == 0 else "FAILED"} ({report["checks"][-1]["seconds"]:.3f}s; {log})', flush=True)
-        if result.returncode:
-            print(log.read_text(), flush=True)
     lane_checks = []
     groups = lanes(selected_projects(paths, root, base))
     weights = {lane_key(entries): sum(lane_weight(root, project) for _order, project, _commands in entries) for entries in groups}

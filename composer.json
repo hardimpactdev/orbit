@@ -20,7 +20,6 @@
         "api-fixtures": "bin/api-fixtures --check",
         "mcp-tools": "bin/mcp-tools --check",
         "cli-contract": "bin/cli-contract",
-        "docs-nav": "bin/docs-nav",
         "test": "bin/test",
         "audit:dependencies": "bin/dependency-audit",
         "check": [
