@@ -144,6 +144,7 @@ The CLI validates the port, source, and protocol before it sends a request. Orbi
 
 | Error code | Meaning |
 | --- | --- |
+| `input.cancelled` | Ctrl-C or end of input at a prompt. The command exits 1 and sends no request. |
 | `firewall.node_id_invalid` | `--node` is not a positive integer. |
 | `firewall.source_invalid` | The source is not `any`, an IP address, or a valid CIDR. |
 | `firewall.protocol_invalid` | The protocol is not `tcp` or `udp`. |

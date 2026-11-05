@@ -167,7 +167,7 @@ class FakeFleet:
         if args[0] == 'node:list':
             document = {'nodes': [{'id': node_id, 'name': name} for name, node_id in NODE_IDS.items()]}
         elif args[0] == 'firewall:list':
-            document = {'rules': list(self.records)}
+            document = {'nodes': [{'node_id': 1, 'rules': list(self.records)}]}
         elif args[0] == 'operation:list':
             document = {'operations': [{'id': number} for number in range(1, self.next_id)]}
         elif args[0] == 'operation:show':

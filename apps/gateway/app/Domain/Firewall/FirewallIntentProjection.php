@@ -30,7 +30,7 @@ final readonly class FirewallIntentProjection implements DirectOperationProjecti
     public function apply(Operation $operation, array $data): Operation
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
+        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code', 'skipped']));
 
         return DB::transaction(function () use ($operation, $data, $status, $result): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);

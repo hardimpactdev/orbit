@@ -368,6 +368,16 @@ class StepTest(unittest.TestCase):
             self.run.resolve('${nothing}')
 
 
+
+class FamilyRowsTest(unittest.TestCase):
+    def test_a_line_from_one_ipv6_address_is_a_line_of_family_6(self):
+        anywhere = {"to": "1/tcp (v6)", "from": "Anywhere (v6)"}
+        address = {"to": "1/tcp", "from": "fd42:232:2::10"}
+        plain = {"to": "1/tcp", "from": "10.0.0.1"}
+        rows = [anywhere, address, plain]
+        self.assertEqual(steps.family_rows(rows, 6), [anywhere, address])
+        self.assertEqual(steps.family_rows(rows, 4), [plain])
+
 if __name__ == '__main__':
     with patch.object(runner.Run, 'sleep', lambda self, seconds: None):
         unittest.main()

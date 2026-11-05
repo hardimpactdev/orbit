@@ -380,7 +380,6 @@ it('shows the gateway admission refusal and request ID', function (string $comma
         ->assertExitCode(1);
 })->with([
     'conflict' => ['firewall:deny', 'firewall.rule_conflict', 409, 'An allow rule has the same port, protocol, and source.'],
-    'exists' => ['firewall:allow', 'firewall.rule_exists', 409, 'This firewall rule exists.'],
     'overlap' => ['firewall:allow', 'firewall.rule_overlap', 409, 'A rule for any protocol overlaps this rule.'],
     'protected port' => ['firewall:deny', 'firewall.protected_port', 422, 'Port 22 is protected.'],
 ]);
@@ -478,3 +477,26 @@ it('follows a queued firewall Operation to its final JSON receipt and forwards t
     $mock->assertSent(fn ($request): bool => $request instanceof AllowFirewallRuleRequest && $request->headers()->get('Idempotency-Key') === 'allow-7');
     $mock->assertSent(fn ($request): bool => $request instanceof ShowOperationRequest);
 });
+
+it('reports a repeat of an applied rule as skipped, not as an error', function (): void {
+    $applied = ['data' => [...firewall_cli_operation(), 'result' => ['backend' => 'active', 'skipped' => 'firewall.rule_exists']], 'meta' => ['request_id' => firewall_cli_request_id()]];
+    MockClient::global([
+        AllowFirewallRuleRequest::class => MockResponse::make($applied, 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make($applied),
+    ]);
+
+    expect(Artisan::call('firewall:allow', ['port' => '443', '--node' => '7']))->toBe(0);
+    expect(Artisan::output())->toContain('Skipped — already applied (firewall.rule_exists)')->not->toContain('Firewall rule succeeded.');
+});
+
+it('refuses a missing Node or port without a request when it cannot prompt', function (array $arguments, string $code): void {
+    $mock = firewall_cli_mock([AllowFirewallRuleRequest::class => firewall_cli_response('allow', 'active', 202)]);
+
+    expect(Artisan::call('firewall:allow', [...$arguments, '--json' => true]))->toBe(1);
+    expect(Artisan::output())->toContain($code);
+    $mock->assertNotSent(AllowFirewallRuleRequest::class);
+})->with([
+    'no Node' => [['port' => '443'], 'firewall.node_id_invalid'],
+    'no port' => [['--node' => '7'], 'firewall.port_invalid'],
+]);

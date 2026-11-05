@@ -57,10 +57,11 @@ def ufw_rows(run, node):
 
 
 def family_rows(rows, family):
-    """Rows of one family; the rows of IPv6 carry the `(v6)` mark. Without a family all rows stay."""
+    """Rows of one family; the rows of IPv6 carry the `(v6)` mark or an IPv6 source. Without a family all rows stay."""
     if family is None:
         return rows
-    marked = [row for row in rows if '(v6)' in row['to'] or '(v6)' in row['from']]
+    # ufw marks a line for anywhere with `(v6)`; a line from one IPv6 address shows the address alone.
+    marked = [row for row in rows if '(v6)' in row['to'] or '(v6)' in row['from'] or ':' in row['from']]
     return marked if int(family) == 6 else [row for row in rows if row not in marked]
 
 
@@ -327,7 +328,8 @@ def record_rows(run, command, node):
     result = run.cli([command, '--node=' + str(run.fleet.nodes[node]['node_id'])])
     if result['rc'] or not isinstance(result['json'], dict):
         raise Infra(f"{command} failed: exit {result['rc']}")
-    return result['json'].get(key) or []
+    # `firewall:list --node` answers per Node: {"nodes": [{"node_id": 1, "rules": [...]}]}.
+    return [row for item in result['json'].get('nodes') or [] for row in item.get(key) or []]
 
 
 def record(run, args):
