@@ -1238,7 +1238,9 @@ A host’s seed is refreshed after each release, and at least daily. The Swamp t
 
 The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. A step for each nested VM runs once per role with `forEach`, and Swamp names its steps `<name>-<role>`. Each step has its own behavior name, per task VM, so steps that run together do not wait for each other's model lock. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub file. It deletes the proof Swamp Club key and searches every file of the three guests for it. It trims the disks and stops the guests.
 
-It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked. It holds no Club key and no file of a checkout. A booted guest makes mount point directories there and writes a Laravel log, and those are no checkout. Its state is on its own disk, and the Gateway copy has no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
+It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked. It holds no Club key and no file of a checkout.
+
+A booted guest makes mount point directories there and writes a Laravel log, and those are no checkout. Its state is on its own disk, and the Gateway copy has no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
 
 ##### The ready copies
 
