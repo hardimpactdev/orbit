@@ -111,14 +111,6 @@ final readonly class TaskVmDestroyIntent
                 app(NativeRouteRemovalIntent::class)->beginWithdrawal($route);
             }
         }
-        if ($vm->slot !== null) {
-            // A slot outlives its task: the ending run withdraws the Route and tears the workspace down, and the VM is not destroyed.
-            // The release (`task_vm.slot_release`) follows it and keeps the Node, the keys, the tokens and the identity volume.
-            return ['slot' => true, 'task_vm_id' => $vm->id, 'node_id' => $host->id, 'guest_node_id' => $vm->node_id,
-                'workspace_routes' => $workspaceRoutes, 'group_id' => $vm->group_id, 'name' => $vm->name, 'wireguard_ip' => $vm->wireguard_ip,
-                'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'model_key_required' => $vm->model_key !== null,
-                'execution_secrets' => []];
-        }
         $snapshot = $node instanceof Node ? app(NodeRemovalPlan::class)->build($node, offline: true, machineDeleted: true) : null;
         $removal = $snapshot === null ? null : app(NodeRemovalInput::class)->capture($snapshot, $workspace);
         $model = null;
@@ -185,7 +177,7 @@ final readonly class TaskVmDestroyIntent
     {
         $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : Node::query()->where('status', LifecycleStatus::Active)
             ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
-        if ($host->status !== LifecycleStatus::Active || $vm->name !== ($vm->slot === null ? 'tvm-'.$vm->id : TaskVmSlot::name($host->name, $vm->slot))) {
+        if ($host->status !== LifecycleStatus::Active || $vm->name !== 'tvm-'.$vm->id) {
             throw new ResourceOperationException('task_vm.destroy_refused', 'Destroy requires its exact VM and active provider executor.', 409);
         }
 

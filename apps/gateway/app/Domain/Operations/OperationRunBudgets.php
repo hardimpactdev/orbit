@@ -71,14 +71,6 @@ final class OperationRunBudgets
         // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
         'task_vm.fill_package_cache' => 2100,
         'task_vm.image_build' => 2400,
-        // No successful run yet. Basis: the identity phase (volume, keys, files), the model key issue (7 router calls), a hub
-        // reload, the proof VM's boot (about 17 s after `incus start`, M0) and its cleanup, x 3 for the first fresh-host runs,
-        // rounded up to five minutes. Replace with the 14-day p95 after the first successes.
-        'task_vm.slot_enroll' => 900,
-        // No successful run yet. Basis: the forced VM delete (180 s bound), the seed clone delete (180 s bound) and the two host
-        // reads (60 s bound each) run in turn, 600 s at their bounds, x 1.5 = 900 s, a multiple of five minutes. Replace with the
-        // 14-day p95 after the first successes.
-        'task_vm.slot_release' => 900,
         // No successful run yet. Basis: two live runs on beast with the host at load 5 to 9, 7 min 31 s and 10 min 2 s. The host
         // steps are bounded by 340 s (cleanup), 640 s (clone), 310 s (start), 310 s (fetch), 910 s (dependencies), 1,710 s
         // (the proof reset), 610 s (copies), 910 s (check), 210 s (stop) and 410 s (promote). A loaded host stretches the reset

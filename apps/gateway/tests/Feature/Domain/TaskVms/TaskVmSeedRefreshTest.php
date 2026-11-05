@@ -17,7 +17,6 @@ use App\Domain\TaskVms\TaskVmSeedRefreshIntent;
 use App\Domain\TaskVms\TaskVmSeedRefreshProjection;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmSlot;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -190,7 +189,6 @@ it('names the seed a claim clones from the image, and the refresh swaps what tha
     $fingerprint = RefreshImage;
 
     expect(TaskVmVolumes::seed($fingerprint))->toBe('orbit-topology-seed-c1c2cf4051fb');
-    expect(TaskVmSlot::seedSource($fingerprint))->toBe(TaskVmVolumes::seed($fingerprint));
     expect(TaskVmSeedRefresh::building($fingerprint))->toBe('orbit-topology-seed-c1c2cf4051fb-refresh');
     expect(TaskVmVolumes::previousSeed($fingerprint))->toBe('orbit-topology-seed-c1c2cf4051fb-previous');
     // The host audit and the stray report own all three names of a kept image, and no other seed name.

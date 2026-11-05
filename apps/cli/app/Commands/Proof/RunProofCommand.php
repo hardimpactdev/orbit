@@ -122,7 +122,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
             $this->writeHumanMessage('Uncovered: '.self::text($path['path'] ?? null).' ('.self::text($path['reason'] ?? null).')');
         }
 
-        foreach (['slot' => 'Slot', 'receipt_url' => 'Receipt'] as $field => $label) {
+        foreach (['vm' => 'VM', 'receipt_url' => 'Receipt'] as $field => $label) {
             $value = $result[$field] ?? null;
 
             if (is_string($value) && $value !== '') {

@@ -28,8 +28,8 @@ final class PrepareTaskVmHubCommand extends Command
     /** Reverb is served by the `websocket` Node's Caddy site for `reverb.orbit` on this port. */
     private const int ReverbPort = 443;
 
-    /** Task VM Nodes are named `tvm-<task VM id>`, and slot Nodes `<node-slug>-tvm-<n>`. Only they may hold a reserved address. */
-    private const string TaskVmNodeName = '/\A(?:[a-z0-9]+(?:-[a-z0-9]+)*-)?tvm-[0-9]+\z/D';
+    /** Task VM Nodes are named `tvm-<task VM id>`. Only they may hold a reserved address. */
+    private const string TaskVmNodeName = '/\Atvm-[0-9]+\z/D';
 
     #[\Override]
     protected $signature = 'task-vms:prepare-hub';

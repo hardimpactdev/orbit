@@ -56,7 +56,7 @@ sequenceDiagram
   %%> - creates a large VM (12 GiB, 6 CPUs) from the task image, with the seed clone as the disk `topology-seed`, and starts it
   %%> - waits until the Incus agent reports the VM's address
   %%> Not included:
-  %%> - no fleet identity: the builder has no WireGuard address, Node, token or model key, and it is not an enrolled slot
+  %%> - no fleet identity: the builder has no WireGuard address, Node, token or model key, and it is not an enrolled VM
   SW->>B: Fetch the source<br/>incus exec · git clone
   %%> What it does:
   %%> - clones the release repository into the checkout path and checks out the release commit on the branch `seed-refresh/task-1`

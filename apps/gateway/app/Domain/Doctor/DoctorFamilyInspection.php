@@ -38,7 +38,6 @@ final class DoctorFamilyInspection
         private readonly array $facts,
         public readonly bool $managed,
         public readonly bool $parked,
-        public readonly bool $free = false,
     ) {}
 
     /**

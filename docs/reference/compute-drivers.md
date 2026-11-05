@@ -3,13 +3,13 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
-  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{EnrollTaskVmSlotCommand,RefreshTaskVmSeedCommand}.php,database/migrations/2027_01_15_000000_add_task_vm_slots.php}
+  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/RefreshTaskVmSeedCommand.php}
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch},tools/task-vm-seed/*.sh}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-slot-enroll,workflow-operation-task-vm-seed-refresh,workflow-operation-task-vm-slot-release,workflow-task-vm-slot-identity,workflow-task-vm-slot-boot,workflow-task-vm-slot-claim,workflow-task-vm-nested-reset}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-seed-refresh}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -98,7 +98,7 @@ An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 
 
 Internal pins do not require publishing HTTPS releases. Third-party tools still require HTTPS artifact pins. Online validation fails clearly if a local file is missing or its digest differs. It never executes the binary. Existing installers keep their pre-install hash verification.
 
-The Pi pin comes from `apps/pi-server` at source commit `23e7198f7c98`, file `pi-server-23e7198f7c98-linux-x64`, SHA-256 `df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438`. It is an `amd64` build, like every recipe artifact. It must equal `task_vms.pi.artifact_sha256`: a task VM slot keeps the Pi build of the image and the enrolment check compares it with that setting. The first pin was `e5933d4c8696`.
+The Pi pin comes from `apps/pi-server` at source commit `23e7198f7c98`, file `pi-server-23e7198f7c98-linux-x64`, SHA-256 `df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438`. It is an `amd64` build, like every recipe artifact. It must equal `task_vms.pi.artifact_sha256`: the enrolment check compares the Pi build of the image with that setting. The first pin was `e5933d4c8696`.
 
 A profile's effective set is the union of `common` and its own list, sorted by tool identifier. A `php:<version>` entry expands to that version's PHP set. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
 
@@ -424,204 +424,6 @@ Before an image builder can install command mode, its system bus must be availab
 Before publication, `image.clean` stops identity-writing services and removes the builder's machine, SSH, Incus, and service identities. It clears authorized keys, temporary files, Pi transfer artifacts, and logs, then verifies that the identities are absent. It preserves the installed Pi binary, package lists, and systemd private temporary directories. An agent secret or WireGuard configuration refuses cleanup before any change: an enrolled Node cannot become a base image.
 
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
-
-### Task VM slots
-
-This section describes the target design. Built so far: the [identity unit](#the-identity-volume) and the [slot units](#the-slot-units) in the task image, the [enrol](#enrol-once), the [claim](#claim) and the [release](#release). The claim is off until you list a host in `task_vms.slot_claim_hosts`. The slot count per host is not built: until a host claims slots, every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
-
-A task VM host has a fixed number of slots. Each slot is a task VM identity that Orbit enrols once. A task takes a free slot. It does not enrol a new Node.
-
-Each host has 5 slots. They are named `<node-slug>-tvm-<n>`, for example `shark-tvm-1` and `beast-tvm-5`. The host setting `max_vms` is the number of slots. At most 5 task VMs run on one host at the same time.
-
-#### What a slot holds
-
-A slot is one long-lived `task_vms` row. The row keeps these for its whole life:
-
-- its name and its Node, which has the `app-dev` role and the `pi-server` Process;
-- its WireGuard address, WireGuard key and SSH host keys;
-- its static bridge address and fixed MAC;
-- its observer secret, Pi token and model key.
-
-The machine and the task data are not part of the slot. They exist only while a task holds the slot.
-
-A slot is in one of these states:
-
-| State | Meaning |
-| --- | --- |
-| `provisioning` | Orbit is enrolling the slot, or a task has claimed it and its VM is starting |
-| `free` | The slot is enrolled and no VM exists. Another task can claim it |
-| `ready` | A task holds the slot, and Pi runs |
-| `parked` | A task holds the slot, and its VM is stopped. See [Park and resume](#park-and-resume) |
-| `destroying` | The task ended and Orbit is releasing the slot: it deletes the VM and its seed clone |
-| `failed` | A step failed, and no claim can take the slot. The failed Operation shows the cause. The [host sweep](#release) releases the slot once its task has ended |
-
-A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, but no VM runs, so its observer shows offline. Doctor skips a `free` slot, as it skips a `parked` one. Fleet rollout and Metrics skip every task VM Node already.
-
-#### The identity volume
-
-Each slot has one small Incus custom volume, `<node-slug>-tvm-<n>-identity`. The VM gets it as a read-only filesystem device named `identity` at `/opt/orbit-slot`. The volume holds the keys, the WireGuard config, the observer files, the Pi unit, the Pi token, `models.json` and a `REVISION` file. The host enforces the read-only flag. Root in the guest cannot write to the volume, so a task cannot change the identity of the slot for the next task.
-
-The volume holds this tree. The unit installs every file in it, so a missing file fails the unit:
-
-```
-etc/wireguard/{orbit.key,orbit.conf,orbit.dns-link}
-etc/ssh/ssh_host_{ed25519,ecdsa,rsa}_key{,.pub}
-etc/cloud/cloud.cfg.d/99-orbit-slot.cfg
-etc/orbit/agent/{secret,config.toml,ca.pem}
-etc/systemd/system/orbit-process-<pi_process_id>-pi-server.service
-etc/systemd/system/orbit-process-<pi_process_id>-pi-server.service.d/10-slot.conf
-etc/systemd/system/orbit-slot.target.d/10-pi.conf
-home/orbit/.pi/agent/{orbit-token,models.json}
-REVISION
-```
-
-Built: the task image holds `orbit-slot-identity.service`, enabled in `sysinit.target`. The [image build](#build-the-base-image) installs it. At boot it checks that the kernel exposes the virtiofs tag `incus_identity`, mounts the tag read-only at `/run/orbit-slot`, and copies the files to the root disk with these owners and modes. It copies the `etc/systemd/system` folder as a whole, because the names of the Pi files hold the Process id, which the image cannot know. Then it unmounts, reloads systemd and starts `orbit-slot.target` again, so that the target pulls in the new Pi unit (see [The slot units](#the-slot-units)).
-
-The unit runs before `sshd-keygen.service`, ssh, WireGuard and the observer, so ssh uses the slot host keys. It does not wait for the Incus agent, which mounts `/opt/orbit-slot` later. The unit never logs file contents. The image holds no key and no secret.
-
-| Files | Owner and mode |
-| --- | --- |
-| `/etc/wireguard/orbit.key`, `orbit.conf` | `root:root` `0600` |
-| `/etc/wireguard/orbit.dns-link`, `/etc/ssh/ssh_host_*_key.pub`, `/etc/cloud/cloud.cfg.d/99-orbit-slot.cfg` | `root:root` `0644` |
-| `/etc/orbit/agent/config.toml`, `ca.pem`, and the files under `/etc/systemd/system` | `root:root` `0644` |
-| `/etc/ssh/ssh_host_*_key`, `/etc/orbit/agent/secret` | `root:root` `0600` |
-| `/home/orbit/.pi/agent/orbit-token`, `models.json` | `orbit:orbit` `0600` |
-
-The file `99-orbit-slot.cfg` is the single line `ssh_deletekeys: false`. Without it, cloud-init deletes the host keys on the first boot of every clone and makes new ones, and the slot would not keep its host key. The enrol writes this file into the volume with the keys.
-
-The file alone is not enough. The identity unit and cloud-init start at the same time. cloud-init can run its `ssh` module before the unit has installed the file. A proof VM showed this: cloud-init deleted the installed keys and made new ones, so the VM presented a new host key on every boot.
-
-So the boot of a slot VM (the enrol's proof VM and every claim) also sets `ssh_deletekeys: false` in the cloud-init user-data of the instance. cloud-init has the user-data from its first stage, so the setting does not depend on the order of the two. cloud-init still makes a key that is missing, and the unit installs the slot key over it.
-
-The files that hold no key are text that the Gateway renders, and the enrol writes them into the volume:
-
-| File | Content |
-| --- | --- |
-| `etc/orbit/agent/config.toml` | The observer configuration: `gateway_url` and `gateway_address`. It is the same for every slot. |
-| `etc/orbit/agent/ca.pem` | The Orbit root CA that the observer trusts for the Gateway. The image already trusts the same root in its system store, which is what Pi uses. |
-| `etc/systemd/system/orbit-process-<pi_process_id>-pi-server.service` | The unit of the slot's `pi-server` Process, exactly as the Gateway renders it: the WireGuard address and the Pi port are in its `ExecStart`. |
-| `…-pi-server.service.d/10-slot.conf` | Start Pi after WireGuard, because Pi listens on the WireGuard address. |
-| `etc/systemd/system/orbit-slot.target.d/10-pi.conf` | Binds `orbit-slot.target` to the Pi unit and orders it after Pi. It is also the marker that the VM is a slot. |
-
-These files sit in the volume, not in the image. A change of the Gateway address, the CA, the Pi port or the Pi Process then needs a new `identity_revision` and a volume sync, not a new task image.
-
-The image also holds the system group `orbit-env`, because the observer unit names it in `SupplementaryGroups` and a unit that names a missing group does not start. Today's enrolment creates the same group with `groupadd -f`, so it is the same on a VM that is not a slot.
-
-A VM with no volume stays quiet. The unit has no matching virtiofs tag, so its start check skips it. It installs nothing and starts no WireGuard, no observer and no Pi, and today's enrolment is unchanged.
-
-#### The slot units
-
-Built: the task image also holds the units that start a slot. They are the same for every slot, so the image bakes them. The files in the identity tree are what differ per slot.
-
-| File in the image | Content |
-| --- | --- |
-| `/etc/systemd/system/orbit-slot.target` | Enabled in `multi-user.target`. It is bound to WireGuard, wants the observer, and is ordered after both. It starts only when the tree holds `orbit-slot.target.d/10-pi.conf`. |
-| `/etc/systemd/system/orbit-agent.service` | The observer unit as the Gateway renders it for a new Node. It is not enabled. |
-| `/etc/systemd/system/orbit-agent.service.d/10-slot.conf` | A drop-in: start after WireGuard, and only when `/etc/orbit/agent/{secret,config.toml,ca.pem}` exist. |
-| `/etc/systemd/system/wg-quick@orbit.service.d/10-slot.conf` | A drop-in: start only when `/etc/wireguard/orbit.conf` exists. |
-
-Only the target is enabled. The target means that the slot is up: it is bound to WireGuard and, through its drop-in from the tree, to the Pi unit. A WireGuard or Pi unit that fails to start, or is skipped, fails the start of the target. A WireGuard or Pi unit that stops later takes the target down with it. The observer is only wanted, because it retries by itself when the Gateway is out of reach. A claim therefore checks `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`. The target stays inactive on a VM with no slot identity.
-
-The target uses `BindsTo=`, not `Requires=`. In the proof, a Pi unit that exited right after its start left a `Requires=` target active, and a Pi unit whose condition failed did too. With `BindsTo=` the first leaves the target inactive and the second fails `systemctl start`. A Pi that crashes and restarts on its own does not bring the target back up. The next claim check starts it again.
-
-The image holds no Pi unit, no address and no key. Pi comes with the tree, as the unit that the Gateway renders for the slot's `pi-server` Process. The Gateway reads that Process as the unit `orbit-process-<id>-pi-server.service`, in its status, its observer facts and its log reads, and the Process id is different for each slot. The Gateway keeps the Process record of the slot, so the unit has that name.
-
-A systemd alias to a baked `pi-server.service` is not enough: `systemctl status` follows it, but the observer reads logs with `journalctl --unit`, which does not, and would find no entries.
-
-A new unit name is unknown to systemd until it reloads, and the boot transaction has already expanded the target. So the identity unit reloads systemd and starts `orbit-slot.target` again, and the target, with its drop-in from the tree, is bound to the Pi unit and starts it.
-
-Each unit starts only when the files of its slot are there, so a VM with no identity volume starts none of them. The smoke VM of the [image build](#build-the-base-image) checks that, and checks that the target is enabled.
-
-A VM that is not a slot behaves as before. Today's enrolment writes `orbit-agent.service` at the same path, with the same text, and enables it. Its files make the conditions of the drop-in true. Pi runs there as the same Process unit, which today's enrolment installs. Two traces of the target remain on such a VM: the unit `orbit-slot.target` is loaded and inactive, and the slice `system-wg\x2dquick.slice` is active, because systemd creates the slice when it skips the WireGuard unit. A later converge of the Node rewrites `orbit-agent.service` from the Gateway's text. The drop-in stays.
-
-A slot that was enrolled before this image has no unit, no drop-in and no files of the new tree in its volume. Run `task-vms:enroll-slot` for it again before the image is promoted. No slot is live yet, so this is only a note.
-
-The Gateway computes `identity_revision` from the fleet-wide inputs, such as the model list and the CA. The volume keeps the same value in `REVISION`. A claim compares them. If they differ, the claim rewrites the volume before it clones the VM.
-
-#### Enrol once
-
-The `task_vm.slot_enroll` kind creates the slot. It makes the identity volume and the keys on the host, and writes the observer configuration, the observer CA and the Pi unit into the volume. The private keys never leave the host. It adds the hub peer, issues the model key, and boots a proof VM that must reach the observer and Pi. The slot becomes `free` only after the proof passes. A rerun keeps the keys that exist.
-
-There is no CLI command of its own. An operator runs `php artisan task-vms:enroll-slot <host> <n>` on the Gateway, one slot at a time. The Gateway records the slot as a `task_vms` row in the state `provisioning`, with its Node, the `pi-server` Process, its WireGuard address, its static bridge address and its fixed MAC. It makes the Pi token and the model key once, keeps both encrypted on the row, and pushes both to the vault. 
-
-The model key stays on the row because the router teardown fence and the revoke at slot retire read it there. The workflow registers the model key with the router before the identity phase writes it into `models.json`.
-
-A failed enrolment makes the slot `failed`. No claim can take it. The proof VM and its seed clone are deleted also after a failure, and the next boot removes any that a crash left. The keys, the volume and the hub peer stay, and running the command again for the same slot continues from them. A `free` slot is not counted in the host capacity of today's task VMs, and Doctor reports nothing for it.
-
-#### Claim
-
-A task claims a slot only on a host that `task_vms.slot_claim_hosts` lists and that has at least one slot. No host is listed by default, so every task enrols a new VM as before. A listed host stops creating VMs of its own, so list it after its slots are enrolled. A listed host with no slot is served as an unlisted one. A host that is not listed serves the task only when no listed host has a free slot. The [UpCloud overflow](#upcloud-overflow) still applies when all listed hosts are full, if it is configured for the Project.
-
-The claim has two parts. The Gateway takes the lowest-numbered free slot on the listed host with the most free slots, in the placement transaction of `tasks:provision`. A second claim for the same slot waits. 
-
-A slot has one size, so a group whose size is not normal (a medium or large Project, or a declared topology) never claims a slot: it takes a host that creates its own VMs, or waits. A slot claim uses only the promoted image of the current recipe, never the one-day fallback image, because only that image holds the slot units.
-
-The slot records the task, `claimed_at` and the image. It makes no Node, no WireGuard key, no token and no model key. It removes the slot Node's old agent facts, because an agent never rewrites a report that has not changed.
-
-Then Swamp runs the child workflow `task-vm-slot-claim` in the task's own `tasks.provision` run, in place of `task-vm-provision`. Its steps are:
-
-1. `Boot the VM` runs `task-vm-slot-boot`, the boot of an enrolment's proof VM.
-   It clones the topology seed and creates the VM from the task image with the identity volume.
-   Then it starts the VM and waits for the guest.
-2. `Check the slot VM` connects over WireGuard to the host key that the slot recorded.
-   It runs `systemctl start orbit-slot.target && systemctl is-active --quiet orbit-slot.target`: the start returns when the identity, observer and Pi units are up, and the check proves the target stayed up.
-   It checks that the observer and Pi binaries match their pins and that Pi answers, which it retries while Pi binds.
-3. `Fetch the task branch` fetches the start commit of the task onto the checkout at the workspace path.
-   It does this only when the image holds a checkout and the repository needs a credential.
-   It uses the token that the Gateway minted for the task, from the vault, with the same GitHub URL rewrites as the workspace clone.
-4. `Reset the nested topology` runs `task-vm-nested-reset`, which lands with B3 and B4.
-   The step is skipped while `task_vms.nested_reset` is off, which is the default.
-   While the setting is on, the claim is refused at admission, so no slot is taken; a placeholder workflow would fail the run otherwise.
-
-The slot becomes `ready` when the run succeeded and the slot Node has reported a `host` fact since `claimed_at`. If the run succeeded and no report arrived, the task fails with `task_vm.slot_not_reporting`. A failed step fails the task, and the task ends like any other: the ending run tears its workspace down, and the [release](#release) of the slot follows. The release deletes the half-made VM and its seed clone, and the slot becomes `free`. If a run cannot start or fails, the slot stays `failed` or `destroying`, and the host sweep tries again.
-
-Enrolling the slot again clears the task from it. A task that ends does not destroy its slot: see the [release](#release).
-
-The target for the whole claim is 20 seconds. Most of that time is the VM boot, about 16 seconds. The claims still use the current task image and its fallback rule.
-
-When all slots of all listed hosts are taken, and no other host has room, the task waits with `Task VM: no capacity.` as before.
-
-#### Release
-
-When a task on a slot ends, the slot goes back to `free` with its identity kept. A task ends by completion, by cancel, by the cleanup after its merge, or by a failed claim. Nothing destroys a slot: `task_vm.destroy` refuses one with `task_vm.slot_not_destroyable`.
-
-The release has two parts. For a task that ran, the ending run (`tasks.cancel` or `tasks.maintenance_finish`) comes first. It pushes approved work, withdraws the workspace Route and runs the Project's teardown steps in the guest, as it does for any task VM. It does not destroy the VM. After it succeeded, and its workspace Instance and Route records are gone, the Gateway admits the `task_vm.slot_release` kind for the slot. A failed claim starts the same ending run as soon as the claim fails, because it can have published its Route.
-
-The `task_vm.slot_release` kind then runs in four steps. It records the VM name and the seed clone name, and the slot becomes `destroying`, so no claim can take it.
-
-1. Swamp deletes the VM with one forced `incus delete`. An absent VM counts as done.
-2. Swamp deletes the seed clone volume. The identity volume stays: the next claim uses it.
-3. Swamp reads the host's instances and custom volumes again.
-4. A native assert proves that neither the VM nor the seed clone is listed, and that the identity volume is.
-
-When the run has succeeded, the Gateway scrubs its own records, in one transaction:
-
-- It deletes the slot Node's agent facts of every kind. The next task uses the same workspace path, and an old checkout fact would still read as current.
-- It removes the workspace records on the slot Node without contacting it: Instance, Route, Schedule, and every Process except `pi-server`.
-
-Then it checks that the Node holds nothing else. The Node has no Instance, Route or Schedule. It has no Process except `pi-server`. It has no database connection, firewall rule or Tool.
-
-A leftover is a failure. The slot becomes `failed` with the error `task_vm.slot_not_clean`. The Operation fails, and the Gateway reports the error, which files a problem.
-
-With a clean Node, it clears the task, `claimed_at`, `ready_at`, the image, and the publish, topology and error fields. The slot becomes `free`.
-
-The release rotates nothing. The Pi token, the model key and the observer secret stay the same from task to task. The Node, the hub peer and the identity volume stay too. Orbit revokes the model key when an operator removes the slot, not when a task ends.
-
-If a host step fails or the run expires, the slot stays `destroying` with the error.
-
-The task VM host sweep runs every thirty minutes. It releases a slot again when the slot is `provisioning`, `ready`, `parked`, `failed` or `destroying`, its task has ended, and the task does not own a workspace. The forced deletes make a repeated release safe.
-
-A task that ended with its workspace still in place, such as a failed claim, gets its ending run from the sweep first. Only that run can push the approved work, withdraw the Route and tear the workspace down. The release waits while an Operation of the task group, the slot or its Node is open. A slot with no recorded task is `free` or still enrolling, and has nothing to release.
-
-#### Network and firewall
-
-The hub filter, the nftables table and the UFW rules match the reserved range as a CIDR. They need no change. Hub peers are permanent. A claim or a release writes nothing to the hub.
-
-#### Slot limits
-
-- UpCloud overflow is off. A slot needs a host volume, so UpCloud has no slot yet.
-- Lowering `max_vms` removes free slots only. It never removes a slot that a task holds.
-- The first claim after a new task image reaches a host is slower, because Incus unpacks the image once.
 
 ### From claim to workspace
 
@@ -1330,8 +1132,6 @@ Swamp resumes failed native steps; completed steps remain checkpoints in the sam
 
 An Incus build copies the pinned Pi build from the Gateway Node to 209 with official SSH, checks its SHA-256 there, copies it to the build host, and pushes it with `incus file push --mode 0600 --uid 0 --gid 0` to `/var/cache/orbit/pi/<sha256>.bin` in the guest. The `pi` phase verifies that file against its pin before `pi.install-artifact` publishes it. Final cleanup removes both staged copies. A recipe without Pi skips the copies; its `pi` phase changes nothing.
 
-After `ssh.service` is enabled, an Incus build installs the [slot identity unit](#the-identity-volume). The `slot-identity-unit` step runs `incus file push` with the unit text as stdin, and `slot-identity-enable` runs `systemctl enable orbit-slot-identity.service`. The unit is not part of the recipe, so it does not change the recipe identity and starts no rebuild: request one with `task-vms:build-recipe --rebuild`. The smoke VM has no identity volume. Its `smoke-slot-identity` step only checks that the unit is enabled in the published image.
-
 UpCloud Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
 
 The guest phase service keeps its existing 1,440-second execution bound and 30-second stop bound. Guest commands keep their typed command deadlines. Native workflow placement, cancellation and recovery use Swamp defaults; `queueTimeout` is 30 seconds. No Gateway observation loop, progress callback or keyed receipt controls Incus image execution.
@@ -1405,7 +1205,7 @@ The builder has no fleet identity: no WireGuard address, Node, token or model ke
 
 ##### How a claim selects the new seed
 
-A claim and a slot clone the seed named from the fingerprint of the task image (`orbit-topology-seed-<12 hex>`), as before. The refresh swaps what that name holds, so no claim path changes. A task VM that already runs keeps its own clone of the old seed.
+A claim clones the seed named from the fingerprint of the task image (`orbit-topology-seed-<12 hex>`), as before. The refresh swaps what that name holds, so no claim path changes. A task VM that already runs keeps its own clone of the old seed.
 
 One host lock, `/run/lock/orbit-task-vm-seed.lock`, orders the two. The claim’s seed clone and the promotion both take it with `flock`. So no claim clones the seed between the two renames, and a claim waits for them.
 
@@ -1538,8 +1338,6 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
 | `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#size-of-a-task-vm) when no subtask declares a topology. Default `[]` |
 | `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | A JSON list of Project IDs whose groups get a [large VM](#size-of-a-task-vm) when no subtask declares a topology. Takes precedence over `medium_projects`. Default `[]` |
-| `task_vms.slot_claim_hosts` | `ORBIT_TASK_VMS_SLOT_CLAIM_HOSTS` | A JSON list of task VM host Node IDs whose tasks [claim a free slot](#claim) instead of enrolling a new VM. Default `[]` |
-| `task_vms.nested_reset` | `ORBIT_TASK_VMS_NESTED_RESET` | Whether a slot claim runs the `task-vm-nested-reset` workflow, which lands with B3 and B4. While on, a slot claim is refused. Default off |
 | `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need a [declared topology](#prove-work-on-a-topology). Default `{}` |
 
 Each task VM stores `ai_router_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.

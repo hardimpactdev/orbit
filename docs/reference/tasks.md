@@ -132,8 +132,6 @@ Each captured Project setup command then runs in order as `env -C <checkout> …
 
 Full capacity, or no usable promoted image, returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available. While a host builds the current recipe, or after its build failed, the host's last promoted image serves a new VM when it is at most one day old, unless the group set `current_recipe`. See [Image fallback](/reference/compute-drivers#image-fallback).
 
-On a host that [claims slots](/reference/compute-drivers#claim), the group takes a free slot instead of a new VM. It waits with `Task VM: no capacity.` when none is free.
-
 Admission captures the workspace's runtime with the same actions as `instance:create`. A Project that serves a web root with `task_workspace_routed` on gets a private Route on the development Cluster. Development Process definitions become Instance Processes. Schedule definitions are production-only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)), so a workspace gets none. The guest's host key is unknown at admission, so the Gateway captures the guest's SSH targets with `host_keys: null`.
 
 `Bind the workspace keys` fills those keys from the VM step's pinned key and refuses any other Node. The run uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials. Success activates the Route and completes the Processes; a failure marks them failed. The projection reads the admitted Process members only when the receipt reports Process outcomes.
@@ -189,8 +187,6 @@ A stopped VM skips guest teardown. The exact group, Project and VM must own the 
 The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed, interrupted or timed-out cleanup retains the records for recovery; it does not mark the group cancelled. Its captured VM cleanup [fails like a standalone destroy](/reference/compute-drivers#destroy-a-task-vm): the guest Node becomes `failed`, and another cancel claims it again after [native settlement](/reference/operations#native-run-budgets). A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
 
 A completed group with an owned residual VM or workspace uses this same cleanup and stays `completed`; a completed group with neither returns `tasks.not_cancellable`. A VM without a group uses `task_vm.destroy`.
-
-A [slot](/reference/compute-drivers#task-vm-slots) is never destroyed. For a task on a slot, the ending DAG pushes approved work, withdraws the Route and runs the teardown steps as above, but its destroy step is skipped and the Gateway keeps the slot's Node, keys and tokens. When the run succeeds and the workspace records are gone, the Gateway admits the [slot release](/reference/compute-drivers#release), which deletes the VM and returns the slot to `free`. Completion by `tasks.maintenance_finish` ends the same way. A failed claim starts this ending run itself, because it can have published its Route, and its status becomes `cancelled`.
 
 Plain Task VMs have no Swamp worker. Native provision supplies the Pi runtime and public Node metadata; Tasks work runs from Node 209 over official SSH.
 

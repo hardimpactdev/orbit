@@ -29,7 +29,7 @@
                         "reason": "none: no case yet"
                     }
                 ],
-                "slot": null,
+                "vm": null,
                 "receipt_url": null
             },
             "cancel_requested": false,

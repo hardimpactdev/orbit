@@ -16,7 +16,7 @@ use JsonException;
 
 /**
  * Projects the terminal run of a proof. The verdicts come from the final line of `bin/proof-fleet verify`, which the
- * run keeps as the stdout of its case step; the Gateway holds no other source and never calls Swamp or the slot.
+ * run keeps as the stdout of its case step; the Gateway holds no other source and never calls Swamp or the VM.
  */
 final readonly class ProofRunProjection implements DirectOperationProjection, NativeOperationProjection
 {
@@ -28,7 +28,7 @@ final readonly class ProofRunProjection implements DirectOperationProjection, Na
 
     private const array Verdicts = ['p' => 'passed', 'f' => 'failed', 'u' => 'unrun'];
 
-    public function __construct(private ProofSlotClaim $slots) {}
+    public function __construct(private ProofVmClaim $vms) {}
 
     public function native(Operation $operation): bool
     {
@@ -39,11 +39,11 @@ final readonly class ProofRunProjection implements DirectOperationProjection, Na
     {
         $input = $operation->input;
         if ($operation->kind !== OperationKinds::ProofRun || ! is_string($input['commit'] ?? null) || ! is_array($input['cases'] ?? null)
-            || $input['cases'] === [] || ! is_array($input['slot'] ?? null)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'A proof run needs its admitted commit, cases and slot.', 422);
+            || $input['cases'] === [] || ! is_array($input['vm'] ?? null)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'A proof run needs its admitted commit, cases and VM.', 422);
         }
 
-        return ['intent' => array_intersect_key($input, array_flip(['commit', 'cases', 'uncovered', 'slot', 'ssh_execution']))];
+        return ['intent' => array_intersect_key($input, array_flip(['commit', 'cases', 'uncovered', 'vm', 'ssh_execution']))];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -63,10 +63,10 @@ final readonly class ProofRunProjection implements DirectOperationProjection, Na
             $data['error_code'] = ($report['cases_ran'] ?? false) === true ? 'proof.cases_failed' : 'proof.run_failed';
         }
         $result = ['commit' => $operation->input['commit'], 'outcome' => $status === OperationStatus::Succeeded ? 'passed' : 'failed', 'cases' => $cases,
-            'uncovered' => $operation->input['uncovered'] ?? [], 'slot' => ValidatedData::object($operation->input['slot'])['name'], 'receipt_url' => null];
+            'uncovered' => $operation->input['uncovered'] ?? [], 'vm' => ValidatedData::object($operation->input['vm'])['name'], 'receipt_url' => null];
         $projected = app(DirectOperation::class)->project($operation, $data, $result);
         if ($status->terminal()) {
-            $this->slots->release(ValidatedData::string(ValidatedData::object($operation->input['slot'])['name']));
+            $this->vms->release(ValidatedData::string(ValidatedData::object($operation->input['vm'])['name']));
         }
 
         return $projected;

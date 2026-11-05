@@ -16,8 +16,6 @@ use App\Models\Node;
  *   renaming: the old seed becomes `-previous` for one refresh, and the clone takes the seed name.
  * - `tvm-<id>-topology-seed`: the clone of its base image's topology seed that a VM whose size runs a topology boots
  *   with. It goes with the VM.
- * - `<node-slug>-tvm-<n>-topology-seed` and `<node-slug>-tvm-<n>-identity`: the same clone of a slot's VM, and the slot's
- *   identity volume, which outlives every VM of the slot.
  *
  * Incus keeps a ZFS clone's origin until the last clone is gone, so a seed can go while VMs still use their clones.
  */
@@ -29,7 +27,7 @@ final readonly class TaskVmVolumes
     /** The size of every topology seed. ZFS volumes are thin, so a clone uses only what its Nodes write. */
     public const string SeedSize = '45GiB';
 
-    private const string Clone = '/\A((?:[a-z0-9]+(?:-[a-z0-9]+)*-)?tvm-[0-9]+)-(?:topology-seed|identity)\z/D';
+    private const string Clone = '/\A(tvm-[0-9]+)-topology-seed\z/D';
 
     private const string Seed = '/\Aorbit-topology-seed-([a-f0-9]{12})(?:-new|-refresh|-previous)?\z/D';
 

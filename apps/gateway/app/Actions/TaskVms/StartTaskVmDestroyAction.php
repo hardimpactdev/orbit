@@ -27,9 +27,6 @@ final readonly class StartTaskVmDestroyAction
             if ($vm === null || $vm->state === TaskVmState::Destroyed) {
                 return null;
             }
-            if ($vm->slot !== null) {
-                throw new ResourceOperationException('task_vm.slot_not_destroyable', 'A slot outlives its tasks. Its release is task_vm.slot_release.', 409);
-            }
             $existing = Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->first();
             if ($existing !== null) {

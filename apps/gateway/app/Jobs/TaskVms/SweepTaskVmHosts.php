@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace App\Jobs\TaskVms;
 
 use App\Actions\TaskVms\StartTaskVmDestroyAction;
-use App\Actions\TaskVms\StartTaskVmSlotReleaseAction;
 use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Domain\TaskVms\TaskVmSlotReleaseIntent;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Models\Node;
@@ -37,15 +35,9 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         $this->onTaskVmQueue();
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations, TaskVmSlotReleaseIntent $intent): void
+    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations): void
     {
-        // A slot of an ended task: the ending run first when the task still owns its workspace, otherwise the release.
-        foreach (TaskVm::query()->whereNotNull('slot')->whereNotNull('group_id')->get() as $slot) {
-            if ($intent->sweepable($slot) || $intent->endable($slot)) {
-                app(StartTaskVmSlotReleaseAction::class)->admit($slot->id);
-            }
-        }
-        foreach (TaskVm::query()->whereNull('slot')->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {
+        foreach (TaskVm::query()->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {
             try {
                 app(StartTaskVmDestroyAction::class)->execute($retired->id);
             } catch (ResourceOperationException $refused) {

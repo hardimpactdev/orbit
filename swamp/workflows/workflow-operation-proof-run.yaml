@@ -1,6 +1,6 @@
 id: 25c04899-994c-4f6c-a297-129b033a8568
 name: operation-proof-run
-description: Prove the selected cases of one commit on a claimed proof slot, with the existing proof path, as official SSH exec argv.
+description: Prove the selected cases of one commit on a claimed proof VM, with the existing proof path, as official SSH exec argv.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -53,7 +53,7 @@ jobs:
         argv:
         - git
         - -C
-        - ${{ inputs.intent.slot.checkout_path }}
+        - ${{ inputs.intent.vm.checkout_path }}
         - rev-parse
         - HEAD
   - name: Read the checkout state
@@ -69,16 +69,16 @@ jobs:
         argv:
         - git
         - -C
-        - ${{ inputs.intent.slot.checkout_path }}
+        - ${{ inputs.intent.vm.checkout_path }}
         - status
         - --porcelain
   - name: Check the checkout
     labels: {role: swamp}
     task:
       type: assert
-      # The slot holds code and no credential: its checkout is clean at the exact commit, or nothing runs.
+      # The VM holds code and no credential: its checkout is clean at the exact commit, or nothing runs.
       expr: 'steps["Read the checkout head"].outputs.stdout.trim() == inputs.intent.commit && steps["Read the checkout state"].outputs.stdout.trim() == ""'
-      message: The slot checkout is not clean at the admitted commit.
+      message: The VM checkout is not clean at the admitted commit.
       severity: high
     dependsOn:
     - step: Read the checkout head
@@ -101,7 +101,7 @@ jobs:
         hosts: name:target
         okExitCodes: any
         timeoutSec: 2400
-        argv: ${{ ["env", "-C", inputs.intent.slot.checkout_path, "PROOF_BUDGET_SECONDS=1800", "bin/proof-fleet", "verify", string(inputs.operation_id)] + inputs.intent.cases.map(c, c.program) }}
+        argv: ${{ ["env", "-C", inputs.intent.vm.checkout_path, "PROOF_BUDGET_SECONDS=1800", "bin/proof-fleet", "verify", string(inputs.operation_id)] + inputs.intent.cases.map(c, c.program) }}
     dependsOn:
     - step: Check the checkout
       condition:
@@ -121,7 +121,7 @@ jobs:
         argv:
         - env
         - -C
-        - ${{ inputs.intent.slot.checkout_path }}
+        - ${{ inputs.intent.vm.checkout_path }}
         - bin/proof-fleet
         - release
         - ${{ string(inputs.operation_id) }}

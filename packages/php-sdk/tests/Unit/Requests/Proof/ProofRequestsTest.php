@@ -104,7 +104,7 @@ describe('proof responses from recorded Gateway fixtures', function (): void {
         'nothing to prove' => ['nothing-to-prove', 'succeeded', null, 'nothing_to_prove'],
         'a case failed' => ['failed', 'failed', 'proof.cases_failed', 'failed'],
         'fleet not ready' => ['run-failed', 'failed', 'proof.run_failed', 'failed'],
-        'no slot' => ['no-slot', 'failed', 'proof.no_slot', ''],
+        'no VM' => ['no-vm', 'failed', 'proof.no_vm', ''],
     ]);
 
     it('preserves the code and details of a recorded refusal', function (string $fixture, string $code, array $details): void {

@@ -79,9 +79,9 @@ CI is the only gate: if CI passes, the PR merges. So CI must be strict about wha
 
 1. Fast checks run in about 1 minute.
 2. The VM job runs only when command code changed:
-   1. Orbit takes a free task VM slot and starts a fresh test fleet from the ready snapshot, in seconds.
+   1. Orbit takes a VM and starts a fresh test fleet from the ready snapshot, in seconds.
    2. It applies the PR's code to that fleet, in about 2 to 3 minutes.
-   3. It runs only the test cases of the affected commands, one after another in that fleet, and then releases the slot.
+   3. It runs only the test cases of the affected commands, one after another in that fleet, and then releases the VM.
 
    Development and CI use the same cases and assertions. The required check identifies the tested commit and reports every selected case. A missing result or a failed assertion fails the check. A passing check confirms the defined cases; it does not prove behavior that the cases omit.
 
@@ -92,7 +92,7 @@ CI is the only gate: if CI passes, the PR merges. So CI must be strict about wha
 
 ### The VM job
 
-The VM job is the target. Built so far: the `orbit proof:run` admission (trust check and case selection) and the selection list. Not built yet: proof execution (slot claim, commit transfer, receipt), the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+The VM job is the target. Built so far: the `orbit proof:run` admission (trust check and case selection) and the selection list. Not built yet: proof execution (VM claim, commit transfer, receipt), the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
 
 The job is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
 
@@ -107,7 +107,7 @@ The job is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs
 
 - The job summary lists each case, the uncovered paths and the receipt link. It holds no command output and no host name. The receipt link needs access to the private network.
 - A run with uncovered paths and no case passes, and the summary says so. It never looks like a run that proved something.
-- The job exits with the verdict. The timeout is 45 minutes: the slot wait plus the run budget. A cancelled job cancels its run.
+- The job exits with the verdict. The timeout is 45 minutes: the VM wait plus the run budget. A cancelled job cancels its run.
 - `Proofs` tests the pull request head, not its merge with `main`. The merge queue tests the merge.
 
 **Triggers**
@@ -131,7 +131,7 @@ The job is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs
 - The workflow condition picks a self-hosted runner for a pull request from this repository and for the merge queue. It picks a hosted runner for every other pull request.
 - `tools/test_ci_runner_policy.py` pins the condition. A fork controls its own copy of the workflow, so the approval is the gate and the condition is the second layer.
 - The job passes no secret.
-- The CI proof slot holds no Pi token and no model key.
+- The CI proof VM holds no Pi token and no model key.
 - Orbit refuses a commit that is not on a branch of the repository, so a job that reaches a runner can still prove only trusted code.
 
 **Required check**

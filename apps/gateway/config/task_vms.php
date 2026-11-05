@@ -32,12 +32,6 @@ return [
     // A JSON object from Project id to path patterns, such as {"46":["apps/agent/**"]}. A handoff that changes one fails
     // while no subtask of the group declares a topology.
     'topology_paths' => json_decode((string) (env('ORBIT_TASK_VMS_TOPOLOGY_PATHS') ?: '{}'), true),
-    // A JSON list of task VM host Node ids whose tasks claim a free slot (docs/reference/compute-drivers.md, Task VM slots)
-    // instead of enrolling a new VM. Off for every host by default. A listed host stops creating VMs of its own, so list
-    // it only after its slots are enrolled.
-    'slot_claim_hosts' => json_decode((string) (env('ORBIT_TASK_VMS_SLOT_CLAIM_HOSTS') ?: '[]'), true),
-    // Whether a slot claim runs the `task-vm-nested-reset` workflow. The workflow lands with B3/B4; until then it stays off.
-    'nested_reset' => filter_var(env('ORBIT_TASK_VMS_NESTED_RESET', false), FILTER_VALIDATE_BOOLEAN),
     'pi' => [
         'artifact_path' => env('ORBIT_TASK_VMS_PI_ARTIFACT_PATH'),
         'artifact_sha256' => env('ORBIT_TASK_VMS_PI_ARTIFACT_SHA256'),

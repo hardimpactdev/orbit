@@ -13,8 +13,8 @@ use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
-use App\Domain\Proof\ProofSlot;
-use App\Domain\Proof\ProofSlotClaim;
+use App\Domain\Proof\ProofVm;
+use App\Domain\Proof\ProofVmClaim;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -193,7 +193,7 @@ describe('proof:run admission', function (): void {
 
         expect($operation->kind)->toBe('proof.run')->and($operation->status)->toBe(OperationStatus::Succeeded)
             ->and($operation->result)->toBe(['commit' => PROOF_SHA, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
-                'uncovered' => [['path' => 'swamp/workflows/workflow-vault-sync.yaml', 'reason' => 'none: no case yet']], 'slot' => null, 'receipt_url' => null]);
+                'uncovered' => [['path' => 'swamp/workflows/workflow-vault-sync.yaml', 'reason' => 'none: no case yet']], 'vm' => null, 'receipt_url' => null]);
     });
 
     it('refuses an unmapped path and records nothing', function (): void {
@@ -227,15 +227,15 @@ describe('proof:run admission', function (): void {
             ->and(Operation::query()->count())->toBe(0);
     });
 
-    it('does not take a slot while execution is switched off', function (): void {
+    it('does not take a VM while execution is switched off', function (): void {
         $source = proofSource();
         $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
         proofWorld($source);
-        app()->instance(ProofSlotClaim::class, new class implements ProofSlotClaim
+        app()->instance(ProofVmClaim::class, new class implements ProofVmClaim
         {
-            public function claim(): ProofSlot
+            public function claim(): ProofVm
             {
-                throw new LogicException('A disabled run must not claim a slot.');
+                throw new LogicException('A disabled run must not claim a VM.');
             }
 
             public function release(string $name): void {}
@@ -244,29 +244,29 @@ describe('proof:run admission', function (): void {
         expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.execution_disabled');
     });
 
-    it('refuses with proof.no_slot while no slot claim exists, once execution is on', function (): void {
+    it('refuses with proof.no_vm while no proof VM claim exists, once execution is on', function (): void {
         config(['proof.execution' => true]);
         $source = proofSource();
         $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
         proofWorld($source);
 
-        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.no_slot')
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.no_vm')
             ->and(Operation::query()->count())->toBe(0);
     });
 
-    it('gives the slot back when the run cannot be admitted after the claim', function (): void {
+    it('gives the VM back when the run cannot be admitted after the claim', function (): void {
         config(['proof.execution' => true]);
         $source = proofSource();
         $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
         proofWorld($source);
-        $claim = new class implements ProofSlotClaim
+        $claim = new class implements ProofVmClaim
         {
             /** @var list<string> */
             public array $released = [];
 
-            public function claim(): ProofSlot
+            public function claim(): ProofVm
             {
-                return new ProofSlot('beast-tvm-1', Node::query()->value('id'), '/home/orbit/orbit');
+                return new ProofVm('tvm-17', Node::query()->value('id'), '/home/orbit/orbit');
             }
 
             public function release(string $name): void
@@ -274,10 +274,10 @@ describe('proof:run admission', function (): void {
                 $this->released[] = $name;
             }
         };
-        app()->instance(ProofSlotClaim::class, $claim);
+        app()->instance(ProofVmClaim::class, $claim);
 
         expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('swamp.ssh_target_unavailable')
-            ->and($claim->released)->toBe(['beast-tvm-1'])->and(Operation::query()->count())->toBe(0);
+            ->and($claim->released)->toBe(['tvm-17'])->and(Operation::query()->count())->toBe(0);
     });
 
     it('runs every case for --all and never lets a docs-only commit skip it', function (): void {

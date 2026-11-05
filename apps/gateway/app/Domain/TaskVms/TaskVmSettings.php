@@ -37,8 +37,6 @@ final readonly class TaskVmSettings
      * @param  list<int>  $mediumProjectIds
      * @param  list<int>  $largeProjectIds
      * @param  array<int, list<string>>  $topologyPaths  Project id => path patterns that need a declared topology
-     * @param  list<int>  $slotClaimHosts  host Node ids whose tasks claim a free slot instead of enrolling a new VM; none by default
-     * @param  bool  $nestedReset  whether a claim runs the `task-vm-nested-reset` workflow, which lands with B3/B4
      */
     public function __construct(
         public bool $enabled,
@@ -55,8 +53,6 @@ final readonly class TaskVmSettings
         public array $largeProjectIds = [],
         public array $topologyPaths = [],
         public ?string $swampHost = null,
-        public array $slotClaimHosts = [],
-        public bool $nestedReset = false,
     ) {}
 
     /** @throws TaskVmException `task_vm.invalid_config` for the first invalid value */
@@ -140,8 +136,6 @@ final readonly class TaskVmSettings
             largeProjectIds: self::projectIds($config, 'large_projects'),
             topologyPaths: $topology,
             swampHost: $swampHost,
-            slotClaimHosts: self::projectIds($config, 'slot_claim_hosts', 'Node ids'),
-            nestedReset: ($config['nested_reset'] ?? null) === true,
         );
     }
 
@@ -149,10 +143,10 @@ final readonly class TaskVmSettings
      * @param  array<string, mixed>  $config
      * @return list<int>
      */
-    private static function projectIds(array $config, string $key, string $of = 'Project ids'): array
+    private static function projectIds(array $config, string $key): array
     {
         $value = $config[$key] ?? null;
-        $message = "{$key} must be a JSON list of {$of}.";
+        $message = "{$key} must be a JSON list of Project ids.";
         TaskVmConfig::validate([$key => $value], [
             $key => ['present', 'list'],
             "{$key}.*" => ['integer:strict', 'min:1'],
@@ -232,12 +226,6 @@ final readonly class TaskVmSettings
         }
 
         throw new TaskVmException(TaskVmError::UnknownHost, "Node [{$nodeId}] is not a task VM host.");
-    }
-
-    /** Tasks on this host claim a free slot. Off unless the host is listed in `slot_claim_hosts`. */
-    public function claimsSlots(int $nodeId): bool
-    {
-        return in_array($nodeId, $this->slotClaimHosts, true);
     }
 
     public function hasHost(int $nodeId): bool

@@ -54,8 +54,6 @@ task_vm.fill_package_cache
 task_vm.hub_converge
 task_vm.resume
 task_vm.seed_refresh
-task_vm.slot_enroll
-task_vm.slot_release
 task_vm.sweep_host
 task_vm.upcloud_image_build
 tasks.analyze
