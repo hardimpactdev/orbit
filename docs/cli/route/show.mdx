@@ -5,5 +5,29 @@ description: "Show one Route with its kind, generation basis, upstream or Proces
 ---
 
 ```bash
-orbit route:show <route>
+orbit route:show <route> [--json]
 ```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the Route as JSON. |
+
+```bash
+orbit route:show 12
+```
+
+In a terminal, an omitted Route is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `route.id_invalid` and sends no request, and so is a value that is not a positive integer.
+
+The command shows what Orbit has recorded. It does not contact any Node, so it works while a Node is unreachable. The detail is titled `Route: <domain>` and has the fields ID, Kind, Project, Provenance, Scope, Publication, Status, Generation basis Node, Replaces Route, Replaced by Route, Replacement step, Target set step, Failed step, Error and Request ID. A custom proxy Route also shows its Upstream and Process; an app Route shows its Targets and Web root, which is `Instance root` when it has none. An analytics tracking Route shows its Analytics Instance and no targets. The Project, Scope, Generation basis Node, related Routes and Targets show by name and ID. A missing value shows `—`. The replacement, target set and failure fields tell you where an unfinished change stopped.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `route.id_invalid` | The Route is missing or is not a positive integer, and the CLI cannot prompt. |
+| `http.404` | The Route is unknown. |
+| `node_access.required` | The caller has no access grant to the Node that owns the Route: for a Cluster-scoped Route, to any member Node (or, for a Cluster without members, to the Gateway Node); for a public custom proxy Route, to both the Ingress Node and the Process Node. |
