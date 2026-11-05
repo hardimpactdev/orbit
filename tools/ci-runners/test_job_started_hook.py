@@ -21,11 +21,18 @@ class JobStartedHookTest(unittest.TestCase):
         self.git('add', '.')
         self.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', '-c', 'commit.gpgsign=false',
                  'commit', '-qm', 'Tracked file')
-        (self.work / '_temp').mkdir()
-        (self.work / '_temp/keep').write_text('runner internals\n')
+        # Runner internals and a non-git directory a job created must survive, even next to a broken checkout.
+        for kept in ('_temp/x/y/keep', '_actions/o/r/keep', 'orbit/cache/keep'):
+            (self.work / kept).parent.mkdir(parents=True)
+            (self.work / kept).write_text('kept\n')
+        (self.work / '_actions/o/r/.git').write_text('gitdir: elsewhere\n')
 
     def git(self, *args):
         subprocess.run(['git', *args], cwd=self.workspace, check=True, capture_output=True)
+
+    def assertKept(self):
+        for kept in ('_temp/x/y/keep', '_actions/o/r/keep', 'orbit/cache/keep'):
+            self.assertEqual((self.work / kept).read_text(), 'kept\n', kept)
 
     def hook(self):
         return subprocess.run(['bash', str(HOOK)], env={**os.environ, 'ORBIT_RUNNER_WORK': str(self.work)},
@@ -38,7 +45,7 @@ class JobStartedHookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.workspace / 'tracked.txt').read_text(), 'clean\n')
         self.assertFalse((self.workspace / 'leftover.txt').exists())
-        self.assertEqual((self.work / '_temp/keep').read_text(), 'runner internals\n')
+        self.assertKept()
 
     def test_empties_a_checkout_that_git_cannot_reset_and_still_succeeds(self):
         (self.workspace / '.git/HEAD').write_text('not a ref\n')
@@ -47,6 +54,7 @@ class JobStartedHookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(list(self.workspace.iterdir()), [])
         self.assertIn('emptying', result.stderr)
+        self.assertKept()
 
     def test_succeeds_without_a_checkout(self):
         for path in sorted(self.workspace.rglob('*'), reverse=True):

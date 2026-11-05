@@ -9,10 +9,9 @@ WORK=${ORBIT_RUNNER_WORK:-/home/runner/work}
 
 reset_workspace() {
   local workspace=$1
-  [ -d "$workspace" ] || return 0
-  if [ -d "$workspace/.git" ] \
-    && git -C "$workspace" reset --hard --quiet \
-    && git -C "$workspace" clean -ffdx --quiet; then
+  # Only a git checkout is reset; any other directory under WORK is not ours to touch. A worktree has a .git file.
+  [ -e "$workspace/.git" ] || return 0
+  if git -C "$workspace" reset --hard --quiet && git -C "$workspace" clean -ffdx --quiet; then
     return 0
   fi
   echo "job-started-hook: emptying $workspace; git could not reset it" >&2
