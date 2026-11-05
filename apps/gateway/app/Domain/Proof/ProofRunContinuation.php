@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Jobs\Proof\AdvanceProofRun;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
@@ -43,42 +44,58 @@ final readonly class ProofRunContinuation
         }
     }
 
+    /** Called when a task operation of any group ends. A group of a running proof gets one job that admits the next step, away from the locks of this projection. */
     public function apply(Operation $operation): void
     {
-        DB::afterCommit(fn () => $this->advance($operation->refresh()));
+        if ($operation->status->terminal() && $this->proof($operation) !== null) {
+            DB::afterCommit(static fn () => AdvanceProofRun::dispatch($operation->id));
+        }
     }
 
-    private function advance(Operation $operation): void
+    /** @throws ResourceOperationException when the next admission is refused, such as while the group is still recording a result; the job tries again */
+    public function advance(Operation $operation): void
     {
-        $proof = Operation::query()->where('kind', OperationKinds::ProofRun)->where('target_type', 'task_group')->where('target_id', $operation->target_id)->latest('id')->first();
-        if ($proof === null || $proof->status->terminal() || ! $operation->status->terminal() || ($operation->state['proof_continued'] ?? false)) {
+        $proof = $this->proof($operation);
+        if ($proof === null || ! $operation->status->terminal() || ($operation->state['proof_continued'] ?? false)) {
             return;
         }
-        $operation->update(['state' => [...($operation->state ?? []), 'proof_continued' => true]]);
         $group = Task::topLevel()->findOrFail($operation->target_id);
         if ($operation->kind === 'tasks.cancel') {
             $this->close($proof);
-
-            return;
-        }
-        if ($operation->kind === 'tasks.script') {
-            $this->store->change($proof, ['state' => [...($proof->state ?? []), 'verdict' => $this->verdict($this->lastLine($operation), $proof)]]);
         } elseif ($operation->kind === 'tasks.provision' && $operation->status === OperationStatus::Succeeded && $proof->cancel_requested_at === null) {
             $subtask = $group->tasks()->orderBy('position')->firstOrFail();
-            try {
-                $this->admit($group, 'tasks.script', fn () => app(StartTaskScriptAction::class)->execute($group,
-                    new StartTaskScriptData($subtask->id, 'bin/proof-fleet', ['verify', (string) $group->id, ...ValidatedData::stringList(array_column($this->cases($proof), 'program'))]), 'proof-run', null));
-
-                return;
-            } catch (ResourceOperationException) {
-                // The group is cancelled below; every case ends unrun.
+            $this->admit($group, 'tasks.script', fn () => app(StartTaskScriptAction::class)->execute($group,
+                new StartTaskScriptData($subtask->id, 'bin/proof-fleet', ['verify', (string) $group->id, ...ValidatedData::stringList(array_column($this->cases($proof), 'program'))]), 'proof-run', null));
+        } else {
+            if ($operation->kind === 'tasks.script') {
+                $this->store->change($proof, ['state' => [...($proof->state ?? []), 'verdict' => $this->verdict($this->lastLine($operation), $proof)]]);
             }
+            $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, 'proof-run', null));
         }
+        $operation->update(['state' => [...($operation->state ?? []), 'proof_continued' => true]]);
+    }
+
+    /** The job gave up: cancel the group once more and close the proof with what it has. */
+    public function abandon(Operation $operation): void
+    {
+        $proof = $this->proof($operation);
+        if ($proof === null) {
+            return;
+        }
+        $group = Task::topLevel()->findOrFail($operation->target_id);
         try {
             $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, 'proof-run', null));
         } catch (ResourceOperationException) {
-            $this->close($proof);
+            // The group stays for `tasks:cancel`; the proof still closes.
         }
+        $this->close($proof->refresh());
+    }
+
+    /** The running proof of the group that the task operation belongs to. */
+    private function proof(Operation $operation): ?Operation
+    {
+        return Operation::query()->where('kind', OperationKinds::ProofRun)->where('target_type', 'task_group')->where('target_id', $operation->target_id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->latest('id')->first();
     }
 
     /** @return array<string,mixed> the one JSON line that `bin/proof-fleet verify` prints last, or nothing when the run printed none */
