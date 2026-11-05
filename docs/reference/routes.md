@@ -181,7 +181,7 @@ A Route target must have a supported relative web root. An Instance rooted at `.
 | Change | Result |
 | --- | --- |
 | Set the current target again | The unchanged Route. On a Route that is not `active`, the Gateway grants the target's source access again. |
-| Clear an empty Route | The unchanged Route. |
+| Clear an empty Route | The unchanged Route; the CLI reports `Skipped — no target (route.target_unchanged)`. |
 | Set an Instance that belongs to another Route | `route.target_conflict`. Both associations stay. |
 | Replace or clear a target, or remove the Route, when that detaches an active Instance | `route.target_conflict`. Nothing changes. |
 | Clear the target of a replacement Route that never activated | `route.target_conflict`. Remove the replacement with `route:destroy` instead. |
