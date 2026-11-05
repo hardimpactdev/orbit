@@ -1,35 +1,67 @@
 ---
 title: "orbit cluster:update"
 sidebarTitle: "cluster:update"
+description: "Change the name or TLD of a Cluster."
 ---
 
-Change the name or TLD of a Cluster. At least one option is required. To change its state, use [`cluster:activate`](/cli/cluster/activate) or [`cluster:deactivate`](/cli/cluster/deactivate).
-
 ```bash
-orbit cluster:update <cluster> [--name=NAME] [--tld=TLD]
+orbit cluster:update <cluster> [--name=NAME] [--tld=TLD] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `cluster` | yes | Numeric Cluster ID. |
 
-| Option | Meaning |
-| --- | --- |
-| `--name=NAME` | New Cluster name. |
-| `--tld=TLD` | New development TLD. An empty value, `--tld=`, unsets it. |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--name=NAME` | none | New Cluster name. |
+| `--tld=TLD` | none | New development TLD as one DNS label. An empty value, `--tld=`, unsets it. |
+| `--json` | off | Print the Cluster, or the final task, as JSON. |
 
 ```bash
-orbit cluster:update 3 --tld=
+orbit cluster:update 3 --name=edge
+orbit cluster:update 3 --tld=test
 ```
 
-Setting a TLD on an active Cluster makes the Gateway check that one active Router exists, that no non-member Node owns the proposed TLD, and that every affected Route keeps a valid domain, scope, and target. Generated domains then use the Cluster TLD even when member Nodes have their own TLDs. The Gateway then republishes DNS and Router projections before it stores the change. A failure leaves the previous state authoritative. A name change alone touches no traffic.
+At least one of `--name` and `--tld` is required; neither is prompted for, so a call with neither is refused with `cluster.update_required` in a terminal too. To change the state, use [`cluster:activate`](/cli/cluster/activate) or [`cluster:deactivate`](/cli/cluster/deactivate). In a terminal, an omitted Cluster is chosen from an interactive list. A noninteractive or `--json` call that omits it is refused with `cluster.id_invalid`, and a call with neither option with `cluster.update_required`; neither sends a request.
+
+`--tld=` unsets the TLD; generated Route domains then fall back to the Node TLDs, so every member Node needs a TLD of its own (`route.tld_required`).
+
+A name change alone, and any change to an inactive Cluster, is recorded at once. No Node is contacted and no traffic changes. A call whose values already match, with no unfinished change, succeeds with `Skipped — nothing to change (cluster.update_unchanged)`. The same command after a failure past the cutover is not skipped: it finishes the work.
+
+Setting, changing or unsetting the TLD of an active Cluster moves the generated Route domains, so Orbit first checks the whole change. A new TLD needs one active Router and no non-member Node that owns it, and the private names must stay within the DNS policy limit; unsetting the TLD needs none of these. Every affected Route must keep a valid domain, scope and target, and a generated Route must keep an effective TLD, from the Cluster or from its Node. One refusal leaves every Route in place. An active public Route that the change would move is refused with `route.reconciliation_required`. Then Orbit moves the generated Routes to the new TLD, with explicit Routes keeping their domains and custom proxy Routes their Node scope, and updates the private DNS answers: the new TLD answers before the old sites go, and the old answers are pruned at the end. Managed peers learn the new TLD from the peer DNS policy in a separate run, one peer at a time, so a peer resolves the new name only after that run. The CLI shows one progress indicator while the task runs, then prints the Cluster by its name with the task and request IDs.
+
+The cutover is the point where the Gateway records the new state: the new name and TLD, and the new domains in force. A failure before it leaves the Cluster with its name and TLD and every Route as it was. A failure after it leaves the new values in force, and the same command finishes the withdrawal and the prune. Finished steps stay; there is no rollback. After you fix the cause, run the same command again. See [Change a TLD, Cluster state, or Cluster membership](/reference/routes#change-a-tld-cluster-state-or-cluster-membership).
+
+A TLD is one DNS label. Case is ignored and the value is stored lowercase. The CLI refuses anything else with `cluster.tld_invalid` before it sends a request. A name or TLD that another Cluster already uses, or a TLD equal to `orbit` or the VPN domain or to its last label, is refused with `validation.failed`.
 
 ## Errors
 
-| Error code | Meaning |
+| Code | Meaning |
 | --- | --- |
+| `cluster.id_invalid` | The Cluster is missing in a call that cannot prompt, or is not a positive integer. |
 | `cluster.update_required` | No option was given. |
-| `cluster.router_required` | The Cluster would be active with a TLD but has no active Router. |
+| `cluster.name_invalid` | The name is empty. Refused before the request. |
+| `cluster.tld_invalid` | The TLD is not one DNS label. Refused before the request. |
+| `validation.failed` | The name or TLD is taken, the TLD conflicts with a private zone, or an API or MCP caller sent an empty name, an invalid TLD or a name over 255 characters. |
+| `vpn.peer_dns_policy_invalid` | The new TLD would push the private names over the DNS policy limit. |
+| `input.cancelled` | You cancelled the Cluster list. |
+| `cluster.router_required` | The Cluster is active, would have a TLD, and has no active Router. |
 | `cluster.tld_conflict` | A Node outside the Cluster already owns the proposed TLD. |
-| `cluster.router_busy` | Another Router transition still owns this Cluster; retry after it finishes. |
-| `route.reconciliation_required` | An active Route depends on the change and cannot be reconciled by this operation. |
+| `cluster.router_busy` | Another Cluster change holds the Cluster for more than 30 seconds. Retry after it finishes. |
+| `route.reconciliation_required` | An active public Route would change its domain or scope. |
+| `route.domain_conflict` | A new Route domain would collide with another Route. |
+| `route.tld_required` | A generated Route would have no effective TLD. |
+| `route.target_scope_conflict` | The targets of a Route would span routing scopes. |
+| `route.target_invalid` | A Route or tracking host has no valid target. |
+| `route.generation_basis_missing` | A generated Route has no generation basis. |
+| `route.generation_basis_invalid` | A generated Route cannot be reconciled from its stored basis. |
+| `route.scope_invalid` | A Route without a target cannot leave its Cluster scope. |
+| `route.domain_change_conflict` | An affected Route already has another domain change in progress. |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed`, `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
+| `http.404` | The Cluster is unknown. |
+| `node_access.required` | The caller has no access grant to a member Node of the Cluster, or to the Gateway Node when the Cluster has no members. |
+
+## How it works
+
+<div className="flow-at" data-chart="cluster/update"></div>

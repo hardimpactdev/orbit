@@ -1,0 +1,66 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, one Swamp run with the shared route reconcile child (route.reconcile). docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
+  %% status: reviewed
+  %% command: cluster:update
+  %% kind: cluster.update
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane V icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Cluster Nodes<br/>Router · members
+  participant V as VPN Node<br/>private DNS
+  CLI->>GW: cluster:update<br/>CLUSTER options
+  Note over GW: Validate, lock, plan<br/>transitions stored
+  %%> Requirements:
+  %%> - the calling Node has an access grant to a member Node, or to the Gateway Node when the Cluster has none
+  %%> - at least one of `--name` and `--tld` (`cluster.update_required`); the name and TLD are valid and free
+  %%> - a new TLD on an active Cluster needs one active Router (`cluster.router_required`) and no non-member Node that owns it (`cluster.tld_conflict`), and keeps the private names within the DNS policy limit (`vpn.peer_dns_policy_invalid`)
+  %%> - every affected Route keeps a valid domain, scope and target, and a generated Route keeps an effective TLD; one refusal leaves every Route in place; an active public Route that the change would move is refused (`route.reconciliation_required`)
+  %%> - no other Cluster change runs; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
+  %%> Stored:
+  %%> - the Cluster keeps its name and TLD; a pending replacement is stored for each domain change and the old placement for each scope change
+  alt active Cluster and the TLD changes, or an earlier change is unfinished
+    GW->>SW: Start run, full intent<br/>operation-cluster-update
+    GW-->>CLI: 202 Accepted<br/>task ID
+    SW->>V: Add the new TLD in DNS<br/>records + catalog, then reload
+    %%> Why first:
+    %%> - the new names must resolve before the child withdraws the old sites; the old TLD keeps answering
+    %%> Managed peers:
+    %%> - they learn the new TLD from the peer DNS policy in a separate run, one peer at a time; until then a peer resolves the new name through its public resolver
+    opt Routes change
+      SW->>N: Reconcile the Routes<br/>child route-reconcile
+      %%> What it does:
+      %%> - moves every generated Route to the new TLD, or back to its Node TLD when the TLD is unset; the cutover is inside the child
+    end
+    SW->>V: Prune old DNS answers<br/>records + catalog, then reload
+    %%> Why it always runs:
+    %%> - it removes only what the stored state does not need, so after a failure before the cutover it removes the new TLD again
+    alt every step succeeds
+      SW-->>GW: Run succeeded<br/>terminal event
+      Note over GW: Record name and TLD<br/>Routes cut over
+    else a step fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      Note over GW: Read the failed step<br/>cutover or not
+      %%> Result before the cutover:
+      %%> - the Cluster keeps its name and TLD and every Route keeps its domain and scope
+      %%> Result after the cutover:
+      %%> - the new name and TLD are in force; a rerun finishes the withdrawal and the prune
+      %%> Retry:
+      %%> - run the same command again; every step runs again and skips what already matches
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
+  else name only, inactive Cluster, or no change, nothing unfinished
+    GW-->>CLI: 200 OK<br/>Cluster updated
+    %%> Result:
+    %%> - the name and TLD are recorded at once; no Node is contacted and no traffic changes
+    %%> Skipped:
+    %%> - when the values already match and nothing is unfinished, the result reports `Skipped — nothing to change (cluster.update_unchanged)`
+  end
