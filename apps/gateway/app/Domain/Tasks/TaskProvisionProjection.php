@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\TaskVms\StartTaskVmSlotReleaseAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -112,6 +113,10 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
                 }
                 $instance->update(['failed_step' => $result['failed_step'] ?? 'provision', 'error_code' => $data['error_code']]);
                 $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
+                if ($vm->slot !== null) {
+                    // A failed claim ends like any task: its workspace is torn down by the ending run, then the release deletes the half-made VM. If either cannot start, the host sweep admits it.
+                    app(StartTaskVmSlotReleaseAction::class)->afterCommit($vm->id);
+                }
             } elseif ($data['status'] === 'cancelled') {
                 $group->update(['status' => TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
             }

@@ -84,16 +84,6 @@ final readonly class TaskVmSlotClaim
     }
 
     /**
-     * Ends a claim without host work, for a task that is cancelled or merged: the slot becomes `failed` with no task,
-     * so no claim takes it and `task_vm.slot_release` (M5) can release it later. Its VM and workspace records stay.
-     */
-    public function detach(TaskVm $vm): void
-    {
-        $vm->update(['state' => TaskVmState::Failed, 'group_id' => null, 'claimed_at' => null, 'ready_at' => null,
-            'error_code' => 'task_vm.slot_detached', 'error_message' => 'The task ended; the slot waits for its release.']);
-    }
-
-    /**
      * Makes the claimed slot `ready` from the claim's receipt. The Node, its keys and its Process stay as the enrolment
      * recorded them; only the machine is new.
      *

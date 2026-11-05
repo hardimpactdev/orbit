@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-slot-enroll,workflow-task-vm-slot-identity,workflow-task-vm-slot-boot,workflow-task-vm-slot-claim,workflow-task-vm-nested-reset}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-slot-enroll,workflow-operation-task-vm-slot-release,workflow-task-vm-slot-identity,workflow-task-vm-slot-boot,workflow-task-vm-slot-claim,workflow-task-vm-nested-reset}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -427,7 +427,7 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### Task VM slots
 
-This section describes the target design. Built so far: the [identity unit](#the-identity-volume) and the [slot units](#the-slot-units) in the task image, the [enrol](#enrol-once) and the [claim](#claim). The claim is off until you list a host in `task_vms.slot_claim_hosts`. The release and the slot count per host are not built: until a host claims slots, every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
+This section describes the target design. Built so far: the [identity unit](#the-identity-volume) and the [slot units](#the-slot-units) in the task image, the [enrol](#enrol-once), the [claim](#claim) and the [release](#release). The claim is off until you list a host in `task_vms.slot_claim_hosts`. The slot count per host is not built: until a host claims slots, every task enrols a new Node, as the rest of this page describes. The [enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enroll.mmd), [claim](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-claim.mmd) and [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd) charts show the flows.
 
 A task VM host has a fixed number of slots. Each slot is a task VM identity that Orbit enrols once. A task takes a free slot. It does not enrol a new Node.
 
@@ -452,8 +452,8 @@ A slot is in one of these states:
 | `free` | The slot is enrolled and no VM exists. Another task can claim it |
 | `ready` | A task holds the slot, and Pi runs |
 | `parked` | A task holds the slot, and its VM is stopped. See [Park and resume](#park-and-resume) |
-| `destroying` | The task ended and Orbit is deleting the VM |
-| `failed` | A step failed. No claim can take the slot. The failed Operation shows the cause; no alert fires |
+| `destroying` | The task ended and Orbit is releasing the slot: it deletes the VM and its seed clone |
+| `failed` | A step failed, and no claim can take the slot. The failed Operation shows the cause. The [host sweep](#release) releases the slot once its task has ended |
 
 A `free` slot is dormant. Its Node, its hub peer and its identity volume exist, but no VM runs, so its observer shows offline. Doctor skips a `free` slot, as it skips a `parked` one. Fleet rollout and Metrics skip every task VM Node already.
 
@@ -569,9 +569,9 @@ Then Swamp runs the child workflow `task-vm-slot-claim` in the task's own `tasks
    The step is skipped while `task_vms.nested_reset` is off, which is the default.
    While the setting is on, the claim is refused at admission, so no slot is taken; a placeholder workflow would fail the run otherwise.
 
-The slot becomes `ready` when the run succeeded and the slot Node has reported a `host` fact since `claimed_at`. If the run succeeded and no report arrived, the task fails with `task_vm.slot_not_reporting`. A failed step leaves the slot `failed`: no claim can take it, the VM and its seed clone stay on the host, and the group asks for assistance.
+The slot becomes `ready` when the run succeeded and the slot Node has reported a `host` fact since `claimed_at`. If the run succeeded and no report arrived, the task fails with `task_vm.slot_not_reporting`. A failed step fails the task, and the task ends like any other: the ending run tears its workspace down, and the [release](#release) of the slot follows. The release deletes the half-made VM and its seed clone, and the slot becomes `free`. If a run cannot start or fails, the slot stays `failed` or `destroying`, and the host sweep tries again.
 
-Enrolling the slot again clears the task from it. Cancelling a task, or cleaning up after its merge, cannot destroy a slot. It detaches the slot instead, with no host work: the slot becomes `failed` with no task, and the [release](#release), which is not built yet, will free it. The task ends, and its workspace records stay on the slot Node until then. Approved work that is not published must be published first. Until the release is built, do not list a host for real tasks.
+Enrolling the slot again clears the task from it. A task that ends does not destroy its slot: see the [release](#release).
 
 The target for the whole claim is 20 seconds. Most of that time is the VM boot, about 16 seconds. The claims still use the current task image and its fallback rule.
 
@@ -579,9 +579,35 @@ When all slots of all listed hosts are taken, and no other host has room, the ta
 
 #### Release
 
-The `task_vm.slot_release` kind deletes the VM and its seed clone. It keeps the identity volume. The Gateway then deletes the slot's observer facts, removes the workspace records, checks that the Node holds nothing but `pi-server`, and sets the slot to `free`.
+When a task on a slot ends, the slot goes back to `free` with its identity kept. A task ends by completion, by cancel, by the cleanup after its merge, or by a failed claim. Nothing destroys a slot: `task_vm.destroy` refuses one with `task_vm.slot_not_destroyable`.
 
-The release rotates nothing. The Pi token, the model key and the observer secret stay the same from task to task. Orbit revokes the model key when an operator removes the slot, not when a task ends.
+The release has two parts. For a task that ran, the ending run (`tasks.cancel` or `tasks.maintenance_finish`) comes first. It pushes approved work, withdraws the workspace Route and runs the Project's teardown steps in the guest, as it does for any task VM. It does not destroy the VM. After it succeeded, and its workspace Instance and Route records are gone, the Gateway admits the `task_vm.slot_release` kind for the slot. A failed claim starts the same ending run as soon as the claim fails, because it can have published its Route.
+
+The `task_vm.slot_release` kind then runs in four steps. It records the VM name and the seed clone name, and the slot becomes `destroying`, so no claim can take it.
+
+1. Swamp deletes the VM with one forced `incus delete`. An absent VM counts as done.
+2. Swamp deletes the seed clone volume. The identity volume stays: the next claim uses it.
+3. Swamp reads the host's instances and custom volumes again.
+4. A native assert proves that neither the VM nor the seed clone is listed, and that the identity volume is.
+
+When the run has succeeded, the Gateway scrubs its own records, in one transaction:
+
+- It deletes the slot Node's agent facts of every kind. The next task uses the same workspace path, and an old checkout fact would still read as current.
+- It removes the workspace records on the slot Node without contacting it: Instance, Route, Schedule, and every Process except `pi-server`.
+
+Then it checks that the Node holds nothing else. The Node has no Instance, Route or Schedule. It has no Process except `pi-server`. It has no database connection, firewall rule or Tool.
+
+A leftover is a failure. The slot becomes `failed` with the error `task_vm.slot_not_clean`. The Operation fails, and the Gateway reports the error, which files a problem.
+
+With a clean Node, it clears the task, `claimed_at`, `ready_at`, the image, and the publish, topology and error fields. The slot becomes `free`.
+
+The release rotates nothing. The Pi token, the model key and the observer secret stay the same from task to task. The Node, the hub peer and the identity volume stay too. Orbit revokes the model key when an operator removes the slot, not when a task ends.
+
+If a host step fails or the run expires, the slot stays `destroying` with the error.
+
+The task VM host sweep runs every thirty minutes. It releases a slot again when the slot is `provisioning`, `ready`, `parked`, `failed` or `destroying`, its task has ended, and the task does not own a workspace. The forced deletes make a repeated release safe.
+
+A task that ended with its workspace still in place, such as a failed claim, gets its ending run from the sweep first. Only that run can push the approved work, withdraw the Route and tear the workspace down. The release waits while an Operation of the task group, the slot or its Node is open. A slot with no recorded task is `free` or still enrolling, and has nothing to release.
 
 #### Network and firewall
 

@@ -95,7 +95,8 @@ jobs:
       condition: *done
   - name: Destroy the task VM
     labels: {role: swamp}
-    guard: '${{ inputs.intent.task_vm_id == null || (size(inputs.intent.workspace_routes) > 0 && !steps["Withdraw the Route"].outputs.result.ready) }}'
+    # A slot is not destroyed: its release (task_vm.slot_release) follows this run, once the Gateway has recorded the cleanup.
+    guard: '${{ inputs.intent.task_vm_id == null || inputs.intent.?slot.orValue(false) || (size(inputs.intent.workspace_routes) > 0 && !steps["Withdraw the Route"].outputs.result.ready) }}'
     task:
       type: workflow
       workflowIdOrName: task-vm-destroy
@@ -136,7 +137,7 @@ jobs:
           GROUP: ${{ string(inputs.intent.group_id) }}
           INSTANCE: '${{ inputs.intent.instance_id == null ? "null" : string(inputs.intent.instance_id) }}'
           WITHDRAWN: '${{ string(size(inputs.intent.workspace_routes) == 0 || steps["Withdraw the Route"].outputs.result.ready) }}'
-          TASK_VM: ${{ string(inputs.intent.task_vm_id != null) }}
+          TASK_VM: ${{ string(inputs.intent.task_vm_id != null && !inputs.intent.?slot.orValue(false)) }}
           # The destroy child prints no result: its success proves the VM gone, and the Gateway builds the receipt from the captured intent.
           VM: '${{ inputs.intent.task_vm_id == null || steps["Destroy the task VM"].status != "succeeded" ? "{}" : "{\"destroyed\": true, \"cleanup_complete\": true}" }}'
     dependsOn:
