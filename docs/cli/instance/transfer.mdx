@@ -1,25 +1,72 @@
 ---
 title: "orbit instance:transfer"
 sidebarTitle: "instance:transfer"
+description: "Move an active development Instance to another app-dev Node."
 ---
 
-Move an active development Instance to another `app-dev` Node. Both Nodes must belong to active Clusters. The transfer stops the source, copies it into an independent checkout, moves or replaces its Route, and deletes the old placement. See [Instance transfer](/reference/instance-transfer).
-
 ```bash
-orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--idempotency-key=KEY] [--json]
+orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]
 ```
 
-Use these options to select the destination and confirm downtime.
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID of an active development Instance. |
+| `node` | yes | Numeric ID of the destination Node, a different active `app-dev` Node. |
 
-| Option | Meaning |
-| --- | --- |
-| `--name=NAME` | Optional destination name. |
-| `--sqlite-source-path=PATH` | Currently returns `operation.kind_unavailable` before reservation or Node work; native transfer cannot copy SQLite yet. |
-| `--force` | Confirm downtime and deletion of the old placement. |
-| `--json` | Return machine-readable output without prompts. Requires `--force` for consent. |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--name=NAME` | the current name | Destination Instance name: lowercase letters, digits and hyphens, at most 63 characters. Use it when the destination path or generated domain must change. |
+| `--sqlite-source-path=PATH` | none | Refused with `operation.kind_unavailable` before anything is reserved or moved: native transfer cannot copy SQLite yet. |
+| `--force` | prompt | Confirm the downtime and the deletion of the old placement. Required without a terminal and with `--json`. |
+| `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
-Without `--force`, an interactive call asks for default-No consent naming the source, destination and effect. JSON and noninteractive calls without `--force` return `instance.confirmation_required` before mutation.
+```bash
+orbit instance:transfer 12 7
+orbit instance:transfer 12 7 --name=feature-b --force
+orbit instance:transfer 12 7 --force --json > transfer.json
+```
+
+In a terminal, an omitted Instance is chosen from an interactive list, and an omitted Node from the active `app-dev` Nodes. The CLI then asks to confirm with the source and destination and the effect, that the Instance goes down during the move and its old placement is deleted, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no transfer. For a transfer that failed earlier and is being retried, the question says "Retry transfer". A noninteractive or `--json` call without the Instance or the Node is refused with `instance.id_invalid` or `node.id_invalid`, and one without `--force` with `instance.confirmation_required`; neither starts a transfer.
+
+Both Nodes must be active Linux Nodes with the `app-dev` role, each in an active Cluster; the destination may be in the same Cluster or another. The source must be an active development Instance with one authoritative Route and no removal in progress, and the destination Node must have a stored absolute apps path. VM placements are refused with `operation.kind_unavailable`.
+
+The transfer stops the source Processes for the downtime window, copies the source checkout or worktree into an independent checkout on the destination, runs the Project setup steps there, installs the Processes, publishes the Route, checks that the destination answers, and then deletes the old placement. A generated primary domain follows the destination's TLD while an explicit domain stays. No Schedule fires during the move, and external database bindings stay with the Instance. A linked worktree becomes an independent checkout and keeps its history, staged and unstaged work and untracked files; the source `.env` stays behind, and the destination gets a `.env` rendered from the Instance's stored configuration, and a `.env.testing` for an Instance that owns a MySQL or PostgreSQL database. The Instance's Schedules move with it. Other Routes with a web root must be active, and a public web-root Route cannot move across Clusters. See [Instance transfer](/reference/instance-transfer).
+
+The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does: a progress tree of the steps, Ctrl-C stops following and not the transfer and exits 130, and `--json` prints nothing while it follows.
+
+Before the destination becomes authoritative, a failure or a cancel restores the source publication and runtime and discards the destination checkout that Orbit proved it made. Once the destination is published and authoritative, a failure or a cancel keeps it, and the old placement stays for repair. A failed cleanup stays visible as a failure and never deletes anything unproven. A failed check that the destination answers is also after the cutover: the destination stays authoritative and the source is kept for repair. Run the identical command again to resume or retry: a different request for the same Instance is refused with `instance.transfer_retry_conflict`. While a transfer is open, [`instance:destroy`](/cli/instance/destroy) of the Instance and [`route:destroy`](/cli/route/destroy) of its Route are refused with `instance.transfer_incomplete`.
 
 ## How it works
 
 <div className="flow-at" data-chart="instance/transfer"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid`, `node.id_invalid` | The Instance or Node is missing in a call that cannot prompt, or is not a positive integer. |
+| `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
+| `instance.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `operation.kind_unavailable` | `--sqlite-source-path`, a VM placement, or a destination without a stored absolute apps path. |
+| `instance.lifecycle_conflict` | The Instance is not active, has no authoritative Route, or has an incomplete Route domain change. |
+| `instance.production_refused` | The Instance is a production Instance. |
+| `instance.same_node` | The destination is the Instance's Node. |
+| `instance.node_inactive`, `instance.node_not_app_dev` | A Node is not an active Linux Node, or has no active `app-dev` role. |
+| `instance.standalone_unsupported` | A Node does not belong to an active Cluster. |
+| `instance.identity_conflict` | The destination name is already owned in the Project. Retry with another `--name`. |
+| `instance.destination_exists` | The destination path is occupied. |
+| `instance.removal_conflict` | A removal of the Instance is in progress. |
+| `instance.transfer_retry_conflict` | A different request for this Instance is unfinished. |
+| `instance.transfer_recovery_pending` | The recorded recovery of an earlier attempt must finish first. Fails today: nothing records a pending recovery, so this code is not emitted. |
+| `instance.transfer_source_router_unknown` | The source Route needs its original Router and it is unknown. |
+| `route.domain_conflict` | The new generated domain is owned by another Route. |
+| `instance.transfer_route_conflict` | An additional web-root Route is not active, is changing, or is public and would cross Clusters. |
+| `instance.source_profile_missing` | The source has no recorded source profile. |
+| `route.router_required`, `cluster.router_required` | The destination Cluster has no active Router. |
+| `validation.failed` | `--name` is not a valid name, or `--sqlite-source-path` is not absolute. |
+| `operation.execution_forbidden` | The Project's setup steps changed after admission. Start the transfer again. |
+| `instance.transfer_source_shared`, `instance.transfer_source_invalid`, `instance.transfer_destination_exists` | The run found a shared common repository or alternates, an invalid source, or an occupied destination path, and restored the source. |
+| `env.configuration_missing` | The Instance has no stored environment configuration. Import its `.env` with [`env:import`](/cli/env/import). |
+| `instance.transfer_failed` | A run that only restored the source. |
+| `http.404` | The Instance or the Node is unknown. |
+| `node_access.required` | The caller has no access grant to the source or the destination Node. |
