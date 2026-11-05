@@ -20,4 +20,4 @@ bun run test
 bun run build
 ```
 
-Run the tests on Linux; [test worker file access](../../docs/reference/pi-server.md#test-worker-file-access) lists the tools they need. Root `composer check` runs these checks when a change touches this directory, and CI runs them on every pull request.
+Run the tests on Linux; [test worker file access](../../docs/reference/pi-server.md#test-worker-file-access) lists the tools they need. Root `composer check` runs `bun install --frozen-lockfile` and `bun run check` (fix mode) when a change touches this directory. No CI job checks the Pi server.
