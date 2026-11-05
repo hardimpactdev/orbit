@@ -649,8 +649,9 @@ class ReadyWaitTests(unittest.TestCase):
                    b'.d..t...... apps/cli\n<fcst...... apps/cli/composer.json\n<fc.t...... packages/php-sdk/composer.lock\n'
                    b'.f..t...... apps/e2e/composer.lock\n')
         with patch.object(phases.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, listing, b'')) as run:
-            changed = phases.sync_checkout(Path('/src'), 'gw', Path('/tmp/wrap'))
+            changed, moved = phases.sync_checkout(Path('/src'), 'gw', Path('/tmp/wrap'))
         self.assertEqual(['apps/gateway', 'packages/php-sdk'], changed)
+        self.assertTrue(moved)
         command = run.call_args.args[0]
         self.assertEqual(['rsync', '-a', '--checksum', '--delete', '--itemize-changes', '--chown=orbit:orbit', '-e', '/tmp/wrap'], command[:8])
         for excluded in ('/.git', 'vendor', 'node_modules', '.env', '/apps/*/storage', '/apps/*/bootstrap/cache'):

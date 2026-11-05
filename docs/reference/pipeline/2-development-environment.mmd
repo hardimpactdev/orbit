@@ -87,6 +87,9 @@ sequenceDiagram
     %%> What it does:
     %%> - `orbit-nested` on the outer VM runs the same sync before each call; well under a second when nothing changed
     %%> - `orbit-nested exec NODE -- CMD` does the same for direct commands, such as `artisan`; the task brief says to use it
+    %%> - when the sync moved files into the Gateway, the apply step follows: `composer install` only where a lock file changed, then migrations, the Swamp workflows and a restart of two proof services; about 1 second
+    %%> - a call that fails halfway leaves a marker; the next call repeats the whole sync and apply
+    %%> Target, not built:
     %%> - when the change holds playbooks or pins, or after a rebase onto main, the sync also runs the converge step above once
     %%> Why:
     %%> - the agent never has to remember a sync; edits reach the fleet like the old share

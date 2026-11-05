@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -45,6 +46,11 @@ WG_OUTER_PORT = 51821
 WG_OUTER = 'wg-nested'
 NESTED_CLI = '/usr/local/bin/orbit-nested'
 NESTED_PROFILE = 'nested'
+# What `orbit-nested` needs between resets: the checkout it syncs from and the nested VMs it syncs to (written by `operator`).
+NESTED_CONFIG = Path('/home/orbit/.orbit/nested.json')
+# Present while a sync or its apply step has not finished, so the next call repeats what a failure left undone.
+NESTED_PENDING = Path('/home/orbit/.orbit/nested.pending')
+NESTED_LOCK = Path('/home/orbit/.orbit/nested.lock')
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 
 # What the guests write into the generation's source directory while the Gateway is built (`.env`, caches, logs, the
@@ -372,13 +378,23 @@ def fresh_since(request):
     return 0.0 if started_at(request) is not None else (Path(request['evidence']) / 'prepare.json').stat().st_mtime
 
 
+def guest_facts(topology, group, generation):
+    return {'group': group, 'generation': generation, 'nodes': topology['nodes'], 'wireguard': wireguard(topology)}
+
+
+def run_guest(topology, facts, action):
+    """Run one guest program (`guest.py`) in the nested Gateway from its own checkout."""
+    script = '/home/orbit/orbit/swamp/proof/reset/guest.py'
+    return json.loads(incus(['exec', topology['nodes']['gateway']['instance'], '--', 'python3', script, action],
+                            data=json.dumps(facts).encode(), timeout=1800))
+
+
 def guest(request, action):
     topology = prepared(request)['construction']
     source_for(request, request['generation'])
     gateway = topology['nodes']['gateway']['instance']
-    network = wireguard(topology)
-    facts = {'group': request['group'], 'generation': request['generation'],
-             'nodes': topology['nodes'], 'wireguard': network}
+    facts = guest_facts(topology, request['group'], request['generation'])
+    network = facts['wireguard']
     if action == 'gateway-db':
         # The hub and the peers exist before the Gateway seeds addresses on them and Caddy binds one.
         bring_up_wireguard(topology, network)
@@ -408,8 +424,7 @@ def guest(request, action):
                             'agent_secret_hash': hashlib.sha256(secret.encode()).hexdigest()})
         facts['targets'] = targets
     # Only the Gateway mounts the checkout; the outer VM, the operator, is configured locally below.
-    script = '/home/orbit/orbit/swamp/proof/reset/guest.py'
-    result = json.loads(incus(['exec', gateway, '--', 'python3', script, action], data=json.dumps(facts).encode(), timeout=1800))
+    result = run_guest(topology, facts, action)
     if action == 'gateway-runtime':
         sys.path.insert(0, str(Path(request['candidate']) / 'tools/swamp-proof-guest'))
         import boot
@@ -456,6 +471,7 @@ def operator(request):
     pinned.write_bytes(incus(['exec', topology['nodes']['gateway']['instance'], '--', 'cat', '/home/orbit/.orbit/ca/root.pem']))
     pinned.chmod(0o644)
     install_cli(request)
+    write_nested_config(request)
     local_cli(request, 'gateway:add', 'https://' + address, '--name=' + NESTED_PROFILE, '--use', '--accept-ca-change', '--ca=' + str(pinned), '--json')
     if cli_profiles() != [NESTED_PROFILE]:
         raise RuntimeError('The outer VM CLI must have exactly one profile, nested; found ' + ', '.join(cli_profiles()))
@@ -481,9 +497,24 @@ def local_cli(request, *args, allow_failure=False, timeout=120):
 
 
 def install_cli(request):
-    """The candidate CLI on the outer VM's PATH under its own name; the real `orbit` there is never replaced."""
-    wrapper = f"#!/bin/sh\nexec {Path(request['candidate']) / 'apps/cli/orbit'} \"$@\"\n".encode()
+    """`orbit-nested` on the outer VM's PATH under its own name; the real `orbit` there is never replaced.
+
+    The wrapper runs the candidate's `nested.py`, which syncs the candidate into the nested VMs and then runs its CLI.
+    """
+    wrapper = f"#!/bin/sh\nexec python3 {Path(request['candidate']) / 'swamp/proof/reset/nested.py'} \"$@\"\n".encode()
     privileged(['sh', '-c', 'umask 022; cat > "$1"; chmod 0755 "$1"', 'sh', NESTED_CLI], data=wrapper)
+
+
+def write_nested_config(request):
+    """Tell `orbit-nested` which checkout to sync from and which nested VMs to sync to. Every reset writes it again."""
+    config = {'candidate': request['candidate'], 'group': request['group'], 'generation': request['generation'],
+              'construction': prepared(request)['construction']}
+    orbit_home()
+    NESTED_CONFIG.write_text(json.dumps(config))
+    NESTED_CONFIG.chmod(0o600)
+    NESTED_PENDING.unlink(missing_ok=True)
+    if os.geteuid() == 0:
+        shutil.chown(NESTED_CONFIG, 'orbit', 'orbit')
 
 
 def fresh_facts(state, managed_ids, since):
@@ -716,7 +747,8 @@ def start_units(instance, units):
 
 
 def sync_checkout(source, instance, wrapper):
-    """rsync the source into the checkout of one guest. Returns the directories whose composer.lock changed.
+    """rsync the source into the checkout of one guest. Returns the directories whose composer.lock changed, and whether
+    rsync wrote or deleted any file.
 
     The itemized list tells which files rsync wrote: a lock file that changed needs `composer install`. A fresh export
     has new file times, so rsync compares content (`--checksum`); the list then names only files whose content differs.
@@ -727,12 +759,15 @@ def sync_checkout(source, instance, wrapper):
                                       '-e', str(wrapper), *SYNC_EXCLUDE_ARGS, f'{source}/', f'{instance}:{ready.CHECKOUT}/'],
                                      stdin=subprocess.DEVNULL, capture_output=True, timeout=600), 'rsync').decode()
     changed = []
+    moved = False
     for line in listing.splitlines():
         flags, _, path = line.partition(' ')
-        # `<f` is a file sent to the guest; `.f` is a file that only had its time set.
+        # `<f` is a file sent to the guest, `*deleting` one removed, `cd` and `cL` a new directory or link; `.f` is a file
+        # that only had its time set.
+        moved = moved or flags.startswith(('<f', '*deleting', 'cd', 'cL'))
         if flags.startswith('<f') and path.endswith('composer.lock'):
             changed.append(str(Path(path).parent))
-    return changed
+    return changed, moved
 
 
 def install_locked(instance, directories):
@@ -742,10 +777,20 @@ def install_locked(instance, directories):
                'composer', 'install', '--no-interaction', '--no-progress'], timeout=900, data=b'')
 
 
-def sync_candidate(request, instances):
-    """Put the generation's source into the checkout of the Gateway and app-dev, in parallel. Returns the timings."""
-    source = source_for(request, request['generation'])
+def lock_directories(source):
+    """Every directory of the source that holds a tracked composer.lock."""
+    listing = checked(subprocess.run(['git', '-C', str(source), 'ls-files', '-z', '--', '*composer.lock'],
+                                     stdin=subprocess.DEVNULL, capture_output=True, timeout=30), 'git').decode()
+    return sorted(str(Path(path).parent) for path in listing.split('\0') if path)
+
+
+def sync_source(source, instances, *, reinstall=False):
+    """Put a source into the checkout of the Gateway and app-dev, in parallel. Returns the timings.
+
+    `reinstall` runs composer in every directory with a lock file, to repeat what a failed earlier sync left undone.
+    """
     timings = {}
+    everywhere = lock_directories(source) if reinstall else []
     with tempfile.TemporaryDirectory() as temporary:
         wrapper = Path(temporary) / 'incus-exec'
         wrapper.write_text('#!/bin/sh\nh=$1; shift; exec incus exec "$h" -- "$@"\n')
@@ -753,16 +798,22 @@ def sync_candidate(request, instances):
 
         def one(role):
             started = time.time()
-            changed = sync_checkout(source, instances[role], wrapper)
+            changed, moved = sync_checkout(source, instances[role], wrapper)
             synced = time.time()
+            changed = sorted({*changed, *everywhere})
             install_locked(instances[role], changed)
-            timings[role] = {'rsync_seconds': round(synced - started, 1), 'composer': changed,
+            timings[role] = {'rsync_seconds': round(synced - started, 1), 'moved': moved, 'composer': changed,
                              'composer_seconds': round(time.time() - synced, 1)}
 
         with ThreadPoolExecutor(max_workers=len(ready.CHECKOUT_ROLES)) as pool:
             for future in [pool.submit(one, role) for role in ready.CHECKOUT_ROLES]:
                 future.result()
     return timings
+
+
+def sync_candidate(request, instances):
+    """Put the generation's source into the checkout of the Gateway and app-dev. Returns the timings."""
+    return sync_source(source_for(request, request['generation']), instances)
 
 
 def apply_candidate(request):

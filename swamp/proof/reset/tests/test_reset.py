@@ -398,7 +398,20 @@ class OperatorTests(unittest.TestCase):
         argv = privileged.call_args.args[0]
         self.assertEqual('/usr/local/bin/orbit-nested', argv[-1])
         self.assertNotIn('/usr/local/bin/orbit"', argv[2])
-        self.assertIn(b'/home/orbit/apps/orbit/workspace/apps/cli/orbit', privileged.call_args.kwargs['data'])
+        self.assertIn(b'python3 /home/orbit/apps/orbit/workspace/swamp/proof/reset/nested.py "$@"', privileged.call_args.kwargs['data'])
+
+    def test_the_nested_config_names_the_checkout_and_the_vms_and_clears_a_pending_repair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            construction = {'nodes': {'gateway': {'instance': 'gw'}}}
+            (home / 'nested.pending').touch()
+            with patch.dict(phases.CLI_ENV, {'ORBIT_HOME': str(home)}), patch.object(phases, 'NESTED_CONFIG', home / 'nested.json'), \
+                    patch.object(phases, 'NESTED_PENDING', home / 'nested.pending'), patch.object(phases, 'prepared', return_value={'construction': construction}):
+                phases.write_nested_config({'candidate': '/work', 'group': 7, 'generation': 'g'})
+            config = json.loads((home / 'nested.json').read_text())
+            self.assertEqual({'candidate': '/work', 'group': 7, 'generation': 'g', 'construction': construction}, config)
+            self.assertEqual(0o600, (home / 'nested.json').stat().st_mode & 0o777)
+            self.assertFalse((home / 'nested.pending').exists())
 
     def test_release_stops_and_disables_the_operator_tunnel(self):
         with patch.object(phases, 'privileged') as privileged:
