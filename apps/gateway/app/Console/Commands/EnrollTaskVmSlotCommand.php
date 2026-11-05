@@ -23,7 +23,7 @@ final class EnrollTaskVmSlotCommand extends Command
     {
         $host = $this->argument('host');
         $slot = $this->argument('slot');
-        if (! is_string($host) || ! is_string($slot) || ! ctype_digit($slot) || (int) $slot < 1) {
+        if (! ctype_digit($slot) || (int) $slot < 1) {
             $this->error('A task VM host and a positive slot number are required.');
 
             return self::FAILURE;

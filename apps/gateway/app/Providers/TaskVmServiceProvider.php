@@ -8,6 +8,7 @@ use App\Console\Commands\BuildTaskVmImageCommand;
 use App\Console\Commands\BuildTaskVmRecipeCommand;
 use App\Console\Commands\BuildUpCloudTaskVmImageCommand;
 use App\Console\Commands\EnrollTaskVmSlotCommand;
+use App\Console\Commands\EnrollTaskVmSlotCommand;
 use App\Console\Commands\ListTaskVmImageBuildsCommand;
 use App\Console\Commands\PackageCacheUsageCommand;
 use App\Console\Commands\PrepareTaskVmHostCommand;
@@ -39,6 +40,7 @@ final class TaskVmServiceProvider extends ServiceProvider
             BuildTaskVmImageCommand::class,
             BuildTaskVmRecipeCommand::class,
             BuildUpCloudTaskVmImageCommand::class,
+            EnrollTaskVmSlotCommand::class,
             EnrollTaskVmSlotCommand::class,
             ListTaskVmImageBuildsCommand::class,
             PackageCacheUsageCommand::class,
