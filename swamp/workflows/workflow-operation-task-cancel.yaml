@@ -138,7 +138,8 @@ jobs:
           WITHDRAWN: '${{ string(size(inputs.intent.workspace_routes) == 0 || steps["Withdraw the Route"].outputs.result.ready) }}'
           TASK_VM: ${{ string(inputs.intent.task_vm_id != null) }}
           # The destroy child prints no result: its success proves the VM gone, and the Gateway builds the receipt from the captured intent.
-          VM: '${{ inputs.intent.task_vm_id == null || steps["Destroy the task VM"].status != "succeeded" ? "{}" : "{\"destroyed\": true, \"cleanup_complete\": true}" }}'
+          # A destroy step its guard skipped has no entry in `steps`, so the guard's own test comes before the step is read.
+          VM: '${{ inputs.intent.task_vm_id == null || (size(inputs.intent.workspace_routes) > 0 && !steps["Withdraw the Route"].outputs.result.ready) || steps["Destroy the task VM"].status != "succeeded" ? "{}" : "{\"destroyed\": true, \"cleanup_complete\": true}" }}'
     dependsOn:
     - step: Push approved work
       condition: *done

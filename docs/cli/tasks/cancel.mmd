@@ -85,6 +85,8 @@ sequenceDiagram
   %%> Per provider:
   %%> - Incus: `incus delete` on Node 14 over SSH
   %%> - UpCloud overflow: the UpCloud API from 209
+  %%> Guard:
+  %%> - skipped when the task has no VM, or when the Route is not withdrawn; the check below then reads the VM as not destroyed and the run fails
   SW->>H: Check the VM is gone<br/>provider absence
   %%> Why:
   %%> - the VM only counts as removed when the provider no longer has it
