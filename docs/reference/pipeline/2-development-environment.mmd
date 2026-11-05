@@ -1,8 +1,8 @@
 sequenceDiagram
-  %% Target design: stage 2 of the command development pipeline. A task VM holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
+  %% Target design: stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
   %% status: draft
-  %% command: development pipeline stage 2 · proof environment
-  %% kind: pipeline.2-proof-environment
+  %% command: development pipeline stage 2 · development environment
+  %% kind: pipeline.2-development-environment
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
@@ -45,7 +45,7 @@ sequenceDiagram
   opt no usable ready copies
     VM->>NT: Build the fleet<br/>then make ready copies
     %%> When:
-    %%> - a new task image has a seed with only the Node template until its first seed refresh (stage 7)
+    %%> - a new task image has a seed with only the Node template until its first seed refresh (stage 6)
     %%> Time:
     %%> - about 230 seconds; the build ends by making the ready copies for the next reset
   end
@@ -58,7 +58,7 @@ sequenceDiagram
   %%> - records the baseline that each case compares against
   SW-->>GW: Environment ready<br/>terminal event
   %%> Result:
-  %%> - the Gateway marks the group running and records the VM; the proof (stage 3) or the VM job (stage 5) uses the fleet
+  %%> - the Gateway marks the group running and records the VM; the proof (stage 3) or the proof CI (stage 4) uses the fleet
   opt a case needs a clean fleet, or cleanup failed
     SW->>VM: Reset the fleet again<br/>in place · about 75 s
     %%> What it keeps:

@@ -83,7 +83,7 @@ When a correction is a rule for every command, add it to the skill that owns it 
 ## 7. Land and record
 
 1. Mark the chart `%% status: reviewed`.
-2. Open one docs-only PR for the command: chart, page and cases. Docs-only changes run fast CI and no VM job. Merge through the queue with `gh pr merge <n> -R hardimpactdev/orbit --auto`.
+2. Open one docs-only PR for the command: chart, page and cases. Docs-only changes run the docs checks of CI and no proof CI. Merge through the queue with `gh pr merge <n> -R hardimpactdev/orbit --auto`. This is the interim: the target is that Swamp turns on auto-merge with a GitHub App token that the Gateway mints, on a PR that the Orbit App opened ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).
 3. The orchestrator records each approval on the pipeline dashboard. The command then shows as ready.
 
 ## Report

@@ -58,48 +58,55 @@ Use the chart to cover the command's paths.
    Each case asserts the command's promised effect, the recorded state and the observed Node state. Doctor reports zero drift for the records it touched, and a second run changes nothing. An error case checks that the command refuses and nothing changes.
 
    For example, a firewall case proves that traffic reaches a blocked port after the allow command. A restricted source case also proves that an excluded source stays blocked. A broad test-network allowance must not let either assertion pass without the tested rule. The `verifying-commands` skill owns the case contract and evidence requirements.
-4. Reset the topology to the branch and run the cases there with `bin/proof-fleet verify`. The change works there before it is pushed.
+4. Reset the topology to the branch and run the cases there, before the push.
+   - Target: Orbit's own Swamp runs the reset and verify workflows over SSH.
+   - Today: `bin/proof-fleet verify` does it.
 
 ## 3. Pull request
 
 The author prepares the PR for the merge queue.
 
-1. Push the branch and open the PR.
-2. The author turns on auto-merge as `nckrtl` with `gh pr merge <n> --auto`, so the PR joins the merge queue once CI passes.
+1. Push the branch.
+2. Swamp opens the PR as the Orbit App.
+3. After a manual or automatic gate, Swamp turns on auto-merge, so the PR joins the merge queue once CI passes.
+
+Swamp uses an App token that the Gateway mints, through GitHub's `enablePullRequestAutoMerge`. The Gateway only admits the request and mints the token. GitHub ignores auto-merge turned on with the built-in Actions token, so #2550 removed that workflow. An App token is different.
+
+Not built yet: PRs opened by the App, and Swamp turning on auto-merge. App-enabled auto-merge still has to be proven to join the queue. Until then, the author opens the PR and runs `gh pr merge <n> --auto` as `nckrtl`.
 
 ## 4. CI
 
-CI is the only gate: if CI passes, the PR merges. So CI must be strict about what matters and run nothing else. The changed files decide which jobs run:
+CI is the only gate: if CI passes, the PR merges. There is one CI: the fast checks plus, for command code, the proof CI. The merge queue requires that one result. So CI must be strict about what matters and run nothing else. The changed files decide which jobs run:
 
 | Changed files | Jobs |
 | --- | --- |
-| Documentation only (`docs/`, `*.md`, charts) | Docs checks only. Never a VM job. |
+| Documentation only (`docs/`, `*.md`, charts) | Docs checks only. Never the proof CI. |
 | Gateway code (`apps/gateway/`) | Fast checks and the Gateway Pest suite |
 | Web or CLI code | Fast checks and that build |
-| Command code: Swamp workflows, extensions, playbooks, role definitions, versions | Fast checks and the VM job for the affected commands |
+| Command code: Swamp workflows, extensions, playbooks, role definitions, versions | Fast checks and the proof CI for the affected commands |
 
 1. Fast checks run in about 1 minute.
-2. The VM job runs only when command code changed:
+2. The proof CI runs only when command code changed:
    1. Orbit takes a task VM. It resets the test fleet from the ready copies in the host's topology seed and applies the PR's code, in about 75 seconds.
    2. It runs only the test cases of the affected commands, one after another in that fleet, and then releases the VM.
 
    Development and CI use the same cases and assertions. The required check identifies the tested commit and reports every selected case. A missing result or a failed assertion fails the check. A passing check confirms the defined cases; it does not prove behavior that the cases omit.
 
-   This adds time only to PRs that change commands. The run budget is 30 minutes after the fleet is ready. See [the VM job](#the-vm-job).
+   This adds time only to PRs that change commands. The run budget is 30 minutes after the fleet is ready. See [the proof CI](#the-proof-ci).
 3. The merge queue applies the same selection rule.
 
-   A batch needs the VM job only for PRs that change command code.
+   A batch needs the proof CI only for PRs that change command code.
 
-### The VM job
+### The proof CI
 
-The VM job is the target. Built so far: the `orbit proof:run` admission (trust check and case selection), the selection list, and the execution as a Gateway-started chain that moves to one Swamp flow next. Not built yet: the receipt store, the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+The proof CI is the target. Built so far: the `orbit proof:run` admission (trust check and case selection), the selection list, and the execution as a Gateway-started chain that moves to one Swamp flow next. Not built yet: the receipt store, the job and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
 
-The job is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
+The job is `Proofs`, a job of the one CI; the merge queue requires the one CI result. A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on the self-hosted runners on beast and shark, waits for the verdict, and passes or fails. These are the organization's runner services. They reach the Gateway over the private network, and the job adds no runner and no access: any job on those runners already acts as the Node of its host.
 
 **The job**
 
 - A hosted scope step reads the changed paths with `bin/proof-select`, run from `main` and not from the pull request. A path that needs a proof starts `Proofs`.
-- A path that matches no line fails the scope step. A change to documentation only never starts the VM job.
+- A path that matches no line fails the scope step. A change to documentation only never starts the proof CI.
 - `Proofs` passes one commit SHA to `orbit proof:run --json`: the pull request head, or the merge queue commit.
 - It also passes an idempotency key built from the workflow run and its attempt. It checks out nothing and chooses no cases.
 - Orbit fetches the commit and selects the cases with its own program.
@@ -136,7 +143,7 @@ The job is the required check `Proofs`. A job in `.github/workflows/ci.yml` runs
 
 **Required check**
 
-- `Proofs` is a required status of the merge ruleset, next to `Required checks`.
+- `Proofs` is a job of the one CI. The merge queue requires the one CI result, `Required checks`, which will hold it.
 - Only the scope step may skip it, and only for a change that needs no proof.
 
 ### Choose the cases
@@ -239,7 +246,7 @@ Doctor reports drift so you can choose a fix.
 Version changes follow the same flow as other changes.
 
 1. Self-hosted Renovate, running on our runners, proposes version changes as PRs to `recipe.json`, with checksums.
-2. The PR goes through the same CI: the VM job converges the new versions onto the ready copies of a topology and runs the tests of the roles it changes.
+2. The PR goes through the same CI: the proof CI converges the new versions onto the ready copies of a topology and runs the tests of the roles it changes.
 3. A green PR merges. A red PR stays open until someone excludes the broken version.
 4. The release then rolls the new versions out to the Nodes with those roles (step 8.2).
 
@@ -265,7 +272,7 @@ The nightly build checks that the topology seed matches a fresh installation.
 Build the missing parts in dependency order. This order prepares the development pipeline; a release still follows steps 6 through 9 above.
 
 1. **Agree the command contract and cases.** Align the documented contract with the implementation. Extend the existing harness with chart-path cases. Verify the CLI output and intended Node state, including Doctor and unchanged reruns.
-2. **Establish the proof environment.** Verify that the topology seed of a host holds the ready Gateway with Swamp, app-dev and app-prod copies. Record their release identity. Development and CI reset from the same copies.
+2. **Establish the development environment.** Verify that the topology seed of a host holds the ready Gateway with Swamp, app-dev and app-prod copies. Record their release identity. Development and CI reset from the same copies.
 3. **Connect the cases to CI.** Run affected cases on a topology reset to the tested commit. Changes only to documentation skip VM tests. Prove that a failed case blocks the merge queue.
 4. **Verify the Swamp release.** Follow the merged commit into the running Gateway and loaded workflows. A manual proof receipt does not establish that the automatic release works.
 5. **Complete the per-host refresh.** Each host refreshes its task image and seed after a release (step 7). A failed refresh keeps the previous seed. Verify that the next development or CI reset uses the new release.

@@ -25,7 +25,12 @@ sequenceDiagram
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
   SW->>VM: Run the proof<br/>child flow · proof-fleet verify
-  %%> Inside the VM: reset the nested topology from the ready copies, then run each selected case (for example the firewall:allow traffic case). One verdict per case.
+  %%> What it does:
+  %%> - Orbit's own Swamp runs the reset and verify workflows (`workflow-proof-fleet-reset`, `-ready`, `-verify`) directly and reaches into the task VM over SSH, like every other step
+  %%> - resets the nested topology from the ready copies, then runs each selected case (for example the firewall:allow traffic case); one verdict per case
+  %%> - pushes the proof Swamp Club key from its vault into the nested Gateway during the reset; the nested Gateway runs its own Swamp as part of the Orbit under test. The key is copied in at boot, never baked, and never stored on the outer task VM
+  %%> Not built:
+  %%> - the direct run; today `bin/proof-fleet` starts a local Swamp inside the task VM
   SW->>VM: Destroy the task VM<br/>child workflow · always
   %%> Runs after success or failure, so no proof VM is left behind.
   alt every case passes

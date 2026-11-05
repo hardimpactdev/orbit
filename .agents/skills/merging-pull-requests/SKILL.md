@@ -28,3 +28,5 @@ Do not merge added object-storage-host or linear-reference leftovers. Do not add
 Report the merge commit and any cleanup still needed.
 
 The Tasks scheduler completes a merged task on its next tick. The maintainer profile bypasses GitHub enforcement of `Required checks`, and GitHub does not require this approval, so the reviewer enforces both before invoking the merge. This workflow keeps that bypass. It does not enable auto-merge. It adds no `orbit tasks:merge` command, Gateway merge endpoint, SDK contract, MCP contract, or API contract, and it changes no ruleset or App permission.
+
+The interim: this skill merges after a formal review. The target is that Swamp turns on auto-merge with a GitHub App token that the Gateway mints, on a PR that the Orbit App opened ([PR and CI](../../../docs/reference/command-development-pipeline.mdx)).

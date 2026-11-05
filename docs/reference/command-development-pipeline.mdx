@@ -9,17 +9,16 @@ The command development pipeline is the stages every command goes through during
 
 | Stage | Status |
 | --- | --- |
-| [1. Prep](#1-prep) | Built |
-| [2. Proof environment](#2-proof-environment) | Built, slot pool not built |
-| [3. Proof](#3-proof) | Built, one case so far |
-| [4. PR with fast CI](#4-pr-with-fast-ci) | Built |
-| [5. VM CI](#5-vm-ci) | Partly built |
-| [6. Automatic Swamp release](#6-automatic-swamp-release) | Built |
-| [7. Per-host task image and seed refresh](#7-per-host-task-image-and-seed-refresh) | Partly built |
+| [1. Prep](#1-prep) | Partly built |
+| [2. Development environment](#2-development-environment) | Built, slot pool not built |
+| [3. Proof](#3-proof) | Partly built, one case so far |
+| [4. PR and CI](#4-pr-and-ci) | Partly built |
+| [5. Automatic Swamp release](#5-automatic-swamp-release) | Built |
+| [6. Per-host task image and seed refresh](#6-per-host-task-image-and-seed-refresh) | Partly built |
 
 ## 1. Prep
 
-**Built.** A command is ready when its chart, docs page and verification cases are approved and merged. Preparation changes no code.
+**Partly built.** A command is ready when its chart, docs page and verification cases are merged; preparation changes no code. Swamp owns the whole flow and its state and the Gateway only authorizes it: an author agent drafts in a task VM, a separate review agent checks, and Swamp opens the PR as the Orbit App. Then one of two modes, set per flow, turns on auto-merge. In manual mode, Nick's approving review on the exact PR head is the gate, after an optional review in a development Instance on the PR branch; in automatic mode, CI and a final self-review by a fresh review agent are the gate. Not built: the Swamp prep flow, PRs opened by the App, the approval-triggered continuation, and App-enabled auto-merge into the merge queue.
 
 <div className="flow-at" data-chart="reference/pipeline/1-prep"></div>
 
@@ -28,11 +27,11 @@ The command development pipeline is the stages every command goes through during
 - Docs page: `docs/cli/<family>/<command>.mdx`.
 - Cases: `swamp/proof/<family>/<command>.cases.md`, for example [`firewall/allow.cases.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.md).
 
-## 2. Proof environment
+## 2. Development environment
 
-**Built, with a slot pool still to come.** A task VM, started with `tasks:provision`, holds a nested topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. They share a real nested WireGuard network, `10.45.0.0/24`, and the outer VM is the operator. Each task VM host keeps ready copies of this topology in its topology seed, so a reset takes about 75 seconds instead of a 230-second build.
+**Built, with a slot pool still to come.** A task VM, started with `tasks:provision`, holds a nested topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. They share a real nested WireGuard network, `10.45.0.0/24`, and the outer VM is the operator. Each task VM host keeps ready copies of this topology in its topology seed, so a reset takes about 75 seconds instead of a 230-second build. An agent, or Nick, develops a command here, and the proof cases run here too.
 
-<div className="flow-at" data-chart="reference/pipeline/2-proof-environment"></div>
+<div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
 - Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), the [proof reset](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/reset/reset.mmd), and the [seed refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd) that makes the ready copies.
 - Not built: the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd), a draft. A slot is a normal task VM, enrolled ahead of time and kept stopped; a claim starts it, a release destroys it, and the pool refills by enrolling a new one.
@@ -42,7 +41,7 @@ The command development pipeline is the stages every command goes through during
 
 ## 3. Proof
 
-**Built, with one case so far.** `bin/proof-fleet verify` runs the command's cases on that topology. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case.
+**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the reset and verify workflows (`workflow-proof-fleet-reset`, `-ready`, `-verify`) directly and reaches into the task VM over SSH, like every other step. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Not built: that direct Swamp run; today `bin/proof-fleet verify` starts a local Swamp in the VM.
 
 <div className="flow-at" data-chart="reference/pipeline/3-proof"></div>
 
@@ -50,44 +49,34 @@ The command development pipeline is the stages every command goes through during
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
 - Files: [`allow-fresh-ipv4-tcp.sh`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh), [`allow.cases.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.md).
 
-## 4. PR with fast CI
+## 4. PR and CI
 
-**Built.** The author opens the PR and turns on auto-merge as `nckrtl`. The merge queue lands it when `Required checks` pass.
+**Partly built.** There is one CI: the fast checks plus, for command code, the proof CI (`proof:run` for the affected commands). The merge queue requires that one result. Swamp opens the PR as the Orbit App and, after a manual or automatic gate, turns on auto-merge with a Gateway-minted App token through GitHub's `enablePullRequestAutoMerge`. Not built: PRs opened by the App, Swamp turning on auto-merge (it still has to be proven to join the merge queue), and the proof CI job. Today the author opens the PR and turns on auto-merge as `nckrtl`.
 
-<div className="flow-at" data-chart="reference/pipeline/4-pr-fast-ci"></div>
+<div className="flow-at" data-chart="reference/pipeline/4-pr-and-ci"></div>
 
-- Docs: [Feature delivery](/reference/implementation-loop), [Pull request](/reference/feature-flow#3-pull-request) and [CI](/reference/feature-flow#4-ci) in the feature flow.
-- Skill: [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md).
-- Files: [`.github/workflows/ci.yml`](https://github.com/hardimpactdev/orbit/blob/main/.github/workflows/ci.yml), [`bin/ci-build-plan`](https://github.com/hardimpactdev/orbit/blob/main/bin/ci-build-plan).
+- Built: the fast checks, the merge queue, and for the proof CI the trust check, the case selection and the execution as a Gateway-started chain. Execution is off by default (`proof.execution`). It moves to one Swamp flow next.
+- Not built: the CI job on the beast and shark self-hosted runners that calls `proof:run`, and the proof CI as a job of the one CI result. Outside pull requests will run the proof CI only after review plus the `run-proofs` label.
+- Charts: the stage chart above covers the PR, CI, the label gate and the merge. [`proof:run`](/cli/proof/run#how-it-works) shows the proof CI run, as one Swamp flow (reviewed).
+- Docs: [Feature delivery](/reference/implementation-loop), [Pull request](/reference/feature-flow#3-pull-request), [CI](/reference/feature-flow#4-ci) and [The proof CI](/reference/feature-flow#the-proof-ci) in the feature flow, [`orbit proof:run`](/cli/proof/run), [Choose the cases](/reference/feature-flow#choose-the-cases).
+- Skills: [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md), [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
+- Files: [`.github/workflows/ci.yml`](https://github.com/hardimpactdev/orbit/blob/main/.github/workflows/ci.yml), [`bin/ci-build-plan`](https://github.com/hardimpactdev/orbit/blob/main/bin/ci-build-plan), [`swamp/proof/selection.txt`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/selection.txt), [`apps/gateway/app/Domain/Proof`](https://github.com/hardimpactdev/orbit/tree/main/apps/gateway/app/Domain/Proof).
 
-## 5. VM CI
-
-**Partly built.** `orbit proof:run <commit>` picks the cases from the diff with the selection list and runs them in a task VM.
-
-<div className="flow-at" data-chart="reference/pipeline/5-vm-ci"></div>
-
-- Built: the trust check, the case selection and the execution as a Gateway-started chain. Execution is off by default (`proof.execution`). It moves to one Swamp flow next.
-- Not built: the CI job on the beast and shark self-hosted runners that calls `proof:run`, and the `Proofs` required check. Outside pull requests will run it only after review plus the `run-proofs` label.
-- Charts: the stage chart above covers the CI job, the label gate and the `Proofs` check. [`proof:run`](/cli/proof/run#how-it-works) shows the run inside it, as one Swamp flow (reviewed).
-- Docs: [`orbit proof:run`](/cli/proof/run), [The VM job](/reference/feature-flow#the-vm-job), [Choose the cases](/reference/feature-flow#choose-the-cases).
-- Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
-- Files: [`swamp/proof/selection.txt`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/selection.txt), [`apps/gateway/app/Domain/Proof`](https://github.com/hardimpactdev/orbit/tree/main/apps/gateway/app/Domain/Proof).
-
-## 6. Automatic Swamp release
+## 5. Automatic Swamp release
 
 **Built.** The Gateway looks for the newest green commit on `main` and starts one Swamp run: build, snapshot and migrate, switch, load the new workflows and check health. A failed check switches back.
 
-<div className="flow-at" data-chart="reference/pipeline/6-automatic-release"></div>
+<div className="flow-at" data-chart="reference/pipeline/5-automatic-release"></div>
 
 - Charts: the stage chart above covers the automatic trigger. [`gateway:release:deploy`](/cli/gateway/release-deploy#how-it-works) shows the run.
 - Docs: [Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run), [Automatic releases](/reference/gateway-recovery#automatic-releases).
 - Files: [`swamp/workflows/workflow-operation-gateway-release.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-gateway-release.yaml), [`bin/gateway-rollback`](https://github.com/hardimpactdev/orbit/blob/main/bin/gateway-rollback).
 
-## 7. Per-host task image and seed refresh
+## 6. Per-host task image and seed refresh
 
 **Partly built.** After each release, and at least daily, each task VM host refreshes its own task image and topology seed. The hosts work in parallel, and nothing is copied between them.
 
-<div className="flow-at" data-chart="reference/pipeline/7-task-image-seed-refresh"></div>
+<div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
 - Built: the image build, and the seed refresh. An operator starts a seed refresh with `php artisan task-vms:refresh-seed <host>`.
 - Not built: the release trigger and the daily schedule (B8).
@@ -101,5 +90,5 @@ Change a stage in the place that owns it, and update this page in the same PR.
 
 - **This page:** the stages, their order, their status and their links. Edit `docs/reference/command-development-pipeline.mdx`. A stage that gets built changes its status here.
 - **The charts:** edit the `.mmd` file next to the command page, chart first. The stage charts are `docs/reference/pipeline/<n>-<stage>.mmd`, placed on this page with a `flow-at` placement, as the CLI pages rules describe. Run `bin/check-flows`. The rules are in [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
-- **The skills:** `.agents/skills/preparing-commands` for stage 1, `developing-commands` for the order a command takes, and `verifying-commands` for stages 2, 3 and 5.
+- **The skills:** `.agents/skills/preparing-commands` for stage 1, `developing-commands` for the order a command takes, and `verifying-commands` for stages 2, 3 and 4.
 - **The detail of the flow:** [Feature flow](/reference/feature-flow) for the target flow after the release, and the CI job.
