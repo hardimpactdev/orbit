@@ -1,0 +1,206 @@
+"""One case from the real allow file against the fake fleet: the verdicts, the line, and the commands."""
+import contextlib
+import io
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet as fleet_module
+import runner
+import spec
+from fakes import BRIDGE, FakeFleet
+
+PROOF = Path(__file__).resolve().parents[2]
+CASES = PROOF / 'firewall' / 'allow.cases.yaml'
+BATCHES = PROOF / 'batches.yaml'
+CASE = 'new-restricted-allow'
+
+
+class RunnerTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.spec = spec.load(CASES, BATCHES)
+        self.fleet = FakeFleet()
+        patcher = patch.object(runner.Run, 'sleep', lambda self, seconds: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def execute(self, case=CASE, negative=False):
+        return runner.execute(self.spec.case(case), self.fleet, self.spec, self.directory.name, negative)
+
+    def test_the_first_case_passes_when_the_effect_is_real(self):
+        result, receipt = self.execute()
+        self.assertEqual(result['verdict'], 'passed', result)
+        self.assertNotIn('cause', result)
+        self.assertEqual([step['step'] for step in receipt['steps'] if not step['ok']], [])
+        self.assertTrue(any('firewall:allow' in call for call in map(' '.join, self.fleet.cli_calls)))
+
+    def test_it_uses_the_address_the_kernel_route_gives(self):
+        self.execute()
+        allow = next(call for call in self.fleet.cli_calls if call[0] == 'firewall:allow')
+        self.assertIn('--from=' + BRIDGE['gateway'], allow)
+        self.assertIn('--node=211', allow)
+
+    def test_a_command_that_changes_no_rule_fails_on_assertion_and_names_every_check(self):
+        self.fleet.allow_effect = False
+        result, _ = self.execute()
+        self.assertEqual((result['verdict'], result['cause']), ('failed', 'assertion'))
+        failed = ' '.join(result['failed'])
+        self.assertIn('expect[0] probe gateway-connects: gateway to', failed)
+        self.assertIn('expect[4] ufw', failed)
+
+    def test_a_failed_operation_fails_the_act_and_the_expect_still_runs(self):
+        self.fleet.allow_status = 'failed'
+        result, receipt = self.execute()
+        self.assertEqual(result['cause'], 'assertion')
+        self.assertTrue(result['failed'][0].startswith('act[0] cli firewall:allow: exit 1'))
+        self.assertTrue(any(step['step'].startswith('expect') for step in receipt['steps']))
+
+    def test_a_port_that_is_not_blocked_before_the_command_is_unrun_not_a_pass(self):
+        self.fleet.deny_ignored = True
+        result, _ = self.execute()
+        self.assertEqual((result['verdict'], result['cause']), ('unrun', 'precondition'))
+        self.assertIn('setup: probe', result['failed'][0])
+        self.assertFalse(any(call and call[0] == 'firewall:allow' for call in self.fleet.cli_calls))
+
+    def test_a_cli_that_cannot_run_is_infrastructure(self):
+        self.fleet.failing_cli = 'firewall:allow'
+        result, _ = self.execute()
+        self.assertEqual((result['verdict'], result['cause']), ('failed', 'infrastructure'))
+        self.assertIn('the CLI did not start', result['failed'][-1])
+
+    def test_a_step_that_is_not_built_fails_the_case_as_infrastructure(self):
+        result, _ = self.execute('interrupted-reorder')
+        self.assertEqual((result['verdict'], result['cause']), ('failed', 'infrastructure'))
+        self.assertIn('is not built', result['failed'][-1])
+
+    def test_the_case_timeout_stops_the_run(self):
+        self.spec.case(CASE).timeout = -1
+        result, _ = self.execute()
+        self.assertEqual((result['verdict'], result['cause']), ('failed', 'infrastructure'))
+        self.assertIn('timeout', result['failed'][-1])
+
+    def test_the_negative_run_passes_only_when_the_named_check_fails(self):
+        result, receipt = self.execute(negative=True)
+        self.assertEqual(result['verdict'], 'passed', result)
+        self.assertTrue(result['negative'])
+        self.assertTrue(any(step['step'].startswith('negative') for step in receipt['steps']))
+
+    def test_the_negative_run_fails_when_the_break_changes_nothing_that_is_checked(self):
+        case = self.spec.case(CASE)
+        case.negative['must_fail'] = ['nothing']
+        result, _ = self.execute(negative=True)
+        self.assertEqual((result['verdict'], result['cause']), ('failed', 'assertion'))
+        self.assertIn('did not fail', result['failed'][0])
+
+    def test_a_negative_run_of_a_case_without_negative_is_refused(self):
+        result, _ = self.execute('conflict', negative=True)
+        self.assertEqual(result['cause'], 'infrastructure')
+
+    def test_the_receipt_and_the_command_output_go_to_the_evidence_directory(self):
+        self.execute()
+        files = {path.name for path in Path(self.directory.name).iterdir()}
+        self.assertTrue({'cli-1.json', 'cli-2.json'} <= files)
+        self.assertTrue(any(name.startswith('ufw-app-dev') for name in files))
+
+
+class VerdictLineTest(unittest.TestCase):
+    def test_a_short_line_is_plain_json(self):
+        line = runner.verdict_line({'id': 'a', 'verdict': 'passed', 'secs': 1.5})
+        self.assertEqual(json.loads(line), {'id': 'a', 'verdict': 'passed', 'secs': 1.5})
+
+    def test_many_long_failures_stay_under_1_kb_and_are_counted(self):
+        failed = [f'expect[{n}] ' + 'x' * 400 for n in range(30)]
+        line = runner.verdict_line({'id': 'a', 'verdict': 'failed', 'cause': 'assertion', 'secs': 2, 'failed': failed})
+        self.assertLessEqual(len(line), 1000)
+        document = json.loads(line)
+        self.assertEqual(document['id'], 'a')
+        self.assertRegex(document['failed'][-1], r'^\+\d+ more$')
+        self.assertTrue(document['failed'][0].startswith('expect[0]'))
+
+
+class CommandTest(unittest.TestCase):
+    def call(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = runner.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_plan_prints_the_batches_and_cases_without_a_fleet(self):
+        code, out, _ = self.call(['plan', '--file', str(CASES)])
+        self.assertEqual(code, 0)
+        self.assertLess(out.index('batch fresh-fleet'), out.index('batch dual-stack'))
+        self.assertIn('  new-restricted-allow', out)
+        self.assertIn('  protocols[udp]', out)
+
+    def test_plan_with_steps_prints_the_resolved_steps(self):
+        _, out, _ = self.call(['plan', '--file', str(CASES), '--steps'])
+        self.assertIn('listener {"family": 4, "on": "app-dev", "ports": ["port", "control"], "proto": ["tcp"]}', out)
+
+    def test_a_refused_file_exits_3_and_says_why(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'bad.yaml'
+            path.write_text('command: x\n')
+            code, _, err = self.call(['plan', '--file', str(path)])
+        self.assertEqual(code, 3)
+        self.assertIn('cases file refused', err)
+
+    def test_case_prints_one_verdict_line_and_exits_with_the_verdict(self):
+        fleet = FakeFleet()
+        with tempfile.TemporaryDirectory() as directory, patch.object(fleet_module, 'from_environment', lambda: fleet), \
+                patch.object(runner.Run, 'sleep', lambda self, seconds: None):
+            code, out, err = self.call(['case', CASE, '--file', str(CASES), '--evidence', directory])
+            self.assertEqual(len(list(Path(directory).glob(CASE + '/*/receipt.json'))), 1)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)['verdict'], 'passed')
+        self.assertEqual(len(out.strip().splitlines()), 1)
+        self.assertIn('evidence', err)
+
+    def test_an_unknown_case_is_refused(self):
+        code, _, err = self.call(['case', 'nope', '--file', str(CASES)])
+        self.assertEqual(code, 3)
+        self.assertIn('unknown case', err)
+
+    def test_a_fleet_that_cannot_be_found_is_infrastructure(self):
+        def missing():
+            raise fleet_module.FleetError('expected one complete nested fleet')
+        with patch.object(fleet_module, 'from_environment', missing):
+            code, out, _ = self.call(['case', CASE, '--file', str(CASES)])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)['cause'], 'infrastructure')
+
+
+class FleetDiscoveryTest(unittest.TestCase):
+    def guest(self, name, address='10.0.0.5', status='Running'):
+        return {'name': name, 'status': status, 'state': {'network': {'lo': {'addresses': [{'family': 'inet', 'scope': 'local', 'address': '127.0.0.1'}]},
+                'orbit': {'addresses': [{'family': 'inet', 'scope': 'global', 'address': '10.45.0.2'}]},
+                'enp5s0': {'addresses': [{'family': 'inet', 'scope': 'global', 'address': address}]}}}}
+
+    def test_discover_picks_the_one_complete_set_and_its_bridge_addresses(self):
+        guests = [self.guest(f'orbit-e2e-task-3187-aa-{role}', f'10.0.0.{n}') for n, role in enumerate(('gateway', 'app-dev', 'app-prod'), 1)]
+        guests.append(self.guest('orbit-e2e-task-3187-aa-operator'))
+        guests.append(self.guest('fleet-ready-gateway', status='Stopped'))
+        found = fleet_module.discover(guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
+        self.assertEqual(found.nodes['app-dev'], {'instance': 'orbit-e2e-task-3187-aa-app-dev', 'node_id': 2, 'bridge': '10.0.0.2'})
+
+    def test_two_complete_sets_need_a_prefix(self):
+        guests = [self.guest(f'orbit-e2e-task-3187-{tag}-{role}') for tag in ('aa', 'bb') for role in ('gateway', 'app-dev', 'app-prod')]
+        with self.assertRaises(fleet_module.FleetError):
+            fleet_module.discover(guests=guests, node_ids={})
+        found = fleet_module.discover('orbit-e2e-task-3187-bb', guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
+        self.assertTrue(found.nodes['gateway']['instance'].startswith('orbit-e2e-task-3187-bb'))
+
+    def test_an_incomplete_set_is_refused(self):
+        guests = [self.guest('orbit-e2e-task-3187-aa-gateway')]
+        with self.assertRaises(fleet_module.FleetError):
+            fleet_module.discover(guests=guests, node_ids={})
+
+
+if __name__ == '__main__':
+    unittest.main()
