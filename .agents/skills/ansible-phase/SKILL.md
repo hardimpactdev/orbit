@@ -16,7 +16,7 @@ The `node.role_add` flow provides these shared parts:
 - the `@nckrtl/ansible-input` behavior, which writes the admitted intent to a run file and ships the playbooks to the worker. It is TypeScript growth (F15); its reason is that Swamp has no other way to hand a whole object to a command;
 - the `swamp/ansible/` folder with the playbooks and the input builder, which writes the inventory, the vars and `known_hosts`;
 - the pinned `ansible-core` and collections in the `swamp` role ([role prerequisites](../../../docs/reference/node-provisioning.md#role-prerequisites));
-- `ansible-lint` in CI, and the shape gate's acceptance of `ansible-playbook` phase commands.
+- `ansible-lint` and the shape gate's acceptance of `ansible-playbook` phase commands. Run both before a push with `bin/swamp-shape-gate`; CI runs the same script.
 
 ## Layout and contract
 

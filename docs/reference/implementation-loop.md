@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,pr-head-check,deploy-verify,test,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build}
+  - bin/{review-check,pr-head-check,deploy-verify,test,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate,swamp-shape-gate-requirements.txt}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows}.py,tools/check-processes.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -90,7 +90,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
-| Swamp | Validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
+| Swamp | Validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate (both through the one script `bin/swamp-shape-gate`, which you also run before a push) and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the reset unit tests, lint the proof programs with `ruff` and validate the `workflow-proof-*.yaml` files with the pinned Swamp runtime |
 | Proof run (report-only) | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Not in Required checks yet, see [the proof run job](#the-proof-run-job) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
@@ -137,7 +137,7 @@ The job follows these rules for pull requests:
 
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The CI run on `main` selects builds the same way.
 
-The Swamp shape job runs its gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the role playbook and checks the private Ansible input builder. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
+The Swamp shape job runs `bin/swamp-shape-gate --only shape`. The script runs the gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the role playbook and checks the private Ansible input builder. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
 
 Tests live beside the checked scripts in `swamp/bin/` and run one file at a time. Python helpers run as subprocesses with assertions in Deno. These regression tests use disposable fixtures and do not run the Swamp CLI.
 
@@ -291,7 +291,21 @@ API ownership matching removes the shared `api/v1` prefix, so a Form Request use
 
 Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`, and test files beside their source (`*_test.ts`, `*_test.py`, `test_*.py`). A page's `covers:` glob over a source folder does not claim the test files in it. Nor does a change to the machine recipe that only bumps pinned values. A deleted CLI command needs no page either: step 1 does not ask for the page of a command whose source file is gone.
 
-When the candidate selects the Swamp checks by the rule of `bin/ci-build-plan`, the gate also runs `swamp/bin/validate-swamp-workflows.py`, the native workflow validation of CI, as its own group. The validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the gate reports the check as skipped, not failed, because CI validates.
+When the candidate selects the Swamp checks by the rule of `bin/ci-build-plan`, the gate runs `bin/swamp-shape-gate` as its own group: the shape steps against the merge base, then the workflow validation of CI. [Run the Swamp shape gate before you push](#run-the-swamp-shape-gate-before-you-push) describes the script. Without a Swamp credential, the gate reports the validation as skipped, not failed, because CI validates.
+
+#### Run the Swamp shape gate before you push
+
+The `Swamp shape gate` and `Swamp workflow validate` jobs of CI call one script, `bin/swamp-shape-gate`. The candidate gate calls it too, so a local run checks what CI checks. Commit your change first: the checkers compare committed `HEAD` with the base.
+
+```bash
+bin/swamp-shape-gate                # shape and validation, against the merge base with origin/main
+bin/swamp-shape-gate --base REF     # compare with another base
+bin/swamp-shape-gate --only shape   # or --only validate
+```
+
+The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `bin/swamp-shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts` and the frozen agent command check. It runs every step, prints a summary, and exits 1 when any step failed. It retries nothing. A run takes about one minute once the environment exists. The JSON reports go to `--reports DIR`, by default a per-user directory in the temporary directory.
+
+Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
 
 For each Composer project, the gate runs `composer check`. CI runs `composer validate --strict`. Its `composer check` runs Rector and Pint in fix mode, as [Formatters run in fix mode](#formatters-run-in-fix-mode) describes.
 
