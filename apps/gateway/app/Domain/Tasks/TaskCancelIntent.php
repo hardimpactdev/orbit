@@ -108,7 +108,7 @@ final readonly class TaskCancelIntent
                 ];
 
                 return $this->start->execute($kind, 'task_group', $group->id, isset($capture['node_id']) ? ValidatedData::integer($capture['node_id']) : 209, [
-                    'workspace_routes' => [], 'task_vm_id' => null, 'slot' => false, ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
+                    'workspace_routes' => [], 'task_vm_id' => null, ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
                     'instance_id' => $workspace?->id, 'checkout_path' => $workspace?->checkout_path,
                     'ssh_execution' => $teardown !== [] && $workspace instanceof Instance ? app(SwampSshExecutionInput::class)->forNode($workspace->node) : null,
                     'teardown' => $teardown, 'push' => $push,

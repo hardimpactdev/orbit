@@ -9,13 +9,13 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Proof\ProofCommitSource;
-use App\Domain\Proof\ProofSlotClaim;
+use App\Domain\Proof\ProofVmClaim;
 use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
 use App\Infrastructure\Proof\GitHubProofCommitSource;
-use App\Infrastructure\Proof\UnavailableProofSlotClaim;
+use App\Infrastructure\Proof\UnavailableProofVmClaim;
 use Illuminate\Support\ServiceProvider;
 
 final class GitHubServiceProvider extends ServiceProvider
@@ -27,6 +27,6 @@ final class GitHubServiceProvider extends ServiceProvider
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         BranchHeadReader::class => GitHubBranchHeadReader::class,
         ProofCommitSource::class => GitHubProofCommitSource::class,
-        ProofSlotClaim::class => UnavailableProofSlotClaim::class,
+        ProofVmClaim::class => UnavailableProofVmClaim::class,
     ];
 }

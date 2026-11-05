@@ -42,7 +42,7 @@
                     }
                 ],
                 "uncovered": [],
-                "slot": "shark-tvm-1",
+                "vm": "tvm-17",
                 "receipt_url": "https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846"
             },
             "cancel_requested": false,

@@ -14,7 +14,7 @@ use App\Infrastructure\TaskVms\TaskVmVolumes;
  */
 final readonly class TaskVmSeedRefresh
 {
-    /** The builder VM. No digits follow `tvm-`, so the sweep and the slot patterns never match it. */
+    /** The builder VM. No digits follow `tvm-`, so the sweep pattern never matches it. */
     public const string BuilderName = 'tvm-seed-refresh';
 
     /**

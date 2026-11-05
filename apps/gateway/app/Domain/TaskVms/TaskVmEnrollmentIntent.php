@@ -61,8 +61,11 @@ final readonly class TaskVmEnrollmentIntent
                 throw new TaskVmException('task_vm.invalid_config', 'Enrollment requires the pinned Pi artifact, models and group credentials.');
             }
             $this->keys->assertReady();
-            [$node, $installation] = $this->reserve($vm);
+            $node = $this->reserveNode($vm);
             $pin = $this->delivery->pin($node);
+            $process = $this->recordPiProcess($node);
+            $installation = Arr::only($this->admissions->inputFor($process, 'create', target: $this->processTarget($node)),
+                ['process_id', 'name', 'runtime', 'content_hash', 'desired', 'on_demand', 'activation_pending']);
             if ($vm->model_key === null) {
                 $vm->update(['model_key' => bin2hex(random_bytes(32)), 'ai_router_origin' => $origin]);
             }
@@ -84,22 +87,6 @@ final readonly class TaskVmEnrollmentIntent
                     'process' => [...$installation, 'agent_sha256' => $pin, 'retired' => null]],
             ];
         });
-    }
-
-    /**
-     * The Node, `app-dev` role and `pi-server` Process of a VM, recorded once. No host effects. A task VM and a slot
-     * both reserve them this way.
-     *
-     * @return array{Node, array<string,mixed>} the Node and the Process installation input
-     */
-    public function reserve(TaskVm $vm): array
-    {
-        $node = $this->reserveNode($vm);
-        $process = $this->recordPiProcess($node);
-        $installation = Arr::only($this->admissions->inputFor($process, 'create', target: $this->processTarget($node)),
-            ['process_id', 'name', 'runtime', 'content_hash', 'desired', 'on_demand', 'activation_pending']);
-
-        return [$node, $installation];
     }
 
     private function reserveNode(TaskVm $vm): Node
@@ -162,27 +149,13 @@ final readonly class TaskVmEnrollmentIntent
         return new ProcessTarget(node: $node, user: 'orbit', checkoutPath: '/home/orbit');
     }
 
-    /**
-     * The unit of the VM's `pi-server` Process under the name the Gateway reads in observer facts and logs.
-     *
-     * @return array{name:string,content:string}
-     */
-    public function unit(TaskVm $vm): array
-    {
-        $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'The runtime has no admitted Node.');
-        $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
-
-        return ['name' => $this->systemd->unitName($process), 'content' => $this->systemd->render($process, $this->processTarget($node))];
-    }
-
     /** @return array{runtime:string,content:string,environment:string} Private material for the shared Process lower action. */
     public function installation(TaskVm $vm): array
     {
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'The runtime has no admitted Node.');
         $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
 
-        // The slot's identity tree carries the same unit, so a slot's Pi runs exactly as an enrolled VM's does.
-        return ['runtime' => 'systemd', 'content' => $this->unit($vm)['content'],
+        return ['runtime' => 'systemd', 'content' => $this->systemd->render($process, $this->processTarget($node)),
             'environment' => $this->systemd->environmentContent($process, $this->processTarget($node))];
     }
 }

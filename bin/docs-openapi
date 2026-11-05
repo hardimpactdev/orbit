@@ -641,7 +641,7 @@ TAGS = [
     ('process', 'Processes', 'systemd services and Docker containers owned by an Instance, a Node, or a Project definition.'),
     ('schedule', 'Schedules', 'Recurring commands run by native systemd timers.'),
     ('tasks', 'Tasks', 'Task groups and ordered subtasks.'),
-    ('proof', 'Proofs', 'The proof cases of a commit, run in a disposable test fleet on a task VM slot.'),
+    ('proof', 'Proofs', 'The proof cases of a commit, run in a disposable test fleet on a VM.'),
     ('extension', 'Extensions', 'Gateway-owned extension switches.'),
     ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
     ('activity', 'Activities', 'The Gateway log of authorized commands.'),

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*
- * `orbit proof:run`: proofs of a commit in a disposable test fleet on a task VM slot. App\Domain\Proof\ProofSettings
+ * `orbit proof:run`: proofs of a commit in a disposable test fleet on a VM. App\Domain\Proof\ProofSettings
  * reads these values; every default lives here.
  */
 return [

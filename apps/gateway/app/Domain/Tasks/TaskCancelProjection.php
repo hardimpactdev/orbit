@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\TaskVms\StartTaskVmSlotReleaseAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
@@ -13,7 +12,6 @@ use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
@@ -68,13 +66,7 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
                 }
                 if (($operation->input['task_vm_id'] ?? null) !== null) {
                     $vm = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']));
-                    // A slot is not destroyed: its release follows the ending run, once this transaction has committed.
-                    if ($vm->slot === null) {
-                        app(TaskVmDestroyProjection::class)->record($vm, $operation->input);
-                    } else {
-                        $vm->update(['state' => TaskVmState::Destroying]);
-                        app(StartTaskVmSlotReleaseAction::class)->afterCommit($vm->id);
-                    }
+                    app(TaskVmDestroyProjection::class)->record($vm, $operation->input);
                 }
                 $group->taskable()->dissociate();
                 $group->fill(['status' => $operation->kind === 'tasks.maintenance_finish' || $group->status === TaskGroupStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null])->save();

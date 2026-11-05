@@ -10,8 +10,8 @@ use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Str;
 
 /**
- * The task image that a host's VMs boot from: its latest promoted build, whatever the current recipe is. A proof VM, a
- * slot or a seed refresh needs a bootable image, not the current recipe. The image's topology seed is named from its
+ * The task image that a host's VMs boot from: its latest promoted build, whatever the current recipe is. A proof VM or a
+ * seed refresh needs a bootable image, not the current recipe. The image's topology seed is named from its
  * fingerprint, so this is also how a caller finds the seed that belongs to the image.
  */
 final readonly class TaskVmPromotedImage

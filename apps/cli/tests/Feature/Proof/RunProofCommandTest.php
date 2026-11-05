@@ -45,7 +45,7 @@ afterEach(function (): void {
 });
 
 describe('proof:run', function (): void {
-    it('follows a passing proof and prints each case with its verdict, the slot and the receipt', function (bool $json): void {
+    it('follows a passing proof and prints each case with its verdict, the VM and the receipt', function (bool $json): void {
         $mock = proof_run_gateway([proof_run_running(), proof_run_operation('passed')]);
 
         expect(Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--json' => $json, '--no-interaction' => true]))->toBe(0);
@@ -58,7 +58,7 @@ describe('proof:run', function (): void {
                 ->and($payload['result']['commit'])->toBe(PROOF_RUN_SHA)
                 ->and($payload['result']['cases'][0])->toBe(['program' => 'swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh', 'command' => 'firewall:allow', 'verdict' => 'passed', 'seconds' => 12.4])
                 ->and($payload['result']['uncovered'][0]['path'])->toBe('swamp/workflows/workflow-vault-sync.yaml')
-                ->and($payload['result']['slot'])->toBe('shark-tvm-1')
+                ->and($payload['result']['vm'])->toBe('tvm-17')
                 ->and($payload['result']['receipt_url'])->toBe('https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846');
         } else {
             expect($output)->toContain(
@@ -68,7 +68,7 @@ describe('proof:run', function (): void {
                 'allow-fresh-ipv4-tcp.sh',
                 '12.4 s',
                 'Uncovered: swamp/workflows/workflow-vault-sync.yaml (none: no case yet)',
-                'Slot: shark-tvm-1',
+                'VM: tvm-17',
                 'Receipt: https://proof.orbit/receipts/0198e15c-bf97-7c23-8f1f-61b8fe67a846',
             )->not->toContain("\e");
         }
@@ -105,11 +105,11 @@ describe('proof:run', function (): void {
             ->and(Artisan::output())->toContain('Proof failed.', 'unrun', 'Error code: proof.run_failed', 'Failed step: reset-fleet');
     });
 
-    it('fails with proof.no_slot after the wait and no case result', function (): void {
-        proof_run_gateway([proof_run_operation('no-slot')]);
+    it('fails with proof.no_vm after the wait and no case result', function (): void {
+        proof_run_gateway([proof_run_operation('no-vm')]);
 
         expect(Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--no-interaction' => true]))->toBe(1)
-            ->and(Artisan::output())->toContain('Proof failed.', 'Error code: proof.no_slot');
+            ->and(Artisan::output())->toContain('Proof failed.', 'Error code: proof.no_vm');
     });
 
     it('skips a proof that nothing needs and exits 0', function (bool $json): void {
@@ -121,7 +121,7 @@ describe('proof:run', function (): void {
             $result = proof_run_json_output()['result'];
             expect($result['outcome'])->toBe('nothing_to_prove')->and($result['reason'])->toBe('proof.nothing_to_prove')->and($result['cases'])->toBe([]);
         } else {
-            expect(Artisan::output())->toContain('Skipped — nothing to prove (proof.nothing_to_prove)', 'Uncovered: swamp/workflows/workflow-vault-sync.yaml')->not->toContain('Slot:');
+            expect(Artisan::output())->toContain('Skipped — nothing to prove (proof.nothing_to_prove)', 'Uncovered: swamp/workflows/workflow-vault-sync.yaml')->not->toContain('VM:');
         }
     })->with([false, true]);
 

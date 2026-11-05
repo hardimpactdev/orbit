@@ -17,7 +17,7 @@
             "sequence": 4,
             "current_step": null,
             "failed_step": null,
-            "error_code": "proof.no_slot",
+            "error_code": "proof.no_vm",
             "result": null,
             "cancel_requested": false,
             "attempts": 1,

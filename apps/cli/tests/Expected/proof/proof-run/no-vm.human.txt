@@ -3,10 +3,10 @@ Proof running...
 ┌  Prove commit 0123456789ab
 │
 ├  ● Proof running
-│    proof.no_slot
+│    proof.no_vm
 │
 └  Proof failed.
 
-Error code: proof.no_slot
+Error code: proof.no_vm
 Operation: 1
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

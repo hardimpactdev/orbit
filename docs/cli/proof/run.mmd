@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: VM CI (verifying-commands skill, "Run the same proof in development and CI"), docs/reference/feature-flow.md "The VM job", docs/reference/compute-drivers.md (Task VM slots), swamp/proof/reset/README.md, DECISIONS R1-R4.
+  %% Target design: VM CI (verifying-commands skill, "Run the same proof in development and CI"), docs/reference/feature-flow.md "The VM job", swamp/proof/reset/README.md, DECISIONS R1-R4.
   %% status: draft
   %% command: proof:run
   %% kind: proof.run
@@ -11,7 +11,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
-  participant S as Proof slot<br/>task VM over ssh
+  participant S as Proof VM<br/>task VM over ssh
   CLI->>GW: proof:run COMMIT
   %%> Command:
   %%> - `orbit proof:run COMMIT`
@@ -49,45 +49,43 @@ sequenceDiagram
     GW-->>CLI: Skipped — nothing to prove<br/>proof.nothing_to_prove
     %%> Result:
     %%> - only paths that need no proof changed, such as documentation and charts
-    %%> - no slot is taken and nothing runs
+    %%> - no VM is taken and nothing runs
     %%> - the task is recorded as succeeded, with no run
     %%> - paths marked as having no case yet are listed in the result
   else cases selected
-    Note over GW: Record the task<br/>queue for a proof slot
+    Note over GW: Record the task<br/>queue for a proof VM
     %%> Result:
     %%> - a task is recorded with the full intent
     GW-->>CLI: 202 Accepted<br/>task ID
-    Note over GW: Take a proof slot<br/>wait up to 10 min
+    Note over GW: Take a proof VM<br/>wait up to 10 min
     %%> Requirements:
-    %%> - an active task VM host has a `free` slot; a slot that a task holds is never taken
-    %%> - a host gives at most 3 of its slots to proofs at once
-    %%> - one SQLite transaction takes the slot, so two runs never get the same one
+    %%> - a VM is free for the proof; one SQLite transaction takes it, so two runs never get the same one
     %%> When it waits:
-    %%> - no slot is free: the task waits (`capacity`) and starts when a slot is released
-    %%> - after the wait the task fails with `proof.no_slot`; nothing has started
+    %%> - no VM is free: the task waits (`capacity`) and starts when a VM is released
+    %%> - after the wait the task fails with `proof.no_vm`; nothing has started
     %%> Credential:
     %%> - the Gateway mints a short-lived, read-only GitHub token and pushes it to the vault under a key name
     GW->>SW: Start run, full intent<br/>operation-proof-run
     %%> Inputs:
     %%> - the commit, the selected case programs and the paths no case covers
-    %%> - the slot name, host and image fingerprint
+    %%> - the VM name, host and image fingerprint
     %%> - the vault key name of the token, never its value
-    SW->>S: Claim the slot VM<br/>child workflow · proof mode
+    SW->>S: Claim the VM<br/>child workflow · proof mode
     %%> What it does:
     %%> - the shared claim phases: clone the topology seed, create the VM, start it, check it
     %%> Proof mode:
-    %%> - the identity volume is not mounted: no Pi token, no model key, no real-fleet key
-    %%> - the slot has no route to the real Gateway or to other Nodes
+    %%> - the VM gets no Pi token, no model key and no real-fleet key
+    %%> - the VM has no route to the real Gateway or to other Nodes
     SW->>S: Send the commit<br/>git bundle · ssh
     %%> What it does:
-    %%> - Swamp fetches the commit with the vault token and sends only the new commits to the checkout in the slot
+    %%> - Swamp fetches the commit with the vault token and sends only the new commits to the checkout in the VM
     %%> - the checkout ends clean at the exact commit
     %%> Why:
-    %%> - the slot holds code, never a token
+    %%> - the VM holds code, never a token
     SW->>S: Reset the test fleet<br/>proof-fleet-reset
     %%> What it does:
     %%> - boots the three ready nested VMs (Gateway with Swamp, `app-dev`, `app-prod`) from the snapshot
-    %%> - applies the commit, joins the slot as the operator, and waits for fresh agent facts
+    %%> - applies the commit, joins the VM as the operator, and waits for fresh agent facts
     %%> On failure:
     %%> - no case runs; all selected cases end `unrun`
     SW->>S: Run the cases<br/>proof-command-verification
@@ -103,9 +101,9 @@ sequenceDiagram
     %%> - copies case results, observations, Doctor findings, timings and run references to the receipt store, without secrets
     %%> When:
     %%> - always, also after a failure
-    SW->>S: Release the slot<br/>child workflow · slot release
+    SW->>S: Release the VM<br/>child workflow
     %%> What it does:
-    %%> - releases the nested fleet, deletes the slot VM and its seed clone, and keeps the identity volume
+    %%> - releases the nested fleet, deletes the VM and its seed clone
     %%> When:
     %%> - always, after the receipt is copied
     Note over SW: Check the verdicts<br/>assert
@@ -117,7 +115,7 @@ sequenceDiagram
       %%> - its run reader sees the terminal event; Swamp never calls the Gateway
       Note over GW: Record result<br/>verdicts · receipt link
       %%> Result:
-      %%> - the slot becomes `free` and the task succeeds
+      %%> - the task succeeds
       %%> - the result lists each case, the uncovered paths and the receipt link
     else a case fails or the fleet is not ready
       S--xSW: case fails or exit ≠ 0
@@ -127,10 +125,10 @@ sequenceDiagram
       %%> - `proof.cases_failed` when a case failed or did not run
       %%> - `proof.run_failed` when the fleet never became ready: every selected case is `unrun`
       %%> - each case is `passed`, `failed` or `unrun`; the receipt keeps the failed assertion and the command output
-      %%> On the slot:
+      %%> On the VM:
       %%> - the fleet and the VM are released also after a failure; only the receipt remains
-      %%> - if the release fails, the slot becomes `failed` and no run can take it
-      %%> - the verdicts stay as they are, and the host sweep releases the slot again
+      %%> - if the release fails, the failure shows in the operation
+      %%> - the verdicts stay as they are
       %%> Retry:
       %%> - run the command again after the fix; it is a new run
     end

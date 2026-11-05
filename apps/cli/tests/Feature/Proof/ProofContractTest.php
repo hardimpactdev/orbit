@@ -56,7 +56,7 @@ describe('proof contract', function (): void {
         'nothing to prove' => ['proof/proof-run/nothing-to-prove', 0],
         'a case failed and one did not run' => ['proof/proof-run/failed', 1],
         'the test fleet is not ready' => ['proof/proof-run/run-failed', 1],
-        'no slot became free' => ['proof/proof-run/no-slot', 1],
+        'no VM could run the proof' => ['proof/proof-run/no-vm', 1],
     ]);
 
     it('renders a refusal from the Gateway contract in human and JSON modes', function (string $refusal): void {

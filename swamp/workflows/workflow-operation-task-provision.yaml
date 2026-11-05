@@ -48,8 +48,7 @@ jobs:
     labels: {role: swamp}
     task:
       type: workflow
-      # A claimed slot is already enrolled; a task on another host enrols a new VM.
-      workflowIdOrName: '${{ inputs.intent.placement == "slot" ? "task-vm-slot-claim" : "task-vm-provision" }}'
+      workflowIdOrName: task-vm-provision
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}

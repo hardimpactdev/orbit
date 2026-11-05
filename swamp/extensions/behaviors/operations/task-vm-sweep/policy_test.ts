@@ -176,24 +176,6 @@ Deno.test("sweep refuses malformed scope before returning any deletion plan", ()
     );
 });
 
-Deno.test("a slot's VM, seed clone and identity volume are owned and never deleted", () => {
-    const names = ["beast-tvm-1", "beast-tvm-1-topology-seed", "beast-tvm-1-identity"];
-    const strays = incusStrays(
-        scope,
-        false,
-        [...rows(["beast-tvm-1", "beast-tvm-x1"]), ...rows(["beast-tvm-2"], "default")],
-        rows(names.slice(1)),
-        [],
-    );
-    assertEquals(strays.instances, [
-        { project: "tasks", name: "beast-tvm-x1" },
-        { project: "default", name: "beast-tvm-2" },
-    ]);
-    assertEquals(strays.volumes, []);
-    const orphans = selectIncusOrphans(scope, rows(names.slice(0, 1)), rows(names.slice(1)));
-    assertEquals([orphans.instances, orphans.volumes], [[], []]);
-});
-
 Deno.test("a seed refresh's builder, clone and previous seed are owned of a kept image, and never deleted", () => {
     const fingerprints = ["aaaaaaaaaaaa0000"];
     const names = [

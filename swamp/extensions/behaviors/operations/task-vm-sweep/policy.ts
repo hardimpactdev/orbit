@@ -107,9 +107,6 @@ export function incusStrays(
         ciRunner && project === "orbit-ci" ||
         scope.operator_owned.includes(`${project}/${name}`) ||
         scope.operator_owned.includes(`${project}/*`);
-    // A slot is `<node-slug>-tvm-<n>`: its VM, its seed clone and its identity volume are owned, and never deleted here.
-    const slotVm = /^[a-z0-9]+(?:-[a-z0-9]+)*-tvm-[0-9]+$/;
-    const slotVolume = /^[a-z0-9]+(?:-[a-z0-9]+)*-tvm-[0-9]+-(?:topology-seed|identity)$/;
     return {
         instances: instanceRows.filter((row) => {
             const build = /^tvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?$/
@@ -118,7 +115,7 @@ export function incusStrays(
                 );
             return !excluded(row.project, row.name) &&
                 !(row.project === scope.project &&
-                    (/^tvm-[0-9]+$/.test(row.name) || row.name === "tvm-seed-refresh" || slotVm.test(row.name) ||
+                    (/^tvm-[0-9]+$/.test(row.name) || row.name === "tvm-seed-refresh" ||
                         build !== null &&
                             scope.protected_build_ids.includes(
                                 Number(build[1]),
@@ -130,7 +127,7 @@ export function incusStrays(
             );
             return !excluded(row.project, row.name) &&
                 !(row.project === scope.project &&
-                    (/^tvm-[0-9]+-topology-seed$/.test(row.name) || slotVolume.test(row.name) ||
+                    (/^tvm-[0-9]+-topology-seed$/.test(row.name) ||
                         seed !== null &&
                             fingerprints.some((fp) => fp.startsWith(seed[1]))));
         }).map((row) => ({ ...row, pool: scope.pool })),

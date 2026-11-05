@@ -24,7 +24,7 @@ use Throwable;
 final readonly class ProofRunIntent
 {
     public function __construct(private ProofCommitTrust $trust, private ProofCommitSource $source, private ProofSettings $settings,
-        private StartOperationAction $start, private OperationIdempotency $idempotency, private ProofSlotClaim $slots, private SwampSshExecutionInput $ssh) {}
+        private StartOperationAction $start, private OperationIdempotency $idempotency, private ProofVmClaim $vms, private SwampSshExecutionInput $ssh) {}
 
     public function start(string $commit, bool $all, string $caller, ?string $requestId): Operation
     {
@@ -41,27 +41,27 @@ final readonly class ProofRunIntent
         if ($selection->nothingToProve()) {
             return $this->start->record(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, $intent, [
                 'commit' => $commit, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
-                'uncovered' => $selection->uncovered, 'slot' => null, 'receipt_url' => null,
+                'uncovered' => $selection->uncovered, 'vm' => null, 'receipt_url' => null,
             ], $caller, $requestId);
         }
         if (! $this->settings->executionEnabled()) {
             throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409,
                 details: ['commit' => $commit, 'cases' => $selection->programs(), 'uncovered' => array_column($selection->uncovered, 'path')]);
         }
-        $slot = $this->slots->claim();
+        $vm = $this->vms->claim();
         try {
             $operation = $this->start->execute(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, [...$intent,
-                'slot' => ['name' => $slot->name, 'checkout_path' => $slot->checkout],
-                'ssh_execution' => $this->ssh->forNode(Node::query()->findOrFail($slot->nodeId)),
+                'vm' => ['name' => $vm->name, 'checkout_path' => $vm->checkout],
+                'ssh_execution' => $this->ssh->forNode(Node::query()->findOrFail($vm->nodeId)),
             ], $caller, $requestId);
         } catch (Throwable $exception) {
-            $this->slots->release($slot->name);
+            $this->vms->release($vm->name);
 
             throw $exception;
         }
-        // A request that raced an earlier one with the same key got that run back; its slot is the one that counts.
+        // A request that raced an earlier one with the same key got that run back; its VM is the one that counts.
         if (! $operation->wasRecentlyCreated) {
-            $this->slots->release($slot->name);
+            $this->vms->release($vm->name);
         }
 
         return $operation;
