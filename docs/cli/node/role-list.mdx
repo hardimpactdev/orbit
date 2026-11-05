@@ -20,7 +20,7 @@ orbit node:role:list <node> [--json]
 orbit node:role:list 7
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `node.id_invalid` and sends no request, and so is an ID that is not a positive integer. The caller needs an access grant to the Node (`node.access_denied`), and an unknown Node is refused with `http.404`.
+In a terminal, an omitted Node is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `node.id_invalid` and sends no request, and so is an ID that is not a positive integer. The caller needs an access grant to the Node (`node_access.required`), and an unknown Node is refused with `http.404`.
 
 The list shows what Orbit has recorded for the Node. It does not contact the Node, so it works while the Node is unreachable. It has one row per role assignment, sorted by role name, with the columns ID, ROLE, STATUS, FAILED STEP and ERROR CODE. A missing value shows `—`. A Node without roles says `No roles.`.
 
