@@ -24,16 +24,16 @@ flowchart TD
     fastInventory[Pin candidate and inventory] --> fastSnapshot[Export pinned source to a new generation; carry the lease and the Gateway runtime state from the previous one; activate last]
     fastSnapshot --> restore[Per guest: delete, copy from ready copy, label for this attempt, add NIC with saved MAC and IP, add the new source mount; start all]
     restore --> candidate[Candidate overlay in the Gateway as soon as it mounts the new source: Caddy access, migrations, Swamp repository, restart queue workers]
-    candidate --> wait[Bounded wait: guest agents, fresh tunnel handshake, Gateway answers, every Node agent online, Swamp worker enrolled]
+    candidate --> wait[Blocking commands: incus wait agent, systemctl start of the units; tunnel handshake]
     wait --> fastOperator[Native step: operator, pins the restored CA]
-    fastOperator --> fastTransport[One readiness check: Gateway knows the operator, Doctor has no finding, record the case baseline]
+    fastOperator --> fastTransport[One readiness check: every Node agent online, Swamp worker enrolled, Gateway knows the operator, Doctor has no finding, record the case baseline]
   end
 
   readiness --> result[Publish generation, readiness and preservation evidence]
   fastTransport --> result
   readyCheck --> receipt
   result --> cases{Verification run?}
-  result -. fast reset only, in parallel .-> retire[Delete the previous generation source]
+  result -. in parallel .-> prune[Keep the active and the previous generation source; delete the others]
   cases -->|yes| commands[Run each case program in order against the one fleet within the case budget; scoped case cleanup]
   cases -->|no| held[Keep generation for explicit test use]
   commands --> baseline[After each case compare its own pre-case database and firewall state; residue fails that case]

@@ -4,6 +4,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import secrets
 import signal
 import subprocess
@@ -54,8 +55,8 @@ ACL_DIRECTORIES = ('.', 'apps', 'apps/gateway', 'apps/gateway/public')
 # A boot is not an observation: the guests need about 50 s from `incus start` to a healthy fleet. The bound is fixed.
 READY_WAIT_SECONDS = 150
 ACTIONS = ('inventory', 'release-previous', 'snapshot', 'snapshot-ready', 'prepare', 'swamp-state', 'gateway-db',
-           'gateway-runtime', 'restore-ready', 'ready-wait', 'candidate', 'operator', 'transport-readiness',
-           'observer-facts', 'readiness', 'ready-check', 'ready-make', 'publish', 'retire-previous', 'failure-cleanup',
+           'gateway-runtime', 'restore-ready', 'ready-wait', 'agents-online', 'candidate', 'operator', 'transport-readiness',
+           'observer-facts', 'readiness', 'ready-check', 'ready-make', 'publish', 'prune-generations', 'failure-cleanup',
            'release-active', 'cases')
 
 
@@ -132,6 +133,12 @@ def bring_up_wireguard(topology, network):
         privileged(['systemctl', 'enable', '--now', f'wg-quick@{WG_OUTER}'])
     # A recreated Gateway cannot read the old session; one packet starts the handshake at once.
     subprocess.run(['ping', '-c', '1', '-W', '3', network['nodes']['gateway']['ip']], capture_output=True, timeout=15, check=False)
+
+
+def force_handshake(address):
+    """Make the outer VM's tunnel handshake now. With a deadline, ping keeps sending until the first reply: one blocking
+    command, so a Gateway that restarted or sat idle cannot leave the last handshake too old."""
+    subprocess.run(['ping', '-c', '1', '-w', '60', address], capture_output=True, timeout=90, check=False)
 
 
 def tunnel_ready(network, *, seconds=120):
@@ -504,6 +511,7 @@ def transport_readiness(request):
                   data=json.dumps({'group': request['group'], 'nodes': topology['nodes'],
                                    'managed': {key: {'address': node['incus_address'], 'host_key': incus(['exec', node['instance'], '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).decode().split()[1]} for key, node in topology['nodes'].items() if key != 'operator'}}).encode(), timeout=240).decode()
     network = wireguard(topology)
+    force_handshake(network['nodes']['gateway']['ip'])
     handshake_age = tunnel_ready(network)
     _, status = local_cli(request, 'gateway:status', '--json')
     # Only an active WireGuard member is told the release state, so this proves the Gateway knows the outer VM by 10.45.0.10.
@@ -530,6 +538,8 @@ def observer_facts(request):
 
 def readiness(request):
     evidence = Path(request['evidence'])
+    if request.get('mode') == 'ready-make':
+        agents_online(request)
     transport = json.loads((evidence / 'transport-readiness.json').read_text())
     facts = json.loads((evidence / 'observer-facts.json').read_text())
     ids = node_ids(request)
@@ -632,62 +642,97 @@ def restore_ready(request):
     return ready.restore(state['guests'], state['network'], source_for(request, request['generation']), labels)
 
 
+CLUB_KEY = '/home/orbit/.config/swamp/club-api-key'
+
+
+def deliver_key(request, gateway):
+    """Put the proof Swamp Club key into a started Gateway and start Swamp with it, as the full build does. Never baked."""
+    incus(['wait', gateway, 'agent', '--timeout', str(READY_WAIT_SECONDS)], timeout=READY_WAIT_SECONDS + 30)
+    incus(['file', 'push', request['key_file'], gateway + CLUB_KEY, '--mode=0600', '--uid=1000', '--gid=1000'])
+    # Serve could not start without the key and may have hit its start limit.
+    incus(['exec', gateway, '--', 'sh', '-c', 'systemctl reset-failed orbit-swamp-serve orbit-node-worker; systemctl restart orbit-swamp-serve orbit-node-worker'],
+          timeout=READY_WAIT_SECONDS + 30)
+
+
+def scrub_key(request, gateway):
+    """Delete the club key from the running Gateway, then prove no file on its disks holds it. The file list names paths only."""
+    incus(['exec', gateway, '--', 'rm', '-f', CLUB_KEY])
+    scan = ('umask 077; cat > /run/club-key-scan; find / -xdev -type f -size -20M ! -path /run/club-key-scan '
+            '-exec grep -lF -f /run/club-key-scan {} + ; status=$?; rm -f /run/club-key-scan; [ "$status" -le 1 ]')
+    found = incus(['exec', gateway, '--', 'sh', '-c', scan], data=Path(request['key_file']).read_bytes(), timeout=600).decode().split()
+    if found:
+        raise RuntimeError('The proof club key is still on the Gateway disk, nothing copied: ' + ', '.join(sorted(found)))
+    return {'scanned': True, 'files_holding_the_key': 0}
+
+
+def start_units(instance, units):
+    """Start units in one guest. systemctl returns when the start jobs finish, and fails if a job fails."""
+    incus(['exec', instance, '--', 'systemctl', 'start', *units], timeout=READY_WAIT_SECONDS + 30)
+
+
 def apply_candidate(request):
     """Apply the candidate in the restored Gateway as soon as it has mounted the new source, while the Nodes still boot."""
     gateway = prepared(request)['construction']['nodes']['gateway']['instance']
-    deadline = time.monotonic() + READY_WAIT_SECONDS
-    while True:
-        try:
-            incus(['exec', gateway, '--', 'test', '-f', '/home/orbit/orbit/apps/gateway/artisan'], timeout=10)
-            break
-        except (RuntimeError, subprocess.TimeoutExpired) as error:
-            if time.monotonic() > deadline:
-                raise RuntimeError(f'The Gateway did not mount the new source {READY_WAIT_SECONDS} s after its start: {error}') from error
-            time.sleep(1)
+    deliver_key(request, gateway)
+    # This unit's start waits (at most 60 s) for the new source mount, so the job ends when the mount is there.
+    start_units(gateway, ['orbit-proof-operations'])
+    incus(['exec', gateway, '--', 'test', '-f', '/home/orbit/orbit/apps/gateway/artisan'], timeout=10)
     return guest(request, 'candidate')
 
 
 def ready_wait(request):
-    """Wait, within a fixed bound, for the started guests: guest agents, tunnel, Node agents online (which needs the Gateway)."""
+    """Block on the started guests: guest agents, units, tunnel handshake.
+
+    Each wait is one blocking command with a fixed bound: `incus wait` for the guest agent and `systemctl start` for the
+    units, which returns when their start jobs end. The units' own start conditions wait for the Gateway.
+    """
     topology = prepared(request)['construction']
     network = wireguard(topology)
     address = network['nodes']['gateway']['ip']
-    managed = [value for key, value in node_ids(request).items() if key != 'operator']
     since = started_at(request)
     if since is None:
         raise RuntimeError('The fleet has no recorded start; restore or make ready copies first.')
-    deadline = time.monotonic() + READY_WAIT_SECONDS
-    while True:
-        try:
-            for key, node in topology['nodes'].items():
-                if key != 'operator':
-                    incus(['exec', node['instance'], '--', 'true'], timeout=10)
-            # The Gateway cannot read the old session; one packet starts the handshake at once.
-            subprocess.run(['ping', '-c', '1', '-W', '1', address], capture_output=True, timeout=10, check=False)
-            tunnel_ready(network, seconds=max(1.0, time.time() - since))
-            state = gateway_state(request)
-            agents = state.get('agents')
-            if agents is None:
-                # A generation built before the Gateway driver reported presence: ask through the candidate CLI.
-                agents = {str(node): local_cli(request, 'node:show', str(node), '--json')[1]['agent']['state'] for node in managed}
-            silent = [node for node in managed if agents.get(str(node)) != 'online']
-            if silent:
-                raise RuntimeError('The Node agents are not online yet: ' + ', '.join(map(str, silent)))
-            if not fresh_facts(state, managed, 0.0):
-                raise RuntimeError('The Node facts are missing.')
-            if request.get('mode') == 'ready':
-                # The restored Gateway runs the candidate's guest program, so it can name the worker check itself.
-                incus(['exec', topology['nodes']['gateway']['instance'], '--', 'python3', '/home/orbit/orbit/swamp/proof/reset/guest.py', 'worker'],
-                      data=json.dumps({'group': request['group'], 'generation': request['generation'], 'nodes': topology['nodes'], 'wireguard': network}).encode(), timeout=60)
-            return {'seconds_since_start': round(time.time() - since, 1), 'address': address}
-        except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as error:
-            if time.monotonic() > deadline:
-                raise RuntimeError(f'The fleet was not ready {READY_WAIT_SECONDS} s after its start: {error}') from error
-            time.sleep(1)
+    instances = {key: node['instance'] for key, node in topology['nodes'].items() if key != 'operator'}
+    for instance in instances.values():
+        incus(['wait', instance, 'agent', '--timeout', str(READY_WAIT_SECONDS)], timeout=READY_WAIT_SECONDS + 30)
+    start_units(instances['gateway'], ['php8.5-fpm', 'caddy', 'orbit-websocket', 'orbit-swamp-serve', 'orbit-node-worker',
+                                       'orbit-proof-agent-view', 'orbit-proof-operations', 'orbit-agent'])
+    for key, instance in instances.items():
+        if key != 'gateway':
+            start_units(instance, ['orbit-agent'])
+    force_handshake(address)
+    tunnel_ready(network, seconds=max(1.0, time.time() - since))
+    return {'seconds_since_start': round(time.time() - since, 1), 'address': address}
+
+
+def agents_online(request):
+    """One observation: every Node agent is online by the Gateway's presence heartbeat, its facts exist, the worker is enrolled.
+
+    It runs at the start of the readiness check, a few seconds after the agent units started: the agents report their
+    presence within one heartbeat and no command blocks on that.
+    """
+    topology = prepared(request)['construction']
+    managed = [value for key, value in node_ids(request).items() if key != 'operator']
+    state = gateway_state(request)
+    agents = state.get('agents')
+    if agents is None:
+        # A generation built before the Gateway driver reported presence: ask through the candidate CLI.
+        agents = {str(node): local_cli(request, 'node:show', str(node), '--json')[1]['agent']['state'] for node in managed}
+    silent = [node for node in managed if agents.get(str(node)) != 'online']
+    if silent:
+        raise RuntimeError('The Node agents are not online: ' + ', '.join(map(str, silent)))
+    if not fresh_facts(state, managed, 0.0):
+        raise RuntimeError('The Node facts are missing.')
+    if request.get('mode') == 'ready':
+        # The restored Gateway runs the candidate's guest program, so it can name the worker check itself.
+        incus(['exec', topology['nodes']['gateway']['instance'], '--', 'python3', '/home/orbit/orbit/swamp/proof/reset/guest.py', 'worker'],
+              data=json.dumps({'group': request['group'], 'generation': request['generation'], 'nodes': topology['nodes'], 'wireguard': wireguard(topology)}).encode(), timeout=60)
+    return {'online': managed}
 
 
 def ready_check(request):
     """The one readiness check of a reset from ready copies: the Gateway knows the operator, Doctor has no finding."""
+    agents_online(request)
     ids = {key: value for key, value in node_ids(request).items() if key != 'operator'}
     # The reads are independent, so they run together.
     with ThreadPoolExecutor(max_workers=len(ids) + 2) as pool:
@@ -716,18 +761,33 @@ def ready_make(request):
     for instance in guests.values():
         if instance not in observed or observed[instance]['metadata'] != expected:
             raise RuntimeError('Guest ownership mismatch, nothing copied: ' + instance)
-    return ready.make(guests, ready.network_of(guests['gateway']), record['nodes'])
+    scrubbed = scrub_key(request, guests['gateway'])
+    made = ready.make(guests, ready.network_of(guests['gateway']), record['nodes'])
+    # The running fleet goes on with its key, as after any start of a Gateway.
+    deliver_key(request, guests['gateway'])
+    return {**made, 'key': scrubbed}
 
 
-def retire_previous(request):
-    """Delete the source directory the previous generation used; the new generation carries everything from it."""
+def prune_generations(request):
+    """Keep the active generation and the previous one; delete the other generation source directories of this group.
+
+    A directory is deleted only when it is a generation of this candidate and group and no guest mounts it. The guests
+    wrote some of it as root (the agent manifest, Python caches), so the outer user needs sudo.
+    """
     previous = json.loads((Path(request['evidence']) / 'inventory.json').read_text())['previous']
-    if request.get('mode') != 'ready' or not previous or previous == request['generation']:
-        return {'retired': None}
-    directory = source_for(request, previous).parent
-    # The guests wrote some of it as root (the agent manifest, Python caches), so the outer user needs sudo.
-    privileged(['rm', '-rf', '--', str(directory)], timeout=300)
-    return {'retired': previous}
+    keep = {request['generation'], previous}
+    expected = {key: request[key] for key in ('candidate', 'group')}
+    mounted = incus(['list', '--format=json']).decode()
+    removed = []
+    for directory in sorted((Path(request['root']) / 'generations').iterdir()):
+        owner = directory / 'owner.json'
+        if directory.name in keep or not re.fullmatch('[0-9a-f]{32}', directory.name) or directory.is_symlink() or not owner.is_file():
+            continue
+        if json.loads(owner.read_text()) != expected or str(directory) in mounted:
+            continue
+        privileged(['rm', '-rf', '--', str(directory)], timeout=300)
+        removed.append(directory.name)
+    return {'kept': sorted(name for name in keep if name), 'removed': removed}
 
 
 def preservation(request):
@@ -892,12 +952,14 @@ def execute(request, action):
         return apply_candidate(request)
     if action == 'ready-wait':
         return ready_wait(request)
+    if action == 'agents-online':
+        return agents_online(request)
     if action == 'ready-make':
         return ready_make(request)
     if action == 'ready-check':
         return ready_check(request)
-    if action == 'retire-previous':
-        return retire_previous(request)
+    if action == 'prune-generations':
+        return prune_generations(request)
     if action == 'prepare':
         source = source_for(request, request['generation'])
         value = harness(request, 'prepare', source)

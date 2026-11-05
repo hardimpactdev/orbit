@@ -206,6 +206,18 @@ jobs:
             env:
               PROOF_REQUEST: "${{ inputs.request }}"
               PROOF_CANDIDATE: "${{ inputs.candidate }}"
+      - name: prune
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: proof-prune-generations
+          methodName: execute
+          inputs:
+            run: 'python3 "$PROOF_CANDIDATE/swamp/proof/reset/phases.py" prune-generations'
+            timeout: 600000
+            env:
+              PROOF_REQUEST: "${{ inputs.request }}"
+              PROOF_CANDIDATE: "${{ inputs.candidate }}"
   - name: failure
     dependsOn:
       - job: reset

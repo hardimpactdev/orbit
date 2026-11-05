@@ -10,6 +10,16 @@ The boot fixes that keep a reset near 50 s (agent after the tunnel, cloud-init o
 
 Cases live under `swamp/proof/<family>/cases/`. A case calls the real candidate CLI, checks the real effect and exits 0 (pass), 1 (fail) or 2 (unrun). The first one is [`firewall/cases/allow-fresh-ipv4-tcp.sh`](firewall/cases/allow-fresh-ipv4-tcp.sh): a real `firewall:allow` opens real traffic.
 
+## Ready copies: the contract
+
+`bin/proof-fleet ready GROUP` is the one way to make ready copies. Anything else that stores or restores a nested fleet (the topology seed, B3) uses these names and keys.
+
+- **Names:** `fleet-ready-gateway`, `fleet-ready-app-dev`, `fleet-ready-app-prod`. Stopped Incus VM copies in the same project and pool as the fleet.
+- **Keys** on each copy: `user.ready.set` (one identity for the three), `user.ready.role`, `user.ready.made` (UTC), `user.ready.hwaddr`, `user.ready.ipv4`, `user.ready.subnet` (the network's `ipv4.address`), `user.ready.mounts` (JSON of mount device to guest path). The Gateway copy also has `user.ready.nodes` (JSON of Node name to Gateway Node id). `user.ready.complete` equals `user.ready.set` and is written last on all three; a set without it is not used.
+- **Not on a copy:** no `user.orbit.e2e.*` label, no `eth0` device, no `orbit-source` device. A restore adds them for the generation it restores into.
+- **No secret.** The proof Swamp Club key is never in a copy. `ready` deletes it from the running Gateway, scans every file on its disks (`find / -xdev`) for the key and stops with the paths if one holds it, and checks that all three guests report `Stopped` before it copies. The restore pushes the key in after the Gateway agent is up, as the full build does, then restarts Swamp serve and the worker.
+- **Source.** The Gateway's database and its `.env` key belong to the source tree it was built from. Today the fast reset takes that state (`.env`, `storage`, `bootstrap/cache`, the agent manifest) and the attempt lease from the source of the active generation, so it needs an active generation whose network has the subnet of the copies. A fresh task VM with only seed copies is not covered yet: it needs the runtime state of the source stored with the copies and a network and lease created for it.
+
 ## Superseded paths
 
 These paths stay until each kind has a case under the current path. Removal is a later milestone.

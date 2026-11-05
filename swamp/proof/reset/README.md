@@ -48,6 +48,8 @@ IP. It has no `orbit-source` device, which names one generation's source directo
 mount path, the Gateway's Node ids, the creation time and one set identity are `user.ready.*` keys; `user.ready.complete`
 is written last on all three, so a half made set is never used.
 
+**No secret in a copy.** `ready` deletes the proof Swamp Club key from the running Gateway, scans its files for the key, and fails with the paths if any holds it; it also fails unless all three guests report `Stopped` before the copy. A restore (and the end of `ready`) pushes the key back in once the Gateway agent is up, then restarts Swamp serve and the worker. The contract for other tools is in [`swamp/proof/README.md`](../README.md#ready-copies-the-contract).
+
 **When copies are usable.** All three exist, stopped, with one complete set identity and no label or generation device.
 They are for the subnet and the three addresses of the active generation, which also needs a fleet record (the
 generation was published healthy; one built before the record existed has the same facts in its evidence). They are
@@ -65,17 +67,21 @@ younger than 20 h, because the Swamp tokens that a build mints last 24 h and its
    attempt, adds a NIC on the generation's network with the saved MAC and IP, adds the new source mount and starts all
    three. It records the time just before the start.
 4. `candidate` applies the candidate inside the Gateway as soon as it has mounted the new source, while the Nodes still
-   boot: Caddy access, `package:discover`, migrations, the Swamp repository (serve hot-reloads the workflows; its `.swamp.yaml`, which holds the datastore the build set up, stays), the
-   extensions whose pin changed, and a restart of the queue worker and the agent-view subscriber. The Gateway mounts the
-   generation's private source copy; mounting the live checkout is a later change.
-5. `wait` waits within a fixed 150 s bound for the guest agents, a fresh WireGuard handshake with the nested Gateway,
-   an answer from the Gateway, every Node agent online by the Gateway's own presence heartbeat, and the Swamp worker
-   enrolled in serve. A boot is not an observation of Orbit state, so this one step waits; every later step is one-shot.
+   boot. It blocks on `incus wait agent`, then on the start of `orbit-proof-operations`, whose start condition waits for
+   the mount. Then: Caddy access, `package:discover`, migrations, the Swamp repository (serve hot-reloads the workflows;
+   its `.swamp.yaml`, which holds the datastore the build set up, stays), the extensions whose pin changed, and a restart
+   of the queue worker and the agent-view subscriber. The Gateway mounts the generation's private source copy; mounting
+   the live checkout is a later change.
+5. `wait` blocks. Each wait is one command with a fixed bound of 150 s: `incus wait agent` for every guest and
+   `systemctl start` for the Gateway units and the Node agents, which returns when the start jobs end (the agent unit's
+   start waits for the Gateway). There is no loop and no sleep. It ends with a fresh WireGuard handshake.
 6. `operator` pins the restored Gateway's CA and the single profile, as in a build.
-7. `readiness` is the one readiness check: the Gateway answers the outer VM as a WireGuard member, scoped Doctor is
+7. `readiness` is the one readiness check, made once: every Node agent is online by the Gateway's presence heartbeat, the
+   recorded facts exist, the Swamp worker is enrolled in serve, the Gateway answers the outer VM as a WireGuard member, scoped Doctor is
    healthy for each Node, and the firewall baseline for the cases is recorded.
-8. `publish` records the receipt and the fleet record. `retire-previous` runs beside it and deletes the previous
-   generation's source directory (the guests wrote some of it as root, so it uses sudo).
+8. `publish` records the receipt and the fleet record. `prune` runs beside it, in every reset: it keeps the active
+   generation and the previous one and deletes the other source directories of this candidate and group that no guest
+   mounts (the guests wrote some of it as root, so it uses sudo).
 
 A fleet restored from ready copies sends no new Node fact, because the agent reports a fact only when it changes, so
 the build's check for facts received after the start does not apply. The presence heartbeat in `wait` proves that each

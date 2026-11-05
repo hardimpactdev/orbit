@@ -124,6 +124,9 @@ def make(guests, network, nodes):
     try:
         if running:
             incus(['stop', *running], timeout=300)
+        for role in ROLES:
+            if json.loads(incus(['query', '/1.0/instances/' + guests[role]]))['status'] != 'Stopped':
+                raise RuntimeError(f'{guests[role]} is not stopped; nothing copied.')
         for existing in copies():
             incus(['delete', '--force', existing])
         for role in ROLES:

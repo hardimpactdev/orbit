@@ -51,14 +51,18 @@ def complete_set():
 class FakeIncus:
     """Records every call and answers the few queries ready.py makes."""
 
-    def __init__(self, rows=(), fail_on=None):
-        self.calls, self.rows, self.fail_on = [], list(rows), fail_on
+    def __init__(self, rows=(), fail_on=None, stop_works=True):
+        self.calls, self.rows, self.fail_on, self.stop_works = [], list(rows), fail_on, stop_works
 
     def __call__(self, args, **kwargs):
         args = [str(argument) for argument in args]
         self.calls.append(args)
         if self.fail_on and args[:len(self.fail_on)] == self.fail_on:
             raise RuntimeError('incus exited 1: ' + ' '.join(self.fail_on))
+        if args[0] == 'stop' and self.stop_works:
+            for row in self.rows:
+                if row['name'] in args[1:]:
+                    row['status'] = 'Stopped'
         if args[0] == 'list':
             return json.dumps(self.rows).encode()
         if args[0] == 'query':
@@ -135,6 +139,13 @@ class MakeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'static MAC'):
             self.make(incus)
         self.assertEqual([], [call for call in incus.calls if call[0] in ('stop', 'copy', 'delete')])
+
+    def test_nothing_is_copied_unless_every_guest_reports_stopped(self):
+        incus = FakeIncus([guest_row(role) for role in ready.ROLES], stop_works=False)
+        with self.assertRaisesRegex(RuntimeError, 'is not stopped; nothing copied'):
+            self.make(incus)
+        self.assertFalse(any(call[0] == 'copy' for call in incus.calls))
+        self.assertEqual(['start', *GUESTS.values()], incus.calls[-1])
 
     def test_stopped_guests_are_not_stopped_again(self):
         incus = FakeIncus([guest_row(role, 'Stopped') for role in ready.ROLES])
@@ -392,16 +403,23 @@ class SnapshotReadyTests(unittest.TestCase):
                     phases.snapshot_ready(request)
             snapshot.assert_not_called()
 
-    def test_retire_removes_only_the_previous_generation_and_only_after_a_fast_reset(self):
+    def test_prune_keeps_the_active_and_the_previous_generation_and_only_this_groups_unmounted_ones(self):
         with tempfile.TemporaryDirectory() as temporary:
             request, root, previous, new = self.fleet(temporary)
-            with patch.object(phases, 'privileged') as remove:
-                self.assertEqual({'retired': None}, phases.retire_previous({**request, 'mode': 'full'}))
-            remove.assert_not_called()
-            (root / 'generations' / new).mkdir()
-            with patch.object(phases, 'privileged') as remove:
-                self.assertEqual({'retired': previous}, phases.retire_previous({**request, 'mode': 'ready'}))
-            remove.assert_called_once_with(['rm', '-rf', '--', str(root / 'generations' / previous)], timeout=300)
+            request['mode'] = 'full'
+            generations = root / 'generations'
+            (generations / new).mkdir()
+            launcher.write_json(generations / new / 'owner.json', {'candidate': '/c', 'group': '1'})
+            old, foreign, mounted = 'c' * 32, 'd' * 32, 'e' * 32
+            for name, owner in ((old, {'candidate': '/c', 'group': '1'}), (foreign, {'candidate': '/other', 'group': '1'}), (mounted, {'candidate': '/c', 'group': '1'})):
+                (generations / name).mkdir()
+                launcher.write_json(generations / name / 'owner.json', owner)
+            (generations / 'not-a-generation').mkdir()
+            listing = json.dumps([{'devices': {'orbit-source': {'source': str(generations / mounted / 'source')}}}]).encode()
+            with patch.object(phases, 'incus', return_value=listing), patch.object(phases, 'privileged') as remove:
+                result = phases.prune_generations(request)
+            remove.assert_called_once_with(['rm', '-rf', '--', str(generations / old)], timeout=300)
+            self.assertEqual({'kept': sorted([previous, new]), 'removed': [old]}, result)
 
 
 class PreservationTests(unittest.TestCase):
@@ -429,60 +447,90 @@ class PreservationTests(unittest.TestCase):
 
 
 class ReadyWaitTests(unittest.TestCase):
-    def request(self, temporary, started=True):
+    def request(self, temporary, started=True, mode='ready'):
         evidence = Path(temporary)
         launcher.write_json(evidence / 'prepare.json', {'construction': {'nodes': {key: {'instance': key, 'incus_address': '10.232.2.1'} for key in ('gateway', 'app-dev', 'operator')}}})
         launcher.write_json(evidence / 'gateway-db.json', {'nodes': {'gateway': 1, 'app-dev': 2, 'operator': 3}})
         if started:
             launcher.write_json(evidence / 'restore-ready.json', {'started_at': 1000.0})
-        return {'evidence': temporary, 'group': '1', 'generation': 'a' * 32, 'mode': 'ready'}
+        return {'evidence': temporary, 'group': '1', 'generation': 'a' * 32, 'mode': mode}
 
-    def wait(self, request, states, monotonic=None):
-        network = {'nodes': {'gateway': {'ip': '10.45.0.1'}}}
-        facts = [{'node_id': node, 'kind': kind, 'enabled': True, 'received_at': '2026-11-05T00:00:00+00:00'} for node in (1, 2) for kind in ('host', 'ufw', 'units')]
-        replies = iter([{'facts': facts, 'agents': agents} for agents in states])
-        with patch.object(phases, 'wireguard', return_value=network), patch.object(phases, 'incus', return_value=b'') as incus, \
+    def wait(self, request):
+        with patch.object(phases, 'wireguard', return_value={'nodes': {'gateway': {'ip': '10.45.0.1'}}}), patch.object(phases, 'incus', return_value=b'') as incus, \
                 patch.object(phases.subprocess, 'run'), patch.object(phases, 'tunnel_ready', return_value=1.0) as tunnel, \
-                patch.object(phases, 'gateway_state', side_effect=lambda r: next(replies)), \
-                patch.object(phases.time, 'sleep'), patch.object(phases.time, 'time', return_value=1010.0):
-            if monotonic:
-                with patch.object(phases.time, 'monotonic', side_effect=monotonic):
-                    return phases.ready_wait(request), incus, tunnel
-            return phases.ready_wait(request), incus, tunnel
+                patch.object(phases, 'gateway_state') as state, patch.object(phases.time, 'time', return_value=1010.0):
+            result = phases.ready_wait(request)
+        self.calls = [call.args[0] for call in incus.call_args_list]
+        state.assert_not_called()
+        return result, tunnel
 
-    def test_waits_until_every_agent_is_online_then_checks_the_worker(self):
+    def test_each_wait_is_one_blocking_command(self):
         with tempfile.TemporaryDirectory() as temporary:
-            request = self.request(temporary)
-            result, incus, tunnel = self.wait(request, [{'1': 'online', '2': 'offline'}, {'1': 'online', '2': 'online'}])
-            self.assertEqual(10.0, result['seconds_since_start'])
-            guest_calls = [call.args[0] for call in incus.call_args_list]
-            self.assertEqual(1, sum(1 for argv in guest_calls if 'guest.py' in ' '.join(map(str, argv)) and argv[-1] == 'worker'))
-            # The handshake must be newer than the start: the bound is the time since it.
+            result, tunnel = self.wait(self.request(temporary))
+            calls = [' '.join(map(str, call)) for call in self.calls]
+            self.assertEqual(['wait gateway agent --timeout 150', 'wait app-dev agent --timeout 150'], calls[:2])
+            self.assertIn('exec gateway -- systemctl start php8.5-fpm caddy orbit-websocket orbit-swamp-serve orbit-node-worker orbit-proof-agent-view orbit-proof-operations orbit-agent', calls)
+            self.assertIn('exec app-dev -- systemctl start orbit-agent', calls)
             self.assertEqual(10.0, tunnel.call_args.kwargs['seconds'])
+            self.assertEqual(10.0, result['seconds_since_start'])
 
-    def test_the_wait_is_bounded_and_names_the_last_reason(self):
+    def online(self, request, agents, mode='ready'):
+        facts = [{'node_id': node, 'kind': kind, 'enabled': True, 'received_at': '2026-11-05T00:00:00+00:00'} for node in (1, 2) for kind in ('host', 'ufw', 'units')]
+        state = {'facts': facts} if agents is None else {'facts': facts, 'agents': agents}
+        with patch.object(phases, 'wireguard', return_value={'nodes': {}}), patch.object(phases, 'incus', return_value=b'') as incus, \
+                patch.object(phases, 'gateway_state', return_value=state), \
+                patch.object(phases, 'local_cli', return_value=(0, {'agent': {'state': 'online'}})) as cli:
+            result = phases.agents_online({**request, 'mode': mode})
+        return result, incus, cli
+
+    def test_the_observation_names_a_silent_agent_and_checks_the_worker_in_a_fast_reset(self):
         with tempfile.TemporaryDirectory() as temporary:
             request = self.request(temporary)
-            ticks = iter([0.0, 1.0, phases.READY_WAIT_SECONDS + 5])
-            with self.assertRaisesRegex(RuntimeError, r'not ready 150 s after its start: The Node agents are not online yet: 2'):
-                self.wait(request, [{'1': 'online'}, {'1': 'online'}], monotonic=lambda: next(ticks))
+            with self.assertRaisesRegex(RuntimeError, r'not online: 2'):
+                self.online(request, {'1': 'online', '2': 'offline'})
+            result, incus, _ = self.online(request, {'1': 'online', '2': 'online'})
+            self.assertEqual({'online': [1, 2]}, result)
+            self.assertTrue(any(call.args[0][-1] == 'worker' for call in incus.call_args_list))
+            _, incus, _ = self.online(request, {'1': 'online', '2': 'online'}, mode='ready-make')
+            incus.assert_not_called()
 
     def test_the_candidate_cli_answers_for_a_generation_that_does_not_report_presence(self):
         with tempfile.TemporaryDirectory() as temporary:
-            request = {**self.request(temporary), 'mode': 'ready-make'}
-            facts = [{'node_id': node, 'kind': kind, 'enabled': True, 'received_at': '2026-11-05T00:00:00+00:00'} for node in (1, 2) for kind in ('host', 'ufw', 'units')]
-            with patch.object(phases, 'wireguard', return_value={'nodes': {'gateway': {'ip': '10.45.0.1'}}}), patch.object(phases, 'incus', return_value=b''), \
-                    patch.object(phases.subprocess, 'run'), patch.object(phases, 'tunnel_ready'), \
-                    patch.object(phases, 'gateway_state', return_value={'facts': facts}), \
-                    patch.object(phases, 'local_cli', return_value=(0, {'agent': {'state': 'online'}})) as cli, patch.object(phases.time, 'time', return_value=1001.0):
-                phases.ready_wait(request)
+            _, _, cli = self.online(self.request(temporary), None, mode='ready-make')
             self.assertEqual(['node:show', '1', '--json'], list(cli.call_args_list[0].args[1:]))
+
+    def test_the_handshake_is_forced_by_one_blocking_ping_before_it_is_read(self):
+        with patch.object(phases.subprocess, 'run') as run:
+            phases.force_handshake('10.45.0.1')
+        self.assertEqual(['ping', '-c', '1', '-w', '60', '10.45.0.1'], run.call_args.args[0])
+        lease = {'construction': {'attempt_id': 'a', 'nodes': {'gateway': {'instance': 'g', 'incus_address': '10.232.2.10'}}}, 'source': {'operation_id': 'o'}}
+        order = []
+        metadata = {'user.orbit.e2e.' + key: value for key, value in {'owner': 'orbit-e2e', 'issue': 'TASK-3187', 'attempt': 'a', 'operation': 'o'}.items()}
+        with patch.object(phases, 'prepared', return_value=lease), patch.object(phases, 'inventory', return_value={'guests': [{'name': 'g', 'status': 'Running', 'metadata': metadata}]}), \
+                patch.object(phases, 'incus', return_value=b'ssh-ed25519 KEY'), patch.object(phases, 'wireguard', return_value={'nodes': {'gateway': {'ip': '10.45.0.1'}}}), \
+                patch.object(phases, 'force_handshake', side_effect=lambda address: order.append('ping')), \
+                patch.object(phases, 'tunnel_ready', side_effect=lambda network: order.append('read') or 1.0), \
+                patch.object(phases, 'local_cli', return_value=(0, {'data': {'auto_release': {}}, 'nodes': []})):
+            try:
+                phases.transport_readiness({'issue': 'TASK-3187', 'group': '1'})
+            except RuntimeError:  # the stubbed node list is not the fixture's; only the order of the two calls matters here
+                pass
+        self.assertEqual(['ping', 'read'], order)
 
     def test_refuses_to_wait_for_a_fleet_that_never_started(self):
         with tempfile.TemporaryDirectory() as temporary:
             with patch.object(phases, 'wireguard', return_value={'nodes': {'gateway': {'ip': 'x'}}}):
                 with self.assertRaisesRegex(RuntimeError, 'no recorded start'):
                     phases.ready_wait(self.request(temporary, started=False))
+
+    def test_the_candidate_waits_for_the_agent_then_the_mount_and_never_loops(self):
+        with patch.object(phases, 'prepared', return_value={'construction': {'nodes': {'gateway': {'instance': 'gw'}}}}), \
+                patch.object(phases, 'incus', return_value=b'') as incus, patch.object(phases, 'guest', return_value={'migrated': True}) as guest:
+            phases.apply_candidate({'key_file': '/k'})
+        calls = [' '.join(map(str, call.args[0])) for call in incus.call_args_list]
+        self.assertEqual(['wait gw agent --timeout 150', 'exec gw -- systemctl start orbit-proof-operations',
+                          'exec gw -- test -f /home/orbit/orbit/apps/gateway/artisan'], [calls[0], calls[3], calls[4]])
+        guest.assert_called_once_with({'key_file': '/k'}, 'candidate')
 
     def test_facts_after_a_start_from_ready_copies_need_only_exist(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -492,6 +540,13 @@ class ReadyWaitTests(unittest.TestCase):
             launcher.write_json(evidence / 'ready-make.json', {'started_at': 5.0})
             self.assertEqual(0.0, phases.fresh_since({'evidence': temporary}))
             self.assertEqual(5.0, phases.started_at({'evidence': temporary}))
+
+    def test_the_proof_programs_hold_no_sleep_and_no_endless_loop(self):
+        for name in ('phases.py', 'ready.py', 'launcher.py', 'guest.py'):
+            source = (Path(__file__).resolve().parents[1] / name).read_text()
+            self.assertNotIn('time.sleep', source, name)
+            self.assertNotIn('while True', source, name)
+
 
 
 class ReadyMakePhaseTests(unittest.TestCase):
@@ -506,9 +561,81 @@ class ReadyMakePhaseTests(unittest.TestCase):
                 phases.ready_make({'issue': 'TASK-3187'})
             make.assert_not_called()
             guests[1]['metadata'] = dict(LABELS)
-            with patch.object(ready, 'network_of', return_value='oe-net'):
-                phases.ready_make({'issue': 'TASK-3187'})
+            with patch.object(ready, 'network_of', return_value='oe-net'), patch.object(phases, 'scrub_key', return_value={}), patch.object(phases, 'deliver_key'):
+                phases.ready_make({'issue': 'TASK-3187', 'key_file': '/k'})
             make.assert_called_once_with(GUESTS, 'oe-net', {})
+
+
+    def record(self):
+        return {'prepare': {'construction': {'attempt_id': 'a' * 32, 'nodes': {role: {'instance': GUESTS[role]} for role in ready.ROLES}},
+                            'source': {'operation_id': 'b' * 32}}, 'nodes': {}}
+
+    def test_the_club_key_leaves_the_gateway_before_the_copy_and_returns_after_the_restart(self):
+        order = []
+        guests = [{'name': GUESTS[role], 'status': 'Running', 'metadata': dict(LABELS)} for role in ready.ROLES]
+        with patch.object(phases, 'fleet_record', return_value=self.record()), patch.object(phases, 'inventory', return_value={'guests': guests}), \
+                patch.object(phases, 'scrub_key', side_effect=lambda *args: order.append('scrub') or {'scanned': True}), \
+                patch.object(phases, 'deliver_key', side_effect=lambda *args: order.append('deliver')), \
+                patch.object(ready, 'network_of', return_value='oe-net'), patch.object(ready, 'make', side_effect=lambda *args: order.append('make') or {'set': 's'}):
+            result = phases.ready_make({'issue': 'TASK-3187', 'key_file': '/k'})
+        self.assertEqual(['scrub', 'make', 'deliver'], order)
+        self.assertEqual({'scanned': True}, result['key'])
+
+    def test_a_key_that_stays_on_the_disk_stops_the_copy(self):
+        guests = [{'name': GUESTS[role], 'status': 'Running', 'metadata': dict(LABELS)} for role in ready.ROLES]
+        with patch.object(phases, 'fleet_record', return_value=self.record()), patch.object(phases, 'inventory', return_value={'guests': guests}), \
+                patch.object(phases, 'scrub_key', side_effect=RuntimeError('still on the Gateway disk')), patch.object(phases, 'deliver_key') as deliver, \
+                patch.object(ready, 'network_of', return_value='oe-net'), patch.object(ready, 'make') as make:
+            with self.assertRaisesRegex(RuntimeError, 'still on the Gateway disk'):
+                phases.ready_make({'issue': 'TASK-3187', 'key_file': '/k'})
+        make.assert_not_called()
+        deliver.assert_not_called()
+
+
+class ClubKeyTests(unittest.TestCase):
+    def scrub(self, found):
+        with tempfile.TemporaryDirectory() as temporary:
+            key = Path(temporary) / 'key'
+            key.write_text('club-secret-value\n')
+            with patch.object(phases, 'incus', return_value=found) as incus:
+                try:
+                    return phases.scrub_key({'key_file': str(key)}, 'gw'), incus
+                finally:
+                    self.calls = incus.call_args_list
+
+    def test_the_key_file_is_deleted_and_the_disk_scan_finds_nothing(self):
+        result, incus = self.scrub(b'')
+        self.assertEqual({'scanned': True, 'files_holding_the_key': 0}, result)
+        self.assertEqual(['exec', 'gw', '--', 'rm', '-f', phases.CLUB_KEY], list(map(str, incus.call_args_list[0].args[0])))
+        scan = incus.call_args_list[1]
+        # The key travels on stdin to a file in /run (memory); it is never an argument.
+        self.assertEqual(b'club-secret-value\n', scan.kwargs['data'])
+        self.assertNotIn('club-secret-value', ' '.join(map(str, scan.args[0])))
+        self.assertIn('/run/club-key-scan', ' '.join(map(str, scan.args[0])))
+
+    def test_a_file_that_still_holds_the_key_fails_ready_and_names_only_paths(self):
+        with self.assertRaises(RuntimeError) as raised:
+            self.scrub(b'/home/orbit/.orbit/proof-control/config/auth.json\n')
+        self.assertIn('/home/orbit/.orbit/proof-control/config/auth.json', str(raised.exception))
+        self.assertNotIn('club-secret-value', str(raised.exception))
+
+    def test_the_restored_gateway_gets_the_key_before_swamp_starts(self):
+        with patch.object(phases, 'incus', return_value=b'') as incus:
+            phases.deliver_key({'key_file': '/home/orbit/.config/swamp/club-api-key'}, 'gw')
+        calls = [' '.join(map(str, call.args[0])) for call in incus.call_args_list]
+        self.assertEqual('wait gw agent --timeout 150', calls[0])
+        self.assertTrue(calls[1].startswith('file push /home/orbit/.config/swamp/club-api-key gw/home/orbit/.config/swamp/club-api-key --mode=0600'))
+        self.assertIn('systemctl restart orbit-swamp-serve orbit-node-worker', calls[2])
+
+    def test_the_fast_reset_delivers_the_key_first_and_the_copies_never_hold_it(self):
+        with patch.object(phases, 'prepared', return_value={'construction': {'nodes': {'gateway': {'instance': 'gw'}}}}), \
+                patch.object(phases, 'incus', return_value=b'') as incus, patch.object(phases, 'guest', return_value={}):
+            phases.apply_candidate({'key_file': '/k'})
+        calls = [' '.join(map(str, call.args[0])) for call in incus.call_args_list]
+        self.assertEqual(['wait gw agent --timeout 150', 'file push /k gw' + phases.CLUB_KEY + ' --mode=0600 --uid=1000 --gid=1000'], calls[:2])
+        self.assertLess(calls.index('file push /k gw' + phases.CLUB_KEY + ' --mode=0600 --uid=1000 --gid=1000'), calls.index('exec gw -- systemctl start orbit-proof-operations'))
+        copies = ready.make.__code__.co_names
+        self.assertNotIn('club', ' '.join(copies))
 
 
 class ReadyCheckTests(unittest.TestCase):
@@ -521,8 +648,10 @@ class ReadyCheckTests(unittest.TestCase):
                 if args[0] == 'gateway:status':
                     return 0, {'data': {'auto_release': {}}} if status is None else status
                 return 0, reports[args[1]]
-            with patch.object(phases, 'local_cli', side_effect=cli), patch.object(phases, 'case_baseline', return_value={'ufw': {}}):
+            with patch.object(phases, 'local_cli', side_effect=cli), patch.object(phases, 'case_baseline', return_value={'ufw': {}}), \
+                    patch.object(phases, 'agents_online') as online:
                 result = phases.ready_check(request)
+            online.assert_called_once_with(request)
             return result, json.loads((Path(temporary) / 'baseline.json').read_text())
 
     def test_every_node_is_checked_and_the_case_baseline_is_recorded(self):
@@ -681,7 +810,7 @@ class WorkflowDefinitionTests(unittest.TestCase):
         text = self.definitions()['workflow-proof-fleet-reset-ready.yaml']
         for forbidden in ('release-previous', 'phases.py" prepare', 'gateway-db', 'swamp-state', 'gateway-runtime'):
             self.assertNotIn(forbidden, text)
-        for required in ('snapshot-ready', 'restore-ready', 'ready-wait', 'candidate', 'ready-check', 'retire-previous', 'failure-cleanup'):
+        for required in ('snapshot-ready', 'restore-ready', 'ready-wait', 'candidate', 'ready-check', 'prune-generations', 'failure-cleanup'):
             self.assertIn(required, text)
 
     def test_the_command_usage_names_every_action(self):
