@@ -21,7 +21,10 @@ const intent = (ensure: string, changes: Changes) => ({
 function converge(ufw: UfwDouble, changes: Changes = {}, ensure = "present") {
     const commands = plan(intent(ensure, changes), ufw.status());
     for (const argv of commands) ufw.apply(argv);
-    return { commands, result: check(intent(ensure, changes), ufw.status()) };
+    return {
+        commands,
+        result: check(intent(ensure, changes), ufw.status(), commands.length),
+    };
 }
 
 function refusal(compute: () => unknown) {
@@ -39,10 +42,12 @@ Deno.test("any writes one commented line per protocol and family above managed l
     const ufw = new UfwDouble();
     const { result } = converge(ufw, { protocol: "any", source: "any" });
     const before = structuredClone(ufw.rows);
-    assertEquals(
-        converge(ufw, { protocol: "any", source: "any" }).commands,
-        [],
-    );
+    const repeat = converge(ufw, { protocol: "any", source: "any" });
+    assertEquals(repeat.commands, []);
+    assertEquals(repeat.result, {
+        backend: "active",
+        skipped: "firewall.rule_exists",
+    });
     assertEquals(result, { backend: "active" });
     assertEquals(ufw.tuples(), [
         ["443/tcp", "allow", "Anywhere"],

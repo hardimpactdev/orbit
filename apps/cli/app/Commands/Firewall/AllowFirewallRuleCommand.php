@@ -23,7 +23,6 @@ final class AllowFirewallRuleCommand extends StoreFirewallRuleCommand
     protected $description = 'Allow traffic to one Node port through the gateway.';
 
     #[\Override]
-    #[\Override]
     protected function promptsForMissingInput(): bool
     {
         return true;

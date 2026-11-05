@@ -372,7 +372,9 @@ export const behavior = {
             ) => {
                 const result = args.refusal
                     ? JSON.parse(args.refusal)
-                    : outcome(() => check(args.intent, args.stdout, args.changes));
+                    : outcome(() =>
+                        check(args.intent, args.stdout, args.changes)
+                    );
                 const value = {
                     stdout: JSON.stringify(result),
                     ok: !("error_code" in result),
