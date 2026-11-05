@@ -151,7 +151,7 @@ Registration captures the pending Instance's prospective site, PHP pool and TLS 
 
 ```bash
 orbit route:create 12 shop.example.test
-orbit route:create 12 shop.example.com --publication=public
+orbit route:create 14 shop.example.com --publication=public
 ```
 
 The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"instance_id":12,"domain":"shop.example.test","publication":"private"}`, and an optional `web_root`. The Instance ID implies the Project and scope; the app Route request does not take `project_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. A public custom proxy instead supplies `domain`, `process_id`, `publication: public`, and optional `ingress_node_id`, without `node_id`, `cluster_id`, or `upstream`. The Gateway derives routing scope from the selected Ingress; the Process keeps its own Node and Cluster membership.
@@ -285,8 +285,8 @@ Follow-up: a transfer that moves a public Route with a web root to another Clust
 A custom proxy Route publishes an exact domain for a service that already runs on one managed Node. It creates no Project, PHP handler, or document root.
 
 ```bash
-orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
-orbit route:create executor.orbit --node=beast --process=executor
+orbit route:create executor.orbit --node=7 --upstream=http://127.0.0.1:4788
+orbit route:create executor.orbit --node=7 --process=21
 ```
 
 The first form stores a loopback URL. The second form stores a Node Process and resolves its listener to a loopback or Node-local address.
@@ -324,7 +324,7 @@ Give a Node Process its own public hostname through a selected Cluster Ingress.
 orbit route:create sync.example.com --process=267 --publication=public
 ```
 
-The API body is `{"domain":"sync.example.com","process_id":267,"publication":"public"}`. Add `ingress_node_id` or CLI `--ingress=<node>` to select an active Ingress by ID (the CLI also accepts an exact Node name). By default, Orbit selects the public Ingress of the Process Node's Cluster. For a Process Node outside a Cluster, Orbit selects the single active Ingress serving existing active public app Routes. No candidate returns `route.ingress_required`; multiple candidates return `route.ingress_ambiguous`. An explicit Ingress must be active with an active `ingress` role.
+The API body is `{"domain":"sync.example.com","process_id":267,"publication":"public"}`. Add `ingress_node_id` or CLI `--ingress=<node>` to select an active Ingress by ID (the CLI takes only numeric IDs). By default, Orbit selects the public Ingress of the Process Node's Cluster. For a Process Node outside a Cluster, Orbit selects the single active Ingress serving existing active public app Routes. No candidate returns `route.ingress_required`; multiple candidates return `route.ingress_ambiguous`. An explicit Ingress must be active with an active `ingress` role.
 
 The stored Route has that Ingress's Cluster scope. Orbit never changes the Process Node's Cluster membership or Caddy sites. The caller needs command access to the selected Ingress and the Process Node; unrelated Cluster members need no grant.
 
