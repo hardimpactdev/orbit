@@ -601,7 +601,7 @@ jobs:
     labels: {role: swamp}
     queueTimeout: 10
     allowFailure: true
-    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || inputs.intent.proof_club == null }}
+    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.proof_club == null }}
     dependsOn:
     - step: profile
       condition:
@@ -647,7 +647,7 @@ jobs:
     labels: {role: swamp}
     queueTimeout: 10
     allowFailure: true
-    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || inputs.intent.proof_club == null }}
+    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.proof_club == null }}
     dependsOn:
     - step: proof_club_directory
       condition:
@@ -684,7 +684,7 @@ jobs:
     labels: {role: swamp}
     queueTimeout: 10
     allowFailure: true
-    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || inputs.intent.proof_club == null }}
+    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.proof_club == null }}
     dependsOn:
     - step: proof_club_previous
       condition:

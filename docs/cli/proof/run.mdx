@@ -40,7 +40,7 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 ## The run
 
-Orbit creates a task group on the Orbit Project and provisions it with the same `tasks.provision` operation as any task. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. If no host has room, the provision waits as it does for a task.
+Orbit creates a task group on the Orbit Project and provisions it with the same `tasks.provision` operation as any task. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the provision waits as it does for a task.
 
 Orbit then runs `bin/proof-fleet verify` in the VM as a `tasks.script` operation, and cancels the group whatever the cases did.
 
