@@ -1234,7 +1234,7 @@ A host’s seed is refreshed after each release, and at least daily. The Swamp t
 
 The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub file. It deletes the proof Swamp Club key and searches every file of the three guests for it. It trims the disks and stops the guests.
 
-It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked: no Club key, no checkout, its state on its own disk, no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
+It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked: no Club key, no file of a checkout (a booted guest makes mount point directories there, which are no checkout), its state on its own disk, no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
 
 ##### The ready copies
 
