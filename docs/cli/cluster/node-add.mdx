@@ -5,24 +5,56 @@ description: "Attach an active Node to a Cluster."
 ---
 
 ```bash
-orbit cluster:node:add <cluster> <node>
+orbit cluster:node:add <cluster> <node> [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `cluster` | yes | Numeric Cluster ID. |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | Numeric Node ID of an active Node that belongs to no Cluster. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--json` | off | Print the Cluster, or the final task, as JSON. |
 
 ```bash
 orbit cluster:node:add 3 7
 ```
 
-Attaching to an inactive Cluster records membership and leaves Node routing and generated domains unchanged. Attaching to an active Cluster without a TLD uses Cluster scope and keeps generated domains on the Node TLD. Attaching to an active Cluster with a TLD moves generated Route domains into that Cluster namespace and Cluster scope before membership becomes authoritative. Custom proxy Routes on the Node keep Node scope and keep serving. `node:add --cluster=ID` attaches a Node during provisioning with the same guards.
+In a terminal, an omitted Cluster is chosen from an interactive list, and an omitted Node from the active Nodes that belong to no Cluster and that the caller has a grant to. To repair an existing member, pass its ID. A noninteractive or `--json` call that omits one is refused with `cluster.id_invalid` or `node.id_invalid` and sends no request.
+
+Attaching a Node that is not a member of an inactive Cluster records the membership at once. No Node is contacted, and routing and generated domains stay as they are. Attaching to an active Cluster moves the Node's Routes to the Cluster scope, and a Cluster with a TLD moves its generated domains into the Cluster namespace; without a TLD they stay on the Node TLD. Custom proxy Routes on the Node keep their Node scope and keep serving. Orbit first checks the whole change: the Node must be active, belong to no other Cluster, and have a LAN address that is free in the Cluster, and every affected Route must keep a valid domain, scope and target, and a Route that would take Cluster scope needs an active Router. A Node with no Routes attaches without a Router. One refusal leaves every Route in place. An active public Route that the change would move is refused with `route.reconciliation_required`. Then Orbit opens the LAN ingress rules, moves the Routes, selects the Router in private DNS, and prunes the rules the Cluster does not need. The CLI shows one progress indicator while the task runs, then prints the Cluster by its name with the task and request IDs.
+
+Attaching a Node that is already a member is not an error and not a skip: the run re-applies the LAN rules and the DNS selection and prunes what the Cluster does not need, without moving membership or activating the Cluster. Use it to repair a Router after a firewall or connectivity failure, and to finish an attach after a failure past the cutover.
+
+The cutover is the point where the Gateway records the membership and the new domains and scopes. When no Route changes, the Gateway records the membership when the run succeeds. A failure before it leaves the Node outside the Cluster and every Route as it was. A failure after it leaves the Node a member, and the same command finishes the withdrawal and the prune. Finished steps stay; there is no rollback. After you fix the cause, run the same command again. See [Change a TLD, Cluster state, or Cluster membership](/reference/routes#change-a-tld-cluster-state-or-cluster-membership).
+
+`node:add --cluster=ID` joins a new Node to the Cluster during provisioning with the membership and LAN address guards. It does not run this task.
 
 ## Errors
 
-| Error code | Meaning |
+| Code | Meaning |
 | --- | --- |
+| `cluster.id_invalid`, `node.id_invalid` | The Cluster or Node is missing in a call that cannot prompt, or is not a positive integer. |
+| `input.cancelled` | You cancelled a list. |
 | `cluster.node_inactive` | The Node is not active. |
 | `cluster.membership_conflict` | The Node already belongs to another Cluster. |
 | `cluster.lan_ip_conflict` | The Node's LAN address is already assigned in the Cluster. |
+| `route.router_required` | A Route would take Cluster scope and the Cluster has no active Router. |
+| `cluster.router_busy` | Another Cluster change holds the Cluster for more than 30 seconds. Retry after it finishes. |
+| `route.reconciliation_required` | An active public Route would change its domain or scope. |
+| `route.domain_conflict` | A new Route domain would collide with another Route. |
+| `route.tld_required` | A generated Route would have no effective TLD. |
+| `route.target_scope_conflict` | The targets of a Route would span routing scopes. |
+| `route.target_invalid` | A Route or tracking host has no valid target. |
+| `route.generation_basis_missing` | A generated Route has no generation basis. |
+| `route.generation_basis_invalid` | A generated Route cannot be reconciled from its stored basis. |
+| `route.scope_invalid` | A Route without a target cannot leave its scope. |
+| `route.domain_change_conflict` | An affected Route already has another domain change in progress. |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed`, `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
+| `http.404` | The Cluster or Node is unknown. |
+| `node_access.required` | The caller has no access grant to the Node being attached. |
+
+## How it works
+
+<div className="flow-at" data-chart="cluster/node-add"></div>
