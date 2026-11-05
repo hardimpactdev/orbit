@@ -5,15 +5,33 @@ description: "Remove an empty Cluster."
 ---
 
 ```bash
-orbit cluster:destroy <cluster> [--force]
+orbit cluster:destroy <cluster> [--force] [--json]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--force` | Skip the confirmation prompt. Required in non-interactive and `--json` calls. |
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `cluster` | yes | Numeric Cluster ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--force` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the removed Cluster as JSON. |
 
 ```bash
 orbit cluster:destroy 3 --force
 ```
 
-The Gateway refuses a Cluster that still has member Nodes (`cluster.not_empty`) or still scopes Routes (`cluster.has_routes`).
+In a terminal, an omitted Cluster is chosen from an interactive list, and the CLI asks to confirm with the Cluster's name and the effect, that the record is deleted, with No selected. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. Without `--force`, a call that cannot prompt is refused with `cluster.confirmation_required`. Without the Cluster it is refused with `cluster.id_invalid`, and so is a value that is not a positive integer. A declined or refused call starts no removal.
+
+The command only deletes the Cluster record, so it contacts no Node. Orbit refuses a Cluster that still has member Nodes (`cluster.not_empty`) or still scopes Routes (`cluster.has_routes`), and nothing changes. Detach the Nodes with [`cluster:node:remove`](/cli/cluster/node-remove) first, after you clear the Router with [`cluster:router:unset`](/cli/cluster/router-unset) and remove an `ingress` role, which block detaching. A Cluster without members can still scope Routes.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `cluster.id_invalid` | The Cluster is missing or is not a positive integer, and the CLI cannot prompt. |
+| `cluster.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `cluster.not_empty` | The Cluster still has member Nodes. |
+| `cluster.has_routes` | The Cluster still scopes Routes. |
+| `http.404` | The Cluster is unknown. |
+| `node_access.required` | The caller has no authority over the Gateway Node and no grant to any member Node. |
