@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofRunContinuation;
+use App\Domain\Proof\ProofVerifyProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScriptProjection;
 use App\Domain\Tasks\TaskStatus;
 use App\Jobs\Proof\AdvanceProofRun;
 use App\Models\Node;
@@ -140,6 +142,19 @@ it('verifies after a reset that passed and cancels after a reset that failed', f
 
     // The group has no task VM workspace in this test, so the verify is refused for that reason; the cancel is refused because the extension is off.
     expect($code($step('passed')))->toBe('tasks.no_workspace')->and($code($step('failed')))->toBe('extension.disabled');
+});
+
+it('queues the next step when the Gateway times out a script or a verify of a running proof', function (): void {
+    Queue::fake();
+    $proof = proofRunning();
+    foreach ([[new TaskScriptProjection, 'tasks.script'], [new ProofVerifyProjection, 'proof.verify']] as [$projection, $kind]) {
+        $step = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'sequence' => 1, 'attempts' => 0]);
+
+        $projection->timedOut($step);
+
+        Queue::assertPushed(AdvanceProofRun::class, static fn (AdvanceProofRun $job): bool => $job->operationId === $step->id);
+    }
 });
 
 it('does nothing for a group without a proof', function (): void {

@@ -83,6 +83,10 @@ final class OperationRunBudgets
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
+        // The history of short scripts gave 120 s, which timed out the proof reset twice (ops 10861, 10872) and stalled both proofs.
+        // Basis: `bin/proof-fleet reset --from-ready` takes about 75 s from ready copies and about 230 s when it builds; x 1.5, rounded up
+        // to 1,800 s with the other repository scripts, which the SSH exec bounds at 3,600 s. Replace with the 14-day p95.
+        'tasks.script' => 1800,
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
