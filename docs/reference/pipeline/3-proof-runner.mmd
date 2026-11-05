@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: the proof runner inside stage 3 of the command development pipeline (design: reference/verification-cases). One shared runner executes the cases of a command; a case is a specification built from a fixed set of steps. Orbit's own Swamp runs the runner over SSH in the task VM, as part of the "Run the proof" child of proof:run. The Gateway only admits the request and records the verdicts.
+  %% Target design: the proof runner inside stage 3 of the command development pipeline (design: reference/verification-cases). One shared runner executes the cases of one command; each batch restores the task's base snapshot once, cases use their own resources and undo nothing, and a case that did not pass triggers a restore; a case is a specification built from a fixed set of steps. Orbit's own Swamp runs the runner over SSH in the task VM, as part of the "Run the proof" child of proof:run. The Gateway only admits the request and records the verdicts.
   %% status: draft
   %% command: development pipeline stage 3 · proof runner
   %% kind: pipeline.3-proof-runner
@@ -14,38 +14,36 @@ sequenceDiagram
   participant NT as Nested fleet<br/>Gateway · 2 Nodes
   GW->>SW: Start the verify run<br/>cases · commit
   %%> Inputs:
-  %%> - the commit and the commands whose cases `proof:run` selected
+  %%> - the commit and the one command whose cases run; in CI, `proof:run` proves each affected command separately
   %%> Why:
   %%> - the Gateway only authorizes; Swamp owns the run and its state
   SW->>VM: Select the cases<br/>runner plan
   %%> What it does:
-  %%> - reads the cases file of each selected command at the tested commit
+  %%> - reads the command's cases file at the tested commit
   %%> - refuses a case with an unknown step, an unknown chart path or no batch
   %%> - lists the chart paths, options and codes that no case covers
-  %%> - groups the cases by batch, in the order of the batch list; inside a batch, in file order
+  %%> - groups the cases by batch, in the order of `swamp/proof/batches.yaml`; inside a batch, in file order
   VM-->>SW: Ordered plan<br/>batches · cases
   loop each batch, one at a time
-    opt after the first batch
-      SW->>VM: Reset the fleet<br/>workflow: proof-fleet-reset
-      %%> Why:
-      %%> - the first batch starts on the fresh fleet that the run made
-      %%> - a later batch needs its own starting state, so the fleet returns to the ready copies
-    end
-    SW->>VM: Set up the batch<br/>batch setup steps
+    SW->>NT: Restore base<br/>memory snapshot · about 16 s
     %%> What it does:
-    %%> - runs the setup steps of the batch, such as extra addresses on the Nodes
-    %%> - does nothing for a batch without setup steps
+    %%> - restores the task's stateful snapshot `base` of the three nested VMs; skipped when the fleet is still at `base`, as for the first batch
+    %%> - a restore that fails or is not healthy within 30 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
+    opt the batch declares a start state
+      SW->>VM: Set up the batch<br/>batch setup steps
+      %%> What it does:
+      %%> - runs the setup steps of the batch, such as extra addresses on the Nodes
+    end
     loop each case, one at a time
       SW->>VM: Run one case<br/>runner case ID
       %%> What it does:
-      %%> - records the baseline: firewall rules, Gateway records, open listeners
       %%> - runs the setup, act and expect steps of the case in order
+      %%> - no undo and no cleanup: the case uses its own resources (free ports, its own listeners, a new Instance), so it does not touch the other cases of the batch
       %%> Result:
       %%> - one verdict line; the full receipt stays in the evidence directory
       VM->>NT: Set up the case<br/>listener · ufw_rule · probe
       %%> What it does:
       %%> - builds the starting state, then probes it, for example a blocked port and a working control port
-      %%> - every created thing registers its undo
       %%> When:
       %%> - a failed setup step ends the case as `unrun`; it is not a pass
       VM->>NT: Run the real CLI<br/>built from the commit
@@ -55,19 +53,13 @@ sequenceDiagram
       %%> What it does:
       %%> - the `expect` steps check traffic, rule order, the Gateway record and Doctor
       %%> - every step runs, so one verdict lists all failures
-      VM->>NT: Clean up, compare<br/>undo stack · baseline
-      %%> What it does:
-      %%> - undoes what the case created, last first, even after a failure
-      %%> - compares the fleet with the baseline; a difference is residue
-      alt nothing left behind
-        VM-->>SW: Verdict<br/>one JSON line
-        %%> Returns:
-        %%> - the case id, `passed` or `failed`, the cause, the failed step and the seconds
-      else residue or failed cleanup
-        VM--xSW: Verdict failed, dirty<br/>residue named
-        SW->>VM: Reset the fleet<br/>before the next case
+      VM-->>SW: Verdict<br/>one JSON line
+      %%> Returns:
+      %%> - the case id, `passed`, `failed` (cause `assertion` or `infrastructure`) or `unrun` (cause `precondition`), the failed checks and the seconds
+      opt the case did not pass
+        SW->>NT: Restore base<br/>then the batch start state
         %%> Why:
-        %%> - this is the only reset inside a batch
+        %%> - a failed case can leave anything behind; the next case starts clean
       end
     end
   end

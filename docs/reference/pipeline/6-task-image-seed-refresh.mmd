@@ -39,6 +39,9 @@ sequenceDiagram
     %%> - clones the current seed, boots a builder from the new image, checks out the release commit, runs `proof-fleet reset` and `ready`
     %%> - boots a throwaway copy of each ready copy to check it, stops the builder, and promotes the clone under the host lock
     %%> - keeps the old seed as `-previous`, the rollback copy; cleanup always runs
+    %%> Target, not built:
+    %%> - the nested Gateway and app-dev ready copies hold their own checkout of the release commit, with `vendor` and `node_modules` installed and the package caches warm; no code share from the outer VM
+    %%> - task VMs already running keep their own copy; when one rebases onto main, its sync sees the changed playbooks and converges that VM (stage 2)
     %%> Chart:
     %%> - `task_vm.seed_refresh`
     SW->>SL: Replace old ready slots<br/>one at a time

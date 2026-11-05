@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 3 of the command development pipeline (verifying-commands skill). The author runs the command's cases on the nested fleet of the development environment, before pushing. Orbit's own Swamp runs the reset and verify workflows (workflow-proof-fleet-reset, -ready, -verify) and reaches into the task VM over SSH, like every other step. The Gateway only admits the request and mints tokens. The same cases and assertions run in CI (stage 4).
+  %% Target design: stage 3 of the command development pipeline. The author proves the command in the development environment it already works in (task VM with its nested fleet). The nested VMs hold their own checkout, with no share from the outer VM, so Incus memory snapshots work. Each run restores the task's base snapshot, syncs the author's code once and takes base again. Each batch restores base once; its cases use their own resources and need no undo. A failed case triggers a restore before the next. Cases come from the command's cases file; each names its batch from swamp/proof/batches.yaml, which sets the order. One shared runner; the same cases and runner run in CI (stage 4, proof:run on a fresh VM).
   %% status: draft
   %% command: development pipeline stage 3 · proof
   %% kind: pipeline.3-proof
@@ -9,73 +9,112 @@ sequenceDiagram
   %% lane SW icon=workflow pill=executes tone=green
   %% lane VM icon=server pill=target tone=purple
   %% lane NT icon=server pill=fleet tone=amber
-  participant AG as Author agent<br/>in the task VM
+  participant AG as Author<br/>agent or Nick
   participant GW as Gateway<br/>authorizes only
   participant SW as Swamp<br/>owns flow · state
   participant VM as Task VM<br/>outer VM
   participant NT as Nested fleet<br/>Gateway · 2 Nodes
-  AG->>GW: Ask for the proof<br/>orbit proof:run COMMIT
-  %%> Command:
-  %%> - `orbit proof:run COMMIT` for the command's cases
-  %%> Built or not:
-  %%> - built, with one case so far: the `firewall:allow` traffic case; every other command's cases are not built
+  AG->>GW: Prove the command<br/>orbit proof COMMAND
+  %%> What it does:
+  %%> - runs the command's cases on the author's own development VM; no new VM
+  %%> - the cases file (`swamp/proof/FAMILY/COMMAND.cases.yaml`) names the batch of each case; `swamp/proof/batches.yaml` defines the shared batches and their order; nothing is picked at run time
+  %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
   %%> Not built:
-  %%> - the request from a branch that is not pushed yet; `proof:run` takes only a commit on a branch of the repository today
-  Note over GW: Admit the request<br/>trust check · cases
+  %%> - the command, the cases file format, the runner
+  Note over GW: Authorize<br/>mint tokens
+  GW->>SW: Start the proof<br/>cases file · this VM
+  SW->>NT: Restore the base snapshot<br/>memory included · about 16 s
   %%> What it does:
-  %%> - checks the commit and selects the cases, as in the chart of `proof:run`
-  %%> - records the operation for the CLI and web, and mints the tokens the run needs
-  %%> Why:
-  %%> - the Gateway only authorizes; Swamp owns the flow and its state
-  GW->>SW: Start the proof run<br/>operation-proof-run
+  %%> - restores the task's Incus stateful snapshot `base` (stage 2), all three VMs in parallel
+  %%> - sets each guest clock from the outer VM as soon as that VM's agent answers; a restore puts the clocks back to snapshot time
+  %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat (every 5 s) and Doctor is healthy
+  %%> - every restore in this chart has a 30 s limit: a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
+  %%> Time, measured on tvm-554:
+  %%> - stock Incus restore and agent wait, no tuning: restore about 9 s, healthy about 16 s
+  SW->>VM: Sync the author's code<br/>same sync as orbit-nested
+  %%> What it does:
+  %%> - rsync of the outer checkout into the nested Gateway and app-dev, only what changed since `base`
+  %%> - leaves out `vendor`, `node_modules`, `.git`, `.env`, `storage` and `bootstrap/cache`
+  %%> - `composer install` or `bun install` only when a lock file changed, from the cache in the VM; then migrations and a Swamp reload
+  %%> Time, measured on tvm-554:
+  %%> - rsync of both nested checkouts in parallel: 0.2 s with nothing changed, 2.1 s for 7,600 files
+  %%> - apply in the nested Gateway (package discovery, migrations, Swamp repository copy, restart of the two proof services): about 1 s
+  %%> - `composer install` takes about 10 s even with an unchanged lock file (its scripts regenerate the OpenAPI and MCP files), so it runs only on a lock change
   %%> Not built:
-  %%> - Orbit's own Swamp running the reset and verify workflows directly; today `bin/proof-fleet` starts a local Swamp inside the task VM
-  SW->>VM: Reset the fleet<br/>workflow: proof-fleet-reset
-  %%> What it does:
-  %%> - Swamp reaches into the task VM over SSH, like every other step; there is no `bin/proof-fleet` and no controller Swamp in the VM
-  %%> - starts each independent run on a fresh nested fleet (stage 2), with the branch's code applied
-  %%> - falls back to a full build when no ready copy is usable
-  %%> - pushes the proof Swamp Club key from its vault into the nested Gateway, which runs its own Swamp as part of the Orbit under test
-  %%> Why:
-  %%> - the key is copied in at boot and never baked into an image; it is never stored on the outer task VM
-  SW->>VM: Run the cases<br/>workflow: proof-fleet-verify
-  %%> What it does:
-  %%> - the verify workflow runs each selected case against the nested fleet through the task VM, over SSH
-  loop each case, in order
-    SW->>NT: Check the starting state<br/>control probe
+  %%> - the two proof services still wait up to 60 s for the old code share at start (`tools/swamp-proof-guest/boot.py`); that wait goes with the share
+  opt playbooks or pins changed
+    SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
-    %%> - confirms the test setup works before the command runs, for example a healthy listener and a port that is blocked
+    %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
+    %%> - runs after the sync, so the nested Orbit has the new playbooks
     %%> Why:
-    %%> - a broad unmanaged allowance must not let a case pass without the rule under test
-    SW->>NT: Run the real CLI<br/>built from the tested commit
-    %%> What it does:
-    %%> - calls the command through its real interface: required arguments only, each flag, each error path
-    NT-->>SW: Result<br/>exit status · output
-    %%> Result:
-    %%> - the public result in human and JSON output
-    SW->>NT: Check the real effect<br/>record · Node · behavior
-    %%> What it checks:
-    %%> - the Gateway record, the observed Node state, and the promised effect, such as traffic that passes or stays blocked
-    %%> - Doctor reports no drift for the records the case touched
-    %%> - what must stay unchanged, including unmanaged resources
-    SW->>NT: Repeat the request<br/>nothing changes
-    %%> What it checks:
-    %%> - a repeat adds no managed resource and changes no configuration; a documented skip returns its reason code
-    SW->>NT: Clean up the case<br/>compare with the baseline
-    %%> What it does:
-    %%> - scoped cleanup, then compares the case's own database and firewall state with its start
-    %%> - residue fails the case; an infrastructure failure is reported apart and never counts as a pass
+    %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
+    %%> - the base images are not touched; only the merge and the seed refresh change them
   end
+  opt the tokens in base are older than 20 hours
+    SW->>NT: Re-mint Swamp tokens<br/>in the nested Gateway
+    %%> What it does:
+    %%> - the nested Gateway mints new serve and worker tokens for its own Swamp, with the same step as the fleet build
+    %%> Why:
+    %%> - the tokens a build mints last 24 hours and its certificates 2 days; `base` inherits them, so a task older than a day would otherwise prove with an expired nested Swamp
+    %%> - these tokens belong to the nested Orbit; the real Gateway mints nothing for them
+  end
+  opt the sync, the converge or the re-mint changed something
+    SW->>NT: Take base again<br/>parallel · about 19 s
+    %%> What it does:
+    %%> - skipped when rsync moved and deleted nothing, no lock file changed, nothing converged and no token was re-minted: the fleet is then still exactly `base`, as after a rerun without edits
+    %%> - `incus snapshot create --stateful --reuse base` on the three nested VMs at once; `--reuse` replaces the old `base`
+    %%> - the VMs keep running; their clocks lose about 1 s while memory is saved, which the normal time sync corrects
+    %%> - `base` holds the proof Swamp Club key, on the nested Gateway's disk and in its Swamp serve's memory; accepted because `base` belongs to one task, never leaves its task VM and is destroyed with it; ready copies stay key-free
+    %%> Time, measured on tvm-554:
+    %%> - about 19 s; the Gateway's 660 MB memory state sets it (app-dev 12 s, app-prod 7 s)
+    %%> Why:
+    %%> - every batch starts from it without another sync; the next proof run only syncs what changed since this one
+    %%> - the task VM keeps its own state until the task merges; changes flow back only as code, through the release and the seed refresh
+  end
+  loop each batch, in the order of swamp/proof/batches.yaml
+    SW->>NT: Restore base<br/>about 16 s
+    %%> What it does:
+    %%> - one restore per batch; skipped when the fleet is still at `base`, as for the first batch
+    %%> - 30 s limit, as for every restore; a failed restore stops the run
+      opt the batch declares a start state
+      SW->>NT: Set up the batch<br/>its declared start state
+      %%> What it does:
+      %%> - applies what the batch declares, for example dual-stack networking
+    end
+    loop each case in the batch, in order
+      SW->>NT: Run the case<br/>setup · act · expect
+      %%> What it does:
+      %%> - the shared runner executes the case's spec steps: setup (for example a listener or a test deny), the real CLI call, then the checks the case lists (traffic, UFW, Gateway record, Doctor, unchanged state)
+      %%> - each case names the chart path it covers (main, opt, alt); every optional flag has its own case
+      %%> - no undo and no cleanup: each case uses its own resources (free ports, its own listeners, a new Instance), so cases in a batch do not touch each other
+      %%> - a case that changes shared state (UFW off, injected failures, a held lock, a full-list check) sits in its own batch
+      opt the case failed
+        SW->>NT: Restore base<br/>then the batch start state
+        %%> Why:
+        %%> - a failed case can leave anything behind; the next case starts clean
+      end
+    end
+  end
+  SW->>NT: Restore base<br/>fleet clean on the author's code
+  %%> Why:
+  %%> - the author keeps developing on a clean fleet that already runs the latest code; nothing switches back
+  Note over SW: Join the verdicts<br/>report step
+  %%> What it does:
+  %%> - each case ended with one JSON line of at most 1 KB (Swamp cuts step output at 4,096 bytes): id, verdict, cause, seconds and the failed checks
+  %%> - verdicts: `passed`; `failed` with cause `assertion` or `infrastructure`; `unrun` with cause `precondition` (setup failed, the command never ran) or `infrastructure` (a failed restore stopped the run first)
+  %%> - the full receipt (every step, command output, firewall state, timings) stays in the task VM's evidence directory
   alt every case passes
-    SW-->>GW: Receipt<br/>PASS per case
-    GW-->>AG: Receipt<br/>PASS per case
+    SW-->>GW: Verdict per case<br/>PASS
     %%> Result:
-    %%> - one verdict per case with observations, Doctor findings and timings; the Gateway records it once; the author may push (stage 4)
-  else a case fails or did not run
-    SW--xGW: Receipt<br/>FAIL with output
-    GW--xAG: Receipt<br/>FAIL with output
+    %%> - the Gateway records the verdicts once, from the run's terminal event
+    GW-->>AG: PASS per case<br/>timings
+  else a case failed or did not run
+    SW--xGW: Verdict per case<br/>FAIL with output
+    GW--xAG: Failed check per case<br/>no secrets · exit nonzero
     %%> Result:
-    %%> - the failed case with its output, without secrets; the author fixes and runs again
+    %%> - the line names the failed check; the receipt in this task VM has the rest
+    %%> - in CI (stage 4) the proof VM is destroyed, so only the verdict lines stay; the author reruns `orbit proof` in their own task VM for the full receipt
   end
   opt a new case is added
     Note over SW,NT: Prove the case can fail<br/>on an isolated checkout

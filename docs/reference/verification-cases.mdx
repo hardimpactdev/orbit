@@ -1,6 +1,6 @@
 ---
 title: "Verification cases"
-description: "How the cases that prove an Orbit command are written, checked and run: a short YAML specification built from a fixed set of steps, one shared runner, a coverage check against the command chart, and batches that share a starting state."
+description: "How the cases that prove an Orbit command are written, checked and run: a short YAML specification built from a fixed set of steps, one shared runner, a coverage check against the command chart, and batches that each start from one restore of the task's base snapshot."
 ---
 
 # Verification cases
@@ -13,7 +13,7 @@ The design has four aims:
 
 - Writing a case is quick. An agent turns the command page and chart into cases, and another agent reviews them. Different commands are written in parallel.
 - Every part of a command's flow has a case. A check lists what no case covers.
-- Cases that need the same starting state run together, so the fleet resets only between such groups.
+- Cases run in batches. The fleet restores its base snapshot once per batch, and a case undoes nothing.
 - The same cases run on a developer's fleet and in CI.
 
 ## The case file
@@ -34,8 +34,8 @@ One file per command, because the reviewer reads the whole contract of a command
 | `chart` | The chart under `docs/cli`, such as `firewall/allow`. |
 | `target` | The Node the command acts on. |
 | `sources` | The Nodes that probe the target. |
-| `baseline` | What the runner records before each case and compares after its cleanup. |
-| `batches` | The starting states, in run order. They move to `swamp/proof/batches.yaml` when a second command needs them. |
+| `baseline` | The state that `unchanged` compares: the runner records it at the start of `act`. |
+| `batch` (on each case) | The name of a batch in `swamp/proof/batches.yaml`, which defines every batch, its start state and the run order. |
 | `vars` | Named lists that a command line splices with `"@name"`. |
 | `fixtures` | Named lists of steps that cases reuse. |
 | `uncovered` | Chart paths, options or codes that have no case yet, each with a reason. |
@@ -54,7 +54,6 @@ A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fai
     - cli:
         run: [firewall:allow, "@tcp_rule"]
         expect: {exit: 0, status: succeeded}
-        undo: [firewall:remove, "@tcp_rule", --yes]
   expect:
     - probe: {id: gateway-connects, from: gateway, to: app-dev, port: "${port}", expect: connect}
     - probe: {from: app-prod, to: app-dev, port: "${port}", expect: blocked}
@@ -80,7 +79,7 @@ A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fai
 | `negative` | no | How to prove that the case can fail. See [Prove a case can fail](#prove-a-case-can-fail). |
 | `timeout` | no | Seconds for the case. Default 180. |
 
-The runner adds three things to every case, so no case writes them: a baseline taken before `setup`, the undo of everything the case created, and a comparison with the baseline after the undo.
+A case writes no cleanup. Each batch starts from a restore of the task's `base` snapshot, and each case creates what it needs on its own resources: free ports, its own listeners, a new Instance. So cases in a batch do not touch each other. A case that did not pass triggers a restore before the next case.
 
 ## Steps
 
@@ -89,12 +88,12 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 | Step | Where | What it does |
 | --- | --- | --- |
 | `use` | any | Insert a [fixture](#fixtures), with parameters. |
-| `listener` | setup | Start TCP or UDP listeners on a Node, on free ports, and bind each port to a name. `block` starts a run of consecutive ports. Cleanup stops them. |
-| `ufw_rule` | setup | Add a rule that the test owns, straight on the Node, above or below another row. Cleanup deletes it. |
-| `fault` | setup, act | Make `ufw` on the Node fail after the n-th call that contains a word. `clear` removes it. Cleanup removes it too. |
-| `busy_node` | setup | Keep one firewall write running on the Node, so its lock is held. Cleanup lets it finish. |
+| `listener` | setup | Start TCP or UDP listeners on a Node, on free ports, and bind each port to a name. `block` starts a run of consecutive ports. |
+| `ufw_rule` | setup | Add a rule that the test owns, straight on the Node, above or below another row. |
+| `fault` | setup, act | Make `ufw` on the Node fail after the n-th call that contains a word. `clear` removes it. A case with a fault needs its own batch. |
+| `busy_node` | setup | Keep one firewall write running on the Node, so its lock is held. A case with a held lock needs its own batch. |
 | `ipv6_addresses` | batch setup | Give Nodes an IPv6 address on the proof bridge. |
-| `cli` | setup, act | Run `orbit` built from the tested commit. Keys: `run`, `forms`, `tty`, `expect`, `undo`. |
+| `cli` | setup, act | Run `orbit` built from the tested commit. Keys: `run`, `forms`, `tty`, `expect`. |
 | `probe` | any | Open a connection from a Node to a port and expect `connect` or `blocked`. |
 | `ufw` | expect | Read `ufw status numbered` on a Node and check rows. |
 | `record` | expect | Run a read command and count the rows that match. |
@@ -104,7 +103,7 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 
 Details that a case author needs:
 
-- **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form; use it only on calls that are safe to repeat, such as a refusal or a skip. `tty` runs the call in a terminal and answers prompts: `see` waits for text, `send` types it, `choose` picks a list item. `expect` takes `exit`, `status` (the Operation), `code` (an error code), `skipped` (a reason code), `request: none` (no Operation was created) and `human` (text). `undo` is the command that removes what the call created. An undo that fails is recorded; the baseline comparison decides whether it mattered.
+- **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form; use it only on calls that are safe to repeat, such as a refusal or a skip. `tty` runs the call in a terminal and answers prompts: `see` waits for text, `send` types it, `choose` picks a list item. `expect` takes `exit`, `status` (the Operation), `code` (an error code), `skipped` (a reason code), `request: none` (no Operation was created) and `human` (text).
 - **`probe`** in `setup` is a precondition: a mismatch makes the case `unrun`. In `expect` it is an assertion: a mismatch fails the case. A list in `from`, `proto` or `port` runs one probe for each combination. `family` is 4 or 6, and `proto` is `tcp` or `udp`.
 - **`ufw`** checks that each row appears exactly once, in the order listed, top to bottom. `absent` rows must not appear. A row is `to`, `action`, `from` and an optional `comment`, or `ref` to a rule that `ufw_rule` bound with `as`.
 - **`record`** runs `list` with the node, then matches `where` against each row. `count` is exact.
@@ -175,17 +174,19 @@ firewall:allow  14 cases, 16 verdicts
 
 The check cannot read prose. The reviewer walks the `Requirements` of each chart step against the cases. For `firewall:allow` that finds three more gaps: the access grant, a target that is not an active Linux Node, and an invalid port or source.
 
-## Batches and resets
+## Batches and restores
 
-A batch is a starting state: a name, a summary and optional setup steps. Every case names one. The batch list sets the order in which batches run.
+A batch is a group of cases that run one after another after one restore. Every case names its batch. `swamp/proof/batches.yaml` defines each batch: a name, a summary, optional setup steps, and the order in which batches run. A run proves one command, so cases of different commands never share a batch; batch definitions such as `dual-stack` are shared.
 
-- The run starts on a fresh nested fleet. The first batch needs no reset.
-- A later batch starts with a reset from the ready copies, about 75 seconds, then its setup steps.
-- Inside a batch, cases run one after another. Each undoes what it created, and the runner compares the fleet with its baseline.
-- A case that leaves a difference fails with cause `cleanup`. The fleet resets before the next case. This is the only reset inside a batch.
+- The run starts on the task's `base` snapshot. The first batch needs no restore.
+- A later batch starts with a restore of `base`, about 16 seconds, then its setup steps.
+- Inside a batch, cases run one after another and undo nothing. Each uses its own resources, so it does not see the others.
+- A case that changes state all cases share gets its own batch: UFW turned off, an injected `fault`, a held lock (`busy_node`), network setup, or a check of the complete list.
+- A case that does not pass triggers a restore of `base` and the batch setup before the next case.
+- A restore that fails or is not healthy within 30 seconds stops the run. The cases that did not run become `unrun` with cause `infrastructure`; the verdicts already reached stay.
 - A case that needs a state that no batch offers gets a new batch. Do not build a different world inside one case.
 
-A batch costs a reset, so keep few. `firewall:allow` needs two:
+A batch costs a restore, so keep few. `firewall:allow` needs two:
 
 | Batch | Starting state | Cases |
 | --- | --- | --- |
@@ -201,27 +202,27 @@ Orbit's own Swamp runs the runner over SSH in the task VM. The runner is part of
 The workflow `proof-fleet-verify` has the shape below. The build settles the syntax against the Swamp manual.
 
 - A `plan` step runs `runner plan` and prints the ordered batches.
-- A `forEach` over the batches, one at a time, runs one child workflow per batch. It resets the fleet with the `proof-fleet-reset` child, guarded so the first batch skips it, then sets up the batch.
-- A `forEach` over the cases of the batch, one at a time, runs one child workflow per case. It has two steps: `runner case ID` as an `@swamp/ssh` exec step on the task VM, and a reset that a dirty verdict triggers through `guard`. The cases step uses `allowFailure`, so a failed case does not stop its batch.
+- A `forEach` over the batches, one at a time, runs one child workflow per batch. It restores `base`, guarded so the first batch skips it, then sets up the batch.
+- A `forEach` over the cases of the batch, one at a time, runs one child workflow per case. It has two steps: `runner case ID` as an `@swamp/ssh` exec step on the task VM, and a restore of `base` that a verdict other than `passed` triggers through `guard`. The cases step uses `allowFailure`, so a failed case does not stop its batch.
 - A `report` step joins the verdicts, and the run ends. The Gateway reads the terminal event and records the verdicts once.
 
-A case is one step because its steps share state (ports, the baseline, the undo stack) and its cleanup must run after a failure. That is one action group in the sense of the [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Batches, resets, order and failure handling are native Swamp controls, not a loop inside the runner. The runner is a Python file that ships with the workflow, linted with the other scripts.
+A case is one step because its steps share state: its ports and the state that `unchanged` compares. That is one action group in the sense of the [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Batches, resets, order and failure handling are native Swamp controls, not a loop inside the runner. The runner is a Python file that ships with the workflow, linted with the other scripts.
 
 Each case ends with one JSON line of at most 1 KB, because Swamp cuts step output at 4096 bytes:
 
 ```json
-{"id": "protocols[both]", "verdict": "failed", "cause": "assertion", "secs": 41.2, "dirty": false, "failed": ["expect[2] probe: app-prod to 47212/udp connected, expected blocked"]}
+{"id": "protocols[both]", "verdict": "failed", "cause": "assertion", "secs": 41.2, "failed": ["expect[2] probe: app-prod to 47212/udp connected, expected blocked"]}
 ```
 
 | Verdict | Cause | Meaning |
 | --- | --- | --- |
-| `passed` | | Every step passed and the fleet is back at its baseline. |
+| `passed` | | Every step passed. |
 | `failed` | `assertion` | An `act` or `expect` step failed. |
-| `failed` | `cleanup` | The fleet differs from the baseline after the undo. |
 | `failed` | `infrastructure` | A step could not run, for example the fleet is unreachable. |
 | `unrun` | `precondition` | A `setup` step failed, such as a port that was not blocked before the command. |
+| `unrun` | `infrastructure` | A failed restore stopped the run before the case. |
 
-Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. The receipt store is not built, so it lasts only as long as the VM.
+Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns `orbit proof` in their own task VM for the full receipt.
 
 A case marked `fails_today` runs like any other and reports its real verdict. The build PR removes the mark when the command passes.
 
@@ -234,7 +235,7 @@ The cases are written last, after the chart and the page, from those two and nev
 3. Run `bin/check-cases` and `runner plan --dry-run` (both new). The dry run prints every case with fixtures and placeholders resolved, and the batch order, without a fleet.
 4. A second agent reviews, read-only, with the chart, the page and the file.
 
-A new step is a function in the runner, an entry in its argument schema, an undo when it creates state, a row in the table above and a test. It lands in the PR of the first case that needs it, and every later case can use it.
+A new step is a function in the runner, an entry in its argument schema, a row in the table above and a test. It lands in the PR of the first case that needs it, and every later case can use it.
 
 Cases of different commands are written by different agents at the same time. They share only the vocabulary, the fixtures and the batch list, which change rarely and in their own PRs.
 
@@ -263,7 +264,7 @@ negative:
   must_fail: [gateway-connects]
 ```
 
-The runner runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest must still run. A case where they pass is not a test. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
+The runner restores `base` and runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest must still run. A case where they pass is not a test. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
 
 ## What exists and what is new
 
@@ -271,7 +272,7 @@ Today one case exists, `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh`, a 3
 
 | Piece | Today |
 | --- | --- |
-| `cli` with JSON, `expect` and `undo` | In the case script (`cli`, the cleanup block). To extract. |
+| `cli` with JSON and `expect` | In the case script (`cli`). To extract; its cleanup block is deleted. |
 | `cli` with `forms: human` and `tty` | New. The terminal driver is the largest piece. |
 | `listener` for TCP | Exists (`listener.py`, `free_ports`). |
 | `listener` for UDP, IPv6 and `block` | New. |
@@ -281,12 +282,13 @@ Today one case exists, `swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh`, a 3
 | `ufw` rows, order and `absent` | Exist (`ufw_numbered` in the case script, `check.py`). To extract. |
 | `record` | In the case script, for `firewall:list`. To extract and generalize. |
 | `doctor` with the agent-tick wait | In the case script. To extract. |
-| Baseline, undo stack, `unchanged` | In the case script and `phases.py` (`case_baseline`). To extract and generalize. |
+| `unchanged` | In the case script and `phases.py` (`case_baseline`). To extract and generalize; the undo stack is deleted. |
 | `negative` and `ufw_delete` | In the case script (the second phase). To extract. |
 | `fault` | New. A `ufw` shim on the Node that passes the runner's own reads. Needs a spike. |
 | `busy_node` | New. Needs a spike to hold the lock without a long write. |
 | `ipv6_addresses` | New. The nested fleet has no IPv6 today. Needs a spike. |
 | Batch list, `plan`, `report` | New. |
+| Restore of `base` per batch and after a case that did not pass | New. Measured on tvm-554 with stock Incus: about 16 seconds until healthy. |
 | `bin/check-cases` and the `check-flows` marker rule | New. |
 | Workflows `proof-fleet-verify` and the per-batch and per-case children | New. `proof-command-verification` and the reset workflows exist. |
 

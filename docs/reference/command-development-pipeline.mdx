@@ -33,6 +33,8 @@ About 74 commands were prepared through docs-only PRs before this flow. Their ch
 
 **Built, with a slot pool still to come.** A task VM, started with `tasks:provision`, holds a nested topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. They share a real nested WireGuard network, `10.45.0.0/24`, and the outer VM is the operator. Each task VM host keeps ready copies of this topology in its topology seed, so a reset takes about 75 seconds instead of a 230-second build. An agent, or Nick, develops a command here, and the proof cases run here too.
 
+The target: the nested VMs hold their own checkout, with no code share from the outer VM. `orbit-nested` syncs the author's changes into them before each call. At task start, Swamp takes an Incus memory snapshot `base` of the three VMs; restoring it takes about 16 seconds until the fleet is healthy. Not built: the sync, the snapshot and the restore; today the nested Gateway mounts the outer VM's source.
+
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
 - Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), the [proof reset](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/reset/reset.mmd), and the [seed refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd) that makes the ready copies.
@@ -43,14 +45,14 @@ About 74 commands were prepared through docs-only PRs before this flow. Their ch
 
 ## 3. Proof
 
-**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the reset and verify workflows (`workflow-proof-fleet-reset`, `-ready`, `-verify`) directly and reaches into the task VM over SSH, like every other step. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Not built: that direct Swamp run; today `bin/proof-fleet verify` starts a local Swamp in the VM.
+**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the proof directly and reaches into the task VM over SSH, like every other step. A run restores `base`, syncs the author's code and takes `base` again when something changed. Each batch then restores `base` once, and its cases run one after another without undo, each on its own resources. A case that does not pass triggers a restore. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Not built: that direct Swamp run; today `bin/proof-fleet verify` starts a local Swamp in the VM.
 
 <div className="flow-at" data-chart="reference/pipeline/3-proof"></div>
 
 - Chart: the stage chart above. A command's own chart, such as [`firewall:allow`](/cli/firewall/allow#how-it-works), shows the command, not the proof run.
 - Design draft: [Verification cases](/reference/verification-cases) describes how cases are written as short specifications, covered against the command chart, and run by one shared runner (chart [3-proof-runner](/reference/verification-cases#the-run)).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
-- Files: [`allow-fresh-ipv4-tcp.sh`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh), [`allow.cases.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.md).
+- Files: [`allow-fresh-ipv4-tcp.sh`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/cases/allow-fresh-ipv4-tcp.sh), [`allow.cases.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.md), and the drafts [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml) and [`batches.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/batches.yaml).
 
 ## 4. PR and CI
 
