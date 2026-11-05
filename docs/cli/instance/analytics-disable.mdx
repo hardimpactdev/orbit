@@ -8,12 +8,41 @@ description: "Remove every tracking host of an Instance."
 orbit instance:analytics:disable <instance> [--yes] [--json]
 ```
 
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. A terminal asks for it when it is omitted. |
+
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--yes` | off | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. |
+| `--yes` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
+| `--json` | off | Print the tracking record as JSON. |
 
-Plausible stops receiving visits for the Instance as soon as the hosts are gone. The data already in Plausible stays. Running the command again for an Instance without hosts succeeds and changes nothing.
+```bash
+orbit instance:analytics:disable 12 --yes
+```
+
+In a terminal, an omitted Instance is chosen from an interactive list. The CLI asks to confirm with the Instance by name and the effect, that visits stop being counted as soon as the hosts are gone, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and sends no request. A noninteractive or `--json` call without the Instance is refused with `instance.id_invalid`, and one without `--yes` with `input.confirmation_required`; neither sends a request.
+
+The command removes every tracking host of the Instance: the private DNS records outside the TLD first, then the Caddy sites and, on a Router, the tracking certificates. The Plausible site, its history and its goals stay, and the command never calls Plausible. An Instance without tracking hosts is skipped: the command succeeds with `Skipped — nothing to change (analytics.tracking_absent)` and starts no run, and the Gateway records the request as already done. With `--json`, the record is printed and `analytics.tracking_absent` is part of the result. Otherwise the command returns a task ID at once and follows the task with one progress indicator until it ends. A failed step leaves the tracking Routes in place, with the failed step and its error code in `operation:show`. Sections already withdrawn stay withdrawn; run the same command again and it skips what is gone. The caller needs an access grant to the Instance's Node.
+
+When the task ends, the CLI prints a detail with Instance (by name), Domain, Tracking (`disabled`) and the request ID. With `--json`, stdout holds `instance_id`, `enabled`, `domain`, `dashboard_url`, `hosts`, `snippet` and `request_id`.
 
 ## How it works
 
 <div className="flow-at" data-chart="instance/analytics-disable"></div>
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
+| `input.cancelled` | You declined, pressed Ctrl-C, the input ended, or you cancelled the list. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |
+| `operation.target_busy` | Another analytics or Route change holds the Instance. |
+| `analytics.tracking_changed` | The tracking hosts or their placement changed after the request was admitted. |
+| `private_dns.publication_failed` | The private DNS records could not be removed. |
+| `route.withdraw_failed` | The Caddy sites or certificates could not be withdrawn. |
+| `route.removal_check_failed` | A tracking site is still loaded after the withdrawal. |
+| `analytics.disable_failed` | The task failed outside a named step. |
