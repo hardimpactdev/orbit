@@ -56,7 +56,7 @@ sequenceDiagram
   %%> - a 209 shell step until cfgmgmt accepts a pinned host key
   SW->>H: Bootstrap the guest<br/>bootstrap · incus exec
   %%> What it does:
-  %%> - through `incus exec` on Node 13: the managed account, 209's authorized key, passwordless sudo, sshd with TCP 22 only from 209's WireGuard address, and a new WireGuard key whose public half it prints
+  %%> - through `incus exec` on Node 13: the managed account, 209's authorized key, passwordless sudo, sshd with TCP 22 only from 209's WireGuard address, the firewall rules that also let 209 and the Gateway reach Pi on TCP 3774, and a new WireGuard key whose public half it prints
   %%> - each phase is one argv the Gateway rendered; no step reads bootstrap assets
   %%> Replaces:
   %%> - the five `bootstrap-*` exec and `-assets` pairs, `peer-key-command`, `peer-key` and the `ssh-prepare` child
