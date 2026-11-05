@@ -176,7 +176,15 @@ function promotedReport(array $change = []): string
         'referenced_bytes' => 6_300_796_128, 'written_bytes' => 778_560_288, ...$change], JSON_THROW_ON_ERROR);
 }
 
-const ReadyList = '["ready-app-dev","ready-app-prod","ready-gateway"]';
+const ReadyList = '{"copies":["fleet-ready-app-dev","fleet-ready-app-prod","fleet-ready-gateway"],"set":"0123456789abcdef","minted":"2026-11-05T01:00:00Z","attempt":"aec0d0dc","inputs":"9f8e7d6c"}';
+
+/** The ready report of `ready-state.sh` with `$change` applied; a null value drops the key. */
+function readyReport(array $change = []): string
+{
+    $report = [...json_decode(ReadyList, true, flags: JSON_THROW_ON_ERROR), ...$change];
+
+    return json_encode(array_filter($report, static fn (mixed $value): bool => $value !== null), JSON_THROW_ON_ERROR);
+}
 
 it('names the seed a claim clones from the image, and the refresh swaps what that name holds', function (): void {
     $fingerprint = RefreshImage;
@@ -372,7 +380,7 @@ it('records what the host holds after a refresh from the reports of the run', fu
 
     expect($operation->refresh()->status->value)->toBe('succeeded');
     expect($operation->result)->toBe(['ready' => true, 'host_node_id' => $host->id, 'image_fingerprint' => RefreshImage, 'seed' => 'orbit-topology-seed-c1c2cf4051fb',
-        'previous' => 'orbit-topology-seed-c1c2cf4051fb-previous', 'roles' => ['gateway', 'app-dev', 'app-prod'], 'referenced_bytes' => 6_300_796_128, 'written_bytes' => 778_560_288]);
+        'previous' => 'orbit-topology-seed-c1c2cf4051fb-previous', 'roles' => ['gateway', 'app-dev', 'app-prod'], 'ready_set' => '0123456789abcdef', 'minted' => '2026-11-05T01:00:00Z', 'attempt' => 'aec0d0dc', 'inputs' => '9f8e7d6c', 'referenced_bytes' => 6_300_796_128, 'written_bytes' => 778_560_288]);
 })->group('seed-refresh');
 
 it('refuses a success without the end check, the right seed, the three ready copies or a size', function (string $case): void {
@@ -387,8 +395,13 @@ it('refuses a success without the end check, the right seed, the three ready cop
         'another previous' => refreshRun('succeeded', promotedReport(['previous' => 'orbit-topology-seed-c1c2cf4051fb-old']), ReadyList),
         'no check report' => refreshRun('succeeded', promotedReport(), ReadyList, 'succeeded', null),
         'a role not checked' => refreshRun('succeeded', promotedReport(), ReadyList, 'succeeded', '["app-dev","gateway"]'),
-        'a missing ready copy' => refreshRun('succeeded', promotedReport(), '["ready-app-dev","ready-gateway"]'),
-        'an extra ready copy' => refreshRun('succeeded', promotedReport(), '["ready-app-dev","ready-app-prod","ready-gateway","ready-operator"]'),
+        'a missing ready copy' => refreshRun('succeeded', promotedReport(), readyReport(['copies' => ['fleet-ready-app-dev', 'fleet-ready-gateway']])),
+        'an extra ready copy' => refreshRun('succeeded', promotedReport(), readyReport(['copies' => ['fleet-ready-app-dev', 'fleet-ready-app-prod', 'fleet-ready-gateway', 'fleet-ready-operator']])),
+        'old copy names' => refreshRun('succeeded', promotedReport(), readyReport(['copies' => ['ready-app-dev', 'ready-app-prod', 'ready-gateway']])),
+        'no set identity' => refreshRun('succeeded', promotedReport(), readyReport(['set' => null])),
+        'no minted time' => refreshRun('succeeded', promotedReport(), readyReport(['minted' => null])),
+        'no attempt' => refreshRun('succeeded', promotedReport(), readyReport(['attempt' => null])),
+        'no inputs digest' => refreshRun('succeeded', promotedReport(), readyReport(['inputs' => ''])),
         'a bad size' => refreshRun('succeeded', promotedReport(['referenced_bytes' => 0]), ReadyList),
         'a bad written size' => refreshRun('succeeded', promotedReport(['written_bytes' => 'many']), ReadyList),
         'text that is no report' => refreshRun('succeeded', 'promoted', ReadyList),
@@ -397,7 +410,7 @@ it('refuses a success without the end check, the right seed, the three ready cop
     expect(fn () => app(TaskVmSeedRefreshProjection::class)->apply($operation, $run))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.result_invalid'));
     expect($operation->refresh()->status->value)->toBe('running');
-})->with(['no end check', 'no promotion report', 'no ready report', 'another seed', 'no seed key', 'another previous', 'no check report', 'a role not checked', 'a missing ready copy', 'an extra ready copy', 'a bad size', 'a bad written size',
+})->with(['no end check', 'no promotion report', 'no ready report', 'another seed', 'no seed key', 'another previous', 'no check report', 'a role not checked', 'a missing ready copy', 'an extra ready copy', 'old copy names', 'no set identity', 'no minted time', 'no attempt', 'no inputs digest', 'a bad size', 'a bad written size',
     'text that is no report'])->group('seed-refresh');
 
 it('records a failed, cancelled or interrupted run as failed and keeps no result', function (string $status): void {

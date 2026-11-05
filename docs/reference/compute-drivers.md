@@ -1377,7 +1377,7 @@ Published images and shared topology seeds remain subject to normal image prunin
 
 #### Refresh the topology seed
 
-The seed that the image build leaves holds only the stopped `node-template`. A **seed refresh** adds the ready nested topology of the running release. That is three stopped VMs: `ready-gateway` (Gateway with Swamp), `ready-app-dev` and `ready-app-prod`. They have real nested WireGuard on 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
+The seed that the image build leaves holds only the stopped `node-template`. A **seed refresh** adds the ready nested topology of the running release. That is three stopped VMs: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They have real nested WireGuard on 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
 
 Each task VM host refreshes its own seed. Nothing is copied between hosts. The hosts have different CPUs, and a copy between machines loses the reflink sharing of the pool inside the seed (14.8 GiB instead of 6.8 GiB). The release flow starts the refresh for every host in parallel once the release is live. An operator runs one with `php artisan task-vms:refresh-seed <host>` on the Gateway. There is no CLI command of its own.
 
@@ -1390,7 +1390,7 @@ The workflow `operation-task-vm-seed-refresh` runs these steps on the host over 
 3. It clones the release repository in the builder at the release commit.
 4. It installs the proof Swamp Club key and the Composer packages.
 5. It runs `bin/e2e-topology-host-setup` and `bin/proof-fleet reset 1`.
-6. [`tools/task-vm-seed/ready-copies.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/ready-copies.sh) keeps a stopped copy of each VM as `ready-<role>`. It deletes the other VMs of the build.
+6. It runs `bin/proof-fleet ready` and `release` of the release. [`ready-state.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/ready-state.sh) then checks the copies and keeps the source state.
 7. [`check-ready.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/check-ready.sh) boots a throwaway copy of each ready copy and searches it for the club key.
 8. It stops the builder cleanly. [`promote-seed.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/task-vm-seed/promote-seed.sh) then promotes the clone.
 Cleanup always runs, after success, failure and cancellation.
@@ -1423,13 +1423,13 @@ A host’s seed is refreshed after each release, and at least daily. The Swamp t
 
 ##### The ready copies
 
-A copy has no NIC. A NIC with a static MAC or address cannot sit on a second instance, because Incus refuses a VM whose MAC or address another instance holds, even a stopped one. A NIC on the build’s network would also make Incus refuse to adopt the pool in a task VM without that network. The values are in the keys `user.orbit.ready.mac`, `user.orbit.ready.ipv4` and `user.orbit.ready.network`. The role is in `user.orbit.ready.role`.
+`bin/proof-fleet ready` makes them, and its contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the MAC, the IP, the subnet, the mounts, when the credentials were minted, the attempt and a digest of the inputs. `user.ready.complete` is written last.
 
-The reset from ready copies adds the NIC back when it copies a ready copy to a running VM. It runs `incus config device add NAME eth0 nic network=... hwaddr=... ipv4.address=...`. The disk `orbit-source` of a copy points at the fixed path `/home/orbit/.orbit/ready/source`. Incus refuses to adopt the pool while that path is missing.
+The age of a set counts from `user.ready.minted`, and a set older than 20 hours is stale. A different inputs digest also makes it stale. `ready-state.sh` requires all of these keys on the three copies.
 
-The ready Gateway and app-dev run the code of the build from a directory of the outer VM. The build wrote its `.env` into it, with the application key the baked database needs, and `storage`, `bootstrap/cache` and the ACLs of the web server. So the seed also holds a copy of that tree, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it into the fixed path before it starts the copies.
+The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
 
-A copy carries no `user.orbit.e2e.*` label, so a release of a build never deletes it. A ready copy is never started: the check boots throwaway copies of it. The build pushes the proof Swamp Club key into the nested Gateway, so the check searches every copy for it. A key in the seed would reach every task VM of the host.
+The proof Swamp Club key is in no copy. `ready` removes it from the Gateway and scans for it. The check then boots a throwaway copy of each ready copy and searches it, and `ready-source`, for the key by path and by value. A key in the seed would reach every task VM of the host. A ready copy itself is never started.
 
 The Gateway keeps no state of its own for a refresh. The succeeded Operation is the record. It holds the seed, the ready copies, the size of the seed (`referenced_bytes`) and the bytes the build wrote (`written_bytes`). The budget is in [Operations](/reference/operations).
 

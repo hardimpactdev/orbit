@@ -3,10 +3,7 @@
 # builder, after the source is cloned. Standard input is the proof Swamp Club key.
 #
 # 1. The key goes to ~/.config/swamp/club-api-key for `orbit`, mode 0600: the reset runs Swamp with it.
-# 2. A seed that an earlier refresh made holds ready copies whose disk `orbit-source` points at a fixed path. Incus
-#    refuses to adopt the pool while that path is missing, so the directory is made here (it stays empty: no ready copy
-#    is ever started in the builder).
-# 3. The reset refuses an outer VM that has no Pi service, no `orbit-agent` observer or no `orbit` WireGuard interface,
+# 2. The reset refuses an outer VM that has no Pi service, no `orbit-agent` observer or no `orbit` WireGuard interface,
 #    because it proves that it leaves them as it found them. The builder is not a fleet Node, so it has none of them.
 #    This adds three throwaway stand-ins: two idle services and an interface with a key that is made here and never
 #    used. They live on the builder's root disk and go with the builder.
@@ -17,9 +14,6 @@ readonly key=/home/orbit/.config/swamp/club-api-key
 runuser -u orbit -- install -d -m 0700 "$(dirname "$key")"
 rm -f -- "$key"
 install -m 0600 -o orbit -g orbit /dev/stdin "$key"
-
-runuser -u orbit -- install -d -m 0700 /home/orbit/.orbit
-runuser -u orbit -- install -d -m 0755 /home/orbit/.orbit/ready /home/orbit/.orbit/ready/source
 
 for unit in orbit-agent seed-builder-pi-server; do
     printf '[Unit]\nDescription=Seed refresh builder stand-in for %s\n[Service]\nExecStart=/bin/sleep infinity\n[Install]\nWantedBy=multi-user.target\n' \

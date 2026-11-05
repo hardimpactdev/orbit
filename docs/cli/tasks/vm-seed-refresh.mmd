@@ -80,16 +80,22 @@ sequenceDiagram
   %%> - the reset ends when the fleet is healthy, its agents are online and Doctor is clean
   %%> Measured:
   %%> - 6 min 33 s to 7 min 26 s on beast at host load 5 to 9, in whole runs of 7 min 31 s and 10 min 2 s; the S3 measurement of the reset alone is 232 s on a quiet host
-  SW->>B: Make the ready copies<br/>incus exec · ready-copies.sh
+  SW->>B: Make the ready copies<br/>incus exec · proof-fleet
   %%> What it does:
-  %%> - stops the three VMs and keeps a stopped copy of each as `ready-gateway`, `ready-app-dev` and `ready-app-prod`
-  %%> - deletes the three VMs of the build and the operator VM the harness still makes; the node template stays
-  %%> - prints the list of the ready copies
-  %%> The copy interface (for the reset from ready copies):
-  %%> - no NIC: a static MAC or address cannot sit on a second instance, and a NIC on the build's network stops a new task VM from adopting the pool; the values are in `user.orbit.ready.mac`, `user.orbit.ready.ipv4` and `user.orbit.ready.network`, and the role in `user.orbit.ready.role`
-  %%> - the disk `orbit-source` points at the fixed path `/home/orbit/.orbit/ready/source`
-  %%> - the build's source tree, with its `.env`, `storage`, `bootstrap/cache`, ACLs and owners, is kept in the pool as the custom volume `ready-source`; the ready Gateway needs it, because its baked database is encrypted with the application key in that `.env`, and a task VM restores it to the fixed path before it starts the copies
-  %%> - no `user.orbit.e2e.*` label, so a release of a build never deletes a ready copy
+  %%> - runs `bin/proof-fleet ready` of the release: it copies the healthy fleet to `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`
+  %%> - the copies carry no Swamp Club key: the command deletes it from the Gateway, scans for it, and discards the freed blocks
+  %%> - then runs `bin/proof-fleet release`, which deletes the guests of the build and leaves the copies
+  %%> The contract:
+  %%> - names, `user.ready.*` keys, no NIC, no source mount and no generation label are in `swamp/proof/README.md`, "Ready copies: the contract"
+  SW->>B: Keep the ready state<br/>incus exec · ready-state.sh
+  %%> What it does:
+  %%> - checks that the pool holds `node-template` and the three complete, stopped copies of one set, with the keys `minted`, `attempt` and `inputs`, and nothing else
+  %%> - keeps the build's source tree as the custom volume `ready-source`, with its `.env`, `storage`, `bootstrap/cache`, ACLs and owners
+  %%> Why the source tree:
+  %%> - the ready Gateway's database is encrypted with the key in that `.env`, and the tree is a directory of the outer VM, not part of the seed
+  %%> - a fresh task VM restores it before it restores the copies
+  %%> Prints:
+  %%> - the copies, their set identity and the keys, which the Gateway compares with what it admitted
   SW->>B: Check the ready copies<br/>incus exec · check-ready.sh
   %%> What it does:
   %%> - starts a throwaway copy of each ready copy and waits for its Incus agent, so each ready copy is a VM that boots

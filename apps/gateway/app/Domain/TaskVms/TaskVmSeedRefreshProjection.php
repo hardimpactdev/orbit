@@ -26,8 +26,8 @@ final readonly class TaskVmSeedRefreshProjection implements DirectOperationProje
     /** The end check: a native assert over the ready copies, the promotion and the host listing that follows it. */
     public const string EndCheck = 'Check the seed';
 
-    /** The step that lists the ready copies in the seed, before it is stopped. */
-    public const string ReadyStep = 'Make the ready copies';
+    /** The step that checks the ready copies and keeps their source state; it prints the copies, their set and their keys. */
+    public const string ReadyStep = 'Keep the ready state';
 
     /** The step that boots a throwaway copy of each ready copy and searches it for the Swamp Club key. */
     public const string CheckStep = 'Check the ready copies';
@@ -81,7 +81,7 @@ final readonly class TaskVmSeedRefreshProjection implements DirectOperationProje
      * clones, and its ready copies are the roles the intent named.
      *
      * @param  array<string,mixed>  $run
-     * @return array{ready:true,host_node_id:int,image_fingerprint:string,seed:string,previous:string,roles:list<string>,referenced_bytes:int,written_bytes:int}
+     * @return array{ready:true,host_node_id:int,image_fingerprint:string,seed:string,previous:string,roles:list<string>,ready_set:string,minted:string,attempt:string,inputs:string,referenced_bytes:int,written_bytes:int}
      */
     private function report(Operation $operation, array $run): array
     {
@@ -90,27 +90,29 @@ final readonly class TaskVmSeedRefreshProjection implements DirectOperationProje
         $roles = ValidatedData::stringList(ValidatedData::object($input['builder'])['roles']);
         try {
             $promoted = ValidatedData::object(json_decode(ValidatedData::string(ValidatedData::object($run['promoted'] ?? [])['stdout'] ?? null), true, flags: JSON_THROW_ON_ERROR));
-            $ready = ValidatedData::stringList(json_decode(ValidatedData::string(ValidatedData::object($run['ready'] ?? [])['stdout'] ?? null), true, flags: JSON_THROW_ON_ERROR));
+            $ready = ValidatedData::object(json_decode(ValidatedData::string(ValidatedData::object($run['ready'] ?? [])['stdout'] ?? null), true, flags: JSON_THROW_ON_ERROR));
             $checked = ValidatedData::stringList(json_decode(ValidatedData::string(ValidatedData::object($run['checked'] ?? [])['stdout'] ?? null), true, flags: JSON_THROW_ON_ERROR));
         } catch (JsonException|InvalidArgumentException) {
             throw $this->invalid();
         }
-        $expected = array_map(static fn (string $role): string => "ready-{$role}", $roles);
+        $expected = array_map(static fn (string $role): string => "fleet-ready-{$role}", $roles);
         sort($expected);
-        sort($ready);
+        $copies = is_array($ready['copies'] ?? null) ? array_values($ready['copies']) : [];
+        sort($copies);
+        $keys = array_map(static fn (string $key): mixed => $ready[$key] ?? null, ['set', 'minted', 'attempt', 'inputs']);
         $bytes = $promoted['referenced_bytes'] ?? null;
         $written = $promoted['written_bytes'] ?? null;
         sort($checked);
         $roleList = $roles;
         sort($roleList);
-        if (($promoted['seed'] ?? null) !== $seed['current'] || ($promoted['previous'] ?? null) !== $seed['previous'] || $ready !== $expected || $checked !== $roleList
+        if (($promoted['seed'] ?? null) !== $seed['current'] || ($promoted['previous'] ?? null) !== $seed['previous'] || $copies !== $expected || $checked !== $roleList || array_any($keys, static fn (mixed $value): bool => ! is_string($value) || $value === '')
             || ! is_int($bytes) || $bytes < 1 || ! is_int($written) || $written < 0) {
             throw $this->invalid();
         }
 
         return ['ready' => true, 'host_node_id' => ValidatedData::integer($input['host_node_id']),
             'image_fingerprint' => ValidatedData::string(ValidatedData::object($input['image'])['fingerprint']),
-            'seed' => ValidatedData::string($seed['current']), 'previous' => ValidatedData::string($seed['previous']), 'roles' => $roles, 'referenced_bytes' => $bytes, 'written_bytes' => $written];
+            'seed' => ValidatedData::string($seed['current']), 'previous' => ValidatedData::string($seed['previous']), 'roles' => $roles, 'ready_set' => ValidatedData::string($keys[0]), 'minted' => ValidatedData::string($keys[1]), 'attempt' => ValidatedData::string($keys[2]), 'inputs' => ValidatedData::string($keys[3]), 'referenced_bytes' => $bytes, 'written_bytes' => $written];
     }
 
     private function invalid(): ResourceOperationException
