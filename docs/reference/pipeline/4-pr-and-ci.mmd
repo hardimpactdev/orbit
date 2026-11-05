@@ -63,6 +63,23 @@ sequenceDiagram
     CI-->>GH: One CI result<br/>green
     %%> Result:
     %%> - the merge requires this one result on the PR head
+    Note over GW,GH: Start the gate check<br/>every minute · reads only
+    %%> What it does:
+    %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
+    %%> - a draft PR whose CI result is green on its head: the Gateway admits the ready step below
+    %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
+    %%> - in automatic mode the Gateway admits the self-review run first, then the merge step
+    %%> Why:
+    %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the green CI and the approval
+    %%> - Swamp steps make no Gateway calls; each admission starts its own Swamp run with the full intent
+    %%> Rules:
+    %%> - admission is keyed by group and head, so a repeat tick on the same head is a no-op; a push moves the head and the check starts again
+    %%> - a pending or red CI result, a missing approval, a busy group or a failed read is a quiet skip; the next tick reads again
+    %%> - only a Project with review and merge enabled takes part
+    %%> Built:
+    %%> - the check for manual mode, as the scheduled command `tasks:pr-gate`
+    %%> Not built:
+    %%> - the check for automatic mode, because the self-review run does not exist
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
     %%> - authorizes the step and mints a short-lived App token
@@ -75,9 +92,9 @@ sequenceDiagram
     %%> Why:
     %%> - a draft means the work is still moving; leaving draft says the spec, code and proof cases are done
     %%> Built:
-    %%> - the operation `tasks:pr-ready`, with its chart; no flow calls it yet
+    %%> - the operation `tasks:pr-ready`, with its chart, called by the gate check in manual mode
     %%> Not built:
-    %%> - a flow that calls it; today the author runs `gh pr ready` as `nckrtl`
+    %%> - the call in automatic mode
     alt manual mode
       GW->>GH: Read the PR reviews<br/>short poll · approval on head
       %%> What it does:
@@ -86,9 +103,7 @@ sequenceDiagram
       %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the approval
       %%> - a push moves the PR head, so the approval must follow the last push
       %%> Built:
-      %%> - the read, as the gate of the operation `tasks:pr-merge`: a caller that polls it sees the approval
-      %%> Not built:
-      %%> - the approval-triggered continuation
+      %%> - the read, as the gate of the operation `tasks:pr-merge`, polled every minute by the gate check
       GH-->>GW: Approval on the head
     else automatic mode
       SW->>AG: Final self-review<br/>fresh review agent
@@ -110,9 +125,9 @@ sequenceDiagram
     %%> History:
     %%> - no merge queue and no GitHub auto-merge (Nick, 2026-11-05): the queue only reran the 2-minute fast checks, because the proof is not run twice
     %%> Built:
-    %%> - the operation `tasks:pr-merge`, with its chart; no flow calls it yet
+    %%> - the operation `tasks:pr-merge`, with its chart, called by the gate check in manual mode
     %%> Not built:
-    %%> - a flow that calls it; today the author runs `gh pr merge N --squash` as `nckrtl` (the interim)
+    %%> - the call in automatic mode; a PR that is not in a Task group still merges with `gh pr merge N --squash` as `nckrtl` (the interim)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one

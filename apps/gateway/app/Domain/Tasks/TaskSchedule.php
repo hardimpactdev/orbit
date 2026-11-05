@@ -17,6 +17,8 @@ final readonly class TaskSchedule
         GatewaySchedule::command($schedule, 'gateway:swamp-reader:check', uniqueFor: 300, overlapMinutes: 10, queue: GatewayQueue::Problems)->hourly()
             ->when(static fn (): bool => config()->string('swamp.read_token') !== '');
         GatewaySchedule::job($schedule, new ObserveParkedTaskVms)->everyMinute()->when($enabled);
+        // The gate check of stage 4 only reads and admits; its bound covers the GitHub reads of one tick.
+        GatewaySchedule::command($schedule, 'tasks:pr-gate', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);
         $hours = config()->integer('retention.job_batch_hours');
         GatewaySchedule::command($schedule, 'queue:prune-batches', uniqueFor: 3600, overlapMinutes: 60, queue: GatewayQueue::Problems, arguments: ["--hours={$hours}", "--unfinished={$hours}", "--cancelled={$hours}"])
             ->daily()->when($enabled);
