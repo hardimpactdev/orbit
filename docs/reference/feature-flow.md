@@ -89,7 +89,7 @@ CI runs on `main` after the merge. A red `main` is fixed forward and never relea
 
 Two PRs for the same command normally conflict, because each edits the command's chart, page and cases file. The second PR rebases. That reruns CI and the proof.
 
-Not built yet: PRs opened by the App, and Swamp merging PRs. Until then (the interim), the author opens the draft PR as `nckrtl`, takes it out of draft and runs `gh pr merge <n> -R hardimpactdev/orbit --auto`. GitHub merges the PR once the Required checks pass.
+Not built yet: PRs opened by the App, and Swamp merging PRs. Until then (the interim), the author opens the draft PR as `nckrtl`, takes it out of draft and runs `gh pr merge <n> -R hardimpactdev/orbit --auto --squash`. GitHub merges the PR once the Required checks pass.
 
 ## 4. CI
 
@@ -200,7 +200,7 @@ A malformed line is refused with `proof.selection_invalid`. A commit without a s
 
 ## 5. Merge
 
-Swamp merges the PR into `main` with a squash merge, after the gate. The interim is `gh pr merge <n> -R hardimpactdev/orbit --auto` as `nckrtl`. CI then runs on `main`; a red `main` is fixed forward.
+Swamp merges the PR into `main` with a squash merge, after the gate. The interim is `gh pr merge <n> -R hardimpactdev/orbit --auto --squash` as `nckrtl`. CI then runs on `main`; a red `main` is fixed forward.
 
 ## 6. Release
 

@@ -106,7 +106,7 @@ sequenceDiagram
     %%> History:
     %%> - no merge queue and no GitHub auto-merge (Nick, 2026-11-05): the queue only reran the 2-minute fast checks, because the proof is not run twice
     %%> Not built:
-    %%> - Swamp merging the PR; today the author runs `gh pr merge --auto` as `nckrtl` (the interim)
+    %%> - Swamp merging the PR; today the author runs `gh pr merge --auto --squash` as `nckrtl` (the interim)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one
