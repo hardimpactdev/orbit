@@ -139,7 +139,7 @@ PR evidence is `{status, checked_at, last_success_at, error_code, value}`. `stat
 
 The native WebSocket response is `{type: "data.get", id: <same request ID>, payload: {data: <native metadata>}}`. The metadata includes `name`, resolved `modelId`, `modelName`, `modelType`, positive integer `version`, `contentType: application/json`, `contentEncoding: utf-8`, and `content` as a JSON **string**. JSON-decode it exactly once. Native metadata fields such as ID, createdAt, size, checksum, tags and ownerDefinition are transport metadata, not producer fields. The fixture checksums cover the exact UTF-8 `content` bytes. `contentPath` is a native relative storage location; readers must not open it or expose it as a product link.
 
-This envelope is verified against Swamp's `handleDataGet`, `DataGetResponse`, and `DataGetData` definitions. The installed pinned CLI is `20261103.000636.0-sha.db3f6373`. Its `data get --json` presentation decodes JSON content to an object; that CLI presentation is different from the WebSocket wire reply. Error frames use native `type: error`; they do not become empty success documents. The consumer supplies rejection cases separately.
+This envelope is verified against Swamp's `handleDataGet`, `DataGetResponse`, and `DataGetData` definitions. The installed pinned CLI is `20261106.204821.0-sha.087900af`. Its `data get --json` presentation decodes JSON content to an object; that CLI presentation is different from the WebSocket wire reply. Error frames use native `type: error`; they do not become empty success documents. The consumer supplies rejection cases separately.
 
 ## Bounds and read semantics
 

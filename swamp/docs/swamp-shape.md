@@ -137,7 +137,7 @@ The second example is a sketch; the pilot fixes the exact syntax. Each action is
 
 The current template uses official `@swamp/ssh` package `2026.10.23.1` (model `2026.10.20.1`), checked at upstream commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. The hand-built SSH launcher, key scanner and common Python module have been deleted. Official `exec` observes platform/architecture; `collect-host-public-key` observes the public key; one pure TypeScript step shapes their outputs. Stored public host keys use the official pinned policy. Missing pins fail native validation; the probe does not select trust on first use. The extension owns its default key agent and connection handling.
 
-The original capability answers below were proved with synthetic data on a dev worker on Beast, using official Swamp `20261031.063736.0-sha.e459d219`; the pin is now `20261103.000636.0-sha.db3f6373`. Serve and worker were separate processes joined through the native remote-only WebSocket dispatch. The SSH executable in the fixture was harmless; this proves native delivery and transport, not a live bootstrap or logical Node 1/18 proxy effect. No secret value was printed.
+The original capability answers below were proved with synthetic data on a dev worker on Beast, using official Swamp `20261031.063736.0-sha.e459d219`; the pin is now `20261106.204821.0-sha.087900af`. Serve and worker were separate processes joined through the native remote-only WebSocket dispatch. The SSH executable in the fixture was harmless; this proves native delivery and transport, not a live bootstrap or logical Node 1/18 proxy effect. No secret value was printed.
 
 ### 1. A remote command step can run a repository script file
 
