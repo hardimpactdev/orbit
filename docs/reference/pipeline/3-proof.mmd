@@ -51,7 +51,10 @@ sequenceDiagram
     SW->>NT: Re-mint Swamp tokens<br/>in the nested Gateway
     %%> What it does:
     %%> - the nested Gateway renews the tokens of its own Swamp with the step of the provision (stage 2, `Re-mint the Swamp tokens`)
-    %%> Not built: the provision step exists; the proof run does not call it yet
+    %%> Built:
+    %%> - the Swamp workflow `proof-fleet-verify` reads the age of the tokens first: `incus exec nested-gateway -- find` on the file that the provision and the re-mint write (`serve-driver-token`), which prints the path only when the file is older than 20 days
+    %%> - then it calls the child `task-nested-apply` with `remint` set, which runs the step of the provision unchanged between its mounts and its migrations and restart; the same call serves a proof in CI and a proof in the author's own VM
+    %%> - a step that fails stops the run: every case is `unrun` with cause `infrastructure`
     %%> Why:
     %%> - the provision renews the tokens for 30 days and `base` inherits them, so a task older than that would otherwise prove with an expired nested Swamp
     %%> - these tokens belong to the nested Orbit; the real Gateway mints nothing for them
