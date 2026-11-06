@@ -123,16 +123,8 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-push-the-swamp-key").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-push-the-swamp-key").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['incus', 'file', 'push', '-', '${{ inputs.intent.fleet.guests.gateway + "/home/orbit/.config/swamp/club-api-key" }}', '--create-dirs', '--mode', '0600', '--uid', '1000', '--gid', '1000'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 50}}
+      inputs: {hosts: 'name:target', argv: ['incus', 'file', 'push', '-', '${{ inputs.intent.fleet.guests.gateway + "/home/orbit/.config/swamp/api-key" }}', '--create-dirs', '--mode', '0600', '--uid', '1000', '--gid', '1000'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 50}}
     dependsOn: [{step: 'Read the Gateway host key', condition: {type: succeeded}}]
-  # The key sits where the ready copies delete it and a task VM pushes it (`club-api-key`); the units of the nested Swamp read `api-key`, a link to it, so the copies hold no key and a started copy finds the one that was pushed.
-  - name: 'Link the Swamp key'
-    labels: {role: swamp}
-    writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-link-the-swamp-key").split(".").join("-") }}', methodName: exec,
-      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-link-the-swamp-key").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--', 'ln', '-sf', 'club-api-key', '/home/orbit/.config/swamp/api-key'], timeoutSec: 50}}
-    dependsOn: [{step: 'Push the Swamp key', condition: {type: succeeded}}]
   # One local run: its steps request no worker, so the Swamp binary of this VM runs them itself, over SSH on the machine. The Gateway sends everything it knows as the fragment of the input; the run adds the machine, its host key and the release.
   - name: 'Prepare the Gateway'
     labels: {role: swamp}
@@ -140,7 +132,7 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-prepare-the-gateway").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-prepare-the-gateway").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '1500', 'env', 'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/club-api-key', 'swamp', 'workflow', 'run', 'gateway-bootstrap', '--repo-dir', '/home/orbit/orbit/swamp', '--input', '${{ "{\"intent\":{" + inputs.intent.bootstrap.fragment + ",\"ssh\":{\"host\":\"" + inputs.intent.fleet.layout["gateway"].address + "\",\"port\":22,\"user\":\"orbit\",\"identity_file\":\"/home/orbit/.ssh/id_ed25519\",\"host_keys\":[\"" + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[1] + " " + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[2] + "\"]},\"release\":{\"repository\":\"" + steps["Read the release address"].outputs.stdout.split("\n")[0] + "\",\"commit\":\"" + steps["Read the release commit"].outputs.stdout.split("\n")[0] + "\"}}}" }}'], timeoutSec: 1510}}
-    dependsOn: [{step: 'Link the Swamp key', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Push the Swamp key', condition: {type: succeeded}}]
 - name: fleet
   labels: {role: swamp}
   dependsOn: [{job: bootstrap, condition: {type: succeeded}}]

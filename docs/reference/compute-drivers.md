@@ -1280,7 +1280,7 @@ A booted guest makes mount point directories there and writes a Laravel log, and
 
 `php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested VM, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
 
-The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and makes three VMs from the stock image with cloud-init, the key of the VM, and the state disk that stateful copies need. It writes the Swamp key to `club-api-key` on the Gateway guest, where the ready copies delete it and a task VM pushes it back, and links `api-key`, which the nested Swamp units read, to it. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
+The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and makes three VMs from the stock image with cloud-init, the key of the VM, and the state disk that stateful copies need. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
 
 Each VM has a 20 GiB root disk and a state disk as large as its memory, set as two device options, so that its copies can be stateful.
 
