@@ -31,7 +31,7 @@ sequenceDiagram
   %%> - when serve is restarting, the start waits up to 10 minutes instead of pausing the release
   SW->>N: checkout<br/>git checkout --detach a1b2c3d
   %%> Requirements:
-  %%> - the new commit descends from the current one (fast-forward only), except for the restore after a failed release
+  %%> - the new commit descends from the current one (fast-forward only)
   %%> On the Node:
   %%> - fetches the commit into the serve checkout
   %%> - moves the checkout to it

@@ -51,95 +51,20 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: intent
-  labels: {role: swamp}
-  steps:
-  - name: Write the intent
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
-      methodName: write
-      inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
-- name: input
-  labels: {role: swamp}
-  steps:
-  - name: Write the playbook input
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-input-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: |
-          umask 077
-          printf %s "$ORBIT_VALUE" > "$ORBIT_RUN/secret-github_token"
-          timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
-        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ORBIT_KIND: '${{ inputs.kind }}',
-          ORBIT_VALUE: '${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}'}
-  dependsOn:
-  - {job: intent, condition: {type: succeeded}}
 - name: release
   labels: {role: swamp}
-  dependsOn:
-  - {job: input, condition: {type: succeeded}}
   steps:
-    # Fetches the commit into the shared repository when it is not there yet (the token reaches git through a private file), clones it, links the shared env and storage, installs the dependencies, writes the agent manifest and seals the release with
-    # REVISION and a cached configuration. A sealed release of the commit is reused. Prints the release's rendered Swamp grants.
-  - name: Build the release
+    # Fetches the commit into the shared repository when it is not there yet. The GitHub token arrives on stdin and reaches git only in its
+    # environment, never in argv.
+  - name: Fetch the commit
     labels: {role: swamp}
     writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-build-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 2730 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags fetch,build "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2 && cat "$ORBIT_RUN/grants"
-        env: &ansible {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{
-            steps["Write the intent"].outputs.assets + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null
-              -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}', ANSIBLE_FORCE_COLOR: '0'}
-    # The web build of the commit from its CI artifact, checked against the artifact digest and extracted with safe names only.
-  - name: Install the web build
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Build the release, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-web-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags web "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2
-        env: *ansible
-    # Runs beside the web build. VACUUM INTO a private copy before any migration; the newest three stay, and the one a pause names. Prints its path.
-  - name: Snapshot the database
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Build the release, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-snapshot-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags snapshot "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2 && cat "$ORBIT_RUN/snapshot"
-        env: *ansible
-    # Always runs, as the legacy runner; from here a failure pauses automatic releases with the old release live.
-  - name: Migrate
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Snapshot the database, condition: {type: succeeded}}, {step: Install the web build, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "gateway-release-migrate-" + string(inputs.node_id) }}'
+      behaviorName: '${{ "gateway-release-fetch-" + string(inputs.node_id) }}'
       methodName: exec
-      globalArgs:
+      globalArgs: &ssh
         name: '${{ "gateway-release-ssh-" + string(inputs.node_id) }}'
         transport:
           kind: ssh
@@ -150,6 +75,112 @@ jobs:
         - name: target
           address: ${{ inputs.intent.ssh.target.host }}
           transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        timeoutSec: 360
+        stdin: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+        argv:
+        - /usr/bin/timeout
+        - '330'
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          sha=$1 repo=/home/orbit/shared/orbit.git
+          fail() { echo "$1: $2" >&2; exit 1; }
+          basic=$(printf 'x-access-token:%s' "$(cat)" | base64 -w0)
+          if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
+            GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
+              GIT_CONFIG_VALUE_0="Authorization: Basic $basic" \
+              timeout 300 git -C "$repo" fetch --quiet --no-tags origin "$sha" || fail gateway.release_fetch_failed "git fetch of $sha failed"
+            git -C "$repo" cat-file -e "$sha^{commit}" || fail gateway.release_commit_unknown "$sha is not in origin"
+          fi
+        - bash
+        - ${{ inputs.intent.sha }}
+    # Resolves the current release, adds the worktree of the fetched commit, links shared env and storage, installs dependencies, writes the agent
+    # manifest and seals the release with REVISION and a cached configuration. A sealed release of the same commit is reused. Its script is read
+    # from the commit being released (a commit from before the scripts has none: gateway.release_script_missing), so a release never runs the scripts of another. Prints the release's rendered Swamp grants.
+  - name: Build the release
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Fetch the commit, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-build-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 2460
+        argv:
+        - /usr/bin/timeout
+        - '2400'
+        - /bin/bash
+        - -c
+        - 'git -C "$1" cat-file -e "$2:swamp/scripts/gateway-release-build.sh" || { echo "gateway.release_script_missing: $2 has no release build script; roll back to it with bin/gateway-rollback" >&2; exit 1; }; bash <(git -C "$1" show "$2:swamp/scripts/gateway-release-build.sh") "$2" "$3" "$4"'
+        - bash
+        - /home/orbit/shared/orbit.git
+        - ${{ inputs.intent.sha }}
+        - ${{ string(inputs.intent.force) }}
+        - ${{ inputs.intent.manifest }}
+  - name: Install the web build
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Build the release, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-web-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        # As the agent's install: root gives the build the web root's owner and the caddy group.
+        sudo: true
+        timeoutSec: 960
+        stdin: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+        argv:
+        - /usr/bin/timeout
+        - '900'
+        - /bin/bash
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-web.sh
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.repository }}
+        - ${{ string(inputs.intent.web.artifact_id) }}
+        - ${{ string(inputs.intent.web.size) }}
+        - ${{ inputs.intent.web.digest }}
+    # VACUUM INTO a private copy before any migration; the newest three stay, and the one a pause names.
+  - name: Snapshot the database
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Install the web build, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-snapshot-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 960
+        argv:
+        - /usr/bin/timeout
+        - '900'
+        - /bin/bash
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-snapshot.sh
+        - ${{ inputs.intent.id }}
+    # Always runs, as the legacy runner; from here a failure pauses automatic releases with the old release live.
+  - name: Migrate
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Snapshot the database, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-migrate-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
       inputs:
         hosts: name:target
         timeoutSec: 960
@@ -192,56 +223,3 @@ jobs:
           horizon_drain_seconds: ${{ inputs.intent.horizon_drain_seconds }}
           keep: ${{ inputs.intent.keep }}
           ssh: ${{ inputs.intent.ssh }}
-    # A failed load or hand-over leaves Swamp on the new commit while the Gateway runs the old one: the next two steps load the previous
-    # commit back.
-  - name: Render the previous grants
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    dependsOn: [{step: Load Swamp on Node 209, condition: {type: or, conditions: [{type: failed}, {type: succeeded}]}}, {step: Hand over the release, condition: {type: or, conditions: [{type: failed}, {type: skipped}]}}]
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-previous-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags previous "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2 && cat "$ORBIT_RUN/previous"
-        env: *ansible
-  - name: Restore Swamp on Node 209
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    dependsOn: [{step: Render the previous grants, condition: {type: succeeded}}]
-    task:
-      type: workflow
-      workflowIdOrName: operation-gateway-swamp-load
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: 209
-        kind: gateway.swamp_load
-        intent:
-          sha: ${{ steps["Render the previous grants"].outputs.stdout.split("---\n")[0] }}
-          restore: true
-          grants:
-            grants/orbit-gateway.yaml: '${{ steps["Render the previous grants"].outputs.stdout.split("---\n")[1] }}'
-            grants/orbit-serve.yaml: '${{ steps["Render the previous grants"].outputs.stdout.split("---\n")[2] }}'
-          ssh: ${{ inputs.intent.swamp_ssh }}
-        execution_secrets: {}
-- name: cleanup
-  labels: {role: swamp}
-  dependsOn:
-  - {job: intent, condition: &settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
-  - {job: input, condition: *settled}
-  - {job: release, condition: *settled}
-  steps:
-  - name: Remove the playbook input
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-cleanup-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 30 rm -rf -- "$ORBIT_RUN"
-        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

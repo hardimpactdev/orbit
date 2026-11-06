@@ -13,7 +13,6 @@ inputs:
       type: object
       properties:
         sha: {type: string, pattern: '^[a-f0-9]{40}$'}
-        restore: {type: boolean}
         grants:
           type: object
           properties:
@@ -39,14 +38,13 @@ jobs:
           behaviorName: '${{ "gateway-swamp-checkout" }}'
           methodName: execute
           inputs:
-            env: {RELEASE_SHA: '${{ inputs.intent.sha }}', RESTORE: '${{ has(inputs.intent.restore) && inputs.intent.restore ? "true" : "false" }}'}
+            env: {RELEASE_SHA: '${{ inputs.intent.sha }}'}
             run: |
               set -eu
               cd /home/orbit/apps/orbit-monorepo-staging/checkout
               previous=$(git rev-parse HEAD)
               timeout 120 git fetch --quiet origin "$RELEASE_SHA"
-              # A restore puts an older commit back, so only a load moves forward.
-              [ "$RESTORE" = true ] || git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
+              git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
               git checkout --quiet --detach "$RELEASE_SHA"
               test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
               printf '%s\n' "$previous"
