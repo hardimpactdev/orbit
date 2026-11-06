@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\TaskVms\TaskVmConvergeProjection;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
@@ -52,6 +53,7 @@ return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-image-refresh',
     'projection' => TaskVmImageRefreshProjection::class,
     'workflow_inputs' => true,
+    'github_token_issuer' => TaskGitHubTokens::class,
     // No result step: the projector reads the end check's status, the provision receipt and the fingerprint the run printed.
     'terminal_result' => ['job' => 'check', 'step' => TaskVmImageRefreshProjection::EndCheck, 'native' => true, 'captures' => TaskVmImageRefreshProjection::captures()],
     // The refresh VM is provisioned as a task VM is, so the run takes the copies of `tasks.provision`.

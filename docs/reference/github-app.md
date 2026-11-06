@@ -171,8 +171,8 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 A task VM never holds a GitHub credential, neither a token nor a deploy key. The App serves every step that needs GitHub. Each step gets its own token when it runs.
 
-- **Clone.** A step on Node 209 clones the repository with full history. The token exists only inside that step. The VM receives the clone as a bundle with `origin` set to the plain repository URL.
-- **Nothing stays on the VM.** `.git/config`, a credential helper and the environment files hold no credential.
+- **Clone.** A step on Node 209 asks the Gateway for a read credential (`purpose: clone`). It clones with full history.
+- **Nothing stays on the VM.** The VM receives a bundle with a plain `origin`. `.git/config`, a credential helper and the environment files hold no credential.
 - **Publish and pull request.** These steps run on Node 209. Each step asks the Gateway for a fresh token at its start (`operation:direct:github-token`).
 - **No admission token.** Admission never mints a token for a later step. An installation token lives one hour, and a prep run can take 43 to 90 minutes to reach its publish step.
 - **Private dependencies.** A setup step installs them like a Project setup step. It uses a token minted for that step only.

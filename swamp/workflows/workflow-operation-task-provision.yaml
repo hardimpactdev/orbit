@@ -15,6 +15,8 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, const: tasks.provision}
+    # The root run of the Operation. A parent run (prep) passes its own; a run the Gateway starts is the root.
+    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
       type: object
     converge:
@@ -67,6 +69,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
+        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
         vm: ${{ steps["Create and prepare the VM"].outputs.result }}
     dependsOn:
     - step: Create and prepare the VM

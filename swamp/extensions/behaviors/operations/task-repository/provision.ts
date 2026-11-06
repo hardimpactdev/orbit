@@ -282,6 +282,7 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
             "prepare",
             "directory",
             "control",
+            "mint_clone",
             "clone",
             "bundle",
             "prepare_remote",
@@ -297,12 +298,8 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
         ]
     ) {
         if (
-            (name === "clone"
-                ? !["clone_private", "clone_public"].some((key) =>
-                    nativeOutputs(steps, key).step.status === "succeeded"
-                )
-                : nativeOutputs(steps, name).step.status !== "succeeded" &&
-                    !(optional.has(name) && !(name in steps)))
+            nativeOutputs(steps, name).step.status !== "succeeded" &&
+            !(optional.has(name) && !(name in steps))
         ) {
             return { error_code: "tasks.provision_failed", failed_step: name };
         }

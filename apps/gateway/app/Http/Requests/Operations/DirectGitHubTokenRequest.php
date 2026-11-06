@@ -30,14 +30,14 @@ final class DirectGitHubTokenRequest extends OperationPeerRequest
     /** @return array<string,list<string>> */
     public function rules(): array
     {
-        return ['run_id' => ['required', 'uuid']];
+        return ['run_id' => ['required', 'uuid'], 'purpose' => ['sometimes', 'string', 'in:clone,publish']];
     }
 
     /** @return list<\Closure(Validator):void> */
     public function after(): array
     {
         return [function (Validator $validator): void {
-            if (array_diff(array_keys($this->all()), ['run_id']) !== []) {
+            if (array_diff(array_keys($this->all()), ['run_id', 'purpose']) !== []) {
                 $validator->errors()->add('request', 'Unexpected request fields.');
             }
         }];
