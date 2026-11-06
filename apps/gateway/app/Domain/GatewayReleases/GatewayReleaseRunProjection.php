@@ -155,11 +155,16 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
                     // The daily window trigger asks again; a release is never held by it.
                     Log::warning('The fleet rollout after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
                 }
-                // A release may change the agent pin: the pool of each host replaces slots that hold another agent.
-                foreach (app(TaskVmSettings::class)->hosts as $host) {
-                    if ($host->slots !== null) {
-                        RefillTaskVmSlots::dispatchFor($host->nodeId);
+                try {
+                    // A release may change the agent pin: the pool of each host replaces slots that hold another agent.
+                    foreach (app(TaskVmSettings::class)->hosts as $host) {
+                        if ($host->slots !== null) {
+                            RefillTaskVmSlots::dispatchFor($host->nodeId);
+                        }
                     }
+                } catch (Throwable $failure) {
+                    // The periodic host sweep runs the refill rule too; a release is never held by it.
+                    Log::warning('The slot refill after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
                 }
             });
         }

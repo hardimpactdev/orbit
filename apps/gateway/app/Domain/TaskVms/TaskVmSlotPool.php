@@ -182,7 +182,6 @@ final readonly class TaskVmSlotPool
             'slot' => ['receipt' => [...$receipt, 'result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]];
     }
 
-    /** The succeeded enrol of a slot, whose intent and receipt its claim reuses. */
     /** Whether the slot's enrol installed another agent than the current pin: a release changed the pin since. */
     private function otherAgent(TaskVm $vm): bool
     {
@@ -191,6 +190,7 @@ final readonly class TaskVmSlotPool
         return is_string($installed) && $vm->node instanceof Node && $installed !== $this->agents->pin($vm->node);
     }
 
+    /** The succeeded enrol of a slot, whose intent and receipt its claim reuses. */
     private function enrolOf(TaskVm $vm): ?Operation
     {
         return Operation::query()->where('kind', self::EnrolKind)->where('target_type', 'task_vm')->where('target_id', $vm->id)
@@ -199,7 +199,8 @@ final readonly class TaskVmSlotPool
 
     /**
      * Whether a ready slot can no longer serve a claim: no setting, another Project or size, an image that is not the
-     * host's last promoted image, or older than {@see self::MaxAgeHours}. An unknown current image makes no slot stale,
+     * host's last promoted image, older than {@see self::MaxAgeHours}, or an enrol that installed another agent than the
+     * current pin. An unknown current image makes no slot stale,
      * so a missing promotion record never drains the pool.
      *
      * @param  array{build_id:int,fingerprint:string,recipe_identity:string}|null  $current

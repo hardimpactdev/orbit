@@ -64,13 +64,13 @@ sequenceDiagram
   GW->>SW: Destroy the VM<br/>today's task VM destroy
   %%> Exactly today's destroy. The Gateway then enrols a new slot to refill the pool.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): one refill rule per host, run after every enrol, claim, destroy, image promotion and settings change.
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06): a verified release of Orbit also runs the refill rule on every host with a pool, because a release may change the agent pin.
   %%> - it does nothing while a slot of the host enrols or is destroyed
   %%> - else it enrols one slot when the pool is below `count`
   %%> - else it destroys one stale slot
   Note over GW,VM: After a release of Orbit
   GW->>SW: Replace ready slots<br/>enrol from the new task image
   %%> Ready slots made from the old image are destroyed and enrolled again, one at a time, so a slot is always ready.
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): a verified release of Orbit also runs the refill rule on every host with a pool, because a release may change the agent pin.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - a slot is stale when its image is not the host's last promoted image, or when it was enrolled more than 20 hours ago, the age at which ready copies of its seed expire, or when its enrol installed another agent than the Gateway's current agent pin; a stale slot is never claimed
   %%> - the refill rule destroys one stale slot, and the end of that destroy enrols its replacement
