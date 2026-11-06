@@ -265,7 +265,7 @@ jobs:
         labels: {role: swamp}
         dependsOn: [{step: finish, condition: {type: succeeded}}]
         task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The development Instance create did not complete.}
-      # Cleanup: the run folder of the phases, also after a failure.
+      # Cleanup: the run folder of the phases, also after a failure. It sits at the depth of finish, so the two run side by side.
       - name: cleanup
         labels: {role: swamp}
         writes: true
@@ -273,6 +273,8 @@ jobs:
           - {step: input, condition: {type: always}}
           - {step: checkout, condition: {type: always}}
           - {step: setup, condition: {type: always}}
+          - {step: processes, condition: {type: always}}
+          - {step: route, condition: {type: always}}
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: behavior
