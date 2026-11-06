@@ -20,6 +20,22 @@ final readonly class GatewayHorizon
         return max([0, ...$timeouts]);
     }
 
+    /** How long a stop waits for running jobs: the longest job a supervisor allows, plus 30 seconds. */
+    public static function drainSeconds(): int
+    {
+        return self::longestJobSeconds() + 30;
+    }
+
+    /**
+     * The unit settings that make `systemctl stop` wait for running jobs: SIGTERM to the master only, no SIGKILL, and the drain as the stop timeout.
+     *
+     * @return list<string>
+     */
+    public static function stopDirectives(): array
+    {
+        return ['KillMode=mixed', 'KillSignal=SIGTERM', 'SendSIGKILL=no', 'TimeoutStopSec='.self::drainSeconds()];
+    }
+
     public static function runs(Process $process): bool
     {
         $command = $process->runtime_config['command'] ?? null;

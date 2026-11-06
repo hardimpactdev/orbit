@@ -61,8 +61,9 @@ it('runs the scheduler and, with a queue, Horizon as units unless the Node has t
     config(['orbit.gateway_queue.connection' => 'gateway-queue']);
     $units = collect(app(GatewayRuntimeFiles::class)->render($node)['units'])->keyBy('name');
 
-    expect($units['orbit-gateway-horizon.service']['unit'])->toContain("ExecStart=\"/usr/bin/php8.5\" \"/home/orbit/orbit/apps/gateway/artisan\" \"horizon\"\n", "Restart=always\n")
-        ->and($units['orbit-gateway-schedule.service']['unit'])->toContain('"schedule:work"', "RuntimeDirectory=orbit\n");
+    expect($units['orbit-gateway-horizon.service']['unit'])->toContain("ExecStart=\"/usr/bin/php8.5\" \"/home/orbit/orbit/apps/gateway/artisan\" \"horizon\"\n", "Restart=always\n",
+        "KillMode=mixed\nKillSignal=SIGTERM\nSendSIGKILL=no\nTimeoutStopSec=")
+        ->and($units['orbit-gateway-schedule.service']['unit'])->toContain('"schedule:work"', "RuntimeDirectory=orbit\n")->not->toContain('KillMode');
 
     foreach (['horizon', 'schedule-work'] as $name) {
         Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => $name, 'runtime' => 'systemd', 'runtime_config' => ['command' => ['true']]]);

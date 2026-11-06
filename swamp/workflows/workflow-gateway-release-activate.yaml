@@ -29,9 +29,9 @@ jobs:
 - name: activate
   labels: {role: swamp}
   steps:
-    # Horizon's running jobs finish on the release they started on: SIGTERM to the main process only, no kill and
-    # no stop timeout, until the unit's whole control group is empty. The stop returns when the main process is gone; a
-    # job's idle SSH connection master (ControlPersist, 60 seconds) can still sit in the group, so the step waits for it.
+    # Horizon's running jobs finish on the release they started on. The unit stops the master with SIGTERM, never sends SIGKILL and
+    # waits as long as the drain allows (GatewayHorizon::stopDirectives), so the stop returns when the unit's whole control
+    # group is empty. A unit that ran out of time is failed, not inactive, and fails the release before the switch.
   - name: Drain Horizon
     labels: {role: swamp}
     writes: true
@@ -63,21 +63,10 @@ jobs:
         - -c
         - |
           set -eu
-          unit=$1 drop=/run/systemd/system/$1.d
-          install -d -m 0755 "$drop"
-          # The drain policy never outlives this step, also when its timeout ends it.
-          trap 'rm -f "$drop/zz-orbit-horizon-drain.conf"; systemctl daemon-reload' EXIT
-          printf '[Service]\nKillMode=mixed\nKillSignal=SIGTERM\nSendSIGHUP=no\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' > "$drop/zz-orbit-horizon-drain.conf"
-          systemctl daemon-reload
-          systemctl stop "$unit"
-          waited=0
-          while grep -qx 'populated 1' "/sys/fs/cgroup/system.slice/$unit/cgroup.events" 2>/dev/null; do
-            [ "$waited" -lt "$2" ] || { echo "gateway.release_horizon_not_drained: $unit still has processes" >&2; exit 1; }
-            sleep 2; waited=$((waited + 2))
-          done
+          systemctl stop "$1"
+          [ "$(systemctl show -p ActiveState --value "$1")" = inactive ] || { echo "gateway.release_horizon_not_drained: $1 is not stopped" >&2; exit 1; }
         - sh
         - ${{ inputs.intent.horizon_unit }}
-        - ${{ string(inputs.intent.horizon_drain_seconds) }}
     # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
     # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
     # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
