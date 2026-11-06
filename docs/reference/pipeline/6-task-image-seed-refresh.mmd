@@ -65,7 +65,7 @@ sequenceDiagram
       %%> - the same step as in the proof CI (stage 4)
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
-    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` on the checkout disk device) are the last piece
+    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes as the step `Converge the nested Nodes`, the child `task-nested-converge`: on a fleet that started from ready copies, the nested Gateway admits one `node.converge` per Node it manages (`orbit:node-converge`, every Node but the operator) from the checkout, and the step waits for each; a fleet the refresh built is already at the release and skips it
     end
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):
