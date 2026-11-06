@@ -136,7 +136,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             NodeAgentFootprint::Marker,
             '[Unit]',
             'Description=Orbit Node agent',
-            // The tunnel and its .orbit DNS route come up in wg-quick@orbit; a first request before them hangs for the connect timeout.
+            // The tunnel to the Gateway address comes up in wg-quick@orbit; a first request before it hangs for the connect timeout.
             'After=network-online.target wg-quick@orbit.service',
             'Wants=network-online.target',
             '',
