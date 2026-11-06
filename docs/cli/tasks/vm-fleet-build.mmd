@@ -116,7 +116,7 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), the lifetimes in a fleet that is saved:
   %%> - the nested Gateway makes its own root CA at bootstrap with a 10-year life and signs its leaves for 397 days; the fleet is private to a disposable task VM, so a long CA costs nothing, and a seed never holds a CA that runs out in days
   %%> - the Swamp key is written to `api-key`, the file the nested Swamp units read and a task VM pushes; the ready copies delete that file from the running Gateway and scan for the key, so a copy holds none
-  %%> - the nested Swamp tokens last 30 days, longer than a seed lives, because the daily refresh replaces the seed; the 24-hour tokens and 2-day certificates of the earlier hand-made fleet are not made again
+  %%> - the nested Swamp tokens last 30 days, and each fleet start re-mints them; the 24-hour tokens and 2-day certificates of the earlier hand-made fleet are not made again
   alt the fleet is ready
     SW->>VM: Save the ready copies<br/>stage 6 · task_vm.ready_copies
     %%> What it does:

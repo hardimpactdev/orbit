@@ -10,8 +10,8 @@ use App\Support\ValidatedData;
 use Illuminate\Console\Command;
 
 /**
- * Starts the refresh of one task VM host's image and seed. There is no CLI command of its own: a release that changed
- * playbooks, pins or lock files and the daily schedule start it for every host, and an operator can run it for one.
+ * Starts the refresh of one task VM host's image and seed. There is no CLI command of its own; an operator runs it for one
+ * host, or `task-vms:refresh-images` for every host.
  */
 final class RefreshTaskVmImageCommand extends Command
 {

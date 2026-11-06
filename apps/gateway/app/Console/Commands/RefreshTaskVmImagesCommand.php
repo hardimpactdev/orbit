@@ -7,7 +7,7 @@ namespace App\Console\Commands;
 use App\Domain\TaskVms\TaskVmImageRefreshTrigger;
 use Illuminate\Console\Command;
 
-/** Admits the refresh of the task image of every Linux task VM host, as the daily trigger does. */
+/** Admits the refresh of the task image of every Linux task VM host. */
 final class RefreshTaskVmImagesCommand extends Command
 {
     #[\Override]
