@@ -1,5 +1,5 @@
 # The selection list. It maps each changed path to the proof it needs. `orbit proof:run` reads the list of the tested
-# commit; see docs/reference/feature-flow.md, "Choose the cases". The last matching line wins, so broad lines come first.
+# commit; see docs/reference/feature-flow.md, "Choose the cases". The last matching line wins, so broad lines come first; the documentation skips come last, to win inside every directory.
 # A path that matches no line is refused (proof.path_unmapped): classify every new kind of file here.
 #
 # Values: skip | family:command ... | * | none: reason
@@ -55,8 +55,12 @@ apps/gateway/app/Actions/Operations/**                     *
 apps/gateway/app/Data/Operations/**                        *
 apps/gateway/app/Domain/Operations/**                      *
 apps/gateway/app/Domain/Shared/ResourceOperationException.php  *
+apps/gateway/app/Http/Authorization/**                     *
 apps/gateway/app/Http/Controllers/Api/OperationsController.php  *
+apps/gateway/app/Http/Controllers/Controller.php           *
+apps/gateway/app/Http/Middleware/AnnounceDesiredCliVersion.php  *
 apps/gateway/app/Http/Middleware/EnsureRequestId.php       *
+apps/gateway/app/Http/Middleware/GuardBrowserOrigins.php   *
 apps/gateway/app/Http/Middleware/HandleOperationIdempotency.php  *
 apps/gateway/app/Http/Middleware/NormalizeErrorDetails.php  *
 apps/gateway/app/Http/Middleware/RecordCommandActivity.php  *
@@ -65,6 +69,8 @@ apps/gateway/app/Http/Middleware/RequireNodeAccess.php     *
 apps/gateway/app/Http/Middleware/StartRequestDeadline.php  *
 apps/gateway/app/Http/Middleware/ValidateRequestBodySize.php  *
 apps/gateway/app/Http/Requests/Operations/**               *
+apps/gateway/app/Http/Responses/ApiErrorResponse.php       *
+apps/gateway/app/Http/Responses/RendersApiError.php        *
 apps/gateway/app/Infrastructure/Swamp/CancelSwampRun.php   *
 apps/gateway/app/Infrastructure/Swamp/Native*.php          *
 apps/gateway/app/Infrastructure/Swamp/PendingSshHostKey.php  *
@@ -84,8 +90,11 @@ apps/gateway/app/Providers/Domains/OperationsServiceProvider.php  *
 apps/gateway/app/Support/StrictJson.php                    *
 apps/gateway/app/Support/ValidatedData.php                 *
 apps/gateway/bootstrap/app.php                             *
+apps/gateway/bootstrap/providers.php                       *
 apps/gateway/routes/api.php                                *
 apps/gateway/routes/api/operation.php                      *
+apps/cli/bootstrap/app.php                                 *
+apps/cli/bootstrap/providers.php                           *
 apps/cli/app/Commands/GatewayCommand.php                   *
 apps/cli/app/Commands/Concerns/FollowsOperations.php       *
 apps/cli/app/Commands/Operations/**                        *
@@ -94,7 +103,10 @@ apps/cli/app/Data/GatewayProfile.php                       *
 apps/cli/app/Exceptions/**                                 *
 apps/cli/app/Providers/AppServiceProvider.php              *
 apps/cli/app/Repositories/**                               *
+apps/cli/app/Services/Extensions/ExtensionDiscoveryResult.php  *
+apps/cli/app/Services/Extensions/GatewayExtensionState.php  *
 apps/cli/app/Services/GatewayConnectorFactory.php          *
+apps/cli/app/Services/SelfUpdate/CliReleaseNotice.php      *
 apps/cli/app/Services/Profile/**                           *
 apps/cli/app/Support/CommandVocabulary.php                 *
 apps/cli/app/Support/Console/**                            *
