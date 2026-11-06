@@ -70,7 +70,7 @@ def plan(base, reports, cache, collections):
     steps = [
         Step('shape', 'ansible collections', ['ansible-galaxy', 'collection', 'install', '-r', 'ansible/requirements.yml', '-p', str(collections)],
              env=ansible_env),
-        Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/task-vm-role.yml',
+        Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/task-vm-role.yml',
                                        'ansible/task-vm-model-key.yml', 'ansible/task-vm-fleet-wait.yml',
                                        'ansible/task-vm-runtime.yml'], env=ansible_env),
     ]
