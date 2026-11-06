@@ -77,21 +77,19 @@ final readonly class GatewayRuntimeFiles
         $owned = $node instanceof Node
             ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
             : [];
-        $longRunning = fn (string $name, string $description, string $artisan, string $stop = '', array $after = []): array => ['name' => "orbit-gateway-{$name}.service",
-            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n", $after)];
+        $longRunning = fn (string $name, string $description, string $artisan, string $stop = '', string ...$after): array => ['name' => "orbit-gateway-{$name}.service",
+            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n", ...$after)];
 
         return [
             ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],
-            ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon', implode("\n", [...GatewayHorizon::stopDirectives(), '']), ['valkey-server.service'])],
+            ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon', implode("\n", [...GatewayHorizon::stopDirectives(), '']), 'valkey-server.service')],
         ];
     }
 
     /**
      * `$after` orders the unit after more units: Horizon drains through its queue, so it stops before a Valkey on the same machine (no-op without one).
-     *
-     * @param  list<string>  $after
      */
-    private function service(string $description, string $type, string $artisan, string $extra = '', array $after = []): string
+    private function service(string $description, string $type, string $artisan, string $extra = '', string ...$after): string
     {
         $application = Config::string('orbit.gateway_checkout');
 
