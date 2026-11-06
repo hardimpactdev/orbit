@@ -553,10 +553,6 @@ jobs:
         - -D
         - -m
         - "0600"
-        - -o
-        - orbit
-        - -g
-        - orbit
         - /dev/stdin
         - ${{ "/home/" + inputs.intent.workspace.user + "/.config/composer/auth.json" }}
         stdin: ${{ vault.get(inputs.intent.dependency_auth.composer.vault, inputs.intent.dependency_auth.composer.key) }}
@@ -594,10 +590,6 @@ jobs:
         - install
         - -m
         - "0600"
-        - -o
-        - orbit
-        - -g
-        - orbit
         - /dev/stdin
         - ${{ "/home/" + inputs.intent.workspace.user + "/.npmrc" }}
         stdin: ${{ vault.get(inputs.intent.dependency_auth.npm.vault, inputs.intent.dependency_auth.npm.key) }}

@@ -61,6 +61,9 @@ function tokenWorld(bool $installed = true, ?array &$scoped = []): object
         /** @var list<array<string,mixed>> */
         public array $frames = [];
 
+        /** The number of vault puts after which the next one is refused. */
+        public ?int $failAfter = null;
+
         private bool $open = false;
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
@@ -75,6 +78,9 @@ function tokenWorld(bool $installed = true, ?array &$scoped = []): object
 
         public function receive(float $timeoutSeconds): array
         {
+            if ($this->failAfter !== null && count($this->frames) > $this->failAfter) {
+                throw new RuntimeException('vault put refused');
+            }
             $frame = end($this->frames);
 
             return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
@@ -184,6 +190,19 @@ it('writes an empty configuration, and records no issue, when the App cannot sup
     app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies');
 
     expect(array_column(tokenPuts($socket), 2))->toBe(['{}', "# no private access\n", 'no-token-minted'])
+        ->and(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
+});
+
+it('revokes the setup token when a vault copy fails, because the workflow revoke step does not run after a failed mint', function (): void {
+    $socket = tokenWorld();
+    $socket->failAfter = 2;
+    app(GitHubApi::class)->shouldReceive('revokeInstallationToken')->once()
+        ->withArgs(fn (GitHubAccessToken $credential): bool => $credential->reveal() === 'deps-token-value')->andReturn(true);
+    [$operation] = cloneOperation('tasks.provision');
+    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => [
+        'composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-9']]]])->save();
+
+    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies'))->toThrow('The Swamp execution copy could not be stored.')
         ->and(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
 });
 

@@ -653,6 +653,8 @@ The check stops each setup step's process group when its shell exits, times out,
 
 The configuration is two files with mode 0600: `~/.config/composer/auth.json` and `~/.npmrc`. Composer gets the token as `http-basic` credentials for `github.com` (user `x-access-token`), not as `github-oauth`. Composer refuses an OAuth token with a character outside letters, digits, dots and underscores, and the installation token has more.
 
+The token reads every repository the App installation covers, because a private package can live in any of them. A setup command is repository code and can read the same repositories while the files exist. The Gateway revokes the token itself if it cannot store one of the three vault copies.
+
 A later step removes both files after the last setup step, on success and on failure. A failed removal fails the provision. A last step revokes the token, so a setup command that echoes it leaves a token that is already revoked. The setup output is redacted for GitHub tokens, dots and dashes included, before it is kept. A cancelled or timed-out run keeps the files until the token expires or `tasks:cancel` removes the VM. The Project check and deliverable commands run after that and find no token.
 
 If the App cannot supply a token, both files hold an empty configuration and setup continues without private access. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill.

@@ -156,6 +156,9 @@ Deno.test("source result requires every ordered setup step before exposing the s
         assertEquals(sourceResult(input, steps), { source });
         steps[name] = kept;
     }
+    // The token revoke is not part of the receipt: the token expires within the hour, and a failed revoke must not fail a provision.
+    steps.deps_revoke = { status: "failed", outputs: {} };
+    assertEquals(sourceResult(input, steps), { source });
     const receipt = result(input, vm, {
         guest: { status: "succeeded" },
         ...steps,

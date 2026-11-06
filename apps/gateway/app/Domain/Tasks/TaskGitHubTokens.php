@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
@@ -20,6 +21,7 @@ use App\Models\Activity;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -170,9 +172,17 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             // The token alone, for the step that revokes it. The placeholder makes that revoke a harmless refusal.
             'token' => $token ?? 'no-token-minted'];
         $copies = [];
-        foreach ($values as $member => $value) {
-            $reference = ValidatedData::object($references[$member]);
-            $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $value);
+        try {
+            foreach ($values as $member => $value) {
+                $reference = ValidatedData::object($references[$member]);
+                $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $value);
+            }
+        } catch (\Throwable $exception) {
+            // The workflow revokes the token after its mint step succeeds; a failed copy ends the mint step, so the token is revoked here.
+            if ($token !== null && ! app(GitHubApi::class)->revokeInstallationToken(new GitHubAccessToken($token, gmdate(DATE_ATOM, time() + 3600)))) {
+                Log::warning('operation.github_token_revoke_failed');
+            }
+            throw $exception;
         }
         if ($token !== null) {
             $this->record($operation, 'Issued the read token of the setup steps of a Task workspace.', $callerNodeId, $runId, $repository->owner.'/'.$repository->name, [['contents' => 'read']]);

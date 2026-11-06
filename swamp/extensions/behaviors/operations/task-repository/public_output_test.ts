@@ -182,3 +182,19 @@ Deno.test("a token that a console error box wrapped over padded lines is redacte
     assertEquals(output.includes("ture_ok"), false);
     assertEquals(output.includes("In BaseIO.php line 143:"), true);
 });
+
+Deno.test("plain output after a token stays, and every GitHub token kind is redacted", () => {
+    const text = [
+        "token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
+        "Done",
+        "vendor",
+        "ghu_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz_0123456789",
+        "next line here",
+    ].join("\n");
+    const output = redactText(text);
+
+    assertEquals(output.includes("ABCDEFGH"), false);
+    assertEquals(output.includes("github_pat_"), false);
+    assertEquals(output.split("\n").slice(1, 3), ["Done", "vendor"]);
+    assertEquals(output.endsWith("next line here"), true);
+});
