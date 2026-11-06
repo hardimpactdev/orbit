@@ -1518,10 +1518,10 @@
             "concepts": [
                 "Access grant",
                 "Deployment",
+                "Gateway",
                 "Instance",
                 "Node",
-                "Process",
-                "Project"
+                "Process"
             ],
             "governing_adrs": []
         },
@@ -1851,7 +1851,9 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Node"
+                "Gateway",
+                "Node",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2589,6 +2591,22 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/project/pr-merge.mdx",
+            "title": "project:pr-merge",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/project/review-and-merge-disable.mdx",
             "title": "orbit project:review-and-merge:disable",
             "kind": "product",
@@ -2647,7 +2665,26 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Extension"
+                "Extension",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/proof/proof.mdx",
+            "title": "orbit proof",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -3337,6 +3374,21 @@
             "concepts": [
                 "Subtask",
                 "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/sync.mdx",
+            "title": "tasks:sync",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -4932,6 +4984,7 @@
                 "Instance",
                 "Node",
                 "Role",
+                "Route",
                 "Task"
             ],
             "governing_adrs": []
@@ -5047,7 +5100,9 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Gateway"
+                "Gateway",
+                "Node",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -5245,7 +5300,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process"
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -6211,7 +6266,8 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },
