@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: shared child workflow of cluster:update, cluster:activate, cluster:deactivate, cluster:node:add and cluster:node:remove, with the steps of route:update. docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
-  %% status: reviewed
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the site child is one Ansible phase per Node (tags site), because each placed Swamp step costs about 1.2 s and the child ran 30 in series (47.6 s measured).
+  %% status: draft
   %% command: none · shared by the Cluster commands
   %% kind: route.reconcile
   autonumber
@@ -25,7 +26,7 @@ sequenceDiagram
   opt Cluster-scoped Route
     SW->>N: Allow the Router on LAN<br/>@swamp/cfgmgmt/firewall
   end
-  SW->>N: Install cert, publish site<br/>child route-create-site · reload
+  SW->>N: Install cert, publish site<br/>child route-create-site · Ansible
   %%> What it does:
   %%> - publishes each new site beside the old one on its workload Node and the Router; Caddy reloads after validation
   opt Laravel target

@@ -13,24 +13,12 @@
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
     run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
     intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
-    target: "{{ intent.ssh_execution.target }}"
-    known_name: "{{ target.host if target.port == 22 else '[' ~ target.host ~ ']:' ~ target.port }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: create_node
   tasks:
-    - name: Pin the host keys of the Node
-      ansible.builtin.known_hosts:
-        path: "{{ run }}/known_hosts"
-        name: "{{ known_name }}"
-        key: "{{ known_name }} {{ item }}"
-        state: present
-      loop: "{{ target.host_keys }}"
     - name: Address the Node
-      ansible.builtin.add_host:
-        name: node
-        groups: [create_node]
-        ansible_host: "{{ target.host }}"
-        ansible_user: "{{ target.user }}"
-        ansible_port: "{{ target.port }}"
-        ansible_ssh_private_key_file: "{{ intent.ssh_execution.identity_file }}"
+      ansible.builtin.import_tasks: tasks/address-node.yml
 
 - name: Clone, check out the branch and write .env
   hosts: create_node
