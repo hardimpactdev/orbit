@@ -39,6 +39,8 @@ final readonly class GatewayBootstrapPlan
         foreach (self::Roles as $role) {
             $packages = [...$packages, ...$catalog->forRole($node, $role)];
         }
+        // The ready copies of a nested fleet edit the Gateway database with the sqlite3 client (task_vm.ready_copies).
+        $packages[] = 'sqlite3';
         $build = PhpBuildInstaller::input(new RecipeLoader()->source(), [self::Php], pcov: false, extras: 'keep', fpm: 'all', opentelemetry: false);
 
         return [
