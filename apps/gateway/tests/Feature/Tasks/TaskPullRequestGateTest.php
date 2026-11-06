@@ -15,14 +15,18 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskReviewRoundVerdict;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskReviewRound;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -79,12 +83,48 @@ it('skips a pull request that is no longer open', function (): void {
         ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => null, 'result' => 'skipped', 'code' => 'tasks_pr.no_pull_request', 'operation' => null]]);
 });
 
-it('admits no ready step while the merge check has not passed on the head of a draft', function (): void {
-    $group = gateWorld(gatePull(true));
+/** A passed handoff check of the group on the head, with the check operation that records it. */
+function gateChecked(Task $group, string $head = GATE_HEAD): TaskCheck
+{
+    $subtask = $group->tasks()->create(['title' => 'S', 'brief' => 'B']);
+    $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1, 'process_started' => 'x',
+        'head_before' => str_repeat('1', 40), 'tree_before' => str_repeat('2', 40), 'head_after' => str_repeat('3', 40), 'tree_after' => str_repeat('4', 40),
+        'commit_sha' => $head, 'started_at' => now(), 'finished_at' => now()]);
+    Operation::query()->create(['kind' => OperationKinds::TasksCheck, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+        'input' => ['subtask' => $subtask->id, 'phase' => 'handoff', 'check_id' => $check->id], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1,
+        'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $head, 'head' => $check->head_after, 'tree' => $check->tree_after, 'ci' => ['state' => 'passed', 'fault' => null, 'commit' => $head, 'branch' => TaskRemoteBranch::handoff($group), 'check_name' => 'Required checks']]]);
+
+    return $check;
+}
+
+it('leaves a draft alone while no passed handoff check is on its head, as for a spec-only pull request', function (): void {
+    $group = gateWorld(gatePull(true), green: true);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute())
-        ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.checks_not_passed', 'operation' => null]])
+        ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.no_checked_head', 'operation' => null]])
         ->and(Operation::query()->count())->toBe(0);
+});
+
+it('leaves a draft alone when the passed handoff check is on another commit', function (): void {
+    $group = gateWorld(gatePull(true), green: true);
+    gateChecked($group, str_repeat('b', 40));
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.no_checked_head']);
+});
+
+it('admits no ready step while the merge check has not passed on the head of a checked draft', function (): void {
+    $group = gateWorld(gatePull(true));
+    gateChecked($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute())
+        ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.checks_not_passed', 'operation' => null]]);
+});
+
+it('tries the ready step for a checked draft with a green merge check', function (): void {
+    $group = gateWorld(gatePull(true), green: true);
+    gateChecked($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
 });
 
 it('admits no merge step while the check has not passed or the reviewer has not approved', function (): void {
@@ -97,13 +137,15 @@ it('admits no merge step while the check has not passed or the reviewer has not 
 
 it('replays the step that the key of the same head already recorded and leaves the identity of the request alone', function (): void {
     $group = gateWorld(gatePull(true));
+    gateChecked($group);
+    $existing = Operation::query()->count();
     $recorded = Operation::query()->create(['kind' => OperationKinds::TasksPrReady, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
         'idempotency_key' => 'pr-gate:ready:'.$group->id.':'.GATE_HEAD, 'idempotency_fingerprint' => hash('sha256', OperationKinds::TasksPrReady.'|'.$group->id.'|'.GATE_HEAD),
         'input' => ['head_sha' => GATE_HEAD], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute())
         ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => 'ready', 'result' => 'replayed', 'code' => null, 'operation' => $recorded->id]])
-        ->and(Operation::query()->count())->toBe(1)
+        ->and(Operation::query()->count())->toBe($existing + 1)
         ->and(app(OperationIdempotency::class)->key)->toBeNull();
 });
 

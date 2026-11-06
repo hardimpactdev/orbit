@@ -66,7 +66,7 @@ sequenceDiagram
     Note over GW,GH: Start the gate check<br/>every minute · reads only
     %%> What it does:
     %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
-    %%> - a draft PR whose CI result is green on its head: the Gateway admits the ready step below
+    %%> - a draft PR whose CI result is green on its head, and whose head has a passed handoff check (`tasks:check` handoff) of the group on exactly that commit: the Gateway admits the ready step below
     %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
     %%> - a PR out of draft in automatic mode, with no review round recorded for that head: the Gateway admits the review round below
     %%> - a PR out of draft in automatic mode, whose round on that exact head passed: the Gateway admits the merge step below
@@ -76,6 +76,7 @@ sequenceDiagram
     %%> Rules:
     %%> - admission is keyed by group and head, so a repeat tick on the same head is a no-op; a push moves the head and the check starts again
     %%> - a pending or red CI result, a missing approval, a busy group or a failed read is a quiet skip; the next tick reads again
+    %%> - a draft PR with no passed handoff check on its head stays a draft, because the code and the runnable cases are not there yet: the PR that `tasks:prep` opens for a spec is such a PR, and an approval never merges it
     %%> - only a Project with review and merge enabled takes part
     %%> Built:
     %%> - the check for both modes, as the scheduled command `tasks:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings

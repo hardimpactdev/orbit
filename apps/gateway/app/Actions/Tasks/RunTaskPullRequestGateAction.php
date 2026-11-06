@@ -13,12 +13,15 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCheckedCandidate;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskReviewRoundVerdict;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskReviewRound;
 use Closure;
 use Illuminate\Support\Str;
@@ -26,7 +29,8 @@ use Illuminate\Support\Str;
 /**
  * One tick of the gate check of stage 4 of the command development pipeline, run every minute by the Gateway
  * scheduler. It only reads GitHub and admits. For each open external group of a review-and-merge Project that has a
- * published pull request it reads the pull request. A draft gets the ready step in the mode of the group. A pull
+ * published pull request it reads the pull request. A draft with a passed handoff check on its head gets the ready step in
+ * the mode of the group; a draft without one, such as a spec-only pull request, stays a draft. A pull
  * request out of draft gets the merge step in manual mode; in automatic mode it gets one review round per head, and
  * the merge step once the round on that exact head passed. Admission makes the other reads: the CI result of the head,
  * and for the manual merge the reviewer's approval of that exact head. A pending check, a missing approval, a running
@@ -42,7 +46,7 @@ final readonly class RunTaskPullRequestGateAction
 {
     public const string Caller = 'gateway:pr-gate';
 
-    public function __construct(private StartTaskPullRequestStepAction $steps, private StartTaskReviewRoundAction $rounds, private StartTaskReviewFixAction $fixes, private RepositoryPullRequestAccess $access,
+    public function __construct(private StartTaskPullRequestStepAction $steps, private StartTaskReviewRoundAction $rounds, private StartTaskReviewFixAction $fixes, private TaskCheckedCandidate $candidates, private RepositoryPullRequestAccess $access,
         private GitHubApi $github, private OperationIdempotency $idempotency) {}
 
     /** @return list<Result> */
@@ -89,6 +93,10 @@ final readonly class RunTaskPullRequestGateAction
         $head = $pull->headSha;
         $request = (string) Str::uuid();
         if ($pull->draft) {
+            if (! $this->checked($group, $head)) {
+                return $this->result($group, $number, 'ready', 'skipped', 'tasks_pr.no_checked_head');
+            }
+
             return $this->admit($group, $number, 'ready', OperationKinds::TasksPrReady, $head, fn () => $this->steps->ready($group, $head, $group->review_mode->value, self::Caller, $request));
         }
         if ($group->review_mode === TaskReviewMode::Manual) {
@@ -96,6 +104,13 @@ final readonly class RunTaskPullRequestGateAction
         }
 
         return $this->automatic($group, $number, $head, $request);
+    }
+
+    /** A draft leaves draft only when a passed handoff check of the group, with its required CI, is on exactly this head. */
+    private function checked(Task $group, string $head): bool
+    {
+        return TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))->where('kind', TaskCheckKind::Handoff->value)
+            ->where('commit_sha', $head)->orderByDesc('id')->get()->contains(fn (TaskCheck $check): bool => $this->candidates->eligible($group, $check));
     }
 
     /** @return Result */
