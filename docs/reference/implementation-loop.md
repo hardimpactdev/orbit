@@ -279,7 +279,7 @@ A task VM holds the same environment in `/opt/orbit-shape-gate`. The task VM rol
 
 Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
 
-CI gives the credentials to this one step on pull requests, on main pushes and on the push of a `task-*-handoff` branch by the Orbit App, so a task handoff that changes `swamp/` can pass hosted CI. It never gives them on `pull_request_target` or to a fork.
+CI gives the credentials to this one step on pull requests, on main pushes, on the nightly schedule and on the push of a `task-*-handoff` branch by the Orbit App (`orbit-nckrtl[bot]`), so a task handoff that changes `swamp/` can pass hosted CI. It never gives them on `pull_request_target` or to a fork. Decided by the orchestrator, for Nick's review.
 
 For each Composer project, the gate runs `composer check`. CI runs `composer validate --strict`. Its `composer check` runs Rector and Pint in fix mode, as [Formatters run in fix mode](#formatters-run-in-fix-mode) describes.
 
