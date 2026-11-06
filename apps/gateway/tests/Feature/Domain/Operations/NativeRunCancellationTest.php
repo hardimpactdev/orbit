@@ -79,6 +79,10 @@ it('asks Swamp to cancel the timed out runs of a group that ends', function (): 
     app(TaskOperations::class)->cancelOpen($group);
 
     expect($expired->refresh()->state)->toHaveKey('native_cancel_requested_at');
+    $socket = reconcileSocket($expired, 'running');
+    reconcile();
+    expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel')
+        ->and($expired->refresh()->state)->toHaveKey('native_cancel_confirmed_at');
 });
 
 /** A run-token connection that answers a `workflow.cancel` request with the frame the test names. */
@@ -197,12 +201,12 @@ it('keeps the target of an Operation that is still running', function (): void {
 afterEach(fn () => app(SwampConnection::class)->release());
 
 /** One Swamp connection that answers a history read with the run the test names and a cancel with the frame it names. */
-function reconcileSocket(?Operation $operation, string $status, string $cancel = 'cancellation_requested'): WebSocketClient
+function reconcileSocket(?Operation $operation, string $status, string $cancel = 'cancellation_requested', ?Closure $onCancel = null): WebSocketClient
 {
     $history = $operation === null ? [] : ['id' => RUN, 'workflowName' => 'operation-task-script', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.script'],
         'startedAt' => now()->subMinutes(3)->toIso8601ZuluString('millisecond'), 'completedAt' => now()->toIso8601ZuluString('millisecond'), 'jobs' => []];
-    $socket = new class($history, $cancel) implements WebSocketClient
+    $socket = new class($history, $cancel, $onCancel) implements WebSocketClient
     {
         /** @var list<array<string,mixed>> */
         public array $frames = [];
@@ -210,7 +214,7 @@ function reconcileSocket(?Operation $operation, string $status, string $cancel =
         private bool $open = false;
 
         /** @param array<string,mixed> $history */
-        public function __construct(private readonly array $history, private readonly string $cancel) {}
+        public function __construct(private readonly array $history, private readonly string $cancel, private readonly ?Closure $onCancel) {}
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
         {
@@ -227,6 +231,10 @@ function reconcileSocket(?Operation $operation, string $status, string $cancel =
             $frame = end($this->frames);
             if ($frame === false) {
                 return [];
+            }
+
+            if ($frame['type'] === 'workflow.cancel' && $this->onCancel !== null) {
+                ($this->onCancel)();
             }
 
             return [['id' => $frame['id'], ...match ($frame['type']) {
@@ -341,4 +349,29 @@ it('expires an unbound Operation at its admission deadline', function (): void {
     reconcile();
 
     expect($operation->refresh()->error_code)->toBe('operation.timed_out');
+});
+
+it('stops forwarding a cancel one hour after it was requested', function (): void {
+    Queue::fake();
+    $operation = runningScript();
+    app(ExpireOperationAction::class)->execute($operation);
+    $this->travel(61)->minutes();
+    $socket = reconcileSocket($operation, 'running', cancel: 'error');
+
+    reconcile();
+
+    expect($socket->frames)->toBe([])
+        ->and($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->toBeNull();
+});
+
+it('does not record a confirmation for a request that was recorded again while Swamp answered', function (): void {
+    $operation = runningScript();
+    app(ExpireOperationAction::class)->execute($operation);
+    $operation->refresh();
+    reconcileSocket($operation, 'running', onCancel: fn () => $operation->forceFill(['state' => [...$operation->refresh()->state,
+        'native_cancel_requested_at' => now()->addSecond()->toISOString()]])->save());
+
+    reconcile();
+
+    expect($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->toBeNull();
 });

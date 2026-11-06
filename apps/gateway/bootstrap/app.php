@@ -72,7 +72,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // The one reconciler of Operations with their Swamp runs: it projects ended runs, expires budgets, finds lost starts,
         // forwards cancels and frees the target of a run that nothing proves ended.
         GatewaySchedule::job($schedule, new ReconcileSwampOperations)->everyMinute()
-            ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->string('swamp.read_token') !== '' && config()->string('swamp.address') !== '');
+            ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
         GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());

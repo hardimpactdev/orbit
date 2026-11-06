@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
@@ -15,6 +16,9 @@ use Illuminate\Support\Str;
  */
 final readonly class NativeRunCancellation
 {
+    /** How long after a request the reconciler keeps forwarding it; a run that outlives that is lost. */
+    public const int ForwardMinutes = 60;
+
     public function __construct(private OperationStore $store) {}
 
     /**
@@ -35,6 +39,17 @@ final readonly class NativeRunCancellation
         ReconcileSwampOperations::dispatch()->afterCommit();
 
         return true;
+    }
+
+    /** True while the reconciler must still forward a recorded request: Swamp has not confirmed it, the window is open and the run has no recorded end. */
+    public function awaitsForwarding(Operation $operation): bool
+    {
+        $state = $operation->state ?? [];
+        $requested = $state['native_cancel_requested_at'] ?? null;
+
+        return is_string($requested) && ! isset($state['native_cancel_confirmed_at'])
+            && Carbon::parse($requested)->greaterThan(now()->subMinutes(self::ForwardMinutes))
+            && (! $operation->status->terminal() || $this->outlivesTimeout($operation));
     }
 
     /** True for a failed Operation that the Gateway timed out and whose native run has no recorded end. */

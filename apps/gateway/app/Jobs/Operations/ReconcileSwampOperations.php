@@ -19,6 +19,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -36,7 +37,10 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 240;
 
-    public int $uniqueFor = 120;
+    public int $uniqueFor = 300;
+
+    /** Forwarding cancels stops after this many seconds, so a slow Swamp cannot starve the reads of the pass. */
+    private const int CancelSeconds = 150;
 
     public function __construct()
     {
@@ -49,18 +53,40 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         if ($kinds === []) {
             return;
         }
-        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store): void {
+        $started = microtime(true);
+        $cancellation = app(NativeRunCancellation::class);
+        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started): void {
+            $forward = [];
             foreach (self::open($kinds)->lazyById() as $operation) {
                 try {
-                    $this->reconcile($operation, $step, $expire, $cancel, $store);
+                    $operation = $this->reconcile($operation, $step, $expire);
+                    if ($cancellation->awaitsForwarding($operation)) {
+                        $forward[] = $operation;
+                    }
                 } catch (Throwable $exception) {
-                    // Remote text can contain inputs: log identity and type only.
-                    Log::warning('The Operation could not be reconciled with its Swamp run; the next pass reads again.',
-                        ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                    $this->warn($operation, $exception);
+                }
+            }
+            // Reads first: a cancel can wait for Swamp's reply for half a minute.
+            foreach ($forward as $operation) {
+                if (microtime(true) - $started > self::CancelSeconds) {
+                    break;
+                }
+                try {
+                    $this->forwardCancel($operation, $cancel, $store);
+                } catch (Throwable $exception) {
+                    $this->warn($operation, $exception);
                 }
             }
         });
         $expire->releaseStaleHolds();
+    }
+
+    /** Remote text can contain inputs: log identity and type only. */
+    private function warn(Operation $operation, Throwable $exception): void
+    {
+        Log::warning('The Operation could not be reconciled with its Swamp run; the next pass tries again.',
+            ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
     }
 
     /**
@@ -76,17 +102,16 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key'))
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')
-                ->whereNotNull('state->native_cancel_requested_at')->whereNull('state->native_cancel_confirmed_at')));
+                ->where('state->native_cancel_requested_at', '>', now()->subMinutes(NativeRunCancellation::ForwardMinutes)->toISOString())
+                ->whereNull('state->native_cancel_confirmed_at')->whereNull('state->native_timeout->native_terminal_status')));
     }
 
-    private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store): void
+    private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire): Operation
     {
         $direct = app(DirectOperation::class);
         $selector = $direct->definition($operation->kind)['terminal_result'] ?? null;
         if ($selector === null || ! $direct->usesNativeTerminal($operation)) {
-            $expire->execute($operation);
-
-            return;
+            return $expire->execute($operation);
         }
         if (! isset($operation->state['swamp_run_id'])) {
             $operation = $expire->execute($operation)->refresh();
@@ -100,7 +125,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $this->project($operation, $run, $selector, $step, $expire);
             $operation->refresh();
         }
-        $this->forwardCancel($operation, $cancel, $store);
+
+        return $operation;
     }
 
     /**
@@ -129,15 +155,17 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
     }
 
-    /** Asks Swamp to cancel a run whose cancel was recorded and not confirmed, while the run has no recorded end. */
+    /** Asks Swamp to cancel the run and records the confirmation, unless the request was recorded again while Swamp answered. */
     private function forwardCancel(Operation $operation, CancelSwampRun $cancel, OperationStore $store): void
     {
-        $state = $operation->state ?? [];
-        if (! isset($state['native_cancel_requested_at']) || isset($state['native_cancel_confirmed_at'])
-            || ($operation->status->terminal() && ! app(NativeRunCancellation::class)->outlivesTimeout($operation))) {
-            return;
-        }
+        $requested = $operation->state['native_cancel_requested_at'] ?? null;
         $cancel->execute($operation);
-        $store->change($operation, ['state' => [...$state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+        DB::transaction(function () use ($operation, $store, $requested): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $state = $current->state ?? [];
+            if (($state['native_cancel_requested_at'] ?? null) === $requested) {
+                $store->change($current, ['state' => [...$state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+            }
+        });
     }
 }
