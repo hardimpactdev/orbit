@@ -34,10 +34,20 @@ final readonly class NativeRunProgress
             $parent = is_string($event['parentRunId'] ?? null) ? $event['parentRunId'] : $runId;
             $index = is_int($event['forEachIndex'] ?? null) ? (string) $event['forEachIndex'] : '';
             $key = hash('sha256', $parent.'|'.$event['jobId'].'|'.$event['stepId'].'|'.$index);
+            // The end of a forEach item comes without the `forEachIndex` its start carried: it ends the one started item of that step.
+            if (in_array($event['kind'], ['step_completed', 'step_failed'], true) && $index === '' && ! isset($active[$key])) {
+                $started = array_keys(array_filter($active, static fn (array $row): bool => ($row['parent'] ?? null) === $parent
+                    && ($row['job'] ?? null) === $event['jobId'] && $row['step'] === $event['stepId'] && ($row['index'] ?? '') !== ''));
+                if (count($started) === 1) {
+                    $key = $started[0];
+                    $index = $active[$key]['index'] ?? '';
+                }
+            }
             if ($event['kind'] === 'step_started') {
                 $started = $event['startedAt'] ?? null;
                 $started = is_string($started) && NativeRunTimestamp::parse($started) !== null ? $started : null;
-                $active[$key] = ['step' => mb_strcut($event['stepId'], 0, 255), 'started_at' => $started, 'observed_at' => now()->toISOString()];
+                $active[$key] = ['step' => mb_strcut($event['stepId'], 0, 255), 'started_at' => $started, 'observed_at' => now()->toISOString(),
+                    'parent' => $parent, 'job' => $event['jobId'], 'index' => $index];
             } else {
                 unset($active[$key]);
             }
@@ -66,7 +76,7 @@ final readonly class NativeRunProgress
         });
     }
 
-    /** @return array<string,array{step:string,started_at:?string,observed_at:string}> */
+    /** @return array<string,array{step:string,started_at:?string,observed_at:string,parent?:string,job?:string,index?:string}> */
     private function active(mixed $value): array
     {
         $active = [];
@@ -74,7 +84,8 @@ final readonly class NativeRunProgress
             if (is_string($key) && is_array($row) && is_string($row['step'] ?? null)
                 && is_string($row['observed_at'] ?? null)) {
                 $active[$key] = ['step' => $row['step'], 'started_at' => is_string($row['started_at'] ?? null) ? $row['started_at'] : null,
-                    'observed_at' => $row['observed_at']];
+                    'observed_at' => $row['observed_at'],
+                    ...array_filter(['parent' => $row['parent'] ?? null, 'job' => $row['job'] ?? null, 'index' => $row['index'] ?? null], is_string(...))];
             }
         }
 
