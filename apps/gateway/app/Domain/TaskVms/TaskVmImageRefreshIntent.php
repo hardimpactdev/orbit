@@ -25,6 +25,7 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 
@@ -106,6 +107,9 @@ final readonly class TaskVmImageRefreshIntent
      */
     private function input(array $input, Task $group, Instance $instance, TaskVm $vm, Node $host, TaskVmHost $location, array $image, string $commit): array
     {
+        // A published image is as large as the root disk of its VM, and no VM can be smaller than its image. The refresh VM
+        // keeps the root disk of the host's base VM, so the image it publishes still fits a normal VM.
+        $input['create'] = [...ValidatedData::object($input['create']), 'disk' => $location->disk];
         // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
         $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => [
             'converge' => $this->converge->provisioning($vm, null), 'ready_copies' => $this->copies->provisioning($vm)]);
