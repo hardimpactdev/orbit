@@ -104,6 +104,21 @@ it('reads a seed as usable only when the latest refresh of the host promoted tha
     expect($seeds->usable($shark->id, $later->id))->toBeFalse();
 });
 
+it('never reads a seed as usable from a refresh with seed=keep, which saved no copies', function (): void {
+    [$beast, , $beastBuild] = fleetPlacementHosts();
+    $seeds = app(TaskVmFleetSeed::class);
+
+    // The input of a keep run holds the ready copies intent like any other, but the run skipped the save.
+    $keep = fleetSeedRefreshed($beast, $beastBuild);
+    $keep->update(['input' => ['refresh' => [...$keep->input['refresh'], 'seed' => 'keep']]]);
+
+    expect($seeds->usable($beast->id, $beastBuild->id))->toBeFalse();
+
+    $keep->update(['input' => ['refresh' => [...$keep->input['refresh'], 'seed' => 'build']]]);
+
+    expect($seeds->usable($beast->id, $beastBuild->id))->toBeTrue();
+});
+
 it('places a VM that needs the nested fleet on the host with usable copies, though the other host has as many free slots', function (): void {
     // Both hosts have as many free slots, so the tie goes to the first in config order, beast, unless its seed is skipped.
     [$beast, $shark, $beastBuild, $sharkBuild] = fleetPlacementHosts(beastMax: 6, sharkMax: 6);
