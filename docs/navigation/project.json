@@ -15,6 +15,7 @@
             "cli/project/update",
             "cli/project/review-and-merge-enable",
             "cli/project/review-and-merge-disable",
+            "cli/project/pr-merge",
             "cli/project/maintenance-enable",
             "cli/project/maintenance-disable",
             "cli/project/maintenance-inspect",

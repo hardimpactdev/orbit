@@ -10,7 +10,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind: {type: string, enum: [tasks.pr_merge]}
+    kind: {type: string, enum: [tasks.pr_merge, project.pr_merge]}
     intent:
       type: object
       properties:
@@ -23,6 +23,7 @@ inputs:
         group_id:
           type: integer
           minimum: 1
+          description: The Task group of a task pull request; a pull request outside every group has none.
         pr_number:
           type: integer
           minimum: 1
@@ -37,7 +38,6 @@ inputs:
       required:
       - node_id
       - project_id
-      - group_id
       - pr_number
       - repository
       - head_sha

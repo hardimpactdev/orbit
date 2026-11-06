@@ -19,6 +19,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
@@ -71,6 +72,9 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         if ($purpose === null && $operation->kind === 'tasks.check') {
             return $this->check($operation, $callerNodeId, $runId);
         }
+        if ($purpose === 'pull_request' && $operation->kind === 'project.pr_merge') {
+            return $this->projectMerge($operation, $callerNodeId, $runId);
+        }
         if ($callerNodeId !== SwampNode::id() || $operation->target_type !== 'task_group' || $operation->status->terminal() || $operation->cancel_requested_at !== null) {
             throw $this->forbidden();
         }
@@ -83,9 +87,24 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             'clone' => $this->clone($operation, $group, $callerNodeId, $runId),
             'dependencies' => $this->dependencies($operation, $group, $callerNodeId, $runId),
             'publish' => $this->publish($operation, $group, $callerNodeId, $runId),
-            'pull_request', 'dependency_merge' => $this->scoped($operation, $group, $callerNodeId, $runId, $purpose),
+            'pull_request', 'dependency_merge' => $this->scoped($operation, $group->project, $callerNodeId, $runId, $purpose),
             default => throw $this->forbidden(),
         };
+    }
+
+    /**
+     * The write token of the merge of a pull request that no Task group watches. The operation targets its Project.
+     *
+     * @return array<string,array{vault:string,key:string}>
+     */
+    private function projectMerge(Operation $operation, int $callerNodeId, string $runId): array
+    {
+        $project = Project::query()->find($operation->target_id);
+        if ($callerNodeId !== SwampNode::id() || $operation->target_type !== 'project' || ! $project instanceof Project || $operation->status->terminal() || $operation->cancel_requested_at !== null) {
+            throw $this->forbidden();
+        }
+
+        return $this->scoped($operation, $project, $callerNodeId, $runId, 'pull_request');
     }
 
     /**
@@ -246,19 +265,19 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
      *
      * @return array<string,array{vault:string,key:string}>
      */
-    private function scoped(Operation $operation, Task $group, int $callerNodeId, string $runId, string $purpose): array
+    private function scoped(Operation $operation, Project $project, int $callerNodeId, string $runId, string $purpose): array
     {
         $write = ['contents' => 'write', 'pull_requests' => 'write'];
         $grants = match ([$purpose, $operation->kind]) {
             ['pull_request', 'tasks.pr_ready'], ['pull_request', 'tasks.pr_comment'] => ['write_token' => ['pull_requests' => 'write']],
-            ['pull_request', 'tasks.pr_merge'] => ['write_token' => $write],
+            ['pull_request', 'tasks.pr_merge'], ['pull_request', 'project.pr_merge'] => ['write_token' => $write],
             // The read token comes first: a failure after it leaves the token with the least authority.
             ['dependency_merge', 'tasks.dependency_merge'] => ['read_token' => ['contents' => 'read', 'pull_requests' => 'read', 'checks' => 'read', 'actions' => 'read'],
                 'write_token' => $write],
             default => throw $this->forbidden(),
         };
         $name = $operation->input['repository'] ?? null;
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repository_url);
         $references = ValidatedData::object($operation->input['execution_secrets'] ?? []);
         if (! is_string($name) || $repository === null || $repository->owner.'/'.$repository->name !== $name
             || array_any(array_keys($grants), static fn (string $member): bool => ! is_array($references[$member] ?? null))) {

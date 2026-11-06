@@ -42,6 +42,7 @@ process.stop
 process.update
 project.detect
 project.observe
+project.pr_merge
 project.routine
 route.caddy_converge
 route.create

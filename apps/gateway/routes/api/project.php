@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ProjectDependenciesController;
 use App\Http\Controllers\Api\ProjectDependencyReadTokenController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
 use App\Http\Controllers\Api\ProjectMaintenanceController;
+use App\Http\Controllers\Api\ProjectPullRequestController;
 use App\Http\Controllers\Api\ProjectRuntimeDefinitionsController;
 use App\Http\Controllers\Api\ProjectsController;
 use App\Http\Middleware\RecordCommandActivity;
@@ -33,6 +34,7 @@ Route::middleware([
     Route::patch('projects/{project}', [ProjectsController::class, 'update'])->name('project:update');
     Route::post('projects/{project}/review-and-merge/enable', [ProjectsController::class, 'enableReviewAndMerge'])->name('project:review-and-merge:enable');
     Route::post('projects/{project}/review-and-merge/disable', [ProjectsController::class, 'disableReviewAndMerge'])->name('project:review-and-merge:disable');
+    Route::post('projects/{project}/pr-merge', [ProjectPullRequestController::class, 'merge'])->whereNumber('project')->name('project:pr-merge');
     Route::delete('projects/{project}', [ProjectsController::class, 'destroy'])->name('project:destroy');
     Route::get('projects/{project}/dev-deploy-steps', [ProjectDevelopmentDeployStepsController::class, 'index'])->name('project:dev-deploy-step:list');
     Route::post('projects/{project}/dev-deploy-steps', [ProjectDevelopmentDeployStepsController::class, 'store'])->name('project:dev-deploy-step:create');
