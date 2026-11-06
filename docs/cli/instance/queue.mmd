@@ -12,8 +12,8 @@ sequenceDiagram
   participant S as Queue store<br/>Redis or database
   CLI->>GW: instance:queue 12
   %%> Command:
-  %%> - `orbit instance:queue 12`
-  %%> - syntax: `<instance> [--state=pending|failed] [--limit=N] [--json]`
+  %%> - the MCP tool `instance-queue`, or `GET /api/v1/instances/12/queue`; the web app calls the same endpoint
+  %%> - syntax: `<instance> [--state=pending|failed] [--limit=N]`
   %%> Input:
   %%> - the Instance ID
   %%> Not included:
@@ -22,16 +22,19 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to the Instance's Node
   %%> - the stored environment has `QUEUE_CONNECTION=redis` and a registered Redis connection with prefix REDIS, or `QUEUE_CONNECTION=database` and a registered mysql or pgsql connection with prefix DB; otherwise the report is `available: false`
+  %%> - failed jobs need a registered mysql or pgsql connection with prefix DB; without one the failed total is null
   %%> - the Gateway takes the queue names and the key prefix from the stored environment, as Laravel does
   %%> Where the credential lives:
   %%> - the Gateway stores the connection's password encrypted and uses it in its own process; nothing is copied to a vault
   GW->>S: Read the queue<br/>Laravel Redis or database client
   %%> How:
   %%> - the same way the Gateway reaches its own queue Redis: Laravel's client, over WireGuard, with a 5 s timeout
-  %%> - Redis: LLEN of each queue list, ZCARD of its delayed and reserved sets, and LRANGE for the newest pending jobs
-  %%> - database: the `jobs` table counted by queue and by reserved or not, and its newest rows
+  %%> - Redis: SCAN for the queue names beside the one the environment names, LLEN of each queue list plus ZCARD of its delayed set for its length, and LRANGE for the newest pending jobs
+  %%> - database: the `jobs` table counted by queue, without the reserved jobs, and its newest rows
   %%> - failed jobs: the Instance's `failed_jobs` table through the registered database connection, newest first
-  %%> - every statement is a read; a job payload is read only to take its `displayName` and is never returned
+  %%> - every statement is a read, with a 5 s limit; a job payload is read only to take its class, id and push time and is never returned
+  %%> - Redis lists jobs from the 5 longest queues, reads at most 50 queue names, and lists no delayed job; a plain Laravel Redis payload may carry no push time, so `pushed_at` can be null
+  %%> - a read of the pending jobs does not fail when `failed_jobs` is unreadable; the failed total is then null
   alt the store answers
     S-->>GW: counts and rows
     %%> Returns:

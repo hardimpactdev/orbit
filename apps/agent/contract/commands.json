@@ -673,20 +673,6 @@
       ]
     },
     {
-      "name": "instance.read-queue",
-      "summary": "Report an Instance's Horizon queue, without job payloads.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "instance.queue_invalid",
-        "instance.queue_failed"
-      ]
-    },
-    {
       "name": "cli.install",
       "summary": "Install the Orbit CLI release when the Node needs it, and write root's CLI profile.",
       "mutates": true,

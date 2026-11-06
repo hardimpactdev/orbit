@@ -23,7 +23,6 @@ mod guest;
 pub mod hibernation;
 mod homebrew;
 mod homebrew_scope;
-pub mod horizon_queue;
 pub mod http_check;
 mod image_boot;
 mod incus;
@@ -119,7 +118,6 @@ pub fn all() -> Vec<Entry> {
         entry::<websocket_runtime::RemoveRuntime>(),
         entry::<websocket_runtime::RuntimeActive>(),
         entry::<ci_runner::CiRunnerHost>(),
-        entry::<horizon_queue::ReadQueue>(),
         entry::<cli::InstallCli>(),
         entry::<os_release::ReadOsRelease>(),
         entry::<node_bootstrap::Bootstrap>(),
