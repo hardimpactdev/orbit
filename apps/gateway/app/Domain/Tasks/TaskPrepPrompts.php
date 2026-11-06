@@ -170,6 +170,32 @@ final readonly class TaskPrepPrompts
         TEXT;
     }
 
+    public function buildTitle(): string
+    {
+        return 'Build '.$this->command;
+    }
+
+    /** The fixed brief of the implementation subtask that follows an approved spec. See docs/cli/tasks/build.mmd. */
+    public function buildBrief(string $head, string $branch): string
+    {
+        return <<<TEXT
+        The owner approved the spec of the Orbit command `{$this->command}` at commit `{$head}` of the branch `{$branch}`. Build the command so that it does what the spec says.
+
+        The approved spec:
+        - chart: `{$this->chart()}`
+        - docs page: `{$this->page()}`
+        - cases: `{$this->cases()}`
+
+        The workspace was synced, so `refs/remotes/origin/{$branch}` holds the approved head. If HEAD of the workspace is not the approved head, run `git merge --ff-only refs/remotes/origin/{$branch}` first, and stop and say so if it does not fast-forward. Do not change the spec. Write the code, the tests and the runnable proof cases that the spec asks for. The deliverables below must pass.
+        TEXT;
+    }
+
+    /** The prompt of the caller of the first implementer turn; the admission puts the subtask in front of it. */
+    public function buildTurn(): string
+    {
+        return 'Build the command from the approved spec, as the brief of this subtask says. Commit your work as one commit when the deliverables pass.';
+    }
+
     public function title(): string
     {
         return 'docs('.$this->family.'): spec for '.$this->command;

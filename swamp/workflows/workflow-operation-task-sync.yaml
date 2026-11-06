@@ -18,6 +18,8 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, const: tasks.sync}
+    # A parent run passes its own run id: the Gateway checks the mint against the root run of the Operation.
+    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
       type: object
       properties:
@@ -64,7 +66,7 @@ jobs:
       workflowIdOrName: task-github-mint
       inputs:
         operation_id: ${{ inputs.operation_id }}
-        run_id: ${{ run.id }}
+        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
         purpose: clone
   - name: Clone the refs
     labels: {role: swamp}

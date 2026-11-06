@@ -381,7 +381,27 @@ The native `operation-task-prep-fix` workflow is one parent run, with existing w
 
 A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
 
-The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes. The gate check does not detect the owner's review yet.
+The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes.
+
+The gate check does not detect a review that asks for corrections, so a person or the orchestrator admits this run. It does detect the approval, which [starts the build](#start-the-build).
+
+#### Start the build
+
+`tasks.build` is the step after the owner approves the spec of a prep group. The gate check admits it. It has no command, route or MCP tool. Before it existed, a person moved the group to `running` and added the build subtask by hand.
+
+The gate check acts on a group that is `waiting_for_review`, with a succeeded `tasks.prep` run, an open draft pull request and no open subtask. In manual mode it acts when the latest review of the reviewer approves the exact head of the pull request. In automatic mode it acts without a review, because the clean review of the prep run is the approval. A group that is already `running`, a head that is not the approved one and a busy group are quiet skips. The Idempotency-Key is `pr-gate:build:<group>:<head>`.
+
+In one transaction the Gateway records the approval (the head, the mode and the reviewer) in the intent, appends the build subtask, moves the group to `running` and admits one run.
+
+The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes. The intent also holds the resume of the VM, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
+
+The native `operation-task-build` workflow is one parent run, with existing workflows as children:
+
+- `Resume the VM` runs `operation-task-vm-resume`.
+- `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
+- `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
+
+The read-token mint of the sync child is the one call to the Gateway. The Gateway projects the terminal event once: the task VM as ready, the metrics of the thread and `{ branch, head }`. The group stays `running` for its driver. A failed run records the failed step with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`, and the group stays `running` for the orchestrator.
 
 ### Task lifecycle
 
@@ -1067,6 +1087,7 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 - A pull request in draft gets the ready step in the review mode of the group. Admission requires a green merge check on the head.
 - The ready step also requires a passed handoff check of the group on that commit.
 - A spec-only pull request, such as the one `tasks:prep` opens, has no such check and stays a draft.
+- The owner's approval of its head [starts the build](#start-the-build) instead.
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 

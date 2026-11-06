@@ -10,6 +10,8 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\GitHub\GitHubReview;
+use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -22,6 +24,7 @@ use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskReviewRoundVerdict;
+use App\Domain\Tasks\TaskStatus;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
@@ -40,17 +43,17 @@ beforeEach(fn () => SwampNodeFixture::ensure());
 const GATE_HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 
 /** The Tasks extension on, the GitHub App stored, and a GitHub that serves one pull request and no check runs or reviews. */
-function gateWorld(GitHubPullRequest $pull, bool $reviewAndMerge = true, bool $green = false, TaskReviewMode $review = TaskReviewMode::Manual): Task
+function gateWorld(GitHubPullRequest $pull, bool $reviewAndMerge = true, bool $green = false, TaskReviewMode $review = TaskReviewMode::Manual, array $reviews = []): Task
 {
     app(TaskExtensionState::class)->enable();
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'hardimpactdev', 'organization', 'https://github.com/apps/gate', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($pull, $green): void {
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($pull, $green, $reviews): void {
         $github->shouldReceive('repositoryInstallation')->andReturn(7);
         $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
         $github->shouldReceive('repositoryChecksToken')->andReturn('checks-token');
         $github->shouldReceive('pullRequest')->andReturn($pull);
         $github->shouldReceive('checkRuns')->andReturn($green ? [new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: GATE_HEAD, appSlug: 'github-actions')] : []);
-        $github->shouldReceive('reviews')->andReturn([]);
+        $github->shouldReceive('reviews')->andReturn($reviews);
     }));
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.',
         'source_access' => 'github_app', 'merge_check' => 'Required checks', 'review_and_merge' => $reviewAndMerge]);
@@ -322,3 +325,76 @@ it('falls back to manual mode when a step of the fix does not end well', functio
     'check failed' => [OperationStatus::Succeeded, OperationKinds::TasksCheck, ['outcome' => 'failed'], 'fix_check_operation_id'],
     'publish failed' => [OperationStatus::Failed, OperationKinds::TasksPublish, [], 'fix_publish_operation_id'],
 ]);
+
+/** What a prep run leaves: its completed spec subtask and its succeeded run. */
+function gateSpecDone(Task $group): void
+{
+    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Spec', 'brief' => 'Draft the spec', 'status' => TaskStatus::Completed]);
+    Operation::query()->create(['kind' => OperationKinds::TasksPrep, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+        'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny']]);
+}
+
+function gateReview(string $commit, GitHubReviewState $state = GitHubReviewState::Approved): GitHubReview
+{
+    return new GitHubReview(1, 1, 'nick', $state, $commit, new DateTimeImmutable('2026-11-06T10:00:00Z'), 'https://example.test', '');
+}
+
+it('waits for the approval of the head of a parked spec before it admits the build', function (): void {
+    config(['task_pull_requests.reviewer' => 'nick']);
+    $group = gateWorld(gatePull(true));
+    gateSpecDone($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute())
+        ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => 'build', 'result' => 'skipped', 'code' => 'tasks_pr.approval_missing', 'operation' => null]])
+        ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
+});
+
+it('does not count the approval of another head or a request for changes', function (GitHubReview $review): void {
+    config(['task_pull_requests.reviewer' => 'nick']);
+    $group = gateWorld(gatePull(true), reviews: [$review]);
+    gateSpecDone($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'skipped', 'code' => 'tasks_pr.approval_missing']);
+})->with([
+    'an older head' => [fn () => gateReview(str_repeat('b', 40))],
+    'changes requested' => [fn () => gateReview(GATE_HEAD, GitHubReviewState::ChangesRequested)],
+]);
+
+it('admits the build once the reviewer approved the exact head, and a refusal of the admission leaves the group parked', function (): void {
+    config(['task_pull_requests.reviewer' => 'nick']);
+    $group = gateWorld(gatePull(true), reviews: [gateReview(GATE_HEAD)]);
+    gateSpecDone($group);
+
+    // The group has no task VM workspace here, so the admission refuses after the approval was read.
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'skipped', 'code' => 'tasks.build_refused'])
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1);
+});
+
+it('starts the build of an automatic group after the clean review, with no review read', function (): void {
+    $group = gateWorld(gatePull(true), review: TaskReviewMode::Automatic);
+    $group->update(['status' => TaskGroupStatus::Running]);
+    gateSpecDone($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'skipped', 'code' => 'tasks.build_refused']);
+});
+
+it('leaves a draft alone that is not a parked spec: a running manual group, a group that built, or a head out of draft', function (): void {
+    $running = gateWorld(gatePull(true));
+    gateSpecDone($running);
+    $running->update(['status' => TaskGroupStatus::Running]);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head']);
+
+    $running->update(['status' => TaskGroupStatus::WaitingForReview]);
+    Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $running->id, 'node_id' => null, 'status' => OperationStatus::Failed, 'input' => []]);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head']);
+});
+
+it('never builds from a pull request that is out of draft', function (): void {
+    $group = gateWorld(gatePull(false));
+    gateSpecDone($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge']);
+});

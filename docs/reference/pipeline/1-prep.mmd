@@ -133,7 +133,7 @@ sequenceDiagram
       %%> - the group then parks again
       %%> Built or not:
       %%> - built: `tasks:prep-fix`, with the review of the owner as its input (`docs/cli/tasks/prep-fix.mmd`)
-      %%> - not built: the gate check does not detect the review of the owner yet
+      %%> - not built: the gate check does not detect a review that asks for corrections; it detects the approval, which starts the build (below)
       %%> Decided by the orchestrator, for Nick's review:
       %%> - the run is admitted with the review as text, so a decision made after the review can go with it; two review rounds follow the corrections
     end
@@ -148,4 +148,27 @@ sequenceDiagram
   %%> Result:
   %%> - the Gateway records the draft PR with its spec commit, for the CLI and web
   %%> - the command is not ready and not merged; building starts in the same PR with stage 2, and stages 3 and 4 follow in it
+  alt manual mode
+    NK->>GH: Approve the spec head<br/>review of the draft PR
+    %%> What it does:
+    %%> - the owner approves the exact head of the draft PR; it is the review that `tasks:pr-merge` reads for the code
+    GW->>SW: Start the build<br/>gate check · approved head
+    %%> What it does:
+    %%> - the gate check (reads only, every minute) sees the approval on the head of the draft PR of a parked prep group
+    %%> - the Gateway records the approval, appends the implementation subtask, moves the group to `running` and admits one run, `tasks.build` (`docs/cli/tasks/build.mmd`)
+    %%> - the subtask has a fixed brief that names the approved chart, page and cases and the approved head; its deliverables are that the runner plan of the cases file passes and that the Project check passes
+    %%> Never:
+    %%> - acts on a group that is already `running`, or on a head other than the approved one; a push after the approval needs a new approval
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the approval starts the build with no hand step
+  else automatic mode
+    GW->>SW: Start the build<br/>gate check · clean review
+    %%> What it does:
+    %%> - the same admission, once the group is parked with the clean review behind it; it reads no approval, because the clean review is the approval
+  end
+  SW->>VM: Resume, sync, first turn<br/>operation-task-build
+  %%> What it does:
+  %%> - one parent run with three child workflows: `operation-task-vm-resume`, `operation-task-sync` and `operation-task-turn`, the first implementer turn on a new thread
+  %%> - the Gateway captured the whole intent at admission and Swamp passes it down as inputs; the read-token mint of the sync child is the one call to the Gateway
+  %%> - the Gateway projects the terminal event once; the group stays `running` and stage 2 goes on
   %%> - a command already prepared through a docs-only PR stays as it is; when its turn comes, this flow reviews and updates its spec

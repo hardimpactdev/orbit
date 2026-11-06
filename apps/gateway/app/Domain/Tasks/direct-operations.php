@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\DependencyMergeProjection;
+use App\Domain\Tasks\TaskBuildProjection;
 use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskGitHubTokens;
@@ -85,6 +86,12 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             ]],
             'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
+        ], 'tasks.build' => [
+            'workflow' => 'operation-task-build', 'projection' => TaskBuildProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'build', 'step' => 'Run the first turn', 'native' => true, 'captures' => ['turn' => ['job' => 'build', 'step' => 'Run the first turn']]],
+            'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
+                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
         ], 'tasks.sync' => [
             'workflow' => 'operation-task-sync', 'projection' => TaskSyncProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
             'workflow_inputs' => true,
