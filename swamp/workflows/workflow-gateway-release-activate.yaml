@@ -29,9 +29,10 @@ jobs:
 - name: activate
   labels: {role: swamp}
   steps:
-    # Horizon's running jobs finish on the release they started on: SIGTERM to the main process only, no kill and
-    # no stop timeout, until the unit's whole control group is empty. The stop returns when the main process is gone; a
-    # job's idle SSH connection master (ControlPersist, 60 seconds) can still sit in the group, so the step waits for it.
+    # Horizon's running jobs finish on the release they started on. The unit stops the master with SIGTERM, never sends SIGKILL and
+    # waits as long as the drain allows (GatewayHorizon::stopDirectives), so the stop returns when the unit's whole control group
+    # is empty. A unit without that policy would kill a running job, so the step refuses it. When the drain runs out, systemd
+    # times out twice and leaves the unit failed, so the step allows twice the drain and then checks that the unit is inactive.
   - name: Drain Horizon
     labels: {role: swamp}
     writes: true
@@ -55,29 +56,11 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        timeoutSec: ${{ inputs.intent.horizon_drain_seconds + 60 }}
+        timeoutSec: ${{ inputs.intent.horizon_drain_seconds + inputs.intent.horizon_drain_seconds + 60 }}
         argv:
-        - /usr/bin/timeout
-        - ${{ string(inputs.intent.horizon_drain_seconds + 30) }}
         - /bin/sh
-        - -c
-        - |
-          set -eu
-          unit=$1 drop=/run/systemd/system/$1.d
-          install -d -m 0755 "$drop"
-          # The drain policy never outlives this step, also when its timeout ends it.
-          trap 'rm -f "$drop/zz-orbit-horizon-drain.conf"; systemctl daemon-reload' EXIT
-          printf '[Service]\nKillMode=mixed\nKillSignal=SIGTERM\nSendSIGHUP=no\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' > "$drop/zz-orbit-horizon-drain.conf"
-          systemctl daemon-reload
-          systemctl stop "$unit"
-          waited=0
-          while grep -qx 'populated 1' "/sys/fs/cgroup/system.slice/$unit/cgroup.events" 2>/dev/null; do
-            [ "$waited" -lt "$2" ] || { echo "gateway.release_horizon_not_drained: $unit still has processes" >&2; exit 1; }
-            sleep 2; waited=$((waited + 2))
-          done
-        - sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-drain.sh
         - ${{ inputs.intent.horizon_unit }}
-        - ${{ string(inputs.intent.horizon_drain_seconds) }}
     # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
     # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
     # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
@@ -99,17 +82,7 @@ jobs:
         - /usr/bin/timeout
         - '150'
         - /bin/sh
-        - -c
-        - |
-          set -eu
-          release=/home/orbit/releases/$1
-          [ "$(cat "$release/REVISION" 2>/dev/null)" = "$2" ] || { echo "gateway.release_not_prepared: release $1 is not sealed" >&2; exit 1; }
-          generations=$(runuser -u orbit -- php8.5 "$release/apps/gateway/artisan" gateway:release:cleanup --no-interaction | jq -ce .generations) \
-            || { echo "gateway.release_cleanup_unreadable: the release cleanup generations cannot be read" >&2; exit 1; }
-          "$release/bin/gateway-rollback" "$1" >&2
-          [ -z "$3" ] || systemctl start "$3"
-          printf '%s\n' "$generations"
-        - sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch.sh
         - ${{ inputs.intent.id }}
         - ${{ inputs.intent.sha }}
         - ${{ inputs.intent.horizon_unit }}
@@ -160,12 +133,7 @@ jobs:
         - /usr/bin/timeout
         - '150'
         - /bin/sh
-        - -c
-        - |
-          "/home/orbit/releases/$1/bin/gateway-rollback" "$2" >&2 \
-            && echo "gateway.release_switched_back: the check failed; release $2 is current again" >&2
-          exit 1
-        - sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch-back.sh
         - ${{ inputs.intent.id }}
         - ${{ inputs.intent.previous }}
     # Always, also after a failed drain, switch or check: the drain stopped Horizon, so every end of the run starts it again, on
@@ -230,28 +198,7 @@ jobs:
         - /usr/bin/timeout
         - '300'
         - /bin/bash
-        - -c
-        - |
-          set -euo pipefail
-          base=/home/orbit keep=$1 current=$2 previous=$3
-          live=$(readlink "$base/orbit"); live=${live#releases/}
-          web=$(readlink "$base/web/current" || true); web=${web#releases/}
-          kept=$(ls -1t "$base"/releases/*/REVISION | head -n "$keep" | xargs -r -n1 dirname | xargs -r -n1 basename)
-          for dir in "$base"/releases/*/; do
-            id=$(basename "$dir")
-            case " $live $current $previous $web $(echo $kept) " in *" $id "*) continue ;; esac
-            # An unsealed directory is a stopped build; it goes after an hour.
-            [ -f "$dir/REVISION" ] || [ -n "$(find "$dir" -maxdepth 0 -mmin +60)" ] || continue
-            chmod -R u+w "$dir" && rm -rf "$dir"
-            rm -rf "$base/web/releases/$id"
-          done
-          git -C "$base/shared/orbit.git" worktree prune
-          # A web build whose release is gone, such as one a failed build left, goes too; the served one stays.
-          for dir in "$base"/web/releases/*/; do
-            id=$(basename "$dir")
-            [ -d "$base/releases/$id" ] || [ "$id" = "$web" ] || rm -rf "$dir"
-          done
-        - bash
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-prune.sh
         - ${{ string(inputs.intent.keep) }}
         - ${{ inputs.intent.id }}
         - ${{ inputs.intent.previous }}

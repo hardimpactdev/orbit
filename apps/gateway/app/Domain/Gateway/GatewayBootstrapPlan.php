@@ -54,6 +54,8 @@ final readonly class GatewayBootstrapPlan
             'php_packages' => PhpBuildInstaller::packageFiles($build),
             'environment' => self::environment((string) file_get_contents(base_path('.env.example')),
                 ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'APP_URL' => $url, 'ORBIT_HOME' => $home, 'ORBIT_GATEWAY_CHECKOUT' => $checkout,
+                    // Named, not implied: the ready copies and the start of a nested fleet read the database from the `.env`.
+                    'DB_DATABASE' => rtrim($home, '/').'/gateway.sqlite',
                     'ORBIT_GATEWAY_QUEUE_CONNECTION' => BootstrapGatewayAction::QueueConnection]),
         ];
     }

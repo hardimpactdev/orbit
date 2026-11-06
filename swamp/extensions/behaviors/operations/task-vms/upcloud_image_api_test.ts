@@ -4,37 +4,26 @@ import {
     createdServer,
     createRequest,
     madeTemplate,
-    phaseEnvelopes,
 } from "./upcloud_image_api.ts";
-import { recipePhases } from "./images.ts";
 
 const id = (n: number) =>
     `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const stamp = "20261031050000";
-const pin = "a".repeat(64);
 const identity = `sha256:${"b".repeat(64)}`;
 const hostKey =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG tvm-image";
-const boot = "878a384f-8b8a-4066-bd17-dcad8eac3e86";
 const intent = (pinned: string[] = []) => ({
     build_id: 9,
     stamp,
     name: `tvm-image-${stamp}`,
     identity,
-    agent_sha256: pin,
-    recipe: { identity, agent_sha256: pin, pi_sha256: null },
+    recipe: { tools: {} },
     upcloud: { zone: "nl-ams1", plan: "STARTER-2xCPU-4GB", disk_gb: 30 },
     host_key: hostKey,
     ssh: {
         identity_file: "/etc/orbit/swamp-role-worker/ssh-identity",
         public_key: "ssh-ed25519 AAAAworker",
     },
-    phase_keys: Object.fromEntries(recipePhases.map((phase) => [phase, {
-        identity,
-        profile: "base",
-        phase,
-        execution: "upcloud-9",
-    }])),
     pinned_templates: pinned,
 });
 const plans = (tier: string | null = "standard") =>
@@ -92,7 +81,7 @@ Deno.test("the smoke server keeps the template's account and omits a tier its pl
     assertEquals("uid" in JSON.parse(body.user_data.slice(14)).users[0], false);
 });
 
-Deno.test("an unknown plan, a foreign expansion or a changed recipe pin refuses before any request", () => {
+Deno.test("an unknown plan, a foreign expansion or a name that is not the stamp refuses before any request", () => {
     assertThrows(
         () =>
             createRequest(
@@ -126,7 +115,7 @@ Deno.test("an unknown plan, a foreign expansion or a changed recipe pin refuses 
     );
     assertThrows(() =>
         createRequest(
-            { ...intent(), recipe: { identity, agent_sha256: "c".repeat(64) } },
+            { ...intent(), name: "tvm-image-other" },
             "builder",
             id(1),
             plans(),
@@ -182,43 +171,6 @@ Deno.test("the create answer gives the server, its disk and its one public addre
             "task_vm.upcloud_invalid",
         );
     }
-});
-
-Deno.test("the boot id fixes each phase's start and inspect envelope under its admitted key", () => {
-    const reply = JSON.stringify({
-        ok: true,
-        data: { boot_id: boot, state: "missing" },
-    });
-    const shaped = phaseEnvelopes(intent(), reply);
-    assertEquals(shaped.boot_id, boot);
-    assertEquals(Object.keys(shaped.start), [...recipePhases]);
-    const start = JSON.parse(shaped.start.packages);
-    assertEquals(start.agent_sha256, pin);
-    assertEquals(start.deadline_ms, 120000);
-    assertEquals(start.input.key, {
-        identity,
-        profile: "base",
-        phase: "packages",
-        execution: "upcloud-9",
-    });
-    assertEquals(start.input.boot_id, boot);
-    assertEquals(start.input.recipe.identity, identity);
-    assertEquals(JSON.parse(shaped.inspect.pi).input, {
-        key: { identity, profile: "base", phase: "pi", execution: "upcloud-9" },
-        boot_id: boot,
-    });
-    assertThrows(
-        () =>
-            phaseEnvelopes(
-                intent(),
-                JSON.stringify({
-                    ok: false,
-                    error: { code: "agent.version_mismatch" },
-                }),
-            ),
-        Error,
-        "agent.version_mismatch",
-    );
 });
 
 Deno.test("templatize answers with this attempt's unverified template only", () => {

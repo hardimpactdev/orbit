@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Swamp;
 
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationStatus;
 use App\Jobs\Operations\ProjectSwampScheduledTerminal;
 use App\Jobs\Operations\ProjectSwampScheduleFire;
-use App\Jobs\Operations\ProjectSwampTerminal;
-use App\Models\Operation;
 use App\Models\Schedule;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
@@ -32,9 +29,6 @@ final readonly class SwampScheduledResults
 
     /** A run whose projection failed this many times is left alone: Swamp keeps only the latest versions of a result, so an old run cannot be read back. */
     private const int MaxAttempts = 2;
-
-    /** A finished run that still has an unfinished Operation is projected by the poll after this long, so the observer's own projection goes first. */
-    private const int OperationGraceSeconds = 45;
 
     /** The projectors are told about the declared workflows this often, not at every read. */
     private const int ActivateSeconds = 600;
@@ -87,51 +81,7 @@ final readonly class SwampScheduledResults
             }
             $this->project($job, $id);
         }
-        $this->operations($runs, $started);
         Cache::forever($this->key('cursor'), $started->toIso8601String());
-    }
-
-    /**
-     * The shared observer follows each Operation's root run and projects its end. It can lose one: a refused attach, a run
-     * that ends before the observer follows it, or a failed projection job. An Operation still unfinished a short time after its
-     * root run ended is projected here, from the same exact history read.
-     *
-     * @param  list<array<string,mixed>>  $runs
-     */
-    private function operations(array $runs, Carbon $now): void
-    {
-        $ended = [];
-        foreach ($runs as $run) {
-            $id = $run['runId'] ?? null;
-            $finished = $run['completedAt'] ?? null;
-            if (! is_string($id) || ! Str::isUuid($id) || isset($run['parentRun']) || ! is_string($finished) || ! is_string($run['status'] ?? null)) {
-                continue;
-            }
-            try {
-                if (Carbon::parse($finished)->diffInSeconds($now, true) >= self::OperationGraceSeconds) {
-                    $ended[$id] = $run['status'];
-                }
-            } catch (Throwable) {
-                continue;
-            }
-        }
-        if ($ended === []) {
-            return;
-        }
-        $open = Operation::query()->whereIn('state->swamp_run_id', array_keys($ended))
-            ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])->get();
-        foreach ($open as $operation) {
-            $run = $operation->state['swamp_run_id'] ?? null;
-            if (! is_string($run) || ! isset($ended[$run]) || ! Cache::add($this->key('operation:'.$operation->id.':'.$run), true, self::QueuedSeconds)) {
-                continue;
-            }
-            try {
-                Bus::dispatch(new ProjectSwampTerminal($operation->id, $run, $ended[$run]));
-            } catch (Throwable $exception) {
-                Cache::forget($this->key('operation:'.$operation->id.':'.$run));
-                $this->log->warning('The Operation projection is unavailable.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
-            }
-        }
     }
 
     /** Remember a run whose projector accepted its exact result; a repeated read then queues nothing. */

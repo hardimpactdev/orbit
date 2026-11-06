@@ -29,7 +29,12 @@
     owner: root
     group: root
     mode: "0644"
+# The snapshot service answers 503 now and then, and the error mode makes one failed index fatal: Ansible tries again.
 - name: Read the package indexes
   ansible.builtin.command: { argv: [apt-get, update] }
   environment: "{{ apt_environment }}"
+  register: apt_indexes
+  until: apt_indexes is succeeded
+  retries: 8
+  delay: 30
   changed_when: false

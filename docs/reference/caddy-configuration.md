@@ -3,7 +3,6 @@ title: "Caddy configuration"
 description: "How Orbit renders each Node's Caddyfile, submits native publication, and reports failures."
 covers:
   - apps/gateway/app/Infrastructure/Caddy/**
-  - apps/agent/src/commands/gateway_certificate.rs
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
   - apps/gateway/app/Domain/Nodes/CaddyRelease.php
@@ -160,10 +159,6 @@ The shared `caddy.install-certificate` and `caddy.remove-certificate` commands o
 Publication validates the key match before it changes the live pair, then swaps the complete directory atomically under the Caddy publication lock. The same lock covers reload and rollback. Matching bytes cause no reload, and an inactive Caddy service stays inactive. A failed reload restores the previous directory and reloads the prior certificate; failed recovery has its own refusal and retains the prior pair. Removal accepts only an owned pair or an absent directory, and runs after the Gateway withdraws its site.
 
 [Gateway releases](/reference/gateway-recovery#release-as-a-swamp-run) switch the code and web build without converging Caddy sites.
-
-Metrics convergence publishes the `metrics.orbit` certificate through `metrics.certificate`. The agent keeps each publication in its own version directory under `/etc/caddy/orbit-metrics-cert-versions`, and the `orbit-metrics-cert-current` link selects one. It holds the Caddy publication lock through the switch, the reload, and any rollback. It reads the Caddy service state as the shared certificate commands do, and refuses before a change when it cannot read that state.
-
-Matching bytes leave the current version unchanged. A failed reload selects the previous version again and removes the new one. A publish replaces a directory of its version that an interrupted publish left behind, but refuses to overwrite the current version. A restore selects only a directory inside the versions directory.
 
 Certificate input or staging failures report `gateway.certificate_install_failed`. An invalid certificate, key, or CA reports `gateway.certificate_invalid`. Publication failures report `gateway.certificate_publish_failed`; activation or recovery failures report `gateway.caddy_start_failed`, with the native refusal retained in the operation output.
 

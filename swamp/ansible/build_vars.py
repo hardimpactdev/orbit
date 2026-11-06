@@ -5,7 +5,7 @@ import shlex
 import sys
 from pathlib import Path
 
-TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build')
+TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build', 'task_vm.upcloud_image_build')
 
 
 def unsafe(value):
@@ -50,8 +50,58 @@ def build_task_vm(folder, kind):
     (folder / 'vars.yml').write_text(unsafe({'intent': intent, 'kind': kind}) + '\n')
 
 
+def build_node_add(folder):
+    """The inventory, known hosts and variables of a Linux Node enrollment. Every host key is pinned; nothing is scanned."""
+    folder = Path(folder)
+    intent = json.loads((folder / 'intent.json').read_text())
+    observed = {'host_key': os.environ['ORBIT_HOST_KEY'].strip(),
+                'bootstrap_authorized_keys': os.environ['ORBIT_BOOTSTRAP_AUTHORIZED_KEYS'].strip()}
+    network = intent['network']
+    control = intent['identity']['identity_file']
+    known = {f'{intent["address"]} {observed["host_key"]}'}
+    hosts = {'swamp': {'ansible_connection': 'local', 'ansible_python_interpreter': '{{ ansible_playbook_python }}'},
+             'node-managed': {'ansible_host': intent['address'], 'ansible_user': intent['managed_user'], 'ansible_port': 22,
+                         'ansible_ssh_private_key_file': control}}
+    groups = {'controller': ['swamp'], 'managed_linux': ['node-managed'], 'bootstrap': [], 'node': [],
+              'hubs': [], 'dns': []}
+
+    def remote(name, group, ssh, key, **extra):
+        target = ssh.get('target', ssh)
+        known.update(f'{target["host"] if target["port"] == 22 else "[" + target["host"] + "]:" + str(target["port"])} {pin}'
+                     for pin in target.get('host_keys', [observed['host_key']]))
+        hosts[name] = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
+                       'ansible_ssh_private_key_file': key, **extra}
+        groups[group].append(name)
+
+    bootstrap = intent['bootstrap']
+    # Enrollment connects as the bootstrap account: first with the bootstrap key, which authorizes the Swamp key, then with that.
+    remote('node-bootstrap', 'bootstrap', {**bootstrap, 'host_keys': [observed['host_key']]}, str(folder / 'bootstrap-identity'))
+    remote('node-control', 'node', {**bootstrap, 'host_keys': [observed['host_key']]}, control)
+    for index, hub in enumerate(network['hubs']):
+        remote(f'hub{index}', 'hubs', hub['ssh'], hub['ssh']['identity_file'], hub_index=index)
+    for index, dns in enumerate(intent['private_dns']):
+        # The DNS host is the Node being enrolled; the Gateway holds a placeholder for its host key until the run observes it.
+        remote(f'dns{index}', 'dns', {'target': {**dns['ssh']['target'], 'host_keys': [observed['host_key']]}},
+               dns['ssh']['identity_file'], dns_index=index)
+    secrets = {}
+    for path in folder.glob('secret-*'):
+        secrets[path.name.removeprefix('secret-')] = path.read_text()
+        path.unlink()
+    hub_files = [[file for file in network['hub_files'] if file['ssh']['target']['host'] == hub['ssh']['target']['host']]
+                 for hub in network['hubs']]
+    inventory = {'all': {'hosts': hosts, 'children': {name: {'hosts': {key: {} for key in members}} for name, members in groups.items()}}}
+    (folder / 'inventory.yml').write_text(json.dumps(inventory))
+    (folder / 'known_hosts').write_text(''.join(line + '\n' for line in sorted(known)))
+    # The role plans, CLI plan and DNS publications belong to child workflows; the playbook needs none of them.
+    kept = {key: value for key, value in intent.items() if key not in ('roles', 'cli', 'dns')}
+    (folder / 'vars.yml').write_text(unsafe({'intent': kept, 'kind': 'node.add', 'observed': observed,
+                                         'secrets': secrets, 'hub_files': hub_files}) + '\n')
+
+
 def build(folder, kind):
     os.umask(0o077)
+    if kind == 'node.add':
+        return build_node_add(folder)
     if kind in TASK_VM_KINDS:
         return build_task_vm(folder, kind)
     folder = Path(folder)

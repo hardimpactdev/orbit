@@ -28,35 +28,9 @@ Fixed **service entry points** run under their own Linux systemd units. `service
 
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
-`swamp.start-worker` and `swamp.stop-worker` remain in the pinned agent contract, but no Gateway operation calls them; task group work starts no worker on the VM. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell.
-
 The agent observes the Node. Swamp applies the network part after the agent footprint checks, and verifies a repaired tunnel with a handshake check.
 
-## Package-tool account boundary
-
-`package.prepare-account` creates the fixed Linux system account `orbit-swamp-package`. It creates `/var/lib/orbit-swamp-package/jobs` under root ownership with mode 0700. Its typed input names a worker account that must already exist and must not be root. Package and worker UIDs must differ. The package account has its own primary group, no supplementary groups, `/nonexistent` as home and `/usr/sbin/nologin` as shell. UID and GID come from the Node's system-account allocator; they are returned by the command, never fixed fleet-wide.
-
-An existing account must match that complete shape. Existing workspace parents must be root-owned directories with mode 0700; symlinks, writable ancestors and an unrelated account are refused. Preparation grants no sudo, socket, worker-cache, token, datastore or vault access. Worker convergence owns its own account and credentials; this primitive never changes them.
-
-### Isolated execution
-
-`package.session` accepts only admitted package manifests, a fixed package tool, relative working directory and literal arguments. The bounded binary input carries a JSON manifest map (64 MiB total, 512 files); it never expands the 4 MiB command envelope. It stages a private job under `/var/lib/orbit-swamp-package/jobs`, runs package code as `orbit-swamp-package`, and returns bounded manifest/lockfile output. Package code has a private root, PID and IPC namespaces, no capabilities or sudo, and no host home, worker credential/cache, Swamp datastore or credential mounts. `/proc` contains only that job's processes, so host `/proc/<serve-pid>/root` is unavailable. The trusted caller keeps GitHub credentials for git/gh; the package environment contains none.
-
-### Required enforcement
-
-Linux x86_64 requires systemd 257 or later (`PrivatePIDs`), `openat2`, cgroup-v2 network filters and a root-owned public toolchain at `/opt/orbit/swamp-package-runtime`. A trusted launch guard proves native seccomp syscall denial, PID 1, NoNewPrivileges and zero capabilities, then waits until the root supervisor verifies distinct PID/IPC/mount namespaces and attached ingress, egress and IPv4/IPv6 bind filters. Unix sockets, socketpair, io_uring and non-native syscall ABIs are refused. Missing enforcement refuses before package code starts. Package jobs use public DNS.
-
-Network filters deny loopback, private fleet endpoints, CGNAT (`100.64.0.0/10`) and every assigned host address, including global IPv6. Root-owned `network-deny.json` in the runtime directory names additional public or NAT addresses as `{"public_addresses":["80.47.233.206"]}`; missing or unsafe metadata refuses execution. `SocketBindDeny=any` blocks listeners, and the trusted guard proves that both IPv4 and IPv6 bind calls fail.
-
-npm uses distinct, empty, root-owned user and global configuration files inside the package root. No host npm configuration is mounted.
-
-Only the active PHP version’s `/etc/php/<version>/cli` configuration is copied into the private root, with selected INI links resolved; pool configuration stays outside the job. Unsupported platforms refuse; there is no execution as `orbit` fallback.
-
-Every package command belongs to the calling native host service's lifetime. Cancellation stops the entire package cgroup, including `setsid` descendants. Before staging, export or removal, the root launcher stops and verifies the previous package cgroup. File transfer uses directory descriptors and rejects symlinks, magic links and hard links. The dedicated UID has no supplementary groups or sudo rule. The managed `orbit` administrator still needs its existing root command authority; it never runs package code.
-
-The package-boundary tests run the delivered agent on systemd when invoked locally. It creates synthetic protected files, proves their host-side existence, and checks their denial in the package root and through the host process alias. It also checks actual sudo denial, missing prerequisites, the private-PID guard, timed cgroup termination and cancellation of detached descendants. Missing test prerequisites fail the job; this suite is not opt-in.
-
-Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. Task VM workers retain `swamp.start-worker` and `swamp.stop-worker`. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
+Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
 
 ## Where it runs
 
@@ -267,8 +241,6 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 Gateway releases and desired fleet state use the pinned `cli-v0.9128.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
-`instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
-
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. `orbit:bootstrap` records that identity from the Gateway's own code and runs no agent command; until it has, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
 ```text
@@ -286,10 +258,6 @@ Standard input starts with one JSON envelope line. Standard output carries one J
 Commands with binary input declare an `input_max_bytes` bound in the exported contract. The envelope's `stream_bytes` gives the exact number of raw bytes after its newline. The agent checks its pin before reading them. The supervised process receives them into an unlinked private file and checks the exact size and end of input before invoking the command. Short input, excess bytes, and failed reads refuse with `agent.binary_input_invalid`. Git packs, SQLite snapshots, and source archives remain binary; their bytes never enter JSON, logs, or diagnostics. Each domain command validates and consumes its own data.
 
 The Gateway sends the envelope line followed by the staged file through one process input stream. It keeps the file open and rewinds it after a version mismatch, without making another disk copy. The caller owns the private staging file and leaves its contents unchanged until the command finishes. Transfer archives stay in `storage/app/transfer-staging`, including during upload.
-
-Read commands can declare bounded binary output before their result. Each chunk starts with one JSON header line, `{"stream_bytes":N}`, followed by exactly `N` raw bytes. A chunk is at most 64 KiB, and the exported contract sets the total byte limit. The runner streams each chunk to a private sink, then requires the final typed result. It rejects partial chunks, excess bytes, and output after that result. A mismatch precedes all binary data; a partial transfer is never retried.
-
-A binary producer enforces its deadline and stops its children before returning the final result. The dispatcher cannot write a timeout result over an unfinished binary frame. If the consumer stops reading, the final write gets at most one second to drain before the agent exits with a transport failure.
 
 | Envelope field | Meaning |
 | --- | --- |
@@ -352,8 +320,6 @@ These errors can come from any command:
 
 A transport loss, a missing result, a malformed result, a timeout, and an undeclared error code are runner failures: `agent.runner_failed` with a `kind`. A lost result never proves that no change happened, so the runner sends a mutation once.
 
-Binary output also reports `output_limit` when it exceeds its declared or caller limit, and `output_write_failed` when its private sink cannot accept bytes. Binary contents never appear in the diagnostic result.
-
 ### Transports
 
 The runner picks the transport from the Node or build guest. Every adapter carries the same arguments, envelope, and result.
@@ -374,7 +340,7 @@ Only binary staging may change a Node outside a named command. First admission u
 
 The Gateway owns validation, authorization, records, operations, placement, and error mapping. Rust commands own Node execution and its tests. [Extensions](/reference/extensions#add-a-plug-in-point) own their Rust command modules, startup hooks, and compiled services; one agent binary dispatches them. There is no dynamic loader or second command runner.
 
-Tasks workspace scripts, their operation journal, and `gateway.task-workspace-owner` retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
+Tasks workspace scripts retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
 
 Operations own recovery. Mutations accept an `effect_key` as `op-<operation id>.<step key>`. Executor transports always supply it after contract authorization. After acquiring command target and resource locks, the shared command layer writes a private intent on the target before the effect and a durable receipt before returning. A repeated key with the same command, input and Operation nonce returns the saved result. A different command or input is refused with `agent.effect_conflict`. An interrupted intent has unknown outcome and is never executed again under that key.
 
@@ -394,14 +360,6 @@ Uncertain infrastructure refusals leave the unfinished intent. If a typed pre-st
 ### Future Mac session execution
 
 Command mode currently runs as the enrolled macOS account. A future LaunchAgent can receive the same envelope in that user's login session and show Touch ID or password confirmation for root work. That path is not built. It must authenticate the SSH-started process beyond its user ID, prevent project code from replacing the executable, and name the command in each prompt. The executing process must still check its own binary digest and declared privilege.
-
-### Live output
-
-A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner. Native Swamp development deployment uses its shared sudo runner as the configured Node account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
-
-While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
-
-SSH stays the repair path. When an agent cannot start or answer, `orbit node:converge` reaches the Node over SSH and installs the pin.
 
 ### Install on mismatch
 
@@ -457,6 +415,8 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
 
 When the `gateway` role moves, the Gateway's WireGuard address changes. Every agent then loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node. The Reverb address needs no converge, because each realtime response carries it.
 
+The Gateway signs no operation channel for an agent, because no agent publishes operation output.
+
 Every agent endpoint call requires an active WireGuard peer and a valid [agent secret](#agent-secret); there is no exemption for older agents or Nodes without a stored secret. Agent endpoints need no access grant and record no Activity.
 
 | Code | HTTP | Meaning |
@@ -509,7 +469,7 @@ Run this on the Gateway when the Gateway refuses the agent's reports because its
 php artisan orbit:node-agent-rekey <node-id> [--attempt=N]
 ```
 
-The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey and `node:converge` share one lock per Node. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/agent-rekey.mmd) shows the steps.
+The command admits the task under the key `node-agent-rekey-<node>-<attempt>` through `OperationIdempotency::under`, as any keyed admission. The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey and `node:converge` share one lock per Node. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/agent-rekey.mmd) shows the steps.
 
 At admission the Gateway makes 32 random bytes as 64 hex characters. It writes the key to one vault copy, `node-agent-rekey-<node>-<attempt>`, and records only its SHA-256 verifier in the task.
 
@@ -670,7 +630,7 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and The native convergence result records the drift. |
 
-During the freeze, Gateway releases keep the same agent pin. After the Swamp port, one final agent release will remove its action commands. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
+Commands that no Gateway or Swamp code calls leave the agent in small pull requests. The Gateway release, Doctor, image, Pi, sqlite, source transfer and source removal commands have left. The last action commands leave with their Swamp ports; then one release ships the observer. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). `orbit self-update` itself replaces only the CLI.
 
 The rollout leaves out the Gateway's own Node. Gateway release runs leave its agent unchanged. Its CLI comes from the current release's `apps/cli`.
 
@@ -709,7 +669,7 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 [Doctor](/cli/doctor/doctor) answers from the `host`, `units` and `ufw` facts and the agent's liveness. It starts no run and reaches no Node. It reports `node.agent_missing` for an agent the Gateway never heard from, and `node.agent_view_stale` for a silent one; while the agent is silent, the Node's other findings may be outdated. Provisioning owns agent binary, secret and configuration verification; Doctor does not duplicate it. The agent remains an observer.
 
-See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
+See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules. The agent has no Doctor command: every Doctor check reads a stored fact.
 
 ## Checks
 

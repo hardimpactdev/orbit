@@ -109,7 +109,8 @@ Deno.test("source result requires every ordered setup step before exposing the s
             "prepare",
             "directory",
             "control",
-            "clone_public",
+            "mint_clone",
+            "clone",
             "bundle",
             "prepare_remote",
             "copy_bundle",
@@ -120,6 +121,11 @@ Deno.test("source result requires every ordered setup step before exposing the s
             "inspect",
             "composer",
             "profile",
+            "mint_deps",
+            "deps_clear",
+            "deps_composer",
+            "deps_npm",
+            "deps_remove",
         ].map((name) => [name, { status: "succeeded", outputs: {} }]),
     );
     assertEquals(sourceResult(input, steps), {
@@ -138,6 +144,21 @@ Deno.test("source result requires every ordered setup step before exposing the s
     assertEquals(sourceResult(input, steps), {
         source,
     });
+    // The private-dependency steps are part of the receipt: a failed mint, write or removal fails the provision.
+    for (const name of ["mint_deps", "deps_clear", "deps_composer", "deps_npm", "deps_remove"]) {
+        const before = steps[name].status;
+        steps[name].status = "failed";
+        assertEquals(sourceResult(input, steps), { error_code: "tasks.provision_failed", failed_step: name });
+        steps[name].status = before;
+        // A skipped step has no entry: a Project without setup steps mints nothing.
+        const kept = steps[name];
+        delete steps[name];
+        assertEquals(sourceResult(input, steps), { source });
+        steps[name] = kept;
+    }
+    // The token revoke is not part of the receipt: the token expires within the hour, and a failed revoke must not fail a provision.
+    steps.deps_revoke = { status: "failed", outputs: {} };
+    assertEquals(sourceResult(input, steps), { source });
     const receipt = result(input, vm, {
         guest: { status: "succeeded" },
         ...steps,
@@ -154,7 +175,8 @@ Deno.test("proof provision requires private delivery before group readiness but 
                 "prepare",
                 "directory",
                 "control",
-                "clone_public",
+                "mint_clone",
+                "clone",
                 "bundle",
                 "prepare_remote",
                 "copy_bundle",
@@ -164,6 +186,11 @@ Deno.test("proof provision requires private delivery before group readiness but 
                 "identity",
                 "inspect",
                 "composer",
+                "mint_deps",
+                "deps_clear",
+                "deps_composer",
+                "deps_npm",
+                "deps_remove",
             ].map((name) => [name, { status: "succeeded", outputs: {} }]),
         ),
         profile: {
@@ -271,7 +298,7 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
             }],
         },
     });
-    const argv = (directory: string, name: string, command: string) => [
+    const argv = (directory: string, name: string, command: string, environment: string[] = []) => [
         "/bin/bash",
         "-c",
         'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>&1 && shift 2 && exec "$@"',
@@ -286,16 +313,17 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
         "COMPOSER_CACHE_DIR=/home/orbit/.cache/composer",
         "ORBIT_SEED_PATH=",
         "ORBIT_SEED_COMMIT=",
+        ...environment,
         "/bin/bash",
         "-lc",
         command,
     ];
     assertEquals(setupArgv(setup("composer install"), "/tmp/run"), [
-        argv("/tmp/run/output", "setup-0", "composer install"),
+        argv("/tmp/run/output", "setup-0", "composer install", ["COMPOSER_HOME=/home/orbit/.config/composer"]),
     ]);
     // The Gateway-owned step expands to the shared CI cache program, never a literal command.
     assertEquals(setupArgv(setup("@orbit/ci-caches"), "/tmp/run"), [
-        argv("/tmp/run/output", "setup-0", ciCacheImportProgram),
+        argv("/tmp/run/output", "setup-0", ciCacheImportProgram, ["COMPOSER_HOME=/home/orbit/.config/composer"]),
     ]);
     assertEquals(
         teardownArgv({

@@ -135,7 +135,7 @@ final readonly class AdmitSwampGatewayReleaseAction
             'manifest' => $manifest,
             'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
             'horizon_unit' => $horizon === null ? '' : new SystemdProcessRenderer()->unitName($horizon),
-            'horizon_drain_seconds' => GatewayHorizon::longestJobSeconds() + 30,
+            'horizon_drain_seconds' => GatewayHorizon::drainSeconds(),
             'keep' => max(2, Config::integer('orbit.gateway_releases.keep')),
             'ssh' => $this->ssh->forNode($gateway),
             'swamp_ssh' => $this->ssh->forNode(Node::query()->findOrFail(SwampNode::id())),

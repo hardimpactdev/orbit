@@ -1,0 +1,68 @@
+id: e94e53a3-608a-4f5a-a253-e80c7fce2df4
+name: task-github-cleanup
+description: Revoke the GitHub token of a pull request step when it was minted, and remove the private GitHub CLI configuration directory of the run. The revoke is best effort; the removal must succeed.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    # Which pull request step runs this cleanup; it names the behaviors and the configuration directory.
+    name:
+      type: string
+      enum: [pr-merge, pr-ready, pr-comment]
+    # The run id of the parent run, which made the configuration directory.
+    run_id:
+      type: string
+      pattern: ^[a-f0-9-]{36}$
+    write_token:
+      type: object
+      properties:
+        vault: {type: string, enum: [orbit-control-inputs]}
+        key: {type: string, pattern: '^pr-(merge|ready|comment)-write-[a-f0-9-]{36}$'}
+      required: [vault, key]
+      additionalProperties: false
+    # The status of the mint step of the parent; a token that was not minted has nothing to revoke.
+    mint_status:
+      type: string
+  required: [name, run_id, write_token, mint_status]
+  additionalProperties: false
+jobs:
+- name: cleanup
+  labels: {role: swamp}
+  steps:
+  - name: Revoke the token
+    labels: {role: swamp}
+    queueTimeout: 30
+    guard: ${{ inputs.mint_status != "succeeded" }}
+    writes: true
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("task-github-revoke-" + inputs.name).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.write_token.vault, inputs.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-" + inputs.name + "-" + inputs.run_id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+  - name: Remove CLI config
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - step: Revoke the token
+      condition:
+        type: or
+        conditions: [{type: completed}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("task-github-cleanup-" + inputs.name).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_GH_DIRECTORY"
+        env:
+          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-" + inputs.name + "-" + inputs.run_id + "-gh" }}

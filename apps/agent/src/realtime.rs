@@ -1,5 +1,5 @@
 //! The agent's connection to Reverb: discovery, the Pusher handshake, channel authorization, and bounded writes.
-//! The observer keeps one connection for its Node channels; a command opens its own to publish on one channel.
+//! The observer keeps one connection for its Node channels.
 
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;

@@ -31,8 +31,8 @@ class Run:
         self.shimmed, self.background = set(), []
         self.evidence.mkdir(parents=True, exist_ok=True)
 
-    def cli(self, args, form='json'):
-        result = self.fleet.cli(args, form=form)
+    def cli(self, args, form='json', node=None):
+        result = self.fleet.cli(args, form=form, **({'node': node} if node else {}))
         return self.keep(result, 'json' if form == 'json' else 'txt')
 
     def cli_tty(self, args, script):

@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use Closure;
 
 /** Request-scoped start identity, shared by the HTTP boundary and the operation store. */
 final class OperationIdempotency
@@ -15,6 +16,27 @@ final class OperationIdempotency
     public ?string $key = null;
 
     public ?string $fingerprint = null;
+
+    /**
+     * Runs the callback under another start identity and puts the previous one back, also when it throws. The HTTP boundary does
+     * it for the request header; an automatic caller does it to key its own admissions.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    public function under(string $kind, string $key, string $fingerprint, Closure $callback): mixed
+    {
+        $previous = [$this->kind, $this->key, $this->fingerprint];
+        [$this->kind, $this->key, $this->fingerprint] = [$kind, $key, $fingerprint];
+
+        try {
+            return $callback();
+        } finally {
+            [$this->kind, $this->key, $this->fingerprint] = $previous;
+        }
+    }
 
     /**
      * Returns the recorded intent without resubmitting its native workflow.

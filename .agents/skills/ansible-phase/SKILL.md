@@ -60,6 +60,12 @@ The `node.role_add` flow provides these shared parts:
 
 - A dedicated FPM pool is a fragment: its process-manager settings can live in the master’s local include. Validate a candidate full master with the candidate pool and the live local settings before replacing the pool. Stage candidates only on drift and remove them in an `always` block, so an unchanged phase reports zero changes.
 
+- Name a host differently from every group. Ansible warns when both share a name (`node` as host and as group), and a play then reads ambiguous.
+- `wg syncconf` leaves a random `ListenPort` on a peer that sets none. To report a change only when the peers differ, hash `wg showconf` without its `ListenPort` line before and after.
+- The Gateway holds a placeholder for the host key of a Node it is enrolling. Pin the key the run observed for that Node, never the placeholder in the intent.
+- Check a key or an identity before the first change that depends on it. A uniqueness assertion that runs after the interface is up comes too late.
+- Prove a flow in the production dispatch mode: `swamp serve` with one worker that carries the placement label. A local run without a server ignores placement and hides the per-step dispatch cost that Ansible phases remove.
+
 ## Prove it
 
 1. Use the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)) and admit the command once, so you have a real intent.

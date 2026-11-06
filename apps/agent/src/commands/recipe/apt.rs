@@ -122,13 +122,11 @@ pub fn package_command(
 }
 
 pub struct Indexes {
+    #[allow(dead_code)] // Holds the temporary directory until the indexes are dropped.
     work: WorkDir,
     pub options: Vec<String>,
 }
 impl Indexes {
-    pub fn path(&self) -> &Path {
-        &self.work.0
-    }
     pub fn temporary(host: &mut impl Host, source: &str) -> Result<Self, Failure> {
         let work = WorkDir::new()?;
         let source_path = work.0.join("ubuntu.sources");
@@ -349,13 +347,6 @@ pub struct Snapshots {
     retained_only: bool,
 }
 impl Snapshots {
-    /// Images prove origin from their selected snapshot, never another historical snapshot.
-    pub fn retained_only() -> Self {
-        Self {
-            lookups: BTreeMap::new(),
-            retained_only: true,
-        }
-    }
     pub fn options(&mut self, host: &mut impl Host, snapshot: &str) -> Result<&[String], Failure> {
         if self.retained_only {
             return Err(Failure::new(

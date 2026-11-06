@@ -31,7 +31,7 @@ major is not a separate update target.
 `exceptions` is schema 1 project input. `detect` reports elapsed exceptions and
 never changes the policy or the exception records.
 [Exception data](../../../docs/project-maintenance-exceptions.md) belongs to the
-private project extension.
+Project entry in `projects.json`.
 
 ## Checks
 

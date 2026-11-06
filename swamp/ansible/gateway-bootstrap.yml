@@ -28,3 +28,13 @@
   tasks:
     - name: Apply the Swamp control plane
       ansible.builtin.import_tasks: tasks/gateway-swamp.yml
+- name: Gateway Swamp tokens, renewed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - remint
+  tasks:
+    - name: Renew the Swamp tokens
+      ansible.builtin.import_tasks: tasks/gateway-swamp-remint.yml

@@ -13,8 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/swamp-proof-guest'))
 import terminal  # noqa: E402
 
-ORBIT = '/usr/local/bin/orbit-nested'
+# The candidate CLI of the checkout this runner runs from, with the profile `nested` that the fleet start adds on the outer VM.
+ORBIT = ['php', str(Path(__file__).resolve().parents[3] / 'apps/cli/orbit')]
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
+NODE_HOME = '/home/orbit'
+NODE_USER = '1000'   # the managed user `orbit` of a Node
 ROLES = ('gateway', 'app-dev', 'app-prod')
 SKIPPED_INTERFACES = ('lo', 'orbit', 'docker0')
 GUEST_PREFIX = 'nested-'
@@ -38,12 +41,17 @@ class Fleet:
         except subprocess.TimeoutExpired as error:
             return subprocess.CompletedProcess(['incus', 'exec', node], 124, error.stdout or '', 'timeout')
 
-    def cli(self, args, timeout=240, form='json'):
-        """Run the CLI without a terminal. The human form leaves out `--json`."""
+    def cli(self, args, timeout=240, form='json', node=None):
+        """Run the CLI without a terminal. The human form leaves out `--json`. With `node` the call is the `orbit` installed on that
+        Node, run as its managed user: the Gateway sees that Node as the caller."""
         started = time.time()
         words = [*args, '--json'] if form == 'json' else list(args)
-        completed = subprocess.run([ORBIT, *words], capture_output=True, text=True, timeout=timeout, env=CLI_ENV, cwd='/',
-                                   stdin=subprocess.DEVNULL)
+        if node:
+            command = ['incus', 'exec', self.nodes[node]['instance'], '--user', NODE_USER, '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--', 'orbit', *words]
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        else:
+            completed = subprocess.run([*ORBIT, *words], capture_output=True, text=True, timeout=timeout, env=CLI_ENV, cwd='/',
+                                       stdin=subprocess.DEVNULL)
         try:
             parsed = json.loads(completed.stdout) if form == 'json' else None
         except ValueError:
@@ -53,14 +61,14 @@ class Fleet:
 
     def cli_background(self, args):
         """Start the CLI in its own session and return a handle. The Gateway keeps the Operation when the handle stops the CLI."""
-        process = subprocess.Popen([ORBIT, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        process = subprocess.Popen([*ORBIT, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                    env=CLI_ENV, cwd='/', start_new_session=True)
         return Background(process)
 
     def cli_tty(self, args, script, timeout=120):
         """Run the CLI in a terminal and answer its prompts (see terminal.py)."""
         started = time.time()
-        done = terminal.drive([ORBIT, *args], script, {**CLI_ENV, 'TERM': 'xterm-256color'}, timeout)
+        done = terminal.drive([*ORBIT, *args], script, {**CLI_ENV, 'TERM': 'xterm-256color'}, timeout)
         return {'rc': done['rc'], 'json': None, 'stdout': done['text'], 'stderr': '', 'secs': round(time.time() - started, 2), 'args': ['orbit', *args]}
 
 

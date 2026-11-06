@@ -172,6 +172,8 @@ export function setupArgv(raw: unknown, root: string): string[][] {
                 workspace.checkout_path,
                 workspace.user,
                 item.command,
+                // Composer reads the private-dependency configuration of the setup steps from here, whatever XDG says.
+                [`COMPOSER_HOME=/home/${workspace.user}/.config/composer`],
             ),
         )
     );
@@ -276,12 +278,14 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     }
     // A guard skips `composer` when inspect found no regular composer.json; a
     // skipped step has no entry in `steps`.
-    const optional = new Set(["composer"]);
+    // The dependency steps are skipped with the setup steps when the profile failed or the Project has none.
+    const optional = new Set(["composer", "mint_deps", "deps_clear", "deps_composer", "deps_npm", "deps_remove"]);
     for (
         const name of [
             "prepare",
             "directory",
             "control",
+            "mint_clone",
             "clone",
             "bundle",
             "prepare_remote",
@@ -293,16 +297,18 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
             "inspect",
             "composer",
             "profile",
+            // The private-dependency configuration is written before the setup steps and removed after them.
+            "mint_deps",
+            "deps_clear",
+            "deps_composer",
+            "deps_npm",
+            "deps_remove",
             ...intent.workspace.setup.map((_, i) => `setup-${i}`),
         ]
     ) {
         if (
-            (name === "clone"
-                ? !["clone_private", "clone_public"].some((key) =>
-                    nativeOutputs(steps, key).step.status === "succeeded"
-                )
-                : nativeOutputs(steps, name).step.status !== "succeeded" &&
-                    !(optional.has(name) && !(name in steps)))
+            nativeOutputs(steps, name).step.status !== "succeeded" &&
+            !(optional.has(name) && !(name in steps))
         ) {
             return { error_code: "tasks.provision_failed", failed_step: name };
         }

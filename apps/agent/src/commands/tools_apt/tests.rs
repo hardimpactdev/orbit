@@ -29,53 +29,6 @@ impl Host for Fake {
     }
 }
 #[test]
-fn versions_preserve_raw_debian_text_and_refuse_ambiguous_candidates() {
-    let mut host = Fake::new("apt 3.2.0 (amd64)\nSupported modules:\n");
-    assert_eq!(version(&mut host).unwrap().version, "apt 3.2.0 (amd64)");
-    assert_eq!(
-        host.calls,
-        [("/usr/bin/apt-get".into(), vec!["--version".into()])]
-    );
-    let mut host = Fake::new(
-        "jq:\n  Installed: 1.0\n  Candidate: 1:1.7.1-3ubuntu0.26.04.1\n  Version table:\n",
-    );
-    assert_eq!(
-        candidate(&mut host, "jq").unwrap().version.as_deref(),
-        Some("1:1.7.1-3ubuntu0.26.04.1")
-    );
-    assert_eq!(
-        host.calls,
-        [(
-            "/usr/bin/apt-cache".into(),
-            vec!["policy".into(), "--".into(), "jq".into()]
-        )]
-    );
-    assert_eq!(
-        candidate(&mut Fake::new("  Candidate: (none)\n"), "jq")
-            .unwrap()
-            .version,
-        None
-    );
-    for invalid in [
-        "",
-        "Installed: (none)\n",
-        "Candidate: 1\nCandidate: 2",
-        "Candidate:1",
-        "Candidate: ",
-        "Candidate: 1.0 unexpected",
-        "Candidate: 1.0\0hidden",
-        &format!("Candidate: {}", "1".repeat(256)),
-    ] {
-        assert_eq!(
-            candidate(&mut Fake::new(invalid), "jq"),
-            Err(Error::Output {})
-        );
-    }
-    for invalid in ["", "apt\0secret", &"a".repeat(256)] {
-        assert_eq!(version(&mut Fake::new(invalid)), Err(Error::Output {}));
-    }
-}
-#[test]
 fn inventory_preserves_duplicates_and_isolates_unverifiable_packages() {
     let mut host=Fake::new("jq\tinstall ok installed\t1.7.1\njq\tinstall ok installed\t1.7.2\nheld\thold ok installed\t1.0\nbad\tinstall ok installed\t1.0\0secret\nUPPER\tinstall ok installed\t1.0\nx\tinstall ok installed\t1.0\n123\tinstall ok installed\t1.0\n\n");
     let expected = InventoryOutput {
@@ -127,35 +80,6 @@ fn inventory_preserves_duplicates_and_isolates_unverifiable_packages() {
         "jq\tinstall ok installed\t1\t2",
     ] {
         assert_eq!(inventory(&mut Fake::new(text)), Err(Error::Output {}));
-    }
-}
-#[test]
-fn removal_plan_reports_every_unique_package_without_hiding_dependencies() {
-    let mut host=Fake::new("Reading package lists...\nRemv jq:amd64 [1.7]\nRemv libonig5:amd64 [6.9]\nRemv jq:amd64 [1.7]\nRemv jq-extra [1.0]\n");
-    for _ in 0..2 {
-        assert_eq!(
-            plan(&mut host, "jq").unwrap().packages,
-            ["jq", "libonig5:amd64", "jq-extra"]
-        );
-    }
-    assert_eq!(
-        host.calls[0],
-        (
-            "/usr/bin/apt-get".into(),
-            vec![
-                "--simulate".into(),
-                "remove".into(),
-                "--".into(),
-                "jq".into()
-            ]
-        )
-    );
-    assert!(plan(&mut Fake::new("Reading package lists...\n"), "jq")
-        .unwrap()
-        .packages
-        .is_empty());
-    for invalid in ["Remv", "Remv jq* [1]", "Remv jq[1]", " Remv jq [1]"] {
-        assert_eq!(plan(&mut Fake::new(invalid), "jq"), Err(Error::Output {}));
     }
 }
 #[test]

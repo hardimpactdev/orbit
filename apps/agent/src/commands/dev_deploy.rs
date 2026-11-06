@@ -1,4 +1,4 @@
-//! `instance.*-development-*` deploys: a development default deploys in its own checkout, as the managed account.
+//! `instance.run-lifecycle-step`: a development default runs its setup or teardown step in its own checkout, as the managed account.
 //! A setup or teardown step holds an exclusive `flock` on the checkout directory while it runs, so the checkout and
 //! each step take the same lock without waiting. These replace the Bash of `DevelopmentCheckoutProgram`, check for
 //! check.
@@ -6,19 +6,15 @@
 use super::deploy_step::{
     run_program, Chunk, DeployStepError, Program, RunDeployStepOutput, StepCommand,
 };
-use super::git_read::GitRead;
-use super::source::{
-    canonical, exists, git, git_in, git_output, is_real_directory, is_symlink, origin_url,
-};
+use super::source::{canonical, is_symlink};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
     collections::BTreeMap,
-    ffi::OsStr,
     fs,
     io::Write,
-    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -46,65 +42,6 @@ fn failed(step: &str) -> DevDeployError {
     DevDeployError::StepFailed { step: step.into() }
 }
 
-fn full_commit(commit: &str) -> bool {
-    (commit.len() == 40 || commit.len() == 64)
-        && commit
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-/// The default Instance's checkout, its origin, and the Instance.
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Checkout {
-    pub home: PathBuf,
-    pub repository: String,
-    pub instance: u64,
-}
-
-impl Checkout {
-    /// A canonical repository root that this account owns, whose origin is the repository and that is no worktree.
-    fn guard(&self) -> Result<(), DevDeployError> {
-        let git_directory = self.home.join(".git");
-        check(
-            is_real_directory(&self.home) && canonical(&self.home),
-            "the checkout is a canonical directory",
-        )?;
-        check(
-            is_real_directory(&git_directory),
-            "the checkout has its own Git directory",
-        )?;
-        let euid = rustix::process::geteuid().as_raw();
-        check(
-            [&self.home, &git_directory]
-                .iter()
-                .all(|path| fs::metadata(path).is_ok_and(|metadata| metadata.uid() == euid)),
-            "this account owns the checkout",
-        )?;
-        check(
-            origin_url(&self.home).as_deref() == Some(self.repository.as_str()),
-            "the checkout's origin is the repository",
-        )?;
-        check(
-            git_output(&self.home, &["rev-parse", "--git-common-dir"], true).as_deref()
-                == Some(b".git".as_slice()),
-            "the checkout is no worktree",
-        )
-    }
-
-    /// The lifecycle lock, held until the value drops. Setup and teardown steps hold it while they run.
-    fn lock(&self) -> Result<fs::File, DevDeployError> {
-        lifecycle_lock(&self.home)
-    }
-
-    fn git(&self, arguments: &[&str]) -> Option<String> {
-        let mut all = vec!["--literal-pathspecs"];
-        all.extend(arguments);
-        git_output(&self.home, &all, true)
-            .map(|output| String::from_utf8_lossy(&output).into_owned())
-    }
-}
-
 /// The lifecycle lock of a checkout: an exclusive `flock` on the directory itself, so it leaves no file behind.
 fn lifecycle_lock(home: &Path) -> Result<fs::File, DevDeployError> {
     let directory = fs::File::open(home).map_err(|_| failed("open the checkout"))?;
@@ -126,247 +63,6 @@ fn lifecycle_lock(home: &Path) -> Result<fs::File, DevDeployError> {
     Ok(directory)
 }
 
-// ---- target ------------------------------------------------------------------------------------------------------
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TargetInput {
-    #[serde(flatten)]
-    pub checkout: Checkout,
-    pub branch: String,
-    /// A commit the branch must contain. Without one, the target is the branch's commit.
-    #[serde(default)]
-    pub commit: Option<String>,
-    /// The transports the fetch may use; every other one is refused.
-    pub protocols: Vec<String>,
-    #[serde(default)]
-    pub git_read: GitRead,
-}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Target {
-    pub commit: String,
-}
-
-/// Fetches the branch and names its commit, or the given commit once the fetched branch contains it.
-pub fn target(input: &TargetInput) -> Result<Target, DevDeployError> {
-    let checkout = &input.checkout;
-    checkout.guard()?;
-    let tracking = format!("refs/remotes/origin/{}", input.branch);
-    let refspec = format!("+refs/heads/{}:{tracking}", input.branch);
-    let options = input.git_read.fetch_options(&input.protocols);
-    let mut arguments: Vec<&OsStr> = options.iter().map(OsStr::new).collect();
-    arguments.extend(
-        ["--literal-pathspecs", "-C"]
-            .map(OsStr::new)
-            .into_iter()
-            .chain([checkout.home.as_os_str()])
-            .chain(
-                [
-                    "fetch",
-                    "--quiet",
-                    "--no-tags",
-                    "--",
-                    &checkout.repository,
-                    &refspec,
-                ]
-                .map(OsStr::new),
-            ),
-    );
-    check(
-        git(&arguments, &input.git_read, true).status.success(),
-        "the branch can be fetched",
-    )?;
-    let Some(commit) = &input.commit else {
-        let commit = checkout
-            .git(&["rev-parse", "--verify", &format!("{tracking}^{{commit}}")])
-            .ok_or_else(|| failed("read the branch"))?;
-        check(full_commit(&commit), "the branch names a commit")?;
-        return Ok(Target { commit });
-    };
-    check(full_commit(commit), "the commit is a full hash")?;
-    if !super::source::first_parent_contains(|args| checkout.git(args), &tracking, commit) {
-        return Err(DevDeployError::NotOnBranch {});
-    }
-    Ok(Target {
-        commit: commit.clone(),
-    })
-}
-
-pub struct ResolveTarget;
-
-impl Command for ResolveTarget {
-    const NAME: &'static str = "instance.resolve-development-target";
-    const SUMMARY: &'static str =
-        "Fetch a development default's branch and name the commit a deploy checks out.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = TargetInput;
-    type Output = Target;
-    type Error = DevDeployError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn target(input: &TargetInput) -> Option<String> {
-        Some(format!("source:{}", input.checkout.home.display()))
-    }
-
-    fn run(input: TargetInput, _: &Context) -> Result<Target, DevDeployError> {
-        target(&input)
-    }
-}
-
-// ---- checkout ----------------------------------------------------------------------------------------------------
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CheckoutInput {
-    #[serde(flatten)]
-    pub checkout: Checkout,
-    pub branch: String,
-    pub commit: String,
-}
-
-/// Checkout leaves untracked and ignored files in a directory that the commit removes, such as the dependencies of a
-/// removed package. Removes them first, so a later copy of the checkout as a seed finds only the commit's directories.
-fn drop_removed_directories(checkout: &Checkout, commit: &str) -> Result<(), DevDeployError> {
-    let listed = git_in(
-        &checkout.home,
-        &["ls-files", "-z", "--others", "--directory"],
-        true,
-    );
-    check(listed.status.success(), "the untracked files can be listed")?;
-    for entry in listed
-        .stdout
-        .split(|byte| *byte == 0)
-        .filter(|entry| !entry.is_empty())
-    {
-        let entry = String::from_utf8_lossy(entry);
-        let entry = entry.trim_end_matches('/');
-        let Some((parent, _)) = entry.rsplit_once('/') else {
-            continue;
-        };
-        let tree = checkout
-            .git(&["ls-tree", "-d", commit, "--", parent])
-            .ok_or_else(|| failed("read the commit's tree"))?;
-        if !tree.is_empty() {
-            continue;
-        }
-        let path = checkout.home.join(entry);
-        if is_real_directory(&path) {
-            // `chmod -R u+w`: a read-only directory, such as one a package manager wrote, can be emptied.
-            for directory in walkdir(&path) {
-                if let Ok(metadata) = fs::symlink_metadata(&directory) {
-                    let _ = fs::set_permissions(
-                        &directory,
-                        fs::Permissions::from_mode(metadata.mode() | 0o200),
-                    );
-                }
-            }
-            fs::remove_dir_all(&path)
-                .map_err(|_| failed("remove a directory the commit removed"))?;
-        } else if exists(&path) {
-            fs::remove_file(&path).map_err(|_| failed("remove a file the commit removed"))?;
-        }
-    }
-    Ok(())
-}
-
-/// The directories below a directory, links not followed.
-fn walkdir(root: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(path) = pending.pop() {
-        if is_real_directory(&path) {
-            if let Ok(entries) = fs::read_dir(&path) {
-                pending.extend(entries.flatten().map(|entry| entry.path()));
-            }
-            found.push(path);
-        }
-    }
-    found
-}
-
-/// Checks out the commit on the branch in place. It refuses a checkout with tracked changes, and a local branch with
-/// commits that the target does not contain, which `checkout -B` would drop.
-pub fn checkout(input: &CheckoutInput) -> Result<Target, DevDeployError> {
-    let checkout = &input.checkout;
-    checkout.guard()?;
-    check(full_commit(&input.commit), "the commit is a full hash")?;
-    let _lock = checkout.lock()?;
-    let changes = checkout
-        .git(&["status", "--porcelain", "--untracked-files=no"])
-        .ok_or_else(|| failed("read the checkout's status"))?;
-    if !changes.is_empty() {
-        return Err(DevDeployError::Dirty {
-            changes: changes.lines().take(20).collect::<Vec<_>>().join("\n"),
-        });
-    }
-    let local = format!("refs/heads/{}", input.branch);
-    if checkout
-        .git(&[
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            &format!("{local}^{{commit}}"),
-        ])
-        .is_some()
-        && checkout
-            .git(&["merge-base", "--is-ancestor", &local, &input.commit])
-            .is_none()
-    {
-        return Err(DevDeployError::Diverged {});
-    }
-    drop_removed_directories(checkout, &input.commit)?;
-    checkout
-        .git(&[
-            "checkout",
-            "--quiet",
-            "--no-track",
-            "-B",
-            &input.branch,
-            &input.commit,
-        ])
-        .ok_or_else(|| failed("check out the commit"))?;
-    check(
-        checkout
-            .git(&["symbolic-ref", "--short", "HEAD"])
-            .as_deref()
-            == Some(input.branch.as_str()),
-        "the checkout is on the branch",
-    )?;
-    let commit = checkout
-        .git(&["rev-parse", "--verify", "HEAD"])
-        .ok_or_else(|| failed("read the commit"))?;
-    Ok(Target { commit })
-}
-
-pub struct CheckoutDefault;
-
-impl Command for CheckoutDefault {
-    const NAME: &'static str = "instance.checkout-development-default";
-    const SUMMARY: &'static str = "Check out a commit on a development default's branch in place.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = CheckoutInput;
-    type Output = Target;
-    type Error = DevDeployError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn target(input: &CheckoutInput) -> Option<String> {
-        Some(format!("source:{}", input.checkout.home.display()))
-    }
-
-    fn run(input: CheckoutInput, _: &Context) -> Result<Target, DevDeployError> {
-        checkout(&input)
-    }
-}
-
 // ---- a setup or teardown step ------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -375,6 +71,8 @@ pub struct LifecycleInput {
     /// Any Instance checkout of this account, by its canonical path.
     pub checkout: PathBuf,
     pub program: StepProgram,
+    // Accepted for the pinned Gateway input; the runner no longer names the step.
+    #[allow(dead_code)]
     pub step: String,
     pub timeout_seconds: u64,
     /// Variables the step sees beside the account's own, such as `VP_HOME` and the seed.
@@ -443,26 +141,22 @@ fn ci_caches(input: &LifecycleInput) -> Result<RunDeployStepOutput, DeployStepEr
             "CI caches cold: no recorded code baseline.\n",
         ));
     };
-    run_program(
-        &Program {
-            user: None,
-            directory: &input.checkout,
-            command: StepCommand::Fixed {
-                executable: "/usr/bin/python3",
-                arguments: &[
-                    "bin/ci-cache-ref".as_ref(),
-                    "import".as_ref(),
-                    "--commit".as_ref(),
-                    commit.as_ref(),
-                ],
-            },
-            step: &input.step,
-            secrets: &[],
-            environment: &input.environment,
-            timeout: Duration::from_secs(input.timeout_seconds),
+    run_program(&Program {
+        user: None,
+        directory: &input.checkout,
+        command: StepCommand::Fixed {
+            executable: "/usr/bin/python3",
+            arguments: &[
+                "bin/ci-cache-ref".as_ref(),
+                "import".as_ref(),
+                "--commit".as_ref(),
+                commit.as_ref(),
+            ],
         },
-        None,
-    )
+        secrets: &[],
+        environment: &input.environment,
+        timeout: Duration::from_secs(input.timeout_seconds),
+    })
 }
 
 /// Runs one Project setup or teardown step with the lifecycle lock held and not inherited. Another step in the checkout refuses it at once with `instance.lifecycle_busy`.
@@ -483,18 +177,14 @@ pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, Dev
         .open(&file)
         .and_then(|mut handle| handle.write_all(script.as_bytes()))
         .map_err(|_| failed("write the step"))?;
-    let result = run_program(
-        &Program {
-            user: None,
-            directory: &input.checkout,
-            command: StepCommand::Script(&file),
-            step: &input.step,
-            secrets: &[],
-            environment: &input.environment,
-            timeout: Duration::from_secs(input.timeout_seconds),
-        },
-        None,
-    );
+    let result = run_program(&Program {
+        user: None,
+        directory: &input.checkout,
+        command: StepCommand::Script(&file),
+        secrets: &[],
+        environment: &input.environment,
+        timeout: Duration::from_secs(input.timeout_seconds),
+    });
     let _ = fs::remove_file(&file);
     result.map_err(lifecycle_error)
 }

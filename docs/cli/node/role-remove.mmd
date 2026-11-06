@@ -32,7 +32,7 @@ sequenceDiagram
   %%> - one add, converge or remove Operation per Node (`operation.target_busy`); a second removal after the first finished finds no such role (`http.404`)
   %%> Result:
   %%> - the assignment is recorded as `removing`, and a task is recorded with the full intent
-  GW->>SW: Start run, full intent<br/>operation-node-role-remove
+  GW->>SW: Start run, full intent<br/>node-role-remove
   GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
   %%> - the task ID, at once

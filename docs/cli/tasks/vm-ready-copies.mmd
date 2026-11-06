@@ -31,13 +31,13 @@ sequenceDiagram
   %%> - the key belongs to the VM that made the copies; a task VM that starts them makes its own (stage 2), so the old key works nowhere else
   SW->>VM: Delete and scan, trim<br/>incus exec · grep, fstrim
   %%> What it does:
-  %%> - deletes the proof Swamp Club key from the nested Gateway, then searches every file of all three guests for it by value, with the key on standard input
+  %%> - deletes the proof Swamp Club key (`/home/orbit/.config/swamp/api-key`) from the nested Gateway, then searches every file of all three guests for it by value, with the key on standard input
   %%> - runs `fstrim` so the freed blocks of the deleted key are discarded from the disk image that every task VM clones
   %%> Why:
   %%> - the seed is cloned into every task VM of the host; a key in it would reach all of them
   SW->>VM: Order the state mounts<br/>_netdev on the units
   %%> What it does:
-  %%> - sets `_netdev` on the three bind-mount units of the state in the Gateway and app-dev guests, then reloads systemd
+  %%> - sets `_netdev` on the NFS mount of the checkout and on the three bind-mount units of the state in the Gateway and app-dev guests, then reloads systemd; it edits the unit files only, never the links in `multi-user.target.wants`
   %%> Why:
   %%> - as local mounts they close an ordering cycle with the NFS mount of the checkout at boot (`local-fs.target`, the NFS mount, `network.target`, `ufw.service`), and systemd drops them; as network mounts they come up after the NFS mount, so the apply step need not start them by name
   SW->>VM: Stop the nested VMs<br/>incus stop
@@ -63,7 +63,7 @@ sequenceDiagram
   %%> - runs after success, failure and cancellation
   SW->>SW: Check the ready copies<br/>assert
   %%> End check:
-  %%> - a native `assert`: every state unit of a stored copy has `_netdev`, no operator key in the record, all three copies stateful and without a NIC
+  %%> - a native `assert`: the NFS mount and every state unit of a stored copy have `_netdev`, no operator key in the record, all three copies stateful and without a NIC
   alt every step passes
     SW-->>GW: Run succeeded<br/>ready copies saved
     %%> Result:

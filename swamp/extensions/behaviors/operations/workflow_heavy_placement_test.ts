@@ -76,8 +76,6 @@ Deno.test("active coordinators select authoritative workers", async () => {
     // maintenance-workers was deleted; the remaining coordinators still own placement.
     for (
         const name of [
-            "group-supervise",
-            "group-run",
             "operation-dependency-merge",
         ]
     ) {

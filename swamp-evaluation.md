@@ -100,12 +100,6 @@ The official SSH control socket adds a random suffix below `/tmp/swamp-ssh/<name
 Production commands also need an explicit working directory when sudo changes from the SSH account to a private app account. `sudo -H` changes HOME but leaves the old cwd; GNU find can fail restoring that inaccessible directory. Public argv now uses `env -C <app-home>` before source and runtime preparation.
 Role convergence uses official apply results to avoid restarting matching Reverb inputs. Docker check exposes public compliance while its observed state remains in the execution vault. Prometheus config needs an in-place copy before SIGHUP because replacing a bind-mounted file leaves the running container on the old inode. Could the file resource offer an in-place mode for such mounts?
 
-WireGuard enrollment keeps private keys in Node files. The official exec and debug_exec resources redirect `wg genkey` output and `wg pubkey` input there, since those commands lack file options and SSH exec accepts only literal stdin. Could a WireGuard key resource, or remote stdin/stdout file options on SSH exec, remove these two shell leaves without bringing private keys into run data?
-
-## Node enrollment hub key composition
-
-The pinned file resource accepts content from the worker; it cannot compose a remote private-key file into that content. Node enrollment writes the public tunnel configuration and a mode-0600 sync file through `file`, then uses one `sed` argv to write its private header from the existing key file and one `dd` argv to append the public peers on stdin. `wg syncconf` receives the complete configuration in one call. No private key enters Swamp data or logs. A public-key observation and native assertion verify that applying peers preserved the hub identity. The same composition preserves the joining Node key; its end check requires a real tunnel handshake. Could file support protected remote-file content composition?
-
 ## Caddy publication
 
 The pinned file behavior separates apply and check; check records drift without failing, so a native assertion enforces compliance after reload. A separate pinned SSH connection check rejects the request's wrong host key before cfgmgmt uses the enrolled Node's known_hosts entry. Could file accept the admitted host-key list directly? Could check optionally fail on drift while retaining its state? Validation and reload remain separate bounded SSH argvs. No wrapper joins these operations.

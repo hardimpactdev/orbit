@@ -5,16 +5,16 @@ covers:
   - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/{swamp,task_pull_requests}.php}"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
-  - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-pr-comment,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
+  - "apps/gateway/app/Console/Commands/{CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-pr-comment,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks}.php"
 ---
 
 # Tasks
 
-Swamp is the only executor of task groups. Its groups driver and per-group runs choose provision, agent turns, checks, publication, review parking and cleanup. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
+Swamp is the only executor of task groups; it runs provision, agent turns, checks, publication, review parking and cleanup as keyed operations. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
 
 Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
 
@@ -28,13 +28,12 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction and model-key revocation finish before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
 
-Project removal also requires every associated workspace lease to be `released` or `cancelled`, a withdrawn waiter. A `held`, `queued`, or unknown lease status returns HTTP 409 and `project.task_workspace_lease_active`. The message names the Project, lease id, kind, and status. All records, including lease operations, remain unchanged. A missing Instance does not prove release. Project deletion does not release leases and removes only released and cancelled leases and their operations.
 
 ## Extension switch and status
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), `merges`, and `workspace_leases`. `merges` lists the stored open review-and-merge records. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), and `merges`. `merges` lists the stored open review-and-merge records. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -61,7 +60,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `implementer_model`, `reviewer_model` | task | The models used for the task's threads |
 | `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#incoming-pull-requests) Orbit reviews |
 | `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
-| `merge_status`, `merge_reason`, `merged_sha` | task | The [merge gate](#merge-on-green) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
+| `merge_status`, `merge_reason`, `merged_sha` | task | The [merge step](#merge-step) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
 | `type` | subtask | `implementation`, or `final_review` for a [final review](#final-review) |
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
@@ -90,9 +89,9 @@ Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-
 
 `POST /api/v1/task-groups/{group}/park`, CLI `tasks:park GROUP --idempotency-key=KEY`, and MCP `tasks-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
 
-Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and no other unfinished operation or workspace owner. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
+Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and and no other unfinished operation. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
 
-A subtask that is still `todo` does not block the park: a prep run opens the spec PR and leaves its subtask `todo`, because the code follows. Such a subtask counts as idle only while no turn, check or prep run of the group is running and no workspace lease is held. A subtask that runs or waits for review refuses the park. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
+A subtask that is still `todo` does not block the park: a prep run opens the spec PR and leaves its subtask `todo`, because the code follows. Such a subtask counts as idle only while no turn, check or prep run of the group is running. A subtask that runs or waits for review refuses the park. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
 
 The operation checks eligibility under the group execution lock. Swamp stops the existing VM through the canonical provider child and checks its stopped state. The Gateway reads native provider completion and retains the IDs captured at admission; no shell prints them again. It checks eligibility again after the stop and moves the group to `waiting_for_review` only if that check still passes. A child or assistance change during shutdown refuses the operation and preserves the previous group status. It preserves the checkout and disk. It neither allocates another VM nor merges the PR.
 
@@ -132,11 +131,17 @@ When the workspace has a Route or Process definitions, three steps run between s
 
 The group lifecycle after provision stays in separate keyed operations (`tasks.check`, `tasks.turn`, `tasks.publish`, `tasks.park` and `tasks.cancel`), each with its own receipt and time budget.
 
-Separate steps on Node 209 clone source and copy a Git bundle through official SSH. Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Two reads take the checkout's HEAD and branch, and a `stat` of `composer.json` and the entry point. When the profile needs a regular `composer.json`, one official `@swamp/ssh copy` downloads it into the private worker directory. TypeScript on Node 209 turns them into the source profile; it reads and deletes the downloaded file.
+A step on Node 209 first asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
 
-"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)). Such a Gateway records finished runs through its own queue, which its `gateway` role converges with the scheduler and Horizon units.
+Separate steps then clone the source on Node 209, with full history, and copy a Git bundle through official SSH. The VM never holds the credential: `origin` is the plain repository URL, and `.git/config`, a credential helper and the environment files hold none.
 
-Each captured Project setup command then runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
+Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Two reads take the checkout's HEAD and branch, and a `stat` of `composer.json` and the entry point. When the profile needs a regular `composer.json`, one official `@swamp/ssh copy` downloads it into the private worker directory. TypeScript on Node 209 turns them into the source profile; it reads and deletes the downloaded file.
+
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)). Such a Gateway records finished runs through its own queue: its bootstrap starts the scheduler and Horizon units, and its `gateway` role keeps them.
+
+Before the first setup command, a step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer and npm configuration of the task account from it. After the last setup command, on success or failure, a step removes both files.
+
+Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
 
 Full capacity, or no usable promoted image, returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available. While a host builds the current recipe, or after its build failed, the host's last promoted image serves a new VM when it is at most one day old, unless the group set `current_recipe`. See [Image fallback](/reference/compute-drivers#image-fallback).
 
@@ -158,7 +163,7 @@ One official `@swamp/ssh copy` downloads the files into a private worker directo
 
 One module holds the rule: `swamp/extensions/behaviors/_lib/public_output.ts`. It reads at most the last 1 MiB of a file and replaces invalid UTF-8 before matching. It replaces known values of eight characters or more in one pass. Then it replaces credential-shaped text: PEM blocks, URL user info, `Authorization` headers, `Bearer` tokens, GitHub tokens, 64-character hex credentials and the values of secret-named assignments.
 
-It redacts the kept tail again. It drops a first line that may start mid-value and any line that still holds an 8-byte piece of a known value. It keeps only whole lines. Task commands receive no credentials, so they pass no known values today.
+It redacts the kept tail again. It drops a first line that may start mid-value and any line that still holds an 8-byte piece of a known value. It keeps only whole lines. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
 
 Repository files follow the same rule. Provision downloads `composer.json` instead of reading it through an exec. The profile step keeps only its facts, the PHP version and whether the source is Laravel, and deletes the file.
 
@@ -186,7 +191,7 @@ A passing handoff creates its candidate commit in the VM with `git add --all` an
 
 For Projects with a handoff check name, separate export, copy, import and push steps publish that exact candidate without force to `task-{group}-handoff`, as [publish](#publish-an-external-group) does. After the candidate is ready, a placed mint step posts to the existing scoped Gateway token primitive with `curl`.
 
-The Gateway captures no token at check admission. It mints the existing repository credentials and writes them through the shared execution-copy helper, with the push token also written in Git extra-header form; the response contains vault descriptors only. The push reads that header whole from the vault, as publish does, so the token never appears in a command. Only trusted Git/GitHub actions on 209 resolve those vault copies.
+The Gateway captures no token at check admission. It mints the existing repository credentials and writes them through the shared execution-copy helper, with the push token also written in Git extra-header form; the response contains vault descriptors only. The push reads that header whole from the vault, as publish does, so the token never appears in a command. Only trusted Git/GitHub actions on 209 resolve those vault copies. The same Gateway class, `TaskGitHubTokens`, mints these credentials as it mints the clone, publish, pull request and dependency merge tokens: a `tasks.check` handoff asks with no purpose.
 
 The VM and repository commands receive none. The push token is revoked after use. The Checks token is revoked when CI settles or admission fails, with `gh api --method DELETE installation/token`. No pull request opens on the handoff branch.
 
@@ -232,7 +237,7 @@ Cancellation uses native Swamp cancel and official SSH session teardown. It does
 
 `tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
-The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a workspace lease or cross-step lock.
+The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a cross-step lock.
 
 Pi HTTP actions run as bounded native curl commands on the Swamp worker. curl reads the Pi token from its own environment, never from argv, and redirects fail. The worker needs only `sh`, `curl` and `awk`: `awk` keeps the first terminal event of the turn in the run's private worker directory, and a TypeScript step reads only its state and finite nonnegative usage.
 
@@ -260,7 +265,9 @@ Direct turn cancellation uses native Swamp cancellation and official SSH session
 
 `tasks:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
-The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work before minting. It mints the existing GitHub installation token for that repository and supplies two small execution copies: the token for GitHub API calls and its Git authorization header. Intent contains only their vault descriptors.
+The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
+
+A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and writes the two values. The reply holds vault descriptors only.
 
 A worker on Node 209 uses official SSH to verify HEAD and the whole working tree against the checked candidate. Each VM read and command is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Four reads take `git read-tree HEAD`, `git add --all` and `git write-tree` on a per-run index file, and `git rev-parse HEAD`. A moved candidate fails with `tasks.head_moved` before a push.
 
@@ -272,7 +279,7 @@ Swamp pushes the exact candidate to `task-{id}` without force. Git pushes nothin
 
 Without `pull_request`, publication only pushes. With it, a `gh api` step looks for an open pull request from the admitted branch. TypeScript on 209 plans one update of its title and body when found, or one creation against the admitted default branch, and a second `gh api` step sends it from a private JSON input file. A lost reply fails the operation.
 
-After cleanup removes scratch, start a fresh command. It obtains a fresh token, pushes again and repeats the PR lookup before another mutation. Native resume cannot recreate scratch from a completed step, and it cannot reopen a terminal Operation.
+After cleanup removes scratch, start a fresh command. Its push step mints a fresh token, pushes again and repeats the PR lookup before another mutation. Native resume cannot recreate scratch from a completed step, and it cannot reopen a terminal Operation.
 
 Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields without changing board status or settle metrics. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
 
@@ -293,7 +300,9 @@ The group is an external `todo` group, made with `tasks:create`, of a Project th
 - the title and body of the draft pull request;
 - the repository, the base and the branch `task-{group}`.
 
-It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints the GitHub installation token for the pull request. The token and its Git authorization header travel as vault key names, never as values. Admission adds no child Operation. No step of the run calls the Gateway.
+It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints no GitHub token. A prep run takes longer than the hour that an installation token lives, so admission only names the vault keys of the push token and its Git authorization header. The publish step asks the Gateway for the token with the run id of the prep run, right before the push. Admission adds no child Operation.
+
+Two steps of the run mint a GitHub credential at the Gateway: the clone step of the provision child and the publish step.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 
@@ -315,13 +324,47 @@ The child workflows gain only inputs that the parent needs. `operation-task-turn
 
 `operation-task-publish` accepts a `null` check, because no check recorded the commit. The Gateway cannot know these values at admission, so they pass from step to step in the run. The `after` snapshot that a turn reports becomes the next reviewer's candidate and the publish commit and tree.
 
-The author commits the three files as one commit. A draft that leaves HEAD where it was ends the run with `tasks.prep_not_committed` before any review. The review runs for at most three rounds. A reviewer receipt with outcome `approved` ends the loop. With `changes_requested`, the reviewer's summary goes into the prompt of a fix turn on the author thread, and a new review follows.
+The author checks the draft with the flow check, the docs build and lint, and `runner.py plan --file` on the cases file, which must exit 0.
+
+The author also runs the runner unit tests; a failure caused by the content of the cases file goes into the summary as a blocker for the owner, and no test is changed. The author keeps every case that runs on the default branch, and the reviewer checks that none moved to `uncovered`. The reference text of a run is input, not truth: it is a draft sibling without approval, and a defect in it is not a precedent. The author commits the three files as one commit.
+
+The run also checks the plan itself. A step `Plan the cases` runs the plan in the task VM as one `@swamp/ssh exec` with literal arguments, after the draft and after each fix. The Gateway captured the path of the cases file at admission. The runner exits 3 on a refusal and the step accepts that exit.
+
+The refusal becomes the first finding of the round: the review cannot approve past it, and the fix turn gets it.
+
+Any other exit fails the run with `tasks.prep_plan_failed`. The run has no handoff check, so a command deliverable on the subtask would not be verified. A draft that leaves HEAD where it was ends the run with `tasks.prep_not_committed` before any review. The review runs for at most three rounds. A reviewer receipt with outcome `approved` ends the loop. With `changes_requested`, the reviewer's summary goes into the prompt of a fix turn on the author thread, and a new review follows.
 
 Each review starts a new thread on the reviewer model of the group, which differs from the author's, at high effort. It also reads the findings of the one before, so it checks them instead of finding them again. A reviewer reports at most five findings and approves with notes when only matters of taste remain.
 
 A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`, because the next review would restore a commit that holds none of the fix. A finding left after the last round ends the run with `tasks.prep_review_unresolved`. Nothing is published, the result keeps the findings of the last review, and the VM stays for the orchestrator, who cancels the group when done.
 
-The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
+The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. It also marks the spec subtask completed, so [`tasks:park`](#park-an-external-group-for-review) can stop the VM while the spec waits for review. A failed run leaves the subtask open. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
+
+#### Apply the corrections
+
+`tasks:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `tasks-prep-fix` is the caller.
+
+The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
+
+- the resume of the VM;
+- the author turn, with the corrections as its prompt;
+- two new review threads and the fix turn;
+- the path of the cases file;
+- the vault key names of the Pi token and the push token.
+
+The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children:
+
+- `Resume the VM` runs `operation-task-vm-resume`.
+- `Apply the corrections` runs the author turn on the author thread of the prep run. The author changes only the three files of the spec, in one new commit. It never amends a pushed commit.
+- `Plan the cases` and the review follow as in the prep run, for at most two rounds.
+  - The reviewer also checks that each correction is applied or has a reason.
+  - Runner tests that pin the old cases file are a note, not a finding. The owner's review must defer them.
+  - The notes of the last review stay in the result.
+- `Push the corrections` runs `operation-task-publish` without a pull request body, so the same draft PR gets the commit.
+
+A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
+
+The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes. The gate check does not detect the owner's review yet.
 
 ### Task lifecycle
 
@@ -710,85 +753,11 @@ A failure in one source does not skip the others. The dispatch command exits suc
 
 Swamp drives each group through the API and MCP operations documented above. `tasks:tick` and tick orchestration are removed. Creating a todo group records intent; only Swamp starts its work.
 
-The Gateway retains task state, workspace leases, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase. Swamp owns admission capacity, lifecycle retries, PR observation and cleanup scheduling.
+The Gateway retains task state, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase.
 
 The group execution lock waits at most five seconds for every waiting caller, including HTTP actions, operation workers and VM jobs. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
 
-### Start a group
-
-Run `swamp workflow run group-start --input workItem=tg-<group> --server wss://swamp.orbit` to start the work item. The factory runs provision, baseline, implement, handoff and review in order. A passed handoff goes directly to review; changes requested return to implementation. After the final approval it publishes the checked commit.
-
-Each run is one bounded generation. While an operation runs, the next generation waits 60 seconds before reading it again. A human gate holds no run; `group-approve` records the decision and wakes the group.
-
-## Workspace lease
-
-This section describes the retained lease consumers. Script, turn and publication operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.
-
-One durable workspace lease coordinates the retained actors that read a task checkout for a verdict or write it. The lease belongs to the Instance. Candidate and handoff checks, deliverable commands, workspace fast-forwards, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
-
-A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. The merge-ready gate uses GitHub state and recorded review evidence, so it does not acquire a workspace lease or join its queue. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
-
-After release, the oldest eligible waiter is admitted when its durable scheduler workflow retries. A synchronous request that fails before it owns such a workflow withdraws its unconsumed waiter. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
-
-A handoff check starts inside its implementer's receipt scope and takes over that lease for its detached process. It never queues a separate check lease ahead of the receipt that must admit it. A baseline check starts inside its own admitted check scope.
-
-Agent turns keep ownership until Orbit observes that the turn stopped. Detached checks keep ownership until Orbit records their remote result. A timeout or an unavailable runtime never proves that a holder stopped. After authoritative completion, replaying the same keyed command acknowledges its durable result without opening another turn or lease.
-
-Before admitting workspace work, Orbit reconciles completed checks and stopped turns under the execution lock. A stale or unreachable holder stays visible and prevents another actor from entering the checkout. A missing check supervisor does not prove its child commands stopped, so a lost reading retains ownership.
-
-A stopped Gateway retains its synchronous lease when remote completion is unknown; there is no timeout reset. Synchronous SSH operations record an operation ID before dispatch and a remote completion receipt outside the checkout.
-
-Each operation runs as the managed user in a dedicated systemd service with a retained terminal state. The service receives command arguments unchanged, including literal dollar expressions; only the invoked program interprets them. Recovery verifies the exact operation binding, host boot, terminal service state, and empty cgroup, including descendants that closed inherited descriptors. A changed boot ends an old operation with an unknown exit status; it never establishes a successful command or an attributable resulting tree. An unavailable system manager or passwordless managed sudo refuses the operation; Orbit never falls back to an uncontained mutation.
-
-Recovery queries that exact ID. An absent ID is atomically tombstoned before it can count as not started, so a delayed original request cannot start afterward. A running or unreadable record retains ownership, even when its supervisor is missing. Proven local process death permits recovery only after every dispatched operation has a terminal receipt or tombstone. Gateway process identity includes its host, boot, PID, and process start ticks.
-
-On the Gateway, `php artisan tasks:lease:release LEASE_ID --reason="operator investigation"` requests guarded recovery of one exact held lease. It does not stop a process, discard a waiter, delete a checkout, or publish a verdict. Admission is sealed in the database and on every recorded remote binding before quiescence is checked. Late operation IDs and delayed service starts honor the same durable seal.
-
-Recovery reads the managed-unit inventory and proves terminal state and empty cgroups for this lease’s operation binding and journaled check run ID. A readable, consistently identified unit for another lease or check run does not block recovery.
-
-A listed unit with no unit file does not block recovery only when it is inactive, has no cgroup, and has no pending job. A `not-found` load state alone does not prove that its processes stopped. Every other `not-found` state, a failed state read, any other non-loaded state, or inconsistent unit identity retains the fence. Any separate check or agent turn still needs authoritative completion.
-
-A live or unreadable actor, unmanaged legacy ownership, uncertain provider destruction, or an unverifiable Node remains held. A missing Instance row is not termination evidence. Cross-host synchronous ownership can recover after sealing every recorded endpoint; a local live owner cannot be displaced. The command records its reason, proof and result in Activity. Operator release never credits an unknown tree change to Orbit.
-
-For an owner recorded on another Gateway host, pass `--gateway-node=ID`. Orbit uses that Node’s pinned SSH transport and verifies the exact recorded hostname, boot and process start identity. A live or unreadable owner is refused. On that pinned Node and matching hostname, a changed boot proves the recorded process ended, just as it does for a local Gateway. With the original boot, Orbit requires the exact PID and process start identity to prove death. An unreadable boot or mismatched hostname does not prove death.
-
-Remote operations and separate turns still need their own terminal evidence. A rebooted managed check ends as interrupted and failed; a result from its previous boot cannot pass a gate or establish a causal after-tree.
-
-Before an opening turn, Orbit journals its request key and forwards that same key to the driver, including when Orbit generates it. A dispatched keyed turn completes its lease only when Pi reports `done` or `failed` for that exact key. `idle`, an unreadable prior observation, and terminal state for another key prove no completion. This preserves the fence while a delayed request may still arrive.
-
-A pre-existing turn adopted without a dispatch journal has no request key to match. Orbit retains that owner until it observes a nonempty turn ID in `idle`, `done`, or `failed`.
-
-A permanently lost Pi runtime can leave a dispatched turn without terminal evidence. The lease remains held, and the operator release command refuses it. There is no supported force-release or expiry for that turn; restoring authoritative runtime evidence or a separately reviewed recovery procedure is required. A ghost teardown with no Instance, saved endpoint, or authoritative provider destruction has the same evidence limit.
-
-Remote receipts, operation lock files and binding seals are retained. Removing a tombstone or seal could admit a delayed original; unlinking a lock while an old process holds its inode could create a second lock. Orbit has no automatic pruning procedure yet. Storage must remain available; age alone never permits deleting recovery evidence.
-
-A protocol-level turn refusal retires that exact released scope before cleanup or replacement. Cleanup inspects the existing reservation and never acquires a new lease. A sealed scope or uncertain dispatch still refuses new work.
-
-Orbit records the review HEAD and working tree after it acquires the reviewer lease and prepares the turn, immediately before it sends the review packet. A review that waited therefore reads the current tree. Review outcomes and publication use the same ownership rule.
-
-Every completed Orbit mutation records its before and after HEAD and tree under its lease. A failed after-snapshot leaves a completed holder pending that read; recovery retries the snapshot without repeating the mutation. The delayed snapshot cannot distinguish an intervening outside edit. A Gateway death before finalization leaves the same observation gap. Orbit marks these causal intervals uncertain and does not use it to clear assistance, even when ownership can safely end. A terminal check with its own durable final snapshot retains that exact evidence.
-
-Detached check starts have a durable run ID before dispatch. Their separate retained system service checks the start tombstone before running. A check result is terminal only after the service and all descendants stop; a later tree change fails the gate and records the final snapshot as causally uncertain. Each run stores its result and output by run ID, so an old status request cannot consume or overwrite a newer result. A lost start reply retains its check row; recovery adopts that exact run or atomically fences a start that never arrived.
-
-A durable mutation marker distinguishes executed Orbit commands from read-only verdicts; a changed snapshot under a read-only lease is not ownership proof.
-
-A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open. A running subtask whose direction relay waits for the workspace keeps its assistance request and the answer linked to its question. Swamp reads that answer and decides when to send it.
-
-The causal chain starts after the lease that captured the review baseline, using admission order rather than queue creation order. A matching mutation from an earlier review cannot excuse a later edit. Fetches, pushes, and receipt-file cleanup do not prove a checkout mutation.
-
-An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. In a review-and-merge Project, it reopens the handoff instead, as [Handoff CI](#handoff-ci) describes. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
-
-Existing assistance stays open until an operator resolves it. A review without a recorded baseline lease cannot inherit proof from merge or check records created before leases existed.
-
-### Why the workspace has one lease
-
-Separate guards for reviewers, checks, and workspace fast-forwards leave other actor pairs free to overlap. One durable lease gives every actor the same ownership rule and preserves detached ownership after a Gateway restart. Process locks alone end before an agent turn or detached check ends. Expiring locks could admit a second writer while the first still runs, so ownership ends only after authoritative reconciliation. Treating every changed HEAD as an Orbit mutation would allow an outside edit to bypass review protection. Exact recorded ownership keeps automatic recovery narrow.
-
-System services retain completion evidence after an SSH client or Gateway process dies. Orbit verifies that the exact service is terminal and its cgroup is empty before it releases ownership. A raw SSH exit status or a missing supervisor PID cannot prove that descendants stopped. Atomic tombstones exclude requests that reach the remote host after recovery. Missing or unreadable evidence keeps the fence; no elapsed-time expiry or blind release command bypasses it.
-
-A garbage-collected unit (`not-found`) with a `running` receipt keeps the lease held until an operator releases it, because Orbit cannot distinguish it from a unit that has not yet been created.
-
-Task work requires systemd 250 or newer, cgroup v2, and the managed account's passwordless sudo prerequisite. Unsupported supervision refuses remote operations. The remote receipt stores operation identity and completion, without commands, credentials, or output. Lease and operation history survives task or Instance removal because an older review can still refer to it. Operations restrict deletion of their lease; a retention policy must preserve referenced baselines before history can be removed.
+A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
 
 ## Task workspace
 
@@ -1026,7 +995,7 @@ The agent driver reports input, output and cached token usage on each thread. Gr
 
 ## Ready and merge a task pull request
 
-**Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and mints; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `tasks-pr-ready` and `tasks-pr-merge`. Both need Gateway access, as the other task operations do.
+**Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and names the vault key; each step mints its own token; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `tasks-pr-ready` and `tasks-pr-merge`. Both need Gateway access, as the other task operations do.
 
 Both steps hold the group execution lock and refuse a second task on the group with `operation.target_busy`. A step that fails records an error code and changes no group state. A repeat with a new key starts a new task with a new token. The charts [`tasks/pr-ready`](/cli/tasks/pr-ready) and [`tasks/pr-merge`](/cli/tasks/pr-merge) show the steps.
 
@@ -1040,7 +1009,7 @@ Both steps hold the group execution lock and refuse a second task on the group w
 
 The check follows the rule of the [review-and-merge gate](#handoff-ci): a missing, pending or failed run refuses. GitHub refuses a review request from the author of the pull request, so the author check refuses early.
 
-The Gateway then mints one token with only `pull_requests: write`, stores it in the vault as `pr-ready-write-<uuid>` and records `tasks.pr_ready` with the full intent.
+The Gateway then records `tasks.pr_ready` with the full intent and the vault key `pr-ready-write-<uuid>`. It mints no token. The first step of the run asks the Gateway for a token with only `pull_requests: write` (`operation:direct:github-token`, `purpose: pull_request`), so the token is fresh when the step uses it.
 
 Swamp takes the pull request out of draft with the GraphQL `markPullRequestReadyForReview` mutation. In manual mode it also requests the review of `task_pull_requests.reviewer` (`nckrtl`). If the pull request is already out of draft, Swamp skips the first step, so a rerun after a refused review request is safe. The result holds the pull request number, head, draft flag and requested reviewers.
 
@@ -1050,9 +1019,11 @@ Swamp takes the pull request out of draft with the GraphQL `markPullRequestReady
 
 The gate is the reviewer's latest review that approves, requests changes or is dismissed. It passes only when that review is an approval whose commit is exactly `head_sha`. A comment changes no decision, and an approval of an older head does not count. A failed gate refuses with `tasks_pr.approval_missing`, and `error.details.state` is `waiting`, `changes_requested` or `head_moved`. The Gateway has no webhooks, so a caller that polls the command sees the approval. A refusal starts no task.
 
-After the gate, the Gateway mints a new token with `contents: write` and `pull_requests: write`. An approval can take longer than the hour that a token lives, so the merge never reuses the ready token. The token goes to the vault as `pr-merge-write-<uuid>` and the Gateway records `tasks.pr_merge`.
+After the gate, the Gateway records `tasks.pr_merge` with the vault key `pr-merge-write-<uuid>`. The first step of the run asks for a token with `contents: write` and `pull_requests: write`. An approval can take longer than the hour that a token lives, so the merge never reuses the ready token.
 
-Swamp reads the pull request again, refuses a moved head, and merges with a squash merge that carries the expected `sha`. If the head moved or the pull request conflicts with the base branch, the merge is refused and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
+Swamp reads nothing before the merge: admission read the head, and the squash merge carries the expected `sha`, so GitHub refuses a head that moved in the seconds between. If the head moved or the pull request conflicts with the base branch, the merge is refused with `tasks_pr.merge_refused` and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
+
+The ready, comment and merge steps end with the shared child `task-github-cleanup`. It revokes the token when the mint step succeeded, as a best effort, and removes the private GitHub CLI configuration directory of the run.
 
 ### Gate check
 
@@ -1076,7 +1047,7 @@ A group switches to manual mode after round 3 with findings. It also switches af
 
 A pending or red check, a missing approval, a busy group, a moved head or a failed read is a quiet skip, and the next tick reads again.
 
-Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so a repeat tick on the same head replays the recorded step and starts nothing. A step that failed is not tried again on the same head. A push moves the head and the check starts again, or the operator calls the step by hand with a new key.
+Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so a repeat tick on the same head replays the recorded step and starts nothing. A step that failed is not tried again on the same head. A push moves the head and the check starts again, or the operator calls the step by hand with a new key. The gate sets the key with `OperationIdempotency::under`, so the key never outlives its admission.
 
 The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code. The scheduler log keeps these results.
 
@@ -1198,13 +1169,13 @@ The read writes no thread state. Activity samples it like any other [read](/cli/
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
+Cancel runs under the group execution lock before it pushes approved work or removes the checkout. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
 Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
-- **Approved work not on origin.** The cancel run first pushes the latest approved commit to `task-{id}` without force. You can then open a pull request from it. The Gateway mints the push token at admission.
+- **Approved work not on origin.** The cancel run pushes the latest approved commit to `task-{id}` without force. You can open a pull request from it. The VM never holds the push token.
 - **Failed push.** The run fails before any removal. The task and its VM stay.
 - **Parked VM with approved work.** A parked VM cannot push. Cancel refuses with HTTP 409 `tasks.push_failed`; publish the work first.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
@@ -1300,9 +1271,9 @@ A push that started can reach GitHub even after its client stops. Native cancell
 
 These reasons explain the design. Check them before you propose a change.
 
-### External checks own their lease and commit
+### External checks are their own operation and own their commit
 
-A turn and its check are separate operations. The check waits for the turn to release the workspace, so a receipt scope cannot lend it the implementer's lease. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit. A lost check retains ownership because a missing supervisor does not prove its children stopped.
+A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit.
 
 The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
 
@@ -1314,7 +1285,7 @@ The orchestrator owns the prompt, gates, budgets, and assistance. The turn opera
 
 An external orchestrator needs the same task VM and workspace as the other keyed operations, without starting a baseline or an agent. Provision shares the workspace provisioner and stops at a usable workspace. One operation hold per group keeps later task effects from overlapping. Capacity waits retain the reservation and release the operation worker; configuration and VM errors end the group instead of starting a Gateway retry policy. Clearing the reservation on cancellation lets existing cleanup own removal.
 
-A group that declares a topology also gets its nested fleet. Provision then calls the child `task-nested-fleet`, which starts the three ready copies of the seed in the VM and joins the VM to them as operator. A group without a topology skips the step. So does a group whose seed holds no ready copies; the result records `nested_fleet: none`. The [compute drivers](/reference/compute-drivers#start-the-nested-fleet) page has the steps.
+A group that declares a topology also gets its nested fleet. Provision then calls the child `task-nested-fleet`, which starts the three ready copies of the seed in the VM and joins the VM to them as operator. A group without a topology skips the step. So does a group whose seed holds no ready copies; the result records `nested_fleet: none`. One step of provision, `Look for ready copies`, decides this, and the refresh of a task image builds the fleet in such a VM. The [compute drivers](/reference/compute-drivers#start-the-nested-fleet) page has the steps.
 
 ### An optional, generic extension
 
@@ -1451,9 +1422,9 @@ The Gateway reads Swamp's own run history rather than recording a second run led
 
 Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a direct `tasks.dependency_merge` Operation on the Swamp configuration Node (209). Swamp owns the GitHub checks, dependency content and version policy, then runs the expected-head squash request. The Gateway records its bounded public result.
 
-Admission holds the group execution lock and mints two repository-scoped tokens: Contents and Pull requests write, and Contents, Pull requests, Checks and Actions read. Their vault descriptors enter the full run intent; the Gateway stores the execution copies after commit. Native `gh api` commands read tokens from the environment. No execution step reads credentials or reports results through a Gateway callback.
+Admission holds the group execution lock and names two vault keys. It mints no token. The first step of the run asks the Gateway for two repository-scoped tokens (`purpose: dependency_merge`): Contents and Pull requests write, and Contents, Pull requests, Checks and Actions read. The Gateway writes them to the named keys. Native `gh api` commands read tokens from the environment. No other execution step reads credentials or reports results through a Gateway callback.
 
-All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission verifies the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
+All Projects are disabled: `dependency_merge.projects` is empty and the Project's `dependencyAutoMerge` entry in `projects.json` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission verifies the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
 
 Fresh GitHub reads must show an open non-draft same-repository `task-{group}` PR into the current Project and repository default branch. Require GitHub Actions' `Required checks` on the exact head. Every enabled policy must name `smoke_workflow`, an exact `.github/workflows/*.yml` or `.yaml` path. Its active workflow and `Production smoke / smoke` are mandatory: the raw `smoke` job must belong to that exact workflow's latest PR suite. Removing or renaming the workflow refuses the merge.
 

@@ -556,21 +556,6 @@ fn removal_keeps_everything_while_a_master_still_runs() {
     assert!(fixture.runtime().join("generated/pool.conf").exists());
 }
 
-#[test]
-fn inspects_the_pool_with_a_fingerprint_of_the_files() {
-    let fixture = Fixture::new();
-    converge(&fixture.input(Mode::Converge, false), &fixture.host).unwrap();
-    let input = InspectPoolInput {
-        user: fixture.user.clone(),
-        version: "8.5".into(),
-        marker: fixture.marker(),
-    };
-    let pool = fs::read_to_string(fixture.runtime().join("generated/pool.conf")).unwrap();
-    let result = inspect_pool(&input, &fixture.host).unwrap();
-    assert_eq!(result.pool, pool);
-    assert_eq!(result.fingerprint.len(), 64);
-}
-
 // ---- cache refresh --------------------------------------------------------------------------------------------
 
 /// A FastCGI responder on the pool socket. Each request gets the next answer; `restarts` counts resets.

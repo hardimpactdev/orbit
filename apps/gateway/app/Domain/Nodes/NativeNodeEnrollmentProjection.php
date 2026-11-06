@@ -34,7 +34,14 @@ final readonly class NativeNodeEnrollmentProjection implements DirectOperationPr
 
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input['intent'], 'execution_secrets' => $operation->input['execution_secrets']];
+        $intent = ValidatedData::object($operation->input['intent']);
+        // A role without copies is stored as `[]`; the run reads each role's copies as a record, so an empty one goes as `{}`.
+        if (is_array($intent['roles'] ?? null)) {
+            $intent['roles'] = array_map(static fn (mixed $role): mixed => is_array($role) && ($role['execution_secrets'] ?? null) === []
+                ? [...$role, 'execution_secrets' => (object) []] : $role, $intent['roles']);
+        }
+
+        return ['intent' => $intent, 'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -55,7 +62,7 @@ final readonly class NativeNodeEnrollmentProjection implements DirectOperationPr
                 'Read the host key' => 'node.ssh_host_key_scan_failed',
                 'Require approved host key' => 'node.ssh_host_key_mismatch',
                 'Read the bootstrap account' => 'node.bootstrap_account_unavailable',
-                'Verify managed SSH' => 'node.orbit_ssh_failed',
+                'Verify managed access' => 'node.orbit_ssh_failed',
                 default => 'node.enrollment_failed',
             };
             if (! $proven && ($data['status'] ?? null) === 'failed') {
@@ -99,7 +106,7 @@ final readonly class NativeNodeEnrollmentProjection implements DirectOperationPr
                     'error_code' => $data['error_code'] ?? 'node.enrollment_failed']);
             }
             $node->save();
-            if (NativeRunResult::stepStatus($raw, 'Install base packages-0') === 'succeeded') {
+            if (NativeRunResult::stepStatus($raw, 'Set up the machine') === 'succeeded') {
                 ToolManagerRecord::query()->updateOrCreate(['node_id' => $node->id, 'name' => ToolManagerName::Apt->value], ['status' => LifecycleStatus::Active]);
             }
             foreach (RouteExecutionProof::objects($plan['role_snapshots']) as $index => $snapshot) {

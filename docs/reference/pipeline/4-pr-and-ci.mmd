@@ -86,7 +86,7 @@ sequenceDiagram
     %%> - the check for both modes, as the scheduled command `tasks:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
-    %%> - authorizes the step and mints a short-lived App token
+    %%> - authorizes the step and names the vault key of its token; the step mints the token when it runs
     %%> When:
     %%> - the PR is a draft and its CI is green on the head
     SW->>GH: Take the PR out of draft<br/>as the Orbit App
@@ -144,10 +144,10 @@ sequenceDiagram
       %%> - after round 3 with findings, the Gateway switches the group to manual mode; the ready step's review request goes to Nick, and the PR waits for his approval
     GW->>SW: Admit the merge step<br/>fresh token key name
     %%> Why:
-    %%> - a token lives one hour and an approval can take longer, so the Gateway mints a new one for this step
+    %%> - a token lives one hour and an approval can take longer, so the merge step mints a new one when it runs
     SW->>GH: Merge the PR<br/>squash · App token
     %%> What it does:
-    %%> - Swamp merges the PR straight into main with a squash merge, using the Gateway-minted App token passed by vault key name
+    %%> - Swamp merges the PR straight into main with a squash merge, using the App token that the step minted, passed by vault key name
     %%> - the Orbit App, through this Swamp step, decides whether the PR may merge; the PR's CI is green on its head and the gate has passed
     %%> - a merge conflict with main refuses the merge; the author rebases, which reruns CI and the proof, and the gate starts again
     %%> History:
