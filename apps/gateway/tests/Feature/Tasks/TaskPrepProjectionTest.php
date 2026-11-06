@@ -7,6 +7,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepProjection;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -80,4 +81,17 @@ it('keeps the findings of the last review in the result of a run that ended on t
     expect($projected->status)->toBe(OperationStatus::Failed)
         ->and($projected->error_code)->toBe('tasks.prep_review_unresolved')
         ->and($projected->result['findings'])->toBe('1. The chart has no end.');
+});
+
+it('completes the open spec subtask of a group when the draft PR is open, and no other', function (): void {
+    [, $group] = prepRun();
+    $open = Task::query()->create(['parent_id' => $group->id, 'title' => 'Spec', 'brief' => 'Brief', 'status' => TaskStatus::Todo, 'position' => 1]);
+    $done = Task::query()->create(['parent_id' => $group->id, 'title' => 'Earlier', 'brief' => 'Brief', 'status' => TaskStatus::Cancelled, 'position' => 2]);
+
+    TaskPrepProjection::completeSubtasks($group->id, 2825);
+
+    expect($open->refresh()->status)->toBe(TaskStatus::Completed)
+        ->and($open->completion_summary)->toBe('The spec is in draft PR #2825.')
+        ->and($open->settled_at)->not->toBeNull()
+        ->and($done->refresh()->status)->toBe(TaskStatus::Cancelled);
 });

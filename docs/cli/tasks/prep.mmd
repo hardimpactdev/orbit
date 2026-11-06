@@ -61,9 +61,14 @@ sequenceDiagram
       %%> What it does:
       %%> - pushes the commit to `task-42` without force and opens the PR as the Orbit App, as a draft
       SW-->>GW: Native terminal result<br/>PR number · URL · commit
-      Note over GW: Record the draft PR<br/>pr_url · watched PR
+      Note over GW: Record the draft PR<br/>PR · subtask done
       %%> Result:
       %%> - the group keeps its VM; the pull request fields of the group are set for stage 4
+      %%> - the spec subtask of the group is marked completed, so the group has no open subtask
+      %%> Why:
+      %%> - `tasks:park` refuses a group with an open subtask; with the subtask completed it can stop the VM while the spec waits for review, and the workspace stays
+      %%> Decided by the orchestrator, for Nick's review:
+      %%> - prep completes its subtask when the App opens the draft PR; park keeps its rule that no subtask is open
     else findings are left
       SW--xGW: Native failed result<br/>tasks.prep_review_unresolved
       %%> Result:

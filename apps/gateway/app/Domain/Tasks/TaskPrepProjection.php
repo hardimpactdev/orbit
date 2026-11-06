@@ -84,12 +84,24 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
                     'pull_request_url' => $pull['pull_request_url'], 'rounds' => $rounds];
                 Task::topLevel()->whereKey($operation->target_id)->update(['pr_url' => $pull['pull_request_url'], 'watched_pr_url' => $pull['pull_request_url'],
                     'watched_pr_number' => $pull['pull_request_number'], 'watched_pr_state' => 'open']);
+                self::completeSubtasks($operation->target_id, $pull['pull_request_number']);
             }
             $data['result'] = $result;
             $data['error_code'] = $code;
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * The spec is done once the App has opened its PR, so the group has no open subtask and `tasks:park` can stop its VM while the
+     * spec waits for review.
+     */
+    public static function completeSubtasks(int $group, int $pullRequest): void
+    {
+        Task::query()->where('parent_id', $group)->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->get()
+            ->each(static fn (Task $subtask): bool => $subtask->update(['status' => TaskStatus::Completed, 'settled_at' => now(),
+                'completion_summary' => 'The spec is in draft PR #'.$pullRequest.'.']));
     }
 
     /**
