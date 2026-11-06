@@ -17,3 +17,7 @@ it('gives a stopping worker the 5 minute drain of the Swamp daemon unit, never a
 
     expect($worker)->toContain("TimeoutStopSec=300\n")->not->toContain('infinity');
 });
+
+it('asks each worker for one dispatch slot per CPU core', function (): void {
+    expect(SwampRoleUnits::for('orbit', 209)['worker'])->toContain(' --concurrency auto ');
+});
