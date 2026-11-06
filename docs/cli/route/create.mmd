@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, one Swamp run, certificate signing is the one step-to-Gateway call. docs/reference/routes.md#create-and-change-targets.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the site child is one Ansible phase per Node (tags site), because each placed Swamp step costs about 1.2 s and the child ran 30 in series (47.6 s measured).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): private DNS is published beside the site install, not last (it waited 4 to 7 s for the site and the probe it does not depend on).
   %% status: draft
   %% command: route:create
   %% kind: route.create
@@ -33,14 +34,16 @@ sequenceDiagram
       SW->>N: Allow the Router on LAN<br/>@swamp/cfgmgmt/firewall
     end
     SW->>N: Install cert, publish site<br/>child route-create-site · Ansible
+    opt domain outside the TLD
+      SW->>V: Publish private DNS<br/>records + catalog, then restart
+      %%> When:
+      %%> - beside the site install, not after the probe: it needs nothing from the site and waits only for the earlier steps. A failed install can leave a record that points at a Node without the site, and a failed DNS publish now skips the probe and the Ingress edge; a rerun or the Route removal replaces the record
+    end
     SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI domain
     %%> Why:
     %%> - the probe checks the hostname and the trusted chain; it does not need a successful application HTTP response
     opt --publication=public
       SW->>N: Open the Ingress edge<br/>Ingress Caddy · ufw 80/443
-    end
-    opt domain outside the TLD
-      SW->>V: Publish private DNS<br/>records + catalog, then restart
     end
     alt every step succeeds
       SW-->>GW: Run succeeded<br/>terminal event + outputs

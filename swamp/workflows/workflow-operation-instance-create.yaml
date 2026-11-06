@@ -218,12 +218,13 @@ jobs:
             kind: '${{ self.member.kind }}'
             intent: '${{ self.member.intent }}'
             execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
-      # Route certificates: the Node-local key and CSR, then the Gateway's signature, beside the checkout. They touch only the
-      # certificate folder, so they wait for nothing; the Route child below takes the signed certificates.
+      # Route certificates: the Node-local key and CSR beside the checkout (same level as it), then the Gateway's signature beside the setup
+      # steps (same depth as them). They touch only the certificate folder; the Route child below takes the signed certificates.
       - name: route-csr
         labels: {role: swamp}
         writes: true
-        dependsOn: []
+        dependsOn:
+          - {step: input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null }}'
         forEach: {item: leaf, in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes }}'}
         task:
@@ -236,6 +237,10 @@ jobs:
         labels: {role: swamp}
         dependsOn:
           - {step: route-csr, condition: {type: always}}
+          - {step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
         forEach: {item: leaf, in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes }}'}
         task:
