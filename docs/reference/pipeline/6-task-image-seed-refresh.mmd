@@ -60,8 +60,10 @@ sequenceDiagram
       %%> - the same step as in the proof CI (stage 4)
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
-    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) as the child `task-nested-converge`, which the fleet start of a provision calls before `base`, for a task with the proof Swamp Club key
-    %%> Not built: the refresh VM has no Club key at its fleet start, so the nested Swamp cannot run the converge there and the step is skipped. The refresh needs the key before the converge and key-free ready copies after it; that change is a follow-up for the refresh lane, and the copies then carry the converged Nodes
+    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) as the child `task-nested-converge`, which the fleet start of a provision calls before `base`; the refresh group is a proof group, so the refresh runs it too
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+    %%> - nothing more to build: the refresh group is a proof group (the provision of a refresh carries a commit, `TaskProvisionIntent`), so its VM already holds the proof Swamp Club key and runs the fleet start, the re-mint and `Converge the nested Nodes` like a proof task
+    %%> - the key comes off before the copies are made: the save deletes the Club key from the nested Gateway and then searches every file of all three guests for it by value (`docs/cli/tasks/vm-ready-copies.mmd`), so the copies carry the converged Nodes and stay key-free
     end
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):

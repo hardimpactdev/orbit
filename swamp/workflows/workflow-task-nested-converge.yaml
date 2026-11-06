@@ -1,7 +1,7 @@
 id: fbfe0126-de99-42a6-be00-a8f1996126a9
 name: task-nested-converge
 description: >-
-  Bring the nested Nodes of a task VM to the playbooks and pins of the checkout (the nested half of `Converge once`, stage 2 of the command development pipeline): the candidate CLI on the task VM asks the nested Gateway, through the CLI profile `nested`, to run `node:converge` for each workload Node. The nested Orbit reads the playbooks from the NFS-mounted checkout. Each step is one command over official SSH to the task VM.
+  Bring the nested Nodes of a task VM to the playbooks and pins of the checkout (the nested half of `Converge once`, stage 2 of the command development pipeline): the candidate CLI on the task VM asks the nested Gateway, through the CLI profile `nested`, to run `node:converge` for app-dev, app-prod and then the nested Gateway, and checks after the Nodes and after the Gateway that the operator still reaches the hub. The nested Orbit reads the playbooks from the NFS-mounted checkout. Each step is one command over official SSH to the task VM.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -17,7 +17,7 @@ jobs:
   labels: {role: swamp}
   steps:
   # `node:converge` follows its own Operation to the end and exits nonzero when it fails, so one command is one step. The nested Gateway locks the target and the hub for each converge, so the Nodes go one after the other.
-  # The nested Gateway is not converged here: its code, state and services come from the mount and the apply step; its agent binary and role software stay at the pins of the seed until the next refresh. Chart: stage 2, "Converge once".
+  # One Node after the other: the nested Gateway holds a lock on the target and the hub for each converge. Chart: stage 2, "Converge once".
   - name: 'Converge app-dev'
     labels: {role: swamp}
     writes: true
@@ -29,3 +29,21 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-prod").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-prod").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', 'app-prod', '--json'], timeoutSec: 1210}}
     dependsOn: [{step: 'Converge app-dev', condition: {type: succeeded}}]
+  # A converge rewrites the hub, and the VM joined it as operator with a runtime peer. A ping through `wg-nested` fails the step when the operator can no longer reach the hub, so a dropped tunnel stops the run here and not at the readiness check. The first check follows the workload Nodes; the Gateway converge is the next to touch the hub.
+  - name: 'Check the tunnel after the Nodes'
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-check-the-tunnel-after-the-nodes").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-check-the-tunnel-after-the-nodes").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'ping', '-c', '1', '-w', '20', '10.45.0.1'], timeoutSec: 40}}
+    dependsOn: [{step: 'Converge app-prod', condition: {type: succeeded}}]
+  # The Gateway comes last, after the Nodes it serves; a real Gateway converges itself (`orbit:node-converge gateway` of the fleet build does the same). It runs its footprint through its own Orbit and Swamp, so its agent pin and role playbooks are proven too.
+  - name: 'Converge the Gateway'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-the-gateway").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-the-gateway").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', 'gateway', '--json'], timeoutSec: 1210}}
+    dependsOn: [{step: 'Check the tunnel after the Nodes', condition: {type: succeeded}}]
+  - name: 'Check the tunnel after the Gateway'
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-check-the-tunnel-after-the-gateway").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-check-the-tunnel-after-the-gateway").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'ping', '-c', '1', '-w', '20', '10.45.0.1'], timeoutSec: 40}}
+    dependsOn: [{step: 'Converge the Gateway', condition: {type: succeeded}}]
