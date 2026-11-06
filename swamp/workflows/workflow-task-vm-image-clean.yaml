@@ -35,7 +35,7 @@ jobs:
       behaviorName: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-guests").split(".").join("-") }}'
       methodName: exec
       globalArgs: {name: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-guests").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'delete', '--force', '${{ inputs.intent.nested.guests["gateway"] }}', '${{ inputs.intent.nested.guests["app-dev"] }}', '${{ inputs.intent.nested.guests["app-prod"] }}'], okExitCodes: any, timeoutSec: 200}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'delete', '--force', '${{ "guests" in inputs.intent.nested ? inputs.intent.nested.guests["gateway"] : "" }}', '${{ "guests" in inputs.intent.nested ? inputs.intent.nested.guests["app-dev"] : "" }}', '${{ "guests" in inputs.intent.nested ? inputs.intent.nested.guests["app-prod"] : "" }}'], okExitCodes: any, timeoutSec: 200}
   - name: 'Remove the nested network'
     labels: {role: swamp}
     writes: true
@@ -47,7 +47,7 @@ jobs:
       behaviorName: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-network").split(".").join("-") }}'
       methodName: exec
       globalArgs: {name: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-network").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'network', 'delete', '${{ inputs.intent.nested.network }}'], okExitCodes: any, timeoutSec: 60}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'network', 'delete', '${{ "network" in inputs.intent.nested ? inputs.intent.nested.network : "" }}'], okExitCodes: any, timeoutSec: 60}
   - name: 'Stop the services'
     labels: {role: swamp}
     writes: true
