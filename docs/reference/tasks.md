@@ -321,7 +321,9 @@ The child workflows gain only inputs that the parent needs. `operation-task-turn
 
 `operation-task-publish` accepts a `null` check, because no check recorded the commit. The Gateway cannot know these values at admission, so they pass from step to step in the run. The `after` snapshot that a turn reports becomes the next reviewer's candidate and the publish commit and tree.
 
-The author checks the draft with the flow check, the docs build and lint, and `runner.py plan --file` on the cases file, which must exit 0. The author commits the three files as one commit.
+The author checks the draft with the flow check, the docs build and lint, and `runner.py plan --file` on the cases file, which must exit 0.
+
+The author also runs the runner unit tests; a failure caused by the content of the cases file goes into the summary as a blocker for the owner, and no test is changed. The author keeps every case that runs on the default branch, and the reviewer checks that none moved to `uncovered`. The reference text of a run is input, not truth: it is a draft sibling without approval, and a defect in it is not a precedent. The author commits the three files as one commit.
 
 The run also checks the plan itself. A step `Plan the cases` runs the plan in the task VM as one `@swamp/ssh exec` with literal arguments, after the draft and after each fix. The Gateway captured the path of the cases file at admission. The runner exits 3 on a refusal and the step accepts that exit.
 

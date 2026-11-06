@@ -63,6 +63,8 @@ sequenceDiagram
   %%> - runs `bin/check-flows`, `composer docs-build` and `composer docs-lint`
   %%> - runs `python3 swamp/proof/runner/runner.py plan --file` on the cases file of the command; the plan must exit 0, so a cases file that the runner refuses, such as a step it does not have, goes back to the author
   %%> - a case that needs something the runner lacks is listed under `uncovered`, never written as a step; the runner is not changed
+  %%> - runs the runner unit tests (`python3 -m unittest discover -s swamp/proof/runner/tests`); a failure caused by the content of the cases file is named in the report as a blocker for the owner, and no test is changed
+  %%> - compares the case ids with the default branch: a case that runs there stays a case, and none moves to `uncovered`
   %%> - walks every error code, flag and repeat of the page against the cases
   loop until the review has no findings
     SW->>VM: Plan the cases<br/>runner.py plan
