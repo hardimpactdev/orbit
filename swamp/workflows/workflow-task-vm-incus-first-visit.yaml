@@ -28,6 +28,7 @@ jobs:
 - name: guest
   labels: {role: swamp}
   steps:
+  # The VM agent answers `incus exec`; an exec before it runs fails at once (enrol 12264), so the first visit waits for it.
   - name: guest-available
     labels: {role: swamp}
     task:
@@ -53,19 +54,20 @@ jobs:
         - /usr/bin/sudo
         - -n
         - --
+        - /usr/bin/timeout
+        - '130'
         - /usr/bin/incus
+        - wait
         - --project
         - ${{ inputs.intent.vm.project }}
-        - exec
-        - --mode=non-interactive
-        - --user
-        - '0'
-        - --group
-        - '0'
+        - --timeout
+        - '120'
+        - --interval
+        - '1'
         - --
         - ${{ inputs.intent.name }}
-        - /usr/bin/true
-        timeoutSec: 30
+        - agent
+        timeoutSec: 140
   - name: cloud-init
     labels: {role: swamp}
     task:
