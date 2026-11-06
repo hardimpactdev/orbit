@@ -42,7 +42,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - **Tolerated failure:** `allowFailure`.
    - **Recovery:** `swamp workflow resume`; no hand-written retry loop.
    - **Transient external errors:** in an Ansible phase, the tool's own retry: the task keywords `retries`, `until` and `delay`, or a module's own option such as `update_cache_retries` of `apt`. Never a shell loop or a script of ours. The Note states the bounds.
-   - **Waiting for a state to arrive:** the same task keywords, inside a literal `timeout`: for example a wait for an Operation or Doctor of a nested Gateway, one check per `incus exec` (`swamp/ansible/task-vm-fleet-wait.yml`). The task stops at once when the guest it asks is not running.
+   - **Waiting for a state to arrive:** the same task keywords, inside a literal `timeout`: for example a wait for an Operation or Doctor of a nested Gateway, one check per `incus exec` (`swamp/ansible/task-vm-fleet-wait.yml`). The task stops at once when the guest it asks is not running. (Decided by the orchestrator, for Nick's review, 2026-11-06.)
    - **Parallelism:** `concurrency`.
    - **Waiting for a worker:** set `queueTimeout` on every step per PLAN F8 and the measured kind budget.
    - **Waiting for a person:** `manual_approval`.

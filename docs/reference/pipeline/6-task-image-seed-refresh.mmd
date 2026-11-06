@@ -54,7 +54,7 @@ sequenceDiagram
       %%> - a refresh of a host whose seed holds no usable ready copies (a new host, a new image or copies of an older format) runs the nested fleet build as a child in the refresh VM (chart `docs/cli/tasks/vm-fleet-build.mmd`), automatically and with no flag; the save of the ready copies follows
       %%> - the step is skipped when the provision started the fleet from ready copies; the run needs no check of its own, because a failed build fails the run before the save
       %%> - the refresh admits the fleet-build intent with the rest of its intent, before its VM exists: the host keys of the guest are pinned by the VM step, as for the ready copies, and the build takes the proof Club key as the save does
-      %%> - the waits of the build stop at once when a nested VM is not running (an Ansible task with `until` and `retries`, chart `docs/cli/tasks/vm-fleet-build.mmd`), so a dead nested VM fails the refresh within seconds
+      %%> - the waits of the build stop at once when the nested Gateway guest is not running (an Ansible task with `until` and `retries`, chart `docs/cli/tasks/vm-fleet-build.mmd`), and then name every nested VM that is not running; a dead app VM ends the Operation it enrolls
       %%> Built: the step `Build the fleet`, the child `operation-task-vm-fleet-build`
     end
     opt playbooks or pins changed since the current image

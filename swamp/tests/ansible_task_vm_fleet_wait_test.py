@@ -28,6 +28,9 @@ if [ "$line" = NOT_RUNNING ]; then echo "Error: Instance is not running" >&2; ex
 echo "$line"
 """
 
+NEEDS_ANSIBLE = unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
+                                    'ansible-playbook is not installed')
+
 
 class TaskVmFleetWaitTest(unittest.TestCase):
     def test_the_waits_use_the_tools_own_retry_and_no_shell(self):
@@ -68,15 +71,13 @@ class TaskVmFleetWaitTest(unittest.TestCase):
             count = int((folder / 'count').read_text()) if (folder / 'count').exists() else 0
             return result.returncode, result.stdout + result.stderr, count
 
-    @unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
-                         'ansible-playbook is not installed')
+    @NEEDS_ANSIBLE
     def test_an_operation_that_ends_succeeded_passes_after_its_checks(self):
         code, output, checks = self.wait(['running', 'running', 'succeeded'], wait_kind='operation', wait_operation=7, wait_seconds=10)
         self.assertEqual(code, 0, output)
         self.assertEqual(checks, 3)
 
-    @unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
-                         'ansible-playbook is not installed')
+    @NEEDS_ANSIBLE
     def test_a_nested_vm_that_is_not_running_ends_the_wait_at_once_and_is_named(self):
         listing = 'nested-gateway,STOPPED\nnested-app-dev,RUNNING\nnested-app-prod,RUNNING\n'
         code, output, checks = self.wait(['NOT_RUNNING'], listing, wait_kind='operation', wait_operation=7, wait_seconds=600)
@@ -84,40 +85,55 @@ class TaskVmFleetWaitTest(unittest.TestCase):
         self.assertEqual(checks, 1)
         self.assertIn('A nested VM is not running: nested-gateway', output)
 
-    @unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
-                         'ansible-playbook is not installed')
+    @NEEDS_ANSIBLE
     def test_an_operation_that_ends_failed_fails_the_wait(self):
         code, output, _ = self.wait(['failed'], wait_kind='operation', wait_operation=7, wait_seconds=10)
         self.assertNotEqual(code, 0)
         self.assertIn('ended failed', output)
 
-    @unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
-                         'ansible-playbook is not installed')
+    @NEEDS_ANSIBLE
     def test_an_operation_that_does_not_end_fails_when_the_checks_run_out(self):
         code, _output, checks = self.wait(['running'], wait_kind='operation', wait_operation=7, wait_seconds=3)
         self.assertNotEqual(code, 0)
         # The first check and three retries.
         self.assertEqual(checks, 4)
 
-    @unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
-                         'ansible-playbook is not installed')
-    def test_doctor_passes_when_it_turns_healthy_and_stops_when_a_vm_is_not_running(self):
+    @NEEDS_ANSIBLE
+    def test_an_operation_that_is_cancelled_or_interrupted_ends_the_wait_and_fails_it(self):
+        for status in ('cancelled', 'interrupted'):
+            code, output, checks = self.wait([status], wait_kind='operation', wait_operation=7, wait_seconds=10)
+            self.assertNotEqual(code, 0, status)
+            self.assertEqual(checks, 1, status)
+            self.assertIn(f'ended {status}', output)
+
+    @NEEDS_ANSIBLE
+    def test_doctor_passes_when_it_turns_healthy(self):
         code, output, checks = self.wait(['{"data":{"healthy":false}}', '{"data":{"healthy":true}}'], wait_kind='doctor', wait_seconds=10)
         self.assertEqual(code, 0, output)
         self.assertEqual(checks, 2)
+
+    @NEEDS_ANSIBLE
+    def test_doctor_stops_at_once_when_the_nested_gateway_is_not_running(self):
+        listing = 'nested-gateway,STOPPED\nnested-app-dev,RUNNING\nnested-app-prod,RUNNING\n'
+        code, output, checks = self.wait(['NOT_RUNNING'], listing, wait_kind='doctor', wait_seconds=600)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(checks, 1)
+        self.assertIn('A nested VM is not running: nested-gateway', output)
+
+    @NEEDS_ANSIBLE
+    def test_doctor_does_not_pass_while_a_nested_app_vm_is_not_running(self):
         listing = 'nested-gateway,RUNNING\nnested-app-dev,STOPPED\nnested-app-prod,RUNNING\n'
         code, output, _ = self.wait(['{"data":{"healthy":true}}'], listing, wait_kind='doctor', wait_seconds=10)
         self.assertNotEqual(code, 0)
         self.assertIn('nested-app-dev', output)
 
-
-    @unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists(),
-                         'ansible-playbook is not installed')
+    @NEEDS_ANSIBLE
     def test_doctor_does_not_pass_on_a_healthy_node_while_the_fleet_is_not(self):
         answer = '{"data":{"healthy":false,"nodes":[{"healthy":true}]}}'
         code, _output, checks = self.wait([answer], wait_kind='doctor', wait_seconds=3)
         self.assertNotEqual(code, 0)
         self.assertEqual(checks, 4)
+
 
 if __name__ == '__main__':
     unittest.main()

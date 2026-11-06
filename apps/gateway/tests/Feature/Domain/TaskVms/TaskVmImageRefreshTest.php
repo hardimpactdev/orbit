@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
@@ -17,6 +18,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Process;
@@ -111,13 +113,25 @@ it('places the VM of a refresh in a large size that the admission sets, whatever
     $recipe = $this->base.'/orbit/apps/gateway/resources/machine-software';
     mkdir($recipe, 0700, true);
     copy(base_path('resources/machine-software/recipe.json'), $recipe.'/recipe.json');
-    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Refresh', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
+    // The refresh runs in the orbit Project (46), which a size list could make medium.
+    $project = Project::query()->forceCreate(['id' => 46, 'name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    config(['task_vms.medium_projects' => [$project->id], 'task_vms.large_projects' => []]);
+    app(TaskExtensionState::class)->enable();
+    config(['swamp.proof_club_api_key' => 'club-key']);
 
-    $vm = app(AllocateTaskVmAction::class)->capture($group, $host->id, TaskVmSize::Large);
+    // The admission allocates the VM, then asks for a model key, which this fixture does not configure and which rolls the transaction back; the size is read as the VM is created.
+    $sizes = [];
+    TaskVm::created(function (TaskVm $vm) use (&$sizes): void {
+        $sizes[] = $vm->size;
+    });
 
-    expect($vm->size)->toBe(TaskVmSize::Large)
-        ->and($vm->host_node_id)->toBe($host->id);
+    try {
+        app(TaskVmImageRefreshIntent::class)->start($host, 'test', null);
+    } catch (TaskVmException) {
+        // The model key step, after the allocation.
+    }
+
+    expect($sizes)->toBe([TaskVmSize::Large]);
 });
 
 it('names the seed of an image from its fingerprint, so the refreshed image has a seed of its own', function (): void {
