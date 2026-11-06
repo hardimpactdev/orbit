@@ -26,70 +26,66 @@ inputs:
   required: [operation_id, node_id, kind, intent]
   additionalProperties: false
 jobs:
-- name: intent
-  labels: {role: swamp}
-  steps:
-  - name: Write the intent
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
-      methodName: write
-      inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
-- name: input
-  labels: {role: swamp}
-  steps:
-  - name: Write the playbook input
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-activate-input-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
-        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ORBIT_KIND: '${{ inputs.kind }}'}
-  dependsOn:
-  - {job: intent, condition: {type: succeeded}}
 - name: activate
   labels: {role: swamp}
-  dependsOn:
-  - {job: input, condition: {type: succeeded}}
   steps:
-    # Horizon's running jobs finish on the release they started on. The unit stops the master with SIGTERM, never sends SIGKILL and waits as long as
-    # the drain allows (GatewayHorizon::stopDirectives). The phase refuses a unit without that policy, stops it and requires it to be inactive.
+    # Horizon's running jobs finish on the release they started on. The unit stops the master with SIGTERM, never sends SIGKILL and
+    # waits as long as the drain allows (GatewayHorizon::stopDirectives), so the stop returns when the unit's whole control group
+    # is empty. A unit without that policy would kill a running job, so the step refuses it. When the drain runs out, systemd
+    # times out twice and leaves the unit failed, so the step allows twice the drain and then checks that the unit is inactive.
   - name: Drain Horizon
     labels: {role: swamp}
     writes: true
     guard: ${{ inputs.intent.horizon_unit == "" }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-drain-" + string(inputs.node_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-horizon-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: &ssh
+        name: '${{ "gateway-release-ssh-" + string(inputs.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
       inputs:
-        run: timeout "$ORBIT_TIMEOUT" /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags drain "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2
-        env: &ansible {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{
-            steps["Write the intent"].outputs.assets + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null
-              -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}', ANSIBLE_FORCE_COLOR: '0',
-            ORBIT_TIMEOUT: '${{ string(inputs.intent.horizon_drain_seconds + inputs.intent.horizon_drain_seconds + 60) }}'}
-    # Requires a sealed release, switches the application and web links atomically, reloads PHP-FPM and restarts the running services under the
-    # application. A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
+        hosts: name:target
+        sudo: true
+        timeoutSec: ${{ inputs.intent.horizon_drain_seconds + inputs.intent.horizon_drain_seconds + 60 }}
+        argv:
+        - /bin/sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-drain.sh
+        - ${{ inputs.intent.horizon_unit }}
+    # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
+    # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
+    # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
   - name: Switch the release
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Drain Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-switch-" + string(inputs.node_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-switch-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" -e "expected_sha=$ORBIT_SHA" --tags switch "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2 && cat "$ORBIT_RUN/generations"
-        env: {<<: *ansible, ORBIT_SHA: '${{ inputs.intent.sha }}'}
+        hosts: name:target
+        sudo: true
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - '150'
+        - /bin/sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch.sh
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.sha }}
+        - ${{ inputs.intent.horizon_unit }}
     # A failed check fails no run by itself: the switch-back after it does, so its marker reaches the Gateway.
   - name: Verify the Gateway
     labels: {role: swamp}
@@ -97,26 +93,49 @@ jobs:
     dependsOn: [{step: Switch the release, condition: {type: succeeded}}]
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-verify-" + string(inputs.node_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-verify-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags verify "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2
-        env: *ansible
-    # After a failed check, the same phase puts the previous release back. It then fails the run with its marker; a switch-back that fails
-    # reports its own error instead.
+        hosts: name:target
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - '150'
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          get() { curl -fsS --cacert /etc/caddy/orbit-cert-current/root-ca.pem --max-time 15 --retry 5 --retry-delay 4 --retry-all-errors "https://gateway.orbit$1"; }
+          get /up >/dev/null || { echo "gateway.release_verify_failed: /up does not answer" >&2; exit 1; }
+          get /api/v1/gateway/status | jq -e --arg sha "$1" '(.data // .) | .status == "ok" and (.version == $sha or .version == $sha[0:12])' >/dev/null \
+            || { echo "gateway.release_verify_failed: status is not ok on $1" >&2; exit 1; }
+        - sh
+        - ${{ inputs.intent.sha }}
+    # After a failed check, the same script from the new release puts the previous release back: links, PHP-FPM and
+    # running services. It then fails the run with its marker; a switch-back that fails reports its own error instead.
   - name: Switch back
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Verify the Gateway, condition: {type: failed}}]
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-back-" + string(inputs.node_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-back-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        run: 'timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" -e "target_id=$ORBIT_PREVIOUS" --tags switch "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2 && echo "gateway.release_switched_back: the check failed; release $ORBIT_PREVIOUS is current again" >&2; exit 1'
-        env: {<<: *ansible, ORBIT_PREVIOUS: '${{ inputs.intent.previous }}'}
+        hosts: name:target
+        sudo: true
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - '150'
+        - /bin/sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch-back.sh
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.previous }}
     # Always, also after a failed drain, switch or check: the drain stopped Horizon, so every end of the run starts it again, on
     # the release that is live. Starting a running unit changes nothing.
   - name: Start Horizon
@@ -133,17 +152,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ "gateway-release-start-horizon-" + string(inputs.node_id) }}'
       methodName: exec
-      globalArgs: &ssh
-        name: '${{ "gateway-release-ssh-" + string(inputs.node_id) }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh.target.user }}
-          port: ${{ inputs.intent.ssh.target.port }}
-          identityFile: ${{ inputs.intent.ssh.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      globalArgs: *ssh
       inputs:
         hosts: name:target
         sudo: true
@@ -178,41 +187,18 @@ jobs:
     dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-prune-" + string(inputs.node_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-prune-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags prune "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2
-        env: *ansible
-  # A start cache older than the Swamp binary adds ~0.4 s to every dispatch; the owner of the cache is root, so only root replaces it.
-  - name: Re-seed Swamp cache
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-release-seed-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags seed "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2
-        env: *ansible
-- name: cleanup
-  labels: {role: swamp}
-  dependsOn:
-  - {job: intent, condition: &settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
-  - {job: input, condition: *settled}
-  - {job: activate, condition: *settled}
-  steps:
-  - name: Remove the playbook input
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-gateway-activate-cleanup-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 30 rm -rf -- "$ORBIT_RUN"
-        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+        hosts: name:target
+        timeoutSec: 360
+        argv:
+        - /usr/bin/timeout
+        - '300'
+        - /bin/bash
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-prune.sh
+        - ${{ string(inputs.intent.keep) }}
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.previous }}

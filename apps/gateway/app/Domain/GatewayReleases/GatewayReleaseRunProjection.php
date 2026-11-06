@@ -35,8 +35,6 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
 {
     /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. */
     public const array Steps = [
-        'Write the intent' => ['prepare', 'gateway.release_prepare_failed', false],
-        'Write the playbook input' => ['prepare', 'gateway.release_prepare_failed', false],
         'Build the release' => ['prepare', 'gateway.release_prepare_failed', false],
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Snapshot the database' => ['snapshot', 'gateway.release_snapshot_failed', false],

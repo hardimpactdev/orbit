@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Config;
  * (`orbit.gateway_checkout`, `/home/orbit/orbit/apps/gateway`):
  *
  * - `/home/orbit/orbit` links to the current release, so every path below it stays stable.
- * - `/home/orbit/releases/<id>` holds one immutable release, a clone of one commit.
+ * - `/home/orbit/releases/<id>` holds one immutable release, a linked worktree of one commit.
  * - `/home/orbit/shared` holds what every release shares: the Git repository, the Gateway env
  *   file, and the Gateway storage directory.
  */
@@ -73,7 +73,7 @@ final readonly class GatewayReleaseLayout
         return $this->basePath().'/shared';
     }
 
-    /** The bare repository every release is cloned from. */
+    /** The bare repository every release is a linked worktree of. */
     public function repositoryPath(): string
     {
         return $this->sharedPath().'/orbit.git';
