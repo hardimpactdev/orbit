@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet}.yaml,extensions/behaviors/operations/{task-vms/{agent_reply,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet,workflow-task-nested-apply}.yaml,extensions/behaviors/operations/{task-vms/{agent_reply,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -1282,6 +1282,8 @@ The child reads that state from its first step, `Look for ready copies`, so the 
 The step `Converge once` runs before it. A task with a topology carries the converge intent as the workflow input `converge`. It stays outside the provision intent, because the VM provider passes that whole in one argument. It has the NFS export of its checkout to the nested subnet `10.232.2.0/24` and the bridge `oe-nested`.
 
 The step `Pin the converge` fills the guest host key that the VM step pinned, and `Converge once` runs the child `operation-task-vm-converge`. Its Incus phase recovers the topology seed pool with `incus admin recover` from the seed disk `scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`, so the three ready copies show in the VM. The seed holds the three ready copies and nothing else, because the recovery needs every other instance in the pool to have its network and devices. The fleet child creates the network only when the converge has not, and then checks that the network has the subnet that the copies store.
+
+The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. It makes an empty `.env` in the shared checkout as the mount point, from each guest. It starts the three bind mount units of the Gateway and of app-dev, which put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the NFS checkout. It runs the migrations of the checked-out code on the nested Gateway, restarts its queue worker, agent-view subscriber and Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
 The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
 
