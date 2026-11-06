@@ -133,7 +133,7 @@ The group lifecycle after provision stays in separate keyed operations (`tasks.c
 
 A step on Node 209 first asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
 
-Separate steps then clone the source on Node 209, with full history, and copy a Git bundle through official SSH. The VM never holds the credential: `origin` is the plain repository URL, and `.git/config`, a credential helper and the environment files hold none.
+One step then clones the default branch on Node 209, with full history, and bundles it; official SSH copies the bundle, and one step on the VM fetches it and starts the task branch at its commit. When the workspace already holds a commit of the default branch, the clone takes no file contents (`--filter=blob:none`) and the bundle holds only the newer commits. The VM never holds the credential: `origin` is the plain repository URL, and `.git/config`, a credential helper and the environment files hold none.
 
 Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Two reads take the checkout's HEAD and branch, and a `stat` of `composer.json` and the entry point. When the profile needs a regular `composer.json`, one official `@swamp/ssh copy` downloads it into the private worker directory. TypeScript on Node 209 turns them into the source profile; it reads and deletes the downloaded file.
 
@@ -779,7 +779,7 @@ The SSH steps keep their node id. An SSH definition holds the host keys and the 
 
 Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
 
-The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
+The VM provision child (`tp-fetch`, `tp-ssh-` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
 
 ## Task workspace
 

@@ -35,7 +35,14 @@ sequenceDiagram
   %%> - each host keeps its own seed; nothing is copied between hosts
   SW->>VM: Check out the commit<br/>git fetch · task token
   %%> What it does:
-  %%> - checks out the commit or branch the task works on, with a read token from the vault
+  %%> - checks out the commit or branch the task works on; the read token is minted for the step on Node 209 and never reaches the VM
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - one step on Node 209 clones the default branch and bundles it; one step on the VM fetches the bundle and starts the task branch at its commit
+  %%> - when the VM already holds a commit of the default branch, as a ready slot made ahead of the claim does, the clone takes no file contents and the bundle holds only the newer commits (`git clone --filter=blob:none`, `git bundle create main ^base^`); otherwise it holds the whole branch
+  %%> - replaces eight steps (a workspace child, clone, bundle, import, origin, branch, identity) that each cost a wave of the run
+  %%> Time, measured on beast with the Orbit repository (2026-11-06):
+  %%> - a new workspace: fetch 6.4 s, checkout 2.8 s (79 MB bundle); a workspace that holds an older commit: fetch 2.8 s, checkout 0.1 s (0.2 MB)
+  %%> - before: 43 s from the start of the run to the checked-out branch (median run 101 s; the rest is the Project setup steps, about 40 s for Orbit, and the private dependency files, about 15 s)
   SW->>VM: Start the nested fleet<br/>from the ready copies
   %%> What it does:
   %%> - creates the nested network from the subnet stored with the ready copies

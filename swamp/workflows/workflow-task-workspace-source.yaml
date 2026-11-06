@@ -60,21 +60,6 @@ jobs:
     - step: guest
       condition:
         type: succeeded
-  - name: directory
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-workspace
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ steps.guest.outputs.workspace }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
-    allowFailure: true
   - name: control
     labels: {role: swamp}
     task:
@@ -91,7 +76,7 @@ jobs:
         env:
           ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id }}
     dependsOn:
-    - step: prepare
+    - step: guest
       condition:
         type: succeeded
     allowFailure: true
@@ -107,26 +92,73 @@ jobs:
         run_id: ${{ inputs.run_id }}
         purpose: clone
     dependsOn:
-    - step: control
+    - step: guest
       condition:
         type: succeeded
     allowFailure: true
-  - name: clone
+  # The commit of the default branch that the workspace already holds, such as one made ahead of a claim; empty for a new workspace.
+  - name: read_base
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        okExitCodes: any
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.workspace.checkout_path }}
+        - rev-parse
+        - --verify
+        - --quiet
+        - ${{ "refs/remotes/origin/" + inputs.intent.workspace.default_branch + "^{commit}" }}
+    dependsOn:
+    - step: guest
+      condition:
+        type: succeeded
+    allowFailure: true
+  # One action group on Node 209: clone the default branch with full history and bundle it. When the workspace already holds a commit of
+  # that branch, the clone takes no file contents (partial clone) and the bundle holds only the commits after it; git fetches the
+  # contents those commits need, with the same credential. A base that the branch no longer contains gets the whole branch.
+  - name: fetch
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-clone" }}'
+      behaviorName: '${{ "tp-fetch" }}'
       methodName: execute
       inputs:
-        run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
-
-          '
+        run: |
+          base=$(printf '%s\n' "$ORBIT_BASE" | head -n 1)
+          case "$base" in ''|*[!0-9a-f]*) base= ;; esac
+          set --
+          if [ -n "$base" ]; then set -- --filter=blob:none; fi
+          timeout 600 git clone --quiet --bare --single-branch --branch "$ORBIT_BRANCH" "$@" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
+          set --
+          if [ -n "$base" ] && git -C "$ORBIT_SOURCE" merge-base --is-ancestor "$base^" "refs/heads/$ORBIT_BRANCH" 2>/dev/null; then set -- "^$base^"; fi
+          timeout 600 git -C "$ORBIT_SOURCE" bundle create --quiet "$ORBIT_BUNDLE" "refs/heads/$ORBIT_BRANCH" "$@"
         env:
+          ORBIT_BASE: ${{ steps.read_base.outputs.stdout }}
           ORBIT_BRANCH: ${{ inputs.intent.workspace.default_branch }}
           ORBIT_REPOSITORY: ${{ inputs.intent.workspace.repository }}
-          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
-            }}
+          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.git" }}
+          ORBIT_BUNDLE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle" }}
           GIT_TERMINAL_PROMPT: '0'
           GIT_CONFIG_COUNT: '3'
           GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
@@ -137,28 +169,13 @@ jobs:
           GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
           GIT_CONFIG_VALUE_2: ssh://git@github.com/
     dependsOn:
+    - step: control
+      condition:
+        type: succeeded
     - step: mint_clone
       condition:
         type: succeeded
-    allowFailure: true
-  - name: bundle
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "tp-bundle" }}'
-      methodName: execute
-      inputs:
-        run: 'git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" --all
-
-          '
-        env:
-          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
-            }}
-          ORBIT_BUNDLE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
-            }}
-    dependsOn:
-    - step: clone
+    - step: read_base
       condition:
         type: succeeded
     allowFailure: true
@@ -192,7 +209,7 @@ jobs:
         - --
         - ${{ "/tmp/orbit-task-provision-"+run.id+"/output" }}
     dependsOn:
-    - step: directory
+    - step: guest
       condition:
         type: succeeded
     allowFailure: true
@@ -223,14 +240,16 @@ jobs:
         dst: ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
         direction: to
     dependsOn:
-    - step: bundle
+    - step: fetch
       condition:
         type: succeeded
     - step: prepare_remote
       condition:
         type: succeeded
     allowFailure: true
-  - name: import
+  # One action group on the VM: fetch the bundle into the workspace, name origin by its plain URL, start the task branch at its
+  # commit and read HEAD and the branch back. A new workspace is created here; an existing one only gains the new commits.
+  - name: checkout
     labels: {role: swamp}
     task:
       type: behavior
@@ -253,121 +272,18 @@ jobs:
         hosts: name:target
         timeoutSec: 3900
         argv:
-        - /usr/bin/git
-        - clone
-        - --
-        - ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
-        - ${{ inputs.intent.workspace.checkout_path }}
-    dependsOn:
-    - step: directory
-      condition:
-        type: succeeded
-    - step: copy_bundle
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: origin
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/git
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - remote
-        - set-url
-        - origin
-        - ${{ inputs.intent.workspace.repository }}
-    dependsOn:
-    - step: import
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: branch
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/git
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - switch
+        - /bin/sh
         - -c
+        - 'set -e; git init --quiet -- "$1"; cd -- "$1"; git config remote.origin.url "$2"; git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"; git fetch --quiet --no-tags -- "$3" "+refs/heads/$4:refs/remotes/origin/$4"; git switch --quiet --create "$5" "$6"; git rev-parse HEAD --abbrev-ref HEAD'
+        - orbit-checkout
+        - ${{ inputs.intent.workspace.checkout_path }}
+        - ${{ inputs.intent.workspace.repository }}
+        - ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
+        - ${{ inputs.intent.workspace.default_branch }}
         - ${{ inputs.intent.workspace.branch }}
         - ${{ inputs.intent.workspace.start_commit }}
     dependsOn:
-    - step: origin
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: identity
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/git
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - rev-parse
-        - HEAD
-        - --abbrev-ref
-        - HEAD
-    dependsOn:
-    - step: branch
+    - step: copy_bundle
       condition:
         type: succeeded
     allowFailure: true
@@ -405,7 +321,7 @@ jobs:
         - composer.json
         - ${{ inputs.intent.workspace.entry_point }}
     dependsOn:
-    - step: identity
+    - step: checkout
       condition:
         type: succeeded
     allowFailure: true
@@ -453,11 +369,11 @@ jobs:
       methodName: profile
       inputs:
         intent: ${{ inputs.intent }}
-        identity: ${{ steps.identity.outputs.stdout }}
+        identity: ${{ steps.checkout.outputs.stdout }}
         files: ${{ steps.inspect.outputs.stdout }}
         composer: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/composer.json" }}
     dependsOn:
-    - step: identity
+    - step: checkout
       condition:
         type: succeeded
     - step: inspect
@@ -742,16 +658,10 @@ jobs:
     - step: prepare
       condition:
         type: always
-    - step: directory
-      condition:
-        type: always
     - step: control
       condition:
         type: always
     - step: mint_clone
-      condition:
-        type: always
-    - step: clone
       condition:
         type: always
     - step: deps_write
@@ -760,25 +670,19 @@ jobs:
     - step: deps_remove
       condition:
         type: always
-    - step: bundle
-      condition:
-        type: always
     - step: prepare_remote
       condition:
         type: always
     - step: copy_bundle
       condition:
         type: always
-    - step: import
+    - step: read_base
       condition:
         type: always
-    - step: origin
+    - step: fetch
       condition:
         type: always
-    - step: branch
-      condition:
-        type: always
-    - step: identity
+    - step: checkout
       condition:
         type: always
     - step: inspect
