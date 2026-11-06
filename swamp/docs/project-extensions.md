@@ -1,12 +1,13 @@
 # Private project configuration
 
-Each `extensions/behaviors/projects/<slug>/` extension owns its repository
-identity, maintenance paths, package managers, check, branch and policy. Read
-its `mod.ts`, `config.ts` where present, and `manifest.yaml` for the typed
-fields. Shared ecosystem policy belongs in the Composer and JavaScript
-extensions.
-
-The `configuration` method exposes typed non-secret configuration as Swamp data.
+`extensions/behaviors/operations/project-maintenance/projects.json` holds the
+repository identity, maintenance paths, package managers, check, branch and
+release-age policy of every maintained Project, one entry each. The
+`project-maintenance-input` extension is its only reader: it imports the file and
+validates an entry against `_lib/dependency_project_schema.ts` when a run names a
+Project. A Project without an entry is refused with
+`project.maintenance_not_configured`. To maintain a new Project, add its entry.
+Shared ecosystem policy belongs in the Composer and JavaScript extensions.
 [Recorded project configuration](maintained-project-extensions.md) and its
 fixtures preserve the selected paths and existing release-age policy; they do
 not authorize a live run.
@@ -29,8 +30,7 @@ checkout is not a fallback.
 
 Project inspection and routine entrypoints are shared: `project-maintenance-inspect` and
 `project-routine` take the full Gateway-selected Project snapshot as run inputs.
-Both run on Node209. Project extensions contain configuration only; they no
-longer publish a pair of workflows or a baked-in Project schedule. Producers
+Both run on Node209. The configuration file holds data only; it does not publish a pair of workflows or a baked-in Project schedule. Producers
 supply the Project and group state when they admit a run.
 
 The native-host dispatcher's `project_scan` and `project_routine` actions are

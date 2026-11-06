@@ -7,7 +7,6 @@ import {
     FindingsSchema,
     ScheduleReceiptSchema,
 } from "./_lib/project_schedule.ts";
-import { ProjectExtensionsSchema } from "./_lib/project_config.ts";
 import {
     DependencyProjectSchema,
     DependencyProjectsSchema,
@@ -17,7 +16,6 @@ import { z } from "npm:zod@4";
 
 const GlobalArgsSchema = z.object({
     dependencyProjects: DependencyProjectsSchema.default([]),
-    projectExtensions: ProjectExtensionsSchema.default([]),
     enrollmentVault: z.string().min(1).default("default"),
     workerUrl: z.string().default("wss://swamp.orbit"),
     serveUrl: z.string().default("wss://swamp.orbit"),
