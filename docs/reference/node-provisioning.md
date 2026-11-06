@@ -435,6 +435,8 @@ The workflow writes that plan to the machine and runs `swamp/ansible/gateway-boo
 
 Then the `app` job sets up the Gateway app on the machine: it writes the `.env` (`orbit:bootstrap-plan --environment`, production values from `.env.example`), installs the Composer dependencies, creates the database, makes the application key there and runs the migrations. The key never leaves the machine. The end check fails on a pending migration.
 
+Last, `orbit:bootstrap` runs on the machine, from the Gateway's own code: the Gateway Node (it takes id 209, the one id the Gateway knows for the Swamp Node), its Gateway and VPN roles, the VPN settings, the root CA, the Gateway SSH key and the machine's host key. The VPN role stays provisioning until Swamp applies the hub.
+
 ## Role compatibility
 
 Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything.
