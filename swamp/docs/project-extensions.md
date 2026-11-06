@@ -44,7 +44,7 @@ Routine and batch selection produce typed requests in the terminal result. The G
 
 The shared workspace child only prepares a directory. VM provider, bootstrap, hub and model/Pi composition require the canonical TaskVM provision child. Workspace readiness alone cannot admit provision completion or mark a group running.
 
-The official `@swamp/git` checkout accepts its token as a sensitive argument. The frozen Orbit rule accepts vault values in command environments, so acquisition uses a fixed native `command/shell` Git invocation with its authorization header in the Git environment. The Gateway derives that header from the same scoped token before writing its execution copy. Native PR reads receive the token through a separate execution copy. This adds no Git transport or credential helper.
+The frozen Orbit rule accepts vault values in command environments, so acquisition uses a fixed native `command/shell` Git invocation with its authorization header in the Git environment. The Gateway derives that header from the same scoped token before writing its execution copy. Native PR reads receive the token through a separate execution copy. This adds no Git transport or credential helper.
 
 ## Scheduled producer boundary
 

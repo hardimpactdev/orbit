@@ -81,7 +81,7 @@ Deno.test("nested model invocation refuses CLI option injection before spawning"
         const request of [
             { definition: "--server", method: "status" },
             { definition: "factory", method: "--help" },
-            { modelType: "@swamp/git", name: "--repo-dir", method: "status" },
+            { modelType: "@swamp/ssh", name: "--repo-dir", method: "status" },
         ]
     ) await assertRejects(() => invokeNativeModel(request));
 });
