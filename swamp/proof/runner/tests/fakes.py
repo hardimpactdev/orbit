@@ -42,6 +42,8 @@ class FakeFleet:
         self.deny_ignored = False       # True: every listener is open, so the test port is not blocked
         self.failing_cli = None         # a command name that raises
         self.next_id = 1
+        self.list_nodes = None          # the Nodes of a `firewall:list` answer, when a test sets them
+        self.callers, self.access_removed, self.down = [], [], set()   # the Node a CLI call ran as, `node:access:remove` calls, stopped Nodes
 
     # ---- shell
     def sh(self, node, command, timeout=60, stdin_text=None):
@@ -78,6 +80,9 @@ class FakeFleet:
         if command.startswith("printf 'WORD="):
             word, count = re.search(r"SEEN=0\\n' (\S+) (\d+) >", command).groups()
             self.fault[node] = {'word': word, 'after': int(count), 'seen': 0}
+            return completed()
+        if command.startswith('systemctl stop orbit-agent'):
+            self.down.add(node)
             return completed()
         if command.startswith('kill -- -'):
             return completed()
@@ -155,8 +160,9 @@ class FakeFleet:
         return 124
 
     # ---- CLI
-    def cli(self, args, timeout=240, form='json'):
+    def cli(self, args, timeout=240, form='json', node=None):
         self.cli_calls.append(args)
+        self.callers.append(node)
         if args[0] == self.failing_cli:
             raise RuntimeError('the CLI did not start')
         if args[0] in ('firewall:allow', 'firewall:deny') and '--node=211' in args and 'app-dev' in self.stalled:
@@ -167,7 +173,10 @@ class FakeFleet:
         if args[0] == 'node:list':
             document = {'nodes': [{'id': node_id, 'name': name} for name, node_id in NODE_IDS.items()]}
         elif args[0] == 'firewall:list':
-            document = {'nodes': [{'node_id': 1, 'rules': list(self.records)}]}
+            document = {'nodes': [{'node_id': 1, 'rules': list(self.records)}] if self.list_nodes is None else
+                        [item for item in self.list_nodes if not any(arg.startswith('--node=') for arg in args) or f"--node={item['node_id']}" in args]}
+        elif args[0] == 'node:access:remove':
+            self.access_removed.append(args)
         elif args[0] == 'operation:list':
             document = {'operations': [{'id': number} for number in range(1, self.next_id)]}
         elif args[0] == 'operation:show':
