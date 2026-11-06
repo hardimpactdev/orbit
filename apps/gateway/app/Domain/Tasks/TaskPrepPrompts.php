@@ -186,14 +186,14 @@ final readonly class TaskPrepPrompts
         - docs page: `{$this->page()}`
         - cases: `{$this->cases()}`
 
-        The workspace was synced, so `refs/remotes/origin/{$branch}` holds the approved head. If HEAD of the workspace is not the approved head, run `git merge --ff-only refs/remotes/origin/{$branch}` first, and stop and say so if it does not fast-forward. Do not change the spec. Write the code, the tests and the runnable proof cases that the spec asks for. The deliverables below must pass.
+        The workspace was synced, so the branch `origin/{$branch}` is in it. If HEAD of the workspace is not the approved head, run `git merge --ff-only {$head}` first, and stop and say so if that commit is missing or does not fast-forward. Do not change the spec. Write the code, the tests and the runnable proof cases that the spec asks for. The deliverables below must pass.
         TEXT;
     }
 
     /** The prompt of the caller of the first implementer turn; the admission puts the subtask in front of it. */
     public function buildTurn(): string
     {
-        return 'Build the command from the approved spec, as the brief of this subtask says. Commit your work as one commit when the deliverables pass.';
+        return 'Build the command from the approved spec, as the brief of this subtask says.';
     }
 
     public function title(): string

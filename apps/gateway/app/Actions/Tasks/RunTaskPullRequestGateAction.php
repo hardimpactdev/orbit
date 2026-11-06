@@ -31,10 +31,9 @@ use Illuminate\Support\Str;
  * One tick of the gate check of stage 4 of the command development pipeline, run every minute by the Gateway
  * scheduler. It only reads GitHub and admits. For each open external group of a review-and-merge Project that has a
  * published pull request it reads the pull request. A draft with a passed handoff check on its head gets the ready step in
- * the mode of the group; a draft without one stays a draft, except the spec of a parked prep group, which gets the build step once
- * the owner approved its head. A pull
- * request out of draft gets the merge step in manual mode; in automatic mode it gets one review round per head, and
- * the merge step once the round on that exact head passed. Admission makes the other reads: the CI result of the head,
+ * the mode of the group; a draft without one stays a draft, except the spec of a prep group whose build has not started, which
+ * gets the build step once the owner approved its head. A pull request out of draft gets the merge step in manual mode; in
+ * automatic mode it gets one review round per head, and the merge step once the round on that exact head passed. Admission makes the other reads: the CI result of the head,
  * and for the manual merge the reviewer's approval of that exact head. A pending check, a missing approval, a running
  * round, a busy group or a failed read is a quiet skip; the next tick reads again.
  *
@@ -95,7 +94,7 @@ final readonly class RunTaskPullRequestGateAction
         $head = $pull->headSha;
         $request = (string) Str::uuid();
         if ($pull->draft) {
-            // The spec of a parked prep group: the approval of its head starts the build, and nothing else looks at this draft.
+            // The spec of a prep group whose build has not started: the approval of its head starts the build, and nothing else looks at this draft.
             if (TaskBuildIntent::waiting($group)) {
                 return $this->admit($group, $number, 'build', OperationKinds::TasksBuild, $head, fn () => $this->builds->execute($group, $head, self::Caller, $request));
             }

@@ -13,22 +13,23 @@ sequenceDiagram
   participant GH as GitHub<br/>draft PR
   GW->>GH: Read the PR and reviews<br/>approval of the head
   %%> Who calls it:
-  %%> - the gate check `tasks:pr-gate`, every minute, for a parked prep group; there is no command, route or MCP tool
+  %%> - the gate check `tasks:pr-gate`, every minute, for a prep group whose spec is done; there is no command, route or MCP tool
   %%> What it does:
   %%> - reads the draft PR and its reviews with a read-only App token; in manual mode the latest review of the reviewer must approve the exact head, and in automatic mode no review is read
   %%> - changes nothing on GitHub
   Note over GW: Admit the build<br/>parked prep group · head
   %%> Requirements:
-  %%> - the group is open and external, `waiting_for_review`, with a succeeded `tasks.prep` run, its task VM parked or ready with its Pi credential, and no open subtask
+  %%> - the group is open and external, with a succeeded `tasks.prep` run and no other subtask than its completed spec subtask: `waiting_for_review` after a manual prep, `running` after an automatic one or after a park that was refused
+  %%> - its task VM is parked or ready with its Pi credential, and no build was admitted for it before
   %%> - the PR is open and a draft, and its head is the approved head
   %%> - no other task runs on the group; the Gateway holds one lock per group
   %%> What it does:
   %%> - records the approval (the head, the mode and the reviewer) in the intent
-  %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; deliverables are that the runner plan of the cases file passes and that the Project check passes
-  %%> - moves the group to `running`, creates the implementer thread, and captures the resume, the sync and the first turn
+  %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; deliverables are that the runner plan of the cases file passes and that the Project check passes (the check command of the Project, or a review deliverable when the Project has none)
+  %%> - moves the group to `running` and clears its settled time, creates the implementer thread, and captures the resume, the sync and the first turn
   %%> - names the vault keys of the Pi token and of the read token; it mints no token
   %%> Refuses:
-  %%> - a group that is already `running`, a head that is not the approved one, a missing approval, or a busy group; the gate check skips it quietly and reads again at the next tick
+  %%> - a group that has started its build, a head that is not the approved one, a missing approval, or a busy group; the gate check skips it quietly and reads again at the next tick
   GW->>SW: Start one run, full intent<br/>operation-task-build
   %%> Inputs:
   %%> - the whole intent above and the vault key names of the Pi, VM and read-token credentials, never their values
@@ -43,7 +44,7 @@ sequenceDiagram
   SW->>VM: Run the first turn<br/>operation-task-turn
   %%> What it does:
   %%> - the first implementer turn, on a new thread, with the prompt that the Gateway composed: the title, brief and deliverables of the subtask, then the instruction to build the command
-  %%> - the brief tells the implementer to bring the workspace to the approved head when HEAD differs
+  %%> - the brief tells the implementer to merge the approved commit, fast-forward only, when HEAD differs
   alt every step succeeded
     SW-->>GW: Native terminal result<br/>capture the steps
     %%> How the Gateway learns it:

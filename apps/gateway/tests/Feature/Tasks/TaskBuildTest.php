@@ -2,6 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RunTaskPullRequestGateAction;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubPullRequest;
+use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\GitHub\GitHubReview;
+use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
@@ -9,6 +17,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskBuildProjection;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepPrompts;
 use App\Domain\Tasks\TaskPullRequestEvidence;
@@ -20,6 +29,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -27,6 +37,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Mockery\MockInterface;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -67,25 +78,24 @@ function buildWorld(TaskReviewMode $mode = TaskReviewMode::Manual, TaskVmState $
     return [$group, $vm, $instance];
 }
 
-it('waits for the build of a parked group in manual mode and of a running group in automatic mode', function (): void {
-    [$manual] = buildWorld();
-    expect(TaskBuildIntent::waiting($manual))->toBeTrue();
-});
-
-it('waits for the build of a running group in automatic mode, after the clean review', function (): void {
-    [$automatic] = buildWorld(TaskReviewMode::Automatic);
-
-    expect(TaskBuildIntent::waiting($automatic))->toBeTrue();
-});
-
-it('never acts on a group that is running in manual mode, has more than its spec subtask, has no prep run or has built before', function (): void {
+it('waits for the build of a parked group after a manual prep', function (): void {
     [$group] = buildWorld();
 
-    $group->update(['status' => TaskGroupStatus::Running]);
-    expect(TaskBuildIntent::waiting($group))->toBeFalse();
+    expect(TaskBuildIntent::waiting($group))->toBeTrue();
+});
 
-    $group->update(['status' => TaskGroupStatus::WaitingForReview]);
+it('waits for the build of a running group after an automatic prep, and of a group whose park was refused', function (TaskReviewMode $mode): void {
+    [$group] = buildWorld($mode);
+    $group->update(['status' => TaskGroupStatus::Running]);
+
+    expect(TaskBuildIntent::waiting($group))->toBeTrue();
+})->with([TaskReviewMode::Automatic, TaskReviewMode::Manual]);
+
+it('never acts on a group that has more than its spec subtask, no prep run, or a build before', function (): void {
+    [$group] = buildWorld();
+
     $extra = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Build', 'brief' => 'Build it', 'status' => TaskStatus::Todo]);
+    $group->update(['status' => TaskGroupStatus::Running]);
     expect(TaskBuildIntent::waiting($group))->toBeFalse();
 
     $extra->delete();
@@ -148,6 +158,25 @@ it('refuses a build that has no workspace of its own and leaves the group as it 
         ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
 });
 
+it('writes nothing when the resume of the VM cannot be captured', function (): void {
+    [$group] = buildWorld(vmState: TaskVmState::Provisioning);
+
+    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class, 'Resume requires')
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1)
+        ->and(AgentThread::query()->count())->toBe(0)
+        ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
+});
+
+it('clears the settled time of the group when the build starts', function (): void {
+    [$group] = buildWorld();
+    $group->update(['settled_at' => now()->subHour()]);
+
+    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
+
+    expect($group->fresh()->settled_at)->toBeNull();
+});
+
 it('refuses a build for a group that already started one', function (): void {
     [$group] = buildWorld();
     Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null, 'status' => OperationStatus::Succeeded, 'input' => []]);
@@ -176,7 +205,7 @@ function buildEnd(string $status, array $result, ?array $failure = null): array
         'result' => $result, ...($failure === null ? [] : ['failure' => $failure])];
 }
 
-it('records the VM as ready and the branch with the approved head when the run succeeded, and leaves the group running', function (): void {
+it('records the VM as ready and the branch with the approved head when the run succeeded, and leaves the group as admission set it', function (): void {
     [$operation, $group, $vm] = buildRun();
 
     $projected = app(TaskBuildProjection::class)->apply($operation, buildEnd('succeeded', ['steps' => ['Resume the VM' => ['status' => 'succeeded']]]));
@@ -244,4 +273,37 @@ it('reads the Operation without writing the Pi token, writes it once at run star
 
     $vm->update(['pi_token' => null]);
     expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
+});
+
+it('starts the build from the gate on an approved head, appends the subtask once and admits nothing on the next tick', function (): void {
+    config(['task_pull_requests.reviewer' => 'nick']);
+    [$group] = buildWorld();
+    app(TaskExtensionState::class)->enable();
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'hardimpactdev', 'organization', 'https://github.com/apps/gate', 'unused'));
+    $pull = new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', BUILD_HEAD, 'main', draft: true, authorLogin: 'orbit-app[bot]');
+    $review = new GitHubReview(1, 1, 'nick', GitHubReviewState::Approved, BUILD_HEAD, new DateTimeImmutable('2026-11-06T10:00:00Z'), 'https://example.test', '');
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($pull, $review): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
+        $github->shouldReceive('pullRequest')->andReturn($pull);
+        $github->shouldReceive('reviews')->andReturn([$review]);
+    }));
+    $group->project->update(['source_access' => 'github_app', 'review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $group->update(['watched_pr_number' => 7, 'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/7']);
+
+    // Swamp is not there: the start is refused after the admission was recorded.
+    $first = app(RunTaskPullRequestGateAction::class)->execute();
+    $operation = Operation::query()->where('kind', OperationKinds::TasksBuild)->sole();
+
+    expect($first)->toHaveCount(1)->and($first[0])->toMatchArray(['group' => $group->id, 'step' => 'build'])
+        ->and($operation->idempotency_key)->toBe('pr-gate:build:'.$group->id.':'.BUILD_HEAD)
+        ->and($operation->input['approval'])->toMatchArray(['head' => BUILD_HEAD, 'mode' => 'manual', 'reviewer' => 'nick'])
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2);
+
+    $again = app(RunTaskPullRequestGateAction::class)->execute();
+
+    expect($again[0]['step'])->not->toBe('build')
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2)
+        ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(1);
 });

@@ -360,7 +360,7 @@ it('does not count the approval of another head or a request for changes', funct
     'changes requested' => [fn () => gateReview(GATE_HEAD, GitHubReviewState::ChangesRequested)],
 ]);
 
-it('admits the build once the reviewer approved the exact head, and a refusal of the admission leaves the group parked', function (): void {
+it('reaches the admission of the build once the reviewer approved the exact head, and a refusal there leaves the group parked', function (): void {
     config(['task_pull_requests.reviewer' => 'nick']);
     $group = gateWorld(gatePull(true), reviews: [gateReview(GATE_HEAD)]);
     gateSpecDone($group);
@@ -371,7 +371,7 @@ it('admits the build once the reviewer approved the exact head, and a refusal of
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1);
 });
 
-it('starts the build of an automatic group after the clean review, with no review read', function (): void {
+it('reaches the admission of the build for an automatic group with no review read', function (): void {
     $group = gateWorld(gatePull(true), review: TaskReviewMode::Automatic);
     $group->update(['status' => TaskGroupStatus::Running]);
     gateSpecDone($group);
@@ -379,14 +379,9 @@ it('starts the build of an automatic group after the clean review, with no revie
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'skipped', 'code' => 'tasks.build_refused']);
 });
 
-it('leaves a draft alone that is not a parked spec: a running manual group, a group that built, or a head out of draft', function (): void {
+it('leaves a draft alone when its group built before: a failed build is not admitted again', function (): void {
     $running = gateWorld(gatePull(true));
     gateSpecDone($running);
-    $running->update(['status' => TaskGroupStatus::Running]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head']);
-
-    $running->update(['status' => TaskGroupStatus::WaitingForReview]);
     Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $running->id, 'node_id' => null, 'status' => OperationStatus::Failed, 'input' => []]);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head']);

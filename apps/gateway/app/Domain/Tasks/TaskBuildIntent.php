@@ -29,14 +29,15 @@ final readonly class TaskBuildIntent
 
     /**
      * A prep group whose spec is done and whose build has not started: its only subtask is the completed spec subtask, a prep run
-     * succeeded, and no build was admitted. In manual mode the prep run parked the group; in automatic mode it left it running.
+     * succeeded, and no build was admitted. Manual prep parks the group (`waiting_for_review`); automatic prep leaves it `running`, and
+     * so does a park that was refused. A group with a build subtask never matches, whatever its status.
      */
     public static function waiting(Task $group): bool
     {
         $subtasks = $group->tasks()->get();
         $runs = static fn (string $kind) => Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)->where('kind', $kind);
 
-        return $group->status === ($group->review_mode === TaskReviewMode::Manual ? TaskGroupStatus::WaitingForReview : TaskGroupStatus::Running)
+        return in_array($group->status, [TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)
             && $subtasks->count() === 1 && $subtasks->first()?->status === TaskStatus::Completed
             && $runs(OperationKinds::TasksPrep)->where('status', OperationStatus::Succeeded)->exists()
             && ! $runs(OperationKinds::TasksBuild)->exists();
@@ -66,21 +67,23 @@ final readonly class TaskBuildIntent
         }
         $prompts = TaskPrepPrompts::for(ValidatedData::string(ValidatedData::object($prep->input)['command']));
         $branch = 'task-'.$group->id;
+        $instance->loadMissing('node');
+        $resume = TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm));
+        $sync = $this->sync->capture($group);
+        $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
         $subtask = $this->appendSubtask($group, $prompts, $head, $branch);
-        // Park or not, the group builds from here on.
-        Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+        // Park or not, the group builds from here on; it is no longer settled.
+        $group->update(['status' => TaskGroupStatus::Running, 'settled_at' => null]);
         $thread = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
         // A query update: every subtask row carries `review_mode`, and a model save of a subtask refuses it.
         Task::query()->whereKey($subtask->id)->update(['implementer_agent_thread_id' => $thread->id]);
-        $instance->loadMissing('node');
-        $resume = TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm));
 
         return [
             'command' => $prompts->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $resume['intent']['node_id'], 'subtask' => $subtask->id,
             'approval' => ['head' => $head, 'mode' => $group->review_mode->value, 'reviewer' => $group->review_mode === TaskReviewMode::Manual ? TaskPullRequestEvidence::reviewer() : null],
             'resume' => $resume['intent'],
-            'sync' => $this->sync->capture($group),
-            'turn' => TaskPrepThreads::turn($thread, TaskTurnPrompt::compose($subtask, $prompts->buildTurn()), true, $group, $subtask, $instance, app(SwampSshExecutionInput::class)->forNode($instance->node)),
+            'sync' => $sync,
+            'turn' => TaskPrepThreads::turn($thread, TaskTurnPrompt::compose($subtask, $prompts->buildTurn()), true, $group, $subtask, $instance, $ssh),
             // Only vault key names are admitted. The Pi token is written when the run starts ({@see TaskBuildProjection::workflowInput()}),
             // and the sync child mints its read token when it runs ({@see TaskGitHubTokens}).
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]],

@@ -389,11 +389,13 @@ The gate check does not detect a review that asks for corrections, so a person o
 
 `tasks.build` is the step after the owner approves the spec of a prep group. The gate check admits it. It has no command, route or MCP tool. Before it existed, a person moved the group to `running` and added the build subtask by hand.
 
-The gate check acts on a group that is `waiting_for_review`, with a succeeded `tasks.prep` run, an open draft pull request and no open subtask. In manual mode it acts when the latest review of the reviewer approves the exact head of the pull request. In automatic mode it acts without a review, because the clean review of the prep run is the approval. A group that is already `running`, a head that is not the approved one and a busy group are quiet skips. The Idempotency-Key is `pr-gate:build:<group>:<head>`.
+The gate check acts on a group with a succeeded `tasks.prep` run, an open draft pull request and no other subtask than its completed spec subtask. The group is `waiting_for_review` after a manual prep, and `running` after an automatic prep or a park that was refused.
+
+In manual mode it acts when the latest review of the reviewer approves the exact head of the pull request. In automatic mode it acts without a review, because the clean review of the prep run is the approval. A group that has started its build, a head that is not the approved one and a busy group are quiet skips. The Idempotency-Key is `pr-gate:build:<group>:<head>`.
 
 In one transaction the Gateway records the approval (the head, the mode and the reviewer) in the intent, appends the build subtask, moves the group to `running` and admits one run.
 
-The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes. The intent also holds the resume of the VM, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
+The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the resume of the VM, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
 
 The native `operation-task-build` workflow is one parent run, with existing workflows as children:
 
