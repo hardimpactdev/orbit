@@ -47,6 +47,10 @@ apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php  firewall:allo
 apps/gateway/app/Http/Requests/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Models/FirewallRule.php                   firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Providers/Domains/FirewallServiceProvider.php  firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Infrastructure/Firewall/**                firewall:allow firewall:deny firewall:list firewall:remove
+apps/gateway/app/Infrastructure/Firewall/NativeRouterLanIngressReconciler.php  skip
+apps/gateway/database/migrations/*_firewall_rules*.php     firewall:allow firewall:deny firewall:list firewall:remove
+apps/gateway/routes/api/firewall.php                       firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
