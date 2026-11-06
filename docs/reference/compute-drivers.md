@@ -738,7 +738,7 @@ The `tools` phase installs the NFS server and the shape gate linters.
 
 The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, the NFS server active and the export as named.
 
-The `check` phase also asserts that `orbit` has UID and GID 1000. When the intent names a firewall, it asserts that ufw is active with the recovery rule.
+The `check` phase also asserts that `orbit` has UID and GID 1000. The `template` phase asserts that ufw is active, denies incoming connections by default and has the recovery rule; the smoke of an UpCloud template runs it after `check`.
 
 The `clean` phase follows an image build and nothing else; it does nothing unless `intent.image` is set. The UpCloud template build runs it. The Incus build cleans through its own child workflow.
 
@@ -1594,7 +1594,7 @@ At admission the Gateway generates one ed25519 host key pair for the build serve
 | Run the task image phases | The child `task-vm-upcloud-image-ansible` copies the pinned Pi build from the Gateway Node to 209 and checks its SHA-256. It then runs the `software`, `tools` and `check` phases against the public address of the builder |
 | Prepare and clean | The same child with the `clean` phase: masks, ufw with only the public SSH rule `orbit:public-ssh-recovery`, identity files, `cloud-init clean` |
 | Make the template, Read the template | Stops the builder, turns its disk into the template `orbit-task-base-<stamp>-unverified` and reads its UUID |
-| Smoke the template | The child `task-vm-upcloud-image-smoke` creates a server from the template with the same host key, boots it as above, and runs the `check` phase with the firewall check |
+| Smoke the template | The child `task-vm-upcloud-image-smoke` creates a server from the template with the same host key, boots it as above, and runs the `check` and `template` phases |
 | Promote the template | Records the `orbit.recipe` and `orbit-task-image` labels and renames the template to `orbit-task-base-<stamp>` |
 | List servers, templates, Plan the cleanup | After the build, whatever its outcome, lists the labelled servers and the templates once, and confirms the promotion |
 | Check the template | The end check: the promoted template is the one templatize made |
