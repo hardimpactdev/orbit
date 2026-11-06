@@ -1287,6 +1287,8 @@ The orchestrator owns the prompt, gates, budgets, and assistance. The turn opera
 
 An external orchestrator needs the same task VM and workspace as the other keyed operations, without starting a baseline or an agent. Provision shares the workspace provisioner and stops at a usable workspace. One operation hold per group keeps later task effects from overlapping. Capacity waits retain the reservation and release the operation worker; configuration and VM errors end the group instead of starting a Gateway retry policy. Clearing the reservation on cancellation lets existing cleanup own removal.
 
+A group that declares a topology also gets its nested fleet. Provision then calls the child `task-nested-fleet`, which starts the three ready copies of the seed in the VM and joins the VM to them as operator. The [compute drivers](/reference/compute-drivers#start-the-nested-fleet) page has the steps.
+
 ### An optional, generic extension
 
 Tasks is an extension, so an operator can switch it off without a Gateway downgrade. The engine knows tasks, subtasks, deliverables, one task check, and a lifecycle. Each Project's own policy and task check decide how it plans and verifies work. Inferring policy from a slug, manifest, or CI job name would create a second hidden contract in the Gateway, so those choices belong to the Project. The ADE plans, because planning needs the conversation with you. A web form to create tasks would be a second path beside MCP and the API.
