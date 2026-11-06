@@ -8,7 +8,7 @@ inputs:
     # intent.ssh: the fresh machine, as the other Node workflows name it: host, port, user, identity_file, host_keys (pins its SSH host key).
     # intent.release: repository and the 40-hex commit; the Gateway code and this swamp/ folder come from that one commit.
     # intent.swamp: url and sha256 of the pinned Swamp release in the machine software recipe (recipe.json).
-    # intent.gateway: url, the address of the new Gateway (APP_URL).
+    # intent.gateway: url, the address of the new Gateway (APP_URL); wireguard_ip and wireguard_subnet, its address in the private network of the fleet it leads.
     # intent.operator: checkout, the release checkout on the operator, with its Gateway dependencies; it renders the plan of the machine.
     intent: {type: object}
   required: [intent]
@@ -338,6 +338,19 @@ jobs:
         hosts: name:target
         argv: [timeout, '300', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', migrate, --force, --no-interaction]
         timeoutSec: 305
+  - name: Bootstrap the Gateway
+    writes: true
+    dependsOn: [{step: Migrate the database, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-bootstrap").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-bootstrap").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '300', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', 'orbit:bootstrap', '${{ inputs.intent.ssh.host }}', '--wireguard-ip=${{ inputs.intent.gateway.wireguard_ip }}', '--wireguard-subnet=${{ inputs.intent.gateway.wireguard_subnet }}', --no-interaction]
+        timeoutSec: 305
 # The end check: the pinned Swamp runs, the venv runs the pinned Ansible, and the checkout is at the release.
 - name: check
   dependsOn:
@@ -410,6 +423,6 @@ jobs:
     - {step: Read the migrations, condition: {type: succeeded}}
     task:
       type: assert
-      expr: 'steps["Read the Swamp version"].outputs.stdout.startsWith("swamp ") && steps["Read the Ansible version"].outputs.stdout.contains("ansible-playbook [core ") && steps["Read the release commit"].outputs.stdout.split("\n")[0] == inputs.intent.release.commit && steps["Read the PHP version"].outputs.stdout.startsWith("PHP 8.5.") && steps["Read the migrations"].outputs.stdout.contains("Ran") && !steps["Read the migrations"].outputs.stdout.contains("Pending")'
+      expr: 'steps["Read the Swamp version"].outputs.stdout.startsWith("swamp ") && steps["Read the Ansible version"].outputs.stdout.contains("ansible-playbook [core ") && steps["Read the release commit"].outputs.stdout.split("\n")[0] == inputs.intent.release.commit && steps["Read the PHP version"].outputs.stdout.startsWith("PHP 8.5.") && steps["Read the migrations"].outputs.stdout.contains("Ran") && !steps["Read the migrations"].outputs.stdout.contains("Pending") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.")'
       severity: high
       message: The machine is not ready to converge itself.
