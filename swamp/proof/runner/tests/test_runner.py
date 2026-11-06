@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -188,6 +188,18 @@ class CommandTest(unittest.TestCase):
             code, out, _ = self.call(['case', CASE, '--file', str(CASES)])
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(out)['cause'], 'infrastructure')
+
+
+class FleetCliTest(unittest.TestCase):
+    def test_the_cli_as_a_node_runs_the_orbit_of_that_node_as_its_managed_user_and_the_default_runs_the_candidate(self):
+        found = fleet_module.Fleet({'app-prod': {'instance': 'nested-app-prod', 'node_id': 3, 'bridge': '10.0.0.3'}})
+        done = Mock(returncode=0, stdout='{}', stderr='')
+        with patch.object(fleet_module.subprocess, 'run', return_value=done) as run:
+            found.cli(['firewall:list'], node='app-prod')
+            found.cli(['firewall:list'])
+        as_node, default = (call.args[0] for call in run.call_args_list)
+        self.assertEqual(as_node, ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--', 'orbit', 'firewall:list', '--json'])
+        self.assertEqual(default[:2], ['php', str(Path(fleet_module.__file__).resolve().parents[3] / 'apps/cli/orbit')])
 
 
 class FleetDiscoveryTest(unittest.TestCase):
