@@ -112,5 +112,5 @@ it('admits the resume of a parked VM under a keyed request without the key of th
     // start of its native run, which this test has no endpoint for: that refusal is the proof that the key check passed.
     $call = fn () => app(OperationIdempotency::class)->under('tasks.turn', 'turn-1', 'fingerprint', fn () => TaskVmAwake::require($group));
 
-    expect($call)->not->toThrow(LogicException::class);
+    expect($call)->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('swamp.start_unavailable'));
 });

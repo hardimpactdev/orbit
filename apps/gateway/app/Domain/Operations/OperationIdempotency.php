@@ -28,14 +28,7 @@ final class OperationIdempotency
      */
     public function under(string $kind, string $key, string $fingerprint, Closure $callback): mixed
     {
-        $previous = [$this->kind, $this->key, $this->fingerprint];
-        [$this->kind, $this->key, $this->fingerprint] = [$kind, $key, $fingerprint];
-
-        try {
-            return $callback();
-        } finally {
-            [$this->kind, $this->key, $this->fingerprint] = $previous;
-        }
+        return $this->swap($kind, $key, $fingerprint, $callback);
     }
 
     /**
@@ -49,8 +42,19 @@ final class OperationIdempotency
      */
     public function suspended(Closure $callback): mixed
     {
+        return $this->swap(null, null, null, $callback);
+    }
+
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    private function swap(?string $kind, ?string $key, ?string $fingerprint, Closure $callback): mixed
+    {
         $previous = [$this->kind, $this->key, $this->fingerprint];
-        [$this->kind, $this->key, $this->fingerprint] = [null, null, null];
+        [$this->kind, $this->key, $this->fingerprint] = [$kind, $key, $fingerprint];
 
         try {
             return $callback();
