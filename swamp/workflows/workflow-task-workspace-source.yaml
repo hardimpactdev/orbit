@@ -39,7 +39,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-guest" }}'
+      behaviorName: '${{ ("tp-data-guest-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: guest
       inputs:
         intent: ${{ inputs.intent }}
@@ -51,7 +51,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-prepare" }}'
+      behaviorName: '${{ ("tp-data-prepare-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
@@ -80,7 +80,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-control" }}'
+      behaviorName: '${{ ("tp-control-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'umask 077
@@ -116,7 +116,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-clone" }}'
+      behaviorName: '${{ ("tp-clone-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
@@ -146,7 +146,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-bundle" }}'
+      behaviorName: '${{ ("tp-bundle-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" --all
@@ -449,7 +449,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-profile" }}'
+      behaviorName: '${{ ("tp-data-profile-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: profile
       inputs:
         intent: ${{ inputs.intent }}
@@ -585,7 +585,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-setup-output" }}'
+      behaviorName: '${{ ("tp-data-setup-output-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: setup_output
       inputs:
         intent: ${{ inputs.intent }}
@@ -729,7 +729,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-result" }}'
+      behaviorName: '${{ ("tp-data-result-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: result
       inputs:
         intent: ${{ inputs.intent }}
@@ -810,7 +810,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-cleanup" }}'
+      behaviorName: '${{ ("tp-cleanup-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_ROOT"
