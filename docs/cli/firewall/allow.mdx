@@ -4,7 +4,7 @@ sidebarTitle: "firewall:allow"
 description: "Allow traffic to one destination port or port range, optionally from one source."
 ---
 
-Allow incoming traffic on one Linux Node. Without a source or protocol, the rule allows both TCP and UDP from anywhere. UFW does not restrict ports published by Docker; see the [firewall overview](/cli/firewall).
+Allow incoming traffic on one Linux Node. UFW does not restrict ports published by Docker; see the [firewall overview](/cli/firewall).
 
 ## Usage
 
@@ -30,7 +30,7 @@ orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --label="of
 orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 ```
 
-Prompts and output follow the [CLI standard](/reference/cli-ux). The port prompt is `Destination port or range`; the `Node` selector lists active Linux Nodes. See the firewall family's [rule identity and repeat behavior](/cli/firewall#rule-identity), [source ordering](/cli/firewall#order-on-the-node), and [safe change order](/cli/firewall#change-rules-without-an-exposure-window).
+Prompts and output follow the [CLI standard](/reference/cli-ux). See the firewall family's [rule identity and repeat behavior](/cli/firewall#rule-identity), [source ordering](/cli/firewall#order-on-the-node), and [safe change order](/cli/firewall#change-rules-without-an-exposure-window).
 
 Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow succeeds with `Skipped — already applied (firewall.rule_exists)` when its ports lie inside one protected port or range Orbit already opens and its source is one that entry already admits. Orbit records a succeeded Operation without an operator rule or Node contact; this uses recorded intent, not a live UFW check. Another firewall change on the Node still prevents this skip (`operation.target_busy`). A range extending beyond that entry, or a source it does not admit, is a normal allow.
 
@@ -49,5 +49,3 @@ See the [firewall error codes](/cli/firewall#error-codes) for input, access, con
 | `firewall.backend_inactive` | UFW is inactive; no rule is applied on the Node. |
 | `firewall.verify_failed` | The final check does not find every expected line in the required order. |
 | `operation.native_failed` | An execution step fails before returning a public check result; partial changes may remain. |
-
-`firewall.rule_exists` is a successful skip reason, not an error.
