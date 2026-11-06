@@ -76,7 +76,7 @@ jobs:
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-order-the-state-mounts" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-order-the-state-mounts" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'sh', '-c', 'find /etc/systemd/system -name "home-orbit-orbit-apps-gateway-*.mount" -exec sed -i "s/^Options=bind.*$/Options=bind,_netdev/" {} + && systemctl daemon-reload'], timeoutSec: 70}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'sh', '-c', 'cd /etc/systemd/system && sed -i -e "s/^Options=bind.*$/Options=bind,_netdev/" home-orbit-orbit-apps-gateway-*.mount && sed -i -e "/^Options=.*_netdev/! s/^Options=\\(vers=.*\\)$/Options=\\1,_netdev/" home-orbit-orbit.mount && systemctl daemon-reload'], timeoutSec: 70}}
 - name: copy
   labels: {role: swamp}
   dependsOn: [{job: keys, condition: {type: succeeded}}]
@@ -203,7 +203,7 @@ jobs:
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-unordered-mounts" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-unordered-mounts" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'sh', '-c', 'grep -L _netdev /etc/systemd/system/home-orbit-orbit-apps-gateway-*.mount || true'], timeoutSec: 40}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'sh', '-c', 'grep -L _netdev /etc/systemd/system/home-orbit-orbit.mount /etc/systemd/system/home-orbit-orbit-apps-gateway-*.mount || true'], timeoutSec: 40}}
     dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
   # The Gateway database is the one its own `.env` names, the one the key step updated.
   - name: 'Read the stored database path'
