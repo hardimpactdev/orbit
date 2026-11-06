@@ -1,6 +1,6 @@
 ---
-# One wait of the fleet build, of the readiness of a nested fleet (task-nested-ready) or of a nested converge (task-nested-converge), run from Node 209 against the task VM: the nested
-# Gateway ends one of its Operations, or its Doctor is healthy.
+# One wait of the fleet build, of the readiness of a nested fleet (task-nested-ready) or of a nested converge
+# (task-nested-converge), run from Node 209 against the task VM: the nested Gateway ends one of its Operations, or its Doctor is healthy.
 # Each check is one `incus exec` into the nested Gateway, every `wait_delay` seconds, with the tool's own `until` and `retries`.
 # `wait_seconds` is the time of the delays. The checks take their own time on top, so the step that runs this playbook gives it
 # a `timeout` of twice `wait_seconds`.
