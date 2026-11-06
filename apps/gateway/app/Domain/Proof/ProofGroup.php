@@ -8,8 +8,10 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Closure;
 
 /** The task group of a proof.run: its keyed admissions and its cancel. The group carries the VM, so a cancelled proof must cancel it. */
@@ -37,7 +39,8 @@ final readonly class ProofGroup
     public function cancel(Operation $proof): void
     {
         $group = Task::topLevel()->find($proof->target_id);
-        if ($group === null || $group->status === TaskGroupStatus::Cancelled) {
+        // A cancelled run marks its group cancelled and leaves its VM as it was, in provisioning or failed, with its slot taken; that group still needs its cancel.
+        if ($group === null || ($group->status === TaskGroupStatus::Cancelled && ! TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists())) {
             return;
         }
         try {
