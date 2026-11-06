@@ -12,6 +12,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
+use App\Domain\TaskVms\TaskVmLaunchConfig;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -61,7 +62,7 @@ final readonly class StartTaskVmImageOperationAction
             'candidate_alias' => ($build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, 'base', $build->id)).'-attempt-'.$build->attempt,
             'base_alias' => $host->imageAlias, 'previous_alias' => $host->imageAlias.'-previous',
             // The orbit account of the builder and of every clone accepts the key of the Swamp control Node.
-            'launch_config' => $this->launchConfig($identity['public_key']),
+            'launch_config' => TaskVmLaunchConfig::for($identity['public_key']),
             // The host runs Incus; Node 209 reaches the builder through it. The builder's address and host key come from the host during the run.
             'jump' => $this->keys->forNode($node),
             'ssh' => ['identity_file' => $identity['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
@@ -73,13 +74,4 @@ final readonly class StartTaskVmImageOperationAction
         ], 'task-vm-image', null, lockKey: OperationStore::lockKey('task_vm_host', $node->id));
     }
 
-    /** The instance config that `incus init` reads: the cloud-init user data and the drive that carries it into the VM. */
-    private function launchConfig(string $publicKey): string
-    {
-        $cloud = ['users' => [['name' => 'orbit', 'uid' => 1000, 'no_user_group' => false, 'lock_passwd' => true, 'shell' => '/bin/bash',
-            'sudo' => 'ALL=(ALL) NOPASSWD:ALL', 'ssh_authorized_keys' => [$publicKey]]]];
-
-        return json_encode(['config' => ['cloud-init.user-data' => "#cloud-config\n".json_encode($cloud, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n"],
-            'devices' => ['cloud-init' => ['type' => 'disk', 'source' => 'cloud-init:config']]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-    }
 }

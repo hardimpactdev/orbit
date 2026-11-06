@@ -1,7 +1,7 @@
-id: effba24c-615e-492b-aefb-bfac5518a78a
+id: 83c84165-b7a9-465f-95f6-52d70488ced7
 name: task-vm-image-clean
 description: >-
-  Clean and stop a VM so that its disk can be published as a task image: no nested guests, no WireGuard key, observer identity or secret, no Pi token, model key or Club key, no checkout, no SSH host keys, a reset machine-id and cloud-init. One argv per step over official SSH to the Incus host, through `incus exec`. The refresh of a task image (stage 6) runs it on its enrolled refresh VM; the image build runs it on its builder with `enrolled: false` and `nested: {}`.
+  Clean and stop a VM so that its disk can be published as a task image: no nested guests, no WireGuard key, observer identity or secret, no Pi token, model key or Club key, no checkout, no SSH host keys, a reset machine-id and cloud-init. One argv per step over official SSH to the Incus host, through `incus exec`. The refresh of a task image (stage 6) runs it on its enrolled refresh VM; the image build runs it on its builder with `enrolled: false`.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -16,7 +16,7 @@ inputs:
         host_ssh_execution: {type: object}
         vm: {type: object}
         enrolled: {type: boolean}
-        nested: {type: object}
+        nested: {type: [object, 'null']}
       required: [host_ssh_execution, vm, enrolled, nested]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
@@ -29,7 +29,7 @@ jobs:
   - name: 'Remove the nested guests'
     labels: {role: swamp}
     writes: true
-    guard: '${{ "network" in inputs.intent.nested }}'
+    guard: '${{ inputs.intent.nested != null }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -40,7 +40,7 @@ jobs:
   - name: 'Remove the nested network'
     labels: {role: swamp}
     writes: true
-    guard: '${{ "network" in inputs.intent.nested }}'
+    guard: '${{ inputs.intent.nested != null }}'
     dependsOn: [{step: 'Remove the nested guests', condition: {type: succeeded}}]
     task:
       type: behavior

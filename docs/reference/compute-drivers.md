@@ -1230,13 +1230,13 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
 | `Clean the refresh VM` | Runs `task-vm-image-clean` and stops the VM. |
 | `Publish the image` | Runs `incus publish` of the stopped VM under a candidate alias and reads its fingerprint. |
-| `Start the check VM`, `Boot the check VM`, `Check the image` | Boot a throwaway VM from the candidate and check that it holds none of the identity. |
+| `Smoke the candidate` | Runs `task-vm-image-smoke`, the smoke of the image build: a throwaway VM from the candidate and the check phase of the task VM role on it. |
 | `Copy the seed`, `Detach the seed` | Copy the seed disk of the refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
-| `Promote the image` | Moves the host's image alias to the new image under the same lock. |
+| `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
 
-The clean step removes the nested guests and network. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets cloud-init, the machine-id and the SSH host keys, and trims the disk. The image build uses the same workflow for its builder with `enrolled: false`.
+The clean step removes the nested guests and network. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets cloud-init, the machine-id and the SSH host keys, and trims the disk. The image build calls the same workflow for its builder with `enrolled: false`.
 
-The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the promotion did not succeed, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had.
+The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had.
 
 When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
 

@@ -65,7 +65,7 @@ sequenceDiagram
     %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
     SW->>VM: Clean the refresh VM<br/>identity out · stop
     %%> Decided by the orchestrator, for Nick's review:
-    %%> - one explicit clean step before the publication, the workflow `task-vm-image-clean`; the image build uses the same workflow for its builder (`enrolled: false`), so there is one clean step and not two
+    %%> - one explicit clean step before the publication, the workflow `task-vm-image-clean`; the image build's `Clean and stop` calls the same workflow for its builder (`enrolled: false`), so there is one clean step and not two
     %%> - it removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout, resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
     SW->>H: Publish the image<br/>image · seed
     %%> What it does:
@@ -76,6 +76,7 @@ sequenceDiagram
     %%> - removes the refresh VM's WireGuard key from the operator Node record, so a new task VM joins with its own key (stage 2)
     %%> - publishes the outer VM as the new task image
     SW->>H: Boot-check, promote<br/>under the host lock
+    %%> Built: the smoke is the child `task-vm-image-smoke` and the alias move is the child `task-vm-image-promote`, the same children as the image build
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the new image has a new fingerprint, and a seed is named from its image, so the new seed is a copy of the refresh VM's seed disk under the new name (`zfs promote` after the copy, so refreshes form no clone chain); the old image and the old seed stay under their own names, and the old image keeps the alias `-previous`, which is the rollback copy
     %%> - the Gateway records the new image as the host's latest promoted build when the run ends, then cancels the group of the run, which destroys the refresh VM

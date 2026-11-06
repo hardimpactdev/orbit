@@ -25,6 +25,7 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -109,19 +110,29 @@ final readonly class TaskVmImageRefreshIntent
         $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => [
             'converge' => $this->converge->provisioning($vm, null), 'ready_copies' => $this->copies->provisioning($vm)]);
         $candidate = $location->imageAlias.'-refresh-'.$group->id;
+        $jump = $this->ssh->forNode($host);
+        $converge = $pinned['converge'];
 
         return [
             'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
             'execution_secrets' => $input['execution_secrets'] ?? [],
             'provision' => array_diff_key($input, ['execution_secrets' => true]),
             'refresh' => [
-                'host_node_id' => $host->id, 'host_ssh_execution' => $this->ssh->forNode($host), 'commit' => $commit,
+                'host_node_id' => $host->id, 'host_ssh_execution' => $jump, 'commit' => $commit,
                 'image' => $image, 'recipe_identity' => $this->recipes->currentRecipe()->identity,
                 'vm' => ['name' => $vm->name, 'project' => $location->project, 'pool' => $location->pool, 'seed_volume' => $vm->name.'-'.TaskVmVolumes::SeedDevice],
-                'check' => ['network' => $location->network],
-                'names' => ['alias' => $location->imageAlias, 'previous_alias' => $location->imageAlias.'-previous', 'candidate_alias' => $candidate,
-                    'check_vm' => 'refresh-check-'.$group->id, 'seed_prefix' => TaskVmVolumes::SeedPrefix],
-                ...$pinned,
+                'names' => ['alias' => $location->imageAlias, 'candidate_alias' => $candidate, 'seed_prefix' => TaskVmVolumes::SeedPrefix],
+                // What the image build gives its smoke and promote children, so the refresh boot-checks and promotes as a build does.
+                'candidate' => [
+                    'project' => $location->project, 'jump' => $jump, 'candidate_alias' => $candidate, 'base_alias' => $location->imageAlias,
+                    'previous_alias' => $location->imageAlias.'-previous', 'smoke' => 'refresh-check-'.$group->id, 'network' => $location->network,
+                    'cpus' => $location->cpus, 'memory' => $location->memory, 'disk' => $location->disk,
+                    'launch_config' => TaskVmLaunchConfig::for($jump['public_key']),
+                    'ssh' => ['identity_file' => $jump['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
+                    'profile' => 'base', 'image' => true, 'nfs' => null,
+                    'recipe' => $converge['recipe'], 'vp_lock' => $converge['vp_lock'], 'pi' => $converge['pi'],
+                ],
+                'converge' => $converge, 'ready_copies' => Arr::except($pinned['ready_copies'], ['execution_secrets']),
             ],
         ];
     }
