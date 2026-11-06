@@ -219,7 +219,7 @@ jobs:
   dependsOn:
   - {job: smoke, condition: {type: succeeded}}
   steps:
-    # The Operation holds the host's lock key, so no other host Operation runs while the alias moves.
+    # The Operation holds the host's lock key, so no other host Operation runs while the alias moves. An alias takes a fingerprint, not another alias; `incus publish` printed it.
   - name: Promote the image
     labels: {role: swamp}
     writes: true
@@ -231,6 +231,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
+        fingerprint: ${{ steps["Publish the candidate"].outputs.stdout.split("fingerprint: ")[1].trim() }}
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
