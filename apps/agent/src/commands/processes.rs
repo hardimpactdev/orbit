@@ -9,9 +9,6 @@
 //! container, renames that one to a rollback name that records whether it ran, renames the candidate in, and undoes
 //! the change when a step fails. A later call finishes or undoes a change that a lost connection interrupted.
 
-#[path = "process_doctor.rs"]
-pub(super) mod doctor;
-
 use super::caddy::chown;
 use super::health::{self, HealthInput};
 use crate::command::{Command, Context, Platform, Privilege};

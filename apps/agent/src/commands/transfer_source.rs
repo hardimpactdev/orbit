@@ -106,10 +106,10 @@ fn capture(
     sqlite_source: Option<&Path>,
 ) -> Result<TransferOutput, TransferError> {
     let step = "capture";
-    if !super::doctor_route::absolute(source)
+    if !super::source::absolute(source)
         || !matches!(layout, "checkout" | "worktree")
         || sqlite_source.is_some_and(|path| {
-            !super::doctor_route::absolute(path) || !path.starts_with(source) || path == source
+            !super::source::absolute(path) || !path.starts_with(source) || path == source
         })
     {
         return Err(TransferError::Archive {});
@@ -225,8 +225,8 @@ fn materialize(
     context: &Context,
 ) -> Result<TransferOutput, TransferError> {
     let step = "materialize";
-    if !super::doctor_route::absolute(destination)
-        || !super::doctor_route::absolute(environment)
+    if !super::source::absolute(destination)
+        || !super::source::absolute(environment)
         || !environment.starts_with(destination)
         || environment == destination
         || !super::task_git::object_id(head)

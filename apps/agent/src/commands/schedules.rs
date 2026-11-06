@@ -10,7 +10,6 @@ mod spec;
 mod tests;
 #[cfg(test)]
 mod tls_tests;
-pub use doctor::{InspectSchedule, ScheduleOrphans};
 pub use runtime::service;
 
 use super::caddy::chown;
@@ -633,5 +632,3 @@ schedule_command!(
     remove,
     |input: &RemoveInput| Some(format!("schedule:{}", input.id))
 );
-
-mod doctor;

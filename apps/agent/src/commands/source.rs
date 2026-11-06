@@ -872,6 +872,29 @@ pub(super) fn first_parent_contains(
     read(&["rev-parse", "--verify", &ancestor]).as_deref() == Some(commit)
 }
 
+/// An absolute path without a parent-directory component.
+pub fn absolute(path: &Path) -> bool {
+    path.is_absolute()
+        && !path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+}
+
+/// A DNS name of at most 253 characters whose labels are alphanumeric with inner hyphens.
+pub fn valid_domain(domain: &str) -> bool {
+    !domain.is_empty()
+        && domain.len() <= 253
+        && domain.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && label.as_bytes()[0].is_ascii_alphanumeric()
+                && label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
