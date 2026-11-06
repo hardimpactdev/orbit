@@ -58,7 +58,7 @@ sequenceDiagram
       %%> - the same step as in the proof CI (stage 4)
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
-    %%> Built: the outer VM through `operation-task-vm-converge`; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) are the last piece, with the NFS child of stage 2
+    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) are the last piece, with the NFS child of stage 2
     end
     SW->>VM: Re-mint Swamp tokens<br/>in the nested Gateway
     %%> Decided by the orchestrator, for Nick's review:

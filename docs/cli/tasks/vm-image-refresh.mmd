@@ -22,13 +22,10 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
   SW->>VM: Create the VM<br/>image · seed · checkout
   %%> What it does:
-  %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit and the nested fleet from the ready copies
+  %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit, the converge of the outer VM and the nested fleet from the ready copies
   SW->>VM: Pin the VM<br/>guest host key
   %%> What it does:
-  %%> - fills the host key the VM step observed into the converge and ready copies intents
-  SW->>VM: Converge once<br/>task_vm.converge
-  %%> What it does:
-  %%> - the child `operation-task-vm-converge`: the task VM role phases of Ansible on the outer VM; a VM at the pins reports no change
+  %%> - fills the host key the VM step observed into the ready copies intent
   SW->>VM: Save the ready copies<br/>task_vm.ready_copies
   %%> What it does:
   %%> - the child `operation-task-vm-ready-copies`: key-free, self-contained copies in the seed disk, boot-checked

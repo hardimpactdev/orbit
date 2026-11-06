@@ -41,7 +41,7 @@ final readonly class TaskVmImageRefreshIntent
 
     public function __construct(private TaskProvisionIntent $provision, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
         private SwampSshExecutionInput $ssh, private ProofSettings $proof, private RecipeImageBuilds $recipes,
-        private TaskVmConvergeIntent $converge, private TaskVmReadyCopiesIntent $copies) {}
+        private TaskVmReadyCopiesIntent $copies) {}
 
     /**
      * The refresh that is open on `$host`, if any: a second admission returns it.
@@ -111,11 +111,12 @@ final readonly class TaskVmImageRefreshIntent
         // keeps the root disk of the host's base VM, so the image it publishes still fits a normal VM.
         $input['create'] = [...ValidatedData::object($input['create']), 'disk' => $location->disk];
         // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
-        $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => [
-            'converge' => $this->converge->provisioning($vm, null), 'ready_copies' => $this->copies->provisioning($vm)]);
+        $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => ['ready_copies' => $this->copies->provisioning($vm)]);
         $candidate = $location->imageAlias.'-refresh-'.$group->id;
         $jump = $this->ssh->forNode($host);
-        $converge = $pinned['converge'];
+        // The provision converges the outer VM, so its converge intent also holds the pins that the smoke of the image checks.
+        $converge = $input['converge'] ?? throw new ResourceOperationException('task_vm.image_refresh_unavailable', 'The refresh VM needs the converge intent of a topology VM.', 409);
+        $converge = ValidatedData::object($converge);
 
         return [
             'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
@@ -136,7 +137,7 @@ final readonly class TaskVmImageRefreshIntent
                     'profile' => 'base', 'image' => true, 'nfs' => null,
                     'recipe' => $converge['recipe'], 'vp_lock' => $converge['vp_lock'], 'pi' => $converge['pi'],
                 ],
-                'converge' => $converge, 'ready_copies' => Arr::except($pinned['ready_copies'], ['execution_secrets']),
+                'ready_copies' => Arr::except($pinned['ready_copies'], ['execution_secrets']),
             ],
         ];
     }
