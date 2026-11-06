@@ -371,6 +371,41 @@ jobs:
       condition:
         type: succeeded
     allowFailure: true
+  # The Route's Caddy access on the guest, one row at a time, after the fetch and before the setup steps write into the tree: what they
+  # create inherits the default entries, as in instance:create's checkout phase. The Route then skips these rows for the guest.
+  - name: access-${{ self._index }}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 130
+        argv: ${{ ["sudo", "-n", "timeout", "120"] + self.access }}
+    dependsOn:
+    - step: identity
+      condition:
+        type: succeeded
+    forEach:
+      item: access
+      in: ${{ inputs.intent.workspace.access }}
+    concurrency: 1
+    guard: ${{ self._index > 0 && (!("access-"+string(self._index-1) in steps) || steps["access-"+string(self._index-1)].status != "succeeded") }}
+    allowFailure: true
   - name: inspect
     labels: {role: swamp}
     task:
@@ -460,6 +495,9 @@ jobs:
     - step: identity
       condition:
         type: succeeded
+    - step: access-${{ self._index }}
+      condition:
+        type: always
     - step: inspect
       condition:
         type: succeeded
@@ -523,8 +561,10 @@ jobs:
       item: setup
       in: ${{ inputs.intent.workspace.setup }}
     concurrency: 1
-    guard: ${{ has(steps.profile.outputs.error_code) || (self._index > 0 && (!("setup-"+string(self._index-1)
-      in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
+    # The access rows stop at the first that fails, so the last one succeeded only when all did.
+    guard: ${{ has(steps.profile.outputs.error_code) || (size(inputs.intent.workspace.access) > 0
+      && (!("access-"+string(size(inputs.intent.workspace.access)-1) in steps) || steps["access-"+string(size(inputs.intent.workspace.access)-1)].status != "succeeded"))
+      || (self._index > 0 && (!("setup-"+string(self._index-1) in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
     allowFailure: true
   - name: deps_remove
     labels: {role: swamp}

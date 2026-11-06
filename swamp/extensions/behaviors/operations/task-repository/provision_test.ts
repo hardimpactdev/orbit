@@ -143,6 +143,10 @@ Deno.test("source result requires every ordered setup step before exposing the s
     assertEquals(sourceResult(input, steps), {
         source,
     });
+    // The guest's rows of the Route access run before the setup steps; one that did not succeed fails the provision.
+    const routed = { ...input, workspace: { ...input.workspace, access: [["/usr/bin/setfacl", "-m", "u:caddy:--x", "--", "/home"]] } };
+    assertEquals(sourceResult(routed, steps), { error_code: "tasks.provision_failed", failed_step: "access-0" });
+    assertEquals(sourceResult(routed, { ...steps, "access-0": { status: "succeeded", outputs: {} } }), { source });
     // The private-dependency steps are part of the receipt: a failed mint, write or removal fails the provision.
     for (const name of ["deps_write", "deps_remove"]) {
         const before = steps[name].status;

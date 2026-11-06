@@ -260,6 +260,10 @@ it('captures the Route of a routed workspace served, with the admitted Project f
         ->and($route)->not->toContain('Orbit Route unavailable')
         ->and($route)->toContain('reverse_proxy')
         ->and([$instance->selected_php_version, $instance->source_is_laravel])->toBe(['8.5', true]);
+    // The workspace step runs the guest's Route access rows before the setup steps; the Route keeps all rows, and skips the guest's.
+    $guestRows = array_values(array_filter($operation->input['route']['route_create']['acl'], fn (array $row): bool => $row['node_id'] === $guest->id));
+    expect($guestRows)->not->toBeEmpty()
+        ->and($operation->input['workspace']['access'])->toBe(array_column($guestRows, 'argv'));
 });
 
 it('refuses a routed workspace whose Project source facts are invalid, and records nothing', function (): void {

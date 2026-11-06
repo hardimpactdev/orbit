@@ -41,6 +41,9 @@ sequenceDiagram
   SW->>H: Wait for the slot boot<br/>incus exec · systemctl --wait
   %%> The agent answers before sshd, WireGuard and Pi; this waits for the boot to finish, and a degraded boot still counts
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): with a Route, the workspace step runs the guest's rows of the Route's Caddy access right after the fetch, before the setup steps write into the tree, as instance:create does in its checkout phase:
+  %%> - what the setup creates inherits the default entries, so the walk covers the fetched files only
+  %%> - the Route then gets `prepared` with the guest and skips those rows there; in op 12259 the walk over the set-up tree took 4.6 s of the Route
   %%> Private dependencies:
   %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` (`http-basic` for `github.com`, user `x-access-token`) and the `.npmrc` of the task account from it, mode 0600
   %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
