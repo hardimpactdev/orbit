@@ -12,4 +12,8 @@ orbit schedule:logs <schedule> [--lines=COUNT] [--json]
 | --- | --- | --- |
 | `--lines=COUNT` | `100` | 1 through 1,000 lines. |
 
-The Gateway returns at most 1 MiB and sets `truncated` when that limit removed older lines.
+The Gateway answers from the Node agent's log stream, not over SSH. It returns at most 1 MiB and sets `truncated` when that limit removed older lines.
+
+## How it works
+
+<div className="flow-at" data-chart="schedule/logs"></div>

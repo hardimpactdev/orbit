@@ -1,0 +1,49 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-06, agent strip (a): a log read is a typed source of the agent's log streaming. No SSH, no agent command, no Swamp run (R1).
+  %% status: draft
+  %% command: schedule:logs
+  %% kind: schedule.logs
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
+  CLI->>GW: schedule:logs 6f1c0b7e-…
+  %%> Command:
+  %%> - `orbit schedule:logs 6f1c0b7e-…`
+  %%> - syntax: `schedule:logs <schedule> [--lines=COUNT] [--json]`
+  %%> Input:
+  %%> - the Schedule UUID from `schedule:list`
+  %%> Optional:
+  %%> - `--lines` sets the count from 1 through 1,000; it adds no step
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, open a tail<br/>typed source of the Schedule
+  %%> Requirements:
+  %%> - your Node has an access grant to the Node that holds the Schedule
+  %%> - the Schedule is installed; the agent of that Node has a fresh view and has joined its log channel
+  %%> Result:
+  %%> - a tail is recorded in the stream cache with the source the Gateway derives from the Schedule: its service unit
+  %%> - the caller names no unit
+  GW->>A: log-streams.changed
+  %%> What it does:
+  %%> - prompts the agent to fetch its stream list; the event carries no data
+  A->>GW: Fetch the stream list
+  Note over A: Read the newest lines<br/>journalctl --unit
+  %%> What it does:
+  %%> - read-only `journalctl --unit … --output short-iso --utc`, newest entries first, cut and redacted as for a Process
+  A->>GW: Lines<br/>log channel
+  Note over GW: Redact, close the tail
+  alt lines arrive within 5 s
+    GW-->>CLI: 200 lines<br/>truncated flag
+    %%> Result:
+    %%> - at most `--lines` newest complete lines and 1 MiB; `truncated` is set when that limit removed older lines
+  else agent cannot answer
+    GW--xCLI: 409 logs.live_unavailable<br/>reason
+    %%> When:
+    %%> - the agent view is stale, the agent has not joined its log channel, no line arrives within 5 s, or the unit has no journal
+    %%> Result:
+    %%> - there is no SSH fallback and nothing to clean up; read again once the agent is back
+  end

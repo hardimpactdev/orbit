@@ -18,7 +18,7 @@ orbit process:logs <process> [--lines=COUNT] [--follow] [--json]
 | `--follow` | off | Keep printing new lines until Ctrl-C. |
 | `--json` | off | Print the result as JSON, or one JSON object per line with `--follow`. |
 
-Without `--follow`, the Gateway reads the tail once over SSH. With `--follow`, the CLI opens a [live log stream](/reference/live-logs): the Node agent reads the log, and the Gateway relays new lines to this CLI only. The CLI prints `[orbit] N lines dropped` or `[orbit] N MiB skipped` where the stream reports them.
+Without `--follow`, the Gateway answers from the Node agent's log stream: it opens a one-shot tail and returns its first lines, with no SSH. With `--follow`, the CLI opens a [live log stream](/reference/live-logs): the Node agent reads the log, and the Gateway relays new lines to this CLI only. The CLI prints `[orbit] N lines dropped` or `[orbit] N MiB skipped` where the stream reports them.
 
 When the Gateway cannot open a stream, for example because realtime is not configured or the agent has not joined its log channel yet, the CLI prints a notice on stderr and polls the one-shot read every 5 seconds. It does the same when it cannot connect to Reverb within 15 seconds, with reason `realtime_unreachable`, for example on a host that does not resolve `reverb.orbit`. When a live stream ends because the agent stopped, the source became unreadable, or the Gateway fell behind, the CLI switches to polling in the same way. It prints a part the Gateway sends again, with a `sequence` it already has, only once.
 
@@ -43,3 +43,7 @@ With `--json` and `--follow`, the CLI prints one JSON object on each line: `{"ty
 orbit process:logs 41 --lines=250
 orbit process:logs 41 --follow
 ```
+
+## How it works
+
+<div className="flow-at" data-chart="process/logs"></div>

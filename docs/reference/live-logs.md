@@ -14,7 +14,7 @@ covers:
 
 A live log stream shows new lines of one Instance log or one Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance or Process.
 
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs` and `GET /api/v1/processes/{process}/logs`, read over SSH.
+The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads of a Process or a Schedule, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines. The one-shot read of an Instance, `GET /api/v1/instances/{instance}/logs`, still reads over SSH.
 
 ## How a stream works
 
@@ -219,9 +219,9 @@ Reading the journal through `libsystemd` is not possible, because the agent is a
 
 A production Instance lives in its own home, and the agent's unit hides every home except the development Instance root. Widening that unit would expose every production `.env` file that its owner left readable. A tail runs only while someone watches, so SSH reads are enough for production.
 
-### One-shot reads stay on SSH
+### One-shot reads of Processes and Schedules use the stream path
 
-A one-shot read happens only on request and does not repeat. Serving it from the agent would need a request and response path through Reverb for no gain. The live stream sends its own first lines, so opening a pane costs no SSH read.
+A one-shot read of a Process or a Schedule opens a tail on the same typed source as a follow, waits at most 5 seconds for its first lines, and closes it. The agent then needs no command for these reads, and the one-shot and the follow select the same lines. An Instance one-shot read stays on SSH, because the agent may not read production homes.
 
 ### Stream state in a cache, not SQLite
 

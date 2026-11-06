@@ -1,0 +1,55 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-06, agent strip (a): a log read is a typed source of the agent's log streaming. No SSH, no agent command, no Swamp run (R1).
+  %% status: draft
+  %% command: process:logs
+  %% kind: process.logs
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
+  CLI->>GW: process:logs 417
+  %%> Command:
+  %%> - `orbit process:logs 417`
+  %%> - syntax: `process:logs <process> [--lines=COUNT] [--follow] [--json]`
+  %%> Input:
+  %%> - the numeric Process ID from `process:list`
+  %%> Optional:
+  %%> - `--lines` sets the count from 1 through 1,000; `--follow` keeps the tail open (see the live logs page); neither adds a step here
+  %%> Who can call it:
+  %%> - the `orbit` CLI, the web app and the MCP tool send the same request
+  Note over GW: Validate, open a tail<br/>typed source of Process 417
+  %%> Requirements:
+  %%> - your Node has an access grant to the Node that runs Process 417
+  %%> - the agent of that Node has a fresh view and has joined its log channel
+  %%> Result:
+  %%> - a tail is recorded in the stream cache with the source the Gateway derives from the Process: its systemd unit, or its labelled container
+  %%> - the caller names no path and no unit
+  GW->>A: log-streams.changed
+  %%> What it does:
+  %%> - prompts the agent to fetch its stream list; the event carries no data
+  A->>GW: Fetch the stream list
+  %%> What it does:
+  %%> - the agent reads only what the Gateway lists, over HTTPS with its secret
+  Note over A: Read the newest lines<br/>journalctl · container logs
+  %%> What it does:
+  %%> - a systemd Process: read-only `journalctl --unit … --output short-iso --utc`, newest entries first
+  %%> - a Docker Process: the container's standard output and error, only for a container labelled `orbit.managed=true` and `orbit.process.id`
+  %%> - each entry is cut at 256 KiB and each line redacted
+  A->>GW: Lines<br/>log channel
+  Note over GW: Redact, close the tail<br/>stored environment values
+  alt lines arrive within 5 s
+    GW-->>CLI: 200 lines<br/>truncated flag
+    %%> Result:
+    %%> - at most `--lines` newest lines and 4 MiB of whole lines; `truncated` is set when older lines were left out
+    %%> - an empty log is an empty list
+  else agent cannot answer
+    GW--xCLI: 409 logs.live_unavailable<br/>reason
+    %%> When:
+    %%> - the agent view is stale, the agent has not joined its log channel, or no line arrives within 5 s
+    %%> - or the source is unreadable: reason `source_unavailable`
+    %%> Result:
+    %%> - there is no SSH fallback and nothing to clean up; read again once the agent is back
+  end
