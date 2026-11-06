@@ -23,6 +23,7 @@ final readonly class NativeSshExecutor implements SshExecutor
 
     public function __construct(
         private ProcessRunner $runner,
+        private SshControlGroup $group = new SshControlGroup,
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -100,7 +101,9 @@ final readonly class NativeSshExecutor implements SshExecutor
 
     /**
      * Options that run the command as a channel on the Node's shared connection, or none when
-     * the socket directory cannot hold a socket, so the command opens its own connection.
+     * the socket directory cannot hold a socket, so the command opens its own connection. A command that runs
+     * inside Horizon's control group opens its own too, because a master started there would outlive the stop of
+     * the unit and hold the release that drains it.
      *
      * A connection through a jump host shares a connection too, when it names the host's
      * identity. Hosts behind different jump hosts can have the same private address, and a
@@ -116,6 +119,7 @@ final readonly class NativeSshExecutor implements SshExecutor
 
         if (
             ! $connection->shareConnection
+            || $this->group->insideHorizon()
             || ($jump !== null && ($connection->hostIdentity === null || $connection->hostIdentity === ''))
             || strlen($directory) > self::MaxSocketDirectoryLength
             || ! $this->socketDirectory($directory)

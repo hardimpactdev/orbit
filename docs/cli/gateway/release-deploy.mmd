@@ -47,7 +47,7 @@ sequenceDiagram
   %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
   AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
   %%> What it does:
-  %%> - waits until the unit's whole control group is empty, as long as the drain allows; a job's idle SSH connection master can outlive Horizon's main process by up to 60 seconds
+  %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
   %%> On failure:
   %%> - the run fails with `gateway.release_horizon_not_drained`; Horizon is started again below
   AC->>GN: Switch the release<br/>gateway-rollback · Horizon

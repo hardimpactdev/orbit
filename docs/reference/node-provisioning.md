@@ -600,6 +600,7 @@ The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Eve
 - A dead Node ends its connection within about 10 seconds, through `ServerAliveInterval=5` and `ServerAliveCountMax=2`.
 - A key or host-key change on the Node applies when the connection closes.
 - When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
+- A command that runs inside the Horizon unit opens its own connection. A release waits for that unit's control group to empty, and a shared master would stay in it.
 - When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes two warning lines to its stderr.
 
 A reachability check always opens a new connection. The `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. Doctor uses official Swamp SSH. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
