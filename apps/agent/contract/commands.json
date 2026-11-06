@@ -812,38 +812,6 @@
       ]
     },
     {
-      "name": "instance.inspect-release",
-      "summary": "Check and read the selected production release, or a named retained one.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.release_invalid",
-        "instance.commit_not_on_branch",
-        "instance.release_step_failed",
-        "instance.release_missing"
-      ]
-    },
-    {
-      "name": "instance.list-releases",
-      "summary": "List the production releases that pass their checks, and the selected one.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.release_invalid",
-        "instance.commit_not_on_branch",
-        "instance.release_step_failed",
-        "instance.release_missing"
-      ]
-    },
-    {
       "name": "instance.inspect-repository-binding",
       "summary": "Read the repository URL that each production marker and release records.",
       "mutates": false,

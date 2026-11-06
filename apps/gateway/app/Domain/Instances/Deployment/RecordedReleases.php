@@ -24,6 +24,16 @@ final readonly class RecordedReleases
         return self::walk($instance)[0];
     }
 
+    /** The retained releases sorted by name, and the selected one. */
+    public static function state(Instance $instance): DeploymentReleaseState
+    {
+        [$retained, $selected] = self::walk($instance);
+        $names = array_map(strval(...), array_keys($retained));
+        sort($names);
+
+        return new DeploymentReleaseState($names, $selected);
+    }
+
     /**
      * What a deploy of `$release` changes when it succeeds: the selection it replaces, and the releases its cleanup
      * removes because the home no longer keeps them.
