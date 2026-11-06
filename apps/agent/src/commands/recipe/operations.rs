@@ -370,27 +370,6 @@ impl Command for Inspect {
 pub struct Ready {
     ready: bool,
 }
-pub struct IncusPreflight;
-impl Command for IncusPreflight {
-    const NAME: &'static str = "recipe.incus-preflight";
-    const SUMMARY: &'static str =
-        "Refuse an Incus recipe change unless every host instance is stopped.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(900);
-    type Input = Input;
-    type Output = Ready;
-    type Error = Failure;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::super::linux_only(platform, Privilege::Root)
-    }
-    fn run(input: Input, context: &Context) -> Result<Ready, Failure> {
-        let mut host = Native(context);
-        let files = Files::system();
-        assessment::platform(&mut host, &files, &input)?;
-        ownership::incus_preflight(&mut host, &files, &input).map_err(|e| e.at("preflight"))?;
-        Ok(Ready { ready: true })
-    }
-}
 pub struct Apply;
 impl Command for Apply {
     const NAME: &'static str = "recipe.apply";

@@ -1396,27 +1396,6 @@ pub fn inspect_pool(input: &InspectPoolInput, host: &Host) -> Result<Pool, Runti
     Ok(Pool { pool, fingerprint })
 }
 
-pub struct InspectPool;
-
-impl Command for InspectPool {
-    const NAME: &'static str = "php.inspect-production-pool";
-    const SUMMARY: &'static str =
-        "Read a production Instance's generated PHP-FPM pool and its fingerprint.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(30);
-    type Input = InspectPoolInput;
-    type Output = Pool;
-    type Error = RuntimeError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-
-    fn run(input: InspectPoolInput, _: &Context) -> Result<Pool, RuntimeError> {
-        inspect_pool(&input, &Host::system()?)
-    }
-}
-
 // ---- refresh the cache -------------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]

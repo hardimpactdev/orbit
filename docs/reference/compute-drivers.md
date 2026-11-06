@@ -406,8 +406,6 @@ The host's image, instance-name, and host-wide resource inventories use the type
 
 `incus.volumes` reads the custom volumes in the configured project and pool. Swamp owns volume changes through keyed Operation children; the Gateway keeps volume ownership and inventory reads.
 
-`incus.volume` clones a base image's topology seed for a VM, gives a completed seed its final name, or removes an explicitly selected volume. The agent derives seed names from the image fingerprint and clone names from the VM name. It preserves existing clones, refuses a missing source seed, and treats an absent removal target as removed. Volume changes share a host lock; the Gateway keeps the decision about which records and images still own each volume.
-
 `incus.vm-state` returns one VM's running state, explicit `settled: true`, guest bridge address, and original image fingerprint. It refuses a VM unless Incus reports `Running` or `Stopped`.
 
 `incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
@@ -418,11 +416,11 @@ A stopped VM receives the same metadata preparation before it starts. A repeat p
 
 Before enrollment, guest commands use the same command runner, delivery manifest, and mismatch handling as managed Nodes. Incus carries them through its host's pinned transport with `incus exec`; UpCloud carries them through the guest's pinned SSH connection. The Incus adapter refuses source Git credentials before contacting the host, including for a builder with no task VM record. The transport stages only the pinned agent candidate. A builder has no Node row: an installation refusal fails its build, and never records a failed pin on the Incus host or creates a Node record.
 
-`incus.instance-images` reads the original image fingerprint of each instance. `incus.image` prepares single-boot metadata, stops and publishes a builder, promotes an alias, or prunes selected image candidates. Rust preserves metadata maps, removes only NoCloud seed templates, validates publication output, and protects images used by existing instances or unrelated aliases. The Gateway selects obsolete aliases and retained fingerprints from build records. Pruning removes the selected image’s seed volumes before its image. All image changes share the Incus volume lock.
+`incus.instance-images` reads the original image fingerprint of each instance.
 
 The image builder verifies the guest account before publication. Cloud-init uses the configuration disk on its first boot; publication needs no guest service ordering drop-in.
 
-`image.boot` applies the fixed first-boot and APT service masks. Incus images also receive the DHCPv4 network file and IPv4 wait-online drop-in. `image.owner` verifies the fixed `orbit` UID and GID. `image.check` verifies that account and its authorized key, plus the provider’s requested lean-boot or active-firewall checks. These commands replace delivered image-check and boot scripts.
+`image.owner` verifies the fixed `orbit` UID and GID.
 
 `guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
 
@@ -1476,7 +1474,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:build-image` |
-| `task_vm.topology_seed_failed` | 502 | `incus.build-topology-seed` refused the build. The error includes its bounded diagnostic |
+| `task_vm.topology_seed_failed` | 502 | The topology seed build was refused. The error includes its bounded diagnostic |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
@@ -1554,7 +1552,7 @@ The server is named `tvm-<id>` in its title and hostname, and carries the label 
 
 The server clones the newest verified template for the claim's recorded recipe onto a disk with the storage tier of its plan, such as `standard` for a Starter plan. The default plan includes 30 GB of that storage, so the default disk costs nothing extra. It has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too.
 
-The image builder calls `image.firewall` through the guest agent runner before identity cleanup. The command denies incoming traffic by default, allows public SSH on port 22 with the `orbit:public-ssh-recovery` comment, enables UFW, and verifies that it is active. A failed command or inactive firewall stops publication with `task_vm.image_check_failed`, mapped to the build failure at the Gateway. Repeated calls preserve the same fixed policy under the firewall lock.
+Before an UpCloud template is published, the `clean` phase of the task VM role allows public SSH on port 22 with the `orbit:public-ssh-recovery` comment, denies other incoming traffic, and enables UFW.
 
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 

@@ -38,11 +38,6 @@ impl From<vp_scope::Error> for Error {
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PackageInput {
-    pub package: String,
-}
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct VersionOutput {
     pub version: String,
@@ -57,12 +52,6 @@ pub struct InventoryOutput {
     pub packages: Vec<Package>,
     pub scan_complete: bool,
 }
-#[derive(schemars::JsonSchema, Serialize)]
-pub struct RemovalOutput {
-    pub packages: Vec<String>,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Done {}
 const MAX_OUTPUT: u64 = 1_048_576;
 trait Host {
     fn run(&mut self, args: &[&str]) -> Result<Vec<u8>>;
@@ -153,23 +142,6 @@ impl Host for Native<'_> {
         })
     }
 }
-fn valid_package(package: &str) -> bool {
-    package.len() <= 214
-        && regex::Regex::new(
-            r"\A(?:[a-z0-9][a-z0-9._~-]*|@[a-z0-9][a-z0-9._~-]*/[a-z0-9][a-z0-9._~-]*)\z",
-        )
-        .unwrap()
-        .is_match(package)
-}
-fn validate(package: &str, mutation: bool) -> Result<()> {
-    if !valid_package(package) {
-        return Err(Error::Invalid {});
-    }
-    if mutation && package == "pnpm" {
-        return Err(Error::Protected {});
-    }
-    Ok(())
-}
 fn version(host: &mut impl Host) -> Result<VersionOutput> {
     let data = host.run(&["--version"])?;
     let text = std::str::from_utf8(&data).map_err(|_| Error::Output {})?;
@@ -180,15 +152,6 @@ fn version(host: &mut impl Host) -> Result<VersionOutput> {
     Ok(VersionOutput {
         version: first.into(),
     })
-}
-fn candidate(host: &mut impl Host, package: &str) -> Result<VersionOutput> {
-    validate(package, false)?;
-    let data = host.run(&["info", package, "version", "--json"])?;
-    let value: String = serde_json::from_slice(&data).map_err(|_| Error::Output {})?;
-    if !safe(&value) {
-        return Err(Error::Output {});
-    }
-    Ok(VersionOutput { version: value })
 }
 fn inventory(host: &mut impl Host) -> Result<InventoryOutput> {
     let data = host.run(&["list", "-g", "--json"])?;
@@ -221,18 +184,6 @@ fn inventory(host: &mut impl Host) -> Result<InventoryOutput> {
     }
     Ok(result)
 }
-#[derive(Clone, Copy)]
-enum Operation {
-    Plan,
-}
-fn operation(host: &mut impl Host, package: &str, operation: Operation) -> Result<Done> {
-    validate(package, true)?;
-    let args = match operation {
-        Operation::Plan => vec!["remove", "-g", "--dry-run", package],
-    };
-    host.run(&args)?;
-    Ok(Done {})
-}
 macro_rules! read_command {
     ($name:ident,$wire:literal,$summary:literal,$input:ty,$output:ty,$run:expr) => {
         pub struct $name;
@@ -262,37 +213,12 @@ read_command!(
     |_: Empty, context: &Context| version(&mut Native::new(context)?)
 );
 read_command!(
-    Candidate,
-    "tool.vp-candidate",
-    "Read Vite+'s normal registry candidate for one package.",
-    PackageInput,
-    VersionOutput,
-    |input: PackageInput, context: &Context| {
-        validate(&input.package, false)?;
-        candidate(&mut Native::new(context)?, &input.package)
-    }
-);
-read_command!(
     Inventory,
     "tool.vp-inventory",
     "Read Vite+ global package observations without changing Tool intent.",
     Empty,
     InventoryOutput,
     |_: Empty, context: &Context| inventory(&mut Native::new(context)?)
-);
-read_command!(
-    Plan,
-    "tool.vp-removal-plan",
-    "Check removal of exactly one Vite+ global package.",
-    PackageInput,
-    RemovalOutput,
-    |input: PackageInput, context: &Context| {
-        validate(&input.package, true)?;
-        operation(&mut Native::new(context)?, &input.package, Operation::Plan)?;
-        Ok(RemovalOutput {
-            packages: vec![input.package],
-        })
-    }
 );
 #[cfg(test)]
 mod tests;

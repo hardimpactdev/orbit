@@ -1,4 +1,4 @@
-//! `instance.*-development-*` deploys: a development default deploys in its own checkout, as the managed account.
+//! `instance.run-lifecycle-step`: a development default runs its setup or teardown step in its own checkout, as the managed account.
 //! A setup or teardown step holds an exclusive `flock` on the checkout directory while it runs, so the checkout and
 //! each step take the same lock without waiting. These replace the Bash of `DevelopmentCheckoutProgram`, check for
 //! check.
@@ -193,31 +193,6 @@ pub fn target(input: &TargetInput) -> Result<Target, DevDeployError> {
     })
 }
 
-pub struct ResolveTarget;
-
-impl Command for ResolveTarget {
-    const NAME: &'static str = "instance.resolve-development-target";
-    const SUMMARY: &'static str =
-        "Fetch a development default's branch and name the commit a deploy checks out.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = TargetInput;
-    type Output = Target;
-    type Error = DevDeployError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn target(input: &TargetInput) -> Option<String> {
-        Some(format!("source:{}", input.checkout.home.display()))
-    }
-
-    fn run(input: TargetInput, _: &Context) -> Result<Target, DevDeployError> {
-        target(&input)
-    }
-}
-
 // ---- checkout ----------------------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -341,30 +316,6 @@ pub fn checkout(input: &CheckoutInput) -> Result<Target, DevDeployError> {
         .git(&["rev-parse", "--verify", "HEAD"])
         .ok_or_else(|| failed("read the commit"))?;
     Ok(Target { commit })
-}
-
-pub struct CheckoutDefault;
-
-impl Command for CheckoutDefault {
-    const NAME: &'static str = "instance.checkout-development-default";
-    const SUMMARY: &'static str = "Check out a commit on a development default's branch in place.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = CheckoutInput;
-    type Output = Target;
-    type Error = DevDeployError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn target(input: &CheckoutInput) -> Option<String> {
-        Some(format!("source:{}", input.checkout.home.display()))
-    }
-
-    fn run(input: CheckoutInput, _: &Context) -> Result<Target, DevDeployError> {
-        checkout(&input)
-    }
 }
 
 // ---- a setup or teardown step ------------------------------------------------------------------------------------

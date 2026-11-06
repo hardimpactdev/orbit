@@ -923,23 +923,6 @@ fn invalid_readiness_is_refused_before_container_effects() {
 }
 
 #[test]
-fn readiness_and_supported_controls_share_the_process_lock() {
-    let update = readiness_input();
-    let stop = ControlInput {
-        process_id: 7,
-        runtime: Runtime::Docker,
-        name: NAME.into(),
-        operation: Operation::Stop,
-        on_demand: false,
-    };
-    assert_eq!(ConvergeContainer::target(&update), Some("process:7".into()));
-    assert_eq!(
-        ControlProcess::target(&stop),
-        ConvergeContainer::target(&update)
-    );
-}
-
-#[test]
 fn recovered_readiness_is_not_repeated_after_the_backup_is_deleted() {
     let mut s = sandbox();
     s.node

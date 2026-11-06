@@ -197,31 +197,6 @@ pub fn prepare_user(input: &UserInput, layout: &Layout) -> Result<Prepared, Rele
     Ok(Prepared {})
 }
 
-pub struct PrepareUser;
-
-impl Command for PrepareUser {
-    const NAME: &'static str = "instance.prepare-production-user";
-    const SUMMARY: &'static str =
-        "Create a production Instance's system account and private home, or check them.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = UserInput;
-    type Output = Prepared;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-
-    fn target(input: &UserInput) -> Option<String> {
-        Some(format!("production-user:{}", input.user))
-    }
-
-    fn run(input: UserInput, _: &Context) -> Result<Prepared, ReleaseError> {
-        prepare_user(&input, &Layout::system())
-    }
-}
-
 // ---- the initial clone -------------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -394,31 +369,6 @@ pub fn prepare_source(input: &SourceInput, layout: &Layout) -> Result<Prepared, 
     Ok(Prepared {})
 }
 
-pub struct PrepareSource;
-
-impl Command for PrepareSource {
-    const NAME: &'static str = "instance.prepare-production-source";
-    const SUMMARY: &'static str =
-        "Clone a production Instance's repository into its initial release and record the source markers.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(900);
-    type Input = SourceInput;
-    type Output = Prepared;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &SourceInput) -> Option<String> {
-        Some(format!("release-home:{}", input.home.instance))
-    }
-
-    fn run(input: SourceInput, _: &Context) -> Result<Prepared, ReleaseError> {
-        prepare_source(&input, &Layout::system())
-    }
-}
-
 // ---- the branch of the initial release ---------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -552,31 +502,6 @@ pub fn resolve(input: &ResolveInput, layout: &Layout) -> Result<Resolved, Releas
     })
 }
 
-pub struct ResolveSource;
-
-impl Command for ResolveSource {
-    const NAME: &'static str = "instance.resolve-production-source";
-    const SUMMARY: &'static str =
-        "Check out a branch in a production Instance's initial release and link its environment.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(900);
-    type Input = ResolveInput;
-    type Output = Resolved;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &ResolveInput) -> Option<String> {
-        Some(format!("release-home:{}", input.home.instance))
-    }
-
-    fn run(input: ResolveInput, _: &Context) -> Result<Resolved, ReleaseError> {
-        resolve(&input, &Layout::system())
-    }
-}
-
 // ---- the Composer profile ------------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -685,27 +610,6 @@ pub(super) fn composer_profile(
         entry_point: Some(kind.into()),
         composer: Some(base64::engine::general_purpose::STANDARD.encode(content)),
     })
-}
-
-pub struct InspectProfile;
-
-impl Command for InspectProfile {
-    const NAME: &'static str = "instance.inspect-production-profile";
-    const SUMMARY: &'static str =
-        "Read a production checkout's Composer metadata, refusing files the user does not own.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = ProfileInput;
-    type Output = Profile;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn run(input: ProfileInput, _: &Context) -> Result<Profile, ReleaseError> {
-        profile(&input)
-    }
 }
 
 // ---- Caddy's access ------------------------------------------------------------------------------------------------
@@ -830,31 +734,6 @@ pub fn grant_caddy(input: &CaddyInput, layout: &Layout) -> Result<Prepared, Rele
     Ok(Prepared {})
 }
 
-pub struct GrantCaddy;
-
-impl Command for GrantCaddy {
-    const NAME: &'static str = "instance.grant-production-caddy-access";
-    const SUMMARY: &'static str =
-        "Deny Caddy a production home except a path to the selected web root.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = CaddyInput;
-    type Output = Prepared;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-
-    fn target(input: &CaddyInput) -> Option<String> {
-        Some(format!("production-user:{}", input.user))
-    }
-
-    fn run(input: CaddyInput, _: &Context) -> Result<Prepared, ReleaseError> {
-        grant_caddy(&input, &Layout::system())
-    }
-}
-
 // ---- the current selection -----------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -937,51 +816,6 @@ pub fn clear_current(input: &LayoutInput, layout: &Layout) -> Result<Selection, 
         .ok_or_else(|| failed("remove current"))?;
     }
     Ok(Selection { current: None })
-}
-
-pub struct ValidateLayout;
-
-impl Command for ValidateLayout {
-    const NAME: &'static str = "instance.validate-release-layout";
-    const SUMMARY: &'static str =
-        "Check a production home, its releases, and the release that current selects.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = LayoutInput;
-    type Output = Selection;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn run(input: LayoutInput, _: &Context) -> Result<Selection, ReleaseError> {
-        validate_layout(&input, &Layout::system())
-    }
-}
-
-pub struct ClearCurrent;
-
-impl Command for ClearCurrent {
-    const NAME: &'static str = "instance.clear-current-release";
-    const SUMMARY: &'static str = "Check a production home and remove its current link.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = LayoutInput;
-    type Output = Selection;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &LayoutInput) -> Option<String> {
-        Some(format!("release-home:{}", input.home.instance))
-    }
-
-    fn run(input: LayoutInput, _: &Context) -> Result<Selection, ReleaseError> {
-        clear_current(&input, &Layout::system())
-    }
 }
 
 // ---- the APP_URL of a served directory ---------------------------------------------------------------------------
@@ -1284,31 +1118,6 @@ mv -f -- "$APP_CONFIG_CACHE" "$cache"
     })
 }
 
-pub struct RefreshConfigCache;
-
-impl Command for RefreshConfigCache {
-    const NAME: &'static str = "instance.refresh-config-cache";
-    const SUMMARY: &'static str =
-        "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = ConfigCacheInput;
-    type Output = ConfigCache;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &ConfigCacheInput) -> Option<String> {
-        Some(format!("production-environment:{}", input.user))
-    }
-
-    fn run(input: ConfigCacheInput, _: &Context) -> Result<ConfigCache, ReleaseError> {
-        refresh_config_cache(&input, Path::new("/usr/bin"))
-    }
-}
-
 // ---- removal -------------------------------------------------------------------------------------------------------
 
 /// Whether any process runs as the uid.
@@ -1399,31 +1208,6 @@ pub fn remove(input: &Home, layout: &Layout) -> Result<Removed, ReleaseError> {
     check(!exists(home), "the home is gone")?;
     remove_state()?;
     Ok(Removed { removed: true })
-}
-
-pub struct RemoveHome;
-
-impl Command for RemoveHome {
-    const NAME: &'static str = "instance.remove-production-home";
-    const SUMMARY: &'static str =
-        "Remove a production Instance's home, system account, and source state.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(600);
-    type Input = Home;
-    type Output = Removed;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-
-    fn target(input: &Home) -> Option<String> {
-        Some(format!("release-home:{}", input.instance))
-    }
-
-    fn run(input: Home, _: &Context) -> Result<Removed, ReleaseError> {
-        remove(&input, &Layout::system())
-    }
 }
 
 #[cfg(test)]

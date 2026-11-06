@@ -1,5 +1,5 @@
 //! A Schedule's systemd units on its Node: `schedule.install` writes its script, service, and timer and sets the
-//! timer to the desired state, restoring what it replaced on failure; `schedule.activate` enables the timer;
+//! timer to the desired state, restoring what it replaced on failure;
 //! `schedule.run` starts one run; `schedule.logs` reads its journal; `schedule.remove` deletes its units. Each
 //! acts only on files that carry the Schedule's own marker.
 
@@ -587,17 +587,6 @@ schedule_command!(
     Done,
     install,
     |input: &InstallInput| Some(format!("schedule:{}", input.id))
-);
-schedule_command!(
-    ActivateSchedule,
-    "schedule.activate",
-    "Enable and start a Schedule's timer.",
-    true,
-    45,
-    TargetInput,
-    Done,
-    activate,
-    |input: &TargetInput| Some(format!("schedule:{}", input.id))
 );
 schedule_command!(
     RunSchedule,

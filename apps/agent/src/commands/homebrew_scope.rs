@@ -21,6 +21,7 @@ crate::command_errors! {
 type Result<T> = std::result::Result<T, Error>;
 const PREFIX: &str = "/home/linuxbrew/.linuxbrew";
 const ORIGIN: &str = "https://github.com/Homebrew/brew";
+#[cfg(test)]
 pub(super) const VERSION: &str = "Homebrew 7.0.0";
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]

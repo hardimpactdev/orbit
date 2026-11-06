@@ -5,9 +5,6 @@
 //! A unit change is two calls, so the Gateway can record a pending activation between them: `process.stage-unit`
 //! writes a candidate that `systemd-analyze verify` accepts, and `process.activate-unit` publishes it with a backup
 //! of the unit it replaces, reloads systemd, sets the desired state, and restores the previous unit when that fails.
-//! `process.converge-container` changes a container in one call: it creates a candidate beside the current
-//! container, renames that one to a rollback name that records whether it ran, renames the candidate in, and undoes
-//! the change when a step fails. A later call finishes or undoes a change that a lost connection interrupted.
 
 use super::caddy::chown;
 use super::health::{self, HealthInput};
@@ -1644,17 +1641,6 @@ process_command!(
     Activated,
     |input: &ActivateInput| activate(&mut Node::system(), input),
     |input: &ActivateInput| Some(format!("process:{}", input.process_id))
-);
-process_command!(
-    ConvergeContainer,
-    "process.converge-container",
-    "Create or replace a Process's container and set its desired state.",
-    true,
-    900,
-    ContainerInput,
-    Done,
-    |input: &ContainerInput| converge_container(&mut Node::system(), input),
-    |input: &ContainerInput| Some(format!("process:{}", input.process_id))
 );
 process_command!(
     ReadLogs,

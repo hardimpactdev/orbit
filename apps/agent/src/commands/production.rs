@@ -587,10 +587,6 @@ pub struct Release {
 
 // ---- prepare ----------------------------------------------------------------------------------------------------
 
-/// Clones a new release of the branch, or of a commit the branch contains, links its environment and shared
-/// paths, and leaves `current` alone.
-pub struct PrepareRelease;
-
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareInput {
@@ -863,29 +859,6 @@ fn no_link_on_the_way(base: &Path, path: &Path) -> bool {
     })
 }
 
-impl Command for PrepareRelease {
-    const NAME: &'static str = "instance.prepare-release";
-    const SUMMARY: &'static str =
-        "Clone a new production release of a branch and link its environment and shared paths.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(900);
-    type Input = PrepareInput;
-    type Output = Release;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &PrepareInput) -> Option<String> {
-        Some(format!("release-home:{}", input.home.instance))
-    }
-
-    fn run(input: PrepareInput, _: &Context) -> Result<Release, ReleaseError> {
-        prepare(&input, &Layout::system())
-    }
-}
-
 // ---- served web roots ------------------------------------------------------------------------------------------
 
 /// The release that `current` selects, for a Route with a web root. Without `current`, nothing serves yet.
@@ -952,52 +925,6 @@ pub fn check_served(input: &ServedInput, layout: &Layout) -> Result<(), ReleaseE
         )?;
     }
     Ok(())
-}
-
-pub struct PrepareServedWebRoots;
-
-impl Command for PrepareServedWebRoots {
-    const NAME: &'static str = "instance.prepare-served-web-roots";
-    const SUMMARY: &'static str =
-        "Link the environment and grant Caddy each Route web root in a production Instance's selected release.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = ServedInput;
-    type Output = Release;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &ServedInput) -> Option<String> {
-        Some(format!("release-home:{}", input.home.instance))
-    }
-
-    fn run(input: ServedInput, _: &Context) -> Result<Release, ReleaseError> {
-        prepare_served(&input, &Layout::system())
-    }
-}
-
-pub struct CheckServedWebRoots;
-
-impl Command for CheckServedWebRoots {
-    const NAME: &'static str = "instance.check-served-web-roots";
-    const SUMMARY: &'static str =
-        "Check that a production Instance's selected release can serve each Route web root.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = ServedInput;
-    type Output = serde_json::Value;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn run(input: ServedInput, _: &Context) -> Result<serde_json::Value, ReleaseError> {
-        check_served(&input, &Layout::system()).map(|()| serde_json::json!({}))
-    }
 }
 
 // ---- activate ---------------------------------------------------------------------------------------------------
@@ -1208,9 +1135,6 @@ impl Command for ListReleases {
 
 // ---- prune ------------------------------------------------------------------------------------------------------
 
-/// Removes releases beyond the retained count, never the selected one, the previous one, or one a process uses.
-pub struct PruneReleases;
-
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PruneInput {
@@ -1386,29 +1310,6 @@ pub fn prune(
         );
     }
     Ok(output)
-}
-
-impl Command for PruneReleases {
-    const NAME: &'static str = "instance.prune-releases";
-    const SUMMARY: &'static str =
-        "Remove production releases beyond the retained count that no process uses.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = PruneInput;
-    type Output = PruneOutput;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &PruneInput) -> Option<String> {
-        Some(format!("release-home:{}", input.home.instance))
-    }
-
-    fn run(input: PruneInput, _: &Context) -> Result<PruneOutput, ReleaseError> {
-        prune(&input, &Layout::system(), Path::new("/proc"))
-    }
 }
 
 // ---- repository binding -----------------------------------------------------------------------------------------

@@ -585,12 +585,10 @@ mod tests {
             "role.install-prerequisites",
         ];
         let firewall = [
-            "firewall.gateway-vpn",
             "firewall.route-lan",
             "firewall.router-lan",
             "firewall.rule",
             "firewall.rules",
-            "image.firewall",
             "incus.prepare-host",
             "metrics.cadvisor",
             "metrics.node-exporter",

@@ -1,7 +1,6 @@
 //! The WireGuard hub on the Node with the `vpn` role: `wireguard.project-hub` validates and installs the hub
 //! configuration the Gateway rendered and activates `wg-quick@orbit`, restoring the previous configuration and
-//! service state when activation fails; `wireguard.inspect-hub` reads whether the interface runs and the digests of
-//! the hub and VPN DNS record files, for Doctor. The Gateway renders both files and compares the digests.
+//! service state when activation fails. The Gateway renders the hub and VPN DNS record files.
 //!
 //! [`Host`] also carries the paths and tools of [peer DNS](super::peer_dns), which shares `/etc/wireguard`.
 
@@ -420,26 +419,6 @@ impl Command for ProjectHub {
     }
 }
 
-pub struct BootstrapHub;
-impl Command for BootstrapHub {
-    const NAME: &'static str = "wireguard.bootstrap-hub";
-    const SUMMARY: &'static str = "Validate the Gateway hub, enable forwarding and restart WireGuard with configuration recovery.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = ProjectInput;
-    type Output = Projected;
-    type Error = HubError;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn target(_: &ProjectInput) -> Option<String> {
-        Some("wireguard-hub".into())
-    }
-    fn run(input: ProjectInput, _: &Context) -> Result<Projected, HubError> {
-        publish_hub(&input, &Host::system(), Some(Path::new("/etc/sysctl.d")))
-    }
-}
-
 // ---- inspect the hub ---------------------------------------------------------------------------------------------
 
 command_errors! {
@@ -475,28 +454,6 @@ pub fn inspect(host: &Host) -> Result<HubState, InspectHubError> {
         config_sha256: digest(&host.path("orbit.conf"))?,
         dns_records_sha256: digest(&host.dns_records)?,
     })
-}
-
-pub struct InspectHub;
-
-impl Command for InspectHub {
-    const NAME: &'static str = "wireguard.inspect-hub";
-    const SUMMARY: &'static str =
-        "Read whether the hub interface runs and the digests of its configuration and VPN DNS records.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(30);
-    type Input = InspectHubInput;
-    type Output = HubState;
-    type Error = InspectHubError;
-
-    /// The hub configuration holds its private key and only root reads it.
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-
-    fn run(_: InspectHubInput, _: &Context) -> Result<HubState, InspectHubError> {
-        inspect(&Host::system())
-    }
 }
 
 #[cfg(test)]

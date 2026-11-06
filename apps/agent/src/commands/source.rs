@@ -1,4 +1,4 @@
-//! Checks and steps that the development source commands share. A failed check ends the command with the error that
+//! Checks and steps that the instance commands share. A failed check ends the command with the error that
 //! its caller names, through [`require`]. Paths are compared as the shell compared them: `stat`, `test`, and
 //! `realpath -e` look at the path itself, and command output loses its trailing newlines.
 

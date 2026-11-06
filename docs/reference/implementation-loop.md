@@ -473,7 +473,7 @@ The fixture that snapshots a live WAL shares only its initial database, not the 
 
 Registration tests in the Gateway fake agent receipts and verify source facts, relocation checkpoints, lost-response recovery, and error mapping. Rust tests own checkout safety, cross-filesystem copies, worktree repair, and Laravel rollback files. Each filesystem recovery checkpoint runs against real private repositories, including a separate filesystem for copy recovery.
 
-Development source tests keep branch selection and removal recovery decisions in PHP with fake agent responses. Native Rust tests verify Git execution, preparation receipts, quarantine identity, and cleanup after partial Git deletion. Tests of linked worktrees compare the files of siblings and shared Git metadata before and after removal. They cover siblings that move or disappear during an accepted removal.
+Development source tests keep branch selection and removal recovery decisions in PHP with fake agent responses.
 
 The Documents scheduler proves startup and recurring cleanup, explicit pause/resume, dead-worker fencing, and daemon restart in separate cases. Each case owns its database, HTTP server and workers, with real `schedule:work` dispatch and `schedule:run` children. A restart case may prepare earlier deletions through the real cleanup action; the old worker's child dispatch has its own proof.
 

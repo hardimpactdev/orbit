@@ -201,30 +201,5 @@ impl Command for ReadVolumes {
         })
     }
 }
-pub struct ChangeVolume;
-impl Command for ChangeVolume {
-    const NAME: &'static str = "incus.volume";
-    const SUMMARY: &'static str =
-        "Clone, finish, or remove an explicitly selected task VM topology volume.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(180);
-    const RESOURCES: &'static [&'static str] = &["incus-volumes"];
-    type Input = Input;
-    type Output = Changed;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        crate::commands::linux_only(platform, Privilege::Root)
-    }
-    fn target(input: &Input) -> Option<String> {
-        Some(format!(
-            "incus-volumes:{}:{}",
-            input.location.project, input.location.pool
-        ))
-    }
-    fn run(input: Input, context: &Context) -> Result<Changed, Error> {
-        change(&mut Native(context), &input)
-    }
-}
-
 #[cfg(test)]
 mod tests;

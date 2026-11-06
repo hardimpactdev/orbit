@@ -1,6 +1,4 @@
-//! A managed peer's split DNS (docs/reference/private-dns.md): `wireguard.inspect-peer-dns` reads the saved and live
-//! resolver state under a shared peer lock, `wireguard.query-dns` sends uncached lookups, and
-//! `wireguard.repair-peer-dns` moves the peer's DNS selection to the `orbit` link with the Gateway's routing domains.
+//! A managed peer's split DNS (docs/reference/private-dns.md): `wireguard.repair-peer-dns` moves the peer's DNS selection to the `orbit` link with the Gateway's routing domains.
 //!
 //! Repair runs as one transaction under the exclusive peer lock `/run/lock/orbit-wireguard-peer.lock`, which the
 //! native peer convergence commands also take. It backs up the configuration, the DNS state, the `orbit` default
@@ -292,28 +290,6 @@ pub fn inspect(input: &InspectInput, host: &Host) -> Result<PeerDnsState, Inspec
     })
 }
 
-pub struct InspectPeerDns;
-
-impl Command for InspectPeerDns {
-    const NAME: &'static str = "wireguard.inspect-peer-dns";
-    const SUMMARY: &'static str =
-        "Read a peer's saved DNS state, its PostUp hooks, and its live orbit resolver settings.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(10);
-    type Input = InspectInput;
-    type Output = PeerDnsState;
-    type Error = InspectError;
-
-    /// `/etc/wireguard` and the peer lock are root's.
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-
-    fn run(input: InspectInput, _: &Context) -> Result<PeerDnsState, InspectError> {
-        inspect(&input, &Host::system())
-    }
-}
-
 // ---- query -------------------------------------------------------------------------------------------------------
 
 command_errors! {
@@ -357,27 +333,6 @@ pub fn query(input: &QueryInput, host: &Host) -> Result<Answers, QueryError> {
             })
             .collect(),
     })
-}
-
-pub struct QueryDns;
-
-impl Command for QueryDns {
-    const NAME: &'static str = "wireguard.query-dns";
-    const SUMMARY: &'static str = "Look names up through systemd-resolved without its cache.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(10);
-    type Input = QueryInput;
-    type Output = Answers;
-    type Error = QueryError;
-
-    /// Any account may ask systemd-resolved.
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn run(input: QueryInput, _: &Context) -> Result<Answers, QueryError> {
-        query(&input, &Host::system())
-    }
 }
 
 // ---- repair ------------------------------------------------------------------------------------------------------
