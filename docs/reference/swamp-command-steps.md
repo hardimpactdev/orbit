@@ -3,7 +3,7 @@ title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
   - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
-  - apps/gateway/app/Jobs/Operations/ProjectSwampTerminal.php
+  - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
 ---
 
 # Swamp command steps
@@ -94,11 +94,19 @@ The shared Gateway cache stores the time of the last successful read, keyed by n
 
 A fire of a Schedule's own workflow is recorded as a task when its run ends, not when it starts. The job also tells each projection about its declared workflow every ten minutes, which the feed did when it connected. There is no timer on history reads of one run and no fallback to a family search.
 
-### Catch-all for Operation runs
+### Reconciler
 
-The observer can lose an Operation's root run. It drops a refused attach, a run that ends before it follows it, or a projection job that failed. The minute poll covers this. It already lists the root runs that finished in the last hour. For each one whose Operation is still unfinished 45 seconds after the run ended, it queues the same `ProjectSwampTerminal` job. The job reads the exact history, so the list is only a hint. A queued Operation is not queued again for 15 minutes.
+`ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. Polling stays: the datastore is format 2, which has no commit feed.
 
-A history that is not terminal yet is read again, like an unreadable one, until the run deadline. Serve can announce the end of a run before it writes the history.
+Each pass reads every open Operation of a direct kind against Swamp:
+
+- A bound run gets one exact history read. A terminal history is projected through `SwampCommandStep::projectTerminal`. A history that is not terminal yet, or a read that fails, changes nothing, and the next pass reads again. Serve can announce the end of a run before it writes the history.
+- An Operation past its budget is expired. A history that shows the run ended within its budget wins.
+- An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start.
+- A recorded cancel that Swamp has not confirmed is forwarded.
+- A timed-out Operation whose run nothing proves ended frees its target after an hour.
+
+The pass has no retry, backoff or per-Operation job. Only one pass runs at a time.
 
 ### Kept read connection
 
@@ -116,15 +124,15 @@ A step is matched by its job and name, or by its position when a job repeats a n
 
 The existing `orbit:agent-view` Gateway observer keeps the shared native run connection. It joins the private `orbit` record channel; a committed native binding publishes an Operation notice there. At startup and after subscription acknowledgement, it reads active bound Operations once to cover missed notices. It multiplexes `run.attach` requests on its run-authorized socket; receiving events never waits for a workflow to finish.
 
-Only kinds with `terminal_result` are followed through bound-root attachments and project their fixed result. The scheduled read runs as its own Gateway job. Result delivery runs independently of Horizon.
+Only kinds with `terminal_result` are followed through bound-root attachments and project their fixed result. The scheduled read runs as its own Gateway job. The reconciler and the scheduled read run on the operations queue.
 
 The native event connection and shared history reader accept messages and frames up to 8 MiB. Full run metadata and intent can exceed the Reverb client's 64 KiB message limit; Reverb keeps its existing limit. A run beyond the native bound cannot be projected through this connection and must not be treated as successful delivery.
 
-A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status. Laravel synchronously dispatches `ProjectSwampTerminal` in the existing Gateway observer process. It reloads the Operation and its declaration and calls the same `SwampCommandStep` helper. Terminal projection therefore remains available when Horizon is stopped, including a failed Horizon installation or restart. There is one history request per delivery and no native execution command.
+A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status. Laravel dispatches `ReconcileSwampOperations` for a pass; the pass reloads each Operation and its declaration and calls the same `SwampCommandStep` helper. There is no native execution command.
 
-An explicit attach `not_found`, or a `run.interrupted` reply naming the bound root, dispatches the same job without a claimed status for late-result recovery. Official e459 uses `run.interrupted` when the previous owner's heartbeat is stale; that reply alone does not prove persisted terminal history. The shared helper still requires the exact root's terminal history before projecting.
+An explicit attach `not_found`, or a `run.interrupted` reply naming the bound root, requests the same pass for late-result recovery. Official e459 uses `run.interrupted` when the previous owner's heartbeat is stale; that reply alone does not prove persisted terminal history. The shared helper still requires the exact root's terminal history before projecting.
 
-If projection fails, the observer keeps the binding and attachment without closing the native event socket. It reads history again only after another native notice or an explicit recovery attachment. Elapsed time never retries projection. An interrupted reply can arrive before terminal history; the Operation stays active until a later native notice verifies terminal history. Other bound runs continue on the same socket. A process restart recovers durable bindings through the normal startup snapshot.
+If projection fails, the observer keeps the binding and attachment without closing the native event socket, and the next scheduled pass reads history again. An interrupted reply can arrive before terminal history; the Operation stays active until a pass sees terminal history. Other bound runs continue on the same socket. A process restart recovers durable bindings through the normal startup snapshot.
 
 Authorization failures and `run.elsewhere` do not invent a terminal result. Successful duplicate deliveries are suppressed on the connection; the helper's row lock and terminal guard protect duplicate delivery after a process restart.
 

@@ -6,20 +6,17 @@ namespace App\Infrastructure\Swamp;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
-use App\Jobs\Operations\ProjectSwampTerminal;
-use App\Jobs\Operations\RecoverUnboundSwampRun;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Closure;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
-/** Observes bound native roots. It never submits, resumes, cancels or polls native work. */
+/** Follows bound native roots for their progress and asks the reconciler to settle one when its run ends. It never submits, resumes or cancels native work. */
 final class SwampRunSubscriber
 {
     /** @var array<int,array{run:string,workflow:string,request:?string,attached:bool}> */
@@ -27,12 +24,6 @@ final class SwampRunSubscriber
 
     /** @var array<string,int> */
     private array $requests = [];
-
-    /** @var array<string,true> One lookup per uncertain start or timeout, never a timer retry. */
-    private array $lookedUp = [];
-
-    /** @var array<int,int> Gateway deadlines, populated by committed records and startup recovery. */
-    private array $deadlines = [];
 
     /** @var array<int,string> Terminal notices queued during this connection. */
     private array $queued = [];
@@ -54,7 +45,7 @@ final class SwampRunSubscriber
         $this->clock = $clock ?? static fn (): float => microtime(true);
     }
 
-    /** One snapshot at startup or after the record channel rejoins; never a status poll. */
+    /** One snapshot at startup or after the record channel rejoins. */
     public function recover(): void
     {
         $this->queued = [];
@@ -73,35 +64,16 @@ final class SwampRunSubscriber
     public function follow(int $operationId): void
     {
         $operation = Operation::query()->find($operationId);
-        if ($operation !== null) {
-            $operation = $this->expire($operation);
-        }
         if ($operation === null || ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation))) {
             $request = $this->following[$operationId]['request'] ?? null;
             if ($request !== null) {
                 unset($this->requests[$request]);
             }
-            unset($this->following[$operationId], $this->deadlines[$operationId]);
+            unset($this->following[$operationId]);
 
             return;
         }
         $definition = app(DirectOperation::class)->definition($operation->kind);
-        $deadline = $definition === null || ExpireOperationAction::awaitsSettlement($operation) || isset($this->queued[$operationId]) ? null : OperationRunBudgets::deadline($operation);
-        if ($deadline !== null) {
-            $this->deadlines[$operationId] = $deadline->getTimestamp();
-        }
-        $lookup = (ExpireOperationAction::awaitsSettlement($operation) ? 'timeout:' : 'start:').$operationId;
-        if ($definition !== null && app(DirectOperation::class)->usesNativeTerminal($operation)
-            && ! isset($operation->state['swamp_run_id']) && ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation))
-            && ! isset($this->lookedUp[$lookup])) {
-            $this->lookedUp[$lookup] = true;
-            try {
-                Bus::dispatch(new RecoverUnboundSwampRun($operation->id));
-                $operation->refresh();
-            } catch (Throwable $exception) {
-                $this->log->warning('The native start lookup is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
-            }
-        }
         $run = $operation->state['swamp_run_id'] ?? null;
         if ($definition === null || ! app(DirectOperation::class)->usesNativeTerminal($operation) || ! is_string($run) || ! Str::isUuid($run)
             || ($this->following[$operationId]['run'] ?? null) === $run || ($this->queued[$operationId] ?? null) === $run) {
@@ -117,25 +89,9 @@ final class SwampRunSubscriber
     /** One pass beside the existing Gateway observer's Reverb receive loop. */
     public function pass(): void
     {
-        OperationRunBudgets::duringTick(fn () => $this->receivePass());
-    }
-
-    private function receivePass(): void
-    {
         if (! $this->started) {
             $this->recover();
             $this->started = true;
-        }
-        foreach ($this->deadlines as $operationId => $deadline) {
-            if ($deadline > ($this->clock)()) {
-                continue;
-            }
-            $operation = Operation::query()->find($operationId);
-            if ($operation !== null) {
-                $this->expire($operation);
-            }
-            unset($this->deadlines[$operationId]);
-            $this->follow($operationId);
         }
         if ($this->following === [] || ($this->clock)() < $this->nextConnection) {
             return;
@@ -177,24 +133,6 @@ final class SwampRunSubscriber
         }
     }
 
-    /** At a bound deadline, let the existing single history read arbitrate before any failure alert. */
-    private function expire(Operation $operation): Operation
-    {
-        $deadline = OperationRunBudgets::deadline($operation);
-        $run = $operation->state['swamp_run_id'] ?? null;
-        if (! $operation->status->terminal() && $deadline !== null && ! $deadline->isFuture()
-            && is_string($run) && Str::isUuid($run) && app(DirectOperation::class)->usesNativeTerminal($operation)) {
-            if (! isset($this->queued[$operation->id])) {
-                Bus::dispatch(new ProjectSwampTerminal($operation->id, $run, null, atDeadline: true));
-                $this->queued[$operation->id] = $run;
-            }
-
-            return $operation->refresh();
-        }
-
-        return app(ExpireOperationAction::class)->execute($operation);
-    }
-
     private function scheduleReconnect(): void
     {
         $this->connectionBackoff = min(60.0, max(1.0, $this->connectionBackoff * 2));
@@ -232,7 +170,7 @@ final class SwampRunSubscriber
         if ($type === 'error') {
             $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
             if (($error['code'] ?? null) === 'not_found') {
-                $this->project($operationId, null);
+                $this->project($operationId);
             } else {
                 $this->log->warning('The native terminal observer attach was refused.', ['operation_id' => $operationId]);
                 unset($this->following[$operationId], $this->requests[$id]);
@@ -242,7 +180,7 @@ final class SwampRunSubscriber
         }
         if ($type === 'run.interrupted') {
             if (is_array($payload) && ($payload['runId'] ?? null) === $entry['run']) {
-                $this->project($operationId, null);
+                $this->project($operationId);
             }
 
             return;
@@ -267,10 +205,10 @@ final class SwampRunSubscriber
             || ! is_string($run['status'] ?? null) || ! in_array($run['status'], ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
             return;
         }
-        $this->project($operationId, $run['status']);
+        $this->project($operationId);
     }
 
-    private function project(int $operationId, ?string $status): void
+    private function project(int $operationId): void
     {
         $entry = $this->following[$operationId];
         if (($this->queued[$operationId] ?? null) === $entry['run']) {
@@ -280,11 +218,11 @@ final class SwampRunSubscriber
             }
         }
         try {
-            Bus::dispatch(new ProjectSwampTerminal($operationId, $entry['run'], $status));
+            ReconcileSwampOperations::dispatch();
             $this->queued[$operationId] = $entry['run'];
         } catch (Throwable $exception) {
-            // A later native notice or explicit recovery may deliver again; elapsed time never reads history.
-            $this->log->warning('The native terminal projection is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
+            // The reconciler's next scheduled pass settles the run.
+            $this->log->warning('The Operation reconcile request is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
 
             return;
         }
