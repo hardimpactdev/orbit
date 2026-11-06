@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\TaskVms\FailTaskVmAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +47,7 @@ final readonly class TaskVmResumeProjection implements DirectOperationProjection
             if ($vm !== null && $vm->state->value === ($operation->input['admitted_state'] ?? null)) {
                 if ($projected->status === OperationStatus::Succeeded && $vm->state !== TaskVmState::Ready) {
                     $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null, ...TaskVm::ForgetTopology]);
+                    Task::query()->whereKey($vm->group_id)->where('capacity_wait_reason', WakeTaskVmAction::Resuming)->update(['capacity_wait_reason' => null]);
                 } elseif ($projected->status === OperationStatus::Failed && $vm->state === TaskVmState::Parked) {
                     $this->fail->execute($vm, [$vm->state], ValidatedData::string($data['error_code']), 'The task VM resume could not be confirmed.', 'The task VM resume could not be confirmed.');
                 }

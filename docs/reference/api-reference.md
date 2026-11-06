@@ -80,6 +80,8 @@ The `tasks:provision` body schema is empty: task VMs run no Swamp worker, so the
 
 The `tasks:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
 
+The `tasks:turn`, `tasks:check` and `tasks:publish` descriptions name the refusal `409 tasks.vm_resuming`: a parked task VM is woken by the admission, and the call is repeated once the VM runs ([Tasks](/reference/tasks)).
+
 The `tasks:pr-ready` and `tasks:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `tasks:dependency-merge`; the MCP tools `tasks-pr-ready` and `tasks-pr-merge` are the callers.
 
 The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.

@@ -32,6 +32,7 @@ final readonly class TaskPublishIntent
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
         }
+        TaskVmAwake::require($group);
 
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request));
     }
