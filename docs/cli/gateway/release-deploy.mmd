@@ -46,6 +46,10 @@ sequenceDiagram
   %%> Why:
   %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
   AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
+  %%> What it does:
+  %%> - waits until the unit's whole control group is empty, as long as the drain allows; a job's idle SSH connection master can outlive Horizon's main process by up to 60 seconds
+  %%> On failure:
+  %%> - the run fails with `gateway.release_horizon_not_drained`; Horizon is started again below
   AC->>GN: Switch the release<br/>gateway-rollback · Horizon
   %%> Why:
   %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
@@ -53,6 +57,10 @@ sequenceDiagram
   opt the check failed
     AC->>GN: Switch back<br/>gateway-rollback previous
   end
+  AC->>GN: Start Horizon<br/>always · also after a failure
+  %%> Why:
+  %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
+  %%> - starting a running unit changes nothing; the rollback script starts a stopped Horizon the same way
   AC->>GN: Resume document cleanup<br/>best effort
   %%> Why:
   %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release

@@ -35,3 +35,10 @@ for unit in $(systemctl list-units --type=service --state=active --plain --no-le
     directory=$(systemctl show -p WorkingDirectory --value "$unit")
     case $directory in "$application" | "$application"/*) systemctl restart "$unit" && echo "gateway-rollback: restarted $unit" ;; esac
 done
+# Horizon is the Gateway's queue, and a release drains it before the switch, so a stopped Horizon is what a failed release leaves behind: start it.
+for unit in $(systemctl list-unit-files --type=service --state=enabled --plain --no-legend | awk '{print $1}'); do
+    directory=$(systemctl show -p WorkingDirectory --value "$unit")
+    case $directory in "$application" | "$application"/*) ;; *) continue ;; esac
+    systemctl show -p ExecStart --value "$unit" | grep -q 'artisan horizon ;' || continue
+    systemctl is-active --quiet "$unit" || { systemctl start "$unit" && echo "gateway-rollback: started $unit"; }
+done

@@ -30,7 +30,8 @@ jobs:
   labels: {role: swamp}
   steps:
     # Horizon's running jobs finish on the release they started on: SIGTERM to the main process only, no kill and
-    # no stop timeout, until the unit's whole control group is empty.
+    # no stop timeout, until the unit's whole control group is empty. The stop returns when the main process is gone; a
+    # job's idle SSH connection master (ControlPersist, 60 seconds) can still sit in the group, so the step waits for it.
   - name: Drain Horizon
     labels: {role: swamp}
     writes: true
@@ -69,11 +70,14 @@ jobs:
           printf '[Service]\nKillMode=mixed\nKillSignal=SIGTERM\nSendSIGHUP=no\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' > "$drop/zz-orbit-horizon-drain.conf"
           systemctl daemon-reload
           systemctl stop "$unit"
-          if grep -qx 'populated 1' "/sys/fs/cgroup/system.slice/$unit/cgroup.events" 2>/dev/null; then
-            echo "gateway.release_horizon_not_drained: $unit still has processes" >&2; exit 1
-          fi
+          waited=0
+          while grep -qx 'populated 1' "/sys/fs/cgroup/system.slice/$unit/cgroup.events" 2>/dev/null; do
+            [ "$waited" -lt "$2" ] || { echo "gateway.release_horizon_not_drained: $unit still has processes" >&2; exit 1; }
+            sleep 2; waited=$((waited + 2))
+          done
         - sh
         - ${{ inputs.intent.horizon_unit }}
+        - ${{ string(inputs.intent.horizon_drain_seconds) }}
     # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
     # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
     # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
@@ -164,6 +168,28 @@ jobs:
         - sh
         - ${{ inputs.intent.id }}
         - ${{ inputs.intent.previous }}
+    # Always, also after a failed drain, switch or check: the drain stopped Horizon, so every end of the run starts it again, on
+    # the release that is live. Starting a running unit changes nothing.
+  - name: Start Horizon
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.horizon_unit == "" }}
+    dependsOn:
+    - {step: Drain Horizon, condition: &always {type: always}}
+    - {step: Switch the release, condition: *always}
+    - {step: Verify the Gateway, condition: *always}
+    - {step: Switch back, condition: *always}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-start-horizon-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 60
+        argv: [/usr/bin/systemctl, start, '${{ inputs.intent.horizon_unit }}']
     # Best effort: the scheduler restart paused the release cleanups; they resume once a reconciliation finds no
     # differences. One that stays paused fails this step and keeps its own status; the release stays live.
   - name: Resume document cleanup
@@ -173,6 +199,7 @@ jobs:
     dependsOn:
     - {step: Verify the Gateway, condition: {type: or, conditions: [{type: succeeded}, {type: failed}]}}
     - {step: Switch back, condition: {type: always}}
+    - {step: Start Horizon, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
