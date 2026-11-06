@@ -56,7 +56,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        timeoutSec: ${{ 2 * inputs.intent.horizon_drain_seconds + 60 }}
+        timeoutSec: ${{ inputs.intent.horizon_drain_seconds + inputs.intent.horizon_drain_seconds + 60 }}
         argv:
         - /bin/sh
         - -c
