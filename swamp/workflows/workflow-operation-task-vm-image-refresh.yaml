@@ -56,10 +56,19 @@ jobs:
         intent: ${{ inputs.intent.provision }}
         converge: ${{ inputs.converge }}
         execution_secrets: ${{ inputs.execution_secrets }}
+  # A refresh saves the ready copies of the fleet it started. A seed without usable ready copies gives a VM without a fleet, so the run ends here, before anything is published.
+  - name: Check the fleet
+    labels: {role: swamp}
+    dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
+    task:
+      type: assert
+      expr: 'steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'')'
+      severity: high
+      message: The VM has no nested fleet, because the seed of this host has no usable ready copies. Build them with task_vm.fleet_build and task_vm.ready_copies, then refresh.
   # The guests' host keys are pinned only by the VM step; the ready copies intent carries `host_keys: null` until here.
   - name: Pin the VM
     labels: {role: swamp}
-    dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
+    dependsOn: [{step: Create the VM, condition: {type: succeeded}}, {step: Check the fleet, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -69,11 +78,10 @@ jobs:
         receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
         guest_node_id: '${{ inputs.intent.provision.guest_node_id }}'
         intents: '${{ {"ready_copies": inputs.intent.refresh.ready_copies} }}'
-  # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them. A seed without usable ready copies has no nested fleet in this VM (the provision child records nested_fleet none), so there is nothing to save until the fleet build exists.
+  # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them.
   - name: 'Save the ready copies'
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "none"'') }}'
     dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
     task:
       type: workflow
@@ -90,7 +98,7 @@ jobs:
   - name: 'Withdraw the enrollment'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Save the ready copies', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Save the ready copies', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -98,7 +106,7 @@ jobs:
       methodName: exec
       globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-withdraw-enrollment").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'exec', '${{ inputs.intent.refresh.vm.name }}', '--', 'sh', '-c', 'rm -f /etc/sudoers.d/orbit /home/orbit/.ssh/authorized_keys2 /usr/local/bin/orbit-agent /usr/local/bin/.orbit-agent.download /etc/systemd/system/orbit-agent.service /etc/systemd/system/multi-user.target.wants/orbit-agent.service && systemctl daemon-reload'], timeoutSec: 60}
-  # A skipped save is fine only when its guard skipped it. A VM that failed its provision skips the pin and with it the save, and the clean must not go on to publish and promote the image of that VM, so it depends on the pin too.
+  # A VM that failed its provision skips the pin and with it the save, and the clean must not go on to publish and promote the image of that VM, so it depends on the save.
   - name: 'Clean the refresh VM'
     labels: {role: swamp}
     writes: true

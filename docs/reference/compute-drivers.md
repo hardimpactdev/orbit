@@ -1224,6 +1224,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | Step | What it does |
 |---|---|
 | `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and seed, the release checkout, the converge of the outer VM, and the nested fleet from the ready copies. |
+| `Check the fleet` | Asserts that the VM step started the nested fleet. A seed without usable ready copies ends the run here, before the clean and the publication. |
 | `Pin the VM` | Fills the host key of the new guest into the ready copies intent. |
 | `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
 | `Withdraw the enrollment` | Removes what the enrollment installed: the sudoers file, the key file of Node 209, the observer binary and its unit. |
@@ -1256,7 +1257,7 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 
 The chart lists what the run still lacks:
 
-- The call of `task_vm.fleet_build` by the refresh of a host whose seed has no ready copies. Until it exists, the run skips the save and the result says `ready_copies: false`.
+- The call of `task_vm.fleet_build` by the refresh of a host whose seed has no ready copies. Such a refresh fails at `Check the fleet`, before it publishes. The operator runs `task_vm.fleet_build` and `task_vm.ready_copies` first.
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
 - The re-mint of the nested Swamp tokens in a proof run (stage 3). The provision already renews them.
 - The replacement of old ready slots. Ready slots do not exist yet.
@@ -1289,9 +1290,11 @@ The outer VM must export its checkout to the nested network: the converge of the
 
 ##### Start the nested fleet
 
-A task that declares a topology gets its nested fleet from the ready copies of the seed. The step is skipped for a task without a topology. It is also skipped when the seed holds no three ready copies of the current format, and the result then says `nested_fleet: none`. The save writes the format as the key `user.ready.format`, and the child lists only the copies that carry the current value, so copies from before a change to the steps that start or apply a fleet are not used.
+A task that declares a topology gets its nested fleet from the ready copies of the seed. The step is skipped for a task without a topology. It is also skipped when the seed holds no three ready copies of the current format, and the result then says `nested_fleet: none`. The provision decides that once, in the step `Look for ready copies`, and the child has no guard of its own.
 
-The child reads that state from its first step, `Look for ready copies`, so the result step also runs when every later step is skipped. The step `Start the nested fleet` of `operation-task-provision` calls the child `task-nested-fleet`, which runs one command per step over official SSH to the task VM. It creates the network `oe-nested` from the subnet that the copies store and copies the three ready copies to `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Each Node gets its stored MAC and address back, and the three VMs start.
+The save writes the format as the key `user.ready.format`, and the child lists only the copies that carry the current value, so copies from before a change to the steps that start or apply a fleet are not used.
+
+The step `Start the nested fleet` of `operation-task-provision` calls the child `task-nested-fleet`, which runs one command per step over official SSH to the task VM. It creates the network `oe-nested` from the subnet that the copies store and copies the three ready copies to `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Each Node gets its stored MAC and address back, and the three VMs start.
 
 The provider step `observe-seed` lists the volumes of the pool and prints only the two it needs: the seed of the image and the seed clone of this VM. Swamp cuts step output at 4,096 bytes, and the whole list of a host with many seeds is longer.
 

@@ -23,6 +23,9 @@ sequenceDiagram
   SW->>VM: Create the VM<br/>image · seed · checkout
   %%> What it does:
   %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit, the converge of the outer VM and the nested fleet from the ready copies
+  SW->>VM: Check the fleet<br/>ready copies found
+  %%> What it does:
+  %%> - an assert on the receipt of the VM step: the nested fleet started from the ready copies; a seed without usable ready copies fails the run here, before anything is published
   SW->>VM: Pin the VM<br/>guest host key
   %%> What it does:
   %%> - fills the host key the VM step observed into the ready copies intent

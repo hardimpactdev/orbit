@@ -50,6 +50,12 @@ sequenceDiagram
     %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the NFS server with the export of the checkout to the nested network, the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
     %%> Why:
     %%> - the image may predate these phases; a VM at the pins reports no change
+    SW->>VM: Find the fleet guest<br/>its address and host key
+    %%> What it does:
+    %%> - the behavior `tp-data-guest-fleet` reads the guest's SSH target from the VM step, as the fleet child does
+    SW->>VM: Look for ready copies<br/>current format only
+    %%> What it does:
+    %%> - lists the instances `fleet-ready-*` that carry `user.ready.format` of the current value; the next step starts only when there are three
     SW->>VM: Start the nested fleet<br/>task-nested-fleet child
     %%> What it does:
     %%> - creates the nested network from the subnet that the ready copies of the seed store (the converge may have made it; the fleet checks that its subnet is the stored one), copies the three ready copies, gives each its stored MAC and address, and starts them
@@ -58,7 +64,7 @@ sequenceDiagram
     %%> - pushes the proof Swamp Club key from the VM into the nested Gateway, where the re-mint below restarts its Swamp
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
-    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet until the fleet build (`task_vm.fleet_build`) lands; the result records `nested_fleet: none`
+    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image refuses such a VM
     %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
     %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
     %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it
