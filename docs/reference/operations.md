@@ -88,6 +88,8 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the `task_vm.destroy` budget of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
+`tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. The longest run of author turns replaces the row once the history holds them.
+
 `task_vm.ready_copies` has a provisional 3,600 seconds, the sum of its serial steps with margin: the Club key scan (900 seconds), the stop (300), a copy (600), the agent wait (130) and the scan of the stored copy (900). A 14-day p95 replaces it after the first successes.
 
 `task_vm.fleet_build` has a provisional 3,600 seconds, the serial bounded steps of the nested fleet. They are the VMs and their first boot, the Gateway bootstrap (about three minutes), and the converges of the Gateway and its Node. The enrollment of app-dev and app-prod takes about six minutes each. A 14-day p95 replaces it after the first successes.
@@ -95,8 +97,6 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 `task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The fleet build, when the seed has no ready copies, takes 3,600 seconds at its bound and about 25 minutes in practice. The ready copies take 3,600 seconds at their bound, about ten minutes in practice. The builder converges at 3,300 seconds at its bound, and a VM at its pins takes about a minute. The publication, the boot check and the check VM take a few minutes each. A 14-day p95 replaces it after the first successes.
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. The budget is replaced by the 14-day p95 once repository installs have native history.
-
-`tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns, so the derived budget of 18 minutes ended an author turn that was still writing code. One hour stands until the history holds author turns.
 
 `fleet.rollout` has a provisional 600 seconds. Its first successes deferred every Node outside the maintenance window in seconds, so a budget derived from them cut off the first real visit at three minutes. One visit of seven Nodes, four of them converged, took 187 seconds; a whole fleet converging at that pace, times 1.5, rounds up to 600. A 14-day p95 replaces it once windowed visits have history.
 

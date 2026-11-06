@@ -114,10 +114,11 @@ final class OperationRunBudgets
         // is minted when the push step starts, so the hour of an installation token does not limit this run.
         // Replace with the 14-day p95 after the first success.
         'tasks.prep_fix' => 2700,
-        // The history of the kind held short reviewer and consult turns, so its p95 gave 18 minutes, and the first implementation turn
-        // of group 3517 (operation 11737, firewall:allow) ended at that bound while the author was still working. An author turn
-        // writes code, runs the Pest suite of its deliverables and fixes what the Project check finds; the draft turn of a prep run takes
-        // about 18 minutes alone (Nick, 2026-11-06: prep runs of 43 to 90 minutes). One hour, until the history holds author turns.
+        // The history of the kind held short reviewer and consult turns: its longest run of 12 minutes x 1.5 gave 18 minutes, and the first
+        // implementation turn of group 3517 (operation 11737, firewall:allow) ended at that bound while the author was still working.
+        // An author turn writes code, runs the Pest suite of its deliverables and fixes what the Project check finds. One hour; the
+        // `observe` step of `operation-task-turn` ends 5 minutes earlier (3,300 seconds) so the snapshots and the receipt still run.
+        // Replace with the longest run x 1.5 once the history holds author turns.
         'tasks.turn' => 3600,
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
