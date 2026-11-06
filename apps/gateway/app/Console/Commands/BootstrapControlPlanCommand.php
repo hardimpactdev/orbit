@@ -8,9 +8,11 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewayControlPlan;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\SwampNode;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
@@ -22,7 +24,9 @@ final class BootstrapControlPlanCommand extends Command
     protected $signature = 'orbit:bootstrap-control-plan
         {--checkout= : The swamp/ folder of the release on this machine}
         {--certificate= : Issue the certificate of the swamp or gateway site and print its paths}
-        {--hub-public-key= : Record the public key of the WireGuard hub the machine made}';
+        {--hub-public-key= : Record the public key of the WireGuard hub the machine made}
+        {--serving : Record that this machine serves Swamp: the swamp role is active}
+        {--agent-secret-hash= : Record the SHA-256 verifier of the agent key the machine made}';
 
     #[\Override]
     protected $description = 'Print the Swamp control plane plan of this Gateway, or issue the certificate of one of its sites.';
@@ -37,6 +41,8 @@ final class BootstrapControlPlanCommand extends Command
                 return self::FAILURE;
             }
             Node::withoutEvents(static fn (): bool => SwampNode::node()->update(['wireguard_public_key' => $hubKey]));
+            // The hub is up, which is all the vpn role of a Gateway Node stands for.
+            $this->activate(RoleName::Vpn);
             // The key every Node peer config names: the Gateway reads it from here when it admits a Node.
             $directory = rtrim(Config::string('orbit.home'), '/').'/wireguard';
             if (! is_dir($directory)) {
@@ -45,6 +51,25 @@ final class BootstrapControlPlanCommand extends Command
             file_put_contents($directory.'/public.key', $hubKey."\n");
             chmod($directory.'/public.key', 0o644);
             $this->line('Hub public key recorded.');
+
+            return self::SUCCESS;
+        }
+        if ($this->option('serving')) {
+            $this->activate(RoleName::Swamp);
+            $this->line('Swamp role active.');
+
+            return self::SUCCESS;
+        }
+        $verifier = $this->option('agent-secret-hash');
+        if (is_string($verifier) && $verifier !== '') {
+            if (preg_match('/\A[a-f0-9]{64}\z/', $verifier) !== 1) {
+                $this->error('The agent key verifier is not a SHA-256 digest.');
+
+                return self::FAILURE;
+            }
+            // The key stays on the machine; only its verifier is recorded, as a rekey does.
+            Node::withoutEvents(static fn (): bool => SwampNode::node()->forceFill(['agent_secret_hash' => $verifier])->save());
+            $this->line('Agent verifier recorded.');
 
             return self::SUCCESS;
         }
@@ -91,5 +116,11 @@ final class BootstrapControlPlanCommand extends Command
         $this->line(json_encode($plan->make($checkout), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
         return self::SUCCESS;
+    }
+
+    private function activate(RoleName $role): void
+    {
+        NodeRole::withoutEvents(static fn (): int => SwampNode::node()->roles()->where('role', $role)
+            ->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]));
     }
 }

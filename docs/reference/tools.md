@@ -267,7 +267,7 @@ Some installed packages keep SSH, the WireGuard tunnel, DNS, Docker, the firewal
 
 | Manager | Protected package names |
 | --- | --- |
-| `apt` | `acl`, `attr`, `ca-certificates`, `caddy`, `composer`, `curl`, `dnsmasq`, `docker.io`, `git`, `gnupg`, `libnss-resolve`, `openssh-client`, `openssh-server`, `openssl`, `php-curl`, `php-xml`, `sudo`, `ufw`, `unzip`, `wireguard`, `wireguard-tools` |
+| `apt` | `acl`, `attr`, `bind9-dnsutils`, `ca-certificates`, `caddy`, `composer`, `curl`, `dnsmasq`, `docker.io`, `git`, `gnupg`, `libnss-resolve`, `openssh-client`, `openssh-server`, `openssl`, `php-curl`, `php-xml`, `sudo`, `ufw`, `unzip`, `wireguard`, `wireguard-tools` |
 | `brew` | `wireguard-tools`, `wireguard-go` |
 | `vp` | `pnpm` |
 
@@ -588,6 +588,6 @@ A fresh Gateway gets its PHP packages from its [bootstrap plan](/reference/node-
 
 The pinned Swamp binary of a fresh Gateway comes from its [bootstrap](/reference/node-provisioning#gateway-bootstrap-prerequisites), which also starts its serve and workers; after that the swamp role keeps the pin.
 
-The bootstrap plan also installs `valkey-server` on a fresh Gateway, for the [Gateway queue](/reference/gateway-queue#connection) that records finished runs. A Node that the nested Gateway adds with `orbit:node-add` gets its Tools through the normal Node workflow.
+The bootstrap plan also installs `valkey-server` on a fresh Gateway, for the [Gateway queue](/reference/gateway-queue#connection) that records finished runs. A Node that the nested Gateway adds with `orbit:node-add` gets its Tools through the normal Node workflow. The Gateway's own Node gets the same through `orbit:node-converge`.
 
 That bootstrap also makes the WireGuard hub key on the new Gateway's machine and brings up `wg-quick@orbit` there, so Swamp can reach the Gateway by its WireGuard address before any role runs.

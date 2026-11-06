@@ -5,7 +5,7 @@ covers:
   - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeNetworkReservation,NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
-  - apps/gateway/app/{Console/Commands/{ProvisionNodeCommand,BootstrapPlanCommand,BootstrapControlPlanCommand,RoleAddCommand,NodeAddCommand},Domain/Gateway/{GatewayBootstrapPlan,GatewayControlPlan}}.php
+  - apps/gateway/app/{Console/Commands/{ProvisionNodeCommand,BootstrapPlanCommand,BootstrapControlPlanCommand,RoleAddCommand,NodeAddCommand,NodeConvergeCommand},Domain/Gateway/{GatewayBootstrapPlan,GatewayControlPlan}}.php
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,app/{Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
   - apps/gateway/app/Infrastructure/{Swamp/SwampSshExecutionInput,Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/CliConverge*.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php,Actions/Nodes/StartNodePhpPackagesAction.php,Domain/Nodes/NodePhpPackages*.php,Domain/Nodes/operation-kinds.php}
@@ -453,9 +453,17 @@ The same phase brings up the WireGuard hub of the Gateway's own network, because
 
 The `app` job also writes the agent delivery manifest from the `agent_delivery` run input: the public pins the admitting Gateway sends, because a new Gateway has no release to carry them.
 
-`orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way. The role brings the PHP-FPM pool, the Caddy site, and units for the scheduler and Horizon.
+`orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way. The role brings the PHP-FPM pool, the Caddy site, and units for the scheduler and Horizon. It adds the `caddy` user to the group of the Gateway account, because Ubuntu keeps a home at 0750 and Caddy must read the checkout in it.
+
+The control plane phase also makes the Gateway's own agent key and records only its SHA-256 verifier, so the first `orbit:node-converge` of the Gateway Node has a verifier to render. It writes the dnsmasq backend file that private DNS needs, and it puts the Orbit root certificate in the system trust of the machine.
+
+The phase starts the firewall with the recovery SSH rule, the trust of the network members and an operator rule for the hub port; the first role converge of the Gateway retires the recovery rule.
+
+The hub step marks the `vpn` role active. After serve and both workers run, the phase marks the `swamp` role active.
 
 `orbit:node-add NODE HOST [--role=ROLE] [--wireguard-ip=IP] [--host-key-fingerprint=SHA256:...]` admits `node.add` from the Gateway itself, as `node:add` does through the API; Swamp then enrolls the Node.
+
+`orbit:node-converge NODE` admits `node.converge` from the Gateway itself. The Gateway converges its own Node this way, which installs the agent and the CLI on its machine.
 
 The Swamp role's own steps are workflow steps bound to worker labels, so a Gateway without a worker cannot run them; once its own Swamp serves, `node:role:add` converges the roles through it.
 

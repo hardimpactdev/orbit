@@ -10,6 +10,7 @@ use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
@@ -25,6 +26,9 @@ it('renders the serve and worker units for the checkout of the machine, with the
 
     expect($plan['node_id'])->toBe($node->id)
         ->and($plan['address'])->toBe($node->wireguard_ip)
+        ->and($plan['firewall']['hub_port'])->toBe('51820')
+        ->and(array_column($plan['firewall']['rules'], 0))->each->toBe('ufw')
+        ->and($plan['dns_backend'])->toContain("listen-address=127.0.0.55\n", "bind-interfaces\n")
         ->and($plan['user'])->toBe('orbit')
         ->and($plan['units']['serve'])->toContain("--repo-dir {$checkout} ")->toContain("WorkingDirectory={$checkout}\n")
         ->and($plan['units']['worker'])->toContain("--label node={$node->id}")
@@ -43,6 +47,7 @@ it('keeps the production checkout of the swamp Node when no repository is named'
 it('records the public key of the hub the machine made, and refuses anything that is not a WireGuard key', function (): void {
     $node = SwampNodeFixture::ensure();
     $key = base64_encode(str_repeat('k', 32));
+    $node->roles()->create(['role' => 'vpn', 'status' => 'provisioning']);
     $home = sys_get_temp_dir().'/'.TestOrbitHome::Prefix.'hub-'.bin2hex(random_bytes(4));
     mkdir($home, 0o700);
     config(['orbit.home' => $home]);
@@ -50,7 +55,8 @@ it('records the public key of the hub the machine made, and refuses anything tha
     $this->artisan('orbit:bootstrap-control-plan --hub-public-key=not-a-key')->assertFailed();
     $this->artisan("orbit:bootstrap-control-plan --hub-public-key={$key}")->assertSuccessful();
 
-    expect($node->fresh()->wireguard_public_key)->toBe($key)
+    expect($node->roles()->where('role', 'vpn')->value('status'))->toBe(LifecycleStatus::Active)
+        ->and($node->fresh()->wireguard_public_key)->toBe($key)
         ->and(file_get_contents($home.'/wireguard/public.key'))->toBe($key."\n");
 });
 
@@ -70,4 +76,23 @@ it('names the folder of the swamp.orbit Route for its certificate and refuses an
         ->expectsOutputToContain('"directory":"/etc/caddy/orbit-certificates/route-'.$route->id.'/current"')
         ->assertSuccessful();
     $this->artisan('orbit:bootstrap-control-plan --certificate=other')->assertFailed();
+});
+
+it('records the verifier of the agent key the machine made, and refuses anything but a SHA-256 digest', function (): void {
+    $node = SwampNodeFixture::ensure();
+    $verifier = hash('sha256', 'agent-key');
+
+    $this->artisan('orbit:bootstrap-control-plan --agent-secret-hash=not-a-digest')->assertFailed();
+    $this->artisan("orbit:bootstrap-control-plan --agent-secret-hash={$verifier}")->assertSuccessful();
+
+    expect($node->fresh()->agent_secret_hash)->toBe($verifier);
+});
+
+it('marks the swamp role active once the machine serves Swamp', function (): void {
+    $node = SwampNodeFixture::ensure();
+    $node->roles()->where('role', 'swamp')->update(['status' => 'provisioning']);
+
+    $this->artisan('orbit:bootstrap-control-plan --serving')->assertSuccessful();
+
+    expect($node->roles()->where('role', 'swamp')->value('status'))->toBe(LifecycleStatus::Active);
 });
