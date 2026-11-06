@@ -73,7 +73,7 @@ final readonly class ExpireOperationAction
             ->where('finished_at', '<', now()->subMinutes(self::HoldMinutes))->pluck('id');
         foreach ($stale as $id) {
             DB::transaction(function () use ($id, &$freed): void {
-                $current = Operation::query()->lockForUpdate()->findOrFail($id);
+                $current = Operation::query()->lockForUpdate()->whereKey($id)->firstOrFail();
                 if (! self::awaitsSettlement($current)) {
                     return;
                 }
