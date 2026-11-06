@@ -19,6 +19,10 @@ pub const RESYNC_INTERVAL: Duration = Duration::from_secs(600);
 pub const RETRY_FIRST: Duration = Duration::from_secs(1);
 /// The longest wait between two tries of a failed report.
 pub const RETRY_MAX: Duration = Duration::from_secs(4);
+/// The files an `accounts` fact is read from.
+pub const PASSWD: &str = "/etc/passwd";
+pub const GROUP: &str = "/etc/group";
+const MAX_ACCOUNTS: usize = 512;
 /// Filesystems that hold data; pseudo, network and snap mounts are left out.
 const DATA_FILESYSTEMS: [&str; 7] = ["ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs"];
 const MAX_FILESYSTEMS: usize = 64;
@@ -230,6 +234,65 @@ fn hex_text(hex: &str) -> Option<String> {
         .map(|at| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok())
         .collect::<Option<Vec<u8>>>()?;
     String::from_utf8(bytes).ok()
+}
+
+/// The local accounts of `passwd`, each with the name of its primary group from `group`, in uid order. An entry that is
+/// malformed, has no group, or holds a name or a path the Gateway would refuse is left out.
+pub fn accounts_data(passwd: &str, group: &str) -> Value {
+    let mut groups: BTreeMap<u32, &str> = BTreeMap::new();
+    for line in group.lines() {
+        let mut fields = line.split(':');
+        if let (Some(name), Some(_), Some(gid)) = (fields.next(), fields.next(), fields.next()) {
+            if let Ok(gid) = gid.parse() {
+                groups.entry(gid).or_insert(name);
+            }
+        }
+    }
+    let mut accounts = passwd
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            let [user, _, uid, gid, _, home, shell] = fields[..] else {
+                return None;
+            };
+            let (uid, gid) = (uid.parse::<u32>().ok()?, gid.parse::<u32>().ok()?);
+            let group = *groups.get(&gid)?;
+            (account_name(user)
+                && account_name(group)
+                && absolute_path(home)
+                && absolute_path(shell))
+            .then(|| {
+                (
+                    uid,
+                    json!({"user": user, "uid": uid, "group": group, "home": home, "shell": shell}),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    accounts.sort_by(|(left_uid, left), (right_uid, right)| {
+        left_uid
+            .cmp(right_uid)
+            .then_with(|| left["user"].as_str().cmp(&right["user"].as_str()))
+    });
+    json!({"accounts": accounts.into_iter().map(|(_, account)| account).take(MAX_ACCOUNTS).collect::<Vec<_>>()})
+}
+
+/// A Linux account or group name: lower case letters, digits, `_` and `-`, not starting with a digit or `-`, and at
+/// most 32 characters, with an optional trailing `$`.
+fn account_name(name: &str) -> bool {
+    let name = name.strip_suffix('$').unwrap_or(name);
+    (1..=32).contains(&name.len())
+        && name.bytes().enumerate().all(|(index, byte)| match byte {
+            b'a'..=b'z' | b'_' => true,
+            b'0'..=b'9' | b'-' => index > 0,
+            _ => false,
+        })
+}
+
+fn absolute_path(path: &str) -> bool {
+    path.starts_with('/')
+        && path.len() <= 4096
+        && !path.bytes().any(|byte| byte < 32 || byte == 127)
 }
 
 /// A role service name from the watch list, such as `caddy.service`, only when it is a plain unit name.
@@ -568,6 +631,46 @@ mod tests {
             data_mounts(mounts),
             vec!["/".to_owned(), "/var/lib/my data".to_owned()]
         );
+    }
+
+    #[test]
+    fn accounts_data_lists_accounts_by_uid_with_their_group_and_leaves_out_unusable_entries() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+            orbit:x:1000:1000:Orbit:/home/orbit:/bin/bash\n\
+            www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\n\
+            ghost:x:1500:1500::/home/ghost:/bin/bash\n\
+            Bad Name:x:1600:1000::/home/bad:/bin/bash\n\
+            relative:x:1700:1000::home/relative:/bin/bash\n\
+            short:x:1800:1000\n\
+            nologin:x:abc:1000::/home/n:/bin/bash\n\
+            dollar$:x:1900:1000::/home/dollar:/bin/bash\n";
+        let group = "root:x:0:\norbit:x:1000:\nwww-data:x:33:\ndup:x:1000:\n";
+
+        let data = accounts_data(passwd, group);
+        let users: Vec<&str> = data["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|account| account["user"].as_str().unwrap())
+            .collect();
+
+        assert_eq!(users, ["root", "www-data", "orbit", "dollar$"]);
+        assert_eq!(
+            data["accounts"][2],
+            json!({"user": "orbit", "uid": 1000, "group": "orbit", "home": "/home/orbit", "shell": "/bin/bash"})
+        );
+    }
+
+    #[test]
+    fn accounts_data_lists_at_most_512_accounts() {
+        let passwd: String = (1000..1600)
+            .map(|uid| format!("u{uid}:x:{uid}:1000::/home/u{uid}:/bin/sh\n"))
+            .collect();
+
+        let data = accounts_data(&passwd, "g:x:1000:\n");
+
+        assert_eq!(data["accounts"].as_array().unwrap().len(), 512);
+        assert_eq!(data["accounts"][511]["uid"], 1511);
     }
 
     #[test]
