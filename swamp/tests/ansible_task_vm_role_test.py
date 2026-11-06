@@ -108,6 +108,9 @@ class TaskVmRoleTest(unittest.TestCase):
         text = (ANSIBLE / 'tasks/task-vm-clean.yml').read_text()
         self.assertNotIn('/var/lib/incus', text)
         self.assertIn('orbit:public-ssh-recovery', text)
+        argvs = [item for task in phase[0]['block'] for item in (task.get('loop') or []) if isinstance(item, list)]
+        tmp = next(argv for argv in argvs if argv[:3] == ['find', '/tmp', '/var/tmp'])
+        self.assertIn(['!', '-name', 'ansible_*'], [tmp[i:i + 3] for i in range(tmp.index('-exec'))], 'the clean phase must not delete the module that is running it')
 
     def test_a_template_builder_is_reached_directly_on_the_address_of_the_run(self):
         placeholder = intent()

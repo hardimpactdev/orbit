@@ -53,7 +53,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the same child with the tag `clean`: mask `systemd-firstboot.service`, `apt-daily.timer`, `apt-daily-upgrade.timer`, `motd-news.timer` and `unattended-upgrades.service`
   %%> - ufw on, default deny incoming, only `orbit:public-ssh-recovery` (22/tcp) open
-  %%> - refuses a server that was enrolled (`/etc/orbit/agent/secret` or `/etc/wireguard/orbit.conf`), removes the build records, shell histories, `/tmp` and `/var/tmp`, rotates and trims the journal and the logs
+  %%> - refuses a server that was enrolled (`/etc/orbit/agent/secret` or `/etc/wireguard/orbit.conf`), removes the build records and shell histories, and empties `/tmp` and `/var/tmp` except `systemd-private-*` and the temp directory of the running Ansible module (`ansible_*`), rotates and trims the journal and the logs
   %%> - last: the SSH host keys and the keys of `authorized_keys`, then `cloud-init clean --logs --seed --machine-id --configs all`; the Ansible session stays open through them
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the clean list lives in the role as the `clean` phase and runs on UpCloud only; the Incus clean child keeps its own argv list. One list for both is a later step
