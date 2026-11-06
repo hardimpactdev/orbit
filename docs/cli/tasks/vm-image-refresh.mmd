@@ -32,13 +32,24 @@ sequenceDiagram
   SW->>VM: Save the ready copies<br/>task_vm.ready_copies
   %%> What it does:
   %%> - the child `operation-task-vm-ready-copies`: key-free, self-contained copies in the seed disk, boot-checked
-  SW->>H: Clean the refresh VM<br/>task-vm-image-clean · stop
+  SW->>H: Stop the refresh VM<br/>its seed disk is complete
   %%> What it does:
-  %%> - the child `task-vm-image-clean` through `incus exec`, which the image build calls too for its builder: removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout
-  %%> - resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
+  %%> - `incus stop` of the refresh VM: it yields only its seed disk and is never published
+  SW->>H: Launch the builder<br/>clone of the current image
+  %%> What it does:
+  %%> - `incus init` of the builder from the alias of the current image, with the cloud-init key of Node 209; the builder is never enrolled and has no seed
+  SW->>H: Wait for the builder<br/>guest agent · cloud-init
+  %%> What it does:
+  %%> - `incus wait` for the guest agent, then `cloud-init status --wait`
+  SW->>H: Run the image phases<br/>software · tools · check
+  %%> What it does:
+  %%> - the child `task-vm-image-ansible` on the builder, as the image build runs it: the VM is at the pins of the release
+  SW->>H: Clean the builder<br/>task-vm-image-clean · stop
+  %%> What it does:
+  %%> - the child `task-vm-image-clean`, which the image build calls too: resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the builder
   SW->>H: Publish the image<br/>incus publish
   %%> What it does:
-  %%> - publishes the stopped VM under a candidate alias and reads its fingerprint
+  %%> - publishes the stopped builder under a candidate alias and reads its fingerprint
   SW->>H: Boot-check the image<br/>throwaway VM
   %%> What it does:
   %%> - the child `task-vm-image-smoke`, as in the image build: a throwaway VM from the candidate and the check phase of the task VM role on it
@@ -56,7 +67,7 @@ sequenceDiagram
   %%> - the child `task-vm-image-promote`, as in the image build: the alias moves to the new image and the old image keeps the alias `-previous`; the old seed stays under its own name
   SW->>H: Remove the leftovers<br/>always
   %%> What it does:
-  %%> - removes the check VM; when the alias does not point at the new image, also the candidate image and the new seed
+  %%> - removes the builder and the check VM; when the alias does not point at the new image, also the candidate image and the new seed
   alt the run passes its check
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the new image<br/>cancel the group
