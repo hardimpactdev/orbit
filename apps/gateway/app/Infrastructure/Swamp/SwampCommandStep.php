@@ -234,8 +234,7 @@ final readonly class SwampCommandStep
                 $finished = is_array($step) ? ($step['completedAt'] ?? null) : null;
                 if (is_string($jobName) && is_string($name) && is_string($started) && NativeRunTimestamp::parse($started) !== null) {
                     $recorded[] = ['job' => $jobName, 'name' => $name, 'started_at' => $started,
-                        'finished_at' => is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null,
-                        'status' => is_string($step['status'] ?? null) ? $step['status'] : null];
+                        'finished_at' => is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null];
                 }
             }
         }

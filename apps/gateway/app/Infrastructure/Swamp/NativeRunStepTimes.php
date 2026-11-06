@@ -8,21 +8,18 @@ use App\Domain\Operations\OperationStatus;
 
 /**
  * Swamp's step events carry no start or end time, but the terminal run history has both for each step. This fills the
- * times of the progress steps an Operation recorded from the events, once, when the run ends. A step still `running` then
- * takes its status from the history. {@see self::settle()} closes any step left `running` when the Operation ends.
+ * times of the progress steps an Operation recorded from the events, once, when the run ends. {@see self::settle()} closes any
+ * step left `running` when the Operation ends.
  */
 final readonly class NativeRunStepTimes
 {
-    /** The step statuses of a finished run's history. */
-    private const array Terminal = ['succeeded', 'failed', 'skipped', 'cancelled'];
-
     /**
      * A step is matched by its job and name. When a job repeats a step name, such as a nested workflow's `result`, the
      * steps are matched by position, and only when the events and the history list the same number of them. A step that
      * cannot be matched with certainty keeps its null times.
      *
      * @param  array<mixed>  $steps  `native_progress.steps`, in event order
-     * @param  list<array{job:string,name:string,started_at:string,finished_at:string|null,status?:string}>  $recorded  the history steps in start order
+     * @param  list<array{job:string,name:string,started_at:string,finished_at:string|null}>  $recorded  the history steps in start order
      * @return array<mixed>
      */
     public function merge(array $steps, array $recorded): array
@@ -47,9 +44,7 @@ final readonly class NativeRunStepTimes
                 if (is_array($row)) {
                     $steps[$key] = [...$row,
                         'started_at' => $this->time($row['started_at'] ?? null) ?? $found[$position]['started_at'],
-                        'finished_at' => $this->time($row['finished_at'] ?? null) ?? $found[$position]['finished_at'],
-                        ...(($row['status'] ?? null) === 'running' && in_array($found[$position]['status'] ?? null, self::Terminal, true)
-                            ? ['status' => $found[$position]['status']] : [])];
+                        'finished_at' => $this->time($row['finished_at'] ?? null) ?? $found[$position]['finished_at'], ];
                 }
             }
         }

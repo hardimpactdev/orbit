@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\Swamp\NativeRunProgress;
-use App\Infrastructure\Swamp\NativeRunStepTimes;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
@@ -49,16 +48,6 @@ it('keeps the index of an end event that carries one', function (): void {
     $progress->apply($operation->id, 'run-1', ['kind' => 'step_completed', 'jobId' => 'source', 'stepId' => 'setup-0', 'forEachIndex' => 0, 'seq' => 2]);
 
     expect(array_map(static fn (array $row): array => [$row['name'], $row['status']], progressRows($operation)))->toBe([['setup-0-0', 'succeeded']]);
-});
-
-it('takes the history status of a step that never reported its end', function (): void {
-    $steps = ['a' => ['job' => 'create', 'name' => 'Sign the CSR-0', 'status' => 'running', 'started_at' => null, 'finished_at' => null]];
-
-    $merged = (new NativeRunStepTimes)->merge($steps, [
-        ['job' => 'create', 'name' => 'Sign the CSR-0', 'started_at' => '2026-11-06T17:27:38.064Z', 'finished_at' => '2026-11-06T17:27:39.464Z', 'status' => 'succeeded'],
-    ]);
-
-    expect([$merged['a']['status'], $merged['a']['finished_at']])->toBe(['succeeded', '2026-11-06T17:27:39.464Z']);
 });
 
 it('leaves no step running once the Operation ends, on every path that saves its status', function (OperationStatus $status, string $ended): void {
