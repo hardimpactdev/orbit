@@ -35,6 +35,17 @@ final readonly class TaskVmFleetBuildIntent
     /** The bridge of the nested network: the first address of its subnet. */
     public const string Bridge = '10.232.2.1/24';
 
+    /** Where the guests mount the checkout of the outer VM, which exports the same path, and where their own state lives (stage 2). */
+    public const string CheckoutPath = '/home/orbit/orbit';
+
+    public const string StatePath = '/var/lib/orbit-checkout-state';
+
+    /** The state of the checkout on the Gateway guest, over the shared checkout: the application's and the Swamp repository's own. */
+    private const array GatewayState = ['apps/gateway/.env', 'apps/gateway/storage', 'apps/gateway/bootstrap/cache', 'swamp/.swamp', 'swamp/vaults', 'swamp/grants'];
+
+    /** The state of the checkout on the app-dev guest. */
+    private const array AppDevState = ['apps/gateway/.env', 'apps/gateway/storage', 'apps/gateway/bootstrap/cache'];
+
     /** The private network of the nested fleet, which its Gateway leads. */
     public const string WireGuardSubnet = '10.45.0.0/24';
 
@@ -57,11 +68,51 @@ final readonly class TaskVmFleetBuildIntent
         return [
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
-            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout],
+            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout, 'checkout' => $this->checkout()],
             'bootstrap' => ['fragment' => $this->fragment()],
             // The key the new Gateway's Swamp runs with; it reaches the guest through stdin and is in no copy.
             'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
         ];
+    }
+
+    /**
+     * The mount units of the shared checkout, as systemd writes them for `/home/orbit/orbit` (stock NFS and bind mounts, the names the stage 2
+     * apply step starts): the NFS mount of the outer VM's export and a bind mount of each piece of state over it. They are network mounts
+     * (`_netdev`), which orders them after the NFS mount at boot, as the ready copies need.
+     *
+     * @return array{server:string,path:string,state:string,units:list<array{guest:string,name:string,content:string}>,binds:array<string,list<string>>}
+     */
+    private function checkout(): array
+    {
+        $server = explode('/', self::Bridge)[0];
+        $units = [];
+        $binds = [];
+        foreach (['gateway' => self::GatewayState, 'app-dev' => self::AppDevState] as $role => $state) {
+            $guest = TaskVmReadyCopiesIntent::Guests[$role];
+            $units[] = ['guest' => $guest, 'name' => self::unitName(self::CheckoutPath), 'content' => implode("\n", [
+                '[Unit]', 'Description=Orbit checkout over NFS', 'After=network-online.target', 'Wants=network-online.target', '',
+                '[Mount]', "What={$server}:".self::CheckoutPath, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
+                '[Install]', 'WantedBy=multi-user.target', '',
+            ])];
+            $binds[$role] = [];
+            foreach ($state as $relative) {
+                $name = self::unitName(self::CheckoutPath.'/'.$relative);
+                $binds[$role][] = $name;
+                $units[] = ['guest' => $guest, 'name' => $name, 'content' => implode("\n", [
+                    '[Unit]', "Description=Orbit state {$relative}", 'RequiresMountsFor='.self::CheckoutPath, '',
+                    '[Mount]', 'What='.self::StatePath.'/'.$relative, 'Where='.self::CheckoutPath.'/'.$relative, 'Type=none', 'Options=bind,_netdev', '',
+                    '[Install]', 'WantedBy=multi-user.target', '',
+                ])];
+            }
+        }
+
+        return ['server' => $server, 'path' => self::CheckoutPath, 'state' => self::StatePath, 'units' => $units, 'binds' => $binds];
+    }
+
+    /** The name of the mount unit of a path, as `systemd-escape --path --suffix=mount` writes it for these paths (no dash in a part, no escaped byte). */
+    private static function unitName(string $path): string
+    {
+        return str_replace('/', '-', ltrim($path, '/')).'.mount';
     }
 
     /**

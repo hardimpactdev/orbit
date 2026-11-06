@@ -111,3 +111,22 @@ it('refuses a VM that is not ready', function (): void {
         fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('task_vm.fleet_build_refused'),
     );
 });
+
+it('renders the mount units of the shared checkout under the names the stage 2 apply step starts, as network mounts', function (): void {
+    $vm = fleetBuildWorld();
+    app()->instance(WebSocketClient::class, fleetBuildVault());
+
+    $checkout = app(TaskVmFleetBuildIntent::class)->capture($vm)['fleet']['checkout'];
+
+    expect($checkout['server'])->toBe('10.232.2.1')
+        ->and($checkout['binds']['app-dev'])->toBe(['home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'])
+        ->and($checkout['binds']['gateway'])->toContain('home-orbit-orbit-swamp-.swamp.mount', 'home-orbit-orbit-swamp-vaults.mount');
+    $units = collect($checkout['units'])->groupBy('guest');
+    expect($units['nested-gateway'])->toHaveCount(7)
+        ->and($units['nested-app-dev'])->toHaveCount(4);
+    foreach ($checkout['units'] as $unit) {
+        expect($unit['content'])->toContain('_netdev', "[Install]\nWantedBy=multi-user.target\n");
+    }
+    $nfs = collect($checkout['units'])->firstWhere('name', 'home-orbit-orbit.mount');
+    expect($nfs['content'])->toContain("What=10.232.2.1:/home/orbit/orbit\n", "Where=/home/orbit/orbit\n", "Type=nfs\n");
+});

@@ -1283,7 +1283,9 @@ The workflow `operation-task-vm-fleet-build` runs one command per step over offi
 
 The new Gateway then does the rest through its own Orbit. It converges its `gateway` role and its own Node, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
 
-The end check passes when Doctor of the nested Gateway has no finding. The budget of the kind is 3,600 seconds. The run does not save ready copies: `task_vm.ready_copies` does, and it needs the guests to keep their checkout on the NFS mount and their state under `/var/lib/orbit-checkout-state`.
+The Gateway and app-dev guests then take their checkout from the outer VM, as they do when a task VM starts from ready copies. The Gateway stops its services and moves its state to `/var/lib/orbit-checkout-state` on its own disk: `.env`, `storage`, `bootstrap/cache` and the state of the Swamp repository. It drops the checkout it built, and the stock systemd mount units mount the NFS export of the outer VM and the state over it. The services start again on the shared checkout.
+
+The outer VM must export its checkout to the nested network: the converge of the task VM role does that, with the NFS settings of a task VM. The end check passes when Doctor of the nested Gateway has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
 
 ##### Start the nested fleet
 
