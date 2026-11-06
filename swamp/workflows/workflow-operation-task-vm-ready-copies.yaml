@@ -177,12 +177,12 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-search-for-the-club-key" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-search-for-the-club-key" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'sh', '-c', 'grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 910}}
     dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
-  # The copy holds no checkout: no file under /home/orbit/orbit but the log a booted guest writes there. The directories it makes (mount points, log directories) are no checkout.
+  # The copy holds no checkout: no file under /home/orbit/orbit but the state that the bind units put there at the boot (they make their own mount points), which the next step looks for on the guest's own disk. The directories they make are no checkout.
   - name: 'Look for a checkout'
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-a-checkout" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-a-checkout" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'find', '/home/orbit/orbit', '-type', 'f', '-not', '-path', '*/storage/logs/*'], timeoutSec: 40}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'find', '/home/orbit/orbit', '-type', 'f', '-not', '-path', '*/apps/gateway/storage/*', '-not', '-path', '*/apps/gateway/bootstrap/cache/*', '-not', '-path', '*/apps/gateway/.env', '-not', '-path', '*/swamp/.swamp/*', '-not', '-path', '*/swamp/vaults/*', '-not', '-path', '*/swamp/grants/*'], timeoutSec: 40}}
     dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
   # The state stays on the guest's own disk; the apply step puts it over the checkout.
   - name: 'Look for the state'

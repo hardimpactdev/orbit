@@ -62,7 +62,7 @@ sequenceDiagram
   %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested containers, so this needs no network yet)
   %%> - the nested Gateway puts the key on its hub; the outer VM brings up WireGuard as the operator `10.45.0.10`
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
-  %%> - the hub gets the operator peer through its peer file, which the nested Gateway renders, not through a runtime `wg set`: a restore of `base` reboots the containers, and a peer that lived only in memory was gone after it
+  %%> - the hub gets the operator peer through a file in its peer folder, in the form the hub rendering writes (a hub converge of the nested Gateway would need its Swamp, which only a proof VM runs), not through a runtime `wg set`: a restore of `base` reboots the containers, and a peer that lived only in memory was gone after it
   %%> - the private key never leaves this task VM; each task VM has its own
   %%> Proposed 2026-11-05:
   %%> - the ready copies hold the operator Node record without a key (stage 6), so the key of the VM that made them never works anywhere else
@@ -114,6 +114,8 @@ sequenceDiagram
   %%> - every Node agent online, the Swamp worker enrolled, the Gateway knows the operator, Doctor has no finding
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - readiness first waits, bounded, until Doctor of the nested Gateway is healthy (one Ansible task with `until` and `retries`, the fleet build's wait playbook); the apply step restarts the agent-view subscriber, and the agents read online only after their next heartbeats, so a single read 3 s later failed (provision 11937)
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - Reverb starts only once the Gateway API answers (systemd ordering on its unit, `ExecStartPre` with a bounded wait), so it accepts about 5 s after the boot and not about 35 s, when the registry fetch of a first start failed; the agents' first reports follow the agent's own retry of failed reports (a separate change)
   SW->>NT: Take the base snapshot<br/>containers · no memory
   %%> What it does:
   %%> - one Incus snapshot `base` of each of the three containers, in parallel
