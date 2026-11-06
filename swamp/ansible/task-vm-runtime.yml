@@ -38,6 +38,27 @@
           loop: "{{ ['/home/orbit/.local', '/home/orbit/.local/bin', pi_home, pi_home + '/agent'] }}"
           vars:
             item_mode: "{{ '0700' if item.startswith(pi_home) else '0755' }}"
+        # The VM records the app-dev role; a served workspace site needs its runtime folders (AppDevRuntimeFootprint).
+        - name: Create the app-dev runtime folders
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: "{{ item.owner }}"
+            group: "{{ item.group }}"
+            mode: "{{ item.mode }}"
+          loop: "{{ intent.runtime.app_dev.directories | default([]) }}"
+          loop_control:
+            label: "{{ item.path }}"
+        - name: Write the app-dev runtime files
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ item.path }}"
+            owner: "{{ item.owner }}"
+            group: "{{ item.group }}"
+            mode: "{{ item.mode }}"
+          loop: "{{ intent.runtime.app_dev.files | default([]) }}"
+          loop_control:
+            label: "{{ item.path }}"
         - name: Copy the Pi build
           ansible.builtin.copy:
             src: "{{ pi_path }}"
