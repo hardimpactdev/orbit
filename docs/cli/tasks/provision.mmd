@@ -43,6 +43,7 @@ sequenceDiagram
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): with a Route, the workspace step runs the guest's rows of the Route's Caddy access right after the fetch, before the setup steps write into the tree, as instance:create does in its checkout phase:
   %%> - what the setup creates inherits the default entries, so the walk covers the fetched files only
+  %%> - the rows run beside the steps that only read the tree (identity, inspect, composer, profile); the dependency writes wait for them, so the setup steps start after them: each row is one SSH step of about 2 s, and run in line the five rows cost 10.2 s (op 12305)
   %%> - the Route then gets `prepared` with the guest and skips those rows there; in op 12259 the walk over the set-up tree took 4.6 s of the Route
   %%> - an APP_URL line on the guest exists only after the setup steps; a Route with one keeps its rows, and the workspace step gets none
   %%> Private dependencies:

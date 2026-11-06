@@ -373,6 +373,8 @@ jobs:
     allowFailure: true
   # The Route's Caddy access on the guest, one row at a time, after the fetch and before the setup steps write into the tree: what they
   # create inherits the default entries, as in instance:create's checkout phase. The Route then skips these rows for the guest.
+  # The rows run beside identity, inspect, composer and profile, which only read the tree; the dependency writes wait for them, so the
+  # setup steps start after them.
   - name: access-${{ self._index }}
     labels: {role: swamp}
     task:
@@ -397,7 +399,7 @@ jobs:
         timeoutSec: 130
         argv: ${{ ["sudo", "-n", "timeout", "120"] + self.access }}
     dependsOn:
-    - step: identity
+    - step: branch
       condition:
         type: succeeded
     forEach:
@@ -495,9 +497,6 @@ jobs:
     - step: identity
       condition:
         type: succeeded
-    - step: access-${{ self._index }}
-      condition:
-        type: always
     - step: inspect
       condition:
         type: succeeded
@@ -607,6 +606,9 @@ jobs:
     - step: deps_clear
       condition:
         type: succeeded
+    - step: access-${{ self._index }}
+      condition:
+        type: always
     guard: ${{ has(steps.profile.outputs.error_code) || size(inputs.intent.workspace.setup) == 0 }}
     allowFailure: true
   - name: deps_write_npm
@@ -651,6 +653,9 @@ jobs:
     - step: deps_clear
       condition:
         type: succeeded
+    - step: access-${{ self._index }}
+      condition:
+        type: always
     guard: ${{ has(steps.profile.outputs.error_code) || size(inputs.intent.workspace.setup) == 0 }}
     allowFailure: true
   - name: setup-${{ self._index }}
@@ -1026,6 +1031,9 @@ jobs:
       condition:
         type: always
     - step: identity
+      condition:
+        type: always
+    - step: access-${{ self._index }}
       condition:
         type: always
     - step: inspect
