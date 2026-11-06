@@ -16,7 +16,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskCheckGitHubTokens;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepFixIntent;
@@ -266,9 +265,27 @@ it('lets a check ask for its tokens at the same mint, and refuses a purpose it d
     tokenWorld();
     [$check] = pushOperation('tasks.check', ['phase' => 'handoff', 'check_name' => 'Required checks']);
 
-    expect(app(DirectOperation::class)->definition('tasks.check')['github_token_issuer'])->toBe(TaskCheckGitHubTokens::class)
-        ->and(fn () => app(TaskCheckGitHubTokens::class)->issue($check, SwampNodeFixture::Id, TOKEN_RUN, 'publish'))
-        ->toThrow(ResourceOperationException::class, 'does not permit repository credentials');
+    expect(app(DirectOperation::class)->definition('tasks.check')['github_token_issuer'])->toBe(TaskGitHubTokens::class)
+        ->and(fn () => app(TaskGitHubTokens::class)->issue($check, SwampNodeFixture::Id, TOKEN_RUN, 'publish'))
+        ->toThrow(ResourceOperationException::class, 'does not permit this token');
+});
+
+it('mints the write token, the checks token and the Git header of a handoff check, and only for a handoff', function (): void {
+    $socket = tokenWorld();
+    app(GitHubApi::class)->shouldReceive('repositoryChecksToken')->andReturn('checks-token-value');
+    $names = ['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-check-write-'.fake()->uuid()],
+        'checks_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-check-read-'.fake()->uuid()],
+        'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-check-git-'.fake()->uuid()]];
+    [$check] = pushOperation('tasks.check', ['phase' => 'handoff', 'check_name' => 'Required checks', 'execution_secrets' => $names]);
+
+    $copies = app(TaskGitHubTokens::class)->issue($check, SwampNodeFixture::Id, TOKEN_RUN);
+
+    expect($copies)->toBe($names)
+        ->and(array_column(tokenPuts($socket), 1))->toBe(array_column($names, 'key'));
+
+    $check->update(['input' => [...$check->input, 'phase' => 'baseline']]);
+    expect(fn () => app(TaskGitHubTokens::class)->issue($check, SwampNodeFixture::Id, TOKEN_RUN))
+        ->toThrow(ResourceOperationException::class, 'does not permit this token');
 });
 
 it('refuses a run that is not the Operation run, a caller that is not Swamp, an Operation that ended, and a missing or unknown purpose', function (): void {
