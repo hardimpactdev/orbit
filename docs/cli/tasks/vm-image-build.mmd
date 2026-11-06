@@ -47,9 +47,11 @@ sequenceDiagram
   %%> - the caches stay in the image, so every slot and task VM starts warm; the end check reads that both directories hold archives
   %%> - the lock-driven host cache (`/var/lib/orbit/package-cache`, `package-cache.host`) is not mounted into any VM and nothing seeds from it, and it never covers a Project without a lockfile, such as laravel/laravel (Project 66); it stays as is and is not part of this change
   %%> Why:
-  %%> - measured 2026-11-06 on beast (`composer install` of laravel/laravel, medians of 3): 8.6 s with an empty cache and 2.7 s with a warm one; that is about 5.9 s of the 8.7 s of `setup-0-0` in the slot claim of op 12083
+  %%> - measured 2026-11-06 on beast (`composer install --prefer-dist` of laravel/laravel, which has no `composer.lock`), cold: 11.8 s in total, of which about 7 s wait for the network (2.2 s to resolve against Packagist, 5.0 s to download 110 archives) and about 4.5 s are work (1.9 s to extract, 2.3 s to dump the autoloader, 0.2 s of scripts); `setup-0-0` of the slot claims (op 12083: 8.7 s, op 12259: 10.6 s) is this command plus one dispatch of about 1.5 s
+  %%> - a warm cache removes the download and most of the Packagist reads: a run with a lockfile and a warm cache took 2.6 to 3.2 s, against 7.4 to 8.6 s with a lockfile and an empty cache
   %%> Limit:
-  %%> - resolution still runs for a Project without a lockfile, so about 3 s stay; a package version newer than the image's lock downloads
+  %%> - a warm run of a Project without a lockfile was not measured; resolution still runs for it, so more than the 3 s above stay
+  %%> - a package version newer than the image's lock downloads
   SW->>H: Clean and stop<br/>cloud-init · host keys
   %%> What it does:
   %%> - `cloud-init clean`, an empty machine-id, removed SSH host keys, then stop; each one `@swamp/ssh exec` argv
