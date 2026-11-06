@@ -515,6 +515,8 @@ At admission the Gateway makes 32 random bytes as 64 hex characters. It writes t
 
 The run reaches the Node over official SSH from 209 and calls no agent command. `Write the new agent key` writes the vault copy to `/etc/orbit/agent/secret` with `@swamp/cfgmgmt/file`, `root:root`, mode `0600`. `Restart the Node agent` restarts `orbit-agent.service` with `@swamp/cfgmgmt/systemd`. `Check the Node agent` fails unless the agent is active again. `Check the new key` reads the file's SHA-256. `Prove the new key` asserts that it equals the recorded verifier, and is the terminal result.
 
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
+
 The Gateway stores the verifier only after that assert passes; until then the old verifier stays valid. When the task ends, the Gateway deletes the vault copy. A failed step has no rollback. Run the command again with a higher attempt number after you fix the cause.
 
 ## Gateway view

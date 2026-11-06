@@ -7,6 +7,7 @@ use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -42,12 +43,12 @@ it('records the Gateway, makes its CA and SSH key, and keeps them on a second ru
     $node = $action->execute(bootstrapData());
 
     expect($node->name)->toBe('gateway')
-        ->and($node->id)->toBe(209)
+        ->and(SwampNode::id())->toBe($node->id)
         ->and($node->status)->toBe(LifecycleStatus::Active)
         ->and($node->wireguard_ip)->toBe('10.45.0.1')
         ->and($node->ssh_host_fingerprint)->toBe($fingerprint)
         ->and($node->roles->mapWithKeys(fn ($role): array => [$role->role->value => $role->status->value])->all())
-        ->toBe(['gateway' => 'active', 'vpn' => 'provisioning'])
+        ->toEqual(['gateway' => 'active', 'vpn' => 'provisioning', 'swamp' => 'provisioning'])
         ->and(app(VpnSettings::class)->subnet())->toBe('10.45.0.0/24')
         ->and(fileperms($home.'/ca/root.key') & 0o777)->toBe(0o600)
         ->and(fileperms($home.'/ssh/id_ed25519') & 0o777)->toBe(0o600)

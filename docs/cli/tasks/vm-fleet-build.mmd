@@ -41,9 +41,12 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), built and proven live in #2798, #2813, #2792, #2819, #2822 and #2828:
   %%> - `orbit:bootstrap` is the Gateway's own code and runs no agent command: the Node and role records, the VPN settings, the root CA, the SSH key and the host key of the machine; it writes nothing under `/etc` and starts no service
   %%> - the WireGuard hub waits for Swamp, because its private key is made on the Node; the VPN role stays `provisioning` until then
-  %%> - the Gateway Node takes id 209, the one id the Gateway knows for the Swamp Node, so every existing admission works unchanged; recording the host key raises no model event, because it would start a Swamp run before Swamp exists
+  %%> - the Swamp Node is the Node that holds the `swamp` role, found by role and not by an id (`SwampNode`), so the nested Gateway needs no special id; recording the host key raises no model event, because it would start a Swamp run before Swamp exists
   %%> - the nested bridge comes from the task VM role phases: Incus is initialised with a pool and the bridge, and the VM firewall opens DHCP, DNS and routing for it
-  %%> Open, needs a decision: the Gateway's own Swamp control plane. A local `swamp workflow run` refuses a step that asks for a worker label, so the first role cannot run until a serve and a worker exist on the machine; they need the serve and worker tokens, the control vault with its encryption key, the Gateway's grants and the `swamp.orbit` route
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), the Swamp control plane of a fresh Gateway:
+  %%> - the same local run applies the `swamp` role's own Ansible phase with a local connection, as it did `prerequisites`: it renders the serve and worker units for the machine's checkout path, mints the serve, worker and driver tokens on the machine with the Swamp CLI, creates the control vault and its key there, writes the Gateway's grants and starts the serve and worker
+  %%> - the tokens never leave the machine, as for any fresh Orbit install that owns its own Swamp credentials
+  %%> - after that, `node:role:add` goes through the machine's own Swamp for everything else: gateway, websocket and the `swamp.orbit` route
   %%> - from here on its own Swamp does everything
   SW->>NG: Add app-dev and app-prod<br/>node:add · nested Orbit
   %%> What it does:

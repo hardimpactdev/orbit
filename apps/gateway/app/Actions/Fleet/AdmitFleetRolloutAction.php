@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -61,9 +62,9 @@ final readonly class AdmitFleetRolloutAction
         }
 
         // Its steps run on the Swamp Node and read and record this intent, so that Node owns it. One rollout runs at a time.
-        return $this->start->execute('fleet.rollout', 'fleet', $root, Node::query()->findOrFail(209)->id, [
+        return $this->start->execute('fleet.rollout', 'fleet', $root, SwampNode::node()->id, [
             'commit' => $plan['commit'], 'nodes' => $nodes,
-            'participant_node_ids' => array_values(array_unique([$root, 209, ...$targets])),
+            'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...$targets])),
         ], 'swamp', null, lockKey: OperationStore::lockKey('fleet_rollout', $root));
     }
 }

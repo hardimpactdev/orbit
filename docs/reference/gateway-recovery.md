@@ -154,6 +154,8 @@ After verification, pruning keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` seale
 
 Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The build renders both grants files from the target release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and Node 209's SSH target in the load intent. This uses the target release, not the running Gateway's older manifests. The release run starts `operation-gateway-swamp-load` as a child with the release commit. That workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
 
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
+
 1. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
 2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
 3. it asks serve to reload, as hot reload would, and waits for the acknowledgement;

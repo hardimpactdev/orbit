@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use Illuminate\Support\Facades\Config;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\Config;
 /** Public capture for official SSH executed by Node 209 workers; no host effects. */
 final readonly class SwampSshExecutionInput
 {
-    /** @return array{control_node_id:209,identity_file:string,public_key:string} */
+    /** @return array{control_node_id:int,identity_file:string,public_key:string} */
     public function identity(): array
     {
         $publicKey = trim(Config::string('swamp.ssh_public_key'));
@@ -21,7 +22,7 @@ final readonly class SwampSshExecutionInput
         }
 
         return [
-            'control_node_id' => 209,
+            'control_node_id' => SwampNode::id(),
             'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity',
             'public_key' => $publicKey,
         ];
@@ -31,7 +32,7 @@ final readonly class SwampSshExecutionInput
      * `node_id` names the target for Swamp: a task VM's WireGuard address returns to the pool, its Node id never does,
      * so a behavior named by `node_id` is never shared with the next VM at that address (docs/cli/README.md#behavior-names).
      *
-     * @return array{control_node_id:209,identity_file:string,public_key:string,target:array{name:string,node_id:int,host:string,user:string,port:int,host_keys:?list<string>}}
+     * @return array{control_node_id:int,identity_file:string,public_key:string,target:array{name:string,node_id:int,host:string,user:string,port:int,host_keys:?list<string>}}
      */
     public function forNode(Node $node): array
     {

@@ -10,6 +10,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -77,7 +78,7 @@ final readonly class TaskCancelIntent
             return DB::transaction(function () use ($group, $caller, $request, $kind, $token): Operation {
                 $input = $this->capture($group, $kind, $token);
 
-                return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : 209, $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
+                return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : SwampNode::id(), $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
         }, wait: false);
     }

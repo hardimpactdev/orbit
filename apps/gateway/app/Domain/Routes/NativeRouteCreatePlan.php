@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\SwampNode;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Route;
@@ -26,7 +27,7 @@ final readonly class NativeRouteCreatePlan
     {
         $plan = $this->build($route, $lifecycle);
 
-        return [...$plan, 'probe_ssh' => $plan['probes'] === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209))];
+        return [...$plan, 'probe_ssh' => $plan['probes'] === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(SwampNode::node())];
     }
 
     /** @param array<string,mixed> $lifecycle

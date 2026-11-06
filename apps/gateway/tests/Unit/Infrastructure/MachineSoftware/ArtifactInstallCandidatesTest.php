@@ -71,6 +71,13 @@ it('captures native Caddy candidates in the convergence footprint and role proje
     Schema::create('node_footprints', function (Blueprint $table): void {
         $table->integer('node_id');
     });
+    // The SSH identity of the run names the Node that holds the swamp role.
+    Schema::create('node_roles', function (Blueprint $table): void {
+        $table->integer('node_id');
+        $table->string('role');
+        $table->string('status');
+    });
+    DB::table('node_roles')->insert(['node_id' => 12, 'role' => 'swamp', 'status' => 'active']);
     $delivery = app(AgentDelivery::class);
     $artifact = Mockery::mock(NodeFootprintArtifact::class);
     $artifact->shouldReceive('name')->andReturn('caddy-package');
@@ -108,6 +115,7 @@ it('captures native Caddy candidates when admitting a Cluster Router', function 
         'status' => 'active', 'wireguard_ip' => '10.44.0.12', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'test-key']);
     DB::table('node_roles')->insert(['id' => 7, 'node_id' => 12, 'cluster_id' => 3,
         'role' => 'router', 'status' => 'provisioning']);
+    DB::table('node_roles')->insert(['id' => 8, 'node_id' => 12, 'cluster_id' => 3, 'role' => 'swamp', 'status' => 'active']);
     $delivery = app(AgentDelivery::class);
     $producer = new NativeClusterRouterIntent($delivery,
         app(RolePrerequisites::class), app(NativeRouteCertificateInput::class));

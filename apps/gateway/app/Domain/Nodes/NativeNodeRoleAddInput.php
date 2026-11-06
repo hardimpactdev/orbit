@@ -166,7 +166,7 @@ final readonly class NativeNodeRoleAddInput
             'services' => array_map(static fn (string $name, int $index): array => ['name' => $name, 'index' => $index], $services, array_keys($services)),
             'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $role)];
 
-        return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [209, $node->id]];
+        return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [SwampNode::id(), $node->id]];
     }
 
     /** @param array<string,mixed> $build

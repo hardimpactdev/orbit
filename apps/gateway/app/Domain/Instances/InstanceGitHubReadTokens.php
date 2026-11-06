@@ -9,6 +9,7 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\GitHub\NativeGitHubTokenIssuer;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
@@ -129,7 +130,7 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
     {
         $operation->refresh();
         $this->direct->assertRun($operation, $runId);
-        if ($callerNodeId !== 209 || $operation->status->terminal() || $operation->cancel_requested_at !== null) {
+        if ($callerNodeId !== SwampNode::id() || $operation->status->terminal() || $operation->cancel_requested_at !== null) {
             throw $this->forbidden();
         }
 

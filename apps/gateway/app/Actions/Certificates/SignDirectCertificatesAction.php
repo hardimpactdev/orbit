@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Certificates;
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Shared\ResourceOperationException;
@@ -75,7 +76,7 @@ final readonly class SignDirectCertificatesAction
         $operation->refresh();
         $this->direct->projection($operation);
         $this->direct->assertRun($operation, $runId);
-        if ($operation->node_id === null || ! in_array($callerNodeId, [$operation->node_id, 209], true)) {
+        if ($operation->node_id === null || ! in_array($callerNodeId, [$operation->node_id, SwampNode::id()], true)) {
             throw new ResourceOperationException('operation.executor_forbidden', 'Only the root Node or canonical certificate signer may sign this intent.', 403);
         }
         if ($operation->status->terminal() || $operation->cancel_requested_at !== null) {

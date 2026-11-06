@@ -5,6 +5,11 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Tests\Support\SwampNodeFixture;
+
+uses(LazilyRefreshDatabase::class);
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 it('captures the configured node.add worker key and its rotation for managed SSH', function (): void {
     $firstKey = 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('f', 32));

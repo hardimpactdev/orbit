@@ -18,8 +18,11 @@ use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 const ImageFingerprint = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
 

@@ -95,7 +95,7 @@ final readonly class NativeNodeRoleRelocateInput
             }
             $prior = array_find($before, static fn (array $member): bool => $member['node_id'] === $after['node_id'])
                 ?? throw new \LogicException('Role relocation needs the complete prior publication.');
-            $result[] = ['node_id' => $after['node_id'], 'control_node_id' => 209,
+            $result[] = ['node_id' => $after['node_id'], 'control_node_id' => SwampNode::id(),
                 'host_keys' => $after['host_keys'], 'connection' => $after['connection'],
                 'before' => array_intersect_key($prior, array_flip(['caddy', 'php', 'dns'])),
                 'after' => array_intersect_key($after, array_flip(['caddy', 'php', 'dns']))];

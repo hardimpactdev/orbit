@@ -32,8 +32,11 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 const GATE_HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 

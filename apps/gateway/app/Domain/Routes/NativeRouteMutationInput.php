@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Domain\Analytics\AnalyticsRoutePlan;
 use App\Domain\Nodes\NodeEnrollmentCandidate;
+use App\Domain\Nodes\SwampNode;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -143,7 +144,7 @@ final readonly class NativeRouteMutationInput
         }
         $certificates = $allLeaves;
         if ($certificates !== []) {
-            $participants[] = 209;
+            $participants[] = SwampNode::id();
         }
         $participants = array_values(array_unique($participants));
         sort($participants);
