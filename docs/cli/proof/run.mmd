@@ -14,15 +14,22 @@ sequenceDiagram
   participant VM as Proof task VM<br/>nested topology
   CLI->>GW: proof:run COMMIT
   %%> The CI job on a beast or shark runner, or a person, passes only the commit SHA.
+  Note over GW: Record the proof<br/>one insert · queue the admission
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the request records the proof Operation (commit, options, no runs yet), queues the admission job and answers 202 at once; it reads no GitHub, takes no lock and starts nothing
+  %%> - why: the request used to do all of the admission and hand the runs to Swamp one after another, which took 40 to 66 s, and a release that reloads PHP-FPM (`process_control_timeout` 30 s) ended it in the middle (proof.run 12343). A queue job is drained by the release with the Horizon workers, which it already waits for
+  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `tasks.capacity_unavailable`, `ai_router.keys_busy`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
+  %%> - the job runs on the `tasks` queue (three workers), not on `operations`, whose one worker settles every Operation
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> The CLI follows the proof and reads the refusal, the verdicts or the receipt from it.
   Note over GW: Check the commit<br/>orbit branch or approved PR
-  %%> Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
+  %%> Runs in the admission job. Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
   Note over GW: Select the cases<br/>diff · selection.txt
   %%> Docs-only changes end here: skipped, nothing to prove.
   Note over GW: Record intent<br/>proof group + full inputs
   %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
   %%> - the intent of each run also holds `head` and `merge_base`, for the proof that a new case fails on the merge base (stage 3 chart)
   %%> - each run starts with the check of the head (stage 3 chart, "Check the head"): `proof.head_behind_platform` when the head lacks a platform change that main has, `proof.sync_needed` when the proof VM has no `origin/main` to compare with; not built yet
-  GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start one run per command<br/>operation-proof-run · parallel
   %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
   %%> Built:
@@ -45,7 +52,7 @@ sequenceDiagram
   %%> - the run list is written inside the admission transaction, with the groups, so it commits with them; the transaction first checks that the proof is still open, so a proof that the watchdog ended admits nothing
   %%> - the admission lock is owned by the proof (`proof.run:ID`), so the proof can free it
   %%> - two cases, kept apart. (a) The request is gone: no Swamp run was started and nothing is left to start one. (b) A run waits: it has a Swamp run, which has its own budget, and it is never touched by (a)
-  %%> - (a) is detected from the absence of the request, not from the age of a run: a proof with no run 150 s after it started (the lock wait is 60 s and admission takes about a minute); a proof whose runs have all been quiet for 300 s while some were never handed to Swamp (the request hands them over one after another and each hand-over is answered within 120 s). The reconcile pass then ends the unstarted runs with `proof.admission_interrupted`, cancels their groups, closes the proof and frees the lock the proof owns (a lock that another admission or a teardown holds stays)
+  %%> - (a) is detected from the absence of the request, not from the age of a run: a proof with no run 300 s after it started (the job may wait in the queue, the lock wait is 60 s and admission takes about a minute); a proof whose runs have all been quiet for 300 s while some were never handed to Swamp (the job hands them over one after another and each hand-over is answered within 120 s). The reconcile pass then ends the unstarted runs with `proof.admission_interrupted`, cancels their groups, closes the proof and frees the lock the proof owns (a lock that another admission or a teardown holds stays)
   %%> - (b) does not exist before the run is handed to Swamp: capacity is decided at admission and refused at once with `tasks.capacity_unavailable` (`AllocateTaskVmAction::place`, caught in `TaskProvisionIntent::admit`); no scheduler waits for capacity; `capacity_wait_reason` is set only while a parked VM resumes. The generic 600 s admission limit stays as the backstop for an unstarted run and no run is ended earlier because it is slow
   %%> - not changed here: PHP-FPM reload (`gateway-rollback`) waits `process_control_timeout` (30 s) for requests in flight, so a request longer than that dies at a release; the release flow does not drain or reject HTTP admissions
   SW->>VM: Provision the task VM<br/>child workflow · task provision

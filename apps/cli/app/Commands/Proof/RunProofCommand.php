@@ -120,6 +120,13 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
             ConsoleWriter::write($this->output, $this->humanRenderer()->table(['Command', 'Case', 'Verdict', 'Duration'], $rows));
         }
 
+        // A proof that failed at admission has no case: the reason is on the Operation (a refusal used to come back from the request).
+        $detail = $operation->error['detail'] ?? null;
+
+        if (! $operation->succeeded() && is_string($detail) && $detail !== '') {
+            $this->writeHumanMessage('Reason: '.$detail);
+        }
+
         foreach (self::entries($result['uncovered'] ?? null) as $path) {
             $this->writeHumanMessage('Uncovered: '.self::text($path['path'] ?? null).' ('.self::text($path['reason'] ?? null).')');
         }

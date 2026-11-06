@@ -57,7 +57,7 @@ No step of a run calls the Gateway. Each run is recorded once, from its terminal
 
 ## The execution switch
 
-`proof:run` works in two stages. Admission checks the commit and selects the cases. Execution creates the group and runs them. Execution is off by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `false`. While it is off, a commit that selects cases is refused with `proof.execution_disabled`, and the error details name the selected cases and the uncovered paths. The command then works as a dry run: it creates no group and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
+`proof:run` works in two stages. Admission checks the commit and selects the cases. Execution creates the group and runs them. Execution is off by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `false`. While it is off, a commit that selects cases ends with `proof.execution_disabled`, and the proof Operation holds the selected cases and the uncovered paths. The command then works as a dry run: it creates no group and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
 
 ## Verdicts
 
@@ -87,18 +87,21 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 
 ## Errors
 
+The request answers at once with the proof Operation. The checks of the commit, the selection of the cases and the admission run after that, in a queue job. A refusal of the admission is therefore on the proof Operation, with its code and message, and the command prints it when it follows the proof. The request itself refuses only `proof.swamp_unavailable`, a start that the extension, the access check or the idempotency key refuses, and `proof.commit_invalid`, which the command checks before any request.
+
 | Code | Meaning |
 | --- | --- |
 | `proof.commit_invalid` | The commit is missing or is not a full lowercase SHA, and the CLI cannot prompt. |
 | `proof.commit_not_found` | The Orbit repository has no such commit. |
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |
-| `proof.path_unmapped` | A changed path matches no line of the selection list. The details name the path. |
+| `proof.path_unmapped` | A changed path matches no line of the selection list. The message names the path. |
 | `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
 | `proof.run_failed` | The VM or the test fleet of a run did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
-| `proof.admission_interrupted` | The request that admitted the proof ended before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
+| `proof.queue_unavailable` | The queue refused the job that admits the proof. No case ran. Run the command again. |
+| `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
 | `tasks.capacity_unavailable` | No host with a usable nested fleet seed has room for a VM for each selected command. No run starts. With `--report-only` a host also keeps the slots of one large VM free (see the option). A host whose seed holds no ready copies of the current format is skipped, even with free slots. |
-| `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The details hold the commit, the selected cases and the uncovered paths. |
-| `proof.selection_invalid` | The selection list of the commit is malformed. The details name the line. |
+| `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
+| `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |
 | `proof.swamp_unavailable` | No active Swamp Node exists to run the proof. |
 | `node_access.required` | The calling Node has no access grant to the Gateway Node. |
