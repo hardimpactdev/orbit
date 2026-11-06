@@ -20,6 +20,7 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -49,6 +50,18 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         private GitHubAppStore $store,
         private SwampCommandStep $step,
     ) {}
+
+    /**
+     * The vault keys of the dependency configuration of one task VM, named at admission by the provision and by a package install.
+     *
+     * @return array{composer:array{vault:string,key:string},npm:array{vault:string,key:string},token:array{vault:string,key:string}}
+     */
+    public static function dependencyAuth(TaskVm $vm): array
+    {
+        return ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-'.$vm->id],
+            'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-'.$vm->id],
+            'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-'.$vm->id]];
+    }
 
     /** @return array<string,array{vault:string,key:string}> */
     public function issue(Operation $operation, int $callerNodeId, string $runId, ?string $purpose = null): array
@@ -119,7 +132,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     private function provisionIntent(Operation $operation): array
     {
         return match ($operation->kind) {
-            'tasks.provision' => $operation->input,
+            'tasks.provision', 'tasks.package' => $operation->input,
             'tasks.prep', 'proof.command', 'task_vm.image_refresh' => ValidatedData::object($operation->input['provision'] ?? []),
             default => throw $this->forbidden(),
         };
@@ -128,7 +141,8 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     /** @return array<string,array{vault:string,key:string}> */
     private function clone(Operation $operation, Task $group, int $callerNodeId, string $runId): array
     {
-        $intent = $this->provisionIntent($operation);
+        // A package install writes the dependency files and never clones.
+        $intent = $operation->kind === 'tasks.package' ? throw $this->forbidden() : $this->provisionIntent($operation);
         $repository = ValidatedData::object($intent['workspace'] ?? [])['repository'] ?? null;
         $reference = $intent['git_authorization'] ?? null;
         if (! is_string($repository) || $repository !== $group->project->repository_url || ($intent['project_id'] ?? null) !== $group->project_id || ! is_array($reference)) {

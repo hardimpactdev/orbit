@@ -181,6 +181,24 @@ it('writes the Composer and npm configuration of the setup steps from one read t
         ]);
 })->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep']]);
 
+it('writes the same configuration for a package install, whose intent holds the key names itself', function (): void {
+    $socket = tokenWorld();
+    [$operation] = cloneOperation('tasks.package');
+    $references = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9']];
+    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => $references]])->save();
+
+    expect(app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies'))->toEqual($references)
+        ->and(array_column(tokenPuts($socket), 1))->toBe(['task-provision-deps-composer-9', 'task-provision-deps-npm-9']);
+});
+
+it('refuses a package install every purpose but dependencies', function (string $purpose): void {
+    $socket = tokenWorld();
+    [$operation] = cloneOperation('tasks.package');
+
+    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, $purpose))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+})->with(['clone', 'publish', 'pull_request', 'dependency_merge']);
+
 it('writes an empty configuration, and records no issue, when the App cannot supply a token', function (): void {
     $socket = tokenWorld(installed: false);
     [$operation] = cloneOperation('tasks.provision');
@@ -335,7 +353,7 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
 
 it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
     tokenWorld();

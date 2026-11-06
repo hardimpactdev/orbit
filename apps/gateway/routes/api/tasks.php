@@ -78,6 +78,8 @@ Route::middleware([
             ->whereNumber('group')->name('tasks:pr-merge');
         Route::post('task-groups/{group}/publish', [TaskGroupsController::class, 'publish'])
             ->whereNumber('group')->name('tasks:publish');
+        Route::post('task-groups/{group}/package', [TaskGroupsController::class, 'package'])
+            ->whereNumber('group')->name('tasks:package');
         Route::post('task-groups/{group}/script', [TaskGroupsController::class, 'script'])
             ->whereNumber('group')->name('tasks:script');
         Route::post('task-groups/{group}/check', [TaskGroupsController::class, 'check'])

@@ -251,6 +251,7 @@ Use the kind and target type to start or find the work of a command.
 | `POST task-groups/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
+| `POST task-groups/{group}/package` | `tasks.package` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
@@ -543,7 +544,7 @@ GitHub App tokens are a Gateway primitive: the Gateway keeps the App signing key
 
 The Gateway validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. A failed scope check, or a failed vault copy, revokes the issued token. Failures log only a fixed phase and HTTP status. They never log tokens or upstream response bodies. The token never enters an Operation, step output, receipt, Activity or shared token cache.
 
-`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), a task provision and its setup steps, a task publish, a pull request step, a dependency merge, a cancel and a prep run, and `tasks.check`. A task kind mints when the step that needs the token runs, never at admission: an installation token lives one hour, and a prep run can take longer to reach its publish step. Any other kind gets `operation.github_token_forbidden` (403).
+`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), a task provision and its setup steps, a package install (`tasks.package`), a task publish, a pull request step, a dependency merge, a cancel and a prep run, and `tasks.check`. A task kind mints when the step that needs the token runs, never at admission: an installation token lives one hour, and a prep run can take longer to reach its publish step. Any other kind gets `operation.github_token_forbidden` (403).
 
 ### Intent-bound certificate signing
 

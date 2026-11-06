@@ -13,6 +13,7 @@ use App\Actions\Tasks\DestroyTaskAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StartTaskCheckAction;
+use App\Actions\Tasks\StartTaskPackageAction;
 use App\Actions\Tasks\StartTaskParkAction;
 use App\Actions\Tasks\StartTaskPrepAction;
 use App\Actions\Tasks\StartTaskPrepFixAction;
@@ -43,6 +44,7 @@ use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
+use App\Http\Requests\Tasks\StartTaskPackageRequest;
 use App\Http\Requests\Tasks\StartTaskPrepFixRequest;
 use App\Http\Requests\Tasks\StartTaskPrepRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
@@ -136,6 +138,16 @@ final class TaskGroupsController extends Controller
     #[StartsOperation(OperationKinds::TasksPublish)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function publish(StartTaskPublishRequest $request, Task $group, StartTaskPublishAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    #[StartsOperation(OperationKinds::TasksPackage, requiresKey: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function package(StartTaskPackageRequest $request, Task $group, StartTaskPackageAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);

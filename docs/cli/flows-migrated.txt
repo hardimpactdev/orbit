@@ -62,6 +62,7 @@ tasks.cancel
 tasks.check
 tasks.dependency_merge
 tasks.maintenance
+tasks.package
 tasks.park
 tasks.pr_comment
 tasks.pr_merge
