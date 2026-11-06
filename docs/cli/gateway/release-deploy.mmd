@@ -4,7 +4,7 @@ sequenceDiagram
   %% status: draft
   %% command: gateway:release:deploy
   %% kind: gateway.release
-  %% behavior name: gateway-release-<step>-209 (fixed)
+  %% behavior name: ansible-gateway-release-<phase>-209 (fixed)
   autonumber
   %% lane TR icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -29,17 +29,24 @@ sequenceDiagram
   %%> What it does:
   %%> - at run start, mints one read token (contents, actions) into the vault
   GW-->>TR: 202 Accepted<br/>running release record
-  SW->>GN: Fetch the commit<br/>shared repository
+  SW->>SW: Write the intent<br/>ansible-input
+  SW->>SW: Write the private input<br/>token file from the vault
+  SW->>SW: Write the playbook input<br/>inventory · pinned host key
   %%> What it does:
-  %%> - fetches the commit with the read token when the shared repository lacks it; the token reaches git only in its environment
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - the fetch is its own step, so that the build runs its script from the commit being released, not from the live release
-  SW->>GN: Build the release<br/>worktree · composer · REVISION
+  %%> - writes the admitted intent, the read token and the pinned host key of the Gateway Node into a private run folder on Node 209
+  %%> - every phase below is one Swamp step that runs one tagged part of `operation-gateway-release.yml` against the Gateway Node over SSH
+  SW->>GN: Fetch the commit<br/>git · bare repository
+  %%> What it does:
+  %%> - fetches the exact commit into `shared/orbit.git` when it is missing; the token reaches git through a private file, removed after the fetch
+  SW->>GN: Build the release<br/>clone · composer · REVISION
   %%> What it does:
   %%> - refuses a commit that does not descend from the current release
-  %%> - links shared env and storage, installs dependencies, seals with `REVISION` and a cached config
-  %%> - a sealed release of the commit is reused
-  SW->>GN: Install the web build<br/>artifact · digest · rename
+  %%> - clones the commit from the shared repository, links the shared env and storage, installs dependencies with `community.general.composer`, writes the agent manifest
+  %%> - seals the release with `REVISION` and a cached config; a sealed release of the commit is reused
+  %%> - prints the grants the new code renders
+  SW->>GN: Install the web build<br/>artifact · digest · safe extract
+  %%> What it does:
+  %%> - downloads the CI artifact, checks its SHA-256, extracts it with safe names only and publishes it by one rename
   SW->>GN: Snapshot the database<br/>VACUUM INTO
   SW->>GN: Migrate<br/>artisan migrate --isolated
   %%> On failure:
@@ -50,29 +57,43 @@ sequenceDiagram
   Note over SW: Hand over the release<br/>gateway-release-activate
   %%> Why:
   %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
-  AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
+  AC->>AC: Write the playbook input<br/>intent · inventory
+  AC->>GN: Drain Horizon<br/>ansible.builtin.systemd · stop
   %%> What it does:
   %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
   %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
   %%> On failure:
   %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
-  AC->>GN: Switch the release<br/>gateway-rollback · Horizon
-  %%> Why:
-  %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
-  AC->>GN: Verify the Gateway<br/>/up · status version
+  AC->>GN: Switch the release<br/>link · FPM reload · restarts
+  %%> What it does:
+  %%> - requires a sealed release; prints the cleanup generations before the switch
+  %%> - switches the application link and the web link with `ansible.builtin.file` (a temporary link and a rename), reloads PHP-FPM, restarts each running service whose working directory is under the application
+  AC->>GN: Verify the Gateway<br/>uri · /up · status version
   opt the check failed
-    AC->>GN: Switch back<br/>gateway-rollback previous
+    AC->>GN: Switch back<br/>same phase · previous release
   end
   AC->>GN: Start Horizon<br/>always · also after a failure
   %%> Why:
   %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
   %%> - starting a running unit changes nothing
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
   AC->>GN: Resume document cleanup<br/>best effort
   %%> Why:
   %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
   AC->>GN: Prune old releases<br/>best effort
+  opt the load or hand-over failed
+    SW->>GN: Render the previous grants<br/>previous release code
+    Note over SW: Restore Swamp on Node 209<br/>operation-gateway-swamp-load
+    %%> Why:
+    %%> - Swamp and the Gateway switch together: a failed load or hand-over leaves Swamp on the new commit while the Gateway runs the old release, so a workflow could expect an intent field the Gateway does not send yet
+    %%> - the previous release renders its own grants; the load child checks out its commit and reloads serve
+    %%> - a restore that fails never hides the release failure
+  end
+  SW->>SW: Remove the playbook input<br/>cleanup
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the release steps are Ansible phases, one Swamp step each, like `node:role:add`; no script file is shipped to the Gateway Node or read from a release
+  %%> - the build is a clone of the commit from the shared repository (`ansible.builtin.git`), not a git worktree; a release directory is self-contained
+  %%> - the restore after a failed load or hand-over keeps Swamp and the Gateway on the same commit; it is the only step besides the release's own load that moves 209's checkout
+  %%> - `bin/gateway-rollback` stays a small script: an operator needs it when Swamp or Node 209 is down, and the release survives a Swamp outage
   alt every step succeeded
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record verified<br/>fleet rollout follows
