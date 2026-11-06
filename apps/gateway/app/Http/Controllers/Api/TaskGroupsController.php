@@ -20,6 +20,7 @@ use App\Actions\Tasks\StartTaskPrepFixAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
+use App\Actions\Tasks\StartTaskSyncAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\StoreTaskGroupCommentAction;
@@ -106,6 +107,17 @@ final class TaskGroupsController extends Controller
     #[StartsOperation(OperationKinds::TasksPark, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function park(EmptyTasksRequest $request, Task $group, StartTaskParkAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    /** Fetch the default branch and the task branch from origin into the VM workspace of an external group. */
+    #[StartsOperation(OperationKinds::TasksSync, requiresKey: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function sync(EmptyTasksRequest $request, Task $group, StartTaskSyncAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
