@@ -5,7 +5,7 @@ description: "Create a task. It starts in `backlog` unless you ask for `todo`."
 ---
 
 ```bash
-orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--current-recipe] [--json]
+orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--current-recipe] [--review=MODE] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -17,6 +17,7 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--or
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
 | `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `tasks.orchestration_invalid`. Topologies are not supported. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
+| `--review=MODE` | `manual` | How the gate of the task pull request is passed. `manual`: Nick approves the exact head. `automatic`: a fresh reviewer passes the head in review rounds ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)). Any other value returns `tasks.review_invalid`. `tasks:show` returns the mode as `review`. |
 | `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |
 
 ```bash

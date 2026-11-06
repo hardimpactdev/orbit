@@ -9,6 +9,7 @@ use App\Data\Tasks\TaskInputData;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
@@ -37,6 +38,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'brief' => ['required', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
             'orchestration' => ['sometimes', 'string', Rule::enum(TaskOrchestration::class)],
+            'review' => ['sometimes', 'string', Rule::enum(TaskReviewMode::class)],
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
             'tasks' => ['sometimes', 'array', 'max:50'],
@@ -69,6 +71,7 @@ final class CreateTaskGroupRequest extends FormRequest
                 'brief',
                 'status',
                 'orchestration',
+                'review',
                 'preview',
                 'current_recipe',
                 'tasks',
@@ -105,6 +108,7 @@ final class CreateTaskGroupRequest extends FormRequest
             preview: $this->boolean('preview'),
             currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),
+            review: TaskReviewMode::from($this->string('review', TaskReviewMode::Manual->value)->toString()),
         );
     }
 }

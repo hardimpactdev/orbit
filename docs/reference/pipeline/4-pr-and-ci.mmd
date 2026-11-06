@@ -111,7 +111,10 @@ sequenceDiagram
       %%> What it does:
       %%> - one Swamp run per round, admitted by the gate check, keyed by group and head; the Gateway records the round number on the group
       %%> - the mode is set per Task group when it is created (`tasks:create --review=automatic`); the default is manual
-      %%> Not built
+      %%> Built:
+      %%> - the mode of the group, set at creation and shown by `tasks:show` as `review`
+      %%> Not built:
+      %%> - the review round itself: the admission, the recorded round number and the fall back to manual after round 3
       SW->>AG: Review the PR head<br/>fresh reviewer turn
       %%> What it does:
       %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds

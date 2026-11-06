@@ -6,6 +6,7 @@ namespace App\Data\Tasks;
 
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskReviewMode;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -25,5 +26,6 @@ final class CreateTaskGroupData extends Data
         public bool $preview = false,
         public bool $currentRecipe = false,
         public TaskOrchestration $orchestration = TaskOrchestration::External,
+        public TaskReviewMode $review = TaskReviewMode::Manual,
     ) {}
 }

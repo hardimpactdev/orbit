@@ -70,6 +70,7 @@
             "vm_power": null,
             "preview": false,
             "current_recipe": false,
+            "review": "manual",
             "review_and_merge": {
                 "enabled": true,
                 "pr_branch": "cursor/login-throttle",
