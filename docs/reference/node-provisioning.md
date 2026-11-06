@@ -445,11 +445,13 @@ The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phas
 
 No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
 
+The phase issues the Gateway's own certificate from the same CA and installs it with the root certificate in `/etc/caddy/orbit-cert-current`, the paths the Gateway Caddyfile names. `orbit:bootstrap` records the `swamp.orbit` Route, so the first Caddyfile the Gateway publishes keeps that front. It also records the Redis Database connection `gateway-queue` for the Valkey server on the machine.
+
 The same phase brings up the WireGuard hub of the Gateway's own network, because Swamp reaches every Node, this one too, by its WireGuard address. It makes the hub key on the machine, writes the hub file the Gateway renders, starts `wg-quick@orbit` and records only the public key.
 
 The `app` job also writes the agent delivery manifest from the `agent_delivery` run input: the public pins the admitting Gateway sends, because a new Gateway has no release to carry them.
 
-`orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way.
+`orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way. The role brings the PHP-FPM pool, the Caddy site, and units for the scheduler and Horizon.
 
 The Swamp role's own steps are workflow steps bound to worker labels, so a Gateway without a worker cannot run them; once its own Swamp serves, `node:role:add` converges the roles through it.
 
@@ -544,7 +546,7 @@ Another installer can put a plain file back at `/usr/local/bin/swamp`, such as t
 
 The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with 8 dispatch slots each and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (root, `0600`) before adding the role. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
 
-The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orbit/swamp-role-worker/ssh-identity` (`0440`, the serve account's group). An operator bootstraps the first swamp Node, because no worker holds the key before that. The role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orbit/swamp-role-worker/ssh-identity` (`0440`, the serve account's group). An operator bootstraps the first swamp Node, because no worker holds the key before that. The role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 
 `caddy.install-package` owns package installation for every caller. The Gateway sends the release pins and keeps the operation error mapping. The agent owns the download URL, kernel setting, and obsolete source paths. It checks the pins and host paths before mutation, verifies the downloaded package before apt sees it, and publishes the kernel setting atomically. Package and system commands share the command deadline. Rust tests cover installation, repetition, drift, and refusal; Gateway tests cover intent. `caddy.order-after-vpn` then orders Caddy after WireGuard. Its failure maps to `gateway.caddy_start_failed`.
 
@@ -564,7 +566,7 @@ HTTP/1.1 clients can still get an empty reply on a new connection during a reloa
 
 ### Caddy on the Gateway machine
 
-Converging the `gateway` role runs the Caddy step over SSH before its firewall step. A failure returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. Run `orbit node:role:add <node> gateway --converge` to repair it. `php artisan orbit:gateway-web` currently refuses with `gateway.web_unavailable` for every role state and makes no host change.
+Converging the `gateway` role runs the Caddy step over SSH before its firewall step. A failure returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. Run `orbit node:role:add <node> gateway --converge` to repair it.
 
 Caddy also serves the Gateway API. A convergence that installs a newer Caddy restarts it, so the CLI can report `Could not reach the gateway.` while the Gateway finishes. `orbit activity:list` shows the real result. Run the command again after a minute.
 

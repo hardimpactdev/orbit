@@ -17,7 +17,7 @@ use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 
 /**
- * The Gateway web site on the Node that holds the `gateway` role, named as Gateway web convergence names it.
+ * The Gateway web site on the Node that holds the `gateway` role, named after the Node and the private domain.
  */
 final readonly class GatewayWebCaddySiteSource implements NodeCaddySiteSource
 {

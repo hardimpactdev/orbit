@@ -49,6 +49,12 @@ sequenceDiagram
   %%> - after that, `node:role:add` goes through the machine's own Swamp for everything else: gateway, websocket and the `swamp.orbit` route
   %%> - the swamp role's own runtime steps are native workflow steps bound to worker labels, not an Ansible phase, and a local run refuses a step that asks for a worker; so the bootstrap has its own Ansible `swamp` phase (`gateway-bootstrap.yml --tags swamp`) with the same units and the same tokens, and a Caddy front for `swamp.orbit` on port 443 signed by the Gateway's CA, because the Gateway starts runs over TLS to that name
   %%> - from here on its own Swamp does everything
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), the first role run of a fresh Gateway:
+  %%> - the control plane phase issues the Gateway's own certificate for `gateway.orbit` from the machine's CA, as for `swamp.orbit`, and installs it with the root certificate at the paths the rendered Caddyfile names (`/etc/caddy/orbit-cert-current`); the first role run publishes that Caddyfile and needs them
+  %%> - `orbit:gateway-web` is retired with its action: it only refused, and the role now does what it did
+  %%> - the `swamp.orbit` Route is recorded in the same bootstrap, before the first Caddyfile publish, so a publication never drops the front the Gateway reaches Swamp through
+  %%> - the rest of the Gateway role comes from the `gateway` role converge itself: the PHP-FPM pool and the Caddy site (its API), and units for the scheduler and Horizon, which record finished runs; a Gateway whose Node has a `schedule-work` or `horizon` Process keeps those, and Horizon runs only where a queue is configured
+  %%> - the queue is a Valkey server on the machine and its Redis Database connection `gateway-queue`, recorded by the bootstrap with the other records, because Operations need a queue to record a finished run
   SW->>NG: Add app-dev and app-prod<br/>node:add · nested Orbit
   %%> What it does:
   %%> - the nested Gateway's own `node:add` with the roles `app-dev` and `app-prod`; its own Swamp converges them over SSH

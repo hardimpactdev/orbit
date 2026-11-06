@@ -91,7 +91,7 @@ Operations need the queue too: the jobs that read a run's terminal result and re
 
 ## Horizon
 
-Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
+Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. A Gateway Node without those Processes gets the units `orbit-gateway-schedule.service` and, where a queue is configured, `orbit-gateway-horizon.service` from the `gateway` role convergence. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
 
 The [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains the existing Horizon Process before it switches code, then starts it on the selected release. It does not create or converge the Process or its unit. Manage that state through [Processes](/reference/processes-and-schedules).
 

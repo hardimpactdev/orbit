@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Gateway;
 
+use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Domain\Nodes\NativeCaddyPackageInput;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
@@ -41,6 +42,8 @@ final readonly class GatewayBootstrapPlan
         }
         // The ready copies of a nested fleet edit the Gateway database with the sqlite3 client (task_vm.ready_copies).
         $packages[] = 'sqlite3';
+        // The queue that records the finished runs of Swamp (docs/reference/gateway-queue.md) needs a Redis server; this Gateway's own, on loopback.
+        $packages[] = 'valkey-server';
         $build = PhpBuildInstaller::input(new RecipeLoader()->source(), [self::Php], pcov: false, extras: 'keep', fpm: 'all', opentelemetry: false);
 
         return [
@@ -50,7 +53,8 @@ final readonly class GatewayBootstrapPlan
             'bun' => null,
             'php_packages' => PhpBuildInstaller::packageFiles($build),
             'environment' => self::environment((string) file_get_contents(base_path('.env.example')),
-                ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'APP_URL' => $url, 'ORBIT_HOME' => $home, 'ORBIT_GATEWAY_CHECKOUT' => $checkout]),
+                ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'APP_URL' => $url, 'ORBIT_HOME' => $home, 'ORBIT_GATEWAY_CHECKOUT' => $checkout,
+                    'ORBIT_GATEWAY_QUEUE_CONNECTION' => BootstrapGatewayAction::QueueConnection]),
         ];
     }
 

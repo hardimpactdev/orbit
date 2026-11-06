@@ -6,16 +6,23 @@ namespace App\Actions\Gateway;
 
 use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Certificates\OrbitRootCa;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\IpUtils;
@@ -31,6 +38,12 @@ final readonly class BootstrapGatewayAction
 {
     /** @var list<RoleName> */
     private const array OwnedRoles = [RoleName::Gateway, RoleName::Vpn];
+
+    /** The Redis Database connection of the Gateway queue: the Valkey server on this machine. */
+    public const string QueueConnection = 'gateway-queue';
+
+    /** Where Swamp serves on its machine, behind the `swamp.orbit` Route. */
+    private const string SwampUpstream = 'http://127.0.0.1:9418';
 
     public function __construct(
         private AssignRoleAction $assignRole,
@@ -85,6 +98,11 @@ final readonly class BootstrapGatewayAction
                 // The machine of this Gateway runs Swamp, so its Node holds the swamp role; the Gateway finds the Swamp Node by that role.
                 // The role is not assignable while a Node provisions, so it comes last, and it stays provisioning until Swamp serves.
                 $this->assignRole->execute($node, RoleName::Swamp);
+                // The Gateway reaches Swamp through `swamp.orbit`, so its Route exists before the first Caddyfile is published: a
+                // publication that lacked it would drop the front that the bootstrap put there.
+                $this->swampRoute($node);
+                DatabaseConnection::query()->updateOrCreate(['slug' => self::QueueConnection],
+                    ['driver' => DatabaseDriver::Redis, 'node_id' => $node->id, 'host' => '127.0.0.1', 'port' => 6379]);
 
                 return $node;
             }));
@@ -99,6 +117,21 @@ final readonly class BootstrapGatewayAction
         $this->servingHost->remember($node);
 
         return $node->load('roles');
+    }
+
+    private function swampRoute(Node $node): void
+    {
+        // A Route is stored pending, and the update after its proxy is stored makes it active, as the Route workflow does.
+        $route = Route::query()->firstOrCreate(['domain' => 'swamp.orbit'], [
+            'kind' => RouteKind::CustomProxy,
+            'node_id' => $node->id,
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->customProxy()->updateOrCreate([], ['node_id' => $node->id, 'upstream' => self::SwampUpstream]);
+        // Set by hand: the bootstrap records without model events, which would set it on an authoritative Route.
+        $route->forceFill(['status' => RouteStatus::Active, 'sites_published' => true])->save();
     }
 
     private function validate(BootstrapGatewayData $data): void

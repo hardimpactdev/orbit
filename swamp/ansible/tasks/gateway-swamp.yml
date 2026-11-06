@@ -190,7 +190,7 @@
   changed_when: true
 # The front the Gateway starts runs through: TLS on 443 for swamp.orbit, signed by this Gateway's CA, to serve on loopback.
 - name: Issue the swamp.orbit certificate
-  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--certificate"] }
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--certificate=swamp"] }
   become_user: "{{ swamp_user }}"
   register: front_certificate
   changed_when: false
@@ -229,3 +229,25 @@
 - name: Start the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", enabled: true, state: started }
   loop: [a, b]
+# The Gateway's own certificate, signed by the same CA, at the paths its rendered Caddyfile names. The first role run publishes that
+# Caddyfile and needs them, so they exist before it.
+- name: Issue the Gateway certificate
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--certificate=gateway"] }
+  become_user: "{{ swamp_user }}"
+  register: gateway_certificate
+  changed_when: false
+- name: Make the Gateway certificate folder
+  ansible.builtin.file: { path: /etc/caddy/orbit-cert-current, state: directory, owner: root, group: caddy, mode: "0750" }
+- name: Place the Gateway certificate
+  ansible.builtin.copy:
+    src: "{{ (gateway_certificate.stdout | from_json)[item.source] }}"
+    remote_src: true
+    dest: "/etc/caddy/orbit-cert-current/{{ item.name }}"
+    owner: root
+    group: caddy
+    mode: "{{ item.mode }}"
+  loop:
+    - { source: certificate, name: gateway.pem, mode: "0640" }
+    - { source: key, name: gateway.key, mode: "0640" }
+    - { source: root, name: root-ca.pem, mode: "0644" }
+  loop_control: { label: "{{ item.name }}" }

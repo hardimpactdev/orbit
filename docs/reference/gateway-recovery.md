@@ -20,7 +20,7 @@ Node convergence applies its recorded network part after the other footprint par
 
 ## Gateway request logs
 
-The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any checkout, certificate, PHP-FPM, Caddy, or service change. Its native parent workflow is not installed. Normal Gateway releases use a [Swamp run](#release-as-a-swamp-run).
+Gateway releases use a [Swamp run](#release-as-a-swamp-run).
 
 The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request.
 

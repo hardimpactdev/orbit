@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Infrastructure\Gateway\GatewayQueueRedis;
+use App\Models\Node;
+use App\Models\Process;
 use Illuminate\Support\Facades\Config;
 
 /**
- * The Gateway Node's own static runtime: its PHP-FPM pool, host retention, the agent-view subscriber and the runtime
- * hibernator. A release changes none of them, so the gateway role's convergence owns them. It also removes what the
+ * The Gateway Node's own static runtime: its PHP-FPM pool, host retention, the agent-view subscriber, the runtime
+ * hibernator, and the scheduler and Horizon units where no Process runs them. A release changes none of them, so the gateway role's convergence owns them. It also removes what the
  * retired release unit left: its timer and services, and the Documents PHP-FPM start hook.
  */
 final readonly class GatewayRuntimeFiles
@@ -18,8 +21,14 @@ final readonly class GatewayRuntimeFiles
     /** The release unit's files; its timer is stopped before they go. */
     public const array ReleaseUnits = ['orbit-gateway-release.timer', 'orbit-gateway-release.service', 'orbit-gateway-release-run@.service'];
 
-    /** @return array{directories: list<array<string, string>>, files: list<array<string, string>>, units: list<array{name: string, unit: string}>} */
-    public function render(): array
+    /**
+     * The scheduler and Horizon run as the Gateway Node's Processes `schedule-work` and `horizon` where an operator made them. A
+     * Gateway without those Processes gets the units here, so its role is all it needs to record finished runs. Horizon runs
+     * only when a queue is configured.
+     *
+     * @return array{directories: list<array<string, string>>, files: list<array<string, string>>, units: list<array{name: string, unit: string}>}
+     */
+    public function render(?Node $node = null): array
     {
         $application = Config::string('orbit.gateway_checkout');
         $home = Config::string('orbit.home');
@@ -28,6 +37,11 @@ final readonly class GatewayRuntimeFiles
         $service = fn (string $description, string $type, string $command, string $extra = ''): string => "[Unit]\nDescription={$description}\n"
             ."After=network-online.target\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\nWorkingDirectory={$this->directive($application)}\n"
             ."Environment=ORBIT_HOME={$this->directive($home)}\nExecStart=\"/usr/bin/php8.5\" {$this->argument($application.'/artisan')} \"{$command}\"\n{$extra}";
+        $owned = $node instanceof Node
+            ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
+            : [];
+        $longRunning = static fn (string $name, string $description, string $command): array => ['name' => "orbit-gateway-{$name}.service",
+            'unit' => $service($description, 'simple', $command, "Restart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n")];
         $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $application.'/storage/logs/laravel.log');
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
@@ -51,6 +65,8 @@ final readonly class GatewayRuntimeFiles
             'units' => [
                 ['name' => 'orbit-agent-view.service', 'unit' => $service('Orbit agent view subscriber', 'simple', 'orbit:agent-view',
                     "Restart=always\nRestartSec=2\nMemoryMax=256M\n\n[Install]\nWantedBy=multi-user.target\n")],
+                ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],
+                ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon')],
                 ['name' => 'orbit-runtime-hibernator.timer', 'unit' => "[Unit]\nDescription=Orbit runtime hibernator timer\n\n[Timer]\nOnBootSec=2min\n"
                     .'OnUnitActiveSec='.Config::integer('orbit.hibernation.sweep_seconds')."s\nPersistent=true\nUnit=orbit-runtime-hibernator.service\n\n[Install]\nWantedBy=timers.target\n"],
             ],
