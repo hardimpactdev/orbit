@@ -24,6 +24,7 @@ use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmConvergeIntent;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
@@ -32,6 +33,7 @@ use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -142,13 +144,32 @@ final readonly class TaskProvisionIntent
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
                     'setup' => $setup],
-                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
+                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'converge' => $this->converge($vm, $node, $checkout->value, $input),
+                'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
                 'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
             $group->taskable()->associate($instance);
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 
             return $this->start->execute($kind, 'task_group', $group->id, ValidatedData::integer($input['node_id']), $extend($input, $group, $instance, $vm), $caller, $request);
         }));
+    }
+
+    /**
+     * "Converge once" of stage 2: the task VM role phases on the outer VM, with the NFS export of its checkout to the nested network, run
+     * before the fleet starts. The guest's host key is pinned by this run's VM step, so its SSH target carries `host_keys: null` until then.
+     *
+     * @param  array<string,mixed>  $input  the VM intent
+     * @return array<string,mixed>|null null for a task without a topology
+     */
+    private function converge(TaskVm $vm, Node $node, string $checkout, array $input): ?array
+    {
+        $create = $input['create'] ?? null;
+        if (! is_array($create) || ($create['topology'] ?? false) !== true) {
+            return null;
+        }
+
+        return app(PendingSshHostKey::class)->during($node->id, fn (): array => app(TaskVmConvergeIntent::class)->provisioning($vm,
+            ['checkout' => $checkout, 'subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
     }
 
     private function assertProvisionable(Task $group): void

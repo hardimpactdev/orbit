@@ -53,20 +53,39 @@ jobs:
       inputs: {hosts: 'name:target', argv: ['incus', 'config', 'get', '${{ "fleet-ready-" + self.role }}', 'user.ready.ipv4'], timeoutSec: 40}}
     dependsOn: [{step: 'Look for ready copies', condition: {type: succeeded}}]
   # The task VM owns the network and the three VMs: it creates the network from the stored subnet and needs no earlier fleet.
+  # The converge of the task VM role creates the nested network when it exports the checkout to it; a fleet without that converge creates it here.
+  - name: 'Look for the network'
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-look-for-the-network").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-look-for-the-network").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'network', 'list', '--format', 'csv', '--columns', 'n'], timeoutSec: 40}}
+    dependsOn: [{step: 'guest', condition: {type: succeeded}}]
   - name: 'Create the nested network'
     labels: {role: swamp}
     writes: true
+    guard: '${{ steps["Look for the network"].outputs.stdout.split("\n").exists(l, l == inputs.intent.fleet.network) }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-create-the-nested-network").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-create-the-nested-network").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'network', 'create', '${{ inputs.intent.fleet.network }}', '${{ "ipv4.address=" + steps["Read the subnet"].outputs.stdout.split("\n")[0] }}', 'ipv4.nat=true', 'ipv6.address=none'], timeoutSec: 70}}
-    dependsOn: [{step: 'Read the subnet', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Read the subnet', condition: {type: succeeded}}, {step: 'Look for the network', condition: {type: succeeded}}]
   # A copy of a stopped copy on the same pool is a clone; the guests keep their own state, database and `base` setting.
+  # The network, wherever it came from, has the subnet that the copies store: each copy keeps its MAC and address inside it.
+  - name: 'Read the network address'
+    labels: {role: swamp}
+    guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-network-address").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-network-address").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'network', 'get', '${{ inputs.intent.fleet.network }}', 'ipv4.address'], timeoutSec: 40}}
+    dependsOn: [{step: 'Create the nested network', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+  - name: 'Check the subnet'
+    labels: {role: swamp}
+    guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
+    task: {type: assert, expr: 'steps["Read the network address"].outputs.stdout.split("\n")[0] == steps["Read the subnet"].outputs.stdout.split("\n")[0]', severity: high, message: The nested network does not have the subnet that the ready copies store}
+    dependsOn: [{step: 'Read the network address', condition: {type: succeeded}}]
   - name: 'Copy the ready copies'
     labels: {role: swamp}
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-copy-the-ready-copies" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-copy-the-ready-copies" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '300', 'incus', 'copy', '--instance-only', '${{ "fleet-ready-" + self.role }}', '${{ inputs.intent.fleet.guests[self.role] }}'], timeoutSec: 310}}
-    dependsOn: [{step: 'Create the nested network', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Check the subnet', condition: {type: succeeded}}]
   # Each Node gets its stored MAC and address back, so the Orbit records in the copies stay true.
   - name: 'Add the NICs'
     labels: {role: swamp}

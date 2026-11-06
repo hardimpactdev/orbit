@@ -26,6 +26,9 @@ final readonly class TaskVmReadyCopiesIntent
     /** The nested network of a task VM. The stage 2 steps create it from the subnet the ready copies store. */
     public const string Network = 'oe-nested';
 
+    /** The subnet of the nested network. The ready copies store the MAC and address of each Node inside it, so a converge and the fleet steps use this one. */
+    public const string Subnet = '10.232.2.0/24';
+
     /**
      * The nested fleet of a task VM: the names of its VMs and of its network, for the steps that start it and the steps that save it.
      *

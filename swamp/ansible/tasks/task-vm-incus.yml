@@ -12,6 +12,7 @@
   changed_when: false
 - name: Work out what is missing
   ansible.builtin.set_fact:
+    incus_seed_disk: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed
     incus_pool_missing: "{{ incus_pools.stdout_lines | select('match', '^default,') | list | length == 0 }}"
     incus_network_missing: >-
       {{ intent.nfs is not none and (incus_networks.stdout_lines | select('match', '^' ~ intent.nfs.interface ~ ',') | list | length == 0) }}
@@ -35,4 +36,17 @@
     preseed: >-
       {{ ({'storage_pools': pool, 'profiles': root_disk} if incus_pool_missing | bool else {})
          | combine({'networks': network} if incus_network_missing | bool else {}) }}
+  changed_when: true
+# The topology seed disk of a task VM is a btrfs file system that holds the ready copies as Incus volumes. Incus does not know it in a
+# fresh VM; `incus admin recover` reads the pool and its volumes from the disk. The answers: recover a pool named topology-seed on btrfs
+# from the disk, no further property, no further pool, scan, recover what it found.
+- name: Look for the topology seed disk
+  when: intent.nfs is not none
+  ansible.builtin.stat: { path: "{{ incus_seed_disk }}" }
+  register: incus_seed
+- name: Recover the topology seed pool
+  when: intent.nfs is not none and incus_seed.stat.exists and (incus_pools.stdout_lines | select('match', '^topology-seed,') | list | length == 0)
+  ansible.builtin.command: { argv: [incus, admin, recover] }
+  args:
+    stdin: "yes\ntopology-seed\nbtrfs\n{{ incus_seed_disk }}\n\nno\nyes\nyes\n"
   changed_when: true
