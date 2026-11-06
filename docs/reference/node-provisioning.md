@@ -79,6 +79,8 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | DNS | Ansible phase `dns` writes the dnsmasq backend of a new VPN hub; native child workflows install its listener and publish private DNS. |
 | End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
 
+Each role in the intent names its execution copies as a record: `{}` for a role without any.
+
 The `baseline` phase replaces the Node pin on 209, and it validates the sudo rule before the rule replaces the old one. The `tunnel` phase requires the WireGuard public key to be unique, and an existing hub to keep its peer-facing key, before it changes any tunnel file, interface or peer.
 
 Role PHP packages, Composer prerequisites and native Caddy use the [recipe artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) for each pinned Debian file. Role prerequisites use one Ansible artifact module; native Caddy and Tool Managers use the shared native fetch workflow. Both consume the admitted candidate list, try upstream only after a mirror transport failure, and verify the checksum before publication. They share the curl transport-code policy. A checksum mismatch stops the run. Local I/O and size-limit failures stop without fallback.
