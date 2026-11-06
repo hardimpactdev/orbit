@@ -283,7 +283,7 @@ The group is an external `todo` group, made with `tasks:create`, of a Project th
 - the title and body of the draft pull request;
 - the repository, the base and the branch `task-{group}`.
 
-It mints the GitHub installation token for the pull request. The token and its Git authorization header travel as vault key names, never as values. Admission adds no child Operation. No step of the run calls the Gateway.
+It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints the GitHub installation token for the pull request. The token and its Git authorization header travel as vault key names, never as values. Admission adds no child Operation. No step of the run calls the Gateway.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 
