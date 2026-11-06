@@ -24,6 +24,8 @@ The Gateway also runs `orbit:auto-deploy` every minute without overlap for [auto
 
 While task VMs are enabled, the Gateway checks the deployed recipe each minute and queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 10 minutes. The sweep also runs while only the [UpCloud](/reference/compute-drivers#sweep-upcloud) token file is set. The same recipe reconcile queues the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) when UpCloud is configured and no verified template matches the deployed recipe. UpCloud has no separate nightly schedule.
 
+The Gateway also queues the [refresh of the task images](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) of the Linux task VM hosts every day at 03:20 while task VMs are enabled. A host with a refresh open returns it.
+
 Release handoff queues [base image builds](/reference/compute-drivers#build-the-base-image) on each configured host when the deployed recipe changes. The minute check recovers missed dispatches.
 
 The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. The [documents extension](/reference/extensions) registers this entry and the cleanup worker below from its provider, and both run whether or not its switch is on. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
