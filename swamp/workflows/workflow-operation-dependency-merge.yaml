@@ -102,6 +102,17 @@ jobs:
       inputs:
         run: timeout 5 mktemp -d /tmp/orbit-dependency-merge-XXXXXXXX
     writes: true
+  - name: Mint the tokens
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ run.id }}
+        purpose: dependency_merge
   - name: Read the PR
     labels:
       role: swamp
@@ -122,6 +133,9 @@ jobs:
           ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
     dependsOn:
     - step: Create merge scratch
+      condition:
+        type: succeeded
+    - step: Mint the tokens
       condition:
         type: succeeded
   - name: Inspect the PR
@@ -493,6 +507,7 @@ jobs:
           GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
+    guard: ${{ !("Mint the tokens" in steps && steps["Mint the tokens"].status == "succeeded") }}
     writes: true
     allowFailure: true
   - name: Revoke the write token
@@ -511,6 +526,7 @@ jobs:
           GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
+    guard: ${{ !("Mint the tokens" in steps && steps["Mint the tokens"].status == "succeeded") }}
     writes: true
     allowFailure: true
   - name: Remove merge scratch

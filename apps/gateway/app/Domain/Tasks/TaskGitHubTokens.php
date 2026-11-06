@@ -32,6 +32,7 @@ use Illuminate\Support\Str;
  * - `clone` writes the Git authorization header of a read of the Project repository, or an empty value for a repository that needs none.
  * - `publish` writes the write token for the pull request and its Git authorization header. An approved push of a cancel takes the token only.
  * - `pull_request` writes the write token of one pull request step: ready, comment or merge.
+ * - `dependency_merge` writes the write and read tokens of a dependency batch squash.
  */
 final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
 {
@@ -59,7 +60,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         return match ($purpose) {
             'clone' => $this->clone($operation, $group, $callerNodeId, $runId),
             'publish' => $this->publish($operation, $group, $callerNodeId, $runId),
-            'pull_request' => $this->pullRequest($operation, $group, $callerNodeId, $runId),
+            'pull_request', 'dependency_merge' => $this->scoped($operation, $group, $callerNodeId, $runId, $purpose),
             default => throw $this->forbidden(),
         };
     }
@@ -122,33 +123,45 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         return $copies;
     }
 
-    /** @return array<string,array{vault:string,key:string}> */
-    private function pullRequest(Operation $operation, Task $group, int $callerNodeId, string $runId): array
+    /**
+     * The scoped tokens of one pull request step or of a dependency merge: one repository, the permissions of the kind, one vault key each.
+     *
+     * @return array<string,array{vault:string,key:string}>
+     */
+    private function scoped(Operation $operation, Task $group, int $callerNodeId, string $runId, string $purpose): array
     {
-        $permissions = match ($operation->kind) {
-            'tasks.pr_ready', 'tasks.pr_comment' => ['pull_requests' => 'write'],
-            'tasks.pr_merge' => ['contents' => 'write', 'pull_requests' => 'write'],
+        $write = ['contents' => 'write', 'pull_requests' => 'write'];
+        $grants = match ([$purpose, $operation->kind]) {
+            ['pull_request', 'tasks.pr_ready'], ['pull_request', 'tasks.pr_comment'] => ['write_token' => ['pull_requests' => 'write']],
+            ['pull_request', 'tasks.pr_merge'] => ['write_token' => $write],
+            // The read token comes first: a failure after it leaves the token with the least authority.
+            ['dependency_merge', 'tasks.dependency_merge'] => ['read_token' => ['contents' => 'read', 'pull_requests' => 'read', 'checks' => 'read', 'actions' => 'read'],
+                'write_token' => $write],
             default => throw $this->forbidden(),
         };
         $name = $operation->input['repository'] ?? null;
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
-        $reference = ValidatedData::object($operation->input['execution_secrets'] ?? [])['write_token'] ?? null;
-        if (! is_string($name) || $repository === null || $repository->owner.'/'.$repository->name !== $name || ! is_array($reference)) {
+        $references = ValidatedData::object($operation->input['execution_secrets'] ?? []);
+        if (! is_string($name) || $repository === null || $repository->owner.'/'.$repository->name !== $name
+            || array_any(array_keys($grants), static fn (string $member): bool => ! is_array($references[$member] ?? null))) {
             throw $this->forbidden();
         }
         $credentials = $this->store->credentials()
             ?? throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before merging a task pull request.', 409);
-        try {
-            $token = app(GitHubApi::class)->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $name, 'permissions' => $permissions]));
-        } catch (GitHubApiException $exception) {
-            report($exception);
-            throw new ResourceOperationException('tasks_pr.github_unreadable', 'The Gateway could not mint a GitHub token for the step.', 502);
+        $copies = [];
+        foreach ($grants as $member => $permissions) {
+            try {
+                $token = app(GitHubApi::class)->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $name, 'permissions' => $permissions]));
+            } catch (GitHubApiException $exception) {
+                report($exception);
+                throw new ResourceOperationException('tasks_pr.github_unreadable', 'The Gateway could not mint a GitHub token for the step.', 502);
+            }
+            $reference = ValidatedData::object($references[$member]);
+            $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $token->reveal());
         }
-        $reference = ValidatedData::object($reference);
-        $copy = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $token->reveal());
-        $this->record($operation, 'Issued the scoped token of a Task pull request step.', $callerNodeId, $runId, $name, [$permissions]);
+        $this->record($operation, 'Issued the scoped tokens of a Task step.', $callerNodeId, $runId, $name, array_values($grants));
 
-        return ['write_token' => $copy];
+        return $copies;
     }
 
     /** @param list<array<string,string>> $permissions */
