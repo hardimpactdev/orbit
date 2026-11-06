@@ -20,28 +20,21 @@ sequenceDiagram
   %%> - the recipe.json of the release, the Vite+ lock, the VM's SSH target with its host key, and the Pi server digest with its place on the Gateway host
   %%> - the NFS settings when named: the checkout to export, the nested subnet and the nested bridge
   GW->>SW: Start run, full intent<br/>operation-task-vm-converge
-  SW->>SW: Write the intent<br/>private run folder
-  %%> What it does:
-  %%> - writes the intent to a private file and locates the shipped playbooks
-  SW->>GW: Fetch the Pi server<br/>copy over ssh
-  %%> What it does:
-  %%> - copies the Pi server from the Gateway host to the run folder on 209
-  %%> Why:
-  %%> - Pi is an internal artifact, not a download; the playbook copies it on to the VM only when the VM's copy differs from the pin
-  SW->>SW: Check the Pi server<br/>sha256 of the pin
-  SW->>SW: Write the playbook input<br/>inventory · vars · hosts
-  %%> What it does:
-  %%> - writes the inventory, the variables and `known_hosts` from the intent; the VM's host key is the recorded one
-  SW->>VM: Install the software<br/>Ansible phase: software
+  SW->>VM: Install the software<br/>child task-vm-role-run
+  %%> The child:
+  %%> - one child workflow, `task-vm-role-run`, runs phases of the task VM role on a guest; the image builds of Incus and UpCloud use it too, and the three steps of this chart call it once per phase
+  %%> - it writes the intent to a private run folder, writes the inventory, the variables and `known_hosts` (the VM's host key is the recorded one), runs `ansible-playbook` for the phases it is given under one literal `timeout`, and removes the run folder whatever the result
+  %%> Pi:
+  %%> - this first call also copies the Pi server from the Gateway host to 209 and checks its SHA-256; Pi is an internal artifact, not a download, and the playbook copies it on to the VM only when the VM's copy differs from the pin
   %%> What it does:
   %%> - apt packages at the pins of the recipe, from the Ubuntu snapshot through their own apt configuration
   %%> - Node, pnpm, Bun and Vite+, Rust, the Swamp binary and the Pi server
   %%> - a tool that already shows its pinned version is left alone, so a VM at the pins reports no change
-  SW->>VM: Install the tools<br/>Ansible phase: tools
+  SW->>VM: Install the tools<br/>child task-vm-role-run
   %%> What it does:
   %%> - the NFS server; with NFS settings it exports the checkout to the nested subnet only (`rw,async`) and allows port 2049 from the nested bridge in UFW
   %%> - the shape gate linters in `/opt/orbit-shape-gate`, named by the digest of their pins, so the handoff check runs offline
-  SW->>VM: Check the task VM role<br/>Ansible phase: check
+  SW->>VM: Check the task VM role<br/>child task-vm-role-run
   %%> What it does:
   %%> - the one end check: every package at its pin, every runtime and tool at its version, the NFS server active, the exports as named
   alt the check passes
@@ -54,6 +47,3 @@ sequenceDiagram
     %%> On the VM:
     %%> - finished phases stay; there is no rollback. Run the same command again: each phase skips what matches
   end
-  SW->>SW: Remove the playbook input<br/>always
-  %%> Why:
-  %%> - the intent and the Pi copy do not outlive the run, whatever its result
