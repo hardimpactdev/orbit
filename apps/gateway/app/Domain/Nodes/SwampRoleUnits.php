@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Operations\OperationRunBudgets;
+
 /**
  * The swamp role's systemd units, rendered at admission. Official cfgmgmt steps write them on the Node and never
  * restart serve or a running worker, so a changed unit takes effect at its next restart (ADR 0243).
@@ -56,7 +58,11 @@ final class SwampRoleUnits
             ."[Install]\nWantedBy=multi-user.target\n";
     }
 
-    /** `orbit-swamp-serve.service`: serve on loopback from the release checkout, draining up to 5 minutes on stop. */
+    /**
+     * `orbit-swamp-serve.service`: serve on loopback from the release checkout, draining up to 5 minutes on stop. A run is cut at the
+     * longest fixed budget of `OperationRunBudgets`. The flag beats `max-run-duration` in `.swamp/serve.yaml`, which the Gateway
+     * rewrites when it publishes triggers.
+     */
     private static function serve(string $user, ?string $repository): string
     {
         $home = '/home/'.$user;
@@ -74,6 +80,7 @@ final class SwampRoleUnits
             ." --auth-mode token --admins user:nckrtl --club-api-key-file {$config}/api-key"
             .' --trusted-hosts swamp.orbit --trust-proxy --dispatch-env-allow=,'
             .' --max-concurrent-scheduled-runs '.self::ScheduledRuns.' --shutdown-drain-timeout 5m'
+            .' --max-run-duration '.OperationRunBudgets::longestFixedSeconds()
             ." --remote-only --hot-reload\n"
             ."Restart=on-failure\nRestartSec=2\nTimeoutStopSec=360\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
