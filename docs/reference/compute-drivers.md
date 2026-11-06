@@ -1210,40 +1210,52 @@ The build leaves the promoted image and, from the first promotion on, the `-prev
 
 #### Refresh the task image and the topology seed
 
-A new task image comes from the recipe build only for a new host or a new base OS. Every release after that brings the image and the seed up to date by converge ([stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh)). The seed that the image build leaves holds only the stopped `node-template`. A refresh adds the ready nested topology of the running release: three stopped VMs, `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`, on the nested WireGuard network 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
+A new task image comes from the recipe build only for a new host or a new base OS. Every release after that brings the image and the seed up to date by converge ([stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh)).
 
-Each task VM host refreshes its own image and seed, and nothing is copied between hosts. The hosts have different CPUs, and a copy between machines loses the reflink sharing of the pool inside the seed. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway. There is no CLI command of its own. The release projection and the daily schedule are the triggers of the chart; they are not built yet.
+The seed that the image build leaves holds only the stopped `node-template`. A refresh adds the ready nested topology of the running release. That is three stopped VMs: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They run on the nested WireGuard network 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
 
-The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep): the refresh VM is a task VM like any other, so the Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. The whole intent is captured in the admission transaction of provision, and no step of the run calls the Gateway. A second admission for a host returns the open Operation. The Gateway refuses a host that is not an active, configured task VM host, a host with an image build running, a host with no promoted image, and a Gateway whose release has no commit.
+Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway. There is no CLI command of its own. The release projection and the daily schedule of the chart are not built yet.
 
-The workflow `operation-task-vm-image-refresh` runs these steps from Node 209:
+The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age.
 
-1. `Create the VM` runs `operation-task-provision` as a child: the VM from the current image with a clone of the current seed, the checkout of the release commit and the nested fleet from the ready copies.
-2. `Pin the VM` fills the host key of the new guest into the converge and ready copies intents.
-3. `Converge once` runs `operation-task-vm-converge` on the refresh VM. A VM at the pins reports no change.
-4. `Save the ready copies` runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked.
-5. `Clean the refresh VM` runs `task-vm-image-clean`: it removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token and model key, the Club key and the checkout, resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM. The image build uses the same workflow for its builder with `enrolled: false`.
-6. `Publish the image` and `Read the fingerprint`: `incus publish` of the stopped VM under a candidate alias.
-7. `Start the check VM`, `Boot the check VM` and `Check the image` boot a throwaway VM from the candidate and check that it holds none of the identity.
-8. `Copy the seed` copies the refresh VM's seed disk to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, and `Detach the seed` runs `zfs promote` on it, so successive refreshes form no clone chain.
-9. `Promote the image` moves the host's image alias to the new image under the same lock. The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name: that is the rollback copy.
+The Gateway captures the whole intent in the admission transaction of provision, so no step of the run calls the Gateway. A second admission for a host returns the open Operation. The Gateway refuses a host that is not an active, configured task VM host. It also refuses a host with an image build running or no promoted image, and a Gateway whose release has no commit.
 
-The cleanup job removes the check VM, and, when the promotion did not succeed, the candidate image and the new seed. A failed run keeps the image and seed the host had. The run records nothing on its own: when it ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release, and cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
+The workflow `operation-task-vm-image-refresh` runs from Node 209.
+
+| Step | What it does |
+|---|---|
+| `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and a clone of the current seed, the checkout of the release commit, and the nested fleet from the ready copies. |
+| `Pin the VM` | Fills the host key of the new guest into the converge and ready copies intents. |
+| `Converge once` | Runs `operation-task-vm-converge` on the refresh VM. A VM at the pins reports no change. |
+| `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
+| `Clean the refresh VM` | Runs `task-vm-image-clean` and stops the VM. |
+| `Publish the image` | Runs `incus publish` of the stopped VM under a candidate alias and reads its fingerprint. |
+| `Start the check VM`, `Boot the check VM`, `Check the image` | Boot a throwaway VM from the candidate and check that it holds none of the identity. |
+| `Copy the seed`, `Detach the seed` | Copy the seed disk of the refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
+| `Promote the image` | Moves the host's image alias to the new image under the same lock. |
+
+The clean step removes the nested guests and network. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets cloud-init, the machine-id and the SSH host keys, and trims the disk. The image build uses the same workflow for its builder with `enrolled: false`.
+
+The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the promotion did not succeed, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had.
+
+When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
 
 ##### How a claim selects the new seed
 
-The seed of an image is named from its fingerprint (`orbit-topology-seed-<12 hex>`). A refresh makes a new image with a new fingerprint, so it makes a new seed under a new name, and the old seed and image stay as they were. A task VM that already runs keeps its own clone of the old seed.
+The seed of an image is named from its fingerprint (`orbit-topology-seed-<12 hex>`). A refresh makes a new image with a new fingerprint, so it makes a new seed under a new name. The old seed and image stay as they were. A task VM that already runs keeps its own clone of the old seed.
 
 One host lock, `/run/lock/orbit-task-vm-seed.lock`, orders the seed copy and the alias move of a refresh against the seed clone of a claim.
 
-Image pruning deletes an image and its seeds together, so the `-previous` alias and old seed go when pruning removes the old image.
+Image pruning deletes an image and its seeds together. The `-previous` alias and the old seed go when pruning removes the old image.
 
 ##### Not built
 
-- The first refresh of a host whose seed holds no ready copies: the run calls `task_vm.fleet_build` as a child once that kind exists.
-- The NFS mount of the checkout over the nested Nodes with its apply step, and the converge of the nested Nodes through the nested Orbit, once stage 2 has them.
-- The re-mint of the nested Swamp tokens, the product command that the fleet build uses.
-- The replacement of old ready slots: ready slots do not exist yet.
+The chart lists what the run still lacks:
+
+- The first refresh of a host whose seed holds no ready copies. The run calls `task_vm.fleet_build` as a child once that kind exists.
+- The NFS mount of the checkout over the nested Nodes with its apply step, and the converge of the nested Nodes through the nested Orbit. Stage 2 builds them.
+- The re-mint of the nested Swamp tokens. It is the product command that the fleet build uses.
+- The replacement of old ready slots. Ready slots do not exist yet.
 - The release projection and the daily schedule that start one run per host.
 
 ##### Save the ready copies

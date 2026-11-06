@@ -1,0 +1,64 @@
+sequenceDiagram
+  %% Target design: the run that refreshes the task image and the topology seed of one task VM host (stage 6, docs/reference/pipeline/6-task-image-seed-refresh.mmd). It is the per-host part of that chart, as built.
+  %% status: draft
+  %% command: none · task-vms:refresh-image on the Gateway host
+  %% kind: task_vm.image_refresh
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane VM icon=server pill=refresh VM tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Task VM host<br/>Incus over ssh
+  participant VM as Refresh VM<br/>a task VM
+  Note over GW: Admit the refresh<br/>one run per host
+  %%> Started by:
+  %%> - the operator command `php artisan task-vms:refresh-image HOST`; the release projection and the daily schedule are not built
+  %%> Requirements:
+  %%> - an active, configured task VM host with a promoted image and no image build running, and a Gateway release with a commit
+  %%> Result:
+  %%> - a group of its own in the proof Project, placed on this host only, and the full intent recorded; a second admission for the host returns the open run
+  GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
+  SW->>VM: Create the VM<br/>image · seed · checkout
+  %%> What it does:
+  %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit and the nested fleet from the ready copies
+  SW->>VM: Pin the VM<br/>guest host key
+  %%> What it does:
+  %%> - fills the host key the VM step observed into the converge and ready copies intents
+  SW->>VM: Converge once<br/>task_vm.converge
+  %%> What it does:
+  %%> - the child `operation-task-vm-converge`: the task VM role phases of Ansible on the outer VM; a VM at the pins reports no change
+  SW->>VM: Save the ready copies<br/>task_vm.ready_copies
+  %%> What it does:
+  %%> - the child `operation-task-vm-ready-copies`: key-free, self-contained copies in the seed disk, boot-checked
+  SW->>H: Clean the refresh VM<br/>task-vm-image-clean · stop
+  %%> What it does:
+  %%> - the child `task-vm-image-clean` through `incus exec`: removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout
+  %%> - resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
+  SW->>H: Publish the image<br/>incus publish
+  %%> What it does:
+  %%> - publishes the stopped VM under a candidate alias and reads its fingerprint
+  SW->>H: Boot-check the image<br/>throwaway VM
+  %%> What it does:
+  %%> - boots a VM from the candidate and checks that it holds none of the identity of the refresh VM
+  SW->>H: Copy the seed<br/>under the host lock
+  %%> What it does:
+  %%> - copies the seed disk of the refresh VM to the seed name of the new fingerprint, then `zfs promote` so refreshes form no clone chain
+  SW->>H: Promote the image<br/>under the host lock
+  %%> What it does:
+  %%> - moves the host's image alias to the new image; the old image keeps the alias `-previous`, and the old seed stays under its own name
+  SW->>H: Remove the leftovers<br/>always
+  %%> What it does:
+  %%> - removes the check VM; when the promotion did not succeed, also the candidate image and the new seed
+  alt the run passes its check
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record the new image<br/>cancel the group
+    %%> Result:
+    %%> - the new image is the host's latest promoted build, with the recipe identity of the release
+    %%> - the cancel of the group destroys the refresh VM
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+    %%> On failure:
+    %%> - the host keeps the image and the seed it had; the group is cancelled and the refresh VM destroyed
+  end
