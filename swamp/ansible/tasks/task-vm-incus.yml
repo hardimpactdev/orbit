@@ -90,7 +90,7 @@
     - name: Delete the folders of the snapshots they had
       ansible.builtin.file: { path: "{{ incus_seed_mount }}/virtual-machines-snapshots/{{ item }}", state: absent }
       loop: >-
-        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path virtual-machines-snapshots/([^/]+)/.*$', '\\1')
+        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path virtual-machines-snapshots/([^/]+)/.*$', '\1')
            | select('match', '^[^ /]+$') | reject('match', incus_seed_keep) | unique | list }}
   always:
     - name: Unmount the topology seed
