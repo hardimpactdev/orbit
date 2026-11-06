@@ -407,7 +407,6 @@ cases:
     batch: fresh-fleet
     covers: []
     summary: Omitted required values fail in both noninteractive forms instead of a parser error or target fallback.
-    fails_today: The port variant hits the required parser argument instead of firewall.port_invalid; the supplied-port, missing-node variant already uses the expected refusal.
     variants:
       - {name: port, args: ["--node=${app-dev.id}"], code: firewall.port_invalid}
       - {name: node, args: ['25'], code: firewall.node_id_invalid}
@@ -420,7 +419,6 @@ cases:
     batch: fresh-fleet
     covers: [main, changes-needed, succeeded]
     summary: A terminal asks again for an invalid port and selects an omitted Node before denying traffic.
-    fails_today: Deny has a required parser argument and does not opt into the StoreFirewallRuleCommand prompts; the shared port prompt does not match the case-sensitive Port expectation, and its Node selector is a SelectPrompt rather than a data list.
     setup:
       - use: open-port
     act:
@@ -437,7 +435,6 @@ cases:
     batch: fresh-fleet
     covers: [main, changes-needed, succeeded]
     summary: Supplying the port but no Node prompts for the target instead of inferring it or refusing.
-    fails_today: Deny does not opt into missing-input prompts.
     setup:
       - use: open-port
     act:
@@ -453,7 +450,6 @@ cases:
     batch: fresh-fleet
     covers: []
     summary: Cancelling either missing-input prompt creates no rule or Operation.
-    fails_today: Deny does not prompt for missing inputs.
     variants:
       - {name: port, args: ["--node=${app-dev.id}"], prompt: Port}
       - {name: node, args: ['25'], prompt: Node}
