@@ -32,15 +32,20 @@
             mode: "0600"
           no_log: true
         - name: Fetch the commit from GitHub
-          ansible.builtin.git:
-            repo: "https://github.com/{{ intent.repository }}.git"
-            dest: "{{ repo }}"
-            bare: true
-            version: "{{ sha }}"
-            refspec: "+{{ sha }}:refs/orbit/{{ sha }}"
+          ansible.builtin.command:
+            argv:
+              - git
+              - -C
+              - "{{ repo }}"
+              - fetch
+              - --no-tags
+              - --quiet
+              - "{{ fetch_url | default('https://github.com/' ~ intent.repository ~ '.git') }}"
+              - "+{{ sha }}:refs/orbit/{{ sha }}"
           environment:
             GIT_TERMINAL_PROMPT: "0"
             GIT_CONFIG_GLOBAL: "{{ base }}/shared/fetch-git-config"
+          changed_when: true
           no_log: true
       rescue:
         - name: Report the failed fetch
@@ -159,11 +164,19 @@
         - name: Make the cached configuration folder private
           ansible.builtin.file: {path: "{{ app }}/bootstrap/cache", state: directory, mode: "0700"}
         - name: Make the shared storage folders
-          ansible.builtin.file:
-            path: "{{ base }}/shared/gateway-storage/{{ item }}"
-            state: directory
-            mode: "0750"
-          loop: [app/private, app/public, framework/cache/data, framework/sessions, framework/views, logs]
+          ansible.builtin.command:
+            argv:
+              - install
+              - -d
+              - -m
+              - "0750"
+              - "{{ base }}/shared/gateway-storage/app/private"
+              - "{{ base }}/shared/gateway-storage/app/public"
+              - "{{ base }}/shared/gateway-storage/framework/cache/data"
+              - "{{ base }}/shared/gateway-storage/framework/sessions"
+              - "{{ base }}/shared/gateway-storage/framework/views"
+              - "{{ base }}/shared/gateway-storage/logs"
+          changed_when: false
         - name: Link the shared environment file
           ansible.builtin.file: {src: "{{ base }}/shared/gateway.env", dest: "{{ app }}/.env", state: link, force: true}
         - name: Keep the tracked storage files out of git status
@@ -375,17 +388,16 @@
                 $db = new PDO("sqlite:".$c["database"]["connections"]["sqlite"]["database"], null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
                 $db->exec("VACUUM INTO ".$db->quote($argv[2]));'
               - "{{ app }}/bootstrap/cache/config.php"
-              - "{{ snapshot }}.partial"
+              - "{{ snapshot }}"
           changed_when: true
-        - name: Publish the snapshot
-          ansible.builtin.copy: {src: "{{ snapshot }}.partial", dest: "{{ snapshot }}", remote_src: true, mode: "0600"}
+        - name: Keep the snapshot private
+          ansible.builtin.file: {path: "{{ snapshot }}", mode: "0600"}
       rescue:
+        - name: Remove the partial snapshot
+          ansible.builtin.file: {path: "{{ snapshot }}", state: absent}
         - name: Report the failed snapshot
           ansible.builtin.fail:
             msg: "gateway.release_snapshot_failed: VACUUM INTO failed"
-      always:
-        - name: Remove the partial snapshot
-          ansible.builtin.file: {path: "{{ snapshot }}.partial", state: absent}
     - name: Read the snapshot a pause names
       ansible.builtin.slurp: {src: "{{ base }}/.orbit/gateway-release.paused"}
       register: paused
@@ -585,6 +597,9 @@
       ansible.builtin.file: {path: "{{ item.0 }}/{{ item.1 }}", state: absent}
       loop: "{{ [base ~ '/releases', base ~ '/web/releases'] | product(removable) | list }}"
       loop_control: {label: "{{ item.0 }}/{{ item.1 }}"}
+    - name: List the release folders that remain
+      ansible.builtin.find: {paths: "{{ base }}/releases", file_type: directory, recurse: false}
+      register: remaining
     - name: List the web builds
       ansible.builtin.find: {paths: "{{ base }}/web/releases", file_type: directory, recurse: false}
       register: web_builds
@@ -592,7 +607,20 @@
       ansible.builtin.file: {path: "{{ item.path }}", state: absent}
       loop: "{{ web_builds.files }}"
       loop_control: {label: "{{ item.path }}"}
-      when: item.path | basename != web_live and not ((base ~ '/releases/' ~ (item.path | basename)) is directory)
+      when: >-
+        item.path | basename != web_live
+        and item.path | basename not in (remaining.files | map(attribute='path') | map('basename') | list)
+    - name: Forget the worktree records of removed releases
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", worktree, prune]}
+      changed_when: false
+    - name: List the commit pins
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", for-each-ref, "--format=%(refname)", refs/orbit]}
+      register: pins
+      changed_when: false
+    - name: Remove the pins of removed releases
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", update-ref, -d, "{{ item }}"]}
+      loop: "{{ (pins.stdout_lines | select('search', '^refs/orbit/(' ~ (removable | join('|')) ~ ')') | list) if removable | length > 0 else [] }}"
+      changed_when: true
 
 - name: Render the grants of the previous release
   hosts: gateway
@@ -633,3 +661,24 @@
         content: "{{ (previous_revision.content | b64decode).strip() }}---\n{{ previous_grants.stdout }}"
         mode: "0600"
       delegate_to: swamp
+
+- name: Re-seed the start cache of Swamp
+  hosts: controller
+  tags: [seed]
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Read the start cache
+      ansible.builtin.stat: {path: /tmp/deno-compile-swamp.cache}
+      register: cache
+    - name: Read the Swamp binary
+      ansible.builtin.stat: {path: /usr/local/bin/swamp, follow: true}
+      register: binary
+    - name: Remove a start cache older than the binary
+      ansible.builtin.file: {path: /tmp/deno-compile-swamp.cache, state: absent}
+      when: cache.stat.exists and binary.stat.exists and cache.stat.mtime < binary.stat.mtime
+      notify: Seed the start cache as root
+  handlers:
+    - name: Seed the start cache as root
+      ansible.builtin.command: {argv: [/usr/local/bin/swamp, --version]}
+      changed_when: true

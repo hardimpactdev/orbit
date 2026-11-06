@@ -15,7 +15,7 @@ spec = importlib.util.spec_from_file_location('build_vars', ANSIBLE / 'build_var
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
-PHASES = ['fetch', 'build', 'web', 'snapshot', 'drain', 'switch', 'verify', 'prune', 'previous']
+PHASES = ['fetch', 'build', 'web', 'snapshot', 'drain', 'switch', 'verify', 'prune', 'previous', 'seed']
 TARGET = {'host': '10.44.0.2', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 gateway']}
 
 
@@ -28,7 +28,7 @@ def phase_steps(name):
     steps = [step for job in workflow(name)['jobs'] for step in job['steps']]
     tagged = []
     for step in steps:
-        match = re.search(r'--tags (\w+) ', step['task'].get('inputs', {}).get('run', ''))
+        match = re.search(r'--tags ([\w,]+) ', step['task'].get('inputs', {}).get('run', ''))
         if match:
             tagged.append((step['name'], match.group(1)))
     return tagged
@@ -38,21 +38,21 @@ class GatewayReleaseTest(unittest.TestCase):
     def test_the_playbook_has_one_play_per_phase(self):
         plays = yaml.safe_load((ANSIBLE / 'operation-gateway-release.yml').read_text())
         self.assertEqual([play['tags'] for play in plays], [[phase] for phase in PHASES])
-        self.assertTrue(all(play['hosts'] == 'gateway' for play in plays))
+        self.assertTrue(all(play['hosts'] == ('controller' if play['tags'] == ['seed'] else 'gateway') for play in plays))
 
     def test_every_swamp_step_runs_one_phase_and_the_two_runs_cover_all_of_them(self):
         release = [tag for _, tag in phase_steps('workflow-operation-gateway-release')]
         activate = [tag for _, tag in phase_steps('workflow-gateway-release-activate')]
-        self.assertEqual(release, ['fetch', 'build', 'web', 'snapshot', 'previous'])
+        self.assertEqual(release, ['fetch,build', 'web', 'snapshot', 'previous'])
         # The switch-back is the switch phase again, with the previous release as its target.
-        self.assertEqual(activate, ['drain', 'switch', 'verify', 'switch', 'prune'])
-        self.assertEqual(sorted(set(release + activate)), sorted(PHASES))
+        self.assertEqual(activate, ['drain', 'switch', 'verify', 'switch', 'prune', 'seed'])
+        self.assertEqual(sorted({tag for tags in release + activate for tag in tags.split(',')}), sorted(PHASES))
 
     def test_the_token_reaches_ansible_as_a_private_file_and_never_in_a_command(self):
         text = (ROOT / 'swamp/workflows/workflow-operation-gateway-release.yaml').read_text()
         runs = [step['task']['inputs'].get('run', '') for job in workflow('workflow-operation-gateway-release')['jobs'] for step in job['steps']
                 if step['task'].get('inputs')]
-        self.assertFalse([run for run in runs if 'github_token' in run or 'vault.get' in run])
+        self.assertFalse([run for run in runs if 'vault.get' in run])
         self.assertEqual(text.count('vault.get('), 1)
         playbook = (ANSIBLE / 'operation-gateway-release.yml').read_text()
         self.assertEqual(playbook.count('secrets.github_token'), 2)
@@ -108,6 +108,11 @@ class GatewayReleaseTest(unittest.TestCase):
         # The pin is a task of the play, not of the fetch block, so a commit that is already known gets its ref too.
         self.assertIn('Pin the commit in the shared repository', names)
         self.assertGreater(names.index('Pin the commit in the shared repository'), names.index('Refuse a commit that origin does not hold'))
+
+    def test_no_controller_side_test_decides_about_the_gateway_node(self):
+        # Jinja tests such as `is directory` and the lookup plugin run on Node 209, so on the Gateway Node they answer about the wrong file system.
+        text = (ANSIBLE / 'operation-gateway-release.yml').read_text()
+        self.assertEqual(re.findall(r"\bis (?:not )?(?:directory|file|exists|link|mount)\b|lookup\(", text), [])
 
     def test_the_run_folder_is_removed_after_every_end(self):
         for name in ('workflow-operation-gateway-release', 'workflow-gateway-release-activate'):

@@ -125,8 +125,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 | Step | What it does |
 | --- | --- |
-| Fetch the commit | Fetches the commit into `shared/orbit.git` when it is missing. The read token reaches git through a private file that is removed after the fetch. |
-| Build the release | Refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
+| Build the release | Fetches the commit when it is missing, refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
 | Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
 | Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
 | Migrate | Runs `artisan migrate --force --isolated` from the new release. |
@@ -140,9 +139,13 @@ Swamp and the Gateway switch together. A failed load or hand-over would leave Sw
 
 The activate child drains Horizon before the switch. The Horizon unit carries the stop policy ([Horizon](/reference/gateway-queue#horizon)), so `systemctl stop` waits until the unit's whole control group is empty, as long as the drain allows. The step refuses a unit without the policy: update the Horizon Process first. A process that a job leaves behind holds the stop; for this reason a command that runs inside Horizon opens its own [SSH connection](/reference/node-provisioning#ssh-connections), and no shared connection master stays in the group.
 
-The child starts Horizon again as a step that runs after every end of the run, so a failed drain, a failed switch or a switch back leaves Horizon running. It then switches both links with `ansible.builtin.file` (a temporary link and a rename, so the switch is atomic), reloads PHP-FPM and restarts the running services under the application.
+The child starts Horizon again as a step that runs after every end of the run, after the check and not at the switch, so a failed drain, a failed switch or a switch back leaves Horizon running. It then switches both links with `ansible.builtin.file` (a temporary link and a rename, so the switch is atomic), reloads PHP-FPM and restarts the running services under the application.
 
-It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/caddy/orbit-cert-current/root-ca.pem`. The status must be `ok` and name the full commit or its 12-digit ID. It then resumes the release cleanups and prunes old releases. When the check fails, the same phase switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
+It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/caddy/orbit-cert-current/root-ca.pem`. The status must be `ok` and name the full commit or its 12-digit ID. It then resumes the release cleanups and prunes old releases, which also forgets the commit pins and worktree records of the releases it removes.
+
+A last best-effort step removes a Swamp start cache that is older than the Swamp binary on Node 209 and seeds it again as root.
+
+When the check fails, the same phase switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
 
 The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
 

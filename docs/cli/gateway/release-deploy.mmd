@@ -30,16 +30,13 @@ sequenceDiagram
   %%> - at run start, mints one read token (contents, actions) into the vault
   GW-->>TR: 202 Accepted<br/>running release record
   SW->>SW: Write the intent<br/>ansible-input
-  SW->>SW: Write the private input<br/>token file from the vault
-  SW->>SW: Write the playbook input<br/>inventory · pinned host key
+  SW->>SW: Write the playbook input<br/>token · inventory
   %%> What it does:
   %%> - writes the admitted intent, the read token and the pinned host key of the Gateway Node into a private run folder on Node 209
   %%> - every phase below is one Swamp step that runs one tagged part of `operation-gateway-release.yml` against the Gateway Node over SSH
-  SW->>GN: Fetch the commit<br/>git · bare repository
+  SW->>GN: Build the release<br/>fetch · clone · REVISION
   %%> What it does:
   %%> - fetches the exact commit into `shared/orbit.git` when it is missing; the token reaches git through a private file, removed after the fetch
-  SW->>GN: Build the release<br/>clone · composer · REVISION
-  %%> What it does:
   %%> - refuses a commit that does not descend from the current release
   %%> - clones the commit from the shared repository, links the shared env and storage, installs dependencies with `community.general.composer`, writes the agent manifest
   %%> - seals the release with `REVISION` and a cached config; a sealed release of the commit is reused
@@ -80,6 +77,9 @@ sequenceDiagram
   %%> Why:
   %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
   AC->>GN: Prune old releases<br/>best effort
+  AC->>SW: Re-seed Swamp cache<br/>best effort
+  %%> Why:
+  %%> - a start cache older than the Swamp binary adds about 0.4 s to every dispatch; root owns the cache, so the phase removes a stale one and seeds it again as root
   opt the load or hand-over failed
     SW->>GN: Render the previous grants<br/>previous release code
     Note over SW: Restore Swamp on Node 209<br/>operation-gateway-swamp-load
@@ -90,8 +90,11 @@ sequenceDiagram
   end
   SW->>SW: Remove the playbook input<br/>cleanup
   %%> Decided by the orchestrator, for Nick's review:
+  %%> - fetching takes the one commit (`git fetch --no-tags`), not `ansible.builtin.git`, which would mirror every branch and tag of the repository on each release
+  %%> - Horizon starts after the check, not at the switch; the check does not depend on it
+  %%> - the web build and the snapshot run side by side; the migration waits for both
   %%> - the release steps are Ansible phases, one Swamp step each, like `node:role:add`; no script file is shipped to the Gateway Node or read from a release
-  %%> - the build is a clone of the commit from the shared repository (`ansible.builtin.git`), not a git worktree; a release directory is self-contained
+  %%> - the build is a clone of the commit from the shared repository (`ansible.builtin.git`), not a git worktree; the clone borrows its objects from the shared repository, which `refs/orbit/<sha>` keeps alive
   %%> - the restore after a failed load or hand-over keeps Swamp and the Gateway on the same commit; it is the only step besides the release's own load that moves 209's checkout
   %%> - `bin/gateway-rollback` stays a small script: an operator needs it when Swamp or Node 209 is down, and the release survives a Swamp outage
   alt every step succeeded

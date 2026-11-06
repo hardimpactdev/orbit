@@ -184,6 +184,20 @@ jobs:
       inputs:
         run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags prune "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2
         env: *ansible
+  # A start cache older than the Swamp binary adds ~0.4 s to every dispatch; the owner of the cache is root, so only root replaces it.
+  - name: Re-seed Swamp cache
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-gateway-release-seed-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags seed "$ORBIT_ANSIBLE/operation-gateway-release.yml" >&2
+        env: *ansible
 - name: cleanup
   labels: {role: swamp}
   dependsOn:

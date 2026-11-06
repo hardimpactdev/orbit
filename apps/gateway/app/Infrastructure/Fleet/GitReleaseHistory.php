@@ -11,7 +11,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use Throwable;
 
 /**
- * Reads the Gateway's own Git history: the in-place checkout, or the linked worktree of a Gateway release.
+ * Reads the Gateway's own Git history: the in-place checkout, or the clone of a Gateway release.
  * A shallow clone has the wrong commit count, so it reports no count, as `bin/orbit-cli-release-version` does.
  */
 final readonly class GitReleaseHistory implements ReleaseHistory
