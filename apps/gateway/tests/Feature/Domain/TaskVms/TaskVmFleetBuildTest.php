@@ -161,21 +161,22 @@ it('refuses a VM that is not ready', function (): void {
     );
 });
 
-it('renders the mount units of the shared checkout under the names the stage 2 apply step starts, as network mounts', function (): void {
+it('renders the checkout as a disk device and the state mounts under the names the stage 2 apply step starts', function (): void {
     $vm = fleetBuildWorld();
     app()->instance(WebSocketClient::class, fleetBuildVault());
 
     $checkout = app(TaskVmFleetBuildIntent::class)->capture($vm)['fleet']['checkout'];
 
-    expect($checkout['server'])->toBe('10.232.2.1')
+    expect($checkout)->not->toHaveKey('server')
+        ->and($checkout['source'])->toBe('/home/orbit/apps/orbit/workspace')
+        ->and($checkout['path'])->toBe('/home/orbit/orbit')
         ->and($checkout['binds']['app-dev'])->toBe(['home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'])
         ->and($checkout['binds']['gateway'])->toContain('home-orbit-orbit-swamp-.swamp.mount', 'home-orbit-orbit-swamp-vaults.mount');
     $units = collect($checkout['units'])->groupBy('guest');
-    expect($units['nested-gateway'])->toHaveCount(7)
-        ->and($units['nested-app-dev'])->toHaveCount(4);
+    expect($units['nested-gateway'])->toHaveCount(6)
+        ->and($units['nested-app-dev'])->toHaveCount(3)
+        ->and(collect($checkout['units'])->pluck('name'))->not->toContain('home-orbit-orbit.mount');
     foreach ($checkout['units'] as $unit) {
-        expect($unit['content'])->toContain('_netdev', "[Install]\nWantedBy=multi-user.target\n");
+        expect($unit['content'])->toContain("Type=none\nOptions=bind\n", "[Install]\nWantedBy=multi-user.target\n")->not->toContain('_netdev', 'nfs');
     }
-    $nfs = collect($checkout['units'])->firstWhere('name', 'home-orbit-orbit.mount');
-    expect($nfs['content'])->toContain("What=10.232.2.1:/home/orbit/apps/orbit/workspace\n", "Where=/home/orbit/orbit\n", "Type=nfs\n");
 });

@@ -43,7 +43,7 @@ sequenceDiagram
   %%> - it starts with the wait for the new server: Ansible's `wait_for_connection` until SSH answers, then `cloud-init status --wait --long` under a literal timeout
   %%> Decided by the orchestrator, for Nick's review:
   %%> - exit 2 of `cloud-init status` (done with recoverable errors) passes, and the check phase is the check of the server; the wait moved here from the launch because OpenSSH retries only a failed connect, and a banner exchange that fails with "No route to host" ended the third build
-  %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters, the NFS server), check
+  %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters), check
   %%> - versions come from the recipe document in the intent; the same playbook builds the Incus image and converges a running task VM
   %%> - the check phase also asserts that `orbit` has UID and GID 1000
   %%> - the pinned Pi build comes first: `@swamp/ssh copy` takes it from the Gateway Node to 209, `sha256sum -c` checks its pin, and the software phase copies it to the server

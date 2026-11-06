@@ -16,6 +16,18 @@ The command development pipeline is the stages every command goes through during
 | [5. Automatic Swamp release](#5-automatic-swamp-release) | Built |
 | [6. Per-host task image and seed refresh](#6-per-host-task-image-and-seed-refresh) | Partly built |
 
+## When each flow runs
+
+Each flow has its own trigger. The first three run for a task. The others keep a host ready.
+
+- **Provision and ready slots.** `tasks:provision` runs for every task group. A ready slot is a stopped task VM that Orbit enrolled ahead of time from the host's promoted image, with a clone of its seed. A claim starts it. Without a slot, the provision clones the image.
+- **Nested fleet start and `base`.** Every provision of a task with a topology starts the nested fleet from the host's ready copies. It then takes the plain snapshot `base` of the three containers.
+- **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
+- **Refresh (stage 6).** It runs after a release whose commit changed playbooks, pins or lock files, daily, and when an operator runs `task-vms:refresh-image`. A code-only release needs none. A refresh updates the existing image and copies and builds nothing.
+- **Fleet build.** It runs only when a host has no usable ready copies: a new host, a new image or copy format, or a broken set.
+- **Ready copies save.** It is the last step of every refresh and of every fleet build.
+- **Image build from the recipe.** It runs only for a new host or a new base OS.
+
 ## 1. Prep
 
 **Partly built.** A command has one PR, and prep starts it. The chart, docs page and verification cases (the spec) are the first commit of a draft PR. A merged docs PR does not make a command ready. The spec is approved in the draft, and the PR stays one PR through code, proof and merge. Prep changes no code. Swamp owns the flow and its state and the Gateway only authorizes it: an author agent drafts the spec in a task VM, a separate review agent checks it, and Swamp opens the draft PR as the Orbit App. One of two modes, set per flow, decides what happens next. In manual mode there is an optional spec checkpoint: Nick reviews the chart, docs and cases in the draft before code is written, and may check out a development Instance on the PR branch and review there with an agent. In automatic mode there is no checkpoint. The code and the runnable proof cases then follow in the same PR ([stage 4](#4-pr-and-ci)). Built: [`tasks:prep`](/cli/tasks/prep) admits one run for a task group and Swamp runs it as one workflow. Its children provision the task VM, run the author turn, up to three review rounds, and open the draft PR as the Orbit App. Built: [`tasks:prep-fix`](/cli/tasks/prep-fix) resumes the parked group, applies the review of the owner as a new commit, checks it, pushes it to the same draft PR and parks the group again. Not built: the automatic mode, and the detection of the owner's review by the gate check.
@@ -33,7 +45,7 @@ About 74 commands have a chart and a page from earlier docs-only PRs. Their old 
 
 **Built, with a slot pool still to come.** A task VM, started with `tasks:provision`, holds a nested topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. They share a real nested WireGuard network, `10.45.0.0/24`, and the outer VM is the operator. Each task VM host keeps ready copies of this topology in its topology seed, so a reset takes about 75 seconds instead of a 230-second build. An agent, or Nick, develops a command here, and the proof cases run here too.
 
-The target: the nested VMs hold their own checkout, with no code share from the outer VM. A sync brings the author's changes into them before each call. At task start, Swamp takes an Incus memory snapshot `base` of the three VMs. Not built: the sync, the snapshot and the restore; the old tool for them was removed. Not built: the converge step for playbook and pin changes.
+The nested guests are Incus system containers. The Gateway and app-dev see the checkout of the task as an Incus disk device, so the author's changes reach them at once. At task start, Swamp takes a plain Incus snapshot `base` of the three containers, and a restore is a reboot. Not built: the converge step for playbook and pin changes.
 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
@@ -79,12 +91,12 @@ The target: the nested VMs hold their own checkout, with no code share from the 
 
 ## 6. Per-host task image and seed refresh
 
-**Partly built.** There is no image build per release. Each task VM host (Linux only: beast and shark) refreshes its own task image and topology seed, and the hosts work in parallel. Nothing is copied between hosts. No trigger runs it now: the release and daily triggers rebuilt on the nested-VM path and were removed; an operator starts it. Per host, Swamp starts a refresh task VM from the current image and seed, then resets and syncs the release commit. It converges once if playbooks or pins changed. It re-mints the nested Swamp tokens. Then it saves the outer VM as the new task image and the nested VMs as new ready copies, key-free. It boot-checks both and promotes them. A recipe build runs only for a new host or a new base OS.
+**Partly built.** There is no image build per release. Each task VM host (Linux only: beast and shark) refreshes its own task image and topology seed, and the hosts work in parallel. Nothing is copied between hosts: that is not a supported flow, so each host refreshes and, if it must, builds its own. The trigger is a release that changed playbooks, pins or lock files, plus a daily run. Per host, Swamp starts a refresh task VM from the current image and seed, then resets and syncs the release commit. It converges once if playbooks or pins changed. It re-mints the nested Swamp tokens. Then it saves the outer VM as the new task image and the nested containers as new ready copies, key-free. It boot-checks both and promotes them. A recipe build runs only for a new host or a new base OS.
 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
 - Built: the refresh run `task_vm.image_refresh`, which an operator starts with `php artisan task-vms:refresh-image <host>`: a refresh VM, the converge, the ready copies, the clean, the new image and seed, the boot check and the promotion. The recipe image build stays for a new host or a new base OS.
-- Built: the NFS mount, apply and readiness check, through the provision child. The release trigger and the daily schedule were removed.
+- Built: the release trigger and the daily schedule, and the checkout disk device, apply and readiness check, through the provision child.
 - Not built: the first refresh of a host with no ready copies (the fleet build child), the converge of the nested Nodes, and the replacement of ready slots.
 - Built: the re-mint of the nested Swamp tokens, at every provision that starts a fleet from ready copies (stage 2), and in a proof run when the tokens in `base` are older than 20 days (stage 3). The copies carry format 3, which marks the control plan it reads.
 - Charts: the stage chart above, the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd) (draft; a refresh replaces ready slots built from the old image, one at a time).

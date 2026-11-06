@@ -35,13 +35,13 @@ class TaskVmNestedFirewallTest(unittest.TestCase):
         self.assertEqual(tools[names.index('Open the firewall to the nested bridge')]['ansible.builtin.import_tasks'],
                          'task-vm-nested-firewall.yml')
 
-    def rules(self, nfs):
+    def rules(self, nested):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder, True)
         modules = folder / 'collections/ansible_collections/community/general/plugins/modules'
         modules.mkdir(parents=True)
         (modules / 'ufw.py').write_text(STUB)
-        play = [{'hosts': 'localhost', 'gather_facts': False, 'vars': {'intent': {'nfs': nfs}},
+        play = [{'hosts': 'localhost', 'gather_facts': False, 'vars': {'intent': {'nested': nested}},
                  'tasks': [{'ansible.builtin.import_tasks': str(ANSIBLE / 'tasks/task-vm-nested-firewall.yml')}]}]
         (folder / 'play.yml').write_text(yaml.safe_dump(play))
         environment = {**os.environ, 'RULES': str(folder / 'rules'), 'ANSIBLE_COLLECTIONS_PATH': str(folder / 'collections'),
@@ -53,7 +53,7 @@ class TaskVmNestedFirewallTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
     def test_the_bridge_gets_dhcp_dns_the_package_cache_and_a_way_out_only(self):
-        rules = self.rules({'checkout': '/home/orbit/c', 'subnet': '10.232.2.0/24', 'interface': 'nested'})
+        rules = self.rules({'subnet': '10.232.2.0/24', 'interface': 'nested'})
         ports = sorted((rule['proto'], rule['to_port']) for rule in rules if not rule['route'])
         self.assertEqual(ports, [('tcp', '3142'), ('tcp', '53'), ('udp', '53'), ('udp', '67')])
         self.assertTrue(all(rule['interface'] == 'nested' and rule['direction'] == 'in' for rule in rules if not rule['route']))

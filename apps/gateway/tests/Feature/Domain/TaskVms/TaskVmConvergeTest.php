@@ -59,7 +59,7 @@ function convergeRun(string $status, string $endCheck = 'succeeded'): array
 it('carries the pins of the release and the VM target in its intent', function (): void {
     $vm = convergeWorld();
 
-    $intent = app(TaskVmConvergeIntent::class)->capture($vm, ['checkout' => '/home/orbit/orbit', 'subnet' => '10.232.2.0/24', 'interface' => 'nested']);
+    $intent = app(TaskVmConvergeIntent::class)->capture($vm, ['subnet' => '10.232.2.0/24', 'interface' => 'nested']);
 
     expect($intent)->toMatchArray(['task_vm_id' => $vm->id, 'guest_node_id' => $vm->node_id, 'profile' => 'base', 'image' => false]);
     expect($intent['ssh']['target'])->toMatchArray(['host' => '10.44.0.131', 'user' => 'orbit', 'port' => 22, 'host_keys' => ['ssh-ed25519 fixture-public-key']]);
@@ -68,7 +68,7 @@ it('carries the pins of the release and the VM target in its intent', function (
     expect($intent['pi']['source']['ssh']['target']['host'])->toBe('10.44.0.2');
     expect($intent['pi']['source']['path'])->toEndWith($intent['recipe']['tools']['pi']['artifacts']['amd64']['filename']);
     expect(hash('sha256', $intent['vp_lock']))->toBe($intent['recipe']['tools']['vp']['lock_sha256']);
-    expect($intent['nfs'])->toBe(['checkout' => '/home/orbit/orbit', 'subnet' => '10.232.2.0/24', 'interface' => 'nested']);
+    expect($intent['nested'])->toBe(['subnet' => '10.232.2.0/24', 'interface' => 'nested']);
     expect(json_encode($intent, JSON_THROW_ON_ERROR))->not->toContain('PRIVATE KEY');
 })->group('task-vm-converge');
 

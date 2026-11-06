@@ -63,7 +63,7 @@ sequenceDiagram
     %%> - the guest's host key exists only after the VM step pins it; the converge intent leaves it unset until then
     SW->>VM: Converge once<br/>operation-task-vm-converge child
     %%> What it does:
-    %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the NFS server with the export of the checkout to the nested network, the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
+    %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
     %%> Why:
     %%> - the image may predate these phases; a VM at the pins reports no change
     SW->>VM: Find the fleet guest<br/>its address and host key
@@ -81,9 +81,9 @@ sequenceDiagram
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
     %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM; placement already keeps a VM that needs the fleet off a host whose seed has no usable copies (stage 2 chart), so the guard is the exception
-    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
+    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the checkout (a disk device of the containers), the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
     %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
-    %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it
+    %%> - takes the plain snapshot `base` of the three nested containers; the proof batches restore it (a reboot)
   end
   opt the workspace has a Route or Processes
     Note over SW: Bind the workspace keys<br/>pin the guest host key

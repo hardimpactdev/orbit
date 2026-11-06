@@ -1,4 +1,4 @@
-"""The fleet build waits end as soon as a nested VM is not running, and use the tool's own retry."""
+"""The fleet build waits end as soon as a nested container is not running, and use the tool's own retry."""
 import importlib.util
 import json
 import os
@@ -95,7 +95,7 @@ class TaskVmFleetWaitTest(unittest.TestCase):
         code, output, checks = self.wait(['NOT_RUNNING'], listing, wait_kind='operation', wait_operation=7, wait_seconds=600)
         self.assertNotEqual(code, 0)
         self.assertEqual(checks, 1)
-        self.assertIn('A nested VM is not running: nested-gateway', output)
+        self.assertIn('A nested container is not running: nested-gateway', output)
 
     @NEEDS_ANSIBLE
     def test_an_operation_that_ends_failed_fails_the_wait(self):
@@ -131,7 +131,7 @@ class TaskVmFleetWaitTest(unittest.TestCase):
         code, output, checks = self.wait(['NOT_RUNNING'], listing, wait_kind='doctor', wait_seconds=600)
         self.assertNotEqual(code, 0)
         self.assertEqual(checks, 1)
-        self.assertIn('A nested VM is not running: nested-gateway', output)
+        self.assertIn('A nested container is not running: nested-gateway', output)
 
     @NEEDS_ANSIBLE
     def test_doctor_does_not_pass_while_a_nested_app_vm_is_not_running(self):

@@ -1,7 +1,7 @@
 id: fe3065e0-fba6-4bf4-9a2e-2db2ca06b2db
 name: operation-task-vm-ready-copies
 description: >-
-  Save the ready copies of the nested fleet that runs in a task VM (stage 6, "Save the new images") and boot-check them. The copies are self-contained, with their own state, no checkout, no operator key and no Club key. Each step is one incus command over official SSH, once per nested VM.
+  Save the ready copies of the nested fleet that runs in a task VM (stage 6, "Save the new images") and boot-check them. The nested guests are system containers. The copies are self-contained, with their own state, no checkout device, no operator key and no Club key. Each step is one incus command over official SSH, once per nested container.
 vaults: [orbit-control-inputs]
 queueTimeout: 60
 inputs:
@@ -26,7 +26,7 @@ jobs:
 - name: keys
   labels: {role: swamp}
   steps:
-  # The Gateway database is the one its own `.env` names. The state is on the guest's own disk, so this does not need the mounted checkout.
+  # The Gateway database is the one its own `.env` names. The state is on the guest's own disk, so this does not need the checkout device.
   - name: 'Read the database path'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-database-path").split(".").join("-") }}', methodName: exec,
@@ -35,7 +35,7 @@ jobs:
         transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'grep', '-m1', '^DB_DATABASE=', '/var/lib/orbit-checkout-state/apps/gateway/.env'], timeoutSec: 40}}
   # The copies hold no WireGuard key of the operator, so the key of the VM that made them works nowhere else (stage 2 makes a new one).
-  # The Node record, then the peer on the Gateway hub, in the hub file or in a peer file. Both are end states.
+  # The Node record, then the peer on the Gateway hub, in its peer file (`orbit-peers.d`, which the hub loads at start). Both are end states.
   - name: 'Remove the operator key'
     labels: {role: swamp}
     writes: true
@@ -61,22 +61,6 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-scan-for-the-club-key" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-scan-for-the-club-key" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'sh', '-c', 'grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 910}}
     dependsOn: [{step: 'Delete the Club key', condition: {type: succeeded}}]
-  # The freed blocks of the deleted key are discarded from the disk image that every task VM clones. fstrim exits 64 when it trimmed some file systems only.
-  - name: 'Trim'
-    labels: {role: swamp}
-    writes: true
-    forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-trim" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-trim" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '300', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'fstrim', '-av'], okExitCodes: [0, 64], timeoutSec: 310}}
-    dependsOn: [{step: 'Delete the Club key', condition: {type: succeeded}}]
-  # The ready copies hold units that bind the state of the guest over the NFS checkout. As local mounts they close an ordering cycle with the network mount
-  # at boot (local-fs.target, the NFS mount, network.target, ufw.service, local-fs.target), and systemd drops them. `_netdev` makes them network mounts, ordered after the NFS mount.
-  - name: 'Order the state mounts'
-    labels: {role: swamp}
-    writes: true
-    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-order-the-state-mounts" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-order-the-state-mounts" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'sh', '-c', 'cd /etc/systemd/system && sed -i -e "s/^Options=bind.*$/Options=bind,_netdev/" home-orbit-orbit-apps-gateway-*.mount && sed -i -e "/^Options=.*_netdev/! s/^Options=\\(vers=.*\\)$/Options=\\1,_netdev/" home-orbit-orbit.mount && systemctl daemon-reload'], timeoutSec: 70}}
 - name: copy
   labels: {role: swamp}
   dependsOn: [{job: keys, condition: {type: succeeded}}]
@@ -100,11 +84,11 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-time").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-time").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'], timeoutSec: 20}}
-  # A clean stop: the guests unmount their disks, so a copy holds finished file systems.
-  - name: 'Stop the nested VMs'
+  # A clean stop, so a copy holds finished file systems.
+  - name: 'Stop the nested containers'
     labels: {role: swamp}
     writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-stop-the-nested-vms").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-stop-the-nested-vms").split(".").join("-") }}'},
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-stop-the-nested-containers").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-stop-the-nested-containers").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '300', 'incus', 'stop', '${{ inputs.intent.fleet.guests.gateway }}', '${{ inputs.intent.fleet.guests["app-dev"] }}', '${{ inputs.intent.fleet.guests["app-prod"] }}'], timeoutSec: 310}}
   # The fleet started from the earlier copies, so they exist; the seed holds one set. A rerun after a failed copy finds some names gone, which is no error:
   # a copy step that finds a name left fails.
@@ -113,8 +97,8 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-old-copies").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-old-copies").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'delete', '--force', 'fleet-ready-gateway', 'fleet-ready-app-dev', 'fleet-ready-app-prod'], okExitCodes: any, timeoutSec: 130}}
-    dependsOn: [{step: 'Stop the nested VMs', condition: {type: succeeded}}]
-  # `--instance-only` leaves the `base` snapshot of the earlier fleet behind. A copy keeps `migration.stateful` and the root disk's size.state.
+    dependsOn: [{step: 'Stop the nested containers', condition: {type: succeeded}}]
+  # `--instance-only` leaves the `base` snapshot of the earlier fleet behind.
   - name: 'Copy the guests'
     labels: {role: swamp}
     writes: true
@@ -130,6 +114,14 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-nic" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-nic" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'device', 'remove', '${{ "fleet-ready-" + self.role }}', 'eth0'], timeoutSec: 40}}
     dependsOn: [{step: 'Copy the guests', condition: {type: succeeded}}]
+  # A copy with the checkout device would name the checkout of this VM: a task VM attaches its own when it starts the copies.
+  - name: 'Remove the checkout device'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-checkout-device" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-checkout-device" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'device', 'remove', '${{ "fleet-ready-" + self.role }}', 'checkout'], timeoutSec: 40}}
+    dependsOn: [{step: 'Copy the guests', condition: {type: succeeded}}]
   # Keys on each copy: role, set identity, time, subnet, MAC and address.
   - name: 'Record the network'
     labels: {role: swamp}
@@ -137,7 +129,7 @@ jobs:
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-record-the-network" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-record-the-network" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'set', '${{ "fleet-ready-" + self.role }}', '${{ "user.ready.hwaddr=" + steps["Read the MAC-" + self.role].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.ipv4=" + steps["Read the address-" + self.role].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.subnet=" + steps["Read the subnet"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.role=" + self.role }}', '${{ "user.ready.set=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.made=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'], timeoutSec: 40}}
-    dependsOn: [{step: 'Remove the NIC', condition: {type: succeeded}}, {step: 'Read the MAC', condition: {type: succeeded}}, {step: 'Read the address', condition: {type: succeeded}}, {step: 'Read the subnet', condition: {type: succeeded}}, {step: 'Read the time', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Remove the NIC', condition: {type: succeeded}}, {step: 'Remove the checkout device', condition: {type: succeeded}}, {step: 'Read the MAC', condition: {type: succeeded}}, {step: 'Read the address', condition: {type: succeeded}}, {step: 'Read the subnet', condition: {type: succeeded}}, {step: 'Read the time', condition: {type: succeeded}}]
   # Written last, on every copy, after all three have their keys: a set without it is half made.
   - name: 'Complete the set'
     labels: {role: swamp}
@@ -171,11 +163,12 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-start-to-check" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-start-to-check" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'start', '${{ "ready-check-" + self.role }}'], timeoutSec: 130}}
     dependsOn: [{step: 'Copy to check', condition: {type: succeeded}}]
-  - name: 'Wait for the agent'
+  # A container has no guest agent: `cloud-init status --wait` blocks from the first moment of the boot (exit 2 is a finished boot with a recoverable warning).
+  - name: 'Wait for cloud-init'
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-wait-for-the-agent" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-wait-for-the-agent" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '130', 'incus', 'wait', '${{ "ready-check-" + self.role }}', 'agent', '--timeout', '120'], timeoutSec: 140}}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '130', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'cloud-init', 'status', '--wait'], okExitCodes: [0, 2], timeoutSec: 140}}
     dependsOn: [{step: 'Start to check', condition: {type: succeeded}}]
   # The same scan as before the stop, on the stored copy: files the guest wrote while it stopped are searched too.
   - name: 'Search for the Club key'
@@ -183,34 +176,27 @@ jobs:
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-search-for-the-club-key" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-search-for-the-club-key" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'sh', '-c', 'grep -rlF --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=run -f - /; echo scan-exit=$?'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 910}}
-    dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
   # The copy holds no checkout: no file under /home/orbit/orbit but the log a booted guest writes there. The directories it makes (mount points, log directories) are no checkout.
   - name: 'Look for a checkout'
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-a-checkout" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-a-checkout" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'find', '/home/orbit/orbit', '-type', 'f', '-not', '-path', '*/storage/logs/*'], timeoutSec: 40}}
-    dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
-  # The state stays on the guest's own disk; the mount step puts it over the shared checkout.
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
+  # The state stays on the guest's own disk; the apply step puts it over the checkout.
   - name: 'Look for the state'
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-the-state" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'stat', '-c', '%n', '/var/lib/orbit-checkout-state/apps/gateway/.env', '/var/lib/orbit-checkout-state/apps/gateway/storage', '/var/lib/orbit-checkout-state/apps/gateway/bootstrap/cache'], timeoutSec: 40}}
-    dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
-  # The units of a stored copy order after the NFS mount: no unit of the state lacks `_netdev`. A copy of a role without the units lists nothing.
-  - name: 'Look for unordered mounts'
-    labels: {role: swamp}
-    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-unordered-mounts" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-unordered-mounts" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'sh', '-c', 'grep -L _netdev /etc/systemd/system/home-orbit-orbit.mount /etc/systemd/system/home-orbit-orbit-apps-gateway-*.mount || true'], timeoutSec: 40}}
-    dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
   # The Gateway database is the one its own `.env` names, the one the key step updated.
   - name: 'Read the stored database path'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-stored-database-path").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-stored-database-path").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', 'ready-check-gateway', '--', 'grep', '-m1', '^DB_DATABASE=', '/var/lib/orbit-checkout-state/apps/gateway/.env'], timeoutSec: 40}}
-    dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
   - name: 'Read the operator keys'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-operator-keys").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-operator-keys").split(".").join("-") }}'},
@@ -221,17 +207,23 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-the-operator-peer").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-the-operator-peer").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', 'ready-check-gateway', '--', 'sh', '-c', 'grep -rq ''10\.45\.0\.10/32'' /etc/wireguard; echo peer-exit=$?'], timeoutSec: 40}}
-    dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
-  - name: 'Read the stateful setting'
-    labels: {role: swamp}
-    forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-stateful-setting" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-stateful-setting" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['incus', 'config', 'get', '${{ "fleet-ready-" + self.role }}', 'migration.stateful'], timeoutSec: 40}}
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
   - name: 'Read the devices'
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-devices" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-devices" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'config', 'device', 'list', '${{ "fleet-ready-" + self.role }}'], timeoutSec: 40}}
+  # A copy of the VM kind, or of an older format, is not usable by container steps: the end check requires containers of the current format.
+  - name: 'Read the instance type'
+    labels: {role: swamp}
+    forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-instance-type" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-instance-type" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'list', '${{ "fleet-ready-" + self.role }}', '--format', 'csv', '--columns', 't'], timeoutSec: 40}}
+  - name: 'Read the format'
+    labels: {role: swamp}
+    forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-format" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-read-the-format" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'config', 'get', '${{ "fleet-ready-" + self.role }}', 'user.ready.format'], timeoutSec: 40}}
 - name: cleanup
   labels: {role: swamp}
   dependsOn: [{job: check, condition: {type: completed}}]
@@ -246,11 +238,11 @@ jobs:
   labels: {role: swamp}
   dependsOn: [{job: check, condition: {type: succeeded}}, {job: cleanup, condition: {type: succeeded}}]
   steps:
-  # No operator key in the record or on the hub, no Club key before and after the stop, stateful, no NIC. The state check fails its own step.
+  # No operator key in the record or on the hub, no Club key before and after the stop, containers of the current format, no NIC and no checkout device. The state check fails its own step.
   - name: Check the ready copies
     labels: {role: swamp}
     task:
       type: assert
-      expr: 'steps["Read the operator keys"].outputs.stdout.split("\n")[0] == "0" && steps["Look for the operator peer"].outputs.stdout.startsWith("peer-exit=1") && [0, 1, 2].all(i, steps["Scan for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && steps["Search for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && steps["Read the stateful setting-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.split("\n")[0] == "true" && !steps["Read the devices-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.contains("eth0")) && [0, 1].all(i, steps["Look for a checkout-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout == "") && [0, 1].all(i, steps["Look for unordered mounts-" + ["gateway", "app-dev"][i]].outputs.stdout.trim() == "")'
+      expr: 'steps["Read the operator keys"].outputs.stdout.split("\n")[0] == "0" && steps["Look for the operator peer"].outputs.stdout.startsWith("peer-exit=1") && [0, 1, 2].all(i, steps["Scan for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && steps["Search for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && !steps["Read the devices-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.contains("eth0") && !steps["Read the devices-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.contains("checkout") && steps["Read the instance type-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.split("\n")[0] == "CONTAINER" && steps["Read the format-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.split("\n")[0] == inputs.intent.fleet.format) && [0, 1].all(i, steps["Look for a checkout-" + ["gateway", "app-dev"][i]].outputs.stdout == "")'
       severity: high
       message: The ready copies are not self-contained.

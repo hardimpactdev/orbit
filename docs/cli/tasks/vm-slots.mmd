@@ -27,7 +27,7 @@ sequenceDiagram
   GW->>SW: Enrol a slot<br/>today's tasks:provision, no task
   %%> Exactly today's path: clone the current task image, boot, enrol (keys, WireGuard, observer), model key, Pi. Runs in the background whenever the pool is below its size.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - kind `task_vm.slot_enrol`, workflow `operation-task-vm-slot-enrol`: the VM child of tasks:provision, which also attaches a clone of the host's topology seed, then "Converge once" (task VM role phases: nested Incus with the seed pool, the NFS export of the checkout path)
+  %%> - kind `task_vm.slot_enrol`, workflow `operation-task-vm-slot-enrol`: the VM child of tasks:provision, which also attaches a clone of the host's topology seed, then "Converge once" (task VM role phases: nested Incus with the seed pool and the nested network)
   %%> - no workspace, nested fleet, Route or Processes: the claim makes them for the task
   %%> - the slot gets its own Pi token and model key at enrol, as a task VM does today
   %%> - the Gateway records on the slot the digest of what a task image carries in the current release (playbooks, pins, lock files), which the converge applied

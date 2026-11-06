@@ -142,7 +142,7 @@ final readonly class TaskProvisionIntent
                 return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
             }, $this->steps->ordered($project, LifecyclePhase::Setup));
             // A claimed slot converged at its enrol; it converges again only when the release changed playbooks, pins or lock files since.
-            $converge = $slot !== null && $slot->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $checkout->value, $input);
+            $converge = $slot !== null && $slot->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $input);
             // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
             $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                 'swamp-proof-club-api-key', $proofClub) : null;
@@ -171,13 +171,13 @@ final readonly class TaskProvisionIntent
     }
 
     /**
-     * "Converge once" of stage 2: the task VM role phases on the outer VM, with the NFS export of its checkout to the nested network, run
+     * "Converge once" of stage 2: the task VM role phases on the outer VM, with Incus and the nested network, run
      * before the fleet starts. The guest's host key is pinned by this run's VM step, so its SSH target carries `host_keys: null` until then.
      *
      * @param  array<string,mixed>  $input  the VM intent
      * @return array<string,mixed>|null null for a task without a topology
      */
-    private function converge(TaskVm $vm, Node $node, string $checkout, array $input): ?array
+    private function converge(TaskVm $vm, Node $node, array $input): ?array
     {
         $create = $input['create'] ?? null;
         if (! is_array($create) || ($create['topology'] ?? false) !== true) {
@@ -185,7 +185,7 @@ final readonly class TaskProvisionIntent
         }
 
         return app(PendingSshHostKey::class)->during($node->id, fn (): array => app(TaskVmConvergeIntent::class)->provisioning($vm,
-            ['checkout' => $checkout, 'subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
+            ['subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
     }
 
     private function assertProvisionable(Task $group): void

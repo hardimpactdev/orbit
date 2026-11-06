@@ -7,9 +7,6 @@ namespace App\Domain\TaskVms;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\TaskVms\RecordTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmDestroyAction;
-use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
-use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -52,8 +49,6 @@ final readonly class TaskVmSlotPool
         private TaskVmConvergeIntent $converge,
         private TaskVmEnrollmentIntent $enrollment,
         private StartOperationAction $start,
-        private StorageRootResolver $roots,
-        private NodeSettingsNormalizer $nodeSettings,
         private PendingSshHostKey $pendingKeys,
         private StartTaskVmDestroyAction $destroy,
         private RecipeImageBuilds $recipes,
@@ -228,15 +223,6 @@ final readonly class TaskVmSlotPool
         return $build === null ? null : ['build_id' => $build->id, ...$image];
     }
 
-    /** The checkout path of a Project's workspace on a task VM: `<apps root>/<project slug>/workspace`, as `tasks:provision` names it. */
-    public function checkoutPath(Node $guest, Project $project): string
-    {
-        $account = new ManagedUserAccount($guest->user, $guest->user, '/home/'.$guest->user);
-
-        return $this->roots->resolveApps($this->nodeSettings->fromStored($guest->settings), $account)
-            ->append($project->slug)->append(TaskVmWorkspaceGuard::WorkspaceCheckout)->value;
-    }
-
     /** The digest of what a task image carries in the release this Gateway runs: playbooks, pins and lock files. */
     public function releaseDigest(): string
     {
@@ -259,9 +245,9 @@ final readonly class TaskVmSlotPool
         $input = $this->provision->capture($vm);
         $guest = $vm->refresh()->node;
         assert($guest instanceof Node);
-        // "Converge once" of the enrol: the task VM role phases, with the nested network and the NFS export of the Project's checkout path.
+        // "Converge once" of the enrol: the task VM role phases, with the nested network.
         $input['converge'] = $this->pendingKeys->during($guest->id, fn (): array => $this->converge->provisioning($vm,
-            ['checkout' => $this->checkoutPath($guest, $project), 'subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
+            ['subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
 
         return $this->start->execute(self::EnrolKind, 'task_vm', $vm->id, ValidatedData::integer($input['node_id']), $input, 'task-vm-slots', null);
     }

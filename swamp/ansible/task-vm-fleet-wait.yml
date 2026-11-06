@@ -4,7 +4,7 @@
 # Each check is one `incus exec` into the nested Gateway, every `wait_delay` seconds, with the tool's own `until` and `retries`.
 # `wait_seconds` is the time of the delays. The checks take their own time on top, so the step that runs this playbook gives it
 # a `timeout` of twice `wait_seconds`.
-# A check that finds the Gateway guest not running ends the wait at once, and the task after it names the nested VMs that are not running.
+# A check that finds the Gateway guest not running ends the wait at once, and the task after it names the nested containers that are not running.
 # Doctor passes only on the fleet's own `healthy`, which opens the answer: each Node in it carries one too (op 11756).
 - name: Wait for the nested fleet
   hosts: task_vm
@@ -86,15 +86,15 @@
       register: nested_why
       changed_when: false
       failed_when: false
-    - name: Read the state of the nested VMs
+    - name: Read the state of the nested containers
       ansible.builtin.command:
         argv: [incus, list, --format, csv, --columns, ns]
       register: nested_vms
       changed_when: false
-    - name: Check that every nested VM is running
+    - name: Check that every nested container is running
       ansible.builtin.assert:
         that: not_running | length == 0
-        fail_msg: "A nested VM is not running: {{ not_running | join(', ') }}"
+        fail_msg: "A nested container is not running: {{ not_running | join(', ') }}"
     - name: Check that the Operation succeeded
       when: wait_kind == 'operation'
       ansible.builtin.assert:

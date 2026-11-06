@@ -21,10 +21,10 @@ final readonly class TaskVmConvergeIntent
     public function __construct(private SwampSshExecutionInput $ssh, private RecipeImageBuilds $recipes) {}
 
     /**
-     * @param  array{checkout:string,subnet:string,interface:string}|null  $nfs  Where the VM serves its checkout; null leaves the NFS export as it is.
+     * @param  array{subnet:string,interface:string}|null  $nested  The nested network the VM leads; null leaves Incus as it is.
      * @return array<string,mixed>
      */
-    public function capture(TaskVm $vm, ?array $nfs): array
+    public function capture(TaskVm $vm, ?array $nested): array
     {
         $guest = $vm->node;
         if ($vm->state !== TaskVmState::Ready || ! $guest instanceof Node || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->user !== 'orbit'
@@ -32,31 +32,31 @@ final readonly class TaskVmConvergeIntent
             throw new ResourceOperationException('task_vm.converge_refused', 'A converge needs the ready VM and its active guest identity with its recorded host key.', 409);
         }
 
-        return $this->build($vm, $guest, $nfs);
+        return $this->build($vm, $guest, $nested);
     }
 
     /**
      * The same intent for a VM that a run is still provisioning, as the refresh of a task image captures it at its
      * admission. The caller wraps the call in {@see PendingSshHostKey::during()}: the run pins the guest key.
      *
-     * @param  array{checkout:string,subnet:string,interface:string}|null  $nfs
+     * @param  array{subnet:string,interface:string}|null  $nested
      * @return array<string,mixed>
      */
-    public function provisioning(TaskVm $vm, ?array $nfs): array
+    public function provisioning(TaskVm $vm, ?array $nested): array
     {
         $guest = $vm->node;
         if (! $guest instanceof Node || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->user !== 'orbit') {
             throw new ResourceOperationException('task_vm.converge_refused', 'A converge needs the guest identity of its VM.', 409);
         }
 
-        return $this->build($vm, $guest, $nfs);
+        return $this->build($vm, $guest, $nested);
     }
 
     /**
-     * @param  array{checkout:string,subnet:string,interface:string}|null  $nfs
+     * @param  array{subnet:string,interface:string}|null  $nested
      * @return array<string,mixed>
      */
-    private function build(TaskVm $vm, Node $guest, ?array $nfs): array
+    private function build(TaskVm $vm, Node $guest, ?array $nested): array
     {
         $architecture = MachineRecipe::architecture($guest->architecture)
             ?? throw new ResourceOperationException('task_vm.converge_refused', 'The guest architecture is unsupported.', 409);
@@ -78,7 +78,7 @@ final readonly class TaskVmConvergeIntent
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']),
             // The run copies the Pi server from the Gateway host to 209; the playbook copies it on to the VM when the VM's copy differs.
             'pi' => ['sha256' => $pi->digest, 'source' => ['ssh' => $this->ssh->forNode($gateway), 'path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location]],
-            'nfs' => $nfs,
+            'nested' => $nested,
         ];
     }
 }

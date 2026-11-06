@@ -34,8 +34,9 @@
     mode: "{{ item.mode }}"
   loop:
     - { path: "{{ swamp_credentials }}", mode: "0755" }
-    - { path: "{{ swamp_credentials }}/a", mode: "0700" }
-    - { path: "{{ swamp_credentials }}/b", mode: "0700" }
+    # The workers run as the swamp account and read their tokens directly: systemd credentials do nothing in a system container.
+    - { path: "{{ swamp_credentials }}/a", mode: "0750", group: "{{ swamp_user }}" }
+    - { path: "{{ swamp_credentials }}/b", mode: "0750", group: "{{ swamp_user }}" }
   loop_control: { label: "{{ item.path }}" }
 - name: Write the units
   ansible.builtin.copy:
@@ -144,8 +145,8 @@
     remote_src: true
     dest: "{{ swamp_credentials }}/{{ item.worker }}/{{ item.token }}.token"
     owner: root
-    group: root
-    mode: "0600"
+    group: "{{ swamp_user }}"
+    mode: "0640"
     force: false
   loop:
     - { worker: a, kind: enrollment, token: enrollment }

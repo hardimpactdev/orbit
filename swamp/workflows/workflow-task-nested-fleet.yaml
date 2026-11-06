@@ -41,8 +41,8 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-address" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-address" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'config', 'get', '${{ "fleet-ready-" + self.role }}', 'user.ready.ipv4'], timeoutSec: 40}}
     dependsOn: [{step: 'guest', condition: {type: succeeded}}]
-  # The task VM owns the network and the three VMs: it creates the network from the stored subnet and needs no earlier fleet.
-  # The converge of the task VM role creates the nested network when it exports the checkout to it; a fleet without that converge creates it here.
+  # The task VM owns the network and the three containers: it creates the network from the stored subnet and needs no earlier fleet.
+  # The converge of the task VM role creates the nested network; a fleet without that converge creates it here.
   - name: 'Look for the network'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-look-for-the-network").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-look-for-the-network").split(".").join("-") }}'},
@@ -81,56 +81,77 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-nics" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-nics" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'device', 'add', '${{ inputs.intent.fleet.guests[self.role] }}', 'eth0', 'nic', '${{ "network=" + inputs.intent.fleet.network }}', '${{ "hwaddr=" + steps["Read the MAC-" + self.role].outputs.stdout.split("\n")[0] }}', '${{ "ipv4.address=" + steps["Read the address-" + self.role].outputs.stdout.split("\n")[0] }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Copy the ready copies', condition: {type: succeeded}}, {step: 'Read the MAC', condition: {type: succeeded}}, {step: 'Read the address', condition: {type: succeeded}}]
-  - name: 'Start the nested VMs'
+  # The checkout of the task is a disk device of the Gateway and app-dev containers, as the fleet build attached its own: the copies hold none. The ID shift gives the container's orbit the rights of this VM's orbit on it.
+  - name: 'Attach the checkout'
     labels: {role: swamp}
     writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-nested-vms").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-nested-vms").split(".").join("-") }}'},
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-attach-the-checkout" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-attach-the-checkout" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'device', 'add', '${{ inputs.intent.fleet.guests[self.role] }}', 'checkout', 'disk', '${{ "source=" + inputs.intent.workspace.checkout_path }}', 'path=/home/orbit/orbit', 'shift=true'], timeoutSec: 40}}
+    dependsOn: [{step: 'Copy the ready copies', condition: {type: succeeded}}]
+  - name: 'Start the nested containers'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-nested-containers").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-nested-containers").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'start', '${{ inputs.intent.fleet.guests.gateway }}', '${{ inputs.intent.fleet.guests["app-dev"] }}', '${{ inputs.intent.fleet.guests["app-prod"] }}'], timeoutSec: 130}}
-    dependsOn: [{step: 'Add the NICs', condition: {type: succeeded}}]
-  - name: 'Wait for the agents'
+    dependsOn: [{step: 'Add the NICs', condition: {type: succeeded}}, {step: 'Attach the checkout', condition: {type: succeeded}}]
+  # A container has no guest agent: `cloud-init status --wait` blocks from the first moment of the boot (exit 2 is a finished boot with a recoverable warning).
+  - name: 'Wait for cloud-init'
     labels: {role: swamp}
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-wait-for-the-agents" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-wait-for-the-agents" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '130', 'incus', 'wait', '${{ inputs.intent.fleet.guests[self.role] }}', 'agent', '--timeout', '120'], timeoutSec: 140}}
-    dependsOn: [{step: 'Start the nested VMs', condition: {type: succeeded}}]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '130', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'cloud-init', 'status', '--wait'], okExitCodes: [0, 2], timeoutSec: 140}}
+    dependsOn: [{step: 'Start the nested containers', condition: {type: succeeded}}]
   # The Gateway database is the one its own `.env` names; the state is on the guest's own disk.
   - name: 'Read the database path'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-database-path").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-database-path").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'grep', '-m1', '^DB_DATABASE=', '/var/lib/orbit-checkout-state/apps/gateway/.env'], timeoutSec: 40}}
-    dependsOn: [{step: 'Wait for the agents', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
   # The task VM joins as operator with its own WireGuard key. The private key stays in this VM; only the public key is printed.
   - name: 'Make the operator key'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-operator-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-operator-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', sudo: true, argv: ['timeout', '30', 'sh', '-c', 'umask 077; wg genkey | tee /etc/wireguard/wg-nested.key | wg pubkey'], timeoutSec: 40}}
-    dependsOn: [{step: 'Wait for the agents', condition: {type: succeeded}}]
-  # The key goes into the nested Gateway's operator Node record, with `incus exec`: the VM is the Incus host of the nested VMs, so this needs no network yet.
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
+  # The key goes into the nested Gateway's operator Node record, with `incus exec`: the VM is the Incus host of the nested containers, so this needs no network yet.
   - name: 'Record the operator key'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-record-the-operator-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-record-the-operator-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'sqlite3', '${{ steps["Read the database path"].outputs.stdout.split("\n")[0].split("=")[1] }}', '${{ "update nodes set wireguard_public_key = ''" + steps["Make the operator key"].outputs.stdout.split("\n")[0] + "'' where name = ''operator''" }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Read the database path', condition: {type: succeeded}}, {step: 'Make the operator key', condition: {type: succeeded}}]
+  # The hub loads every file of its peer folder at start (`NodeWireGuardHubInput`): the operator's peer is a file there, in the form the hub rendering writes, so a restore of `base` (a reboot) keeps it.
+  - name: 'Read the operator id'
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-operator-id").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-operator-id").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'sqlite3', '${{ steps["Read the database path"].outputs.stdout.split("\n")[0].split("=")[1] }}', 'select id from nodes where name = ''operator'''], timeoutSec: 40}}
+    dependsOn: [{step: 'Record the operator key', condition: {type: succeeded}}]
+  - name: 'Write the operator peer'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-write-the-operator-peer").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-write-the-operator-peer").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'file', 'push', '-', '${{ inputs.intent.fleet.guests.gateway + "/etc/wireguard/orbit-peers.d/" + steps["Read the operator id"].outputs.stdout.split("\n")[0] + ".conf" }}', '--mode', '0600'], stdin: '${{ "[Peer]\n# operator\nPublicKey = " + steps["Make the operator key"].outputs.stdout.split("\n")[0] + "\nAllowedIPs = 10.45.0.10/32\n" }}', timeoutSec: 40}}
+    dependsOn: [{step: 'Read the operator id', condition: {type: succeeded}}]
   # The agent answers early in the boot. `systemctl start` returns when the hub tunnel is up, so the next steps find the interface.
   - name: 'Start the hub'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-hub").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-hub").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'start', 'wg-quick@orbit'], timeoutSec: 130}}
-    dependsOn: [{step: 'Record the operator key', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Write the operator peer', condition: {type: succeeded}}]
   - name: 'Read the hub key'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-hub-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-hub-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'wg', 'show', 'orbit', 'public-key'], timeoutSec: 40}}
     dependsOn: [{step: 'Start the hub', condition: {type: succeeded}}]
-  # The hub learns the key; the nested network keeps its address 10.45.0.10 for the operator.
-  - name: 'Add the operator peer'
+  # A hub that was already up when the file was written loads the peer now; the file keeps it across a restart. The nested network keeps its address 10.45.0.10 for the operator.
+  - name: 'Load the operator peer'
     labels: {role: swamp}
     writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-operator-peer").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-operator-peer").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'wg', 'set', 'orbit', 'peer', '${{ steps["Make the operator key"].outputs.stdout.split("\n")[0] }}', 'allowed-ips', '10.45.0.10/32'], timeoutSec: 40}}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-load-the-operator-peer").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-load-the-operator-peer").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'wg', 'addconf', 'orbit', '${{ "/etc/wireguard/orbit-peers.d/" + steps["Read the operator id"].outputs.stdout.split("\n")[0] + ".conf" }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Read the hub key', condition: {type: succeeded}}]
   # The VM brings up wg-nested as the operator 10.45.0.10. Its own `orbit` interface stays as it is.
   - name: 'Add the tunnel'
@@ -138,7 +159,7 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-tunnel").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-tunnel").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', sudo: true, argv: ['timeout', '30', 'ip', 'link', 'add', 'wg-nested', 'type', 'wireguard'], timeoutSec: 40}}
-    dependsOn: [{step: 'Add the operator peer', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Load the operator peer', condition: {type: succeeded}}]
   - name: 'Set the tunnel peer'
     labels: {role: swamp}
     writes: true
@@ -210,11 +231,11 @@ jobs:
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}'}}
     dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
-  # One stateful snapshot `base` of the three nested VMs, memory included; every proof batch starts from it. It holds the proof Club key, and is destroyed with this VM.
+  # One snapshot `base` of the three nested containers; every proof batch starts from it. It holds the proof Club key, and is destroyed with this VM.
   - name: 'Take the base snapshot'
     labels: {role: swamp}
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-take-the-base-snapshot" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-take-the-base-snapshot" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'snapshot', 'create', '${{ inputs.intent.fleet.guests[self.role] }}', 'base', '--stateful'], timeoutSec: 190}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'snapshot', 'create', '${{ inputs.intent.fleet.guests[self.role] }}', 'base'], timeoutSec: 190}}
     dependsOn: [{step: 'Check readiness', condition: {type: succeeded}}]
