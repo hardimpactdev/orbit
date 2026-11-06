@@ -241,7 +241,7 @@ jobs:
         name: pr-ready
         run_id: ${{ run.id }}
         write_token: ${{ inputs.execution_secrets.write_token }}
-        minted: '${{ "Mint the token" in steps && steps["Mint the token"].status == "succeeded" }}'
+        mint_status: '${{ "Mint the token" in steps ? steps["Mint the token"].status : "skipped" }}'
   - name: Confirm the ready step
     labels:
       role: swamp

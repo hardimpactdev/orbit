@@ -21,10 +21,10 @@ inputs:
         key: {type: string, pattern: '^pr-(merge|ready|comment)-write-[a-f0-9-]{36}$'}
       required: [vault, key]
       additionalProperties: false
-    # Whether the mint step succeeded; a token that was never minted has nothing to revoke.
-    minted:
-      type: boolean
-  required: [name, run_id, write_token, minted]
+    # The status of the mint step of the parent; a token that was not minted has nothing to revoke.
+    mint_status:
+      type: string
+  required: [name, run_id, write_token, mint_status]
   additionalProperties: false
 jobs:
 - name: cleanup
@@ -33,7 +33,7 @@ jobs:
   - name: Revoke the token
     labels: {role: swamp}
     queueTimeout: 30
-    guard: ${{ !inputs.minted }}
+    guard: ${{ inputs.mint_status != "succeeded" }}
     writes: true
     allowFailure: true
     task:
