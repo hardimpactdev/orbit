@@ -1283,7 +1283,7 @@ The step `Converge once` runs before it. A task with a topology carries the conv
 
 The step `Pin the converge` fills the guest host key that the VM step pinned, and `Converge once` runs the child `operation-task-vm-converge`. Its Incus phase recovers the topology seed pool with `incus admin recover` from the seed disk `scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`, so the three ready copies show in the VM. The seed holds the three ready copies and nothing else, because the recovery needs every other instance in the pool to have its network and devices. The fleet child creates the network only when the converge has not, and then checks that the network has the subnet that the copies store.
 
-The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM pushes it into the nested Gateway and restarts its Swamp.
+The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
 
 ##### The ready copies
 
