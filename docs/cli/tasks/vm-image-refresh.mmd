@@ -17,6 +17,10 @@ sequenceDiagram
   %%> - the release projection, when the release that went live changed playbooks, pins or lock files; a daily Gateway schedule; and the operator commands `php artisan task-vms:refresh-image HOST` and `task-vms:refresh-images`
   %%> Requirements:
   %%> - an active, configured task VM host with a promoted image and no image build running, and a Gateway release with a commit
+  %%> - with `--seed=keep` (proposal, decided by the orchestrator, for Nick's review): the host also holds the seed volume of its current image
+  %%> Input `seed`:
+  %%> - `build` (the default, as now): the refresh VM builds or starts the nested fleet and its disk becomes the new seed
+  %%> - `keep` (proposal): the image part alone, proven as milestone M1 on one host. No refresh VM, no group and no slots; the steps from `Create the VM` to `Stop the refresh VM` are skipped, and `Copy the seed` copies the host's current seed instead. A host without that seed is refused with `task_vm.seed_unavailable`
   %%> Result:
   %%> - a group of its own in the proof Project, placed on this host only, and the full intent recorded; a second admission for the host returns the open run
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
@@ -53,6 +57,7 @@ sequenceDiagram
   %%> - the child `task-vm-image-ansible` with the phases of a provision converge on the same VM; the promotion waits for this step and the one before
   SW->>H: Copy the seed<br/>under the host lock
   %%> What it does:
+  %%> - with `seed=keep`: the source is the seed volume of the host's current image (`zfs` copy under the same lock), not the seed disk of a refresh VM; the nested disks keep the content they had, and the first use of a task VM converges them (stage 2)
   %%> - copies the seed disk of the refresh VM to the seed name of the new fingerprint, then `zfs promote` so refreshes form no clone chain
   SW->>H: Promote the image<br/>under the host lock
   %%> What it does:
