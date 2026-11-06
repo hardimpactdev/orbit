@@ -1,7 +1,7 @@
 id: c631d4e9-43b9-4ad3-899e-c35b57d1e40c
 name: task-nested-fleet
 description: >-
-  Start the nested fleet of a task VM from the ready copies of its seed and join it as operator (stage 2 of the command development pipeline). Each step is one command over official SSH to the task VM.
+  Start the nested fleet of a task VM from the ready copies of its seed and join it as operator (stage 2 of the command development pipeline). Each step is one command, or one short script for one action group, over official SSH to the task VM.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -128,14 +128,15 @@ jobs:
           set -eu
           case "$1" in ''|*[!A-Za-z0-9+/=]*) echo "not a WireGuard public key" >&2; exit 1 ;; esac
           db=$(sed -n 's/^DB_DATABASE=//p' /var/lib/orbit-checkout-state/apps/gateway/.env | head -n 1)
-          sqlite3 "$db" "update nodes set wireguard_public_key = '$1' where name = 'operator'"
+          [ -f "$db" ] || { echo "no Gateway database: $db" >&2; exit 1; }
+          sqlite3 -cmd '.timeout 5000' "$db" "update nodes set wireguard_public_key = '$1' where name = 'operator'"
           systemctl start wg-quick@orbit
           wg set orbit peer "$1" allowed-ips 10.45.0.10/32
           wg show orbit public-key
         - orbit-join
         - '${{ steps["Make the operator key"].outputs.stdout.split("\n")[0] }}'
     dependsOn: [{step: 'Wait for the agents', condition: {type: succeeded}}, {step: 'Make the operator key', condition: {type: succeeded}}]
-  # One action group on the VM: wg-nested comes up as the operator 10.45.0.10 toward the hub, and a ping makes the first handshake now,
+  # One action group on the VM, safe to run again: wg-nested comes up as the operator 10.45.0.10 toward the hub, and a ping makes the first handshake now,
   # so the Gateway answers the operator at once. The VM's own `orbit` interface stays as it is.
   - name: 'Bring up the tunnel'
     labels: {role: swamp}
@@ -157,9 +158,9 @@ jobs:
         - -c
         - |
           set -eu
-          ip link add wg-nested type wireguard
+          ip link show wg-nested >/dev/null 2>&1 || ip link add wg-nested type wireguard
           wg set wg-nested private-key /etc/wireguard/wg-nested.key listen-port 51821 peer "$1" endpoint "$2:51820" allowed-ips 10.45.0.0/24 persistent-keepalive 25
-          ip address add 10.45.0.10/24 dev wg-nested
+          ip address replace 10.45.0.10/24 dev wg-nested
           ip link set wg-nested up
           ping -c 1 -w 20 10.45.0.1
         - orbit-tunnel
@@ -173,7 +174,7 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['install', '-d', '-m', '0700', '/home/orbit/.orbit'], timeoutSec: 40}}
-    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}, {step: 'Bring up the tunnel', condition: {type: succeeded}}]
   - name: 'Pin the nested CA'
     labels: {role: swamp}
     writes: true
@@ -206,13 +207,13 @@ jobs:
     labels: {role: swamp}
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}', club: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}', remint: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}'}}
-    dependsOn: [{step: 'Bring up the tunnel', condition: {type: succeeded}}, {step: 'Push the Club key', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Push the Club key', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, which every restore of `base` reuses).
   - name: 'Check readiness'
     labels: {role: swamp}
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}'}}
-    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}, {step: 'Bring up the tunnel', condition: {type: succeeded}}]
   # One stateful snapshot `base` of the three nested VMs, memory included; every proof batch starts from it. It holds the proof Club key, and is destroyed with this VM.
   - name: 'Take the base snapshot'
     labels: {role: swamp}

@@ -1301,7 +1301,7 @@ A task that declares a topology gets its nested fleet from the ready copies of t
 
 The save writes the format as the key `user.ready.format`, and the child lists only the copies that carry the current value, so copies from before a change to the steps that start or apply a fleet are not used.
 
-The step `Start the nested fleet` of `operation-task-provision` calls the child `task-nested-fleet`, which runs one command per step over official SSH to the task VM. It creates the network `oe-nested` from the subnet that the copies store and copies the three ready copies to `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Each Node gets its stored MAC and address back, and the three VMs start.
+The step `Start the nested fleet` of `operation-task-provision` calls the child `task-nested-fleet`, which runs one command, or one short script for one action group, per step over official SSH to the task VM. It creates the network `oe-nested` from the subnet that the copies store and copies the three ready copies to `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Each Node gets its stored MAC and address back, and the three VMs start.
 
 The provider step `observe-seed` lists the volumes of the pool and prints only the two it needs: the seed of the image and the seed clone of this VM. Swamp cuts step output at 4,096 bytes, and the whole list of a host with many seeds is longer.
 
@@ -1323,7 +1323,7 @@ The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It 
 
 After the apply step, the fleet child gives the VM a CLI profile. The steps `Make the CLI home`, `Pin the nested CA` and `Add the CLI profile` pull the root CA of the nested Gateway to `~/.orbit/nested-ca.pem` and run `gateway:add https://10.45.0.1 --name=nested --use --ca=…` with the candidate CLI of the checkout. The proof runner runs that same CLI (`php apps/cli/orbit`) and finds the nested Gateway through the profile. The apply child checks the Swamp services only when the VM has the proof Club key (input `club`), because the nested Swamp serve cannot start without it.
 
-The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
+Before that, while the apply step runs, the VM joins as operator. It makes its own WireGuard key while the nested VMs boot, and one step on the nested Gateway writes the public key into its `operator` record, starts the hub and puts the key on it. One step on the VM then brings up `wg-nested` as `10.45.0.10`. Beside the join, for a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
 
 ##### The ready copies
 
