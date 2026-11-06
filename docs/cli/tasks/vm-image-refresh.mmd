@@ -22,6 +22,7 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
   SW->>VM: Create the VM<br/>image · seed · checkout
   %%> What it does:
+  %%> - the VM is large (12 GiB, 6 CPUs, 3 slots): the admission sets the size, so the refresh needs 3 free slots of its host
   %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit, the converge of the outer VM and the nested fleet from the ready copies
   SW->>VM: Pin the VM<br/>guest host key
   %%> What it does:
