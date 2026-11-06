@@ -67,6 +67,80 @@ Deno.test("any writes one commented line per protocol and family above managed l
     assertEquals(before, ufw.rows);
 });
 
+for (
+    const { name, source, ipv4, ipv6 } of [
+        {
+            name: "both families",
+            source: "any",
+            ipv4: "Anywhere",
+            ipv6: "Anywhere (v6)",
+        },
+        {
+            name: "IPv4 only",
+            source: "192.0.2.0/24",
+            ipv4: "192.0.2.0/24",
+            ipv6: null,
+        },
+        {
+            name: "IPv6 only",
+            source: "2001:db8::/64",
+            ipv4: null,
+            ipv6: "2001:db8::/64",
+        },
+    ]
+) {
+    Deno.test(`an allow range with protocol any converges narrow-first for ${name} and repeats without commands`, () => {
+        const ufw = new UfwDouble();
+        const range = { port: "8000:8100", protocol: "any", source };
+        converge(ufw, { ...range, source: "192.0.2.1" });
+        converge(ufw, { ...range, source: "2001:db8::1" });
+        const narrow = structuredClone(ufw.rows);
+        const { commands, result } = converge(ufw, range);
+        const expected4 = ipv4 === null ? [] : [
+            ["8000:8100/tcp", "allow", ipv4],
+            ["8000:8100/udp", "allow", ipv4],
+        ];
+        const suffix = source === "any" ? " (v6)" : "";
+        const expected6 = ipv6 === null ? [] : [
+            [`8000:8100/tcp${suffix}`, "allow", ipv6],
+            [`8000:8100/udp${suffix}`, "allow", ipv6],
+        ];
+
+        assertEquals(commands.length, expected4.length + expected6.length);
+        assertEquals(
+            commands.map((argv) => argv[argv.indexOf("port") + 1]),
+            commands.map(() => "8000:8100"),
+        );
+        assertEquals(result, { backend: "active" });
+        assertEquals(ufw.tuples(), [
+            ["8000:8100/tcp", "allow", "192.0.2.1"],
+            ["8000:8100/udp", "allow", "192.0.2.1"],
+            ...expected4,
+            ["Anywhere on orbit", "allow", "10.44.0.0/24"],
+            ["8000:8100/tcp", "allow", "2001:db8::1"],
+            ["8000:8100/udp", "allow", "2001:db8::1"],
+            ...expected6,
+            ["22/tcp (v6)", "allow", "Anywhere (v6)"],
+        ]);
+        assertEquals(
+            ufw.rows.filter((row) =>
+                narrow.some((old) =>
+                    old.to === row.to && old.source === row.source
+                )
+            ),
+            narrow,
+        );
+        const applied = structuredClone(ufw.rows);
+        const repeat = converge(ufw, range);
+        assertEquals(repeat.commands, []);
+        assertEquals(repeat.result, {
+            backend: "active",
+            skipped: "firewall.rule_exists",
+        });
+        assertEquals(ufw.rows, applied);
+    });
+}
+
 Deno.test("a deny sits above wireguard trust and an allowed source above the deny", () => {
     const ufw = new UfwDouble();
     converge(ufw, { action: "deny", port: "5432", source: "any" });
