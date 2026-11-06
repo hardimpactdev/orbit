@@ -1,6 +1,6 @@
 id: f425dc3d-2d51-56b7-9e0a-656c7db6fcc0
 name: task-github-mint
-description: Ask the Gateway for the GitHub token of the step that follows; the Gateway writes it to the vault key that admission named. A task VM never receives it.
+description: Ask the Gateway for the GitHub token of the step that follows; the Gateway writes it to the vault key that admission named. Only the setup files of the dependencies purpose reach a VM.
 inputs:
   type: object
   properties:
@@ -14,7 +14,7 @@ inputs:
     # What the following step does with the token; the Gateway checks it against the kind of the Operation.
     purpose:
       type: string
-      enum: [clone, publish, pull_request, dependency_merge]
+      enum: [clone, dependencies, publish, pull_request, dependency_merge]
   required: [operation_id, run_id, purpose]
   additionalProperties: false
 jobs:
