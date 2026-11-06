@@ -170,5 +170,7 @@ sequenceDiagram
   SW->>VM: Resume, sync, first turn<br/>operation-task-build
   %%> What it does:
   %%> - one parent run with three child workflows: `operation-task-vm-resume`, `operation-task-sync` and `operation-task-turn`, the first implementer turn on a new thread
-  %%> - the Gateway captured the whole intent at admission and Swamp passes it down as inputs; no step of the run calls the Gateway, because the Gateway writes the read token of the sync child to its vault key as it starts the run
+  %%> - the Gateway captured the whole intent at admission and Swamp passes it down as inputs
   %%> - the Gateway projects the terminal event once; the group stays `running` and stage 2 goes on
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - no step of the run calls the Gateway: the Gateway writes the read token of the sync child to its vault key as it starts the run

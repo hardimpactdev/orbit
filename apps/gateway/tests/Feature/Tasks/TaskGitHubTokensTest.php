@@ -22,7 +22,6 @@ use App\Domain\Tasks\TaskPrepFixIntent;
 use App\Domain\Tasks\TaskPrepIntent;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
-use App\Domain\Tasks\TaskSyncProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\GitHub\HttpGitHubApi;
@@ -170,11 +169,11 @@ it('writes the clone header of a sync run as the Gateway starts it, and refuses 
     $socket = tokenWorld();
     [$operation, $reference] = cloneOperation('tasks.sync');
 
-    $input = app(TaskSyncProjection::class)->workflowInput($operation);
+    $input = app(DirectOperation::class)->workflowInputs($operation);
 
     expect($input['intent']['git_authorization'])->toBe($reference)
         ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]])
-        ->and(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone'))->toThrow(ResourceOperationException::class);
+        ->and(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token');
 });
 
 it('writes the Composer and npm configuration of the setup steps from one read token, and nothing else', function (string $kind): void {

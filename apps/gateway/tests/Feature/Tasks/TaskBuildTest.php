@@ -12,6 +12,7 @@ use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -305,12 +306,12 @@ it('reads the Operation without writing a credential, and writes the Pi token an
         ->and(array_keys($read['intent']))->toBe(['resume', 'sync', 'turn'])
         ->and(json_encode($read['resume_secrets']))->toBe('{}');
 
-    $start = $projection->workflowInput($operation);
+    $start = app(DirectOperation::class)->workflowInputs($operation);
     $puts = array_map(static fn (array $frame): array => [$frame['payload']['key'], $frame['payload']['value']], $socket->frames);
 
     expect($puts)->toBe([
-        ['task-sync-token-6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')],
         ['task-vm-pi-token-'.$vm->id, str_repeat('p', 64)],
+        ['task-sync-token-6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')],
     ])
         ->and($start['execution_secrets'])->toBe(['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]]);
 

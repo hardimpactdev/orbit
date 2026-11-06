@@ -61,10 +61,11 @@ final readonly class TaskBuildProjection implements DirectOperationProjection, D
         if (! $group instanceof Task) {
             throw new ResourceOperationException('tasks.build_refused', 'The task group is gone, so the build cannot start.', 409);
         }
+        $piCopy = app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), $vm->pi_token);
         // The read token of the sync child: the Gateway writes it to the admitted key, so no step of the run asks for it.
         app(TaskGitHubTokens::class)->writeClone($group, ValidatedData::object(ValidatedData::object(ValidatedData::object($operation->input)['sync'])['git_authorization']));
 
-        return [...$input, 'execution_secrets' => ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), $vm->pi_token)]];
+        return [...$input, 'execution_secrets' => ['pi_token' => $piCopy]];
     }
 
     /** @param array<string,mixed> $data */

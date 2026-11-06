@@ -405,8 +405,6 @@ The native `operation-task-build` workflow is one parent run, with existing work
 - `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
 - `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
 
-No step of the run calls the Gateway: as it starts the run, the Gateway writes the Pi token and the read token of the sync child to their vault keys.
-
 The Gateway projects the terminal event once: the task VM as ready, the metrics of the thread and `{ branch, head }`. The group stays `running` for its driver. A failed run records the failed step with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`, and the group stays `running` for the orchestrator.
 
 ### Task lifecycle

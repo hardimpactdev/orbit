@@ -33,9 +33,8 @@ sequenceDiagram
   GW->>SW: Start one run, full intent<br/>operation-task-build
   %%> Inputs:
   %%> - the whole intent above and the vault key names of the Pi, VM and read-token credentials, never their values
-  %%> - no step of the run calls the Gateway: as it starts the run, the Gateway writes the Pi token and the read token of the sync child to their vault keys
   %%> Decided by the orchestrator, for Nick's review:
-  %%> - the Gateway mints the read token and passes only the key name; the sync child no longer asks for it
+  %%> - no step of the run calls the Gateway: as it starts the run, the Gateway mints the read token of the sync child, writes it and the Pi token to their vault keys, and passes only the key names
   SW->>VM: Resume the VM<br/>operation-task-vm-resume
   %%> What it does:
   %%> - starts the parked VM and waits for its agent and Pi; the workspace is as the park left it
