@@ -214,12 +214,14 @@ The agent checks each source itself. For a `journal` source it runs read-only `j
 | Type | Fields | What it reads | What it refuses |
 | --- | --- | --- | --- |
 | `laravel` | `path`: the Instance's [application directory](/reference/projects#application-directory) | `storage/logs/laravel.log`, or the newest `laravel-*.log`. It follows a daily file to the next day's file. | A path that is not normalized and absolute. A link at `storage/logs` or at the file. A file that is not regular, or that `root` owns. |
-| `journal` | `unit` | The output of `journalctl --unit {unit} --output short-iso --utc`: the unit's entries, systemd's and root services' messages about it, and its core dumps. | A unit that is not `orbit-process-{id}-{name}.service`. |
+| `journal` | `unit` | The output of `journalctl --unit {unit} --output short-iso --utc`: the unit's entries, systemd's and root services' messages about it, and its core dumps. | A unit that is neither `orbit-process-{id}-{name}.service` nor the service unit of a Schedule, `orbit-schedule-{uuid}.service`. |
 | `docker` | `container`, `process_id` | The container's output through the Docker Engine API. | A name that is not `orbit-process-{id}-{name}`, and a container without the labels `orbit.managed=true` and `orbit.process.id` equal to `process_id`. |
 
 Refusing a file that `root` owns means the agent reads only files that other users may read, inside the Instance root that its unit binds. So a link in a checkout cannot point the read at another user's file. When the agent cannot open or keep reading a source, it ends the stream with `source_unavailable`.
 
 `journalctl` is part of systemd on every supported Ubuntu Node, at `/usr/bin/journalctl`. The agent starts it with no environment and no input, and stops it when the stream stops, so no `journalctl` outlives its stream. When the agent itself stops, systemd stops any `journalctl` that is left, because it runs in the agent's unit. [Live logs](/reference/live-logs#sources) describes how the agent hands over from the first lines to the follow and how it cuts a long entry.
+
+The agent sends the first lines of a stream as one batch, also when the batch is empty. The last `client-log` event of that batch carries `first_done: true`, so the Gateway knows the first lines are complete. A missing log file or a unit without entries gives an empty batch.
 
 The agent redacts each line with the Gateway's secret patterns before it sends it. [Live logs](/reference/live-logs#redaction) lists the patterns and the handling of unclosed PEM blocks. Both implementations scan in linear time and test the same expected bytes from `apps/agent/tests/redaction_cases.json`, including multiline text and long repeated inputs.
 
