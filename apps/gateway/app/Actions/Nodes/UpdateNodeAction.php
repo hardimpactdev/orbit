@@ -23,6 +23,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -65,6 +66,10 @@ final readonly class UpdateNodeAction
             $written = $this->record($node, $name, $platform);
             if ($settings->isEmpty()) {
                 return $node;
+            }
+            if ($settings->hasTaskVms) {
+                // A changed `slots` setting fills or empties the host's ready slots (docs/cli/tasks/vm-slots.mmd).
+                RefillTaskVmSlots::dispatchFor($node->id);
             }
             $merged = $settings->merge($this->normalizer->fromStored($node->settings));
             $normalized = $this->normalizer->normalize($merged);

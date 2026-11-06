@@ -47,6 +47,8 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         }
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host,$node]) {
             $operations->execute($node->id, 'incus');
+            // The periodic trigger of the ready slot pool: it retries an enrol after a failure and replaces aged slots.
+            RefillTaskVmSlots::dispatchFor($node->id);
         }
         foreach ($settings->enabled ? TaskVmHostAudit::strayNodes() : [] as $stray) {
             Log::warning('A task VM Node has no live task VM record.', ['node_id' => $stray->id, 'name' => $stray->name]);
