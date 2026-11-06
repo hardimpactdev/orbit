@@ -107,7 +107,7 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      # Only the files of Nodes that are gone or being removed go: any other Node keeps its file, because its own run may have written it.
+      # A rewrite deletes the files of Nodes that are gone or being removed and keeps every other Node's file, because its own run may have written it. A removal deletes only its own Node's file.
       inputs: {hosts: 'name:hub', sudo: true, argv: '${{ inputs.intent.prune_argv }}'}
 - name: apply
   dependsOn: [{job: files, condition: {type: succeeded}}]

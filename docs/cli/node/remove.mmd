@@ -66,7 +66,11 @@ sequenceDiagram
     %%> What it does:
     %%> - revokes the admitted keys; the account, tools and host tunnel stay
   end
-  SW->>P: Remove the hub peer<br/>SSH argv
+  SW->>P: Remove the hub peer<br/>native child workflow
+  %%> What it does:
+  %%> - Decided by the orchestrator, for Nick's review: deletes this Node's own peer file on the hub, then loads the files that remain with `wg syncconf`, so the live peer goes with the file
+  %%> - it runs for every removed Node, also one whose key the Gateway never recorded, because the Node's own enrollment run may have written the file
+  %%> - it writes no other peer and keeps none: the intent is a snapshot from admission, and a removal admitted at the same time as another must not put the other's peer back (two removals five seconds apart left a removed VM live on the hub for five minutes)
   SW->>P: Withdraw Router ingress<br/>SSH argv
   SW->>P: Withdraw Metrics<br/>cfgmgmt file · SSH argv
   SW->>P: Withdraw private DNS<br/>native child workflow

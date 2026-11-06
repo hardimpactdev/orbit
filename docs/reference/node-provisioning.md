@@ -26,6 +26,8 @@ Native role prerequisites retain a complete Docker CE installation instead of in
 
 Node and standalone role removal also execute from 209. They remove services, files, containers and authorized keys with official cfgmgmt behaviors. Direct commands use SSH argv. No removal script ships to a worker or a Node. Publication withdrawal finishes before runtime removal. Node removal publishes Metrics membership before stopping exporters, updates the full hub configuration, and removes management keys last. Offline consent skips only an unreachable departing Node; other participants still converge.
 
+Removal takes the Node off the hub by deleting its own peer file and loading the files that remain, also when the Gateway never recorded its key. See [Converge the hub](/reference/wireguard-endpoints#converge-the-hub).
+
 Removal retains packages, accounts, runtime data and unrelated SSH keys. Explicit role purge removes the admitted WebSocket releases, Metrics volumes, or drained CI resources. A regular CI role removal retains its project, image cache and network. Native resource checks and one assert determine completion; the Gateway records the public result from that run.
 
 

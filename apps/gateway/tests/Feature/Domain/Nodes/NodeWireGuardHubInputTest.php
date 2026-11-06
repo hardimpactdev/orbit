@@ -33,3 +33,21 @@ it('prunes the peer files of Nodes that are gone or being removed, and keeps eve
     }
     expect($argv)->not->toContain("! -name {$removing->id}.conf")->not->toContain("! -name {$goneId}.conf");
 });
+
+it('removes one Node from the hub by deleting its own file, and writes or keeps no other peer', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    $node = static fn (string $name, string $ip, LifecycleStatus $status, ?string $key): Node => Node::withoutEvents(static fn (): Node => Node::query()->create([
+        'name' => $name, 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => $ip, 'wireguard_public_key' => $key,
+        'user' => 'orbit', 'status' => $status, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $other = $node('other', '10.44.0.20', LifecycleStatus::Active, base64_encode(str_repeat('a', 32)));
+    $removed = $node('removed', '10.44.0.21', LifecycleStatus::Removing, null);
+
+    $intent = NodeWireGuardHubInput::removal($hub, $removed);
+
+    // A removal admitted at the same time as another lists its Node as a peer; neither run may write or keep the other's file.
+    expect($intent['peers'])->toBe([])->and($intent['peer_keys'])->toBe([])
+        ->and($intent['prune_argv'])->toBe(['rm', '-f', '--', "/etc/wireguard/orbit-peers.d/{$removed->id}.conf"])
+        ->and($intent['config'])->toBe(NodeWireGuardHubInput::config($hub));
+    // A rewrite lists the other Node, which is the snapshot a concurrent removal must not carry.
+    expect(array_column(NodeWireGuardHubInput::intent($hub)['peers'], 'node_id'))->toBe([$other->id]);
+});
