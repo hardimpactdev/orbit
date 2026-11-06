@@ -152,7 +152,7 @@ The Gateway builds the Caddy access ACLs as five commands for one site: two that
 
 A Laravel Instance registered in place can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
 
-[`instance:create`](/cli/instance/create) of a web-serving Project runs `operation-route-create` last in its native run. Its Instance is still `reserved` when the Gateway captures the Route plan, so the capture renders that prepared Instance as its site: the Caddy site, the PHP pool, and the TLS probe.
+[`instance:create`](/cli/instance/create) of a web-serving Project runs `operation-route-create` beside its setup steps in its native run. Its Instance is still `reserved` when the Gateway captures the Route plan, so the capture renders that prepared Instance as its site: the Caddy site, the PHP pool, and the TLS probe.
 
 [Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Instance child workflows bind certificate signing to the parent Operation and its run. Create and registration may sign only their admitted forward Route leaves, never restoration leaves. [`tasks.provision`](/reference/tasks#provision-an-external-group) runs the same child for a routed task workspace and signs under the same rule. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
 

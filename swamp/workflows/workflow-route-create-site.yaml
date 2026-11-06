@@ -9,6 +9,7 @@ inputs:
     intent: {type: object}
     node_id: {type: integer, minimum: 1}
     signed: {type: array, items: {type: string}}
+    prepared: {type: string}
     execution_secrets:
       type: object
       additionalProperties:
@@ -57,6 +58,7 @@ jobs:
           ORBIT_SIGNED: '${{ inputs.signed.join("|||") }}'
           ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ORBIT_PREPARED: '${{ has(inputs.prepared) ? inputs.prepared : "" }}'
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
     # A .env is group orbit-env, so the Node agent can report its key names.
@@ -93,7 +95,7 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
       inputs: {}
-    # Cleanup: the run folder, also after a failure.
+    # Cleanup: the run folder after a failure; a success removed it in the last task of the phase, so this step is skipped.
   - name: 'cleanup'
     labels: {role: swamp}
     dependsOn:
@@ -101,6 +103,7 @@ jobs:
     - {step: site, condition: {type: always}}
     - {step: environment-group, condition: {type: always}}
     - {step: environment, condition: {type: always}}
+    guard: '${{ !steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     task:
       type: behavior

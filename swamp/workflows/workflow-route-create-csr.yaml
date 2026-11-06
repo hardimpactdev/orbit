@@ -8,6 +8,9 @@ inputs:
   properties:
     intent: {type: object}
     leaf: {type: integer, minimum: 0}
+    # An Instance create has the CSR signed in this run, beside its checkout: it names the Operation and the run that holds the signature.
+    operation_id: {type: integer, minimum: 1}
+    parent_run_id: {type: string, minLength: 1}
   required: [intent, leaf]
   additionalProperties: false
 jobs:
@@ -73,3 +76,20 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].identity_file }}', become: true}
       inputs: {}
+    # With an Operation named: 209 has the CSR signed by the Gateway (the one call that route-create-sign makes), beside the key.
+  - name: 'sign'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'csr', condition: {type: always}}
+    guard: '${{ !has(inputs.operation_id) || steps.exists(k, steps[k].status == "failed") }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificate-sign'
+      behaviorName: '${{ ("certificate-sign-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: sign
+      inputs:
+        operation_id: '${{ has(inputs.operation_id) ? inputs.operation_id : 1 }}'
+        run_id: '${{ has(inputs.parent_run_id) ? inputs.parent_run_id : run.id }}'
+        node_id: '${{ inputs.intent.leaves[inputs.leaf].node_id }}'
+        scope: '${{ inputs.intent.leaves[inputs.leaf].scope }}'
+        request: '${{ steps.csr.outputs.stdout }}'

@@ -111,7 +111,7 @@ The same phase writes the `.env` the Gateway rendered at admission from the Proj
 
 Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
 
-The root runs its setup list after the checkout phase, before recording the Instance as active. For a web-serving Project it creates the Route last, after the Processes, with the same child as `route:create`. The Route's key and CSR are made at the start, beside the checkout. Its signature follows beside the setup steps, and that child takes both. It refuses `--database-server` before reservation. 
+The root runs its setup list after the checkout phase, before recording the Instance as active. For a web-serving Project it creates the Route beside the setup steps, with the same child as `route:create`. The Route's key, CSR and signature are made at the start, beside the checkout, and that child takes the signed certificate. The checkout phase has already granted Caddy its access and set `APP_URL`, so the Route's own phase skips both on that Node. A failed setup leaves the published Route; `instance:destroy` withdraws it. It refuses `--database-server` before reservation. 
 
 Setup steps receive two variables:
 

@@ -12,6 +12,8 @@ inputs:
     kind: {type: string, const: route.create}
     # The signed certificates, when the caller already made and signed the CSRs; none from a plain route:create.
     signed: {type: array, items: {type: string}}
+    # The Node whose web-root access and APP_URL the caller has already set (an Instance create does it in its checkout phase).
+    prepared: {type: string}
     intent: {type: object}
     execution_secrets:
       type: object
@@ -91,6 +93,7 @@ jobs:
         node_id: '${{ self.node }}'
         execution_secrets: '${{ inputs.execution_secrets }}'
         signed: '${{ has(inputs.signed) ? inputs.signed : inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
+        prepared: '${{ has(inputs.prepared) ? inputs.prepared : "" }}'
     # From 209 to each serving Node and the Router on 443 with the Route domain as SNI; a failed chain fails the step.
   - name: 'Probe the site over TLS'
     labels: {role: swamp}

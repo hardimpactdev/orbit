@@ -58,6 +58,7 @@ jobs:
             env: &ansible
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
               ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
@@ -218,8 +219,8 @@ jobs:
             kind: '${{ self.member.kind }}'
             intent: '${{ self.member.intent }}'
             execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
-      # Route certificates: the Node-local key and CSR beside the checkout (same level as it), then the Gateway's signature beside the setup
-      # steps (same depth as them). They touch only the certificate folder; the Route child below takes the signed certificates.
+      # Route certificates: the Node-local key and CSR, then the Gateway's signature of it, beside the checkout (same level as it). They
+      # touch only the certificate folder; the Route child below takes the signed certificates.
       - name: route-csr
         labels: {role: swamp}
         writes: true
@@ -233,33 +234,20 @@ jobs:
           inputs:
             intent: '${{ inputs.intent.route }}'
             leaf: '${{ self.leaf }}'
-      - name: route-sign
+            operation_id: '${{ inputs.operation_id }}'
+            parent_run_id: '${{ run.id }}'
+      # Route: a web-serving Project's Route, through the same child that route:create runs, beside the setup (same depth as it). The
+      # checkout phase has granted Caddy its access and written the URL, so the child skips both on this Node.
+      # It waits for the same steps as the setup, so a Swamp job puts both at one depth and does not make one wait for the other.
+      - name: route
         labels: {role: swamp}
+        writes: true
         dependsOn:
           - {step: route-csr, condition: {type: always}}
           - {step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
-        forEach: {item: leaf, in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes }}'}
-        task:
-          type: workflow
-          workflowIdOrName: route-create-sign
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            parent_run_id: '${{ run.id }}'
-            leaf: '${{ inputs.intent.route.leaves[self.leaf] }}'
-            request: '${{ steps["route-csr-" + string(self.leaf)].outputs.csr.stdout }}'
-      # Route: a web-serving Project's Route, through the same child that route:create runs, after setup and Processes.
-      - name: route
-        labels: {role: swamp}
-        writes: true
-        dependsOn:
-          - {step: checkout, condition: {type: always}}
-          - {step: setup, condition: {type: always}}
-          - {step: processes, condition: {type: always}}
-          - {step: route-sign, condition: {type: always}}
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
         task:
           type: workflow
@@ -271,7 +259,8 @@ jobs:
             kind: route.create
             intent: '${{ inputs.intent.route }}'
             execution_secrets: '${{ inputs.intent.route_secrets }}'
-            signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-sign-" + string(i)) in steps && steps["route-sign-" + string(i)].status == "succeeded" ? steps["route-sign-" + string(i)].outputs.sign.stdout : "") }}'
+            signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps && steps["route-csr-" + string(i)].status == "succeeded" ? steps["route-csr-" + string(i)].outputs.sign.stdout : "") }}'
+            prepared: '${{ string(inputs.node_id) }}'
       # Finish: map the first phase that did not finish to the public receipt. The cleanup of the run folder runs beside it.
       - name: finish
         labels: {role: swamp}
@@ -285,7 +274,6 @@ jobs:
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}
           - {step: route-csr, condition: {type: always}}
-          - {step: route-sign, condition: {type: always}}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -298,7 +286,7 @@ jobs:
             setup: '${{ "setup" in steps ? steps.setup.status : "skipped" }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
-            certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") + inputs.intent.route.leaf_indexes.map(i, ("route-sign-" + string(i)) in steps ? steps["route-sign-" + string(i)].status : "skipped") }}'
+            certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
       - name: accepted
         labels: {role: swamp}
         dependsOn: [{step: finish, condition: {type: succeeded}}]
