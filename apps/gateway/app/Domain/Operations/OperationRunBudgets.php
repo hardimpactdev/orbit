@@ -102,10 +102,10 @@ final class OperationRunBudgets
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
-        // No run yet. The pull request token is minted at admission and lives one hour, so the run must end before it:
-        // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each, rounded down to 55 min.
-        // Replace with the 14-day p95 after the first success.
-        'tasks.prep' => 3300,
+        // No run yet. The publish step mints its own token, so the one-hour life of a token no longer bounds the run:
+        // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each. Prep runs of 43 to 90 min
+        // are expected (Nick, 2026-11-06), so 105 min. Replace with the 14-day p95 after the first success.
+        'tasks.prep' => 6300,
         // No run yet. Basis: the task VM resume (about 90 s), one author turn of about 10 minutes, two review rounds of about 4
         // minutes with the runner plans, and one fix of 4 minutes, so about 25 minutes, x 1.5, rounded to 45 minutes. The push token
         // is minted when the push step starts, so the hour of an installation token does not limit this run.

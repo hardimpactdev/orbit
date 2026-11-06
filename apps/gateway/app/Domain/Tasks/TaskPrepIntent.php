@@ -65,7 +65,7 @@ final readonly class TaskPrepIntent
                 'deliverables' => $subtask->deliverables ?? [], 'ssh_execution' => $ssh,
             ];
             $branch = 'task-'.$group->id;
-            // Only the vault key names are admitted. The publish step is minutes to hours away, so it mints the token when it runs ({@see TaskPushGitHubTokens}).
+            // Only the vault key names are admitted. The publish step is minutes to hours away, so it mints the token when it runs ({@see TaskGitHubTokens}).
             $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
             $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 

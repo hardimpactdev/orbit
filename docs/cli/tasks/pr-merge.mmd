@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Nick 2026-11-06: a task VM never holds a GitHub credential, and the step mints its token when it runs, not at admission.
-  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit the merge step"), DECISIONS 1 (tokens minted at admission, vault) and R2-R3. It follows tasks.dependency_merge: the Gateway admits and mints, Swamp calls GitHub. docs/reference/tasks.md#ready-and-merge-a-task-pull-request.
+  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit the merge step"), R2-R3. The Gateway admits and names the vault key, the step mints its token, and Swamp calls GitHub. docs/reference/tasks.md#ready-and-merge-a-task-pull-request.
   %% status: draft
   %% command: none · API / MCP (tasks-pr-merge)
   %% kind: tasks.pr_merge

@@ -30,7 +30,7 @@ sequenceDiagram
   GW->>SW: Start one run, full intent<br/>operation-task-prep
   %%> Inputs:
   %%> - the whole intent above, and the vault key names of the model, Pi and push-token credentials, never their values
-  %%> - one step of the run calls the Gateway: the publish step mints its push token when it starts, with the run id of this run
+  %%> - two steps of the run mint a GitHub credential at the Gateway, with the run id of this run: the clone step of the provision child and the publish step
   %%> - no task VM holds a GitHub credential: it receives the workspace in the provision bundle, and the push and the pull request run on Node 209
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Next:

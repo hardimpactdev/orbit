@@ -43,7 +43,7 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **Node work follows one shape (R4).** The Gateway starts one Swamp run and replies 202. A Swamp worker reaches Nodes over `@swamp/ssh`, with official `@swamp/cfgmgmt/*` behaviors where they fit, or runs an Ansible phase for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A check step confirms the end state. There are no per-Node workers.
 
-**Steps never call the Gateway**, except for certificate signing. GitHub tokens are minted at admission. Secrets go Gateway → vault → step as vault key names, never values (R3).
+**Steps call the Gateway only to sign a certificate or to mint a GitHub token** for the step that is about to use it. Admission mints no token for a later step. Secrets go Gateway → vault → step as vault key names, never values (R3).
 
 **Record-only changes start no run (R1).** A change that touches no Node is written by the Gateway and answered at once.
 

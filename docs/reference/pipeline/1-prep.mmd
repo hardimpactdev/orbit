@@ -31,7 +31,7 @@ sequenceDiagram
   Note over SW: Child workflows<br/>provision · turn · publish
   %%> What it does:
   %%> - the arrows below from Swamp to the task VM and to GitHub are child workflows of one parent run: `operation-task-provision`, `operation-task-turn` for the draft, review and fix turns, and `operation-task-publish` with a draft
-  %%> - the Gateway captured their whole intent at admission and Swamp passes it down as inputs; no step calls the Gateway
+  %%> - the Gateway captured their whole intent at admission and Swamp passes it down as inputs; the clone and publish steps each mint their own GitHub credential at the Gateway
   %%> - the commit and tree the draft leaves, which the Gateway cannot know at admission, pass from step to step inside the run
   SW->>VM: Draft the spec<br/>preparing-commands skill
   %%> What it does:
