@@ -21,6 +21,7 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Swamp\SwampScheduledResults;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
@@ -86,6 +87,10 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // A host with a refresh open returns it, so a repeat starts nothing.
         GatewaySchedule::job($schedule, new RefreshTaskVmImages)->dailyAt('03:20')
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
+        // Stage 8: a verified release admits the fleet rollout (release projection). Nodes outside the daytime set wait for the
+        // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
+        GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.rollout'));
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. Background maintenance, so every
         // thirty minutes; Swamp runs one host sweep at a time. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
