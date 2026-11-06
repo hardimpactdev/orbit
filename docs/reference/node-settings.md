@@ -68,6 +68,8 @@ A patch changes only the members it names. Other stored keys stay, and the API n
 
 Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
 
+`task-vms:converge VM` brings a ready task VM on such a host to the pins of the release. It reads no host setting. See [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm).
+
 ```bash
 orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 ```

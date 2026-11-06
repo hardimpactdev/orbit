@@ -3,7 +3,7 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
-  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/RefreshTaskVmSeedCommand.php,app/Console/Commands/SaveTaskVmReadyCopiesCommand.php}
+  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{ConvergeTaskVmCommand,RefreshTaskVmSeedCommand,SaveTaskVmReadyCopiesCommand}.php}
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
@@ -705,6 +705,17 @@ A source command fails with `task_vm.git_credential_refused` before SSH starts. 
 The guard knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
 
 The checkout keeps the Project repository URL as `origin`. After setup ends, the agent can run Git there, but its environment holds no setup credential. So it cannot fetch from or push to a private repository.
+
+### Converge a running task VM
+
+`php artisan task-vms:converge VM` brings a ready task VM to the pins of the release. It records the `task_vm.converge` Operation on the VM's guest Node and Swamp runs the three phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH: `software`, `tools` and `check`. The [image build](#build-the-base-image) runs the same playbook on its builder, so an image and a converged VM end in the same state.
+
+- **Intent.** The Gateway puts the `recipe.json` of the release, the Vite+ lock, the VM's SSH target with its recorded host key, and the Pi server digest with its place on the Gateway host in the Operation. No task file names a version.
+- **Software.** Ubuntu packages and file packages (the artifact mirror first) install at their pins from the pinned Ubuntu snapshot through their own apt configuration. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that shows its pinned version is left alone, so a VM at its pins reports no change.
+- **Tools.** The NFS server and the shape gate linters. With `--nfs-checkout`, `--nfs-subnet` and `--nfs-interface` (default `nested`), the VM exports the checkout to the nested subnet only with `rw,async,no_subtree_check` and allows TCP 2049 from the nested bridge in UFW. Without them the server runs with no export. The linters build into `/opt/orbit-shape-gate`, named by the digest of their pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`; `bin/swamp-shape-gate` uses that folder when its name matches the pins, so the handoff check runs offline.
+- **Check.** The one end check: every package at its pin, every runtime and tool at its version, the NFS server active and the export as named.
+
+The VM must be `ready` with an active guest Node (`task_vm.converge_refused`), and no other Operation may hold it (`operation.target_busy`). The Operation has a provisional budget of 3,300 seconds. A failed phase leaves finished work in place; run the command again and each phase skips what matches.
 
 ### Park and resume
 
