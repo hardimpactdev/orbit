@@ -78,25 +78,7 @@ final readonly class TaskCancelIntent
             return DB::transaction(function () use ($group, $caller, $request, $kind, $token): Operation {
                 $input = $this->capture($group, $kind, $token);
 
-<<<<<<< HEAD
-                return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : 209, $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
-=======
-                    return ['input_json' => json_encode($step->toArray(), JSON_THROW_ON_ERROR), 'timeout_seconds' => $step->timeoutSeconds];
-                }, $steps);
-
-                $push = $commit === null || ! $workspace instanceof Instance ? null : [
-                    'commit' => $commit, 'checkout_path' => $workspace->checkout_path, 'remote' => $token['remote'],
-                    'refspec' => $commit.':refs/heads/'.TaskRemoteBranch::for($group), 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
-                    'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($workspace->node), 'github_token' => $token['copy'],
-                ];
-
-                return $this->start->execute($kind, 'task_group', $group->id, isset($capture['node_id']) ? ValidatedData::integer($capture['node_id']) : SwampNode::id(), [
-                    'workspace_routes' => [], 'task_vm_id' => null, ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
-                    'instance_id' => $workspace?->id, 'checkout_path' => $workspace?->checkout_path,
-                    'ssh_execution' => $teardown !== [] && $workspace instanceof Instance ? app(SwampSshExecutionInput::class)->forNode($workspace->node) : null,
-                    'teardown' => $teardown, 'push' => $push,
-                ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
->>>>>>> a7e040cc8b (Gateway: find the Swamp Node by its role, not by id 209)
+                return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : SwampNode::id(), $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
         }, wait: false);
     }

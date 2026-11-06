@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
@@ -80,7 +81,7 @@ final readonly class NativeRouteTransferPlan
                 }
             }
             $dns = PrivateDnsPublicationNodes::query()->orderBy('id')->pluck('id')->all();
-            $nodes = array_values(array_unique(ValidatedData::integerList([$transfer->source_node_id, $destination->id, $transfer->source_router_node_id, $router->id, ...$dns, 209])));
+            $nodes = array_values(array_unique(ValidatedData::integerList([$transfer->source_node_id, $destination->id, $transfer->source_router_node_id, $router->id, ...$dns, SwampNode::id()])));
             sort($nodes);
             $retire = [];
             foreach ([$instance->node, Node::query()->findOrFail($transfer->source_router_node_id)] as $node) {
