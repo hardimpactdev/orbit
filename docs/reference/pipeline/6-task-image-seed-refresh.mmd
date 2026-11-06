@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). After a release that changed playbooks, pins or lock files, and at least daily, every task VM host brings its current task image and topology seed up to the release, in parallel, and saves them as the new ones: no build from the recipe; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
+  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). When an operator starts it (the release and daily triggers are removed), every task VM host brings its current task image and topology seed up to the release, in parallel, and saves them as the new ones: no build from the recipe; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
   %% status: draft
   %% command: development pipeline stage 6 · per-host task image and seed refresh
   %% kind: pipeline.6-task-image-seed-refresh
@@ -40,7 +40,7 @@ sequenceDiagram
     %%> - the refresh VM keeps the root disk of the host's base VM (20 GiB), not the larger disk of a topology VM, because a published image is as large as its VM's root disk and no VM can be smaller than its image; the first smoke of a 40 GiB image failed on it
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the refresh VM is always a large task VM (12 GiB, 6 CPUs, 3 slots), because it holds the nested fleet (10 GiB of VMs) and builds it when the seed has no ready copies; the Gateway sets the size at the admission of the refresh, so no Project size list decides it (a group cannot declare a topology, so the size is passed to the placement, not declared); a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer in two runs on beast
-    %%> - a refresh therefore needs 3 free slots of its host and is refused with `tasks.capacity_unavailable` otherwise; the daily trigger tries again
+    %%> - a refresh therefore needs 3 free slots of its host and is refused with `tasks.capacity_unavailable` otherwise; the operator tries again
     SW->>VM: Start and mount<br/>the release commit
     %%> What it does:
     %%> - checks out the release commit in the refresh VM, with `composer install` and `bun install` where a lock file changed

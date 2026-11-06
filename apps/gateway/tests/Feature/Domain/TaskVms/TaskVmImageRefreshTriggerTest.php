@@ -56,8 +56,6 @@ it('digests only what the image carries: playbooks, pins and lock files', functi
 });
 
 it('asks every Linux task VM host and skips one that refuses', function (): void {
-    triggerRelease($this->base.'/releases/aaaaaaaaaaaa');
-    triggerRelease($this->base.'/releases/bbbbbbbbbbbb', playbook: 'b');
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $node = static fn (string $name, string $platform, string $ip): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => $platform, 'architecture' => 'x86_64', 'public_ssh_host' => $ip, 'wireguard_ip' => $ip, 'user' => 'orbit',

@@ -1217,7 +1217,7 @@ The seed that the image build leaves holds only the stopped `node-template`. A r
 
 Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. There is no CLI command of its own. Nothing triggers it automatically: the release and daily triggers rebuilt on the nested-VM path, which the container inner topology replaces, so they were removed. A host with a refresh open returns it, and a host that refuses is skipped.
 
-`php artisan task-vms:refresh-image <host> --seed=keep` runs the image part alone. It skips `Build the fleet` and `Save the ready copies`; the refresh VM still clones the current seed, and the clone is copied under the new image. The seed content stays stale on purpose, the first use of a task VM converges it, and the Gateway never counts a `keep` run as a usable seed. The triggers always use `build`.
+`php artisan task-vms:refresh-image <host> --seed=keep` runs the image part alone. It skips `Build the fleet` and `Save the ready copies`; the refresh VM still clones the current seed, and the clone is copied under the new image. The seed content stays stale on purpose, the first use of a task VM converges it, and the Gateway never counts a `keep` run as a usable seed. `task-vms:refresh-images` always uses `build`.
 
 The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. It keeps the root disk of the host's base VM: a published image is as large as its VM's root disk, and no VM can be smaller than its image.
 
@@ -1292,7 +1292,7 @@ The bootstrap input names the VM's operator address, 10.45.0.10, so the nested G
 
 Each VM has a 20 GiB root disk and a state volume as large as its memory, set as two device options, so that its copies can be stateful. The VMs live in the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed.
 
-The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
+The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM.
 
 The new Gateway then does the rest through its own Orbit. It converges its own Node, then its `gateway` role, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
 
