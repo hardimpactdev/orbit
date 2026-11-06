@@ -1,7 +1,8 @@
 ---
 # The model key of one task VM on the model router (CLIProxyAPI), reached from the Swamp Node.
 # One tagged part per Swamp phase: `anchor` first, then `issue` or `revoke`.
-# `model_origin` and `task_vm_id` come from the admitted intent. The three keys come from the environment, never from argv.
+# `model_origin` comes from the admitted intent. The three keys come from the environment, never from argv.
+# A call must not leave the origin it was made to: the management key would travel with it. So no redirect, no proxy, no netrc.
 - name: Task VM model key
   hosts: localhost
   connection: local
@@ -11,6 +12,7 @@
       timeout: 5
       follow_redirects: none
       use_proxy: false
+      use_netrc: false
       return_content: false
   vars:
     router: "{{ model_origin | regex_replace('/$', '') }}"
@@ -40,23 +42,11 @@
       tags: [anchor]
       block:
         - name: Read the keys
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v0/management/api-keys"
-            headers: "{{ management_headers }}"
-            return_content: true
-          register: listed
-        - name: Check the list
+          ansible.builtin.import_tasks: tasks/model-key-list.yml
+        - name: Remember the keys
           no_log: true
           ansible.builtin.set_fact:
-            keys_before: "{{ (listed.content | from_json)['api-keys'] }}"
-        - name: Check the list shape
-          no_log: true
-          ansible.builtin.assert:
-            that:
-              - keys_before is sequence
-              - keys_before | length <= 4096
-              - keys_before | select('string') | list | length == keys_before | length
+            keys_before: "{{ router_keys }}"
         - name: Add the anchor key when it is missing
           no_log: true
           ansible.builtin.uri:
@@ -68,27 +58,18 @@
           changed_when: true
           when: model_anchor not in keys_before and keys_before | length < 4096
         - name: Read the keys again
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v0/management/api-keys"
-            headers: "{{ management_headers }}"
-            return_content: true
-          register: confirmed
+          ansible.builtin.import_tasks: tasks/model-key-list.yml
         - name: Check that only the anchor key was added
           no_log: true
           ansible.builtin.assert:
             that:
-              - (confirmed.content | from_json)['api-keys'] == (keys_before if model_anchor in keys_before else keys_before + [model_anchor])
+              - router_keys == (keys_before if model_anchor in keys_before else keys_before + [model_anchor])
         - name: Check that the anchor key works
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            headers: { Authorization: "Bearer {{ model_anchor }}" }
-            status_code: 200
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "{{ model_anchor }}", access_status: 200 }
         - name: Check that no key is refused
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            status_code: 401
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "", access_status: 401 }
       rescue:
         - name: Report the failure
           ansible.builtin.fail:
@@ -98,23 +79,15 @@
       tags: [issue]
       block:
         - name: Read the keys
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v0/management/api-keys"
-            headers: "{{ management_headers }}"
-            return_content: true
-          register: listed
-        - name: Check the list
+          ansible.builtin.import_tasks: tasks/model-key-list.yml
+        - name: Remember the keys
           no_log: true
           ansible.builtin.set_fact:
-            keys_before: "{{ (listed.content | from_json)['api-keys'] }}"
+            keys_before: "{{ router_keys }}"
         - name: Check that the anchor key is there
           no_log: true
           ansible.builtin.assert:
-            that:
-              - keys_before is sequence
-              - keys_before | select('string') | list | length == keys_before | length
-              - model_anchor in keys_before
+            that: model_anchor in keys_before
         - name: Add the model key
           no_log: true
           ansible.builtin.uri:
@@ -126,34 +99,22 @@
           changed_when: true
           when: model_key not in keys_before and keys_before | length < 4096
         - name: Read the keys again
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v0/management/api-keys"
-            headers: "{{ management_headers }}"
-            return_content: true
-          register: confirmed
+          ansible.builtin.import_tasks: tasks/model-key-list.yml
         - name: Check that only the model key was added
           no_log: true
           ansible.builtin.assert:
             that:
-              - model_anchor in (confirmed.content | from_json)['api-keys']
-              - (confirmed.content | from_json)['api-keys'] == (keys_before if model_key in keys_before else keys_before + [model_key])
+              - model_anchor in router_keys
+              - router_keys == (keys_before if model_key in keys_before else keys_before + [model_key])
         - name: Check that the model key works
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            headers: { Authorization: "Bearer {{ model_key }}" }
-            status_code: 200
-        - name: Check that the anchor key still works
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            headers: { Authorization: "Bearer {{ model_anchor }}" }
-            status_code: 200
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "{{ model_key }}", access_status: 200 }
+        - name: Check that the anchor key works
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "{{ model_anchor }}", access_status: 200 }
         - name: Check that no key is refused
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            status_code: 401
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "", access_status: 401 }
       rescue:
         - name: Report the failure
           ansible.builtin.fail:
@@ -163,24 +124,16 @@
       tags: [revoke]
       block:
         - name: Read the keys
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v0/management/api-keys"
-            headers: "{{ management_headers }}"
-            return_content: true
-          register: listed
-        - name: Check the list
+          ansible.builtin.import_tasks: tasks/model-key-list.yml
+        - name: Remember the keys
           no_log: true
           ansible.builtin.set_fact:
-            keys_before: "{{ (listed.content | from_json)['api-keys'] }}"
-            keys_expected: "{{ (listed.content | from_json)['api-keys'] | reject('equalto', model_key) | list }}"
+            keys_before: "{{ router_keys }}"
+            keys_expected: "{{ router_keys | reject('equalto', model_key) | list }}"
         - name: Check that the anchor key is there
           no_log: true
           ansible.builtin.assert:
-            that:
-              - keys_before is sequence
-              - keys_before | select('string') | list | length == keys_before | length
-              - model_anchor in keys_before
+            that: model_anchor in keys_before
         - name: Remove the model key
           no_log: true
           ansible.builtin.uri:
@@ -192,34 +145,22 @@
           changed_when: true
           when: model_key in keys_before
         - name: Read the keys again
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v0/management/api-keys"
-            headers: "{{ management_headers }}"
-            return_content: true
-          register: confirmed
+          ansible.builtin.import_tasks: tasks/model-key-list.yml
         - name: Check that only the model key was removed
           no_log: true
           ansible.builtin.assert:
             that:
-              - model_anchor in (confirmed.content | from_json)['api-keys']
-              - (confirmed.content | from_json)['api-keys'] == keys_expected
+              - model_anchor in router_keys
+              - router_keys == keys_expected
         - name: Check that the model key is refused
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            headers: { Authorization: "Bearer {{ model_key }}" }
-            status_code: 401
-        - name: Check that the anchor key still works
-          no_log: true
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            headers: { Authorization: "Bearer {{ model_anchor }}" }
-            status_code: 200
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "{{ model_key }}", access_status: 401 }
+        - name: Check that the anchor key works
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "{{ model_anchor }}", access_status: 200 }
         - name: Check that no key is refused
-          ansible.builtin.uri:
-            url: "{{ router }}/v1/models"
-            status_code: 401
+          ansible.builtin.import_tasks: tasks/model-key-access.yml
+          vars: { access_token: "", access_status: 401 }
       rescue:
         - name: Report the failure
           ansible.builtin.fail:

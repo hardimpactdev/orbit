@@ -126,7 +126,7 @@ jobs:
       methodName: execute
       inputs:
         run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" --tags anchor "$ORBIT_ANSIBLE/task-vm-model-key.yml"
-        env:
+        env: &model
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
           ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
@@ -147,14 +147,7 @@ jobs:
       methodName: execute
       inputs:
         run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" --tags revoke "$ORBIT_ANSIBLE/task-vm-model-key.yml"
-        env:
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
-          ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
-          ANSIBLE_FORCE_COLOR: '0'
-          ORBIT_MODEL_KEY: ${{ vault.get(inputs.execution_secrets.model_key.vault, inputs.execution_secrets.model_key.key) }}
-          ORBIT_MODEL_MANAGEMENT: ${{ vault.get(inputs.execution_secrets.model_router_management.vault, inputs.execution_secrets.model_router_management.key) }}
-          ORBIT_MODEL_ANCHOR: ${{ vault.get(inputs.execution_secrets.model_router_anchor.vault, inputs.execution_secrets.model_router_anchor.key) }}
+        env: *model
   - name: result
     labels: {role: swamp}
     writes: true
