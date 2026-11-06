@@ -10,7 +10,7 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, enum: [task_vm.image_build]}
     intent: {type: object}
-    fingerprint: {type: string, minLength: 64, maxLength: 64}
+    fingerprint: {type: string}
   required: [operation_id, node_id, kind, intent, fingerprint]
   additionalProperties: false
 jobs:
