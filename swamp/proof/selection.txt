@@ -38,15 +38,15 @@ swamp/proof/firewall/list.cases.yaml                       firewall:list
 swamp/proof/firewall/*.md                                  skip
 # The Gateway and CLI code of the firewall commands. The cases of the other commands read firewall:list (`record`).
 apps/cli/app/Commands/Firewall/**                          firewall:allow firewall:deny firewall:list firewall:remove
-apps/cli/app/Support/CommandVocabulary/firewall.php        firewall:allow firewall:deny firewall:remove
+apps/cli/app/Support/CommandVocabulary/firewall.php        firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Actions/Firewall/**                       firewall:allow firewall:deny firewall:list firewall:remove
-apps/gateway/app/Data/Firewall/**                          firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Data/Firewall/**                          firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Domain/Firewall/**                        firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Domain/Firewall/RouterLanIngress*.php     skip
 apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php  firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Http/Requests/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Models/FirewallRule.php                   firewall:allow firewall:deny firewall:list firewall:remove
-apps/gateway/app/Providers/Domains/FirewallServiceProvider.php  firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Providers/Domains/FirewallServiceProvider.php  skip
 apps/gateway/app/Infrastructure/Firewall/**                firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Infrastructure/Firewall/NativeRouterLanIngressReconciler.php  skip
 apps/gateway/database/migrations/*_firewall_rules*.php     firewall:allow firewall:deny firewall:list firewall:remove
