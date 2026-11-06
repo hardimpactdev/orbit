@@ -16,7 +16,6 @@ use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
-use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
@@ -175,16 +174,6 @@ final readonly class NativeNodeRoleAddInput
      */
     private function phpPackages(array $build): array
     {
-        $packages = [];
-        foreach (ValidatedData::object($build['versions']) as $version) {
-            foreach (RouteExecutionProof::objects(ValidatedData::object($version)['packages']) as $package) {
-                $artifact = new ArtifactPin(ValidatedData::string($package['url']), 'sha256', ValidatedData::string($package['sha256']));
-                $urls = $artifact->candidateUrls(ValidatedData::string($package['name']), ValidatedData::string($build['mirror']));
-                unset($package['url']);
-                $packages[] = [...$package, 'urls' => $urls, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
-            }
-        }
-
-        return $packages;
+        return PhpBuildInstaller::packageFiles($build);
     }
 }

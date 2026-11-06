@@ -11,6 +11,8 @@ additionalFiles:
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
+  - ansible/gateway-bootstrap.yml
+  - ansible/tasks/role-prerequisites.yml
   - ansible/tasks/php.yml
   - ansible/tasks/exporter.yml
   - ansible/tasks/exporter-pool.yml

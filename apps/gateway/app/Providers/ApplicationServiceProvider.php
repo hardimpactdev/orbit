@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Console\Commands\AgentViewCommand;
 use App\Console\Commands\AgentViewPublishCommand;
 use App\Console\Commands\BootstrapGatewayCommand;
+use App\Console\Commands\BootstrapPlanCommand;
 use App\Console\Commands\CaddyBuildCommand;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\ConvergeGatewayWebCommand;
@@ -36,6 +37,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             AgentViewCommand::class,
             AgentViewPublishCommand::class,
             BootstrapGatewayCommand::class,
+            BootstrapPlanCommand::class,
             CaddyBuildCommand::class,
             ConvergeGatewayWebCommand::class,
             FinalizeInterruptedActivitiesCommand::class,

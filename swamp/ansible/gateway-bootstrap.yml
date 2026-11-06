@@ -1,0 +1,13 @@
+---
+# The Gateway's own prerequisites, applied on the new Gateway itself with Ansible's local connection, before its app can run.
+# The operator renders the intent from the recipe alone (`php artisan orbit:bootstrap-plan`); the tasks are the role prerequisites.
+- name: Gateway prerequisites
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - prerequisites
+  tasks:
+    - name: Install the role prerequisites
+      ansible.builtin.import_tasks: tasks/role-prerequisites.yml

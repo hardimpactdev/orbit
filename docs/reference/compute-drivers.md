@@ -297,6 +297,10 @@ Sury, Launchpad, and Zabbly can delete superseded builds. The mirror keeps rollb
 
 Change both `vp` and `vp-cli` versions, URLs, and integrity pins together. Regenerate `apps/gateway/resources/machine-software/vite-plus-package-lock.json` with the recipe's Node/npm, using a private package whose only dependency is the exact `vite-plus` version and `npm install --package-lock-only --ignore-scripts`. Review the complete lock, including platform packages. Update `tools.vp.lock_sha256` to the file's SHA-256. This digest is part of the recipe identity. Both images and Nodes install the locked runtime with scripts disabled and keep the existing global tool store.
 
+#### PHP packages of an intent
+
+`PhpBuildInstaller::packageFiles()` turns the packages of the installer input into the files an intent carries: each with its mirror-first download candidates and its path in the role cache (`/var/cache/orbit/role-php`). The role add and the [Gateway bootstrap plan](/reference/node-provisioning#gateway-bootstrap-prerequisites) both use it, so they install the same pinned files.
+
 #### Bump the PHP build
 
 Sury keeps only its newest build in its pool, so keep the recipe on Sury's newest patch. One pull request changes every pin of a version together, with each URL, SHA-256 digest, and version. A partial change fails the loader.
