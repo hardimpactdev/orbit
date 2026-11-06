@@ -326,8 +326,8 @@ it('reads the Operation without writing a credential, and writes the Pi token an
     expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
 });
 
-it('fails a sync run and a build run closed when the vault write of the read token fails at run start, and starts no Swamp run', function (string $kind): void {
-    [$operation] = buildRun();
+it('fails a sync and a build run closed when the read-token vault write fails, and starts no run', function (string $kind): void {
+    [$operation, , $vm] = buildRun();
     Project::query()->update(['source_access' => 'github_app']);
     $socket = buildSwampSocket();
     $socket->refuse = 'task-sync-token-';
@@ -341,7 +341,10 @@ it('fails a sync run and a build run closed when the vault write of the read tok
 
     expect($failed->status)->toBe(OperationStatus::Failed)
         ->and($failed->error_code)->toBe('swamp.vault_sync_unavailable')
-        ->and($failed->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and($failed->dispatched_at)->toBeNull()
+        ->and($failed->finished_at)->not->toBeNull()
+        // The Pi token goes first in a build run; the read token is the write that fails.
+        ->and(array_column(array_column($socket->frames, 'payload'), 'key'))->toBe($kind === OperationKinds::TasksBuild ? ['task-vm-pi-token-'.$vm->id, $reference['key']] : [$reference['key']])
         ->and(array_column($socket->frames, 'type'))->not->toContain('workflow.run');
 })->with([OperationKinds::TasksSync, OperationKinds::TasksBuild]);
 
