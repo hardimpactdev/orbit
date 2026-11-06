@@ -11,3 +11,9 @@ it('caps a run in serve at the longest fixed budget, so the cap is in git and su
     expect(OperationBudgetTable::longestFixedSeconds())->toBeGreaterThanOrEqual(10800)
         ->and($serve)->toContain(' --max-run-duration '.OperationBudgetTable::longestFixedSeconds().' ');
 });
+
+it('gives a stopping worker the 5 minute drain of the Swamp daemon unit, never an unbounded one', function (): void {
+    $worker = SwampRoleUnits::for('orbit', 209)['worker'];
+
+    expect($worker)->toContain("TimeoutStopSec=300\n")->not->toContain('infinity');
+});

@@ -18,6 +18,9 @@ final class SwampRoleUnits
     /** Scheduled runs serve keeps in flight; one starves overlapping Schedules. */
     public const int ScheduledRuns = 4;
 
+    /** The drain a worker gets on stop before systemd kills it: the value of Swamp's own worker daemon unit. */
+    private const int WorkerStopSeconds = 300;
+
     private const int Port = 9418;
 
     private const string Credentials = '/etc/orbit/swamp-role-worker';
@@ -53,7 +56,8 @@ final class SwampRoleUnits
             .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file='.self::Credentials.'/%i/enrollment.token'
             .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
             .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
-            ."Restart=on-failure\nRestartSec=15\nKillMode=mixed\nTimeoutStopSec=infinity\nUMask=0077\n"
+            ."Restart=on-failure\nRestartSec=15\nKillMode=mixed\n"
+            .'TimeoutStopSec='.self::WorkerStopSeconds."\nUMask=0077\n"
             ."StandardOutput=journal\nStandardError=journal\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
     }
