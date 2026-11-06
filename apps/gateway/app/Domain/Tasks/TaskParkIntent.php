@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -29,8 +30,7 @@ final readonly class TaskParkIntent
         $vm = TaskVm::forGroup($group);
         if (! in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview], true)
             || ! $group->pr_url || $group->watched_pr_state !== 'open' || TaskExecutionHold::active($group) || $group->preview
-            || array_filter($group->only(TaskAssistance::Fields)) !== [] || $group->tasks()->get()->contains(fn (Task $child): bool => array_filter($child->only(TaskAssistance::Fields)) !== []
-                || ! in_array($child->status, [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled], true))
+            || array_filter($group->only(TaskAssistance::Fields)) !== [] || ! self::idle($group)
             || ! $vm instanceof TaskVm || ! in_array($vm->state, [TaskVmState::Ready, TaskVmState::Parked], true)
             || TaskWorkspaceLeaseRecord::query()->where('instance_id', $group->taskable_id)->whereIn('status', ['held', 'queued'])->exists()) {
             throw new ResourceOperationException('tasks.park_refused', 'Review parking requires an idle external group with an open published PR and no assistance or workspace owner.', 409);
@@ -41,6 +41,19 @@ final readonly class TaskParkIntent
         }
 
         return $vm;
+    }
+
+    /**
+     * Every subtask has ended or is still `todo` (a prep run leaves its spec subtask `todo`, because the code follows),
+     * none asks for assistance, and no turn, check or prep run of the group is running.
+     */
+    public static function idle(Task $group): bool
+    {
+        $settled = [TaskStatus::Todo, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled];
+
+        return ! $group->tasks()->get()->contains(fn (Task $child): bool => array_filter($child->only(TaskAssistance::Fields)) !== [] || ! in_array($child->status, $settled, true))
+            && ! Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+                ->whereIn('kind', [OperationKinds::TasksTurn, OperationKinds::TasksCheck, OperationKinds::TasksPrep])->whereNotIn('status', OperationStatus::terminalValues())->exists();
     }
 
     /** The group's task VM workspace on the VM's own Node. */
