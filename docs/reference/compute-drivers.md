@@ -1228,9 +1228,8 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 
 | Step | What it does |
 |---|---|
-| `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and seed, the release checkout, and the nested fleet from the ready copies. |
-| `Pin the VM` | Fills the host key of the new guest into the converge and ready copies intents. |
-| `Converge once` | Runs `operation-task-vm-converge` on the refresh VM. A VM at the pins reports no change. |
+| `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and seed, the release checkout, the converge of the outer VM, and the nested fleet from the ready copies. |
+| `Pin the VM` | Fills the host key of the new guest into the ready copies intent. |
 | `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
 | `Clean the refresh VM` | Runs `task-vm-image-clean` and stops the VM. |
 | `Publish the image` | Runs `incus publish` of the stopped VM under a candidate alias and reads its fingerprint. |
@@ -1238,7 +1237,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | `Copy the seed`, `Detach the seed` | Copy the seed disk of the refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
 | `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
 
-The clean step removes the nested guests and network. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets the firewall, cloud-init, the machine-id and the SSH host keys, and trims the disk.
+The refresh has no converge step of its own, because the provision converges the outer VM before the nested fleet. The clean step removes the nested guests and network, the export of the checkout and the firewall rules that the converge added. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets the firewall, cloud-init, the machine-id and the SSH host keys, and trims the disk.
 
 The firewall reset matters: enrollment denies SSH except from Node 209 over the VPN, and a clone of the image has no VPN. The image build calls the same workflow for its builder with `enrolled: false`. The nested and identity steps run only for a VM that has them, and each step waits for the one before it, whether that one ran or was skipped.
 

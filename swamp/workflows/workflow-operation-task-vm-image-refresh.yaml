@@ -18,6 +18,7 @@ inputs:
         refresh: {type: object}
       required: [provision, refresh]
       additionalProperties: false
+    converge: {type: object}
     execution_secrets:
       type: object
       additionalProperties:
@@ -40,6 +41,7 @@ jobs:
 - name: refresh
   labels: {role: swamp}
   steps:
+  # The provision converges the outer VM first (stage 2, `Converge once`), so this run has no converge step of its own.
   - name: Create the VM
     labels: {role: swamp}
     writes: true
@@ -51,8 +53,9 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: tasks.provision
         intent: ${{ inputs.intent.provision }}
+        converge: ${{ inputs.converge }}
         execution_secrets: ${{ inputs.execution_secrets }}
-  # The guests' host keys are pinned only by the VM step; the converge and ready copies intents carry `host_keys: null` until here.
+  # The guests' host keys are pinned only by the VM step; the ready copies intent carries `host_keys: null` until here.
   - name: Pin the VM
     labels: {role: swamp}
     dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
@@ -64,27 +67,13 @@ jobs:
       inputs:
         receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
         guest_node_id: '${{ inputs.intent.provision.guest_node_id }}'
-        intents: '${{ {"converge": inputs.intent.refresh.converge, "ready_copies": inputs.intent.refresh.ready_copies} }}'
-  # The image playbooks on the outer VM; the same run as stage 2 and the proof CI. A VM at the pins reports no change.
-  - name: 'Converge once'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
-    task:
-      type: workflow
-      workflowIdOrName: operation-task-vm-converge
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.intent.provision.guest_node_id }}
-        kind: task_vm.converge
-        intent: '${{ steps["Pin the VM"].outputs.converge }}'
-        execution_secrets: '${{ {} }}'
+        intents: '${{ {"ready_copies": inputs.intent.refresh.ready_copies} }}'
   # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them. A seed without usable ready copies has no nested fleet in this VM (the provision child records nested_fleet none), so there is nothing to save until the fleet build exists.
   - name: 'Save the ready copies'
     labels: {role: swamp}
     writes: true
     guard: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "none"'') }}'
-    dependsOn: [{step: 'Converge once', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: operation-task-vm-ready-copies

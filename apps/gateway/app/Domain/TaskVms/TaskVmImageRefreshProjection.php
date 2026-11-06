@@ -45,7 +45,9 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
         $provision = $this->provision->input(self::provisionView($operation));
         $intent = ValidatedData::object($operation->input);
 
-        return ['intent' => ['provision' => $provision['intent'], 'refresh' => $intent['refresh']], 'execution_secrets' => $provision['execution_secrets']];
+        // The converge intent of the provision is an input of its own, as `tasks.provision` passes it.
+        return ['intent' => ['provision' => $provision['intent'], 'refresh' => $intent['refresh']], ...(is_array($provision['converge'] ?? null) ? ['converge' => $provision['converge']] : []),
+            'execution_secrets' => $provision['execution_secrets']];
     }
 
     /** @param array<string,mixed> $data */
