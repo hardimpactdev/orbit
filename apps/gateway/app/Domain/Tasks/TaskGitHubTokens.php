@@ -96,7 +96,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         $cancelled = GitHubRepository::fromOrigin(is_string($push['remote'] ?? null) ? $push['remote'] : '');
         [$name, $references, $members] = match ($operation->kind) {
             'tasks.publish' => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null, ['github_token', 'git_authorization']],
-            'tasks.prep' => [ValidatedData::object($operation->input['publish'] ?? [])['repository'] ?? null, $operation->input['publish_secrets'] ?? null, ['github_token', 'git_authorization']],
+            'tasks.prep', 'tasks.prep_fix' => [ValidatedData::object($operation->input['publish'] ?? [])['repository'] ?? null, $operation->input['publish_secrets'] ?? null, ['github_token', 'git_authorization']],
             'tasks.cancel' => [$cancelled === null ? null : $cancelled->owner.'/'.$cancelled->name, isset($push['github_token']) ? ['github_token' => $push['github_token']] : null, ['github_token']],
             default => throw $this->forbidden(),
         };

@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskMaintenanceProjection;
 use App\Domain\Tasks\TaskParkProjection;
+use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\Tasks\TaskPublishProjection;
@@ -18,6 +19,7 @@ use App\Domain\Tasks\TaskScriptProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
 $vmProvision = (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.provision'];
+$vmResume = (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.resume'];
 
 return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'Check the result', 'native' => true, 'captures' => ['maintenance' => ['job' => 'maintenance', 'step' => 'shape', 'field' => 'result_json']]]], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies']], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => [...(require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.provision' => [
     'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
@@ -65,6 +67,18 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
+        ], 'tasks.prep_fix' => [
+            'workflow' => 'operation-task-prep-fix', 'projection' => TaskPrepFixProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'corrections', 'step' => 'Review has no findings', 'native' => true, 'captures' => [
+                'author' => ['job' => 'corrections', 'step' => 'Apply the corrections'],
+                'review_1' => ['job' => 'corrections', 'step' => 'Review the spec 1'], 'fix_1' => ['job' => 'corrections', 'step' => 'Fix the findings 1'],
+                'review_2' => ['job' => 'corrections', 'step' => 'Review the spec 2'],
+                'head' => ['job' => 'corrections', 'step' => 'Settle review 2', 'field' => 'head'],
+                'findings' => ['job' => 'corrections', 'step' => 'Settle review 2', 'field' => 'findings'],
+            ]],
+            'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
+                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
         ], 'tasks.park' => [
             'workflow' => 'operation-task-park',
             'projection' => TaskParkProjection::class,

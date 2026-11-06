@@ -115,6 +115,59 @@ final readonly class TaskPrepPrompts
         return $text;
     }
 
+    /** The author turn of the corrections: the review of the owner as the prompt, applied as a new commit on the pushed spec. */
+    public function corrections(string $review): string
+    {
+        return <<<TEXT
+        You are the author of the spec of the Orbit command `{$this->command}` (stage 1, prep). The spec is already a commit on this branch, and a draft pull request is open for it. The owner reviewed it and asked for corrections. Apply them.
+
+        Rules:
+        - Change only these three files: `{$this->chart()}`, `{$this->page()}` and `{$this->cases()}`. A correction that needs another file, a change of the runner or its tests, or a decision that the review leaves open is not yours to make: leave it out and say so in your receipt summary, with the reason.
+        - Make the corrections as ONE new commit on top of the current HEAD, with `git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit` and the message `docs({$this->family}): apply the review of {$this->command}`. Never amend or rewrite a commit that is already on the branch. Leave the working tree clean.
+        - Run `bin/check-flows`, `composer docs-build` and `composer docs-lint` when the tools are installed, and `{$this->plan()}`, which must exit 0. Say in your summary what you ran.
+        - Do not open a pull request and do not fetch or push. A separate review agent checks your work after you.
+
+        The review of the owner:
+
+        {$review}
+        TEXT.$this->briefText(false);
+    }
+
+    /** The review of a round after the corrections: the spec as it stands, and whether each correction is applied. */
+    public function reviewCorrections(string $review): string
+    {
+        return <<<TEXT
+        You are an independent reviewer of the spec of the Orbit command `{$this->command}`, after its owner asked for corrections. You did not write it. You edit no file.
+
+        The spec is on this branch: the first commit holds three files, and the commits after it are corrections that the author made after the review of the owner.
+        - chart: `{$this->chart()}`
+        - docs page: `{$this->page()}`
+        - cases: `{$this->cases()}`
+
+        Check the three files as they stand at HEAD against `.agents/skills/preparing-commands/SKILL.md`, `.agents/skills/flow-tighten/SKILL.md`, `docs/cli/README.md`, `docs/reference/cli-ux.md` and `docs/reference/verification-cases.mdx`. Check with `git log --stat` that the branch changes these three files and nothing else. Then check each correction that the owner asked for: it is applied, or the author's summary or the file gives a reason that a rule or a decision settles. A correction that needs another file or an owner decision may be left out.
+
+        Run `{$this->plan()}` yourself. It reads the cases file and runs no case. If it exits with anything but 0, that is a finding: quote the refusal line, and do not approve. Run no other proof.
+
+        A finding is a place where the spec breaks a rule of those documents, contradicts itself, promises something that no case covers, or leaves a requested correction undone without a reason. A matter of taste is not a finding; mention it after the findings and still approve. Report at most five findings, the most important first.
+
+        End with outcome `approved` when you have no finding. Otherwise end with `changes_requested` and put every finding in your summary as a numbered list. Name the file, the problem and the fix for each finding.
+
+        The review of the owner:
+
+        {$review}
+        TEXT;
+    }
+
+    /** The fix turn of a round after the corrections: it keeps the one corrections commit and never touches the pushed ones. */
+    public function fixCorrections(): string
+    {
+        return <<<TEXT
+        An independent review of your corrections to the spec of `{$this->command}` found the problems listed below. Fix every one that the skill and the Recall decisions settle, in the same three files, and change nothing else. If you disagree with a finding, say why in your receipt summary.
+
+        Keep your corrections as ONE new commit on top of the pushed spec: make the fixes, then amend only your own corrections commit with `git add -A && git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit --amend --no-edit`. Never amend or rewrite a commit that is already on the branch below it. Run the checks once, after the last fix, including `{$this->plan()}`, which must exit 0. Do not fetch or push.
+        TEXT;
+    }
+
     public function title(): string
     {
         return 'docs('.$this->family.'): spec for '.$this->command;

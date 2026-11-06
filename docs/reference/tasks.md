@@ -337,6 +337,28 @@ A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`
 
 The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. It also marks the spec subtask completed, so [`tasks:park`](#park-an-external-group-for-review) can stop the VM while the spec waits for review. A failed run leaves the subtask open. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
 
+#### Apply the corrections
+
+`tasks:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `tasks-prep-fix` is the caller.
+
+The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or ready, an open draft PR, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
+
+- the resume of the VM;
+- the author turn, with the corrections as its prompt;
+- two new review threads and the fix turn;
+- the path of the cases file and the vault key names of the push token.
+
+The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children:
+
+- `Resume the VM` runs `operation-task-vm-resume`.
+- `Apply the corrections` runs the author turn on the author thread of the prep run. The author changes only the three files of the spec, in one new commit. It never amends a pushed commit.
+- `Plan the cases` and the review follow as in the prep run, for at most two rounds. The reviewer also checks that each correction is applied or has a reason.
+- `Push the corrections` runs `operation-task-publish` without a pull request body, so the same draft PR gets the commit.
+
+A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
+
+The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator and records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes. The gate check does not detect the owner's review yet.
+
 ### Task lifecycle
 
 A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one subtask and a deliverable on every subtask. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
