@@ -412,13 +412,14 @@ jobs:
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-mount-points" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--user', '1000', '--', 'sh', '-c', 'set -eu; cd "$0"; touch apps/gateway/.env; if [ "$1" = gateway ]; then mkdir -p swamp/.swamp swamp/vaults swamp/grants; fi', '${{ inputs.intent.fleet.checkout.path }}', '${{ self.role }}'], timeoutSec: 140}}
     dependsOn: [{step: 'Enable the mounts', condition: {type: succeeded}}]
+  # The checkout was attached to the running containers, so the units start by name. They start with `--job-mode=ignore-requirements`: their requirement on the checkout's mount pulls a start job for the device behind it, which no udev confirms in a container, so a normal start waits 90 s for that device and fails. The ordering after the checkout's mount still holds.
   - name: 'Mount the state'
     labels: {role: swamp}
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: '${{ ["timeout", "120", "incus", "exec", inputs.intent.fleet.guests[self.role], "--", "systemctl", "start"] + inputs.intent.fleet.checkout.binds[self.role] }}', timeoutSec: 140}}
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout", "120", "incus", "exec", inputs.intent.fleet.guests[self.role], "--", "systemctl", "start", "--job-mode=ignore-requirements"] + inputs.intent.fleet.checkout.binds[self.role] }}', timeoutSec: 140}}
     dependsOn: [{step: 'Make the mount points', condition: {type: succeeded}}]
   - name: 'Start the Gateway services'
     labels: {role: swamp}
