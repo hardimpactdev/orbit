@@ -650,13 +650,13 @@ After source resolution has observed the default-branch lockfiles, the Gateway a
 
 A task VM has no default checkout and no dependency trees in its recipe image, so `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` are empty. The Project's `seed-dependencies` step therefore skips its reflink copy by design. Fresh task VMs reuse verified Composer archives to build `vendor/`, including `apps/cli/vendor`, without downloading those packages again.
 
-For private dependencies, the workspace step writes the Composer and npm configuration of the task account before the Project setup steps run. The configuration holds a GitHub App installation token with only `contents: read`, which reads the private packages in the repositories that the installation covers. The token is minted for these steps and expires after one hour.
+For remaining GitHub downloads, trusted setup receives a fresh GitHub App installation token with only `metadata: read`. Incoming pull-request baselines receive no setup token. GitHub installation tokens expire after one hour. Orbit carries the token on a pipe into setup, then into Composer’s in-memory authentication store for API and codeload requests. It never exports the token into a process environment. Composer plugins can use it while the install runs; child commands and later checks do not inherit it.
 
 The check stops each setup step's process group when its shell exits, times out, or is cancelled. Setup steps must finish their work before returning. Long-lived services belong in [Processes](/reference/processes-and-schedules), not setup background jobs. See the [baseline check](/reference/tasks#baseline-check) for output cleanup and timeout behavior.
 
-The configuration is two files with mode 0600: `~/.config/composer/auth.json` and `~/.npmrc`. A later step removes both after the last setup step, on success and on failure, and a failed removal fails the provision. A cancelled or timed-out run keeps them until the token expires or `tasks:cancel` removes the VM. The Project check and deliverable commands run after that and find no token.
+Orbit writes no auth file. Setup output redacts the token before writing the check log. The Project check and deliverable commands receive no setup token.
 
-If the App cannot supply a token, both files hold an empty configuration and setup continues without private access. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill.
+If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill.
 
 An interrupted claim resumes only its own checkout after the existing source identity checks.
 

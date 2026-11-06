@@ -34,14 +34,6 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositorySquashToken($credentials, $installation, $repository);
     }
 
-    /** The read token of the dependency install: the whole installation of the repository, for one setup. */
-    public function dependencyToken(GitHubRepository $repository): string
-    {
-        [$credentials, $installation] = $this->installation($repository);
-
-        return $this->github->installationReadToken($credentials, $installation);
-    }
-
     public function metadataToken(GitHubRepository $repository): string
     {
         [$credentials, $installation] = $this->installation($repository);

@@ -182,11 +182,6 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'read']);
     }
 
-    public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string
-    {
-        return $this->repositoryToken($credentials, $installationId, null, ['contents' => 'read']);
-    }
-
     public function repositoryMetadataToken(
         GitHubAppCredentials $credentials,
         int $installationId,
@@ -649,12 +644,12 @@ final readonly class HttpGitHubApi implements GitHubApi
     private function repositoryToken(
         GitHubAppCredentials $credentials,
         int $installationId,
-        ?GitHubRepository $repository,
+        GitHubRepository $repository,
         array $permissions,
     ): string {
         $response = $this->send(
             fn (): Response => $this->asApp($credentials)->withoutRedirecting()->post("/app/installations/{$installationId}/access_tokens", [
-                ...($repository === null ? [] : ['repositories' => [$repository->name]]),
+                'repositories' => [$repository->name],
                 'permissions' => $permissions,
             ]),
         );
