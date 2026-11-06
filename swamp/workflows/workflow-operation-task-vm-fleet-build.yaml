@@ -382,11 +382,12 @@ jobs:
   dependsOn: [{job: checkout, condition: {type: succeeded}}]
   steps:
   # The same check as stage 2: every agent online, the Swamp workers enrolled, Doctor without a finding. The agents report a few minutes after they start.
+  # Only the fleet's own `healthy` ends the wait: each Node in the answer carries one too.
   - name: 'Wait for Doctor'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-doctor").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-doctor").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'sh', '-c', 'until out=$(timeout 120 incus exec "$0" -- curl -sk -m 100 -X POST https://10.45.0.1/api/v1/doctor -H "Host: gateway.orbit" -H "Accept: application/json" -H "Content-Type: application/json" -d "{}"); printf "%s" "$out" | grep -q "\"healthy\":true"; do sleep 15; done; printf "%s\n" "$out"', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 910}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'sh', '-c', 'until out=$(timeout 120 incus exec "$0" -- curl -sk -m 100 -X POST https://10.45.0.1/api/v1/doctor -H "Host: gateway.orbit" -H "Accept: application/json" -H "Content-Type: application/json" -d "{}"); printf "%s" "$out" | grep -q "^{\"data\":{\"healthy\":true"; do sleep 15; done; printf "%s\n" "$out"', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 910}}
   - name: 'Check the nested fleet'
     labels: {role: swamp}
     task: {type: assert, expr: 'steps["Wait for Doctor"].outputs.stdout.startsWith("{\"data\":{\"healthy\":true")', severity: high, message: Doctor of the nested fleet has a finding}
