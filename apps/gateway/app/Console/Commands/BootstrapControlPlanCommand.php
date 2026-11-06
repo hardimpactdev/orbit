@@ -11,6 +11,7 @@ use App\Domain\Nodes\SwampNode;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Console\Command;
 
 /** Prints what the Gateway's own Swamp needs on its machine, issues the certificate of the `swamp.orbit` front or of the Gateway site, or records the hub key. */
@@ -43,7 +44,11 @@ final class BootstrapControlPlanCommand extends Command
         if ($site === 'swamp') {
             $node = SwampNode::node();
             $paths = $certificates->issue('swamp.orbit', (string) $node->wireguard_ip);
-            $this->line(json_encode(['certificate' => $paths->certificatePath, 'key' => $paths->privateKeyPath], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            // The folder the site of the `swamp.orbit` Route names for its certificate (DevelopmentSite::certificateDirectory), which the
+            // Gateway's Caddyfile loads after the first publication.
+            $route = Route::query()->where('domain', 'swamp.orbit')->firstOrFail();
+            $this->line(json_encode(['certificate' => $paths->certificatePath, 'key' => $paths->privateKeyPath,
+                'directory' => "/etc/caddy/orbit-certificates/route-{$route->id}/current"], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
             return self::SUCCESS;
         }

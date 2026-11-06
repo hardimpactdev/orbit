@@ -10,7 +10,6 @@
     swamp_repository: "{{ control.repository }}"
     swamp_app: "{{ control.repository | dirname }}/apps/gateway"
     swamp_credentials: /etc/orbit/swamp-role-worker
-    swamp_front: /etc/orbit/swamp-front
     swamp_driver_token: "/home/{{ control.user }}/.config/swamp/serve-driver-token"
     swamp_address: "ws://127.0.0.1:9418"
 - name: Name how the Swamp CLI runs here
@@ -37,7 +36,6 @@
     - { path: "{{ swamp_credentials }}", mode: "0755" }
     - { path: "{{ swamp_credentials }}/a", mode: "0700" }
     - { path: "{{ swamp_credentials }}/b", mode: "0700" }
-    - { path: "{{ swamp_front }}", mode: "0750", group: caddy }
   loop_control: { label: "{{ item.path }}" }
 - name: Write the units
   ansible.builtin.copy:
@@ -194,17 +192,27 @@
   become_user: "{{ swamp_user }}"
   register: front_certificate
   changed_when: false
+# The certificate sits where the site of the `swamp.orbit` Route names it, so the front now and the Caddyfile the Gateway publishes
+# later load the same files.
+- name: Make the swamp.orbit certificate folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: caddy
+    mode: "0750"
+  loop: "{{ [(front_certificate.stdout | from_json).directory | dirname | dirname, (front_certificate.stdout | from_json).directory | dirname, (front_certificate.stdout | from_json).directory] }}"
 - name: Place the swamp.orbit certificate
   ansible.builtin.copy:
     src: "{{ (front_certificate.stdout | from_json)[item.source] }}"
     remote_src: true
-    dest: "{{ swamp_front }}/{{ item.name }}"
+    dest: "{{ (front_certificate.stdout | from_json).directory }}/{{ item.name }}"
     owner: root
     group: caddy
     mode: "0640"
   loop:
-    - { source: certificate, name: swamp.pem }
-    - { source: key, name: swamp.key }
+    - { source: certificate, name: cert.pem }
+    - { source: key, name: key.pem }
   loop_control: { label: "{{ item.name }}" }
   notify: Reload Caddy
 - name: Write the front
@@ -213,7 +221,7 @@
     content: |
       # Managed by Orbit: the front of the Swamp control plane until the Gateway publishes it as a Route.
       swamp.orbit:443 {
-        tls {{ swamp_front }}/swamp.pem {{ swamp_front }}/swamp.key
+        tls {{ (front_certificate.stdout | from_json).directory }}/cert.pem {{ (front_certificate.stdout | from_json).directory }}/key.pem
         reverse_proxy 127.0.0.1:9418
       }
     owner: root
