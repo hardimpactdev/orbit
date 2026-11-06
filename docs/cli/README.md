@@ -8,7 +8,9 @@ Read the kind's chart first. Any change to a command's flow starts by updating i
 
 Command verification assets live in [swamp/proof](https://github.com/hardimpactdev/orbit/tree/main/swamp/proof). Review them with the command page and chart. Once a command has an executable verification entrypoint, link to it from its page and chart.
 
-Edit charts here, never in a copy. A command's chart arrives in the one PR of that command change, with its page, cases, code and runnable proof cases; the chart, page and cases are the first commit of the draft PR. A pull request that touches only charts, their placements, and `flows-pending.txt` is for a chart that belongs to no command change, such as a stage chart. A chart whose spec Nick approved carries `%% status: reviewed`. Only that approval sets it. A spec PR that changes a reviewed chart sets it to `draft` and keeps the other header lines; the approval in the draft sets `reviewed` again.
+Edit charts here, never in a copy. A command's chart arrives in the one PR of that command change, with its page, cases, code and runnable proof cases; the chart, page and cases are the first commit of the draft PR. A pull request that touches only charts, their placements, and `flows-pending.txt` is for a chart that belongs to no command change, such as a stage chart. A chart whose spec Nick approved carries `%% status: reviewed`.
+
+Only that approval sets it. A spec PR that changes a reviewed chart sets it to `draft` and keeps the other header lines; the approval in the draft sets `reviewed` again.
 
 ## Where a chart lives
 
@@ -55,7 +57,9 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **The main path uses only the required parameters.** Draw the command first as it runs with its required arguments alone; that is the happy path. Each optional parameter gets its own `opt --flag` block, labelled with the flag, holding only the steps that flag adds. The main call line shows no optional flags. Never use an `alt no --flag … else --flag` branch: it makes an opt-in path look like the default. Example: `instance:register --project=7` checks and records; `opt --setup` runs the setup steps, `opt --domain` creates the Route. The Swamp workflow follows the same shape: a step that exists only for an optional input is conditional on it.
 
-**A chart is minimal.** It shows the real flow steps and the true exceptions, nothing else. A step explanation says only what the label and detail line do not: why it must happen, when it runs, what happens on failure. Do not restate the label, and do not list what the command covers, which options mean or what a flag changes: those belong in the description and the option table of the command's docs page. A flag that adds no steps and only changes a check, such as `--force`, gets no `opt` block and no note in the chart. The same holds for a flag that only shapes the output (`--json`). Behavior that is the same for every command (the `--json` output, prompts for missing input, keyed replay of `--idempotency-key`) is documented once, in the CLI standard and the operations reference. A chart gets no `opt` block, `Prompts:` block or replay branch for it, unless a current decision asks otherwise.
+**A chart is minimal.** It shows the real flow steps and the true exceptions, nothing else. A step explanation says only what the label and detail line do not: why it must happen, when it runs, what happens on failure. Do not restate the label, and do not list what the command covers, which options mean or what a flag changes: those belong in the description and the option table of the command's docs page. A flag that adds no steps and only changes a check, such as `--force`, gets no `opt` block and no note in the chart. The same holds for a flag that only shapes the output (`--json`).
+
+Behavior that is the same for every command (the `--json` output, prompts for missing input, keyed replay of `--idempotency-key`) is documented once, in the CLI standard and the operations reference. A chart gets no `opt` block, `Prompts:` block or replay branch for it, unless a current decision asks otherwise.
 
 **A chart is caller-agnostic.** The caller is the CLI, MCP or API. A specific client that calls the command, such as Conn, is not drawn in its chart; that client's own steps belong in its own flow.
 
