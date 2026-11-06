@@ -297,9 +297,9 @@ separation grants no new use of the legacy client or admission on proxy Nodes.
 
 Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
 with `extensions:read` scope. Only the native workflow-validation step receives
-`SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests, main pushes, the nightly schedule and pushes of
-`task-*-handoff` branches by the Orbit App (`orbit-nckrtl[bot]`). Shape and Deno
-jobs receive neither. The caller maps both secrets explicitly, never through
+`SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests, main pushes, the
+nightly schedule and pushes of `task-*-handoff` branches by the Orbit App
+(`orbit-nckrtl[bot]`). Shape and Deno jobs receive neither. The caller maps both secrets explicitly, never through
 inherited secrets. Pull-request-target events and forks cannot receive them.
 Decided by the orchestrator, for Nick's review: a handoff that changes `swamp/`
 needs the validation to pass in hosted CI before `tasks:publish`, and only the
