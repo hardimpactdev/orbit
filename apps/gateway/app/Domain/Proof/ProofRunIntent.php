@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
-use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
@@ -19,19 +18,21 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
+use App\Domain\TaskVms\TaskVmModelAdmission;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
-use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Admits `proof:run`: it checks that the commit is trusted, selects the cases from the diff and the selection list of the commit,
- * and records the intent of one run for each selected command, each on a task group and VM of its own. The Gateway reads GitHub
- * and fetches no code; the Swamp parent `operation-proof-run` of each run does the work. See docs/cli/proof/run.mmd.
+ * and records the intent of one run for each selected command, each on a task group and VM of its own, all or none. The Gateway
+ * reads GitHub and fetches no code; the Swamp parent `operation-proof-run` of each run does the work. See docs/cli/proof/run.mmd.
  */
 final readonly class ProofRunIntent
 {
@@ -67,24 +68,24 @@ final readonly class ProofRunIntent
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, [...$intent, 'runs' => []], $caller, $requestId);
         $this->store->change($proof, ['status' => OperationStatus::Running, 'started_at' => now()]);
-        $runs = [];
-        $groups = [];
         try {
-            foreach ($selection->cases as $case) {
-                $groups[] = $group = $this->group($commit, $case['command']);
-                $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                    fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $case, $input, $group, $instance), 'proof-run', null));
-                $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
-            }
-        } catch (ResourceOperationException $exception) {
-            // Nothing runs unless every command can start: the runs made so far end through the cancel of their groups, and the proof records why.
-            foreach ($runs as $run) {
-                CancelProofGroup::dispatch($run['operation_id']);
-            }
-            if (count($groups) > count($runs)) {
-                app(CancelTaskGroupAction::class)->execute(array_last($groups));
-            }
-            $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $exception->errorCode,
+            // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
+            // the groups roll back with it, and Swamp starts no run before the whole proof is admitted. The router fence spans the
+            // transaction, so a router teardown never sees a half-admitted proof.
+            $runs = app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection): array {
+                $runs = [];
+                foreach ($selection->cases as $case) {
+                    $group = $this->group($commit, $case['command']);
+                    $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $case, $input, $group, $instance), 'proof-run', null));
+                    $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
+                }
+
+                return $runs;
+            }));
+        } catch (Throwable $exception) {
+            $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(),
+                'error_code' => $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,
                 'result' => ['commit' => $commit, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $selection->uncovered, 'receipt_url' => null]]);
 
             throw $exception;
