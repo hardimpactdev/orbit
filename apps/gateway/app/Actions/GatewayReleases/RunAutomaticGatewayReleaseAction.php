@@ -51,7 +51,7 @@ final readonly class RunAutomaticGatewayReleaseAction
     /** A commit whose release failed for a transient reason is tried again after this long. */
     public const int RetryMinutes = 10;
 
-    public const int HeadCheckMinutes = 15;
+    public const int HeadCheckMinutes = 5;
 
     public const int BehindAlertHours = 6;
 
