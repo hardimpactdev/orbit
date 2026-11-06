@@ -29,6 +29,9 @@ sequenceDiagram
   %%> What it does:
   %%> - restores the task's Incus stateful snapshot `base` (stage 2), all three VMs in parallel
   %%> - sets each guest clock from the outer VM as soon as that VM's agent answers; a restore puts the clocks back to snapshot time
+  %%> - restarts the NFS server of the task VM, so the restored guests open new connections to the checkout
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - a stateful restore brings back each guest's TCP state from the snapshot while the NFS server has moved on, so the guest firewall drops the server's packets as invalid and the hard mount hangs every process that reads the checkout (proof 12000, VM 748); a restart of the server ends the old connections, and the guests reconnect in about 10 s
   %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat (every 5 s) and Doctor is healthy
   %%> - every restore of the snapshots has a 45 s limit, and readiness then waits at most 120 s for a healthy Doctor (one Ansible task, decided by the orchestrator, for Nick's review); a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
   %%> Built, not yet passed live:
