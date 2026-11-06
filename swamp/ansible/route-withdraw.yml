@@ -50,16 +50,13 @@
       register: pools
       loop: "{{ found.files | default([]) | map(attribute='path') | select('match', '^/etc/php/[0-9.]+/fpm/pool.d/orbit-scopes.conf$') | list }}"
       when: intent.serves_routes
-    - name: Check for the Caddyfile
-      ansible.builtin.stat:
-        path: /etc/caddy/Caddyfile
-      register: caddyfile
-      when: intent.serves_routes
+    # A Node without a Caddyfile reads as an empty one; any other failure fails the phase.
     - name: Read the Caddyfile
       ansible.builtin.slurp:
         src: /etc/caddy/Caddyfile
       register: caddy
-      when: intent.serves_routes and caddyfile.stat.exists
+      when: intent.serves_routes
+      failed_when: caddy is failed and 'file not found' not in (caddy.msg | default('') | lower)
     # A missing file fails the phase: the Node must hold what the captured states describe.
     - name: Read the private DNS files
       ansible.builtin.slurp:
@@ -102,14 +99,14 @@
       block:
         # Composing and applying are seconds apart: a file that changed since the read is not overwritten.
         - name: Check the files are as they were read
-          ansible.builtin.stat:
-            path: "{{ item.key }}"
-            checksum_algorithm: sha256
+          ansible.builtin.command:
+            argv: "{{ ['sha256sum', '--'] + (plan.expect | dict2items | map(attribute='key') | list) }}"
           register: seen
-          loop: "{{ plan.expect | dict2items }}"
-          loop_control:
-            label: "{{ item.key }}"
-          failed_when: not seen.stat.exists or seen.stat.checksum != item.value
+          when: plan.expect | length > 0
+          changed_when: false
+          failed_when: >-
+            seen.rc != 0 or
+            (seen.stdout_lines | map('split', ' ') | map('first') | list) != (plan.expect | dict2items | map(attribute='value') | list)
           check_mode: false
         # Pools first, as the PHP delta did: written, tested, then reloaded. A reload keeps open requests.
         - name: Write the PHP-FPM pool files
@@ -204,22 +201,18 @@
           loop: "{{ plan.cleanup | map(attribute='user') | unique | list }}"
           changed_when: false
           check_mode: false
-        - name: Remove the Caddy certificate folders
-          ansible.builtin.file:
-            path: "/etc/caddy/orbit-certificates/{{ item.scope }}"
-            state: absent
-          loop: "{{ plan.cleanup }}"
-          loop_control:
-            label: "{{ item.scope }}"
-        - name: Remove the account certificate folders
-          ansible.builtin.file:
-            path: "{{ home }}/.orbit/certificates/{{ item.scope }}"
-            state: absent
+        # One command for every folder: each remote task costs about 0.4 s. The scope names are validated by the composition.
+        - name: Remove the certificate folders
+          ansible.builtin.command:
+            argv: "{{ ['rm', '-rf', '--'] + caddy_folders + account_folders }}"
           vars:
-            home: "{{ (cleanup_accounts.results | selectattr('item', 'equalto', item.user) | first).stdout.split(':')[5] }}"
-          loop: "{{ plan.cleanup }}"
-          loop_control:
-            label: "{{ item.scope }}"
+            scopes: "{{ plan.cleanup | map(attribute='scope') | list }}"
+            passwd: "{{ cleanup_accounts.results | default([]) | items2dict(key_name='item', value_name='stdout') }}"
+            homes: "{{ plan.cleanup | map(attribute='user') | map('extract', passwd) | map('regex_replace', '^(?:[^:]*:){5}([^:]*):.*$', '\\1') | list }}"
+            caddy_folders: "{{ scopes | map('regex_replace', '^', '/etc/caddy/orbit-certificates/') | list }}"
+            account_folders: "{{ homes | zip(scopes) | map('join', '/.orbit/certificates/') | list }}"
+          changed_when: true
+          when: plan.cleanup | length > 0
       always:
         - name: Remove the run folder
           ansible.builtin.file:

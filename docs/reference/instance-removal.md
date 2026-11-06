@@ -27,7 +27,9 @@ The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/m
 
 The run then withdraws the captured Route publications, so the site goes down first.
 
-Each Node that serves the Route, answers its private DNS or holds a withdrawn certificate scope gets one Ansible read, one composition and one Ansible apply, and the Nodes run in parallel. A failure on one Node does not stop the others, so a rerun finishes what is left. Before it writes, the apply phase checks that each file still has the checksum the read found, and refuses otherwise. The run then stops and removes each Process through the canonical Process child.
+Each Node that serves the Route, answers its private DNS or holds a withdrawn certificate scope gets one Ansible read, one composition and one Ansible apply, and the Nodes run in parallel. A failure on one Node does not stop the others, so a rerun finishes what is left. Before it writes, the apply phase checks that each file still has the checksum the read found, and refuses otherwise.
+
+The checks run as one `sha256sum` command and the certificate folders go in one `rm -rf` command, because each remote task costs about 0.4 s. The run then stops and removes each Process through the canonical Process child.
 
 It runs the Project teardown commands, passed as run inputs, one command per step as the managed account. It removes owned SQLite files with the file behavior and drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses. It removes each checkout, a linked worktree through `git worktree remove`, then checks that every checkout is gone. The Gateway deletes owned records only after native success.
 
