@@ -55,7 +55,8 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): today's workspace child, unchanged: Node 209 clones with the task token and the VM imports the bundle, then the Project setup steps run. Another lane makes this step fast; the claim measures it on its own, and the claim is correct with or without that change.
   SW->>VM: Reset the nested topology<br/>from the seed's ready copies
   %%> Only for tasks that need the topology.
-  %%> The seed clone was attached at enrol; it is the host's seed of the slot's image, because the stage 6 refresh promotes the image and its seed together and replaces older slots.
+  %%> The seed clone was attached at enrol; it is the host's seed of the slot's image, because a stage 6 refresh that builds the fleet promotes the image and its seed together and replaces older slots.
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): a large or medium slot follows the clone rule: while the image's seed holds no ready copies (a refresh with `seed=keep`), no claim takes a slot, and the pool enrols nothing and replaces no stale slot; it still destroys a failed one
   SW-->>GW: Slot claimed<br/>terminal event
   %%> Decided by the orchestrator, for Nick's review: today's provision projection; the claimed VM is `ready` and belongs to the group, and the Gateway runs the refill rule.
   Note over GW,VM: Release (the task ends)

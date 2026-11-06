@@ -28,6 +28,7 @@ use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -50,7 +51,7 @@ final readonly class TaskProvisionIntent
         private TaskVmProvisionIntent $vms, private StorageRootResolver $roots,
         private NodeSettingsNormalizer $settings, private ManagedCheckoutOverlap $overlap,
         private ProjectLifecycleStepStore $steps, private InstancePhpVersionCatalog $php,
-        private TaskStartCommit $startCommit) {}
+        private TaskStartCommit $startCommit, private TaskVmSlotPool $slots) {}
 
     /** A proof starts its group at the commit it proves; any other group starts at the newest green commit of the default branch. */
     public function start(Task $group, string $caller, ?string $request, ?string $commit = null): Operation
@@ -91,12 +92,14 @@ final readonly class TaskProvisionIntent
                 throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
             }
             try {
-                $vm = $this->allocate->capture($group, $host, $size);
+                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) always clones.
+                $slot = $host === null ? $this->slots->claim($group) : null;
+                $vm = $slot ?? $this->allocate->capture($group, $host, $size);
             } catch (TaskCapacityException $exception) {
                 throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
                     previous: $exception, details: ['reason' => $exception->wait->value]);
             }
-            $input = $this->vms->capture($vm);
+            $input = $slot !== null ? $this->slots->claimInput($slot) : $this->vms->capture($vm);
             $node = $vm->node;
             assert($node !== null);
             $account = new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
@@ -129,6 +132,8 @@ final readonly class TaskProvisionIntent
 
                 return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
             }, $this->steps->ordered($project, LifecyclePhase::Setup));
+            // A claimed slot converged at its enrol; it converges again only when the release changed playbooks, pins or lock files since.
+            $converge = $slot !== null && $slot->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $checkout->value, $input);
             // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
             $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                 'swamp-proof-club-api-key', $proofClub) : null;
@@ -146,7 +151,7 @@ final readonly class TaskProvisionIntent
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
                     'setup' => $setup],
-                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'converge' => $this->converge($vm, $node, $checkout->value, $input),
+                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'converge' => $converge,
                 'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
                 'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
             $group->taskable()->associate($instance);
