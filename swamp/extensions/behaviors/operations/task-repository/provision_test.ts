@@ -147,10 +147,7 @@ Deno.test("source result requires every ordered setup step before exposing the s
     for (const name of ["deps_write", "deps_remove"]) {
         const before = steps[name].status;
         steps[name].status = "failed";
-        assertEquals(sourceResult(input, steps), {
-            error_code: "tasks.provision_failed",
-            failed_step: name,
-        });
+        assertEquals(sourceResult(input, steps), { error_code: "tasks.provision_failed", failed_step: name });
         steps[name].status = before;
         // A skipped step has no entry: a Project without setup steps mints nothing.
         const kept = steps[name];
@@ -294,12 +291,7 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
             }],
         },
     });
-    const argv = (
-        directory: string,
-        name: string,
-        command: string,
-        environment: string[] = [],
-    ) => [
+    const argv = (directory: string, name: string, command: string, environment: string[] = []) => [
         "/bin/bash",
         "-c",
         'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>&1 && shift 2 && exec "$@"',
@@ -320,15 +312,11 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
         command,
     ];
     assertEquals(setupArgv(setup("composer install"), "/tmp/run"), [
-        argv("/tmp/run/output", "setup-0", "composer install", [
-            "COMPOSER_HOME=/home/orbit/.config/composer",
-        ]),
+        argv("/tmp/run/output", "setup-0", "composer install", ["COMPOSER_HOME=/home/orbit/.config/composer"]),
     ]);
     // The Gateway-owned step expands to the shared CI cache program, never a literal command.
     assertEquals(setupArgv(setup("@orbit/ci-caches"), "/tmp/run"), [
-        argv("/tmp/run/output", "setup-0", ciCacheImportProgram, [
-            "COMPOSER_HOME=/home/orbit/.config/composer",
-        ]),
+        argv("/tmp/run/output", "setup-0", ciCacheImportProgram, ["COMPOSER_HOME=/home/orbit/.config/composer"]),
     ]);
     assertEquals(
         teardownArgv({
@@ -473,9 +461,7 @@ Deno.test("bind pins only the unpinned guest targets to the key the VM step obse
 
 Deno.test("pin takes the provision receipt as an object, as a provision run holds it", () => {
     const key = ["ssh-ed25519 PUBLIC"];
-    const intents = {
-        converge: { ssh: { target: { host: "10.44.0.20", host_keys: null } } },
-    };
+    const intents = { converge: { ssh: { target: { host: "10.44.0.20", host_keys: null } } } };
     const pinned = pinIntents(vm, 20, intents);
     assertEquals(pinned.converge.ssh.target.host_keys, key);
 });
@@ -508,130 +494,59 @@ Deno.test("pin fills the host key of every guest target of a prep run from the p
 
 Deno.test("the revoke outcome tells a revoked token from one GitHub does not know and from one left unrevoked", () => {
     const revoke = (status: string, stdout?: string) =>
-        revokeOutcome({
-            Revoke: { status, outputs: stdout === undefined ? {} : { stdout } },
-        });
+        revokeOutcome({ Revoke: { status, outputs: stdout === undefined ? {} : { stdout } } });
 
     assertEquals(revoke("succeeded", "204"), { state: "revoked" });
     assertEquals(revoke("succeeded", "401\n").state, "none");
     for (const code of ["403", "404", "500", "503"]) {
         const outcome = revoke("succeeded", code);
         assertEquals(outcome.state, "unrevoked");
-        assertEquals(
-            outcome.reason,
-            `GitHub answered HTTP ${code} to the revoke.`,
-        );
+        assertEquals(outcome.reason, `GitHub answered HTTP ${code} to the revoke.`);
     }
     // curl printed something that is not a status: the reason never repeats it.
     const odd = revoke("succeeded", "ghs_NotAStatus");
     assertEquals(odd.state, "unrevoked");
-    assertEquals(
-        odd.reason,
-        "GitHub answered HTTP an unknown status to the revoke.",
-    );
+    assertEquals(odd.reason, "GitHub answered HTTP an unknown status to the revoke.");
     // The request itself failed, so a token may still be valid.
     assertEquals(revoke("failed"), {
         state: "unrevoked",
         reason: "The revoke request did not reach GitHub.",
     });
-    // No revoke step ran.
-    assertEquals(revokeOutcome({}).state, "none");
+    // No revoke step ran: nothing says the token is gone.
+    assertEquals(revokeOutcome({}).state, "unrevoked");
 });
 Deno.test("the receipt names what became of the setup token, and a missing report is never a success", () => {
     const reported = { state: "revoked" };
     assertEquals(
-        dependencyToken({
-            deps_write: { status: "succeeded" },
-            deps_remove: { status: "succeeded", outputs: { result: reported } },
-        }),
+        dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: { result: reported } } }),
         reported,
     );
     assertEquals(
         dependencyToken({
             deps_write: { status: "succeeded" },
-            deps_remove: {
-                status: "succeeded",
-                outputs: {
-                    result: {
-                        state: "unrevoked",
-                        reason: "GitHub answered HTTP 503 to the revoke.",
-                    },
-                },
-            },
+            deps_remove: { status: "succeeded", outputs: { result: { state: "unrevoked", reason: "GitHub answered HTTP 503 to the revoke." } } },
         }),
-        {
-            state: "unrevoked",
-            reason: "GitHub answered HTTP 503 to the revoke.",
-        },
+        { state: "unrevoked", reason: "GitHub answered HTTP 503 to the revoke." },
     );
     // The write step ran and nothing was reported back.
+    assertEquals(dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: {} } }).state, "unrevoked");
     assertEquals(
-        dependencyToken({
-            deps_write: { status: "succeeded" },
-            deps_remove: { status: "succeeded", outputs: {} },
-        }).state,
-        "unrevoked",
-    );
-    assertEquals(
-        dependencyToken({
-            deps_write: { status: "succeeded" },
-            deps_remove: {
-                status: "succeeded",
-                outputs: { result: { state: "fine" } },
-            },
-        }).state,
+        dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: { result: { state: "fine" } } } }).state,
         "unrevoked",
     );
     // The write step was skipped: nothing was written, so nothing needed revoking.
-    assertEquals(dependencyToken({}), {
-        state: "none",
-        reason: "No setup step ran.",
-    });
+    assertEquals(dependencyToken({}), { state: "none", reason: "No setup step ran." });
 
-    const source = {
-        branch: "task-30",
-        commit: "a".repeat(40),
-        php_version: null,
-        laravel: false,
-    };
-    const steps: Record<string, { status: string; outputs?: unknown }> = Object
-        .fromEntries(
-            [
-                "prepare",
-                "directory",
-                "control",
-                "mint_clone",
-                "clone",
-                "bundle",
-                "prepare_remote",
-                "copy_bundle",
-                "import",
-                "origin",
-                "branch",
-                "identity",
-                "inspect",
-                "composer",
-                "profile",
-                "deps_write",
-            ]
-                .map((name) => [name, { status: "succeeded", outputs: {} }]),
-        );
+    const source = { branch: "task-30", commit: "a".repeat(40), php_version: null, laravel: false };
+    const steps: Record<string, { status: string; outputs?: unknown }> = Object.fromEntries(
+        ["prepare", "directory", "control", "mint_clone", "clone", "bundle", "prepare_remote", "copy_bundle", "import", "origin", "branch", "identity", "inspect", "composer", "profile", "deps_write"]
+            .map((name) => [name, { status: "succeeded", outputs: {} }]),
+    );
     steps.guest = { status: "succeeded" };
     steps.profile.outputs = { source };
-    steps.deps_remove = {
-        status: "succeeded",
-        outputs: {
-            result: {
-                state: "none",
-                reason: "GitHub holds no valid setup token.",
-            },
-        },
-    };
+    steps.deps_remove = { status: "succeeded", outputs: { result: { state: "none", reason: "GitHub holds no valid setup token." } } };
 
     const receipt = result(intent, vm, steps);
-    assertEquals(receipt.dependency_token, {
-        state: "none",
-        reason: "GitHub holds no valid setup token.",
-    });
+    assertEquals(receipt.dependency_token, { state: "none", reason: "GitHub holds no valid setup token." });
     assertEquals(receipt.source, source);
 });

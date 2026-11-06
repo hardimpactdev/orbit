@@ -283,8 +283,8 @@ export function revokeOutcome(steps: Record<string, unknown>) {
     const { step, outputs } = nativeOutputs(steps, "Revoke");
     if (step.status === undefined || step.status === "skipped") {
         return {
-            state: "none" as const,
-            reason: "No setup token was revoked.",
+            state: "unrevoked" as const,
+            reason: "The revoke step did not run.",
         };
     }
     if (step.status !== "succeeded") {
@@ -460,10 +460,7 @@ export const behavior = {
             description:
                 "Pin the guest targets of the named intents of a run (prep, image refresh) to the host key the VM step observed",
             arguments: z.object({
-                receipt: z.union([
-                    z.string(),
-                    z.record(z.string(), z.unknown()),
-                ]),
+                receipt: z.union([z.string(), z.record(z.string(), z.unknown())]),
                 guest_node_id: z.number().int().positive(),
                 intents: z.record(z.string(), z.unknown()),
             }),
