@@ -6,6 +6,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOperations;
@@ -161,4 +162,32 @@ it('reports swamp.cancel_unavailable without a bound run and sends nothing', fun
     expect(fn () => app(CancelSwampRun::class)->execute(runningScript(null)))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'swamp.cancel_unavailable')
         ->and($socket->frames)->toBe([]);
+});
+
+it('releases the target of a timed-out Operation whose run was never proven ended, one hour after the expiry', function (): void {
+    Queue::fake();
+    $operation = runningScript();
+    app(ExpireOperationAction::class)->execute($operation);
+    $operation->refresh()->update(['lock_key' => OperationStore::lockKey('task_group', $operation->target_id)]);
+
+    expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(0)
+        ->and($operation->refresh()->lock_key)->not->toBeNull();
+
+    $this->travel(61)->minutes();
+
+    expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1);
+    $operation->refresh();
+    expect($operation->lock_key)->toBeNull()
+        ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('unproven')
+        ->and(ExpireOperationAction::awaitsSettlement($operation))->toBeFalse();
+});
+
+it('keeps the target of an Operation that is still running', function (): void {
+    Queue::fake();
+    $operation = runningScript();
+    $operation->update(['lock_key' => OperationStore::lockKey('task_group', $operation->target_id)]);
+    $this->travel(5)->hours();
+
+    expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(0)
+        ->and($operation->refresh()->lock_key)->not->toBeNull();
 });
