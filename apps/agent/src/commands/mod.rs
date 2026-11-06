@@ -12,7 +12,6 @@ mod caddy_package;
 pub mod ci_runner;
 pub mod cli;
 mod composer_global;
-mod composer_scope;
 pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
@@ -28,58 +27,44 @@ mod homebrew_scope;
 pub mod horizon_queue;
 pub mod http_check;
 mod image_boot;
-mod image_build;
-mod image_identity;
-pub mod image_recipe;
 mod incus;
 pub mod instances;
 pub mod laravel;
 mod macos_enrollment;
-pub mod metrics_certificate;
 mod metrics_exporter;
 mod metrics_publication;
 mod metrics_runtime;
 mod node_bootstrap;
-mod node_dns_listener;
 mod node_identity;
 pub mod node_worker;
 pub mod os_release;
 mod package_cache;
-mod package_sandbox;
 pub mod peer_dns;
 pub mod php_build;
 mod php_fpm;
 mod php_profile;
 pub mod php_runtime;
 mod php_shared;
-pub mod pi_artifact;
-pub mod pi_runtime;
 pub mod plausible;
 pub mod processes;
 pub mod production;
 pub mod production_home;
 pub mod project_source;
 pub mod recipe;
-pub mod recipe_delivery;
 pub mod role_prerequisites;
 pub mod schedules;
-pub mod service_metrics;
 pub mod source;
 mod ssh_host_key;
 pub mod storage_root;
-mod swamp_worker;
 pub mod task_git;
 pub mod task_git_import;
 pub(crate) mod task_topology;
-mod task_vm_hub;
 pub mod tls_check;
-pub mod tmpfiles;
 mod tool_output;
 mod tools_apt;
 pub mod topology_evidence;
 pub mod vite;
 mod vp_global;
-pub mod vp_project;
 mod vp_scope;
 mod vp_store;
 mod vpn_ordering;
@@ -103,7 +88,6 @@ pub fn all() -> Vec<Entry> {
         entry::<vp_store::Inspect>(),
         entry::<vp_store::Install>(),
         entry::<vp_store::Prune>(),
-        entry::<vp_project::ReadProject>(),
         entry::<vp_scope::Inspect>(),
         entry::<composer_global::Version>(),
         entry::<composer_global::Candidate>(),
@@ -118,7 +102,6 @@ pub fn all() -> Vec<Entry> {
         entry::<homebrew::cask::Candidate>(),
         entry::<homebrew::cask::Adoption>(),
         entry::<homebrew::scan::Scan>(),
-        entry::<composer_scope::Inspect>(),
         entry::<tools_apt::Version>(),
         entry::<tools_apt::Candidate>(),
         entry::<tools_apt::Inventory>(),
@@ -127,29 +110,15 @@ pub fn all() -> Vec<Entry> {
         entry::<vp_global::Candidate>(),
         entry::<vp_global::Inventory>(),
         entry::<vp_global::Plan>(),
-        entry::<image_recipe::lifecycle::Inspect>(),
-        entry::<image_recipe::lifecycle::Begin>(),
-        entry::<image_recipe::lifecycle::Retry>(),
-        entry::<image_recipe::verify::Verify>(),
-        entry::<pi_artifact::Receive>(),
-        entry::<pi_artifact::Install>(),
-        entry::<pi_artifact::Inspect>(),
-        entry::<pi_runtime::Configure>(),
-        entry::<swamp_worker::Start>(),
-        entry::<swamp_worker::Stop>(),
-        entry::<swamp_worker::Trust>(),
         entry::<vpn_ordering::OrderCaddy>(),
         entry::<vpn_ordering::RemoveDnsOrdering>(),
         entry::<php_build::operations::Inspect>(),
         entry::<php_build::operations::Install>(),
         entry::<php_profile::Configure>(),
-        entry::<recipe_delivery::Verify>(),
         entry::<recipe::operations::Inspect>(),
         entry::<recipe::operations::IncusPreflight>(),
         entry::<recipe::operations::Apply>(),
         entry::<recipe::javascript::Install>(),
-        entry::<image_build::WriteMarker>(),
-        entry::<image_build::AppendLog>(),
         entry::<incus::ReadImages>(),
         entry::<incus::ReadInstances>(),
         entry::<incus::ReadInventory>(),
@@ -158,7 +127,6 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::volumes::ChangeVolume>(),
         entry::<incus::vm::ReadVm>(),
         entry::<incus::vm::ChangeVm>(),
-        entry::<image_identity::CleanImage>(),
         entry::<image_boot::PrepareBoot>(),
         entry::<image_boot::PrepareFirewall>(),
         entry::<image_boot::CheckImage>(),
@@ -171,12 +139,10 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::cache::MountCache>(),
         entry::<package_cache::HostCache>(),
         entry::<package_cache::SeedCache>(),
-        entry::<task_vm_hub::PrepareHub>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
-        entry::<tmpfiles::PublishTmpfiles>(),
         entry::<websocket_runtime::ConvergeRuntime>(),
         entry::<websocket_runtime::RemoveRuntime>(),
         entry::<websocket_runtime::RuntimeActive>(),
@@ -185,7 +151,6 @@ pub fn all() -> Vec<Entry> {
         entry::<cli::InspectCli>(),
         entry::<cli::InstallCli>(),
         entry::<os_release::ReadOsRelease>(),
-        entry::<node_dns_listener::Install>(),
         entry::<node_bootstrap::Bootstrap>(),
         entry::<macos_enrollment::Inspect>(),
         entry::<ssh_host_key::Scan>(),
@@ -235,15 +200,12 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_observation::ReadLive>(),
         entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
-        entry::<health::AwaitHealthy>(),
-        entry::<metrics_certificate::MetricsCertificate>(),
         entry::<metrics_exporter::NodeExporter>(),
         entry::<metrics_exporter::Cadvisor>(),
         entry::<metrics_runtime::MetricsRuntime>(),
         entry::<metrics_publication::Publication>(),
         entry::<metrics_runtime::MetricsHealth>(),
         entry::<metrics_runtime::MetricsCredentials>(),
-        entry::<service_metrics::ServiceRuntime>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<hibernation::PrepareDirectories>(),
         entry::<hibernation::MarkHibernation>(),
@@ -260,8 +222,6 @@ pub fn all() -> Vec<Entry> {
         entry::<schedules::ReadScheduleLogs>(),
         entry::<schedules::RemoveSchedule>(),
         entry::<accounts::LookupAccount>(),
-        entry::<package_sandbox::Prepare>(),
-        entry::<package_sandbox::runtime::Session>(),
         entry::<processes::CheckRelease>(),
         entry::<processes::ReadStatus>(),
         entry::<processes::ControlProcess>(),

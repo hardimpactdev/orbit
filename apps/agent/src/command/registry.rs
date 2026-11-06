@@ -575,7 +575,6 @@ mod tests {
     fn shared_host_mutations_hold_one_lock_per_resource() {
         let packages = [
             "caddy.install-package",
-            "image.clean",
             "metrics.cadvisor",
             "metrics.node-exporter",
             "node.bootstrap",
@@ -591,13 +590,11 @@ mod tests {
             "firewall.router-lan",
             "firewall.rule",
             "firewall.rules",
-            "firewall.task-vm-hub",
             "image.firewall",
             "incus.prepare-host",
             "metrics.cadvisor",
             "metrics.node-exporter",
             "metrics.publication-firewall",
-            "metrics.service-runtime",
         ];
         for (resource, names) in [("packages", &packages[..]), ("firewall", &firewall[..])] {
             for name in names {

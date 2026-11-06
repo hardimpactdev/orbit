@@ -62,10 +62,6 @@ fn main() {
                 orbit_agent::command::identity::Platform::current(),
             ) {
                 code
-            } else if arguments.get(1).is_some_and(|name| name == "image-phase") {
-                orbit_agent::commands::image_recipe::worker::service(&arguments[2..])
-            } else if arguments.get(1).is_some_and(|name| name == "vp-project") {
-                orbit_agent::commands::vp_project::service(&arguments[2..])
             } else if arguments.get(1).is_some_and(|name| {
                 orbit_agent::command::registry::hooks()
                     .iter()

@@ -21,6 +21,6 @@ The provision of a task with a topology carries the converge intent, and its `Co
 
 The admission of a task run mints no GitHub token. The provision clone and the publish step mint their own when they run ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). Admission holds no token for them.
 
-The Incus build already runs the task VM role phases of Ansible from a stock VM and installs no agent. The UpCloud template build keeps the agent path.
+The Incus build already runs the task VM role phases of Ansible from a stock VM and installs no agent.
 
-`apps/agent/**` is frozen. Its image-build commands (`image_build`, `image_recipe`) belong to the UpCloud template build and wait for the agent strip. The Incus image build does not call them.
+`apps/agent/**` is being stripped to an observer: commands that nothing calls leave in small pull requests, and the rest leave with their Swamp ports.

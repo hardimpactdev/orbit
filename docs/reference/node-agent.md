@@ -28,35 +28,9 @@ Fixed **service entry points** run under their own Linux systemd units. `service
 
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
-`swamp.start-worker` and `swamp.stop-worker` remain in the pinned agent contract, but no Gateway operation calls them; task group work starts no worker on the VM. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell.
-
 The agent observes the Node. Swamp applies the network part after the agent footprint checks, and verifies a repaired tunnel with a handshake check.
 
-## Package-tool account boundary
-
-`package.prepare-account` creates the fixed Linux system account `orbit-swamp-package`. It creates `/var/lib/orbit-swamp-package/jobs` under root ownership with mode 0700. Its typed input names a worker account that must already exist and must not be root. Package and worker UIDs must differ. The package account has its own primary group, no supplementary groups, `/nonexistent` as home and `/usr/sbin/nologin` as shell. UID and GID come from the Node's system-account allocator; they are returned by the command, never fixed fleet-wide.
-
-An existing account must match that complete shape. Existing workspace parents must be root-owned directories with mode 0700; symlinks, writable ancestors and an unrelated account are refused. Preparation grants no sudo, socket, worker-cache, token, datastore or vault access. Worker convergence owns its own account and credentials; this primitive never changes them.
-
-### Isolated execution
-
-`package.session` accepts only admitted package manifests, a fixed package tool, relative working directory and literal arguments. The bounded binary input carries a JSON manifest map (64 MiB total, 512 files); it never expands the 4 MiB command envelope. It stages a private job under `/var/lib/orbit-swamp-package/jobs`, runs package code as `orbit-swamp-package`, and returns bounded manifest/lockfile output. Package code has a private root, PID and IPC namespaces, no capabilities or sudo, and no host home, worker credential/cache, Swamp datastore or credential mounts. `/proc` contains only that job's processes, so host `/proc/<serve-pid>/root` is unavailable. The trusted caller keeps GitHub credentials for git/gh; the package environment contains none.
-
-### Required enforcement
-
-Linux x86_64 requires systemd 257 or later (`PrivatePIDs`), `openat2`, cgroup-v2 network filters and a root-owned public toolchain at `/opt/orbit/swamp-package-runtime`. A trusted launch guard proves native seccomp syscall denial, PID 1, NoNewPrivileges and zero capabilities, then waits until the root supervisor verifies distinct PID/IPC/mount namespaces and attached ingress, egress and IPv4/IPv6 bind filters. Unix sockets, socketpair, io_uring and non-native syscall ABIs are refused. Missing enforcement refuses before package code starts. Package jobs use public DNS.
-
-Network filters deny loopback, private fleet endpoints, CGNAT (`100.64.0.0/10`) and every assigned host address, including global IPv6. Root-owned `network-deny.json` in the runtime directory names additional public or NAT addresses as `{"public_addresses":["80.47.233.206"]}`; missing or unsafe metadata refuses execution. `SocketBindDeny=any` blocks listeners, and the trusted guard proves that both IPv4 and IPv6 bind calls fail.
-
-npm uses distinct, empty, root-owned user and global configuration files inside the package root. No host npm configuration is mounted.
-
-Only the active PHP version’s `/etc/php/<version>/cli` configuration is copied into the private root, with selected INI links resolved; pool configuration stays outside the job. Unsupported platforms refuse; there is no execution as `orbit` fallback.
-
-Every package command belongs to the calling native host service's lifetime. Cancellation stops the entire package cgroup, including `setsid` descendants. Before staging, export or removal, the root launcher stops and verifies the previous package cgroup. File transfer uses directory descriptors and rejects symlinks, magic links and hard links. The dedicated UID has no supplementary groups or sudo rule. The managed `orbit` administrator still needs its existing root command authority; it never runs package code.
-
-The package-boundary tests run the delivered agent on systemd when invoked locally. It creates synthetic protected files, proves their host-side existence, and checks their denial in the package root and through the host process alias. It also checks actual sudo denial, missing prerequisites, the private-PID guard, timed cgroup termination and cancellation of detached descendants. Missing test prerequisites fail the job; this suite is not opt-in.
-
-Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. Task VM workers retain `swamp.start-worker` and `swamp.stop-worker`. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
+Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
 
 ## Where it runs
 
