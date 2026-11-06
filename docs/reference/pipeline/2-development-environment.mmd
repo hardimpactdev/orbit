@@ -57,6 +57,7 @@ sequenceDiagram
   opt no usable ready copies
     VM->>NT: Build the fleet<br/>then make ready copies
     %%> When:
+    %%> Decided by the orchestrator, for Nick's review: until the fleet build (`task_vm.fleet_build`) lands, the branch skips the fleet. The provision records "no nested fleet" (`nested_fleet: none`) on its result, and the VM stays usable for tasks that need no fleet. A proof run on such a VM fails early with `proof.no_nested_fleet`. When the fleet build lands, the branch calls it instead.
     %%> - a new task image has a seed with only the Node template until its first seed refresh (stage 6)
     %%> Time:
     %%> - about 230 seconds; the build ends by making the ready copies for the next reset

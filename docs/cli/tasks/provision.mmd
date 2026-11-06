@@ -45,6 +45,7 @@ sequenceDiagram
     %%> - pushes the proof Swamp Club key from the VM into the nested Gateway and restarts its Swamp
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
+    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet until the fleet build (`task_vm.fleet_build`) lands; the result records `nested_fleet: none`
     %%> Not built yet in this step:
     %%> - the NFS mount of the checkout, the apply step, the readiness check and the `base` snapshot
   end

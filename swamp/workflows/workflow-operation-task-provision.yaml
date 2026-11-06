@@ -161,11 +161,13 @@ jobs:
           result = json.loads(os.environ["ORBIT_RESULT"])
           route, processes = os.environ["ORBIT_ROUTE"], [p for p in os.environ["ORBIT_PROCESSES"].split(";") if p]
           result["route"], result["processes"] = route, processes
+          result["nested_fleet"] = json.loads(os.environ["ORBIT_FLEET"]).get("nested_fleet", "none")
           failed = "bind" if os.environ["ORBIT_BIND"] == "failed" else "route" if route == "failed" else "processes" if any(p.endswith("=failed") for p in processes) else None
           if failed and "error_code" not in result:
               result.update(error_code="tasks.provision_failed", failed_step=failed)
           print(json.dumps(result))'
         env:
+          ORBIT_FLEET: '${{ "Start the nested fleet" in steps && "outputs" in steps["Start the nested fleet"] && "result" in steps["Start the nested fleet"].outputs ? steps["Start the nested fleet"].outputs.result.stdout : "{}" }}'
           ORBIT_BIND: '${{ "Bind the workspace keys" in steps ? steps["Bind the workspace keys"].status : "skipped" }}'
           ORBIT_ROUTE: '${{ "Route the workspace" in steps ? steps["Route the workspace"].status : "skipped" }}'
           ORBIT_PROCESSES: '${{ steps.filter(k, k.startsWith("Create, start Processes-")).map(k, k + "=" + steps[k].status).join(";") }}'
@@ -184,6 +186,9 @@ jobs:
       condition:
         type: always
     - step: Create, start Processes
+      condition:
+        type: always
+    - step: Start the nested fleet
       condition:
         type: always
   - name: Accept the workspace
