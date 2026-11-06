@@ -732,7 +732,7 @@ The `software` phase installs Ubuntu packages and file packages at their pins. I
 
 The `tools` phase installs the NFS server and the shape gate linters.
 
-- With `--nfs-checkout`, `--nfs-subnet` and `--nfs-interface` (default `nested`), the VM exports the checkout to the nested subnet only, with `rw,async,no_subtree_check`.
+- With `--nfs-checkout`, `--nfs-subnet` and `--nfs-interface` (default `nested`), the VM makes the checkout folder as `orbit` when it is missing, binds it at `/srv/checkout` (a systemd bind mount), and exports `/srv/checkout` to the nested subnet only, with `rw,async,no_subtree_check`. The path is the same on every task VM, so the ready copies mount it whatever the Project.
 - UFW then allows TCP 2049 from the nested bridge.
 - Without those options the server runs with no export.
 - The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.
@@ -1336,7 +1336,7 @@ The VM then joins as operator. It makes its own WireGuard key and writes the pub
 
 One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the role, when the copy was made, the MAC, the IP and the subnet. ``user.ready.complete` is written last.
 
-The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 3 carry the control plan that the play reads; copies of another format are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
+The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 3 and later carry the control plan that the play reads; copies of a format other than the current one are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
 
 The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
 

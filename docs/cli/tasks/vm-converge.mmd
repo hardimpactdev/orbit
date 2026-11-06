@@ -32,7 +32,8 @@ sequenceDiagram
   %%> - a tool that already shows its pinned version is left alone, so a VM at the pins reports no change
   SW->>VM: Install the tools<br/>child task-vm-role-run
   %%> What it does:
-  %%> - the NFS server; with NFS settings it exports the checkout to the nested subnet only (`rw,async`) and allows port 2049 from the nested bridge in UFW
+  %%> - the NFS server; with NFS settings it makes the checkout folder as `orbit` when it is missing, binds it at `/srv/checkout` and exports that path to the nested subnet only (`rw,async`), and allows port 2049 from the nested bridge in UFW
+  %%> - `/srv/checkout` is the same on every task VM, so the ready copies mount it whatever the Project (decided by the orchestrator, for Nick's review, 2026-11-06)
   %%> - the shape gate linters in `/opt/orbit-shape-gate`, named by the digest of their pins, so the handoff check runs offline
   SW->>VM: Check the task VM role<br/>child task-vm-role-run
   %%> What it does:

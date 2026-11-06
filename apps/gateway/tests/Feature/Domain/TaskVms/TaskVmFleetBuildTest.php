@@ -198,8 +198,12 @@ it('mounts the path where the task VM role exports every checkout', function ():
     $role = Yaml::parseFile(base_path('../../swamp/ansible/task-vm-role.yml'))[0];
     $nfs = Yaml::parseFile(base_path('../../swamp/ansible/tasks/task-vm-nfs.yml'));
     $task = fn (string $name): array => collect($nfs)->firstWhere('name', $name);
+    $unit = str_replace('/', '-', ltrim(TaskVmFleetBuildIntent::ExportPath, '/')).'.mount';
 
     expect($role['vars']['nfs_export'])->toBe(TaskVmFleetBuildIntent::ExportPath)
+        ->and($task('Bind the checkout at the export path')['ansible.builtin.copy']['dest'])->toBe('/etc/systemd/system/'.$unit)
+        ->and($task('Mount the checkout at the export path')['ansible.builtin.systemd']['name'])->toBe($unit)
+        ->and($task('Make the checkout folder')['ansible.builtin.file']['path'])->toBe('{{ intent.nfs.checkout }}')
         ->and($task('Bind the checkout at the export path')['ansible.builtin.copy']['content'])->toContain("What={{ intent.nfs.checkout }}\n", "Where={{ nfs_export }}\n", "Options=bind\n")
         ->and($task('Export the checkout to the nested subnet')['ansible.builtin.copy']['content'])->toStartWith('{{ nfs_export }} ');
 });

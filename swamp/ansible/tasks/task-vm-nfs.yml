@@ -2,11 +2,16 @@
 # The task VM exports its checkout to the nested fleet and to nothing else.
 # intent.nfs is null on an image, which only holds the server; a task VM names its checkout, the nested subnet and the nested bridge.
 # The export has one path on every task VM (nfs_export): the checkout is bound there, so the ready copies mount the same path whatever the
-# Project, and no copy names a workspace path. A task VM keeps one checkout for its life, so the binding is written once and never moves.
+# Project, and no copy names a workspace path. The checkout keeps its path for the life of the VM, so the binding is written once.
+# A ready slot converges before its checkout is cloned: the folder is made here as the orbit user, and the workspace clones into it.
 - name: Enable the NFS server
   ansible.builtin.systemd: { name: nfs-server.service, enabled: true, state: started }
 - name: Create the exports folder
   ansible.builtin.file: { path: /etc/exports.d, state: directory, owner: root, group: root, mode: "0755" }
+- name: Make the checkout folder
+  when: intent.nfs is not none
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.file: { path: "{{ intent.nfs.checkout }}", state: directory, mode: "0755" }
 - name: Bind the checkout at the export path
   when: intent.nfs is not none
   ansible.builtin.copy:
