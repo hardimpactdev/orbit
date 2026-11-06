@@ -550,7 +550,9 @@ describe('firewall:deny prompts', function (): void {
 
         [$status, $display] = firewall_deny_prompt(['abc', Key::ENTER, '8080', Key::ENTER, Key::ENTER]);
 
-        expect($status)->toBe(0)->and($display)->toContain('Port', 'ordered range', 'Node', 'ID', 'Name', 'Platform', 'Status', 'app-dev');
+        expect($status)->toBe(0)->and($display)
+            ->toContain('Port (destination port or range)', 'ordered range', 'Node', 'ID', 'Name', 'app-dev')
+            ->not->toMatch('/Platform|Status|mac|inactive/');
         $mock->assertSentCount(1, DenyFirewallRuleRequest::class);
         $mock->assertSent(fn ($request): bool => $request instanceof DenyFirewallRuleRequest
             && $request->resolveEndpoint() === '/api/v1/nodes/7/firewall-rules/deny'
@@ -565,7 +567,10 @@ describe('firewall:deny prompts', function (): void {
 
         [$status, $display] = firewall_deny_prompt([Key::ENTER], ['port' => '8080']);
 
-        expect($status)->toBe(0)->and($display)->toContain('Node', 'app-dev');
+        expect($status)->toBe(0)->and($display)
+            ->toContain('Node', 'ID', 'Name', 'app-dev')
+            ->not->toContain('Port (destination port or range)')
+            ->not->toMatch('/Platform|Status|mac|inactive/');
         $mock->assertSentCount(1, DenyFirewallRuleRequest::class);
     });
 

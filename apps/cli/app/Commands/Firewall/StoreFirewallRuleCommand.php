@@ -94,7 +94,7 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
     private function askForPort(): string
     {
         while (true) {
-            $port = $this->commandPrompts()->run(static fn (): TextPrompt => new TextPrompt('Port', placeholder: '8000:8100', required: true));
+            $port = $this->commandPrompts()->run(static fn (): TextPrompt => new TextPrompt('Port (destination port or range)', placeholder: '8000:8100', required: true));
 
             if (is_string($port) && preg_match('/\A(\d{1,5})(?::(\d{1,5}))?\z/D', $port, $parts) === 1
                 && (int) $parts[1] >= 1 && (int) $parts[1] <= (int) ($parts[2] ?? $parts[1]) && (int) ($parts[2] ?? $parts[1]) <= 65_535) {
@@ -118,7 +118,7 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
 
         foreach ($nodes->nodes as $node) {
             if ($node->status === 'active' && $node->platform === 'linux') {
-                $rows[$node->id] = [(string) $node->id, $node->name, $node->platform, $node->status];
+                $rows[$node->id] = [(string) $node->id, $node->name];
             }
         }
 
@@ -128,6 +128,6 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
             return null;
         }
 
-        return (int) $this->commandPrompts()->selectEntity('Node', ['ID', 'Name', 'Platform', 'Status'], $rows);
+        return (int) $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows);
     }
 }
