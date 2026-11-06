@@ -29,10 +29,16 @@ sequenceDiagram
   %%> - the operator (here the refresh VM) runs the Gateway bootstrap workflow once with a local `swamp workflow run`; its steps request no worker, so the binary runs them itself
   %%> - over SSH it installs on the fresh machine the pinned Swamp binary, the swamp role's pinned Ansible venv, the release's `swamp/` folder and the Swamp key
   %%> - the same bootstrap a fresh Orbit install uses: the user's CLI keeps the Swamp binary in `~/.orbit` and removes it after the handover; no Ansible on the user's machine
+  %%> - the release is a git checkout at the release commit: its `swamp/` folder is the Gateway's Swamp repository and holds the Ansible pins, and `apps/gateway` is its code
+  %%> - the Swamp key is written from the operator's local vault; the run input holds only the vault and key names
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database; the `gateway` role installs no PHP, so "converge itself, then `orbit:bootstrap`" cannot be the order
+  %%> - so the same local run also applies the Ansible `prerequisites` phase of the role playbook with Ansible's local connection; the operator renders its intent from the recipe alone with `php artisan` (no database), so the machine gets its pinned PHP, Caddy and WireGuard packages
   NG->>NG: Converge itself<br/>gateway · websocket · swamp
   %%> What it does:
-  %%> - the new Gateway's own Swamp runs the normal role phases with Ansible's local connection, then `orbit:bootstrap`: its CA, SSH key and WireGuard hub, migrations and its Swamp serve and worker
-  %%> - the Gateway records itself and the operator; from here on its own Swamp does everything
+  %%> - on the machine, in this order: Composer install, the Gateway `.env` and application key, migrations, then `orbit:bootstrap`: its CA, SSH key and WireGuard hub; the Gateway records itself and the operator
+  %%> - then the Gateway's own `node:role:add --converge` for gateway, websocket and swamp: its own API admits them and its own Swamp runs the normal role phases with Ansible's local connection, starting its Swamp serve and worker
+  %%> - from here on its own Swamp does everything
   SW->>NG: Add app-dev and app-prod<br/>node:add · nested Orbit
   %%> What it does:
   %%> - the nested Gateway's own `node:add` with the roles `app-dev` and `app-prod`; its own Swamp converges them over SSH
