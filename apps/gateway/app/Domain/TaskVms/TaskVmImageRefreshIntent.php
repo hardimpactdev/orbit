@@ -113,6 +113,7 @@ final readonly class TaskVmImageRefreshIntent
         // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
         $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => ['ready_copies' => $this->copies->provisioning($vm)]);
         $candidate = $location->imageAlias.'-refresh-'.$group->id;
+        $recipeIdentity = $this->recipes->currentRecipe()->identity;
         $jump = $this->ssh->forNode($host);
         // The provision converges the outer VM, so its converge intent also holds the pins that the smoke of the image checks.
         $converge = $input['converge'] ?? throw new ResourceOperationException('task_vm.image_refresh_unavailable', 'The refresh VM needs the converge intent of a topology VM.', 409);
@@ -124,12 +125,14 @@ final readonly class TaskVmImageRefreshIntent
             'provision' => array_diff_key($input, ['execution_secrets' => true]),
             'refresh' => [
                 'host_node_id' => $host->id, 'host_ssh_execution' => $jump, 'commit' => $commit,
-                'image' => $image, 'recipe_identity' => $this->recipes->currentRecipe()->identity,
+                'image' => $image, 'recipe_identity' => $recipeIdentity,
                 'vm' => ['name' => $vm->name, 'project' => $location->project, 'pool' => $location->pool, 'seed_volume' => $vm->name.'-'.TaskVmVolumes::SeedDevice],
                 'names' => ['alias' => $location->imageAlias, 'candidate_alias' => $candidate, 'seed_prefix' => TaskVmVolumes::SeedPrefix],
                 // What the image build gives its smoke and promote children, so the refresh boot-checks and promotes as a build does.
                 'candidate' => [
                     'project' => $location->project, 'jump' => $jump, 'candidate_alias' => $candidate, 'base_alias' => $location->imageAlias,
+                    // The image is published from a builder cloned from the image the refresh VM started from, so image and seed share their origin.
+                    'builder' => 'refresh-build-'.$group->id, 'source' => $image['fingerprint'], 'identity' => $recipeIdentity,
                     'previous_alias' => $location->imageAlias.'-previous', 'smoke' => 'refresh-check-'.$group->id, 'network' => $location->network,
                     'cpus' => $location->cpus, 'memory' => $location->memory, 'disk' => $location->disk,
                     'launch_config' => TaskVmLaunchConfig::for($jump['public_key']),

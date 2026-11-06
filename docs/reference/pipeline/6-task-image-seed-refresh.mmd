@@ -75,13 +75,13 @@ sequenceDiagram
     %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
     %%> - the image is published from a builder: a clone of the image the refresh VM started from (its fingerprint, `candidate.source`), named `candidate.builder`, never enrolled, with no seed attached
     %%> - the builder is brought to the pins of the release by the phases `software`, `tools` and `check`, then cleaned by `task-vm-image-clean` (cloud-init, machine-id, SSH host keys, trim, stop), which has no enrolled branch
-    %%> - the sequence from the launch to the publication is one child workflow, `task-vm-image-builder`, shared with the image build (`task_vm.image_build`), so the two cannot drift apart; the child returns the fingerprint
-    %%> - before the publication one assert checks that the builder has no `topology-seed` pool: an image must never carry the seed pool of the VM it came from
+    %%> - the sequence from the launch to the publication is one child workflow, `task-vm-image-builder`, which the refresh runs now; the image build (`task_vm.image_build`) keeps its own jobs until a follow-up moves it onto the child, because its result reader names those steps
+    %%> - the assert that the builder has no `topology-seed` pool comes with the removal of the surgery below: the builder is cloned from an image that may still hold the stale records, so the assert cannot pass before the lineage is clean
     %%> What it does:
-    %%> - clones the builder, waits for its guest agent and cloud-init, runs the phases, asserts the pools, cleans and stops it, publishes it under a candidate alias and reads its fingerprint
+    %%> - clones the builder, waits for its guest agent and cloud-init, runs the phases, cleans and stops it, publishes it under a candidate alias and reads its fingerprint
     %%> Risks the run accepts:
     %%> - the ready copies are made on the refresh VM from the old image, and the image comes from the builder; the next provision is the check of the pair, and `-previous` (image and old seed) is the rollback
-    %%> - the `incus admin sql` surgery in the seed attach stays until every host serves an image whose lineage never held the seed pool, for example one rebuilt from stock with `task_vm.image_build`; the pool assert keeps that lineage clean, and a later PR deletes the surgery
+    %%> - the `incus admin sql` surgery in the seed attach stays until every host serves an image whose lineage never held the seed pool, for example one rebuilt from stock with `task_vm.image_build`; a later PR deletes it
     SW->>H: Enroll, converge check VM<br/>on the boot-check VM
     %%> Decided by the orchestrator, for Nick's review:
     %%> - a release can trigger a refresh with nobody watching, and a refresh starts from the image the host serves, so one bad image would reach every later provision; the candidate is therefore enrolled and converged before it is promoted

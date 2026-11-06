@@ -37,8 +37,8 @@ sequenceDiagram
   %%> - `incus stop` of the refresh VM: it yields only its seed disk and is never published
   SW->>H: Build the image<br/>task-vm-image-builder
   %%> What it does:
-  %%> - the child `task-vm-image-builder`, shared with the image build: `incus init` of the builder from the image the refresh VM started from (its fingerprint), with the cloud-init key of Node 209; waits for the guest agent and cloud-init
-  %%> - runs the phases `software`, `tools` and `check` (the child `task-vm-image-ansible`), asserts that the builder has no `topology-seed` pool, cleans and stops it (the child `task-vm-image-clean`)
+  %%> - the child `task-vm-image-builder`: `incus init` of the builder from the image the refresh VM started from (its fingerprint), with the cloud-init key of Node 209; waits for the guest agent and cloud-init
+  %%> - runs the phases `software`, `tools` and `check` (the child `task-vm-image-ansible`), cleans and stops it (the child `task-vm-image-clean`)
   %%> - publishes the stopped builder under a candidate alias and reads its fingerprint
   %%> - the builder is never enrolled and has no seed
   SW->>H: Boot-check the image<br/>throwaway VM
@@ -58,7 +58,7 @@ sequenceDiagram
   %%> - the child `task-vm-image-promote`, as in the image build: the alias moves to the new image and the old image keeps the alias `-previous`; the old seed stays under its own name
   SW->>H: Remove the leftovers<br/>always
   %%> What it does:
-  %%> - removes the builder and the check VM; when the alias does not point at the new image, also the candidate image and the new seed
+  %%> - the cleanup job removes the check VM and the builder, then, when the alias does not point at the new image, the candidate image and the new seed
   alt the run passes its check
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the new image<br/>cancel the group
