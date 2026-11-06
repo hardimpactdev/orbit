@@ -78,15 +78,15 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             "-o",
             "APT::Get::List-Cleanup=false",
             // Through the cache the Node asks for the index files the image build asked for (it ignores the drop-ins of
-            // apt.conf.d, which add the appstream and command-not-found files), and tries a failed download again at once, five times:
-            // the snapshot service answers 502 now and then while the cache fills.
+            // apt.conf.d, which add the appstream and command-not-found files), and one request at a time: the cache answers
+            // some of several requests in flight with the body of another file.
             ...(proxy === null ? [] : [
                 "-o",
                 "Acquire::http::Proxy=" + proxy,
                 "-o",
                 "Dir::Etc::parts=-",
                 "-o",
-                "Acquire::Retries=5",
+                "Acquire::http::Pipeline-Depth=0",
             ]),
         ];
         aptArgs = apt.packages.map((pkg, index) =>

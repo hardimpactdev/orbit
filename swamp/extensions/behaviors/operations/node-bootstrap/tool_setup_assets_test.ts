@@ -72,7 +72,7 @@ Deno.test("Composer setup reads the snapshot over https by itself and through a 
             true,
         );
         assertEquals(argv.includes("Dir::Etc::parts=-"), true);
-        assertEquals(argv.includes("Acquire::Retries=5"), true);
+        assertEquals(argv.includes("Acquire::http::Pipeline-Depth=0"), true);
     }
     assertEquals(direct.apt_update.includes("Dir::Etc::parts=-"), false);
 });

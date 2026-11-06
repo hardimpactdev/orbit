@@ -1,6 +1,7 @@
 ---
 # apt reads the snapshot through the package cache of the VM (task-vm-apt-cache.yml, the first task of the software phase): plain http to
-# the cache, which fetches over https. The signatures are still checked.
+# the cache, which fetches over https. The signatures are still checked. apt does not pipeline its requests to the cache: the cache
+# answers some of several requests in flight with the body of another file (a hash mismatch).
 - name: Create the apt configuration folder
   ansible.builtin.file: { path: "{{ apt_directory }}", state: directory, owner: root, group: root, mode: "0755" }
 - name: Point apt at the Ubuntu snapshot
@@ -25,6 +26,7 @@
       Dir::Etc::sourcelist "{{ apt_directory }}/ubuntu.sources";
       Dir::Etc::sourceparts "";
       Acquire::http::Proxy "http://localhost:3142";
+      Acquire::http::Pipeline-Depth "0";
       APT::Get::Always-Include-Phased-Updates "true";
       APT::Get::List-Cleanup "false";
       APT::Update::Error-Mode "any";

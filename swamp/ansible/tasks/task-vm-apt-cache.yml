@@ -13,14 +13,11 @@
   until: apt_cache_install is succeeded
   retries: "{{ apt_retries }}"
   delay: "{{ apt_delay }}"
-# A snapshot never changes, so the cache serves what it holds and does not ask the snapshot service again: its answers to a
-# revalidation fail now and then.
-- name: Keep the packages out of the cache and the indexes in
+- name: Keep the packages out of the cache
   ansible.builtin.copy:
     dest: /etc/apt-cacher-ng/zz_orbit.conf
     content: |
       DontCacheRequested: \.deb$
-      SPfilePatternEx: /ubuntu/[0-9]{8}T[0-9]{6}Z/
     owner: root
     group: root
     mode: "0644"

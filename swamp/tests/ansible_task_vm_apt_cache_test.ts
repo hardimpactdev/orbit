@@ -46,15 +46,12 @@ Deno.test("the cache installs from the own sources of the VM and keeps indexes, 
         "{{ apt_retries }}",
         "{{ apt_delay }}",
     ]);
-    const content =
-        byName["Keep the packages out of the cache and the indexes in"][
-            "ansible.builtin.copy"
-        ].content;
+    const content = byName["Keep the packages out of the cache"][
+        "ansible.builtin.copy"
+    ].content;
     assertStringIncludes(content, "DontCacheRequested: \\.deb$");
-    assertStringIncludes(
-        content,
-        "SPfilePatternEx: /ubuntu/[0-9]{8}T[0-9]{6}Z/",
-    );
+    // A pattern for static files makes the cache answer some index files with the body of another one.
+    assertEquals(content.includes("SPfilePatternEx"), false);
     const service = byName["Run the package cache"]["ansible.builtin.systemd"];
     assertEquals([service.name, service.enabled], [
         "apt-cacher-ng.service",

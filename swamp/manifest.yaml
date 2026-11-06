@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.06.7
+version: 2026.11.06.8
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
