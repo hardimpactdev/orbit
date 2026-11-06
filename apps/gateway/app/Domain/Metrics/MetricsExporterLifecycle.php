@@ -8,8 +8,6 @@ use App\Models\Node;
 
 interface MetricsExporterLifecycle
 {
-    public function actual(Node $node): string;
-
     /** @return list<array{name: string, address: string}> */
     public function targets(Node $metricsNode): array;
 }

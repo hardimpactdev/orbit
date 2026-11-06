@@ -62,7 +62,6 @@
   "metrics.node-exporter": "action",
   "metrics.publication-firewall": "action",
   "metrics.runtime": "action",
-  "metrics.runtime-health": "observer",
   "node.bootstrap": "action",
   "node.inspect-macos-enrollment": "observer",
   "node.os-release": "action",
