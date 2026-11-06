@@ -655,7 +655,7 @@ The agent recovers from each failure below without an operator.
 | The agent crashes | systemd restarts it after 2 seconds. The web app shows the Node offline until the agent joins again, and the Gateway reads over SSH. |
 | The agent stops cleanly | It closes its connection. The web app shows the Node offline at once, and the Gateway drops the Node's view. |
 | The Node loses power or network | Heartbeats stop. After 15 seconds, the web app shows the Node offline and the view turns stale. |
-| The watch list request fails | The agent keeps its last list and asks again after 60 seconds. |
+| The watch list request fails | The agent keeps its last list. |
 | A log source cannot be read, or `journalctl` is missing or stops | The agent ends that stream with `source_unavailable`. |
 | The agent leaves while it streams | The subscriber ends each stream of that Node with `agent_left`. |
 | Reverb is down, or no `websocket` role is active | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |

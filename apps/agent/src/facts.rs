@@ -330,7 +330,9 @@ impl Reporter {
                     (subject.map(str::to_owned), data.clone()),
                 );
                 if self.last_error.as_ref() != Some(&error) {
-                    eprintln!("orbit-agent: {kind} fact report failed: {error}");
+                    let what = subject
+                        .map_or_else(|| kind.to_owned(), |subject| format!("{kind} {subject}"));
+                    eprintln!("orbit-agent: {what} fact report failed: {error}");
                     self.last_error = Some(error);
                 }
             }
@@ -347,6 +349,12 @@ impl Reporter {
         for ((kind, _), (subject, data)) in std::mem::take(&mut self.failed) {
             self.report(&kind, subject.as_deref(), &data).await;
         }
+    }
+
+    /// Stops retrying the failed reports of a kind, for a source that is gone.
+    pub fn drop_failed(&mut self, kind: &str) {
+        self.failed
+            .retain(|(failed_kind, _), _| failed_kind != kind);
     }
 
     /// Forgets the items of a kind that `keep` rejects, so an item that comes back is sent again.
@@ -373,24 +381,19 @@ impl RetryTimer {
             self.failures = 0;
             self.at = None;
         } else if self.at.is_none() {
-            let delay = RETRY_FIRST
-                .saturating_mul(2u32.saturating_pow(self.failures))
-                .min(RETRY_MAX);
-            self.failures = self.failures.saturating_add(1).min(8);
+            let delay = (RETRY_FIRST * 2u32.pow(self.failures)).min(RETRY_MAX);
+            self.failures = (self.failures + 1).min(3);
             self.at = Some(tokio::time::Instant::now() + delay);
         }
     }
 
-    /// Completes when the armed deadline passes, and never when none is armed.
-    pub async fn due(&self) {
+    /// Completes when the armed deadline passes, and disarms the timer; never completes when none is armed. A caller
+    /// that drops the future early keeps the deadline.
+    pub async fn due(&mut self) {
         match self.at {
             Some(at) => tokio::time::sleep_until(at).await,
             None => std::future::pending().await,
         }
-    }
-
-    /// Call when [`RetryTimer::due`] completed, before the try.
-    pub fn fired(&mut self) {
         self.at = None;
     }
 }
@@ -436,7 +439,6 @@ mod tests {
             timer.update(true);
             let armed = tokio::time::Instant::now();
             timer.due().await;
-            timer.fired();
             assert_eq!(armed.elapsed(), Duration::from_secs(expected));
         }
         timer.update(false);
@@ -455,6 +457,19 @@ mod tests {
         let armed = tokio::time::Instant::now();
         timer.due().await;
         assert_eq!(armed.elapsed(), Duration::from_millis(400));
+    }
+
+    /// A client that ignores any proxy in the environment, so the test reaches its local Gateway.
+    fn client() -> reqwest::Client {
+        reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_unarmed_retry_timer_never_completes() {
+        let mut timer = RetryTimer::default();
+        assert!(tokio::time::timeout(Duration::from_secs(3600), timer.due())
+            .await
+            .is_err());
     }
 
     /// A Gateway that refuses the first requests and accepts the rest, and counts what it saw.
@@ -487,7 +502,7 @@ mod tests {
     async fn a_refused_report_is_kept_and_sent_again_until_the_gateway_accepts_it() {
         use std::sync::atomic::Ordering;
         let (url, seen) = gateway(2).await;
-        let mut reporter = Reporter::new(reqwest::Client::new(), &url);
+        let mut reporter = Reporter::new(client(), &url);
         let data = json!({"os": "linux"});
 
         reporter.report("host", None, &data).await;
@@ -508,10 +523,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_newer_accepted_report_replaces_an_older_refused_one() {
+        use std::sync::atomic::Ordering;
+        let (url, seen) = gateway(1).await;
+        let mut reporter = Reporter::new(client(), &url);
+
+        reporter.report("host", None, &json!({"free": 1})).await;
+        assert!(reporter.has_failed());
+        reporter.report("host", None, &json!({"free": 2})).await;
+
+        assert!(!reporter.has_failed());
+        reporter.retry().await;
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn a_refused_item_that_leaves_the_set_is_not_sent_again() {
         use std::sync::atomic::Ordering;
         let (url, seen) = gateway(1).await;
-        let mut reporter = Reporter::new(reqwest::Client::new(), &url);
+        let mut reporter = Reporter::new(client(), &url);
         reporter
             .report("checkout", Some("/apps/gone/main"), &json!({}))
             .await;

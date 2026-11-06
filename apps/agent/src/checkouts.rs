@@ -256,6 +256,8 @@ pub async fn watch_checkouts(
             _watcher = None;
             watched.clear();
             pending.clear();
+            reporter.drop_failed("checkout");
+            reporter.drop_failed("checkouts");
             rescan = false;
         }
         if let (Some(apps_root), true) = (root.clone(), rescan || !pending.is_empty()) {
@@ -340,10 +342,7 @@ pub async fn watch_checkouts(
                 }
             }
             _ = resync.tick() => rescan = true,
-            () = retry.due() => {
-                retry.fired();
-                reporter.retry().await;
-            }
+            () = retry.due() => reporter.retry().await,
             Some(path) = events.recv() => {
                 let mut paths = vec![path];
                 let deadline = tokio::time::sleep(DEBOUNCE);

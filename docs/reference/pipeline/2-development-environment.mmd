@@ -56,7 +56,7 @@ sequenceDiagram
   %%> Proposed 2026-11-05:
   %%> - replaces today's reset, which takes `.env`, storage, the agent manifest and the lease from an earlier fleet in the same VM, so it fails on a fresh VM
   %%> Time:
-  %%> - about 10 seconds to a healthy fleet from the copies (8–11 s on shark); Doctor reads healthy once every agent has reported, about a minute after the boot
+  %%> - about 10 seconds to a healthy fleet from the copies (8–11 s on shark); Doctor reads healthy once every agent has reported; an agent sends a report the Gateway did not accept again within seconds
   SW->>NT: Join as operator<br/>this VM's WireGuard key
   %%> What it does:
   %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested containers, so this needs no network yet)

@@ -700,10 +700,7 @@ async fn report_facts(
             () = retry.due() => Due::Retry,
         };
         match due {
-            Due::Retry => {
-                retry.fired();
-                reporter.retry().await;
-            }
+            Due::Retry => reporter.retry().await,
             Due::Units => {
                 let (names, markers) = {
                     let listed = listed.borrow();

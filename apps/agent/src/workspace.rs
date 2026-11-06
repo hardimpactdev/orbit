@@ -625,10 +625,7 @@ pub async fn watch_workspaces(
         let listing = tokio::select! {
             biased;
             _ = list_tick.tick() => true,
-            () = retry.due() => {
-                retry.fired();
-                true
-            },
+            () = retry.due() => true,
             _ = check_tick.tick() => false,
         };
         if !listing {
