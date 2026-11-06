@@ -1,4 +1,4 @@
-id: c35e06cb-3ab4-4dce-93ca-a0292815490e
+id: ba9ec9f8-5a31-4184-b1b4-248bf4514821
 name: operation-task-vm-image-refresh
 description: >-
   Refresh the task image and the topology seed of one task VM host (stage 6 of the command development pipeline) in one run from full inputs on 209. A refresh VM starts from the current image and seed as any task VM does, converges to the release, saves the nested fleet as ready copies, and is cleaned and published as the new image. The new image and its seed are promoted under the host lock and the old ones stay as `-previous`. No step calls the Gateway; the Gateway cancels the group of the run afterwards, which destroys the refresh VM.
@@ -175,6 +175,8 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: task_vm.image_build
         intent: '${{ inputs.intent.refresh.candidate }}'
+
+        fingerprint: '${{ steps["Read the fingerprint"].outputs.stdout.split("\n")[0] }}'
 
 - name: cleanup
   labels: {role: swamp}
