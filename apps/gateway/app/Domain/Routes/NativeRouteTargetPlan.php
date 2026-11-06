@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Nodes\SwampNode;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Route;
@@ -37,7 +38,7 @@ final readonly class NativeRouteTargetPlan
         $result = ['leaves' => $plan['leaves'], 'leaf_indexes' => $plan['leaf_indexes'], 'nodes' => $plan['nodes'], 'probes' => [], 'dns' => $plan['dns'], 'cleanup' => [], 'lan_absent' => []];
         $nodeOf = static fn (array $row): int => ValidatedData::integer($row['node_id']);
         // Swamp evaluates task definitions even when the probe forEach is empty.
-        $result['probe_ssh'] = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209));
+        $result['probe_ssh'] = app(SwampSshExecutionInput::class)->forNode(SwampNode::node());
         if ($development) {
             // instance:create already gave Caddy access to the web root, so no access commands run here.
             $publish = ['trust' => ValidatedData::integerList($plan['trust']), 'lan' => [], 'acl' => []];

@@ -6,6 +6,7 @@ namespace App\Domain\Projects;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -60,7 +61,7 @@ final readonly class ProjectMaintenanceIntent
                 }
             }
 
-            return $this->start->execute($kind, 'project', $project->id, 209, [
+            return $this->start->execute($kind, 'project', $project->id, SwampNode::id(), [
                 'project' => ['id' => $project->id, 'repository' => $project->repository_url,
                     'default_branch' => $project->default_branch, 'check' => $project->task_check],
                 // An inspection reads no group; the Gateway checks open work from its own records when it admits one.

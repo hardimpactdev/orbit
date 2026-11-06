@@ -8,12 +8,12 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\DependencyBatchMergeGuard;
-use App\Domain\Tasks\DependencyMergeProjection;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
@@ -41,7 +41,7 @@ final readonly class StartDependencyBatchMergeAction
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Another Task Operation owns this group.', 409);
             }
-            $intent = [...$this->guard->lineage($group, $publish, $head), 'node_id' => DependencyMergeProjection::WorkerNodeId];
+            $intent = [...$this->guard->lineage($group, $publish, $head), 'node_id' => SwampNode::id()];
             $credentials = app(GitHubAppStore::class)->credentials();
             if ($credentials === null) {
                 throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before merging a dependency batch.', 409);
@@ -57,7 +57,7 @@ final readonly class StartDependencyBatchMergeAction
             return DB::transaction(function () use ($group, $intent, $secrets, $tokens, $caller, $request): Operation {
                 Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
                 $operation = $this->operations->execute('tasks.dependency_merge', 'task_group', $group->id,
-                    DependencyMergeProjection::WorkerNodeId, [...$intent, 'execution_secrets' => $secrets], $caller, $request,
+                    SwampNode::id(), [...$intent, 'execution_secrets' => $secrets], $caller, $request,
                     lockKey: OperationStore::lockKey('task_group', $group->id));
                 if ($operation->wasRecentlyCreated) {
                     foreach ($secrets as $name => $descriptor) {

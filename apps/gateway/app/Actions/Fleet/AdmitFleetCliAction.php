@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -42,10 +43,10 @@ final readonly class AdmitFleetCliAction
     private function admit(array $nodes, int $root, ?string $triggeredBy, ?string $requestId): Operation
     {
         // Its steps run on the Swamp Node and read and record this intent, so that Node owns it.
-        return $this->start->execute('fleet.cli_converge', 'fleet', $root, Node::query()->findOrFail(209)->id, [
+        return $this->start->execute('fleet.cli_converge', 'fleet', $root, SwampNode::node()->id, [
             'nodes' => array_map(fn (Node $node): array => ['node_id' => $node->id, ...$this->plan->fleetInput($node), 'agent' => null,
                 'daytime' => true], $nodes),
-            'participant_node_ids' => array_values(array_unique([$root, 209, ...array_map(static fn (Node $node): int => $node->id, $nodes)])),
+            'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...array_map(static fn (Node $node): int => $node->id, $nodes)])),
         ], $triggeredBy, $requestId);
     }
 }

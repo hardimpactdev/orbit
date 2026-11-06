@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Analytics\AnalyticsRoutePlan;
+use App\Domain\Nodes\SwampNode;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -34,7 +35,7 @@ final readonly class NativeRouteUpdateInput
             'effectful' => $effectful, 'workloads' => [], 'before' => $before, 'selected' => $selected,
             'public_activated' => new PublicRouteEligibility()->canStartActivation($candidate)];
         if (! $effectful) {
-            return ['intent' => $metadata, 'certificates' => [], 'participant_node_ids' => [209], 'execution_secrets' => []];
+            return ['intent' => $metadata, 'certificates' => [], 'participant_node_ids' => [SwampNode::id()], 'execution_secrets' => []];
         }
 
         $beforeSites = $this->sites->all();

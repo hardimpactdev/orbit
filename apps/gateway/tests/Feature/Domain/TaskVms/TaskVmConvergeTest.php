@@ -15,8 +15,11 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 /** A ready task VM with its host, its active guest Node and the Gateway Node that holds the Pi server. */
 function convergeWorld(TaskVmState $state = TaskVmState::Ready): TaskVm

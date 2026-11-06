@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -32,7 +33,7 @@ final readonly class NativeRouteLifecycleInput
             'workloads' => [], 'awake' => [], 'offline' => ($input['offline'] ?? false) === true, 'removal' => $removing,
             'public_activated' => ! $removing && new PublicRouteEligibility()->canStartActivation($route)];
         if (! $metadata['effectful']) {
-            return ['intent' => $metadata, 'certificates' => [], 'participant_node_ids' => [209], 'execution_secrets' => []];
+            return ['intent' => $metadata, 'certificates' => [], 'participant_node_ids' => [SwampNode::id()], 'execution_secrets' => []];
         }
         if ($deletedWorkloadNodeId !== null && ! $removing) {
             throw new \LogicException('Only workspace removal may exclude its deleted workload Node.');

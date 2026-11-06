@@ -9,12 +9,12 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\DependencyMergeProjection;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskPullRequestEvidence;
@@ -80,7 +80,7 @@ final readonly class StartTaskPullRequestStepAction
                 throw new ResourceOperationException('operation.target_busy', 'Another Task Operation owns this group.', 409);
             }
             $target = $read();
-            $intent = [...$target->intent($group), ...$extra, 'node_id' => DependencyMergeProjection::WorkerNodeId];
+            $intent = [...$target->intent($group), ...$extra, 'node_id' => SwampNode::id()];
             $credentials = app(GitHubAppStore::class)->credentials()
                 ?? throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before merging a task pull request.', 409);
             try {
@@ -94,7 +94,7 @@ final readonly class StartTaskPullRequestStepAction
             return DB::transaction(function () use ($kind, $group, $intent, $secrets, $token, $caller, $request): Operation {
                 Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
                 $operation = $this->operations->execute($kind, OperationKinds::TaskGroupTarget, $group->id,
-                    DependencyMergeProjection::WorkerNodeId, [...$intent, 'execution_secrets' => $secrets], $caller, $request,
+                    SwampNode::id(), [...$intent, 'execution_secrets' => $secrets], $caller, $request,
                     lockKey: OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id));
                 if ($operation->wasRecentlyCreated) {
                     app(SwampCommandStep::class)->executionCopy($secrets['write_token']['vault'], $secrets['write_token']['key'], $token->reveal());

@@ -16,8 +16,11 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 /** A ready task VM with its host and active guest Node, and a vault that records its puts. */
 function readyCopiesWorld(TaskVmState $state = TaskVmState::Ready): array

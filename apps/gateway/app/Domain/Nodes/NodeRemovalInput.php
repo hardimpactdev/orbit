@@ -108,7 +108,7 @@ final readonly class NodeRemovalInput
         }
         $publicSsh = app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node);
         $retained = app(NodeSideResidue::class)->describe(array_values($roles->map(static fn ($role): RoleName => $role->role)->all()), nodeLeavesFleet: true);
-        $participants = [209, $node->id, ...array_column($dns, 'node_id')];
+        $participants = [SwampNode::id(), $node->id, ...array_column($dns, 'node_id')];
         foreach ([...$peers, ...$hub, ...$routerRules] as $row) {
             $connection = ValidatedData::object($row['ssh']);
             $remote = ValidatedData::object($connection['target']);

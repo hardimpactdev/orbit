@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -25,7 +26,7 @@ final readonly class TaskCheckGitHubTokens
         $operation->refresh();
         $this->direct->assertRun($operation, $runId);
         if ($operation->kind !== 'tasks.check' || $operation->target_type !== 'task_group'
-            || ! in_array($callerNodeId, [$operation->node_id, 209], true)
+            || ! in_array($callerNodeId, [$operation->node_id, SwampNode::id()], true)
             || $operation->status->terminal() || $operation->cancel_requested_at !== null
             || ($operation->input['phase'] ?? null) !== 'handoff' || ! is_string($operation->input['check_name'] ?? null)
             || ! is_string($operation->input['repository'] ?? null)) {

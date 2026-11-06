@@ -13,8 +13,6 @@ use App\Support\ValidatedData;
 /** Public intent and bounded result recording. Swamp owns merge policy. */
 final readonly class DependencyMergeProjection implements DirectOperationProjection, NativeOperationProjection
 {
-    public const int WorkerNodeId = 209;
-
     public function native(Operation $operation): bool
     {
         return true;

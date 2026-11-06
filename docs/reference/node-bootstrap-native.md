@@ -41,6 +41,8 @@ Role addition applies packages and Caddy through its [Ansible prerequisites phas
 
 Native role addition calls the shared Tool Manager resource plan from Node 209. A manager package already at the admitted version is kept. Its configuration and installed version still pass the role end checks. Node convergence retains ownership of the observer and Orbit CLI.
 
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
+
 ## Record a trusted first host key
 
 After an authorized one-time scan from209 over the Node's WireGuard address, `POST /api/v1/nodes/{node}/ssh-host-key` records the public `{host,type,value}` result. `host` must equal the Node's stored WireGuard address; `type` is `ssh-ed25519` and `value` is its base64 public key. The Gateway calculates the SHA-256 fingerprint and records the three host-key fields on the Node, then broadcasts its normal update. The response is the updated Node with HTTP200. Normal directed Node access applies.

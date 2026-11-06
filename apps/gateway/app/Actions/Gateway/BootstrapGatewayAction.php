@@ -32,8 +32,6 @@ final readonly class BootstrapGatewayAction
     /** @var list<RoleName> */
     private const array OwnedRoles = [RoleName::Gateway, RoleName::Vpn];
 
-    private const int SwampNodeId = 209;
-
     public function __construct(
         private AssignRoleAction $assignRole,
         private VpnSettings $vpnSettings,
@@ -55,12 +53,7 @@ final readonly class BootstrapGatewayAction
             // No model events: recording the pin would start a Swamp run, and this Gateway has no Swamp yet. The pin is published
             // when Swamp serves.
             $node = Node::withoutEvents(fn (): Node => DB::transaction(function () use ($data, $hostKey): Node {
-                // The Swamp node has one well-known id in the Gateway (known hosts, rollouts, releases, SSH access). The machine of this
-                // Gateway runs Swamp, so its Node takes that id.
                 $node = Node::query()->firstOrNew(['name' => $data->name]);
-                if (! $node->exists) {
-                    $node->id = self::SwampNodeId;
-                }
                 $node->forceFill([
                     'status' => LifecycleStatus::Provisioning,
                     'platform' => 'linux',
@@ -89,6 +82,9 @@ final readonly class BootstrapGatewayAction
                 // The app runs, so the Gateway Node and its role are live. The VPN role stays provisioning until Swamp applies the hub.
                 $node->update(['status' => LifecycleStatus::Active]);
                 $node->roles()->where('role', RoleName::Gateway)->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
+                // The machine of this Gateway runs Swamp, so its Node holds the swamp role; the Gateway finds the Swamp Node by that role.
+                // The role is not assignable while a Node provisions, so it comes last, and it stays provisioning until Swamp serves.
+                $this->assignRole->execute($node, RoleName::Swamp);
 
                 return $node;
             }));

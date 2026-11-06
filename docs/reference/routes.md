@@ -20,6 +20,8 @@ The Gateway validates Route changes and records intent as an Operation. Each ava
 
 Route creation and updates use official cfgmgmt resources and pinned SSH argv commands. Their TLS probes run on 209 over the captured SSH connection, verify the hostname and Orbit CA, and ignore the application HTTP status. A failed Caddy validation stops the reload and leaves the candidate for convergence; there is no rollback.
 
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
+
 Domain, publication and web-root updates use the Route admission action. The Gateway renders every file the run writes: each Node's whole Caddyfile, PHP pools, `APP_URL` lines and certificate leaves.
 
 The run follows the chart [`route/update.mmd`](/cli/route). It publishes the new site beside the old one, writes the new `APP_URL`, and probes TLS. Then it opens or closes the public edge, moves private DNS outside the TLD, waits the DNS grace, and withdraws the old site. There is no rollback.
