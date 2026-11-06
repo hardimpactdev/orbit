@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**,proof-reaper/**},swamp/workflows/{workflow-proof-reaper,workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields}.php"
 ---
@@ -702,11 +702,7 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 Run `swamp workflow run group-start --input workItem=tg-<group> --server wss://swamp.orbit` to start the work item. The factory runs provision, baseline, implement, handoff and review in order. A passed handoff goes directly to review; changes requested return to implementation. After the final approval it publishes the checked commit.
 
-Each run is one bounded generation. While an operation runs, the next generation waits 60 seconds before reading it again. A human gate holds no run; `group-approve` records the decision and wakes the group. `groups-driver` runs every 10 minutes to restart a broken run chain.
-
-The `proof-reaper` schedule also runs every 10 minutes, at minute 7, 17 and so on. It touches only Project 62 proof groups. `ProofReaper` publishes the open groups as the schedule's inputs: id, title, start time, and each running VM's pinned SSH target. It publishes again after a group or its task VM changes, and after each run.
-
-Swamp reads each VM's heartbeat and chooses the groups. A group is chosen when its heartbeat is more than an hour old, or when a newer open group of the same lane exists. A group older than 90 minutes is chosen unless a heartbeat from the last hour renewed it, so a group without a readable heartbeat cannot hold a host. The Gateway's scheduled-result projection cancels each chosen group with the normal cancel intent, once per group and run. The [Swamp proof topology](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md) page describes the heartbeat and the lane titles.
+Each run is one bounded generation. While an operation runs, the next generation waits 60 seconds before reading it again. A human gate holds no run; `group-approve` records the decision and wakes the group.
 
 ## Workspace lease
 

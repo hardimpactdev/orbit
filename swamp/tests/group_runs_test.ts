@@ -12,7 +12,6 @@ import {
     type NativeGroupRun,
     type RunFailures,
 } from "../extensions/behaviors/_lib/group_runs.ts";
-import { discoverGroups } from "../extensions/behaviors/orbit_group_runs.ts";
 
 function fixture() {
     let intent: GroupRun | null = null, owner: GroupRun | null = null;
@@ -133,62 +132,6 @@ Deno.test("running, waiting and interrupted owners hold their generation until n
         "identity differs",
     );
     assertEquals(f.launches(), 1);
-});
-
-Deno.test("discovery rotates four supervisors per pass and isolates an unavailable factory", async () => {
-    const workItems = Array.from({ length: 120 }, (_, i) => `tg-${i + 1}`);
-    let result: Record<string, unknown> = {};
-    const context = {
-        definition: { name: "orbit-group-runs" },
-        globalArgs: {
-            factories: [
-                { factory: "broken", preapprovalModel: "broken-driver" },
-                { factory: "healthy", preapprovalModel: "healthy-driver" },
-            ],
-        },
-        queryData: recordQuery((predicate: string) => {
-            if (predicate.includes('"broken"')) {
-                throw new Error("one factory unavailable");
-            }
-            if (predicate.includes("schedule-")) {
-                return Promise.resolve(["tg-120"]);
-            }
-            if (predicate.includes('name == "groups"')) {
-                return Promise.resolve([result]);
-            }
-            if (predicate.includes('name.startsWith("state-")')) {
-                return Promise.resolve(
-                    workItems.map((workItem) => ({
-                        workItem,
-                        status: "active",
-                    })),
-                );
-            }
-            return Promise.resolve([]);
-        }),
-        invokeModel: () => {
-            throw new Error("discovery must not materialize status or reports");
-        },
-        writeResource: (
-            _spec: string,
-            name: string,
-            data: Record<string, unknown>,
-        ) => {
-            result = data;
-            return Promise.resolve({ name });
-        },
-        logger: { warning() {} },
-    };
-    await discoverGroups(context);
-    const visited = new Set<string>();
-    for (let pass = 0; pass < 30; pass++) {
-        const groups = result.groups as { workItem: string }[];
-        assert(groups.length <= 4);
-        groups.forEach((g) => visited.add(g.workItem));
-        assertEquals((result.errors as unknown[]).length, 1);
-        await discoverGroups(context);
-    }
-    assertEquals([...visited].sort(), workItems.slice(0, -1).sort());
 });
 
 Deno.test("per-group drivers retain and consume pre-approvals from the original named driver", async () => {
@@ -698,117 +641,6 @@ Deno.test("checkpoint recovery reserves attempts, parks before more work, and re
     );
 });
 
-Deno.test("many conflicting factory memberships retain assistance identities without spending the discovery call budget", async () => {
-    const records = new Map<string, Record<string, unknown>>();
-    const workItems = Array.from({ length: 120 }, (_, i) => `tg-${i + 1}`);
-    const ctx = {
-        definition: { name: "orbit-group-runs" },
-        globalArgs: {
-            factories: ["a", "b"].map((factory) => ({
-                factory,
-                preapprovalModel: factory,
-            })),
-        },
-        queryData: recordQuery((p: string) => {
-            if (p.includes("schedule-")) return Promise.resolve([]);
-            if (p.includes("conflict-")) {
-                const name = /name == "([^"]+)"/.exec(p)?.[1];
-                return Promise.resolve(
-                    name && records.has(name) ? [records.get(name)!] : [],
-                );
-            }
-            if (!p.includes('name.startsWith("state-")')) {
-                return Promise.resolve([]);
-            }
-            return Promise.resolve([
-                ...workItems.map((workItem) => ({
-                    workItem,
-                    status: "active",
-                })),
-                ...(p.includes('"a"')
-                    ? [{ workItem: "tg-999", status: "active" }]
-                    : []),
-            ]);
-        }),
-        invokeModel: (call: { method: string }) => {
-            assertEquals(
-                call.method,
-                "status",
-                "notification runs in its own native workflow step",
-            );
-            return Promise.resolve({ ok: true });
-        },
-        writeResource: (
-            _spec: string,
-            name: string,
-            data: Record<string, unknown>,
-        ) => {
-            records.set(name, data);
-            return Promise.resolve({ name });
-        },
-        logger: { warning() {} },
-    };
-    await discoverGroups(ctx);
-    const identity = records.get("conflict-tg-7")?.startedAt;
-    assertEquals(
-        (records.get("groups")?.groups as { workItem: string }[]).map((g) =>
-            g.workItem
-        ),
-        ["tg-999"],
-    );
-    assertEquals((records.get("groups")?.conflicts as unknown[]).length, 120);
-    await discoverGroups(ctx);
-    assertEquals(records.get("conflict-tg-7")?.startedAt, identity);
-    assertEquals(records.get("conflict-tg-7")?.factories, ["a", "b"]);
-});
-
-Deno.test("unchanged human waits stay idle; approval changes wake them; terminal groups stay out", async () => {
-    const { groupFingerprint } = await import(
-        "../extensions/behaviors/_lib/group_activity.ts"
-    );
-    let approval = "before",
-        fingerprint = "",
-        result: Record<string, unknown> = {};
-    const ctx = {
-        definition: { name: "orbit-group-runs" },
-        globalArgs: {
-            factories: [{ factory: "factory", preapprovalModel: "original" }],
-        },
-        queryData: recordQuery((p: string) =>
-            Promise.resolve(
-                p.includes("modelName in")
-                    ? [{ approval }]
-                    : p.includes('name == "activity"')
-                    ? [{ idle: true, fingerprint }]
-                    : p.includes('name.startsWith("state-")')
-                    ? [{ workItem: "tg-7", status: "active" }, {
-                        workItem: "tg-8",
-                        status: "terminal",
-                    }]
-                    : [],
-            )
-        ),
-        invokeModel: () => {
-            throw new Error("discovery must not run factory methods");
-        },
-        writeResource: (_s: string, _n: string, v: Record<string, unknown>) => {
-            result = v;
-            return Promise.resolve({ name: "groups" });
-        },
-        logger: { warning() {} },
-    };
-    fingerprint = await groupFingerprint(ctx, "factory", "tg-7", "original");
-    await discoverGroups(ctx);
-    assertEquals(result.groups, []);
-    approval = "after";
-    await discoverGroups(ctx);
-    assertEquals(result.groups, [{
-        workItem: "tg-7",
-        factory: "factory",
-        preapprovalModel: "original",
-    }]);
-});
-
 Deno.test("a late supervisor cannot launch another generation for a terminal factory", async () => {
     const { behavior: group } = await import(
         "../extensions/behaviors/orbit_group_run.ts"
@@ -831,83 +663,6 @@ Deno.test("a late supervisor cannot launch another generation for a terminal fac
         logger: { info() {}, warning() {} },
     });
     assertEquals(result, { dataHandles: [{ name: "reconcile" }] });
-});
-
-Deno.test("existing owners hold all four slots across ticks; terminal owners release them", async () => {
-    const root = await Deno.makeTempDir();
-    const { join } = await import("jsr:@std/path@1.1.4");
-    const workflow = crypto.randomUUID();
-    const owners = Array.from(
-        { length: 4 },
-        (_, i) => ({
-            workItem: `tg-${i + 1}`,
-            runId: crypto.randomUUID(),
-            generation: 1,
-        }),
-    );
-    let completed = false, result: Record<string, unknown> = {};
-    try {
-        await Deno.mkdir(join(root, "workflows"), { recursive: true });
-        await Deno.writeTextFile(
-            join(root, "workflows/workflow-group-run.yaml"),
-            JSON.stringify({ id: workflow }),
-        );
-        const directory = join(root, ".swamp/workflow-runs", workflow);
-        await Deno.mkdir(directory, { recursive: true });
-        for (const o of owners) {
-            await Deno.writeTextFile(
-                join(directory, `workflow-run-${o.runId}.yaml`),
-                JSON.stringify({ status: "running" }),
-            );
-        }
-        const ctx = {
-            repoDir: root,
-            definition: { name: "orbit-group-runs" },
-            globalArgs: {
-                factories: [{ factory: "f", preapprovalModel: "p" }],
-            },
-            queryData: recordQuery((p: string) =>
-                Promise.resolve(
-                    p.includes("modelName.startsWith")
-                        ? owners
-                        : p.includes('name.startsWith("state-")')
-                        ? Array.from(
-                            { length: 5 },
-                            (_, i) => ({
-                                workItem: `tg-${i + 1}`,
-                                status: completed && i === 0
-                                    ? "terminal"
-                                    : "active",
-                            }),
-                        )
-                        : [],
-                )
-            ),
-            invokeModel: () => Promise.resolve({ ok: true }),
-            logger: { warning() {} },
-            writeResource: (
-                _s: string,
-                _n: string,
-                v: Record<string, unknown>,
-            ) => {
-                result = v;
-                return Promise.resolve({ name: "groups" });
-            },
-        };
-        for (let i = 0; i < 3; i++) {
-            await discoverGroups(ctx);
-            assertEquals(result.groups, []);
-        }
-        completed = true;
-        await discoverGroups(ctx);
-        assertEquals(result.groups, [{
-            workItem: "tg-5",
-            factory: "f",
-            preapprovalModel: "p",
-        }]);
-    } finally {
-        await Deno.remove(root, { recursive: true });
-    }
 });
 
 Deno.test("only the owning run hands its group to the next generation, without a poll", async () => {

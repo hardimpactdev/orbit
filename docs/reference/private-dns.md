@@ -33,9 +33,9 @@ Managed Linux peers send only Orbit names to private DNS. The Gateway renders th
 
 A routing domain for an outside-TLD Route, such as `~app.example.com`, also captures descendants. It creates no private wildcard answer: VPN DNS still forwards descendants that have no private record. Resolver routing cannot select only the exact name. A private Route on an apex such as `example.com` also moves every descendant lookup to VPN DNS; choose a narrower name when those descendants must keep public resolution.
 
-Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. A peer needs `fleet.peer_dns` only while its policy differs from the one its last successful `fleet.peer_dns` run applied. The digest covers the effective DNS server, peer public key and routing domains. `GET /api/v1/fleet/peer-dns/plan` returns the first such peer, in Node order, as one `{node_id, configuration_digest}` entry, without contacting peers or writing state.
+Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. A peer needs `fleet.peer_dns` only while its policy differs from the one its last successful `fleet.peer_dns` run applied. The digest covers the effective DNS server, peer public key and routing domains.
 
-Swamp's fleet maintenance workflow reads the plan each minute and admits that peer once per digest. So the Gateway changes one peer at a time: the next peer waits until this one succeeds. A failed peer is not admitted again for the same digest; fix the cause and rerun it with `orbit:peer-dns-reconcile`, which admits every peer whose policy differs.
+No schedule admits peer DNS. After a policy change, run `orbit:peer-dns-reconcile`, which admits every peer whose policy differs. A failed peer stays changed until you fix the cause and run it again.
 
 The Gateway starts each `fleet.peer_dns` intent directly in Swamp. Its native workflow runs on Node 209 and reaches the peer over SSH.
 

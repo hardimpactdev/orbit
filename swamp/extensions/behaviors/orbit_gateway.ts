@@ -318,21 +318,7 @@ export const behavior = {
                     },
                     readJob: (key) => read<Job>(`job-${key}`),
                     readRun: async () =>
-                        args.stage === "driver" &&
-                            args.gateIds?.[0] === "driver-factory-conflict" &&
-                            args.driverDefinition
-                            ? ((await queryWorkerData(
-                                context,
-                                `modelName == ${
-                                    JSON.stringify(args.driverDefinition)
-                                } && name == ${
-                                    JSON.stringify(`conflict-${args.workItem}`)
-                                }`,
-                                "attributes",
-                            )) as { workItem: string; startedAt: string }[])[
-                                0
-                            ] ?? null
-                            : args.factory
+                        args.factory
                             ? ((await queryWorkerData(
                                 context,
                                 `modelName == "${args.factory}" && name == "state-${args.workItem}"`,

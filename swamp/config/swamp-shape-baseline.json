@@ -144,22 +144,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/fleet/maintenance.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/release.ts",
       "rule": "gateway-http",
       "count": 2,
@@ -274,14 +258,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "groups/conflict-${{ self.conflict.workItem }}"
-      ]
-    },
-    {
       "file": "workflows/workflow-group-run.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -290,12 +266,6 @@
     {
       "file": "workflows/workflow-group-run.yaml",
       "rule": "unknown-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-groups-driver.yaml",
-      "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
     }
