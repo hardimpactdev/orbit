@@ -115,15 +115,15 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 
 ## Releases
 
-The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. It applies a temporary systemd stop policy: SIGTERM reaches the master, the stop has no systemd timeout, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step waits for the unit's control group to empty. A missing Horizon Process needs no drain.
+The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. The Horizon unit carries the stop policy, so `systemctl stop` blocks until the unit's control group is empty: SIGTERM reaches the master, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step refuses a unit that lacks `KillMode=mixed` or `SendSIGKILL=no`, then checks that the unit is inactive. A missing Horizon Process needs no drain.
 
-The drain deadline is the longest supervisor job timeout plus 30 seconds. A failed drain prevents the switch. The step removes its temporary policy when it ends. Inspect the Process journal and let running jobs finish before retrying. If the run ends after draining, Horizon can stay stopped; inspect the run before starting it again.
+The drain is the longest supervisor job timeout plus 30 seconds, and it is fixed in the unit: after you change a supervisor timeout, update the Horizon Process to rewrite the unit. A failed drain prevents the switch. Inspect the Process journal and let running jobs finish before retrying. If the run ends after draining, Horizon can stay stopped; inspect the run before starting it again.
 
 After switching both release links, the child starts Horizon on the selected release and verifies the Gateway. A failed health check runs the local rollback script to switch back. Other requests can queue jobs during the drain; their jobs wait in Redis. Job IDs, attempts, delays and chains do not change.
 
 The switch also restarts other running services whose working directory is under the Gateway application, including the scheduler and agent-view.
 
-Do not restart Horizon with `orbit process:restart`, and do not stop it with `orbit process:stop` while a job runs. Both stop its unit, and systemd kills a job that still runs 90 seconds after the stop, such as a build. To restart Horizon, run `php artisan horizon:terminate`.
+`orbit process:restart`, `orbit process:stop` and `bin/gateway-rollback` wait for running jobs up to the drain, because the unit carries the stop policy. To restart Horizon on the current release without a wait, run `php artisan horizon:terminate`.
 
 ### Switch back to an older release
 
