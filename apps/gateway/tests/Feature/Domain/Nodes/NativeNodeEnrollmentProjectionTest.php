@@ -15,10 +15,10 @@ it('sends a role without copies with an empty record of copies, and keeps the co
         'execution_secrets' => [],
     ]]);
 
-    $input = json_encode(app(NativeNodeEnrollmentProjection::class)->input($operation), JSON_THROW_ON_ERROR);
+    $roles = json_decode(json_encode(app(NativeNodeEnrollmentProjection::class)->input($operation), JSON_THROW_ON_ERROR), false, 512, JSON_THROW_ON_ERROR)->intent->roles;
 
-    expect($input)->toContain('"intent":{"role":"app-dev"},"execution_secrets":{}')
-        ->and($input)->toContain('"execution_secrets":{"environment":{"vault":"orbit-control-inputs"');
+    expect($roles[0]->execution_secrets)->toEqual(new stdClass)
+        ->and((array) $roles[1]->execution_secrets->environment)->toBe($copy);
 });
 
 it('passes an intent without roles through unchanged', function (): void {
