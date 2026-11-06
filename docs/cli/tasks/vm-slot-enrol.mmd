@@ -28,6 +28,9 @@ sequenceDiagram
   SW->>H: Create and prepare the VM<br/>child task-vm-provision
   %%> What it does:
   %%> - today's VM child of tasks:provision: clone the image, attach a clone of the host's topology seed, boot, enrol, model key, Pi
+  SW->>H: Create the checkout folder<br/>ssh exec · incus exec mkdir
+  %%> What it does:
+  %%> - creates the Project's empty checkout folder as `orbit`; the converge exports it, and the claim's workspace step fills it
   SW->>VM: Converge once<br/>child operation-task-vm-converge
   %%> What it does:
   %%> - the task VM role phases: nested Incus with the seed pool, the nested network, the NFS export of the checkout path
