@@ -1154,7 +1154,7 @@ The child reads the builder's bridge address and host key from the host before i
 
 The last five steps follow:
 
-5. **Clean and stop.** `cloud-init clean`, an empty `/etc/machine-id`, removed SSH host keys, then `incus stop`.
+5. **Clean and stop.** The child workflow `task-vm-image-clean` cleans the VM and stops it. The stage 6 refresh shares it.
 6. **Publish the candidate.** `incus publish` with the properties `orbit.recipe` and `orbit.profile`. The Gateway reads the fingerprint from its output.
 7. **Smoke the candidate.** The child workflow `task-vm-image-smoke` boots a throwaway VM from the candidate and runs the `check` phase on it.
 8. **Promote the image.** The child workflow `task-vm-image-promote` points the base alias at the candidate's fingerprint. It keeps the old image as `-previous`.

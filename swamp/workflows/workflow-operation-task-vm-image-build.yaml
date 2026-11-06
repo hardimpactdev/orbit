@@ -140,6 +140,7 @@ jobs:
   - {job: phases, condition: {type: succeeded}}
   steps:
     # The clone makes its own cloud-init state, machine id and host keys at its first boot. The refresh of an image (stage 6) runs the same workflow on its enrolled VM.
+    # No `}}` inside the expression below: the closing braces of the map and of the expression are apart.
   - name: Clean and stop
     labels: {role: swamp}
     writes: true
@@ -150,7 +151,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        intent: '${{ {"host_ssh_execution": inputs.intent.jump, "vm": {"name": inputs.intent.builder, "project": inputs.intent.project}, "enrolled": false, "nested": {}} }}'
+        intent: '${{ {"host_ssh_execution": inputs.intent.jump, "vm": {"name": inputs.intent.builder, "project": inputs.intent.project}, "enrolled": false, "nested": {} } }}'
 - name: publish
   labels: {role: swamp}
   dependsOn:
