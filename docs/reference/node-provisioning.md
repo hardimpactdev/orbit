@@ -67,21 +67,26 @@ A new Node needs a public SSH host and an approved SSH host key fingerprint, `--
 
 Admission records a provisioning Node and freezes its public resource plan. Bootstrap identity and the new observer secret enter the execution vault; the workflow receives only their key names. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
 
-| Stage | Native work |
+| Stage | Work |
 | --- | --- |
-| Trust | Collect the public SSH key, assert its approved fingerprint, read the platform and bootstrap account, then bind that identity into the frozen resources. |
-| Baseline | Authorize the control key, replace stale known-host pins, install packages, create the managed account, validate its sudo rule and authorize management SSH. |
-| Network | Preserve or generate a Node-held WireGuard key, write the rendered tunnel and hub files, set the interface address, apply peers with `wg syncconf` and preserve public recovery SSH. |
-| Observer | Fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
-| Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort and private DNS after role checks. Exporters require explicit enablement. |
-| End check | Verify managed SSH and sudo, check the observer resources and prove the tunnel. The native `Check the Node` assertion determines completion. |
+| Trust | Native steps collect the public SSH key, assert its approved fingerprint, read the platform and bootstrap account, then bind that identity into the frozen resources. |
+| Input | The intent, the private files and the inventory with pinned host keys are written to a run folder on 209. |
+| Baseline | Ansible phase `baseline`: pin the Node, authorize the control key, install packages, create the managed account and its sudo rule, open recovery SSH, enable the firewall. |
+| Network | Phase `tunnel` creates and checks the WireGuard key, writes the tunnel files and applies peers. A native step reads the public key. Phase `hub` adds the peer. |
+| Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
+| Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
+| Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort. Exporters require explicit enablement. |
+| DNS | Ansible phase `dns` writes the dnsmasq backend of a new VPN hub; native child workflows install its listener and publish private DNS. |
+| End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
+
+The `baseline` phase replaces the Node pin on 209, and it validates the sudo rule before the rule replaces the old one. The `tunnel` phase requires the WireGuard public key to be unique, and an existing hub to keep its peer-facing key, before it changes any tunnel file, interface or peer.
 
 Role PHP packages, Composer prerequisites and native Caddy use the [recipe artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) for each pinned Debian file. Role prerequisites use one Ansible artifact module; native Caddy and Tool Managers use the shared native fetch workflow. Both consume the admitted candidate list, try upstream only after a mirror transport failure, and verify the checksum before publication. They share the curl transport-code policy. A checksum mismatch stops the run. Local I/O and size-limit failures stop without fallback.
 
 
-Native Node roots freeze certificate scopes and publication plans at admission. Their explicit resource steps publish the target and withdraw the source after target readiness. Official cfgmgmt resources own file, package, account and service changes. A single command uses SSH argv. No script is copied to a Node. A completed run removes the staged sudo candidate as best effort. A failure retains completed work; reruns use native resource checks and guards.
+Native Node roots freeze certificate scopes and publication plans at admission. Their explicit resource steps publish the target and withdraw the source after target readiness. Node enrollment itself uses Ansible phases for file, package, account and service changes; a single command uses SSH argv. No script is copied to a Node, and the sudo rule is validated in place, so no candidate file is staged. A failure retains completed work; every phase is an end state, so a rerun skips what is done.
 
-The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. Before hub peer synchronization, SSH commands compose the existing key and the public peer plan into a protected configuration on that hub. The workflow verifies that the hub public key is unchanged afterward. Certificate signing stays at the existing Gateway signer boundary.
+The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. The `hub` phase composes the existing key and the public peer plan into a protected configuration on that hub, applies it, and checks that the hub public key is unchanged afterward. Certificate signing stays at the existing Gateway signer boundary.
 
 The enrollment workflow records the verified bootstrap host key for the WireGuard address before checking private SSH. This replaces a stale pin when an address is reused. Fingerprint mismatches refuse before either pin changes. The scanner derives the fingerprint from the returned public key bytes.
 
@@ -112,7 +117,7 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 
 ### Bootstrap identity
 
-A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. A true Swamp guard skips an action: enrollment appends the control key when `grep` exits 1 and skips it when `grep` exits 0.
+A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. The `baseline` phase appends the control key to the bootstrap account when it is absent.
 
 The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key for the bootstrap and managed accounts. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
 

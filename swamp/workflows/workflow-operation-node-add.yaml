@@ -1,6 +1,6 @@
 id: 22e84308-c7ae-4c33-90c6-32dfeb970870
 name: operation-node-add
-description: Enroll a Node through official resources, public host observations and frozen role plans.
+description: Enroll a Node with native host observations, Ansible phases for the Node state and frozen role plans.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -37,48 +37,40 @@ inputs:
   - execution_secrets
   additionalProperties: false
 jobs:
-- name: phase_0
-  labels:
-    role: swamp
+- name: host_key
+  labels: {role: swamp}
   steps:
   - name: Read the host key
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-host-key-"+string(inputs.node_id) }}', methodName: collect-host-public-key, globalArgs: {name: '${{
           "node-add-bootstrap-"+string(inputs.node_id) }}', transport: {kind: ssh, hostKeyPolicy: insecure, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port }}', identityContent: '${{
             vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host }}'}]}, inputs: {
         hosts: 'name:target', timeoutSec: 30}}
-- name: phase_1
-  labels:
-    role: swamp
+- name: approval
+  labels: {role: swamp}
   steps:
   - name: Require approved host key
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: assert, expr: 'steps["Read the host key"].outputs.fingerprint == inputs.intent.bootstrap.fingerprint', severity: high, message: The observed host key must match the
         approved fingerprint.}
   dependsOn:
-  - {job: phase_0, condition: {type: succeeded}}
-- name: phase_2
-  labels:
-    role: swamp
+  - {job: host_key, condition: {type: succeeded}}
+- name: platform
+  labels: {role: swamp}
   steps:
   - name: Read the platform
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-platform-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "node-add-platform-"+string(inputs.node_id)
           }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key)
             }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {
         hosts: 'name:target', argv: [uname, -sm], sudo: false, timeoutSec: 30}}
   dependsOn:
-  - {job: phase_1, condition: {type: succeeded}}
+  - {job: approval, condition: {type: succeeded}}
 - name: bootstrap_account
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Read the bootstrap account
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-bootstrap-account-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
         name: '${{ "node-add-bootstrap-account-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
             }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
@@ -88,814 +80,175 @@ jobs:
       item: linux
       in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
   dependsOn:
-  - {job: phase_2, condition: {type: succeeded}}
-- name: phase_3
-  labels:
-    role: swamp
+  - {job: platform, condition: {type: succeeded}}
+- name: identity
+  labels: {role: swamp}
   steps:
   - name: Bind the Node identity
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: behavior, behaviorType: '@nckrtl/node-enrollment-plan', behaviorName: '${{ "node-add-resources-"+string(inputs.node_id) }}', methodName: bind, inputs: {platform: '${{
           inputs.intent.platform }}', expected_architecture: '${{ inputs.intent.expected_architecture }}', observation: '${{ steps["Read the platform"].outputs }}', host_key: '${{ steps["Read
           the host key"].outputs }}', roles: '${{ inputs.intent.roles }}', cli: '${{ inputs.intent.cli }}', bootstrap_user: '${{ inputs.intent.bootstrap.user }}', bootstrap_account: '${{
           inputs.intent.platform == "linux" ? steps["Read the bootstrap account-0"].outputs : null }}', dns: '${{ inputs.intent.dns }}', private_dns: '${{ inputs.intent.private_dns }}'}}
   dependsOn:
   - {job: bootstrap_account, condition: {type: succeeded}}
-- name: phase_4
-  labels:
-    role: swamp
+- name: intent
+  labels: {role: swamp}
   steps:
-  - name: Read bootstrap keys
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-bootstrap-keys-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-bootstrap-keys-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["grep","-qxF",inputs.intent.identity.public_key,steps["Bind
-          the Node identity"].outputs.bootstrap_authorized_keys] }}', sudo: false, timeoutSec: 30, okExitCodes: [0, 1]}}
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_3, condition: {type: succeeded}}
-- name: phase_5
-  labels:
-    role: swamp
-  steps:
-  - name: Authorize the control key
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-authorize-control-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-authorize-control-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","20","tee","-a",steps["Bind
-          the Node identity"].outputs.bootstrap_authorized_keys] }}', sudo: false, timeoutSec: 65, stdin: '${{ inputs.intent.identity.public_key+"\n" }}'}}
+  - name: Write the intent
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-    # A true guard skips an already authorized key; grep exit 1 must append it.
-    guard: ${{ steps["Read bootstrap keys-0"].outputs.exitCode == 0 }}
+    guard: ${{ inputs.intent.platform != "linux" }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
   dependsOn:
-  - {job: phase_4, condition: {type: succeeded}}
-- name: known_hosts_remove
-  labels:
-    role: swamp
+  - {job: identity, condition: {type: succeeded}}
+- name: private
+  labels: {role: swamp}
   steps:
-  - name: Remove an old host pin
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-control-pins-209"+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "node-add-control-pins-209"+"-"+string(self._index)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.control_ssh.target.user }}', port: '${{ inputs.intent.control_ssh.target.port }}', identityFile: '${{ inputs.intent.control_ssh.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.control_ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.control_ssh.target.host_keys }}'}}]}, inputs: {
-        hosts: 'name:target', argv: '${{ ["timeout","20","ssh-keygen","-R",self.host,"-f",inputs.intent.known_hosts_path] }}', sudo: false, timeoutSec: 65}}
+  - name: Write the private input
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: host
-      in: '${{ inputs.intent.platform == "linux" ? [(inputs.intent.bootstrap.port == 22 ? inputs.intent.bootstrap.host : "["+inputs.intent.bootstrap.host+"]:"+string(inputs.intent.bootstrap.port)),
-        inputs.intent.address] : [] }}'
-    concurrency: 1
+    guard: ${{ inputs.intent.platform != "linux" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-private-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'umask 077
+
+          python3 -c ''import os,pathlib; pathlib.Path(os.environ["ORBIT_SSH_FILE"]).write_text(os.environ["ORBIT_SSH_VALUE"].rstrip("\n") + "\n"); pathlib.Path(os.environ["ORBIT_AGENT_FILE"]).write_text(os.environ["ORBIT_AGENT_VALUE"])'' '
+        env: {ORBIT_SSH_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/bootstrap-identity" }}', ORBIT_AGENT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-agent_secret" }}',
+          ORBIT_SSH_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.bootstrap_identity.key) }}', ORBIT_AGENT_VALUE: '${{ vault.get("orbit-control-inputs",
+            inputs.execution_secrets.agent_secret.key) }}'}
   dependsOn:
-  - {job: phase_5, condition: {type: succeeded}}
-- name: known_hosts_add
-  labels:
-    role: swamp
+  - {job: intent, condition: {type: succeeded}}
+- name: input
+  labels: {role: swamp}
   steps:
-  - name: Pin the bootstrap host
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-control-pins-209"+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "node-add-control-pins-209"+"-"+string(self._index)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.control_ssh.target.user }}', port: '${{ inputs.intent.control_ssh.target.port }}', identityFile: '${{ inputs.intent.control_ssh.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.control_ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.control_ssh.target.host_keys }}'}}]}, inputs: {
-        hosts: 'name:target', argv: '${{ ["timeout","20","tee","-a",inputs.intent.known_hosts_path] }}', sudo: false, timeoutSec: 65, stdin: '${{ (inputs.intent.bootstrap.port == 22
-          ? inputs.intent.bootstrap.host : "["+inputs.intent.bootstrap.host+"]:"+string(inputs.intent.bootstrap.port))+" "+steps["Read the host key"].outputs.publicKey+"\n"+inputs.intent.address+"
-          "+steps["Read the host key"].outputs.publicKey+"\n" }}'}}
+  - name: Write the playbook input
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+    guard: ${{ inputs.intent.platform != "linux" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-input-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ORBIT_KIND: '${{ inputs.kind }}',
+          ORBIT_HOST_KEY: '${{ steps["Read the host key"].outputs.publicKey }}', ORBIT_BOOTSTRAP_AUTHORIZED_KEYS: '${{ steps["Bind the Node identity"].outputs.bootstrap_authorized_keys
+            }}'}
   dependsOn:
-  - {job: known_hosts_remove, condition: {type: succeeded}}
-- name: phase_6
-  labels:
-    role: swamp
+  - {job: private, condition: {type: succeeded}}
+- name: baseline
+  labels: {role: swamp}
   steps:
-  - name: Refresh base packages
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "node-add-base-refresh-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: refresh, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}'}, inputs: {}}
+  - name: Set up the machine
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+    guard: ${{ inputs.intent.platform != "linux" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-baseline-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags baseline "$ORBIT_ANSIBLE/operation-node-add.yml"
+        env: &ansible {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{
+            steps["Write the intent"].outputs.assets + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null
+              -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}', ANSIBLE_FORCE_COLOR: '0'}
   dependsOn:
-  - {job: known_hosts_add, condition: {type: succeeded}}
-- name: phase_7
-  labels:
-    role: swamp
+  - {job: input, condition: {type: succeeded}}
+- name: tunnel
+  labels: {role: swamp}
   steps:
-  - name: Install base packages
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "node-add-base-packages-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', packages: '${{ inputs.intent.packages }}', ensure: present}, inputs: {}}
+  - name: Set up the tunnel
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+    guard: ${{ inputs.intent.platform != "linux" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-tunnel-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags tunnel "$ORBIT_ANSIBLE/operation-node-add.yml"
+        env: *ansible
   dependsOn:
-  - {job: phase_6, condition: {type: succeeded}}
-- name: phase_8
-  labels:
-    role: swamp
-  steps:
-  - name: Create the managed account
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/user', behaviorName: '${{ "node-add-account-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', username: '${{ inputs.intent.managed_user }}', shell: /bin/bash, managehome: true, ensure: present}, inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_7, condition: {type: succeeded}}
-- name: phase_9
-  labels:
-    role: swamp
-  steps:
-  - name: Stage the sudo rule
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-sudo-candidate-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', path: '${{ inputs.intent.sudo.candidate }}', content: '${{ inputs.intent.sudo.content }}', owner: root, group: root,
-        mode: '0440', ensure: present}, inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_8, condition: {type: succeeded}}
-- name: phase_10
-  labels:
-    role: swamp
-  steps:
-  - name: Validate the sudo rule
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-sudo-validate-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-sudo-validate-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","30","visudo","-cf",inputs.intent.sudo.candidate]
-          }}', sudo: true, timeoutSec: 30}}
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_9, condition: {type: succeeded}}
-- name: phase_11
-  labels:
-    role: swamp
-  steps:
-  - name: Publish the sudo rule
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-sudo-rule-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', path: '${{ inputs.intent.sudo.path }}', content: '${{ inputs.intent.sudo.content }}', owner: root, group: root,
-        mode: '0440', ensure: present}, inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_10, condition: {type: succeeded}}
-- name: phase_12
-  labels:
-    role: swamp
-  steps:
-  - name: Write the Orbit keys
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/authorized_key', behaviorName: '${{ "node-add-access-key-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', user: '${{ inputs.intent.managed_user }}', key: '${{ self.key }}', ensure: present},
-      inputs: {}}
-    writes: true
-    forEach:
-      item: key
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.authorized_keys : [] }}'
-  dependsOn:
-  - {job: phase_11, condition: {type: succeeded}}
-- name: phase_13
-  labels:
-    role: swamp
-  steps:
-  - name: Open public recovery SSH
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-public-recovery-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-public-recovery-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ inputs.intent.public_ssh_argv }}', sudo: true,
-        timeoutSec: 65}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_12, condition: {type: succeeded}}
-- name: phase_14
-  labels:
-    role: swamp
-  steps:
-  - name: Enable the firewall
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-firewall-enable-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-firewall-enable-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: [timeout, '60', ufw, --force, enable], sudo: true,
-        timeoutSec: 65}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_13, condition: {type: succeeded}}
-- name: phase_15
-  labels:
-    role: swamp
-  steps:
-  - name: Install the Node agent
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "node-add-agent-binary-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', url: '${{ inputs.intent.agent.url }}', path: /usr/local/bin/orbit-agent, checksum: '${{ "sha256:"+inputs.intent.agent.sha256
-          }}', owner: root, group: root, mode: '0755'}, inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_14, condition: {type: succeeded}}
-- name: phase_16
-  labels:
-    role: swamp
-  steps:
-  - name: Create WireGuard folder
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "node-add-wireguard-folder-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', path: /etc/wireguard, owner: root, group: root, mode: '0700', ensure: present},
-      inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_15, condition: {type: succeeded}}
-- name: phase_17
-  labels:
-    role: swamp
-  steps:
-  - name: Prepare the WireGuard key
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ "node-add-wireguard-key-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', command: umask 077; wg genkey > /etc/wireguard/orbit.key, notIf: test -s /etc/wireguard/orbit.key}, inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_16, condition: {type: succeeded}}
-- name: phase_18
-  labels:
-    role: swamp
+  - {job: baseline, condition: {type: succeeded}}
+- name: tunnel_key
+  labels: {role: swamp}
   steps:
   - name: Read WireGuard public key
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/debug_exec', behaviorName: '${{ "node-add-wireguard-public-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: run,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', command: wg pubkey < /etc/wireguard/orbit.key}, inputs: {}}
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-tunnel-public-key-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
+        name: '${{ "node-add-tunnel-public-key-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
+            }}', identityFile: '${{ inputs.intent.identity.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host }}', transport: {hostKeys: '${{ [steps["Read
+              the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: [wg, show, orbit, public-key], sudo: true, timeoutSec: 30}}
     forEach:
       item: linux
       in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
   dependsOn:
-  - {job: phase_17, condition: {type: succeeded}}
-- name: tunnel_key_check
-  labels:
-    role: swamp
-  dependsOn:
-  - {job: phase_18, condition: {type: succeeded}}
+  - {job: tunnel, condition: {type: succeeded}}
+- name: hub
+  labels: {role: swamp}
   steps:
-  - name: Require unique tunnel key
-    labels:
-      role: swamp
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-    task: {type: assert, expr: 'steps["Read WireGuard public key-0"].outputs.stdout.trim().matches("^[A-Za-z0-9+/]{43}=$") && !(steps["Read WireGuard public key-0"].outputs.stdout.trim()
-        in inputs.intent.network.other_public_keys) && (inputs.intent.network.required_public_key == null || steps["Read WireGuard public key-0"].outputs.stdout.trim() == inputs.intent.network.required_public_key)',
-      severity: high, message: 'The tunnel key must belong to this Node, and an existing hub must retain its peer-facing key.'}
-- name: phase_19
-  labels:
-    role: swamp
-  steps:
-  - name: Write the tunnel files
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-tunnel-file-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: root, group: root, mode: '0600', ensure: present},
-      inputs: {}}
+  - name: Add the peer
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: file
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.files : [] }}'
-  dependsOn:
-  - {job: tunnel_key_check, condition: {type: succeeded}}
-- name: hub_forwarding
-  labels:
-    role: swamp
-  steps:
-  - name: Enable hub forwarding
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/sysctl', behaviorName: '${{ "node-add-hub-forwarding-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', key: net.ipv4.ip_forward, value: '1', ensure: present}, inputs: {}}
-    writes: true
-    forEach:
-      item: hub
-      in: '${{ inputs.intent.platform == "linux" && inputs.intent.network.is_hub ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_19, condition: {type: succeeded}}
-- name: phase_20
-  labels:
-    role: swamp
-  steps:
-  - name: Start the tunnel
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "node-add-wireguard-service-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', service: wg-quick@orbit.service, ensure: running, enabled: true}, inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: hub_forwarding, condition: {type: succeeded}}
-- name: tunnel_address
-  labels:
-    role: swamp
-  steps:
-  - name: Set the tunnel address
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-tunnel-address-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-tunnel-address-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","20","ip","address","replace",inputs.intent.network.address,"dev","orbit"]
-          }}', sudo: true, timeoutSec: 65}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_20, condition: {type: succeeded}}
-- name: retired_tunnel_address
-  labels:
-    role: swamp
-  steps:
-  - name: Remove the retired address
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ "node-add-retired-address-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', command: '${{ "timeout 20 ip address del "+self.address+" dev orbit" }}',
-        onlyIf: '${{ "ip -4 -o address show dev orbit | grep -qF '' "+self.address+" ''" }}'}, inputs: {}}
-    writes: true
-    forEach:
-      item: address
-      in: '${{ inputs.intent.platform == "linux" && inputs.intent.network.retired_address != null ? [inputs.intent.network.retired_address] : [] }}'
-  dependsOn:
-  - {job: tunnel_address, condition: {type: succeeded}}
-- name: phase_21
-  labels:
-    role: swamp
-  steps:
-  - name: Stage the tunnel key
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-tunnel-key-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
-          "node-add-tunnel-key-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","60","sed","-n","-e","1s/^/[Interface]\\nPrivateKey = /","-e","w "+inputs.intent.network.sync_path,inputs.intent.network.private_key_file] }}', sudo: true, timeoutSec: 65}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: retired_tunnel_address, condition: {type: succeeded}}
-- name: tunnel_body
-  labels:
-    role: swamp
-  steps:
-  - name: Finish tunnel config
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.platform != "linux" || inputs.intent.network.hubs.size() == 0 }}
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-add-tunnel-body-"+string(inputs.node_id)+"-"+string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "node-add-tunnel-body-"+string(inputs.node_id)+"-"+string(self._index) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.bootstrap.user }}
-          port: ${{ inputs.intent.bootstrap.port }}
-          identityContent: ${{ vault.get('orbit-control-inputs',inputs.execution_secrets.bootstrap_identity.key) }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.bootstrap.host }}
-          transport:
-            hostKeys: ${{ [steps["Read the host key"].outputs.publicKey] }}
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-hub-" + string(inputs.node_id) }}
+      methodName: execute
       inputs:
-        hosts: name:target
-        argv: ${{ ["timeout","60","dd","of="+inputs.intent.network.sync_path,"oflag=append","conv=notrunc","status=none"] }}
-        sudo: true
-        timeoutSec: 65
-        stdin: ${{ inputs.intent.network.sync_body }}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "node_public_key=$ORBIT_NODE_PUBLIC_KEY" --tags hub "$ORBIT_ANSIBLE/operation-node-add.yml"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{ steps["Write the intent"].outputs.assets
+            + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-"
+            + run.id + "/known_hosts" }}', ANSIBLE_FORCE_COLOR: '0', ORBIT_NODE_PUBLIC_KEY: '${{ steps["Read WireGuard public key-0"].outputs.stdout.trim() }}'}
   dependsOn:
-  - job: phase_21
-    condition:
-      type: succeeded
-- name: phase_22
-  labels:
-    role: swamp
+  - {job: tunnel_key, condition: {type: succeeded}}
+- name: agent
+  labels: {role: swamp}
   steps:
-  - name: Apply the tunnel peers
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-tunnel-peers-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-tunnel-peers-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","60","wg","syncconf","orbit",inputs.intent.network.sync_path] }}',
-        sudo: true, timeoutSec: 65}}
+  - name: Install the Node agent
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: tunnel_body, condition: {type: succeeded}}
-- name: phase_23
-  labels:
-    role: swamp
-  steps:
-  - name: Trust WireGuard members
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-trust-network-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-trust-network-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.bootstrap.user }}', port: '${{ inputs.intent.bootstrap.port
-            }}', identityContent: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets.bootstrap_identity.key) }}'}, hosts: [{name: target, address: '${{ inputs.intent.bootstrap.host
-              }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ inputs.intent.network.trust_argv }}',
-        sudo: true, timeoutSec: 65}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_22, condition: {type: succeeded}}
-- name: phase_24
-  labels:
-    role: swamp
-  steps:
-  - name: Create the hub folders
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "node-add-hub-folder-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ self.hub.ssh.target.host }}', nodeUser: '${{ self.hub.ssh.target.user }}', nodePort: '${{ self.hub.ssh.target.port }}', nodeIdentityFile: '${{ self.hub.ssh.identity_file
-          }}', become: true, path: /etc/wireguard/orbit-peers.d, owner: root, group: root, mode: '0700', ensure: present}, inputs: {}}
-    writes: true
-    forEach:
-      item: hub
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
-  dependsOn:
-  - {job: phase_23, condition: {type: succeeded}}
-- name: phase_25
-  labels:
-    role: swamp
-  steps:
-  - name: Write hub configuration
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-hub-config-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ self.file.ssh.target.host }}', nodeUser: '${{ self.file.ssh.target.user }}', nodePort: '${{ self.file.ssh.target.port }}', nodeIdentityFile: '${{ self.file.ssh.identity_file
-          }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content.split("@KEY@").join(steps["Read WireGuard public key-0"].outputs.stdout.trim()) }}', owner: root,
-        group: root, mode: '0600', ensure: present}, inputs: {}}
-    writes: true
-    forEach:
-      item: file
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hub_files : [] }}'
-  dependsOn:
-  - {job: phase_24, condition: {type: succeeded}}
-- name: hub_key
-  labels:
-    role: swamp
-  steps:
-  - name: Stage the hub private key
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.platform != "linux" }}
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-add-hub-key-"+string(inputs.node_id)+"-"+string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "node-add-hub-key-"+string(inputs.node_id)+"-"+string(self._index) }}
-        transport:
-          kind: ssh
-          user: ${{ self.hub.ssh.target.user }}
-          port: ${{ self.hub.ssh.target.port }}
-          identityFile: ${{ self.hub.ssh.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ self.hub.ssh.target.host }}
-          transport:
-            hostKeys: ${{ self.hub.ssh.target.host_keys }}
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-agent-" + string(inputs.node_id) }}
+      methodName: execute
       inputs:
-        hosts: name:target
-        argv: ${{ ["timeout","60","sed","-n","-e","1s/^/[Interface]\\nPrivateKey = /","-e","w "+self.hub.sync_path,self.hub.private_key_file] }}
-        sudo: true
-        timeoutSec: 65
-    writes: true
-    forEach:
-      item: hub
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags agent "$ORBIT_ANSIBLE/operation-node-add.yml"
+        env: *ansible
   dependsOn:
-  - job: phase_25
-    condition:
-      type: succeeded
-- name: hub_body
-  labels:
-    role: swamp
+  - {job: hub, condition: {type: succeeded}}
+- name: managed
+  labels: {role: swamp}
   steps:
-  - name: Finish hub configuration
-    labels:
-      role: swamp
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-add-hub-body-"+string(inputs.node_id)+"-"+string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "node-add-hub-body-"+string(inputs.node_id)+"-"+string(self._index) }}
-        transport:
-          kind: ssh
-          user: ${{ self.hub.ssh.target.user }}
-          port: ${{ self.hub.ssh.target.port }}
-          identityFile: ${{ self.hub.ssh.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ self.hub.ssh.target.host }}
-          transport:
-            hostKeys: ${{ self.hub.ssh.target.host_keys }}
-      inputs:
-        hosts: name:target
-        argv: ${{ ["timeout","60","dd","of="+self.hub.sync_path,"oflag=append","conv=notrunc","status=none"] }}
-        sudo: true
-        timeoutSec: 65
-        stdin: ${{ self.hub.sync_body.split("@KEY@").join(steps["Read WireGuard public key-0"].outputs.stdout.trim()) }}
-    writes: true
-    forEach:
-      item: hub
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
-  dependsOn:
-  - job: hub_key
-    condition:
-      type: succeeded
-- name: phase_26
-  labels:
-    role: swamp
-  steps:
-  - name: Apply the hub peers
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-hub-sync-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
-          "node-add-hub-sync-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ self.hub.ssh.target.user }}', port: '${{ self.hub.ssh.target.port
-            }}', identityFile: '${{ self.hub.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.hub.ssh.target.host }}', transport: {hostKeys: '${{ self.hub.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', argv: '${{ ["timeout","60","wg","syncconf","orbit",self.hub.sync_path] }}', sudo: true, timeoutSec: 65}}
-    writes: true
-    forEach:
-      item: hub
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
-  dependsOn:
-  - {job: hub_body, condition: {type: succeeded}}
-- name: hub_public_key
-  labels:
-    role: swamp
-  steps:
-  - name: Read the hub public key
-    labels:
-      role: swamp
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-add-hub-public-key-"+string(inputs.node_id)+"-"+string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "node-add-hub-public-key-"+string(inputs.node_id)+"-"+string(self._index) }}
-        transport:
-          kind: ssh
-          user: ${{ self.hub.ssh.target.user }}
-          port: ${{ self.hub.ssh.target.port }}
-          identityFile: ${{ self.hub.ssh.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ self.hub.ssh.target.host }}
-          transport:
-            hostKeys: ${{ self.hub.ssh.target.host_keys }}
-      inputs:
-        hosts: name:target
-        argv: ${{ ["wg","show","orbit","public-key"] }}
-        sudo: true
-        timeoutSec: 65
-    forEach:
-      item: hub
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
-  dependsOn:
-  - job: phase_26
-    condition:
-      type: succeeded
-- name: hub_key_check
-  labels:
-    role: swamp
-  dependsOn:
-  - job: hub_public_key
-    condition:
-      type: succeeded
-  steps:
-  - name: Check the hub key
-    labels:
-      role: swamp
-    forEach:
-      item: hub
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.network.hubs : [] }}'
-    task:
-      type: assert
-      expr: steps["Read the hub public key-"+string(self._index)].outputs.stdout.trim() == self.hub.public_key
-      severity: high
-      message: Applying peers must preserve the hub public key.
-- name: phase_27
-  labels:
-    role: swamp
-  steps:
-  - name: Create observer folders
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "node-add-observer-folder-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', path: /etc/orbit/agent, owner: root, group: root, mode: '0755', ensure: present},
-      inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: hub_key_check, condition: {type: succeeded}}
-- name: phase_28
-  labels:
-    role: swamp
-  steps:
-  - name: Write observer config
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-observer-file-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: root, group: root, mode: '0644', ensure: present},
-      inputs: {}}
-    writes: true
-    forEach:
-      item: file
-      in: '${{ inputs.intent.platform == "linux" ? inputs.intent.agent.files : [] }}'
-  dependsOn:
-  - {job: phase_27, condition: {type: succeeded}}
-- name: phase_29
-  labels:
-    role: swamp
-  steps:
-  - name: Write the observer secret
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-observer-secret-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', path: /etc/orbit/agent/secret, content: '${{ vault.get("orbit-control-inputs",self.credential.key)
-          }}', owner: root, group: root, mode: '0600', ensure: present}, inputs: {}}
-    writes: true
-    forEach:
-      item: credential
-      in: '${{ inputs.intent.platform == "linux" ? [inputs.execution_secrets.agent_secret] : [] }}'
-  dependsOn:
-  - {job: phase_28, condition: {type: succeeded}}
-- name: observer_group
-  labels:
-    role: swamp
-  dependsOn:
-  - {job: phase_29, condition: {type: succeeded}}
-  steps:
-  - name: Create observer group
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/group'
-      behaviorName: '${{ "node-add-observer-group-"+string(inputs.node_id)+"-"+string(self._index) }}'
-      methodName: apply
-      globalArgs:
-        nodeHost: '${{ inputs.intent.bootstrap.host }}'
-        nodeUser: '${{ inputs.intent.bootstrap.user }}'
-        nodePort: '${{ inputs.intent.bootstrap.port }}'
-        nodeIdentityFile: '${{ inputs.intent.identity.identity_file }}'
-        become: '${{ inputs.intent.bootstrap.user != "root" }}'
-        groupname: '${{ inputs.intent.agent.environment_group }}'
-        ensure: present
-        system: true
-      inputs: {}
-- name: phase_30
-  labels:
-    role: swamp
-  steps:
-  - name: Start the Node agent
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "node-add-observer-unit-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.bootstrap.host }}', nodeUser: '${{ inputs.intent.bootstrap.user }}', nodePort: '${{ inputs.intent.bootstrap.port }}', nodeIdentityFile: '${{
-          inputs.intent.identity.identity_file }}', become: '${{ inputs.intent.bootstrap.user != "root" }}', service: orbit-agent.service, unitFile: '${{ inputs.intent.agent.unit }}',
-        ensure: running, enabled: true}, inputs: {}}
-    writes: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: observer_group, condition: {type: succeeded}}
-- name: phase_31
-  labels:
-    role: swamp
-  steps:
-  - name: Verify managed SSH
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-managed-ssh-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "node-add-managed-ssh-"+string(inputs.node_id)
+  - name: Verify managed access
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-managed-access-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "node-add-managed-access-"+string(inputs.node_id)
           }}', transport: {kind: ssh, user: '${{ inputs.intent.managed_user }}', port: 22, identityFile: '${{ inputs.intent.identity.identity_file }}'}, hosts: [{name: target, address: '${{
-              inputs.intent.address }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: [uname, -sm], sudo: false,
-        timeoutSec: 30}}
+              inputs.intent.address }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target', argv: [uname, -sm], sudo: '${{
+          inputs.intent.platform == "linux" }}', timeoutSec: 30}}
   dependsOn:
-  - {job: phase_30, condition: {type: succeeded}}
-- name: phase_32
-  labels:
-    role: swamp
-  steps:
-  - name: Verify passwordless sudo
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-managed-sudo-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "node-add-managed-sudo-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.managed_user }}', port: 22, identityFile: '${{
-            inputs.intent.identity.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.address }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey]
-                }}'}}]}, inputs: {hosts: 'name:target', argv: [timeout, '20', sudo, -n, 'true'], sudo: false, timeoutSec: 30}}
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_31, condition: {type: succeeded}}
+  - {job: agent, condition: {type: succeeded}}
 - name: cli
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Publish the Orbit CLI
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
     allowFailure: true
     forEach:
@@ -903,14 +256,12 @@ jobs:
       in: '${{ inputs.intent.platform == "linux" && inputs.intent.cli != null && inputs.intent.cli.cli.skip_reason == null && inputs.intent.cli.cli.plan_error == null ? [0] : [] }}'
     task: {type: workflow, workflowIdOrName: node-cli-install, inputs: {node_id: '${{ inputs.node_id }}', intent: '${{ steps["Bind the Node identity"].outputs.cli }}'}}
   dependsOn:
-  - {job: phase_32, condition: {type: succeeded}}
-- name: phase_33
-  labels:
-    role: swamp
+  - {job: managed, condition: {type: succeeded}}
+- name: roles
+  labels: {role: swamp}
   steps:
   - name: Converge each role
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: workflow, workflowIdOrName: operation-node-role-add, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ self.role.kind
           }}', intent: '${{ self.role.intent }}', execution_secrets: '${{ self.role.execution_secrets }}', parent_run_id: '${{ run.id }}'}}
     writes: true
@@ -921,43 +272,40 @@ jobs:
   dependsOn:
   - {job: cli, condition: {type: completed}}
 - name: dns_backend
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Configure DNS backend
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-dns-backend-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ self.dns.ssh.target.host }}', nodeUser: '${{ self.dns.ssh.target.user }}', nodePort: '${{ self.dns.ssh.target.port }}', nodeIdentityFile: '${{ self.dns.ssh.identity_file
-          }}', become: true, path: /etc/dnsmasq.d/orbit-vpn.conf, content: '${{ self.dns.backend }}', owner: root, group: root, mode: '0644', ensure: present}, inputs: {}}
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: dns
-      in: ${{ steps["Bind the Node identity"].outputs.private_dns }}
+    guard: ${{ inputs.intent.platform != "linux" || inputs.intent.private_dns.size() == 0 }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-dns-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags dns "$ORBIT_ANSIBLE/operation-node-add.yml"
+        env: *ansible
   dependsOn:
-  - {job: phase_33, condition: {type: succeeded}}
+  - {job: roles, condition: {type: succeeded}}
 - name: dns_listener
-  labels:
-    role: swamp
+  labels: {role: swamp}
   dependsOn:
   - {job: dns_backend, condition: {type: succeeded}}
   steps:
   - name: Install DNS listener
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
     forEach:
       item: dns
       in: ${{ steps["Bind the Node identity"].outputs.private_dns }}
     task: {type: workflow, workflowIdOrName: node-private-dns, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.dns.node_id }}', kind: '${{ inputs.kind }}', intent: '${{
           self.dns }}'}}
-- name: phase_34
-  labels:
-    role: swamp
+- name: dns_publish
+  labels: {role: swamp}
   steps:
   - name: Publish private DNS
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{
           self.publication }}', execution_secrets: {}}}
     writes: true
@@ -966,13 +314,11 @@ jobs:
       in: ${{ steps["Bind the Node identity"].outputs.dns }}
   dependsOn:
   - {job: dns_listener, condition: {type: succeeded}}
-- name: phase_35
-  labels:
-    role: swamp
+- name: mac
+  labels: {role: swamp}
   steps:
   - name: Inspect the Mac tunnel
-    labels:
-      role: swamp
+    labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-mac-tunnel-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
           "node-add-mac-tunnel-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.managed_user }}', port: 22, identityFile: '${{ inputs.intent.identity.identity_file
             }}'}, hosts: [{name: target, address: '${{ inputs.intent.address }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target',
@@ -981,150 +327,67 @@ jobs:
       item: mac
       in: '${{ inputs.intent.platform == "macos" ? [0] : [] }}'
   dependsOn:
-  - {job: phase_34, condition: {type: succeeded}}
-- name: phase_36
-  labels:
-    role: swamp
+  - {job: dns_publish, condition: {type: succeeded}}
+- name: state
+  labels: {role: swamp}
   steps:
-  - name: Check the Node agent
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "node-add-observer-check-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.address }}', nodeUser: '${{ inputs.intent.managed_user }}', nodePort: '${{ 22 }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file
-          }}', become: true, service: orbit-agent.service, ensure: running, enabled: true}, inputs: {}}
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+  - name: Check the Node state
+    labels: {role: swamp}
+    guard: ${{ inputs.intent.platform != "linux" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-check-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags check "$ORBIT_ANSIBLE/operation-node-add.yml"
+        env: *ansible
   dependsOn:
-  - {job: phase_35, condition: {type: succeeded}}
-- name: phase_37
-  labels:
-    role: swamp
-  steps:
-  - name: Check the agent binary
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "node-add-agent-check-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check, globalArgs: {
-        nodeHost: '${{ inputs.intent.address }}', nodeUser: '${{ inputs.intent.managed_user }}', nodePort: '${{ 22 }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file }}',
-        become: true, url: '${{ inputs.intent.agent.url }}', path: /usr/local/bin/orbit-agent, checksum: '${{ "sha256:"+inputs.intent.agent.sha256 }}', mode: '0755'}, inputs: {}}
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_36, condition: {type: succeeded}}
-- name: phase_38
-  labels:
-    role: swamp
-  steps:
-  - name: Check the observer secret
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-secret-check-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check, globalArgs: {
-        nodeHost: '${{ inputs.intent.address }}', nodeUser: '${{ inputs.intent.managed_user }}', nodePort: '${{ 22 }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file }}',
-        become: true, path: /etc/orbit/agent/secret, content: '${{ vault.get("orbit-control-inputs",self.credential.key) }}', owner: root, group: root, mode: '0600', ensure: present},
-      inputs: {}}
-    forEach:
-      item: credential
-      in: '${{ inputs.intent.platform == "linux" ? [inputs.execution_secrets.agent_secret] : [] }}'
-  dependsOn:
-  - {job: phase_37, condition: {type: succeeded}}
-- name: phase_39
-  labels:
-    role: swamp
-  steps:
-  - name: Read tunnel handshakes
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "node-add-handshakes-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
-          "node-add-handshakes-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.managed_user }}', port: 22, identityFile: '${{ inputs.intent.identity.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.address }}', transport: {hostKeys: '${{ [steps["Read the host key"].outputs.publicKey] }}'}}]}, inputs: {hosts: 'name:target',
-        argv: [timeout, '20', wg, show, orbit, latest-handshakes], sudo: true, timeoutSec: 30}}
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-  dependsOn:
-  - {job: phase_38, condition: {type: succeeded}}
+  - {job: mac, condition: {type: succeeded}}
 - name: node
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Check the Node
-    labels:
-      role: swamp
-    task: {type: assert, expr: 'steps["Verify managed SSH"].outputs.stdout.trim() == steps["Read the platform"].outputs.stdout.trim() && (inputs.intent.platform != "linux" || (steps["Check
-        the Node agent-0"].outputs.status == "compliant" && steps["Check the agent binary-0"].outputs.status == "compliant" && steps["Check the observer secret-0"].outputs.status ==
-        "compliant" && (inputs.intent.network.is_hub || steps["Read tunnel handshakes-0"].outputs.stdout.split("\n").exists(line,line.split("\t").size() == 2 && line.split("\t")[1] !=
-        "0")))) && (inputs.intent.platform != "macos" || steps["Inspect the Mac tunnel-0"].outputs.stdout.contains("inet "+inputs.intent.address+" "))', severity: high, message: 'Managed
-        SSH, architecture and the admitted platform resources must match.'}
+    labels: {role: swamp}
+    task: {type: assert, expr: 'steps["Verify managed access"].outputs.stdout.trim() == steps["Read the platform"].outputs.stdout.trim() && (inputs.intent.platform != "macos" || steps["Inspect the Mac tunnel-0"].outputs.stdout.contains("inet
+        "+inputs.intent.address+" "))', severity: high, message: 'Managed access, architecture and the admitted platform resources must match.'}
   dependsOn:
-  - {job: phase_39, condition: {type: succeeded}}
+  - {job: state, condition: {type: succeeded}}
 - name: cleanup
+  labels: {role: swamp}
   dependsOn:
-  - {job: phase_0, condition: {type: completed}}
-  - {job: phase_1, condition: {type: completed}}
-  - {job: phase_2, condition: {type: completed}}
-  - {job: phase_3, condition: {type: completed}}
-  - {job: phase_4, condition: {type: completed}}
-  - {job: phase_5, condition: {type: completed}}
-  - {job: known_hosts_remove, condition: {type: completed}}
-  - {job: known_hosts_add, condition: {type: completed}}
-  - {job: phase_6, condition: {type: completed}}
-  - {job: phase_7, condition: {type: completed}}
-  - {job: phase_8, condition: {type: completed}}
-  - {job: phase_9, condition: {type: completed}}
-  - {job: phase_10, condition: {type: completed}}
-  - {job: phase_11, condition: {type: completed}}
-  - {job: phase_12, condition: {type: completed}}
-  - {job: phase_13, condition: {type: completed}}
-  - {job: phase_14, condition: {type: completed}}
-  - {job: phase_15, condition: {type: completed}}
-  - {job: phase_16, condition: {type: completed}}
-  - {job: phase_17, condition: {type: completed}}
-  - {job: phase_18, condition: {type: completed}}
-  - {job: phase_19, condition: {type: completed}}
-  - {job: phase_20, condition: {type: completed}}
-  - {job: phase_21, condition: {type: completed}}
-  - {job: tunnel_body, condition: {type: completed}}
-  - {job: phase_22, condition: {type: completed}}
-  - {job: phase_23, condition: {type: completed}}
-  - {job: phase_24, condition: {type: completed}}
-  - {job: phase_25, condition: {type: completed}}
-  - {job: hub_key, condition: {type: completed}}
-  - {job: hub_body, condition: {type: completed}}
-  - {job: phase_26, condition: {type: completed}}
-  - {job: hub_public_key, condition: {type: completed}}
-  - {job: hub_key_check, condition: {type: completed}}
-  - {job: phase_27, condition: {type: completed}}
-  - {job: phase_28, condition: {type: completed}}
-  - {job: phase_29, condition: {type: completed}}
-  - {job: phase_30, condition: {type: completed}}
-  - {job: phase_31, condition: {type: completed}}
-  - {job: phase_32, condition: {type: completed}}
-  - {job: cli, condition: {type: completed}}
-  - {job: phase_33, condition: {type: completed}}
-  - {job: phase_34, condition: {type: completed}}
-  - {job: phase_35, condition: {type: completed}}
-  - {job: phase_36, condition: {type: completed}}
-  - {job: phase_37, condition: {type: completed}}
-  - {job: phase_38, condition: {type: completed}}
-  - {job: phase_39, condition: {type: completed}}
-  - {job: node, condition: {type: completed}}
-  - {job: bootstrap_account, condition: {type: completed}}
-  - {job: tunnel_address, condition: {type: completed}}
-  - {job: retired_tunnel_address, condition: {type: completed}}
-  - {job: tunnel_key_check, condition: {type: completed}}
-  - {job: hub_forwarding, condition: {type: completed}}
-  - {job: dns_backend, condition: {type: completed}}
-  - {job: dns_listener, condition: {type: completed}}
+  - {job: host_key, condition: &settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  - {job: approval, condition: *settled}
+  - {job: platform, condition: *settled}
+  - {job: bootstrap_account, condition: *settled}
+  - {job: identity, condition: *settled}
+  - {job: intent, condition: *settled}
+  - {job: private, condition: *settled}
+  - {job: input, condition: *settled}
+  - {job: baseline, condition: *settled}
+  - {job: tunnel, condition: *settled}
+  - {job: tunnel_key, condition: *settled}
+  - {job: hub, condition: *settled}
+  - {job: agent, condition: *settled}
+  - {job: managed, condition: *settled}
+  - {job: cli, condition: *settled}
+  - {job: roles, condition: *settled}
+  - {job: dns_backend, condition: *settled}
+  - {job: dns_listener, condition: *settled}
+  - {job: dns_publish, condition: *settled}
+  - {job: mac, condition: *settled}
+  - {job: state, condition: *settled}
+  - {job: node, condition: *settled}
   steps:
-  - name: Remove staged sudo rule
-    labels:
-      role: swamp
+  - name: Remove the playbook input
+    labels: {role: swamp}
     writes: true
-    allowFailure: true
-    forEach:
-      item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "node-add-sudo-cleanup-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.address }}', nodeUser: '${{ inputs.intent.managed_user }}', nodePort: '${{ 22 }}', nodeIdentityFile: '${{ inputs.intent.identity.identity_file }}',
-        become: true, path: '${{ inputs.intent.sudo.candidate }}', ensure: absent}, inputs: {}}
+    guard: ${{ inputs.intent.platform != "linux" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-node-add-cleanup-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
