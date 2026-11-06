@@ -307,7 +307,7 @@ The child workflows gain only inputs that the parent needs. `operation-task-turn
 
 The author commits the three files as one commit. A draft that leaves HEAD where it was ends the run with `tasks.prep_not_committed` before any review. The review runs for at most three rounds. A reviewer receipt with outcome `approved` ends the loop. With `changes_requested`, the reviewer's summary goes into the prompt of a fix turn on the author thread, and a new review follows.
 
-Each review starts a new thread and also reads the findings of the one before, so it checks them instead of finding them again. A reviewer reports at most five findings and approves with notes when only matters of taste remain.
+Each review starts a new thread on the reviewer model of the group, which differs from the author's, at high effort. It also reads the findings of the one before, so it checks them instead of finding them again. A reviewer reports at most five findings and approves with notes when only matters of taste remain.
 
 A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`, because the next review would restore a commit that holds none of the fix. A finding left after the last round ends the run with `tasks.prep_review_unresolved`. Nothing is published, the result keeps the findings of the last review, and the VM stays for the orchestrator, who cancels the group when done.
 
