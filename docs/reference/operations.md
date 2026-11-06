@@ -6,8 +6,7 @@ covers:
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
-  - apps/gateway/database/migrations/2027_01_22_000000_create_route_publication_holds_table.php
-  - apps/gateway/database/migrations/2027_01_23_000000_add_lease_to_route_publication_holds.php
+  - apps/gateway/database/migrations/*route_publication_holds*.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
