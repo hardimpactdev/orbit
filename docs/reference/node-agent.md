@@ -709,7 +709,7 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 [Doctor](/cli/doctor/doctor) answers from the `host`, `units` and `ufw` facts and the agent's liveness. It starts no run and reaches no Node. It reports `node.agent_missing` for an agent the Gateway never heard from, and `node.agent_view_stale` for a silent one; while the agent is silent, the Node's other findings may be outdated. Provisioning owns agent binary, secret and configuration verification; Doctor does not duplicate it. The agent remains an observer.
 
-See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
+See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules. The agent has no Doctor command: every Doctor check reads a stored fact.
 
 ## Checks
 

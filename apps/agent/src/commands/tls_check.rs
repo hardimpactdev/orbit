@@ -52,7 +52,7 @@ pub fn verify(input: &CertificateInput) -> Result<Verified, CertificateError> {
 }
 
 fn certificate_process(input: &CertificateInput) -> Result<Process, CertificateError> {
-    if input.port == 0 || !super::doctor_route::valid_domain(&input.domain) {
+    if input.port == 0 || !super::source::valid_domain(&input.domain) {
         return Err(CertificateError::Input {});
     }
     let mut process = Process::new("/usr/bin/timeout");

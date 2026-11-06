@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/Fleet/Footprint/PhpRuntimeFootprintArtifact.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
-  - apps/agent/src/commands/{php_runtime,php_doctor,php_profile,php_shared}.rs
+  - apps/agent/src/commands/{php_runtime,php_profile,php_shared}.rs
 ---
 
 # PHP runtimes

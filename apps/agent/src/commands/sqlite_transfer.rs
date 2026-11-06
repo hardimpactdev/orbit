@@ -153,8 +153,8 @@ fn read(input: &ReadInput, context: &Context, output: impl Write) -> Result<Outp
 fn receive(input: &ReceiveInput, context: &Context) -> Result<Output, Error> {
     metadata(input.bytes, &input.sha256)?;
     let prepared = prepared_path(&input.path);
-    let development = super::doctor_route::absolute(&input.base)
-        && super::doctor_route::absolute(&input.path)
+    let development = super::source::absolute(&input.base)
+        && super::source::absolute(&input.path)
         && input.path.starts_with(&input.base)
         && input.path != input.base
         && input

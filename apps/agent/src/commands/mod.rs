@@ -22,11 +22,6 @@ pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
-mod doctor_node;
-mod doctor_project;
-mod doctor_public_route;
-mod doctor_role;
-mod doctor_route;
 pub mod environment;
 pub mod firewall;
 pub mod gateway_start_hooks;
@@ -271,15 +266,6 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy::Reload>(),
         entry::<caddy_observation::CheckAddresses>(),
         entry::<caddy_observation::ReadLive>(),
-        entry::<doctor_node::InspectNode>(),
-        entry::<doctor_project::InspectProject>(),
-        entry::<doctor_project::InspectDevelopmentSource>(),
-        entry::<php_runtime::doctor::InspectProduction>(),
-        entry::<doctor_role::InspectRole>(),
-        entry::<doctor_route::InspectPrivateRoute>(),
-        entry::<doctor_route::InspectApplicationUrls>(),
-        entry::<doctor_public_route::InspectPublicRoute>(),
-        entry::<doctor_route::InspectCustomProxy>(),
         entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
@@ -299,9 +285,6 @@ pub fn all() -> Vec<Entry> {
         entry::<hibernation::InspectCheckout>(),
         entry::<hibernation::PruneCheckout>(),
         entry::<hibernation::RestoreDependencies>(),
-        entry::<processes::doctor::InspectProcess>(),
-        entry::<schedules::InspectSchedule>(),
-        entry::<schedules::ScheduleOrphans>(),
         entry::<schedules::InstallSchedule>(),
         entry::<schedules::ActivateSchedule>(),
         entry::<schedules::RunSchedule>(),

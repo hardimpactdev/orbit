@@ -54,7 +54,7 @@ fn git(input: &Input, context: &Context, arguments: &[&str]) -> Process {
 }
 
 fn revisions(input: &Input, context: &Context) -> Result<String, Error> {
-    if !super::doctor_route::absolute(&input.checkout)
+    if !super::source::absolute(&input.checkout)
         || !super::task_git::object_id(&input.commit)
         || input.haves.len() > MAX_HAVES
         || input.haves.iter().any(|id| !super::task_git::object_id(id))

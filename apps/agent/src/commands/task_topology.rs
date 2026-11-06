@@ -94,7 +94,7 @@ fn validate(input: &StartInput) -> Result<(), Error> {
             ip.parse::<Ipv4Addr>().is_ok() && prefix.parse::<u8>().is_ok_and(|v| v <= 32)
         });
     if !valid_run(&input.run)
-        || !super::doctor_route::absolute(&input.checkout)
+        || !super::source::absolute(&input.checkout)
         || !input.checkout.is_dir()
         || issue.is_empty()
         || issue.len() > 9
