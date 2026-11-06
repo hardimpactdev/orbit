@@ -57,6 +57,7 @@ sequenceDiagram
   %%> Only for tasks that need the topology.
   %%> The seed clone was attached at enrol; it is the host's seed of the slot's image, because a stage 6 refresh that builds the fleet promotes the image and its seed together and replaces older slots.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): a large or medium slot follows the clone rule: while the image's seed holds no ready copies (a refresh with `seed=keep`), no claim takes a slot, and the pool enrols nothing and replaces no stale slot; it still destroys a failed one
+  %%> Time, measured on beast 2026-11-06 (op 12083, Project 66, normal slot, no fleet): 89 s from admission to ready, against 334 s median for a clone that day: slot start 17 s, fetch about 10 s (bundle cloned on Node 209, copied, imported), Project setup about 20 s (setup steps 10 s, dependency auth 10 s), Route 19 s; the claim started the refill enrol at once (op 12084, 206 s)
   SW-->>GW: Slot claimed<br/>terminal event
   %%> Decided by the orchestrator, for Nick's review: today's provision projection; the claimed VM is `ready` and belongs to the group, and the Gateway runs the refill rule.
   Note over GW,VM: Release (the task ends)
