@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: fleet maintenance redesign 2026-11-03 (each Node visit runs node:converge); R3c: no rollout records, Swamp run history is the record. docs/reference/gateway-recovery.md#fleet-rollout.
   %% status: draft
-  %% command: none · each fleet maintenance pass
+  %% command: orbit fleet:rollout
   %% kind: fleet.rollout
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,9 +10,9 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  Note over GW: Pick Nodes behind<br/>GET fleet/rollout/plan
+  Note over GW: Pick Nodes when no Node<br/>IDs are given
   %%> When:
-  %%> - each minute, from Swamp's fleet maintenance pass, while `ORBIT_FLEET_ROLLOUT=true`
+  %%> - when an operator runs `orbit fleet:rollout`, while `ORBIT_FLEET_ROLLOUT=true`; no schedule starts it
   %%> - only for a commit whose Gateway release is verified
   %%> Picks:
   %%> - a Node whose last visit for this commit did not converge it, a drifted Node, or a Node not visited yet

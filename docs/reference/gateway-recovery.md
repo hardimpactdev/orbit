@@ -523,7 +523,7 @@ The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's env
 
 ### Execution
 
-Swamp's fleet maintenance workflow reads `GET /api/v1/fleet/rollout/plan` each minute. The plan names the [Nodes that need a visit](#which-nodes-a-pass-visits). When it names any, the workflow admits one `fleet.rollout` Operation for them with `POST /api/v1/fleet/rollout`. The same workflow admits [peer DNS](/reference/private-dns#resolver-selection) for one changed peer at a time.
+No schedule admits rollouts. An operator starts one with `orbit fleet:rollout`; without Node IDs, the Gateway picks the [Nodes that need a visit](#which-nodes-a-pass-visits) and admits one `fleet.rollout` Operation for them with `POST /api/v1/fleet/rollout`. The `fleet-maintenance` schedule that did this each minute was deleted on 2026-11-06.
 
 Admission validates the serving release and captures the desired state: the commit, the CLI release, the agent pin, and each Node's SSH target. One rollout runs at a time; a second admission returns `fleet.rollout_busy` (409). A plan with no Node to visit admits nothing.
 
@@ -595,7 +595,7 @@ Native `swamp workflow resume` does not replace the retry. A failed rollout Oper
 
 ### Which Nodes a pass visits
 
-The plan reads the newest result of each Node in the terminal `fleet.rollout` Operations of the desired commit. It visits a Node of the rollout set when one of these holds:
+The Gateway's plan reads the newest result of each Node in the terminal `fleet.rollout` Operations of the desired commit. It visits a Node of the rollout set when one of these holds:
 
 | Node | Why the pass visits it |
 | --- | --- |

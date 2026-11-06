@@ -20,7 +20,7 @@ Orbit tracks work in three places today. Each has its own status, history, logs 
 | | Schedules | Operations | Tasks extension |
 | --- | --- | --- | --- |
 | Record | `schedules` row (UUID), Project `schedule_definitions` | `operations` row, keyed by `(kind, idempotency_key)` | `tasks` row: task group or group step; `agent_threads`, `task_vms`, `task_checks`, comments, questions |
-| Trigger | systemd timer on the host Node; its oneshot unit curls `POST /schedules/{id}/run` | API admission | Swamp `groups-driver` tick (every minute) and the software factory |
+| Trigger | systemd timer on the host Node; its oneshot unit curls `POST /schedules/{id}/run` | API admission | the software factory |
 | Execution | `schedule.run` Operation → `operation-schedule-run` over `@swamp/ssh` | `StartSwampRun` → one native workflow per kind | Each stage starts one keyed Operation (`tasks.provision`, `check`, `turn`, `publish`, …); Pi runs the turn in the VM |
 | Status | `provisioning/active/failed/removing` plus `last_run_status` | `queued/running/waiting/succeeded/failed/cancelled/interrupted` | task group: ten board states; group step: seven; thread: five; VM: six; check: six |
 | History | latest run only | one row per run; steps live in Swamp native history (30 days) | Operations, comments, receipts, threads, and Swamp history |
@@ -29,7 +29,7 @@ Orbit tracks work in three places today. Each has its own status, history, logs 
 | Retries | none; a failed curl loses the run | Swamp owns them; the Gateway never re-runs | new cycle key; Durable retries inside a turn |
 | Budgets | `timeout_seconds` | per-kind or history-based run budget; expiry fails the record | factory attempt caps; `maxRunSeconds: 7200`; the stuck-VM rule exists only in memory |
 
-Twelve native Swamp schedules (`groups-driver`, `fleet-maintenance`, `automatic-production-deploy`, `observation-collection`, …) run outside any Orbit record. Their results reach the Gateway only through per-family `scheduled-results.php` maps. Task groups also have a second driver inside the Gateway, `TaskMaintenanceContinuation`, which breaks the rule that the Gateway records intent and Swamp executes.
+Native Swamp schedules (`automatic-production-deploy`, `observation-collection`, …) run outside any Orbit record. Their results reach the Gateway only through per-family `scheduled-results.php` maps. Task groups also have a second driver inside the Gateway, `TaskMaintenanceContinuation`, which breaks the rule that the Gateway records intent and Swamp executes.
 
 Nick decided on 2026-11-01 that there is one system: Swamp is a first-class part of Orbit, and recurring jobs are Orbit records whose execution is a Swamp workflow.
 
@@ -140,7 +140,7 @@ A Schedule is a cadence plus a task template: `name`, `target`, `calendar`, `kin
 - `schedule:run` admits a task from the template through normal admission.
 - Per-minute app schedulers (`laravel-scheduler` on production Instances) move to native triggers last. They move only after measured Swamp serve load and an outage test show that it is safe. Until then systemd stays their start trigger, and each fire is still recorded as a task through `schedule:run` admission.
 - Jobs that the Gateway's own Laravel scheduler runs are not tasks. Gateway self-maintenance is not orchestration (boundary decision 9).
-- A user Schedule uses the `command` driver. A Swamp upkeep job (`fleet-maintenance`, `observation-collection`, `automatic-production-deploy`, …) is a Schedule whose kind uses the `workflow` driver. Every native Swamp schedule is then an Orbit Schedule, and none exists outside Orbit.
+- A user Schedule uses the `command` driver. A Swamp upkeep job (`observation-collection`, `automatic-production-deploy`, …) is a Schedule whose kind uses the `workflow` driver. Every native Swamp schedule is then an Orbit Schedule, and none exists outside Orbit.
 
 ### What is removed or merged
 
