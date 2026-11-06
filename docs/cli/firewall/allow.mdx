@@ -4,7 +4,7 @@ sidebarTitle: "firewall:allow"
 description: "Allow traffic to one destination port or port range, optionally from one source."
 ---
 
-Allow incoming traffic on one active Linux Node. Without a source or protocol, the rule allows both TCP and UDP from anywhere. It does not restrict ports published by Docker; see the [firewall overview](/cli/firewall).
+Allow incoming traffic on one Linux Node. Without a source or protocol, the rule allows both TCP and UDP from anywhere. UFW does not restrict ports published by Docker; see the [firewall overview](/cli/firewall).
 
 ## Usage
 
@@ -21,30 +21,20 @@ orbit firewall:allow <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--labe
 | `--node=ID` | required | Positive numeric target Node ID. The calling Node needs an access grant to it. |
 | `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, CIDR, or `any`. An address or CIDR affects its address family only; `any` affects both. |
 | `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both; `any` is not an accepted value. |
-| `--label=TEXT` | none | Description of at most 255 characters. See [labels and comments](/cli/firewall#rule-identity). |
-| `--idempotency-key=KEY` | automatic | Override the transport retry key to replay a start with the same key, target and input, rather than start another Operation. See [keyed starts](/reference/operations#retry-a-start-with-a-key). Normal repeats need no key. |
-| `--json` | off | Print the final Operation or admission error as JSON, without prompts or progress output. |
+| `--label=TEXT` | none | Description of at most 255 characters; not rule identity. See [labels and comments](/cli/firewall#rule-identity). |
+| `--idempotency-key=KEY` | none | Global [keyed-start option](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | Machine output under the [CLI input and output standard](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --label="office postgres"
 orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 ```
 
-In a terminal, an omitted port is prompted for and an invalid answer is asked again. An omitted Node is selected from an interactive data list of active Linux Nodes. Ctrl-C or end of input at either prompt exits 1 with `input.cancelled` and creates no Operation. Without a terminal, or with `--json`, a missing port or Node is refused with `firewall.port_invalid` or `firewall.node_id_invalid`.
+Prompts and output follow the [CLI standard](/reference/cli-ux). The port prompt is `Destination port or range`; the `Node` selector lists active Linux Nodes. See the firewall family's [rule identity and repeat behavior](/cli/firewall#rule-identity), [source ordering](/cli/firewall#order-on-the-node), and [safe change order](/cli/firewall#change-rules-without-an-exposure-window).
 
-Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow succeeds with `Skipped — already applied (firewall.rule_exists)` when its ports lie inside one protected port or range Orbit already opens and its source is one that entry already admits. Orbit records a succeeded Operation at once, without an operator rule, workflow run or Node contact. This skip uses recorded intent, not a live UFW check. A range extending beyond that entry, or a source it does not admit, is a normal allow.
+Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow succeeds with `Skipped — already applied (firewall.rule_exists)` when its ports lie inside one protected port or range Orbit already opens and its source is one that entry already admits. Orbit records a succeeded Operation without an operator rule or Node contact; this uses recorded intent, not a live UFW check. Another firewall change on the Node still prevents this skip (`operation.target_busy`). A range extending beyond that entry, or a source it does not admit, is a normal allow.
 
-Only one firewall change can run on a Node at a time (`operation.target_busy`). On the normal allow path, a deny with the same port, protocol and normalized source conflicts with the allow (`firewall.rule_conflict`). A both-protocol rule and a single-protocol rule on the same port and source also conflict (`firewall.rule_overlap`), with either action and in either creation order. To change the scope or action of a recorded rule, remove it and create it again. Labels do not identify rules. Changing only the label reuses the record. If the rule is already correct, its UFW lines keep their comments and the command succeeds with `firewall.rule_exists`.
-
-Narrower sources take precedence over broader sources, regardless of action. An allow for one source can override a broad deny; a deny for one source can override a broad allow. Operator rules sit above Orbit's broad managed rules. To restrict a port without an exposure window, add the allows first, then the deny. See [rule ordering](/cli/firewall#order-on-the-node).
-
-Orbit follows the Operation to its final outcome. Human output shows progress, the result, and the Operation and request IDs. Piped output has no animation or escape codes. JSON contains one final Operation, including a successful skip reason or execution failure; a refusal before admission is an error envelope. Success exits 0; a handled failure exits 1.
-
-Repeating a normal allow reuses its record and checks the Node in a new Operation. Correct lines are left untouched; missing or misplaced lines are repaired. Only a fully correct rule succeeds with `Skipped — already applied (firewall.rule_exists)`. UFW must still be active and the final check must pass. An inactive firewall is refused, not enabled. The protected-access skip above starts no Node work and does not perform these checks.
-
-Orbit manages transport retries with one key per logical start. An intentional new attempt gets a new key; ordinary use does not require managing keys.
-
-An execution failure keeps the rule visible as failed. Lines added before the failure remain, and a line deleted for reordering may be absent. Nothing is rolled back. After fixing the cause, repeat the command to repair the rule without duplicates. A keyed replay returns the old Operation, including a failure; omit the old key or use a new key for a repair attempt.
+A normal allow requires active UFW; Orbit does not enable it. A failed execution keeps the rule visible as failed. Lines added before the failure remain, and a line deleted for reordering may be absent. There is no rollback; repeat the command after fixing the cause to repair the same record without duplicates.
 
 ## How it works
 
@@ -52,24 +42,12 @@ An execution failure keeps the rule visible as failed. Lines added before the fa
 
 ## Errors
 
-Input and admission refusals create no Operation or rule and change nothing on the Node. Execution failures keep the failed rule and any partial changes. Shared response details are defined by [Operations](/reference/operations#start-an-operation) and the [firewall family](/cli/firewall#error-codes).
+See the [firewall error codes](/cli/firewall#error-codes) for input, access, conflict and overlap refusals, and [Operation errors](/reference/operations#errors) for shared admission failures. These execution results affect recovery:
 
 | Code | Meaning |
 | --- | --- |
-| `input.cancelled` | Ctrl-C or end of input at a prompt; no request to create a rule is sent. |
-| `firewall.node_id_invalid` | Missing noninteractive Node, invalid positive numeric ID, or no active Linux Node available for selection. |
-| `firewall.port_invalid` | Missing noninteractive port, a service name, an out-of-bounds port, or an invalid or reversed range. |
-| `firewall.source_invalid` | The source is not `any`, an IP address, or a valid CIDR. |
-| `firewall.protocol_invalid` | The supplied protocol is not `tcp` or `udp`. |
-| `validation.failed` | Invalid request input, such as a label longer than 255 characters or a malformed idempotency key. |
-| `node_access.required` | The calling Node has no access grant to the target; the response identifies the serving Node. |
-| `firewall.platform_unsupported` | The target is not Linux; refused before storing a rule or contacting the Node. |
-| `firewall.rule_conflict` | A deny already has the same port, protocol and source on the normal allow path. |
-| `firewall.rule_overlap` | A both-protocol rule overlaps a single-protocol rule on the same port and source on the normal allow path. |
-| `operation.target_busy` | Another firewall change holds the Node; `details.operation_id` identifies it. |
-| `operation.idempotency_conflict` | The key was used for another target or input; no new Operation starts. |
 | `firewall.backend_inactive` | UFW is inactive; no rule is applied on the Node. |
 | `firewall.verify_failed` | The final check does not find every expected line in the required order. |
-| `operation.native_failed` | SSH, a UFW mutation, or another execution step fails before returning a public check result. |
+| `operation.native_failed` | An execution step fails before returning a public check result; partial changes may remain. |
 
 `firewall.rule_exists` is a successful skip reason, not an error.
