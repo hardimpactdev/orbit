@@ -1,6 +1,6 @@
 id: 1b007f31-5cfe-4dc3-bb6e-1fa9bcda3738
 name: task-vm-workspace
-# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationBudgetTable::SecondsByKind).
 description: Prepare the captured directory on an already reachable plain Task VM through official SSH from209.
 vaults: []
 inputs:

@@ -17,12 +17,19 @@ use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Process;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -276,6 +283,40 @@ describe('proof:run admission', function (): void {
         expect($refusal->errorCode)->toBe('tasks.capacity_unavailable')
             ->and($proof->input['report_only'])->toBeTrue()
             ->and(Task::query()->count())->toBe(0);
+    });
+
+    it('passes the reserve of a report-only run down to the placement of its VM', function (): void {
+        // The release layout whose recipe the allocation reads, and one host with usable copies and room for exactly one large VM.
+        $base = sys_get_temp_dir().'/orbit-proof-reserve-'.bin2hex(random_bytes(4));
+        $commit = 'eeeeeeeeeeee0000000000000000000000000000';
+        $release = $base.'/releases/'.substr($commit, 0, 12);
+        mkdir($release.'/apps/gateway/resources/machine-software', 0700, true);
+        file_put_contents($release.'/REVISION', $commit."\n");
+        symlink('releases/'.substr($commit, 0, 12), $base.'/orbit');
+        copy(base_path('resources/machine-software/recipe.json'), $release.'/apps/gateway/resources/machine-software/recipe.json');
+        config(['orbit.gateway_checkout' => $base.'/orbit/apps/gateway', 'proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+            'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']));
+        $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
+            'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)]]]);
+        Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
+            'input' => ['refresh' => ['host_node_id' => $host->id, 'ready_copies' => ['fleet' => ['format' => TaskVmReadyCopiesIntent::Format]]]],
+            'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
+        $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
+        // Three slots: one large VM fits, but not beside the reserve of a report-only run.
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 3, 4, '8GiB', '20GiB')],
+            'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, reportOnly: true));
+
+        Process::run(['rm', '-rf', $base]);
+        expect($refusal->errorCode)->toBe('tasks.capacity_unavailable')->and($refusal->getMessage())->toContain('A report-only proof leaves 3 slots free');
     });
 });
 
