@@ -47,7 +47,7 @@ sequenceDiagram
   %%> - the caches stay in the image, so every slot and task VM starts warm; the end check reads that both directories hold archives
   %%> - the lock-driven host cache (`/var/lib/orbit/package-cache`, `package-cache.host`) is not mounted into any VM and nothing seeds from it, and it never covers a Project without a lockfile, such as laravel/laravel (Project 66); it stays as is and is not part of this change
   %%> Why:
-  %%> - measured 2026-11-06 on beast (`composer install` of laravel/laravel, medians of 3): 8.6 s with an empty cache and 3.0 s with a warm one; that is the 5.6 s of `setup-0-0` in the slot claim of op 12083
+  %%> - measured 2026-11-06 on beast (`composer install` of laravel/laravel, medians of 3): 8.6 s with an empty cache and 2.7 s with a warm one; that is about 5.9 s of the 8.7 s of `setup-0-0` in the slot claim of op 12083
   %%> Limit:
   %%> - resolution still runs for a Project without a lockfile, so about 3 s stay; a package version newer than the image's lock downloads
   SW->>H: Clean and stop<br/>cloud-init · host keys
