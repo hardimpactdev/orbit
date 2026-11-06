@@ -59,7 +59,7 @@ sequenceDiagram
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
     %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet until the fleet build (`task_vm.fleet_build`) lands; the result records `nested_fleet: none`
-    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the migrations, and a restart of the queue worker, the agent-view subscriber and the Swamp worker
+    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the migrations, and a restart of Horizon, the scheduler, the agent-view subscriber and the two Swamp workers of the nested Gateway; it names no per-Node worker, because Swamp workers run only on the Swamp Node, and the nested Swamp's own workers are `orbit-swamp-worker@a` and `@b`
     %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
     %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it
   end

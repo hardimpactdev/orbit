@@ -67,7 +67,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the outer VM exports its checkout over NFS to the nested network only; the nested Gateway and app-dev mount it as their checkout
   %%> - `.env`, `storage` and `bootstrap/cache` stay on each VM's own disk, mounted over the shared checkout
-  %%> - then the apply step: migrations and a restart of the long-running services (queue worker, Swamp worker), so they run the checked-out code
+  %%> - then the apply step: migrations and a restart of the long-running services of the nested Gateway (Horizon, the scheduler, the agent-view subscriber and the two Swamp workers), so they run the checked-out code
   %%> - stock NFS and systemd mount units, set up by the image and Node playbooks; no sync program
   %%> Why:
   %%> - an edit on the outer VM is in the nested VMs at once; nothing can run against old code
