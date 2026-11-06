@@ -657,7 +657,7 @@ The token reads every repository the App installation covers, because a private 
 
 A later step removes both files after the last setup step, on success and on failure. A failed removal fails the provision. The same step revokes the token, so a setup command that echoes it leaves a token that is already revoked. The setup output is redacted for GitHub tokens, dots and dashes included, before it is kept. A cancelled or timed-out run keeps the files until the token expires or `tasks:cancel` removes the VM. The Project check and deliverable commands run after that and find no token.
 
-The provision result names what became of the token in `dependency_token`. `revoked` means GitHub answered 204. `none` means GitHub answered 401: no token was minted, as for a public repository that the App does not cover, or it had already expired or been revoked. `unrevoked` carries a `reason` (GitHub answered another status, or did not answer), and the token may stay valid for up to an hour.
+The provision result names what became of the token in `dependency_token`. `revoked` means GitHub answered 204. `none` means GitHub answered 401: no token was minted, as for a public repository that the App does not cover, or it had already expired or been revoked. `unrevoked` carries a `reason` (GitHub answered another status, the request did not complete, or the revoke step could not run), and the token may stay valid for up to an hour.
 
 An `unrevoked` token does not fail the provision: the files are already gone from the VM, and failing would not shorten the hour. The result says why instead. A provision that runs no setup step writes, removes and revokes nothing, and reports `none`.
 
