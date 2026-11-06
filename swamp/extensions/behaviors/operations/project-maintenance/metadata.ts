@@ -35,7 +35,10 @@ type Context = {
     queryData(predicate: string): Promise<unknown[]>;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
-const output = async (ctx: Context, value: Record<string, unknown>) => ({
+const output = async (
+    ctx: Pick<Context, "writeResource">,
+    value: Record<string, unknown>,
+) => ({
     dataHandles: [await ctx.writeResource("public", "output", value)],
 });
 
@@ -61,7 +64,7 @@ export function configuredProject(snapshot: z.infer<typeof Snapshot>) {
 /** Metadata only: source-owned Project policy and admitted public Gateway state. */
 export const behavior = {
     type: "@nckrtl/project-maintenance-input",
-    version: "2026.11.03.1",
+    version: "2026.11.06.1",
     resources: {
         public: { schema: Public, lifetime: "infinite", garbageCollection: 1 },
     },
@@ -109,89 +112,55 @@ export const behavior = {
         },
         schedule: {
             description:
-                "Select daily detection and weekly routines from full captured Gateway state",
-            arguments: z.object({
-                revision: z.number().int().positive(),
-                snapshot_hash: z.string().regex(/^[a-f0-9]{64}$/),
-                projects: z.array(Snapshot),
-                groups: z.array(z.record(z.string(), z.unknown())),
-                operations: z.array(z.record(z.string(), z.unknown())),
-                admissions: z.record(z.string(), z.unknown()),
-            }).strict(),
+                "Tick of the hourly schedule: list the Projects this source configures, with the request keys of the fire; the Gateway selects the work from its own state",
+            arguments: z.object({}).strict(),
             async execute(
-                args: {
-                    revision: number;
-                    snapshot_hash: string;
-                    projects: z.infer<typeof Snapshot>[];
-                    groups: Record<string, unknown>[];
-                    operations: Record<string, unknown>[];
-                    admissions: Record<string, unknown>;
-                },
-                ctx: Context,
+                _args: Record<string, never>,
+                ctx: Pick<Context, "writeResource">,
             ) {
-                const requests: {
-                        project_id: number;
-                        mode: "detect" | "routine" | "observe";
-                        key: string;
-                    }[] = [],
-                    skipped: { project_id: number; reason: string }[] = [];
                 const now = new Date();
-                for (const snapshot of args.projects) {
-                    let project: z.infer<typeof DependencyProjectSchema>;
+                const configured: {
+                    id: number;
+                    repository: string;
+                    default_branch: string;
+                    check: string;
+                    keys: Record<"routine" | "observe" | "detect", string>;
+                }[] = [];
+                const skipped: { project_id: number; reason: string }[] = [];
+                for (const entry of projects) {
                     try {
-                        project = configuredProject(snapshot);
+                        const project = DependencyProjectSchema.parse(entry);
+                        configured.push({
+                            id: project.projectId,
+                            repository: repositoryIdentity(project.repository),
+                            default_branch: project.defaultBranch,
+                            check: project.check,
+                            keys: {
+                                routine: scheduleKey(
+                                    project.projectId,
+                                    "routine",
+                                    now,
+                                ),
+                                observe: `${project.projectId}-observe-${
+                                    now.toISOString().slice(0, 16)
+                                }`,
+                                detect: scheduleKey(
+                                    project.projectId,
+                                    "detect",
+                                    now,
+                                ),
+                            },
+                        });
                     } catch {
                         skipped.push({
-                            project_id: snapshot.id,
+                            project_id: entry.projectId,
                             reason: "project_configuration_unavailable",
                         });
-                        continue;
-                    }
-                    if (
-                        args.operations.some((op) =>
-                            op.target_id === project.projectId
-                        )
-                    ) continue;
-                    // The hourly inspection comes last, so it never starves a due routine or observation; while
-                    // a maintenance group is open, inspection could not admit another group anyway.
-                    for (
-                        const mode of ["routine", "observe", "detect"] as const
-                    ) {
-                        if (
-                            mode === "observe" &&
-                            !args.groups.some((g) =>
-                                g.project_id === project.projectId &&
-                                Boolean(
-                                    g.pr_url || g.watched_pr_url ||
-                                        (g.maintenance as {
-                                            admission_pending?: boolean;
-                                        } | null)?.admission_pending,
-                                )
-                            )
-                        ) continue;
-                        const key = mode === "observe"
-                            ? `${project.projectId}-observe-${
-                                now.toISOString().slice(0, 16)
-                            }`
-                            : scheduleKey(project.projectId, mode, now);
-                        if (
-                            (args.admissions[`${project.projectId}:${mode}`] as
-                                | { key?: string }
-                                | undefined)?.key === key
-                        ) continue;
-                        requests.push({
-                            project_id: project.projectId,
-                            mode,
-                            key,
-                        });
-                        break;
                     }
                 }
                 return await output(ctx, {
                     result_json: JSON.stringify({
-                        revision: args.revision,
-                        snapshot_hash: args.snapshot_hash,
-                        requests,
+                        projects: configured,
                         skipped,
                     }),
                 });
