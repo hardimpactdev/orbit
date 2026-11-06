@@ -3,6 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
   %% Decided: Nick 2026-11-02, the Route is withdrawn first, before teardown; a failed teardown leaves the site down and a rerun completes.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): an Instance without a Route skips the Route withdrawal and the DNS records (a bare destroy spent 33 s and 11 s there on nothing), and a destroyed name waits no DNS grace (it has no new target to move to; the 31 s wait was 27% of a 116 s destroy).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): a destroy applies each published state once. Without the grace, the prepared, withdrawn and live Caddyfiles and the prepared and final DNS records are identical, so the Route mutation publishes each once (10 of 20 Caddy steps and 20 of 30 DNS steps were repeats), and the DNS step of the Instance does not repeat it.
   %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
@@ -119,6 +120,7 @@ sequenceDiagram
     %%> - only for a Route domain outside the Cluster or Node TLD; private DNS answers the whole TLD, so a domain inside it has no record
     %%> What it does:
     %%> - removes the private DNS records of Instance 42's Routes; an Instance destroy does not wait the 31-second grace
+    %%> - the Route mutation already published them, so this step runs only when its final records differ from the prepared ones
     %%> How:
     %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   end

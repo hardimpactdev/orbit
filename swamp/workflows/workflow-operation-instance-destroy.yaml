@@ -140,7 +140,7 @@ jobs:
         type: succeeded
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p, p.after.dns != null) }}
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p, p.after.dns != null && p.after.dns != p.prepared.dns) }}
     task:
       type: workflow
       workflowIdOrName: route-dns-publish
