@@ -66,3 +66,19 @@ it('limits a review to findings the rules require', function (): void {
     expect($review)->toContain('at most five findings', 'A matter of taste', 'run no proof')
         ->and(TaskPrepPrompts::for('firewall:deny')->fix())->toContain('change nothing else');
 });
+
+it('puts the brief in every prompt and the reference text only in the draft', function (): void {
+    $prompts = TaskPrepPrompts::for('firewall:allow', "  Match the deny spec.\n", 'REFERENCE-FILE-TEXT');
+
+    expect($prompts->draft())->toContain('Brief of this run:', 'Match the deny spec.', 'REFERENCE-FILE-TEXT')
+        ->and($prompts->review())->toContain('Match the deny spec.')->not->toContain('REFERENCE-FILE-TEXT')
+        ->and($prompts->fix())->toContain('Match the deny spec.')->not->toContain('REFERENCE-FILE-TEXT')
+        ->and(TaskPrepPrompts::for('firewall:allow', ' ', null)->draft())->not->toContain('Brief of this run:');
+});
+
+it('accepts the optional brief and reference of a prep request', function (): void {
+    $rules = (new StartTaskPrepRequest)->rules();
+
+    expect(Validator::make(['command' => 'firewall:allow', 'brief' => 'x', 'reference' => 'y'], $rules)->passes())->toBeTrue()
+        ->and(Validator::make(['command' => 'firewall:allow', 'brief' => str_repeat('x', 8001)], $rules)->fails())->toBeTrue();
+});

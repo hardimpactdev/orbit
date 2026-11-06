@@ -39,7 +39,7 @@ final readonly class TaskPrepIntent
         if (($replay = $this->idempotency->replay('tasks.prep')) !== null) {
             return $replay;
         }
-        $prompts = TaskPrepPrompts::for($data->command);
+        $prompts = TaskPrepPrompts::for($data->command, $data->brief, $data->reference);
         $group->loadMissing('project');
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
         $base = $group->project->default_branch;
