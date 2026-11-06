@@ -30,7 +30,7 @@ sequenceDiagram
   %%> Built today:
   %%> - clone the task image, boot, enrol (keys, WireGuard, observer), model key, Pi; takes minutes
   %%> Decided by the orchestrator, for Nick's review:
-  %%> - a task that needs the nested fleet (a proof, or any VM with test nodes: medium or large) is placed only on a host whose seed holds usable ready copies of the current format; with no such host free, admission answers `tasks.capacity_unavailable`
+  %%> - a task that needs the nested fleet (a task of the Orbit Project in a VM with test nodes: medium or large, a proof included) is placed only on a host whose seed holds usable ready copies of the current format; with no such host free, admission answers `tasks.capacity_unavailable`
   %%> - the Gateway reads the fact from its own records: the seed follows the image the VM boots from, and it holds usable copies when the host's latest refresh run promoted that image and saved copies of the current `user.ready.format`; no agent report and no ssh
   %%> - the refresh of a host is pinned to that host and is not filtered, because it is what builds the copies; a task with no fleet (a plain task) still uses any host
   SW->>H: Attach the topology seed<br/>clone under the host lock
@@ -43,6 +43,10 @@ sequenceDiagram
   %%> What it does:
   %%> - checks out the commit or branch the task works on, with a read token from the vault
   SW->>VM: Start the nested fleet<br/>from the ready copies
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - only a task of the Orbit Project starts the fleet: it is an Orbit test fleet that runs Orbit from the checkout; the Gateway knows Orbit by the Project's repository (`proof.repository`), not by its id, and records it in the intent (`orbit_project`)
+  %%> - a task of any other Project skips the start, the mount and `base`, as when the host has no usable copies, and its result says `nested_fleet: none`; a proof on such a VM fails early (`proof.wrong_project`, before any fleet check)
+  %%> - placement filters only Orbit VMs with test nodes by usable copies; another Project's large or medium VM goes to any host
   %%> What it does:
   %%> - creates the nested network from the subnet stored with the ready copies
   %%> - per Node: copies the ready copy, adds its NIC with the stored MAC and address, starts all three

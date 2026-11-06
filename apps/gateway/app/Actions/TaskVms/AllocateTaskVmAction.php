@@ -109,9 +109,10 @@ final readonly class AllocateTaskVmAction
             $images = [];
             $waiting = [];
             $unseeded = [];
-            // A VM with test nodes starts the nested fleet from the ready copies of its host's seed (docs/reference/pipeline/2-development-environment.mmd).
-            // The refresh of a host is pinned to it and builds those copies, so it is not filtered.
-            $needsFleet = $hostNodeId === null && $size->resources()->testNodes > 0;
+            // A VM with test nodes of the Orbit Project starts the nested fleet from the ready copies of its host's seed
+            // (docs/reference/pipeline/2-development-environment.mmd); another Project's VM has no fleet. The refresh of a host is pinned to it
+            // and builds those copies, so it is not filtered.
+            $needsFleet = $hostNodeId === null && $size->resources()->testNodes > 0 && $this->seeds->forProject($group->project()->firstOrFail());
             foreach ($hosts as [$host, $node]) {
                 if (! array_key_exists($host->nodeId, $free)) {
                     continue;

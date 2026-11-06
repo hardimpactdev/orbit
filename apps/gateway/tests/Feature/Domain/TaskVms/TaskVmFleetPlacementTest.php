@@ -20,6 +20,7 @@ use App\Models\Task;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -78,10 +79,10 @@ function fleetSeedRefreshed(Node $host, TaskVmImageBuild $build, string $format 
         'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
 }
 
-/** A group of the Project `$id`: large, medium or plain by the size lists of the settings. */
-function fleetPlacementGroup(int $id): Task
+/** A group of the Project `$id`, of the Orbit repository unless `$repository` names another: large, medium or plain by the size lists of the settings. */
+function fleetPlacementGroup(int $id, string $repository = 'https://github.com/hardimpactdev/orbit.git'): Task
 {
-    $project = Project::query()->forceCreate(['id' => $id, 'name' => 'p'.$id, 'slug' => 'p'.$id, 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    $project = Project::query()->forceCreate(['id' => $id, 'name' => 'p'.$id, 'slug' => 'p'.$id, 'repository_url' => $repository, 'default_branch' => 'main', 'root' => 'public']);
 
     return Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => 'todo']);
 }
@@ -181,4 +182,29 @@ it('does not filter a VM that a host refresh pins to its host, because it builds
     $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject), $beast->id, TaskVmSize::Large);
 
     expect($vm->host_node_id)->toBe($beast->id);
+});
+
+it('gives the nested fleet only to the Orbit Project, known by its repository and not by its id', function (): void {
+    $project = fn (int $id, string $repository): Project => Project::query()->forceCreate(['id' => $id, 'name' => 'p'.$id, 'slug' => 'p'.$id,
+        'repository_url' => $repository, 'default_branch' => 'main', 'root' => '.']);
+    $seeds = app(TaskVmFleetSeed::class);
+
+    expect($seeds->forProject($project(999, 'https://github.com/hardimpactdev/orbit.git')))->toBeTrue()
+        ->and($seeds->forProject($project(46, 'https://github.com/hardimpactdev/swamp-proof-fixture.git')))->toBeFalse();
+});
+
+it('places a large VM of another Project without usable copies, because it gets no nested fleet', function (): void {
+    [$beast] = fleetPlacementHosts(beastMax: 6, sharkMax: 6);
+
+    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject, 'https://github.com/hardimpactdev/swamp-proof-fixture.git'));
+
+    expect($vm->size)->toBe(TaskVmSize::Large)->and($vm->host_node_id)->toBe($beast->id);
+});
+
+it('skips the fleet steps of the provision for a task whose Project is not Orbit', function (): void {
+    $steps = collect(Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-task-provision.yaml'))['jobs'])->flatMap(fn (array $job): array => $job['steps']);
+
+    foreach (['Find the fleet guest', 'Look for ready copies', 'Start the nested fleet'] as $name) {
+        expect($steps->firstWhere('name', $name)['guard'])->toContain('!inputs.intent.orbit_project');
+    }
 });

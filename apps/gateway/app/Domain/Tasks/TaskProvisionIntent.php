@@ -25,6 +25,7 @@ use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmConvergeIntent;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
+use App\Domain\TaskVms\TaskVmFleetSeed;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSize;
@@ -138,7 +139,7 @@ final readonly class TaskProvisionIntent
             // The setup steps get the same: the key names of the Composer and npm configuration, written when the step runs.
             $dependencyAuth = TaskGitHubTokens::dependencyAuth($vm);
             $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
-                'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
+                'project_id' => $project->id, 'orbit_project' => app(TaskVmFleetSeed::class)->forProject($project), 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
                 'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization, 'dependency_auth' => $dependencyAuth,
                 'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
                     'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,

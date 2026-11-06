@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofSettings;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Models\Operation;
+use App\Models\Project;
 
 /**
  * Whether the topology seed of a task VM host holds usable ready copies of the nested fleet. The Gateway keeps no report of the
@@ -15,6 +18,8 @@ use App\Models\Operation;
  */
 final readonly class TaskVmFleetSeed
 {
+    public function __construct(private ProofSettings $proof) {}
+
     /** @param  int  $buildId  the image build that placement picked for the host */
     public function usable(int $hostNodeId, int $buildId): bool
     {
@@ -27,5 +32,16 @@ final readonly class TaskVmFleetSeed
             && data_get($refresh->result, 'refreshed') === true
             && data_get($refresh->result, 'build_id') === $buildId
             && data_get($refresh->input, 'refresh.ready_copies.fleet.format') === TaskVmReadyCopiesIntent::Format;
+    }
+
+    /**
+     * Whether a task of `$project` gets the nested fleet. The fleet is an Orbit test fleet that runs Orbit from the task's checkout, so only
+     * the Orbit Project gets it, known by its repository (`proof.repository`), not by its id. A VM of any other Project records `nested_fleet: none`.
+     */
+    public function forProject(Project $project): bool
+    {
+        $orbit = $this->proof->repository();
+
+        return $project->repository_identity === GitRepositoryIdentity::derive("https://github.com/{$orbit->owner}/{$orbit->name}");
     }
 }
