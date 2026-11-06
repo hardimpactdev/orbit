@@ -58,12 +58,20 @@ jobs:
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-forget-the-earlier-host-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '20', 'ssh-keygen', '-f', '${{ "/home/" + inputs.intent.ssh_execution.target.user + "/.ssh/known_hosts" }}', '-R', '${{ inputs.intent.fleet.layout["gateway"].address }}'], okExitCodes: [0, 255], timeoutSec: 30}}
     dependsOn: [{step: 'Remove the earlier fleet', condition: {type: succeeded}}]
+  # A fresh task VM has no SSH key. The key is the operator key that reaches the nested VMs; an existing key stays.
+  - name: 'Make the operator key'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-operator-key").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-operator-key").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['sh', '-c', 'mkdir -p -m 0700 "$1" && { [ -e "$1/id_ed25519.pub" ] || ssh-keygen -q -t ed25519 -N "" -f "$1/id_ed25519"; }', 'sh', '${{ "/home/" + inputs.intent.ssh_execution.target.user + "/.ssh" }}'], timeoutSec: 30}}
+    dependsOn: [{step: 'Forget the earlier host key', condition: {type: succeeded}}]
   - name: 'Read the operator key'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-operator-key").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-operator-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['cat', '${{ "/home/" + inputs.intent.ssh_execution.target.user + "/.ssh/id_ed25519.pub" }}'], timeoutSec: 30}}
-    dependsOn: [{step: 'Forget the earlier host key', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Make the operator key', condition: {type: succeeded}}]
   # Stock Ubuntu with cloud-init: the orbit account and the key of this VM. Stateful, with the state disk the memory needs, as the ready copies require.
   - name: 'Create the VMs'
     labels: {role: swamp}
