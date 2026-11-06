@@ -56,7 +56,7 @@ These reasons explain the design. Check them before you propose a change.
 
 A new operator machine has no Orbit root certificate, so the first request cannot verify the Gateway. The CLI checks the fingerprint in the response and then repeats the request with the fetched certificate as the only root. A certificate that changes between the two requests fails, and nothing reaches the trust store.
 
-A Gateway bootstrapped with `orbit:bootstrap --operator-ip` already records the operator Node at that address. The operator machine still pins the root certificate this way before its first request.
+The operator of a nested task fleet pins its Gateway's root certificate from a file, with `gateway:add --ca`, so its first request already verifies. That Gateway recorded the operator Node at bootstrap (`orbit:bootstrap --operator-ip`).
 
 ### A changed certificate needs an explicit flag
 

@@ -11,6 +11,7 @@ inputs:
     # intent.gateway: url, the address of the new Gateway (APP_URL); wireguard_ip and wireguard_subnet, its address in the private network of the fleet it leads.
     # intent.agent_delivery: the JSON text of the agent delivery manifest ({commit, version, artifacts}), public pins the admitting Gateway sends.
     # intent.operator: checkout, the release checkout on the operator, with its Gateway dependencies; it renders the plan of the machine.
+    #   Optional wireguard_ip: the operator's address in the fleet's network; the Gateway records the Node `operator` there (orbit:bootstrap --operator-ip).
     intent: {type: object}
   required: [intent]
   additionalProperties: false
