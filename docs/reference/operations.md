@@ -88,6 +88,8 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the `task_vm.destroy` budget of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
+`tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. The longest run of author turns replaces the row once the history holds them.
+
 `task_vm.ready_copies` has a provisional 3,600 seconds, the sum of its serial steps with margin: the Club key scan (900 seconds), the stop (300), a copy (600), the agent wait (130) and the scan of the stored copy (900). A 14-day p95 replaces it after the first successes.
 
 `task_vm.fleet_build` has a provisional 3,600 seconds, the serial bounded steps of the nested fleet. They are the VMs and their first boot, the Gateway bootstrap (about three minutes), and the converges of the Gateway and its Node. The enrollment of app-dev and app-prod takes about six minutes each. A 14-day p95 replaces it after the first successes.
