@@ -13,6 +13,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
+use Tests\Support\TestOrbitHome;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -42,11 +43,15 @@ it('keeps the production checkout of the swamp Node when no repository is named'
 it('records the public key of the hub the machine made, and refuses anything that is not a WireGuard key', function (): void {
     $node = SwampNodeFixture::ensure();
     $key = base64_encode(str_repeat('k', 32));
+    $home = sys_get_temp_dir().'/'.TestOrbitHome::Prefix.'hub-'.bin2hex(random_bytes(4));
+    mkdir($home, 0o700);
+    config(['orbit.home' => $home]);
 
     $this->artisan('orbit:bootstrap-control-plan --hub-public-key=not-a-key')->assertFailed();
     $this->artisan("orbit:bootstrap-control-plan --hub-public-key={$key}")->assertSuccessful();
 
-    expect($node->fresh()->wireguard_public_key)->toBe($key);
+    expect($node->fresh()->wireguard_public_key)->toBe($key)
+        ->and(file_get_contents($home.'/wireguard/public.key'))->toBe($key."\n");
 });
 
 it('names the folder of the swamp.orbit Route for its certificate and refuses another site', function (): void {

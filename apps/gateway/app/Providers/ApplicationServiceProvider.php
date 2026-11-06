@@ -14,6 +14,7 @@ use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
+use App\Console\Commands\NodeAddCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
@@ -43,6 +44,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             CaddyBuildCommand::class,
             FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
+            NodeAddCommand::class,
             ProvisionNodeCommand::class,
             ReconcilePeerDnsCommand::class,
             RoleAddCommand::class,
