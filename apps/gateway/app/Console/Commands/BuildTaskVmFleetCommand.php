@@ -23,7 +23,7 @@ final class BuildTaskVmFleetCommand extends Command
     public function handle(StartTaskVmFleetBuildAction $build): int
     {
         $value = $this->argument('vm');
-        if (! is_string($value) || ! ctype_digit($value) || (int) $value < 1) {
+        if (! ctype_digit($value) || (int) $value < 1) {
             $this->error('A positive TaskVM ID is required.');
 
             return self::FAILURE;
