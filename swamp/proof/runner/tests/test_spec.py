@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import spec
 
 PROOF = Path(__file__).resolve().parents[2]
-CASES = PROOF / 'firewall' / 'allow.cases.yaml'
+CASES = Path(__file__).resolve().parent / 'fixtures' / 'allow.cases.yaml'
 BATCHES = PROOF / 'batches.yaml'
 
 HEADER = 'command: firewall:allow\nchart: firewall/allow\ntarget: app-dev\nsources: [gateway, app-prod]\n'
@@ -43,7 +43,7 @@ class RealFileTest(unittest.TestCase):
         self.assertEqual(ids[6:9], ['protocols[tcp]', 'protocols[udp]', 'protocols[both]'])
 
     def test_the_list_cases_load_and_every_batch_they_name_exists(self):
-        loaded = spec.load(PROOF / 'firewall' / 'list.cases.yaml', BATCHES)
+        loaded = spec.load(Path(__file__).resolve().parent / 'fixtures' / 'list.cases.yaml', BATCHES)
         names = {step.name for case in loaded.cases for step in case.setup + [item for stage in case.stages for item in stage.act + stage.expect]}
         self.assertTrue({'record', 'agent_report', 'node_down'} <= names)
         self.assertIn('node-access-required', [case.id for case in loaded.cases])
