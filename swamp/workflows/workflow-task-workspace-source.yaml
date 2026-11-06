@@ -145,13 +145,19 @@ jobs:
       methodName: execute
       inputs:
         run: |
+          set -eu
+          rm -rf -- "$ORBIT_SOURCE" "$ORBIT_BUNDLE"
           base=$(printf '%s\n' "$ORBIT_BASE" | head -n 1)
           case "$base" in ''|*[!0-9a-f]*) base= ;; esac
           set --
           if [ -n "$base" ]; then set -- --filter=blob:none; fi
           timeout 600 git clone --quiet --bare --single-branch --branch "$ORBIT_BRANCH" "$@" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
           set --
-          if [ -n "$base" ] && git -C "$ORBIT_SOURCE" merge-base --is-ancestor "$base^" "refs/heads/$ORBIT_BRANCH" 2>/dev/null; then set -- "^$base^"; fi
+          # A thin bundle needs the base in the branch and at least one commit after its parent; git refuses an empty bundle.
+          if [ -n "$base" ] && git -C "$ORBIT_SOURCE" merge-base --is-ancestor "$base^" "refs/heads/$ORBIT_BRANCH" 2>/dev/null \
+            && [ "$(git -C "$ORBIT_SOURCE" rev-list --count "$base^..refs/heads/$ORBIT_BRANCH")" -gt 0 ]; then
+            set -- "^$base^"
+          fi
           timeout 600 git -C "$ORBIT_SOURCE" bundle create --quiet "$ORBIT_BUNDLE" "refs/heads/$ORBIT_BRANCH" "$@"
         env:
           ORBIT_BASE: ${{ steps.read_base.outputs.stdout }}
@@ -274,7 +280,16 @@ jobs:
         argv:
         - /bin/sh
         - -c
-        - 'set -e; git init --quiet -- "$1"; cd -- "$1"; git config remote.origin.url "$2"; git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"; git fetch --quiet --no-tags -- "$3" "+refs/heads/$4:refs/remotes/origin/$4"; git switch --quiet --create "$5" "$6"; git rev-parse HEAD --abbrev-ref HEAD'
+        - |
+          set -eu
+          # A 64-character commit names a SHA-256 repository; git init makes SHA-1 by default.
+          if [ "${#6}" -eq 64 ]; then git init --quiet --object-format=sha256 -- "$1"; else git init --quiet -- "$1"; fi
+          cd -- "$1"
+          git config remote.origin.url "$2"
+          git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+          git fetch --quiet --no-tags -- "$3" "+refs/heads/$4:refs/remotes/origin/$4"
+          git switch --quiet --force-create "$5" "$6"
+          git rev-parse HEAD --abbrev-ref HEAD
         - orbit-checkout
         - ${{ inputs.intent.workspace.checkout_path }}
         - ${{ inputs.intent.workspace.repository }}
@@ -283,6 +298,9 @@ jobs:
         - ${{ inputs.intent.workspace.branch }}
         - ${{ inputs.intent.workspace.start_commit }}
     dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
     - step: copy_bundle
       condition:
         type: succeeded
