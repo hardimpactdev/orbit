@@ -1,6 +1,6 @@
 id: 07491a2f-25a8-4458-92dd-e58e467ac28c
 name: operation-task-vm-hub-converge
-description: Check, write and load the Gateway-rendered task VM filter on the WireGuard hub, allow 209 SSH and Router web through UFW, and assert the exact live rules, over pinned official SSH from 209.
+description: Check, write and load the Gateway-rendered task VM filter on the WireGuard hub, allow 209 SSH, 209's TLS probe and Router web through UFW, and assert the exact live rules, over pinned official SSH from 209.
 vaults: []
 queueTimeout: 60
 inputs:
