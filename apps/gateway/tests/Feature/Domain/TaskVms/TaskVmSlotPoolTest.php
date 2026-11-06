@@ -138,12 +138,14 @@ it('keeps at most as many slots as the host can run at once', function (): void 
     expect(app(TaskVmSlotPool::class)->next($host->id))->toBeNull();
 });
 
-it('enrols only with room for one more VM of the slot size beside it', function (): void {
+it('refills beside a live task, into idle capacity only', function (): void {
     [$host] = slotPoolHost(2, maxVms: 6);
+    TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+        'name' => 'tvm-busy-0', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.249']);
     expect(app(TaskVmSlotPool::class)->next($host->id))->toBe(['enrol', null]);
 
     TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Normal,
-        'name' => 'tvm-busy-0', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.249']);
+        'name' => 'tvm-busy-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.250']);
     expect(app(TaskVmSlotPool::class)->next($host->id))->toBeNull();
 });
 
@@ -163,9 +165,14 @@ it('waits for capacity to enrol, and a ready slot takes none', function (): void
     expect($capacity->freeSlots($hosts)[$host->id])->toBe(8)
         ->and(app(TaskVmSlotPool::class)->next($host->id))->toBe(['enrol', null]);
 
+    foreach ([3, 4] as $n) {
+        TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Normal,
+            'name' => 'tvm-busy-'.$n.'0', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.24'.$n]);
+    }
     TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
-        'name' => 'tvm-busy-3', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.248']);
-    expect(app(TaskVmSlotPool::class)->next($host->id))->toBeNull();
+        'name' => 'tvm-busy-5', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.247']);
+    expect($capacity->freeSlots($hosts)[$host->id])->toBe(3)
+        ->and(app(TaskVmSlotPool::class)->next($host->id))->toBe(['enrol', null]);
 });
 
 it('keeps ready slots out of the stray records of the host sweep', function (): void {

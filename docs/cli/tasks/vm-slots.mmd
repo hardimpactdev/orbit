@@ -12,7 +12,7 @@ sequenceDiagram
   participant SW as Swamp<br/>workflow execution
   participant H as Task VM host<br/>Incus over ssh
   participant VM as Slot VM<br/>normal task VM
-  Note over GW,VM: Enrol (5 ready per host)
+  Note over GW,VM: Enrol (pool size per host)
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - a host keeps slots only when its task VM settings name them: `task_vms.slots` = `{count, project_id, size}`, for example `{"count": 5, "project_id": 46, "size": "large"}`; without it, the host has no pool and every provision clones, as today
   %%> - a slot serves one Project and one size: the enrol converge exports that Project's checkout path to the nested network, and the claim needs that size
@@ -23,9 +23,9 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), pool size:
   %%> - a stopped slot holds disk (a ZFS clone), not memory, so it takes no capacity, and stopped slots never block a claim or a clone
   %%> - a pool holds at most as many slots as the host can run at once: `max_vms` ÷ the units of the slot size (beast 6 ÷ 3 = 2 large, shark 12 ÷ 3 = 4); a larger `count` is cut to that
-  %%> - an enrol runs a VM, so it starts only when the host keeps room for one more VM of the slot size beside it; live tasks, the stage 6 refresh and proof runs keep their capacity
+  %%> - an enrol runs a VM for a few minutes, so it starts only in capacity that no task, refresh or proof uses, one at a time; a provision that arrives meanwhile waits for capacity as for any VM, at most one enrol long
   GW->>SW: Enrol a slot<br/>today's tasks:provision, no task
-  %%> Exactly today's path: clone the current task image, boot, enrol (keys, WireGuard, observer), model key, Pi. Runs in the background whenever the pool is below 5.
+  %%> Exactly today's path: clone the current task image, boot, enrol (keys, WireGuard, observer), model key, Pi. Runs in the background whenever the pool is below its size.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - kind `task_vm.slot_enrol`, workflow `operation-task-vm-slot-enrol`: the VM child of tasks:provision, which also attaches a clone of the host's topology seed, then "Converge once" (task VM role phases: nested Incus with the seed pool, the NFS export of the checkout path)
   %%> - no workspace, nested fleet, Route or Processes: the claim makes them for the task

@@ -102,9 +102,9 @@ final readonly class TaskVmSlotPool
         if ($setting !== null && $slots->count() < $count) {
             $free = $this->capacity->freeSlots([[$location, $host]])[$host->id] ?? 0;
 
-            // An enrol runs a VM: it leaves room for one more VM of the slot size, for a claim, a clone or a refresh.
+            // An enrol runs a VM: it takes only capacity that nothing else uses.
             return $current !== null && Project::query()->whereKey($setting->projectId)->exists()
-                && $free >= 2 * $setting->size->slots() && ! $this->recentlyFailed($host->id) ? ['enrol', null] : null;
+                && $free >= $setting->size->slots() && ! $this->recentlyFailed($host->id) ? ['enrol', null] : null;
         }
         $stale = $slots->first(fn (TaskVm $vm): bool => $this->stale($vm, $setting, $current))
             ?? ($slots->count() > $count ? $slots->first() : null);
