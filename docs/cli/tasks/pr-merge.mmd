@@ -56,24 +56,18 @@ sequenceDiagram
   %%> Why here and not at admission:
   %%> - an installation token lives one hour; the token is minted when the step that uses it runs
   %%> - no task VM holds a GitHub credential
-  SW->>GH: Read the PR
-  %%> What it does:
-  %%> - one `gh api` read of the state and the head SHA
-  Note over SW: Check the PR head
-  %%> Refuses:
-  %%> - a head other than the admitted one, or a PR that is no longer open, with `tasks_pr.head_moved`; nothing is merged
   SW->>GH: Squash on expected head
   %%> What it does:
   %%> - one squash merge straight into the base branch, with the admitted `sha`; a moved head refuses without merging
+  %%> - no read of the PR comes first: admission read the head, and the `sha` of the call is the guard for the seconds in between
   %%> - no merge queue and no GitHub auto-merge
   %%> Refuses:
   %%> - a conflict with the base branch; the author rebases, which reruns CI and the proof, and the gate starts again
-  SW->>GH: Revoke the token
-  %%> When:
-  %%> - always, on success and failure; best effort because the token expires within one hour
-  Note over SW: Remove CLI config
+  SW->>GH: Clean up the token<br/>task-github-cleanup
   %%> What it does:
-  %%> - removes the private GitHub CLI configuration directory of this run
+  %%> - runs the shared cleanup child: it revokes the token, best effort because the token expires within one hour, and removes the private GitHub CLI configuration directory of this run
+  %%> When:
+  %%> - always, on success and failure
   Note over SW: Confirm the merge
   alt merged
     GH-->>SW: PR merged · sha
@@ -91,7 +85,7 @@ sequenceDiagram
     %%> - the head moved, the PR conflicts with the base branch, or GitHub refused the merge
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - which step failed and its error code, such as `tasks_pr.head_moved` or `tasks_pr.merge_refused`
+    %%> - which step failed and its error code, such as `tasks_pr.merge_refused`
     Note over GW: Mark the task failed<br/>PR open · author fixes
     %%> Result:
     %%> - the task fails; the PR stays open, unmerged

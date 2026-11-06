@@ -22,7 +22,7 @@ final readonly class TaskPullRequestMergeProjection extends TaskPullRequestProje
 
     protected function codes(): array
     {
-        return ['tasks_pr.head_moved', 'tasks_pr.merge_refused'];
+        return ['tasks_pr.merge_refused'];
     }
 
     protected function stepCodes(): array

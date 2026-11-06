@@ -230,52 +230,28 @@ jobs:
       - type: completed
       - type: skipped
   steps:
-  - name: Revoke the token
+  - name: Clean up the token
     labels:
       role: swamp
     queueTimeout: 30
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "pr-ready-revoke" }}
-      methodName: execute
+      type: workflow
+      workflowIdOrName: task-github-cleanup
       inputs:
-        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
-        env:
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-    guard: ${{ !("Mint the token" in steps && steps["Mint the token"].status == "succeeded") }}
-    writes: true
-    allowFailure: true
-  - name: Remove CLI config
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "pr-ready-cleanup" }}
-      methodName: execute
-      inputs:
-        run: timeout 10 rm -rf -- "$ORBIT_GH_DIRECTORY"
-        env:
-          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
-    writes: true
+        name: pr-ready
+        run_id: ${{ run.id }}
+        write_token: ${{ inputs.execution_secrets.write_token }}
+        mint_status: '${{ "Mint the token" in steps ? steps["Mint the token"].status : "skipped" }}'
   - name: Confirm the ready step
     labels:
       role: swamp
     queueTimeout: 30
     task:
       type: assert
-      expr: '"Read the PR result" in steps && steps["Read the PR result"].status == "succeeded" && steps["Remove CLI config"].status == "succeeded"'
+      expr: '"Read the PR result" in steps && steps["Read the PR result"].status == "succeeded" && steps["Clean up the token"].status == "succeeded"'
       message: tasks_pr.ready_refused
       severity: high
     dependsOn:
-    - step: Revoke the token
-      condition:
-        type: completed
-    - step: Remove CLI config
+    - step: Clean up the token
       condition:
         type: completed

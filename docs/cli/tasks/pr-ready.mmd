@@ -73,12 +73,11 @@ sequenceDiagram
   SW->>GH: Read the PR result
   %%> What it does:
   %%> - reads the head, the draft flag and the requested reviewers; the Gateway keeps this as the task result
-  SW->>GH: Revoke the token
-  %%> When:
-  %%> - always, on success and failure; best effort because the token expires within one hour
-  Note over SW: Remove CLI config
+  SW->>GH: Clean up the token<br/>task-github-cleanup
   %%> What it does:
-  %%> - removes the private GitHub CLI configuration directory of this run
+  %%> - runs the shared cleanup child: it revokes the token, best effort because the token expires within one hour, and removes the private GitHub CLI configuration directory of this run
+  %%> When:
+  %%> - always, on success and failure
   Note over SW: Confirm the ready step
   alt ready
     GH-->>SW: PR ready · head sha

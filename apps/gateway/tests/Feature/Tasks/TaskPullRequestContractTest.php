@@ -97,7 +97,6 @@ it('maps a failed step to a known error code', function (): void {
         ->and($ready->failureCode(['failed_step' => 'Take the PR out of draft', 'detail' => 'gh: Resource not accessible (HTTP 403)']))->toBe('tasks_pr.ready_refused')
         ->and($ready->failureCode(['failed_step' => 'Request the review', 'detail' => 'gh: Review cannot be requested from pull request author. (HTTP 422)']))->toBe('tasks_pr.review_request_refused')
         ->and($ready->failureCode(['failed_step' => 'Read the PR', 'detail' => 'tasks_pr.bogus']))->toBe('tasks_pr.ready_refused')
-        ->and($merge->failureCode(['failed_step' => 'Check the PR head', 'detail' => 'tasks_pr.head_moved']))->toBe('tasks_pr.head_moved')
         ->and($merge->failureCode(['failed_step' => 'Squash on expected head', 'detail' => 'gh: Pull Request is not mergeable (HTTP 405)']))->toBe('tasks_pr.merge_refused')
         ->and($merge->failureCode([]))->toBe('tasks_pr.merge_refused');
 });
