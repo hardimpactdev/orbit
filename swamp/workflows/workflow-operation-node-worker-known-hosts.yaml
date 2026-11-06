@@ -7,7 +7,7 @@ inputs:
       type: integer
     node_id:
       type: integer
-      enum: [209]
+      minimum: 1
     kind:
       type: string
       enum: [node.worker_known_hosts]
@@ -19,7 +19,7 @@ inputs:
       properties:
         control_node_id:
           type: integer
-          enum: [209]
+          minimum: 1
         known_hosts_content:
           type: string
         digest:
