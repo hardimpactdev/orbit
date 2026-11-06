@@ -30,8 +30,8 @@ sequenceDiagram
   %%> - over SSH it installs on the fresh machine the pinned Swamp binary, the swamp role's pinned Ansible venv, the release's `swamp/` folder and the Swamp key
   %%> - the same bootstrap a fresh Orbit install uses: the user's CLI keeps the Swamp binary in `~/.orbit` and removes it after the handover; no Ansible on the user's machine
   %%> - the release is a git checkout at the release commit: its `swamp/` folder is the Gateway's Swamp repository and holds the Ansible pins, and `apps/gateway` is its code
-  %%> - the Swamp key is written from the operator's local vault; the run input holds only the vault and key names
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the Swamp key is not in this run: the shape gate allows a vault read for a file only in a step placed on 209, and a local run has no placement; the refresh VM pushes its key file into the machine with `incus file push`, as stage 2 does, so the run holds no secret
   %%> - the Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database; the `gateway` role installs no PHP, so "converge itself, then `orbit:bootstrap`" cannot be the order
   %%> - so the same local run also applies the Ansible `prerequisites` phase of the role playbook with Ansible's local connection; the operator renders its intent from the recipe alone with `php artisan` (no database), so the machine gets its pinned PHP, Caddy and WireGuard packages
   NG->>NG: Converge itself<br/>gateway · websocket · swamp
