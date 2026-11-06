@@ -32,6 +32,11 @@ final class RefreshTaskVmImageCommand extends Command
             return self::FAILURE;
         }
         $this->line('Operation '.$operation->id.' '.$operation->status->value);
+        $asked = (string) $this->option('seed');
+        $running = (string) data_get($operation->input, 'refresh.seed', 'build');
+        if ($running !== $asked) {
+            $this->warn('A refresh of this host is already open with seed='.$running.'; it is returned instead of seed='.$asked.'.');
+        }
 
         return self::SUCCESS;
     }
