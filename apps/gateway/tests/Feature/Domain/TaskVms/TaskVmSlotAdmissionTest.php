@@ -21,6 +21,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
@@ -206,3 +207,58 @@ it('claims a ready enrolled slot, creates no VM, and starts the provision with t
         ->and(TaskVm::query()->count())->toBe(1)
         ->and($slot->fresh()->group_id)->toBe($group->id);
 })->with(['the pins of its enrol' => [true], 'changed pins' => [false]]);
+
+it('captures the Route of a routed workspace served, with the admitted Project facts', function (): void {
+    $samePins = true;
+    [$host, $project, $build, $group] = slotAdmissionWorld(2);
+    // A routed Laravel app in a Cluster whose router is the task VM host.
+    $project->update(['type' => 'laravel-app', 'task_workspace_routed' => true, 'php_version' => '8.5', 'is_laravel' => true]);
+    $cluster = Cluster::query()->sole();
+    $cluster->update(['state' => 'active']);
+    Node::withoutEvents(fn () => $host->update(['cluster_id' => $cluster->id]));
+    $host->roles()->create(['role' => 'router', 'status' => 'active', 'cluster_id' => $cluster->id]);
+    // The Route renders the Orbit root CA; a throwaway one in this test's Orbit home.
+    $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 4096]);
+    $config = tempnam(sys_get_temp_dir(), 'orbit-ca');
+    file_put_contents($config, "[req]\ndistinguished_name = dn\n[dn]\n[ca]\nbasicConstraints = critical,CA:TRUE\n");
+    $root = openssl_csr_sign(openssl_csr_new(['commonName' => 'Orbit test root'], $key), null, $key, 1, ['config' => $config, 'x509_extensions' => 'ca', 'digest_alg' => 'sha256']);
+    @mkdir(config('orbit.home').'/ca', 0700, true);
+    openssl_x509_export_to_file($root, config('orbit.home').'/ca/root.pem');
+    unlink($config);
+    $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Large, 'name' => 'tvm-900', 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.190',
+        'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => $build->recipe_identity, 'ready_at' => now(),
+        'slot_digest' => $samePins ? app(TaskVmSlotPool::class)->releaseDigest() : str_repeat('0', 64)]);
+    $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-900', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.252.7.90', 'wireguard_ip' => '10.44.0.190', 'user' => 'orbit', 'ssh_jump_node_id' => $host->id, 'cluster_id' => Cluster::query()->sole()->id,
+        'ssh_host_fingerprint' => 'SHA256:guest', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'guest-public-key']));
+    $slot->update(['node_id' => $guest->id]);
+    $guest->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    // The converge of changed pins names the Gateway Node that holds the Pi server.
+    Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:gateway', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'gateway-public-key']))->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' fixture']);
+    $receipt = ['task_vm_id' => $slot->id, 'guest_node_id' => $guest->id, 'ready' => true];
+    Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['task_vm_id' => $slot->id, 'name' => $slot->name, 'node_id' => $host->id, 'host_node_id' => $host->id,
+            'guest_node_id' => $guest->id, 'provider' => 'incus', 'provider_id' => null, 'wireguard_ip' => $slot->wireguard_ip,
+            'image_fingerprint' => $slot->image_fingerprint, 'recipe_identity' => $slot->recipe_identity, 'create' => ['topology' => true], 'converge' => ['x' => 1]],
+        'result' => $receipt, 'finished_at' => now()]);
+
+    try {
+        app(TaskProvisionIntent::class)->start($group, 'test', null, SlotAdmissionCommit);
+    } catch (ResourceOperationException $e) {
+        // This fixture answers no Swamp run start; the admission has recorded its Operation by then.
+        expect($e->errorCode)->toBe('swamp.start_uncertain');
+    }
+    $operation = Operation::query()->where('kind', 'tasks.provision')->sole();
+
+    $route = json_encode($operation->input['route'] ?? null, JSON_THROW_ON_ERROR);
+    $instance = Instance::query()->findOrFail($operation->input['instance_id']);
+
+    expect($operation->input['route'])->not->toBeNull()
+        ->and($route)->not->toContain('Orbit Route unavailable')
+        ->and($route)->toContain('reverse_proxy')
+        ->and([$instance->selected_php_version, $instance->source_is_laravel])->toBe(['8.5', true]);
+});
