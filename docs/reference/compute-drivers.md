@@ -1283,7 +1283,7 @@ Each VM has a 20 GiB root disk and a state volume as large as its memory, set as
 
 The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
 
-The new Gateway then does the rest through its own Orbit. It converges its `gateway` role and its own Node, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
+The new Gateway then does the rest through its own Orbit. It converges its own Node, then its `gateway` role, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
 
 The Gateway and app-dev guests then take their checkout from the outer VM, as they do when a task VM starts from ready copies. The Gateway stops its services and moves its state to `/var/lib/orbit-checkout-state` on its own disk: `.env`, `storage`, `bootstrap/cache` and the state of the Swamp repository. It drops the checkout it built, and the stock systemd mount units mount the NFS export of the outer VM and the state over it. The services start again on the shared checkout.
 
