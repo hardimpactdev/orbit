@@ -109,6 +109,8 @@ sequenceDiagram
   VM->>NT: Check readiness<br/>agents · Swamp · Doctor
   %%> What it does:
   %%> - every Node agent online, the Swamp worker enrolled, the Gateway knows the operator, Doctor has no finding
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - readiness first waits, bounded, until Doctor of the nested Gateway is healthy (one Ansible task with `until` and `retries`, the fleet build's wait playbook); the apply step restarts the agent-view subscriber, and the agents read online only after their next heartbeats, so a single read 3 s later failed (provision 11937)
   SW->>NT: Take the base snapshot<br/>memory included
   %%> What it does:
   %%> - one Incus stateful snapshot `base` of the three nested VMs (`migration.stateful`, `size.state` = memory)
