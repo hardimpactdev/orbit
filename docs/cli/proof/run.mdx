@@ -5,7 +5,7 @@ description: "Prove the commands that a commit changes. Orbit picks the cases fr
 ---
 
 ```bash
-orbit proof:run <commit> [--all] [--idempotency-key=KEY] [--json]
+orbit proof:run <commit> [--all] [--report-only] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -15,6 +15,7 @@ orbit proof:run <commit> [--all] [--idempotency-key=KEY] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--all` | off | Run every case, not only the cases that the commit selects. |
+| `--report-only` | off | Yield capacity to task and proof work. The run takes a host only when one large VM stays free after it, and never overflows to UpCloud. The proof CI job passes it while it is report-only. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
 
@@ -94,7 +95,7 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 | `proof.path_unmapped` | A changed path matches no line of the selection list. The details name the path. |
 | `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
 | `proof.run_failed` | The VM or the test fleet of a run did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
-| `tasks.capacity_unavailable` | No host with a usable nested fleet seed has room for a VM for each selected command. No run starts. A host whose seed holds no ready copies of the current format is skipped, even with free slots. |
+| `tasks.capacity_unavailable` | No host with a usable nested fleet seed has room for a VM for each selected command. No run starts. With `--report-only`, a host also keeps the slots of one large VM free, so the run yields to other work. A host whose seed holds no ready copies of the current format is skipped, even with free slots. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The details hold the commit, the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The details name the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |

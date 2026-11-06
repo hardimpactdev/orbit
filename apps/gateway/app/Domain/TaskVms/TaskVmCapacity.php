@@ -40,12 +40,13 @@ final readonly class TaskVmCapacity
      * The free slots of each of `$hosts`, in their order: `max_vms` minus the slots of every task VM on the host that
      * is not destroyed or failed, parked ones too, except a ready slot that no group holds. A failed VM holds no slot, so it never blocks placement:
      * its group asks for assistance. A VM takes the slots of its size
-     * ({@see TaskVmSize::slots()}). A host over its budget has 0.
+     * ({@see TaskVmSize::slots()}). A host over its budget has 0. A `$reserve` is kept free on top: a report-only proof
+     * run sees fewer free slots, so it never takes the last ones from task and proof work.
      *
      * @param  list<array{TaskVmHost, Node}>  $hosts  from {@see self::activeHosts()}
      * @return array<int, int> host Node id => free slots
      */
-    public function freeSlots(array $hosts): array
+    public function freeSlots(array $hosts, int $reserve = 0): array
     {
         $used = [];
         foreach (TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->get(['host_node_id', 'size']) as $vm) {
@@ -54,7 +55,7 @@ final readonly class TaskVmCapacity
         }
         $free = [];
         foreach ($hosts as [$host]) {
-            $free[$host->nodeId] = max(0, $host->maxVms - ($used[$host->nodeId] ?? 0));
+            $free[$host->nodeId] = max(0, $host->maxVms - ($used[$host->nodeId] ?? 0) - $reserve);
         }
 
         return $free;

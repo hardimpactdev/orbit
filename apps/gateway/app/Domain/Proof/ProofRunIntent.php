@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\TaskVms\TaskVmModelAdmission;
+use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
@@ -39,7 +40,7 @@ final readonly class ProofRunIntent
     public function __construct(private ProofCommitTrust $trust, private ProofCommitSource $source, private ProofSettings $settings,
         private OperationIdempotency $idempotency, private OperationStore $store, private ProofGroup $groups) {}
 
-    public function start(string $commit, bool $all, string $caller, ?string $requestId): Operation
+    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false): Operation
     {
         if (($existing = $this->idempotency->replay(OperationKinds::ProofRun)) !== null) {
             return $existing;
@@ -49,7 +50,7 @@ final readonly class ProofRunIntent
         $swamp = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($roles) => $roles
             ->where('role', RoleName::Swamp)->where('status', LifecycleStatus::Active))->first()
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
-        $intent = ['commit' => $commit, 'all' => $all, 'everything_because' => $selection->everythingBecause,
+        $intent = ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, 'everything_because' => $selection->everythingBecause,
             'cases' => $selection->cases, 'uncovered' => $selection->uncovered];
         if ($selection->nothingToProve()) {
             $operation = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id, $intent, $caller, $requestId);
@@ -72,12 +73,12 @@ final readonly class ProofRunIntent
             // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
             // the groups roll back with it, and Swamp starts no run before the whole proof is admitted. The router fence spans the
             // transaction, so a router teardown never sees a half-admitted proof.
-            $runs = app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection): array {
+            $runs = app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly): array {
                 $runs = [];
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null));
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null, reserveSlots: $reportOnly ? TaskVmPlacementPolicy::reportOnlyReserve() : 0));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 

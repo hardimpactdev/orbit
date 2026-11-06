@@ -260,6 +260,23 @@ describe('proof:run admission', function (): void {
             ->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
+
+    it('records a report-only run as such and refuses it for capacity like any other run', function (): void {
+        config(['proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, reportOnly: true));
+
+        $proof = Operation::query()->where('kind', 'proof.run')->sole();
+        expect($refusal->errorCode)->toBe('tasks.capacity_unavailable')
+            ->and($proof->input['report_only'])->toBeTrue()
+            ->and(Task::query()->count())->toBe(0);
+    });
 });
 
 describe('the intent of a run', function (): void {

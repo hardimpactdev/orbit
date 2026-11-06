@@ -51,13 +51,13 @@ final readonly class AllocateTaskVmAction
      * State-only placement for an owning Task admission transaction. Starts no Operation or job. An admission that needs a size sets it
      * in `$size`, as the refresh of a task image does for a large VM; otherwise the group's topology and Project decide it.
      */
-    public function capture(Task $group, ?int $hostNodeId = null, ?TaskVmSize $size = null): TaskVm
+    public function capture(Task $group, ?int $hostNodeId = null, ?TaskVmSize $size = null, int $reserveSlots = 0): TaskVm
     {
-        return $this->allocate($group, null, $hostNodeId, $size);
+        return $this->allocate($group, null, $hostNodeId, $size, $reserveSlots);
     }
 
     /** @param null|Closure(TaskVm):mixed $admit */
-    private function allocate(Task $group, ?Closure $admit = null, ?int $hostNodeId = null, ?TaskVmSize $size = null): TaskVm
+    private function allocate(Task $group, ?Closure $admit = null, ?int $hostNodeId = null, ?TaskVmSize $size = null, int $reserveSlots = 0): TaskVm
     {
         $existing = TaskVm::forGroup($group);
         if ($existing instanceof TaskVm) {
@@ -66,7 +66,7 @@ final readonly class AllocateTaskVmAction
         }
         $size ??= TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
         try {
-            $vm = $this->place($group, $size, $admit, $hostNodeId);
+            $vm = $this->place($group, $size, $admit, $hostNodeId, $reserveSlots);
         } catch (Throwable $exception) {
             if (! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception)) {
                 throw $exception;
@@ -83,12 +83,12 @@ final readonly class AllocateTaskVmAction
      *
      * @param  null|Closure(TaskVm):mixed  $admit
      */
-    private function place(Task $group, TaskVmSize $size, ?Closure $admit, ?int $hostNodeId): TaskVm
+    private function place(Task $group, TaskVmSize $size, ?Closure $admit, ?int $hostNodeId, int $reserveSlots = 0): TaskVm
     {
         $resolvedIdentity = $this->images->currentRecipe()->identity;
         $template = null;
         try {
-            $target = $this->policy->choose($size, $group, $this->capacity->freeSlots($this->capacity->activeHosts()));
+            $target = $this->policy->choose($size, $group, $this->capacity->freeSlots($this->capacity->activeHosts(), $reserveSlots), $reserveSlots);
             if ($target->provider === TaskVmProviderKind::UpCloud) {
                 $template = app(UpCloudServers::class)->currentTemplate($resolvedIdentity);
             }
@@ -96,7 +96,7 @@ final readonly class AllocateTaskVmAction
             // Admission rechecks capacity under the row lock.
         }
 
-        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit, $hostNodeId): TaskVm {
+        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit, $hostNodeId, $reserveSlots): TaskVm {
             // Serialize admission with desired-recipe changes and image promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $existing = TaskVm::forGroup($group);
@@ -105,7 +105,7 @@ final readonly class AllocateTaskVmAction
             }
             $recipe = $this->images->currentRecipe();
             $hosts = array_values(array_filter($this->capacity->activeHosts(), static fn (array $entry): bool => $hostNodeId === null || $entry[0]->nodeId === $hostNodeId));
-            $free = $this->capacity->freeSlots($hosts);
+            $free = $this->capacity->freeSlots($hosts, $reserveSlots);
             $images = [];
             $waiting = [];
             $unseeded = [];
@@ -142,7 +142,7 @@ final readonly class AllocateTaskVmAction
                 }
             }
             try {
-                $target = $this->policy->choose($size, $group, $free);
+                $target = $this->policy->choose($size, $group, $free, $reserveSlots);
                 if ($waiting !== [] && $target->provider === TaskVmProviderKind::UpCloud) {
                     throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::NoCapacity);
                 }
@@ -151,7 +151,7 @@ final readonly class AllocateTaskVmAction
                     throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for recipe '.substr($recipe->identity, 7, 12).' images on '.implode(', ', $waiting).'.');
                 }
                 if ($unseeded !== []) {
-                    throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::noCapacityFor($size)
+                    throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::noCapacityFor($size, $reserveSlots)
                         .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'. Refresh their task image.');
                 }
                 throw $exception;

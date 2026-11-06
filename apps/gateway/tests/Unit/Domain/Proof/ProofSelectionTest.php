@@ -334,10 +334,50 @@ it('selects every case for every tracked file of the shared directories', functi
         'apps/cli/app/Support/Console/', 'apps/cli/app/Support/Operations/', 'packages/php-sdk/src/Support/', 'packages/php-sdk/src/Requests/Operations/',
         'packages/php-sdk/src/Responses/Operations/',
     ];
-    $files = array_values(array_filter($tracked, static fn (string $path): bool => ! str_ends_with($path, '.md')
+    $files = array_values(array_filter($tracked, static fn (string $path): bool => ! str_ends_with($path, '.md') && ! str_ends_with($path, 'Operations/OperationKinds.php') && ! str_ends_with($path, 'Operations/OperationRunBudgets.php')
         && array_filter($directories, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
 
     expect($files)->not->toBeEmpty();
     $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
     expect($unselected)->toBe([]);
 });
+
+/** The two file sets that started a proof of every case: #3080 (the serve run cap) and its follow-up commit 74304ed. */
+dataset('swamp unit changes that touch no command', [
+    '#3080, the serve run cap in the unit' => [[
+        'apps/gateway/app/Domain/Nodes/SwampRoleUnits.php',
+        'apps/gateway/app/Domain/Operations/OperationRunBudgets.php',
+        'apps/gateway/tests/Unit/Domain/Nodes/SwampRoleUnitsTest.php',
+        'docs/decisions/0243-serve-swamp-through-a-swamp-role.md',
+        'docs/swamp/porting.md',
+    ]],
+    '74304ed, the cap follows the fixed budgets only' => [[
+        'apps/gateway/app/Domain/Operations/OperationRunBudgets.php',
+        'docs/decisions/0243-serve-swamp-through-a-swamp-role.md',
+    ]],
+    'a Swamp manifest and config' => [['swamp/manifest.yaml', '.swamp.yaml', 'swamp/config/gateway-workflow-grants.json']],
+]);
+
+it('selects no case for a change to a Swamp unit or a budget that touches no command', function (array $files): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $selected = proofSelect($files, list: (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'));
+
+    expect($selected['because'])->toBeNull()->and($selected['cases'])->toBe([])->and($selected['nothing'])->toBeTrue();
+})->with('swamp unit changes that touch no command');
+
+it('selects only the firewall cases when a budget changes with the code of a firewall command, never every case', function (): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $selected = proofSelect(['apps/gateway/app/Domain/Operations/OperationRunBudgets.php', 'apps/gateway/app/Actions/Firewall/StoreFirewallRuleAction.php'],
+        list: (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'));
+
+    expect($selected['because'])->toBeNull()->and(array_column($selected['cases'], 'command'))->toBe(['firewall:allow', 'firewall:deny']);
+});
+
+it('keeps the registries of Operation kinds and budgets out of the shared code that selects every case', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::None);
+})->with([
+    'the kinds' => ['apps/gateway/app/Domain/Operations/OperationKinds.php'],
+    'the budgets' => ['apps/gateway/app/Domain/Operations/OperationRunBudgets.php'],
+]);

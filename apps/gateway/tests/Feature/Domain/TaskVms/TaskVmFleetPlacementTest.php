@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\TaskVms\TaskVmFleetSeed;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
@@ -181,4 +182,26 @@ it('does not filter a VM that a host refresh pins to its host, because it builds
     $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject), $beast->id, TaskVmSize::Large);
 
     expect($vm->host_node_id)->toBe($beast->id);
+});
+
+it('keeps the slots of one large VM free from a report-only proof, so a critical-path run still finds room', function (): void {
+    // Shark holds 6 slots, two large VMs. A report-only proof leaves one large VM's slots free.
+    [, $shark, , $sharkBuild] = fleetPlacementHosts(beastMax: 2, sharkMax: 6);
+    fleetSeedRefreshed($shark, $sharkBuild);
+    $reserve = TaskVmPlacementPolicy::reportOnlyReserve();
+
+    $first = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject), reserveSlots: $reserve);
+
+    expect($reserve)->toBe(3)->and($first->host_node_id)->toBe($shark->id);
+
+    // The second report-only proof would take the reserved slots: it yields.
+    $secondGroup = Task::query()->create(['project_id' => FleetPlacementFleetProject, 'title' => 'Second', 'brief' => 'Brief', 'status' => 'todo']);
+
+    expect(fn () => app(AllocateTaskVmAction::class)->capture($secondGroup, reserveSlots: $reserve))
+        ->toThrow(TaskCapacityException::class, 'A report-only proof leaves 3 slots free for task and proof work.');
+
+    // A run without the flag takes the reserved slots.
+    $critical = app(AllocateTaskVmAction::class)->capture($secondGroup);
+
+    expect($critical->host_node_id)->toBe($shark->id);
 });

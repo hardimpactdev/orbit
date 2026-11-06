@@ -386,6 +386,8 @@ jobs:
       - name: Run orbit proof:run on the pull request head
         env:
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+          # The job is report-only: its VMs yield capacity to task and proof work (docs/cli/proof/run.mmd).
+          PROOF_REPORT_ONLY: '1'
         run: python3 -I bin/ci-proof-run
 
   swamp:
