@@ -423,6 +423,8 @@ The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a dir
 
 ### The topology seed pool
 
+A task image made by a refresh VM carries the Incus database of that VM, with stale records of the ready copies. Before any nested guest exists, the phase deletes the database rows of the seed pool (the data on the disk stays), so the recovery reads the disk and the VM sees the copies as they are saved.
+
 A task VM that has the topology seed disk also recovers the pool on it (`topology-seed`, btrfs) with `incus admin recover`, so the ready copies it holds show in the VM. The phase first deletes the other instances of the seed disk, which is a clone of the VM, and bounds every command with `timeout`. The provision of a task with a topology runs this converge before the nested fleet starts; a VM at the pins reports no change.
 
 A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested VMs get an address and reach the internet. Nothing else is opened; the checkout export has its own rule.
