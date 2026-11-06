@@ -48,9 +48,9 @@ jobs:
 - name: provision
   labels: {role: swamp}
   steps:
-  # Stage 2 "Take a task VM": a claimed ready slot (docs/cli/tasks/vm-slots.mmd) is started; otherwise the VM is cloned and enrolled.
-  # A guard that is true skips its step: this step runs without `intent.slot`, the slot steps below run with it.
   - name: Create and prepare the VM
+    # Stage 2 "Take a task VM": a claimed ready slot (docs/cli/tasks/vm-slots.mmd) is started; otherwise the VM is cloned and enrolled.
+    # A guard that is true skips its step: this step runs without `intent.slot`, the slot steps below run with it.
     labels: {role: swamp}
     guard: '${{ has(inputs.intent.slot) }}'
     task:
@@ -62,8 +62,8 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
-  # A slot is enrolled already: a VM that already runs makes `incus start` exit 1 and counts as started; the agent wait proves it.
   - name: Start the slot
+    # A slot is enrolled already: a VM that already runs makes `incus start` exit 1 and counts as started; the agent wait proves it.
     labels: {role: swamp}
     writes: true
     guard: '${{ !has(inputs.intent.slot) }}'
@@ -119,8 +119,8 @@ jobs:
     - step: Start the slot
       condition:
         type: succeeded
-  # The agent answers before sshd, WireGuard and Pi; the workspace SSHes in next. A degraded boot exits 1 and still counts.
   - name: Wait for the slot boot
+    # The agent answers before sshd, WireGuard and Pi; the workspace SSHes in next. A degraded boot exits 1 and still counts.
     labels: {role: swamp}
     guard: '${{ !has(inputs.intent.slot) }}'
     task:
