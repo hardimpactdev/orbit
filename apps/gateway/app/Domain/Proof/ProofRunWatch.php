@@ -23,8 +23,11 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class ProofRunWatch
 {
-    /** Without a run: the request waits 60 s at most for the admission lock and then admits in about a minute. Later, it is gone. */
+    /** Without a run: the job waits 60 s at most for the admission lock and then admits in about a minute. Later, it is lost. */
     public const int AdmissionSeconds = 150;
+
+    /** What the Operation says when the admission was lost. */
+    public const string Lost = 'The Gateway stopped before it handed the runs to Swamp. No case ran; run the proof again.';
 
     /**
      * With runs: the request starts them one after another, and each start is answered within 120 s. A proof whose runs have all been
@@ -84,7 +87,7 @@ final readonly class ProofRunWatch
         if ($children->isEmpty()) {
             $input = ValidatedData::object($proof->input);
             $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
-                'error_code' => ProofRunSettlement::AdmissionInterrupted,
+                'error_code' => ProofRunSettlement::AdmissionInterrupted, 'state' => [...($proof->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => self::Lost, 'stderr_recorded' => false]],
                 'result' => ['commit' => $input['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $input['uncovered'] ?? [], 'receipt_url' => null]]);
             $this->freeLock($proof->id);
 

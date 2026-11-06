@@ -14,15 +14,22 @@ sequenceDiagram
   participant VM as Proof task VM<br/>nested topology
   CLI->>GW: proof:run COMMIT
   %%> The CI job on a beast or shark runner, or a person, passes only the commit SHA.
+  Note over GW: Record the proof<br/>one insert · queue the admission
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the request records the proof Operation (commit, options, no runs yet), queues the admission job and answers 202 at once; it reads no GitHub, takes no lock and starts nothing
+  %%> - why: the request used to do all of the admission and hand the runs to Swamp one after another, which took 40 to 66 s, and a release that reloads PHP-FPM (`process_control_timeout` 30 s) ended it in the middle (proof.run 12343). A queue job is drained by the release with the Horizon workers, which it already waits for
+  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `tasks.capacity_unavailable`, `ai_router.keys_busy`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
+  %%> - the job runs on the `tasks` queue (three workers), not on `operations`, whose one worker settles every Operation
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> The CLI follows the proof and reads the refusal, the verdicts or the receipt from it.
   Note over GW: Check the commit<br/>orbit branch or approved PR
-  %%> Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
+  %%> Runs in the admission job. Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
   Note over GW: Select the cases<br/>diff · selection.txt
   %%> Docs-only changes end here: skipped, nothing to prove.
   Note over GW: Record intent<br/>proof group + full inputs
   %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
   %%> - the intent of each run also holds `head` and `merge_base`, for the proof that a new case fails on the merge base (stage 3 chart)
   %%> - each run starts with the check of the head (stage 3 chart, "Check the head"): `proof.head_behind_platform` when the head lacks a platform change that main has, `proof.sync_needed` when the proof VM has no `origin/main` to compare with; not built yet
-  GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start one run per command<br/>operation-proof-run · parallel
   %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
   %%> Built:
