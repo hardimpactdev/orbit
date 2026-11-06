@@ -66,7 +66,7 @@ final readonly class TaskVmPlacementPolicy
         return $reserve > 0 ? $message." A report-only proof leaves {$reserve} slots free for task and proof work." : $message;
     }
 
-    /** The slots a report-only proof leaves free on a host: one large VM, so a critical-path run always finds room. */
+    /** The slots a report-only proof leaves free on a host: one large VM, so a critical-path run for one command still finds room. */
     public static function reportOnlyReserve(): int
     {
         return TaskVmSize::Large->slots();

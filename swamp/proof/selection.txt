@@ -50,12 +50,13 @@ packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewa
 
 # Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break
 # any command, so it runs every case (`*`), which is every command that has a cases file. The shared files are named, so code that only some
-# commands use (schedules, logs, project definitions) stays out. The tables of Operation kinds and budgets name one entry per command and select nothing.
+# commands use (schedules, logs, project definitions) stays out. The table of run budgets (data) and two checks that no request path calls select nothing; the rules that read the table select every case.
 apps/gateway/app/Actions/Operations/**                     *
 apps/gateway/app/Data/Operations/**                        *
 apps/gateway/app/Domain/Operations/**                      *
-apps/gateway/app/Domain/Operations/OperationKinds.php      none: a table of Operation kinds; the PR of a changed kind also changes the code of its command
-apps/gateway/app/Domain/Operations/OperationRunBudgets.php  none: a table of run budgets; the registry tests check an entry, and a changed budget touches no command
+apps/gateway/app/Domain/Operations/OperationBudgetTable.php  none: the table of run budgets, one entry per kind, and the serve cap derived from it; a changed budget touches no command
+apps/gateway/app/Domain/Operations/OperationRegistryCheck.php  none: a registry check that no request path calls
+apps/gateway/app/Domain/Operations/GatewayWorkflowGrantCheck.php  none: a registry check that no request path calls
 apps/gateway/app/Domain/Shared/ResourceOperationException.php  *
 apps/gateway/app/Domain/Activity/ActivityInputRedaction.php  *
 apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php     *

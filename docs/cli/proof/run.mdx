@@ -15,7 +15,7 @@ orbit proof:run <commit> [--all] [--report-only] [--idempotency-key=KEY] [--json
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--all` | off | Run every case, not only the cases that the commit selects. |
-| `--report-only` | off | Yield capacity to task and proof work. The run takes a host only when one large VM stays free after it, and never overflows to UpCloud. The proof CI job passes it while it is report-only. |
+| `--report-only` | off | Yield capacity to task and proof work. The run takes a host only when one large VM stays free after it, and never overflows to UpCloud. It always clones its VM, so a host of 6 slots takes one only when idle. The proof CI job passes it while it is report-only. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
 

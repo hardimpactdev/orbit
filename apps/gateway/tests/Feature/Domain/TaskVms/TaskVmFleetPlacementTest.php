@@ -205,3 +205,27 @@ it('keeps the slots of one large VM free from a report-only proof, so a critical
 
     expect($critical->host_node_id)->toBe($shark->id);
 });
+
+it('never places a report-only proof on a host that cannot hold a large VM beside the reserve, but still places a run without the flag', function (): void {
+    // Beast holds 6 slots: one large VM (3) plus the reserve (3) is the whole host. A host of 5 slots cannot take a report-only large VM.
+    [$beast, , $beastBuild] = fleetPlacementHosts(beastMax: 5, sharkMax: 0);
+    fleetSeedRefreshed($beast, $beastBuild);
+
+    $group = fleetPlacementGroup(FleetPlacementFleetProject);
+
+    expect(fn () => app(AllocateTaskVmAction::class)->capture($group, reserveSlots: TaskVmPlacementPolicy::reportOnlyReserve()))
+        ->toThrow(TaskCapacityException::class, 'A report-only proof leaves 3 slots free');
+
+    $critical = app(AllocateTaskVmAction::class)->capture($group);
+
+    expect($critical->host_node_id)->toBe($beast->id);
+});
+
+it('never overflows a report-only proof to UpCloud', function (): void {
+    $group = fleetPlacementGroup(FleetPlacementFleetProject);
+    $policy = new TaskVmPlacementPolicy(app(TaskVmSettings::class));
+
+    // No host has a free slot. Without the reserve the policy may go to UpCloud when the rules allow it; with it, it waits.
+    expect(fn () => $policy->choose(TaskVmSize::Large, $group, [], TaskVmPlacementPolicy::reportOnlyReserve()))
+        ->toThrow(TaskCapacityException::class, 'A report-only proof leaves 3 slots free');
+});

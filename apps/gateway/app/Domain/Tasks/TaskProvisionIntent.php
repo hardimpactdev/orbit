@@ -97,7 +97,7 @@ final readonly class TaskProvisionIntent
                 throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
             }
             try {
-                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) always clones.
+                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) and a report-only one always clone.
                 $slot = $host === null && $reserveSlots === 0 ? $this->slots->claim($group) : null;
                 $vm = $slot ?? $this->allocate->capture($group, $host, $size, $reserveSlots);
             } catch (TaskCapacityException $exception) {

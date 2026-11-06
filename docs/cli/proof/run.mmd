@@ -36,6 +36,8 @@ sequenceDiagram
   %%> - a run started with `--report-only` (the report-only proof CI job) yields capacity to task and proof work: its VMs are admitted only on a host that keeps the slots of one large VM free after them, and it never overflows to UpCloud. With less room it fails at admission with `tasks.capacity_unavailable`, whose message names the reserve, and starts nothing. It uses the same admission as every run, with the free slots reduced; no queue and no loop
   %%> - why: two report-only proofs of a Swamp unit change started a run for every case, filled the host and made the Gateway refuse a critical-path proof; the report-only job never has to win capacity
   %%> - the flag goes when the proof CI becomes a required check
+  %%> - a report-only VM is always a clone (it claims no ready slot), so a host of 6 slots, such as beast, takes one only when it is idle, and an idle fleet holds 4 report-only VMs; a report-only proof of more commands fails at admission and the job goes red, which is acceptable for a job that is not required
+  %%> - the reserve keeps one large VM free; a critical proof of several commands, which admits one large VM for each, can still be refused while report-only VMs run, and nothing queues
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
   SW->>VM: Reset and mount<br/>ready copies · the commit
