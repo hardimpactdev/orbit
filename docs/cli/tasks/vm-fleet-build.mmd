@@ -47,6 +47,7 @@ sequenceDiagram
   %%> - the same local run applies the `swamp` role's own Ansible phase with a local connection, as it did `prerequisites`: it renders the serve and worker units for the machine's checkout path, mints the serve, worker and driver tokens on the machine with the Swamp CLI, creates the control vault and its key there, writes the Gateway's grants and starts the serve and worker
   %%> - the tokens never leave the machine, as for any fresh Orbit install that owns its own Swamp credentials
   %%> - after that, `node:role:add` goes through the machine's own Swamp for everything else: gateway, websocket and the `swamp.orbit` route
+  %%> - the swamp role's own runtime steps are native workflow steps bound to worker labels, not an Ansible phase, and a local run refuses a step that asks for a worker; so the bootstrap has its own Ansible `swamp` phase (`gateway-bootstrap.yml --tags swamp`) with the same units and the same tokens, and a Caddy front for `swamp.orbit` on port 443 signed by the Gateway's CA, because the Gateway starts runs over TLS to that name
   %%> - from here on its own Swamp does everything
   SW->>NG: Add app-dev and app-prod<br/>node:add · nested Orbit
   %%> What it does:

@@ -585,3 +585,5 @@ One Node repository record holds shared intent so package removal cannot retire 
 The preference gives the repository's Tool packages priority 990 for each repository host, so unattended upgrades keep the vendor package. Every other package from that host gets priority 1: the vendor cannot replace or upgrade an installed or distribution package. A shared repository keeps a removed Tool's package in the preference until the next write for that repository. Gateway admission and terminal projection store intent and outcomes; Swamp owns downloads, key checks, source writes, refresh, and cleanup.
 
 A fresh Gateway gets its PHP packages from its [bootstrap plan](/reference/node-provisioning#gateway-bootstrap-prerequisites), not from a Tool Manager: the plan reads the machine software recipe and the role prerequisites install the pinned files.
+
+The pinned Swamp binary of a fresh Gateway comes from its [bootstrap](/reference/node-provisioning#gateway-bootstrap-prerequisites), which also starts its serve and workers; after that the swamp role keeps the pin.

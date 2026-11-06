@@ -11,3 +11,18 @@
   tasks:
     - name: Install the role prerequisites
       ansible.builtin.import_tasks: tasks/role-prerequisites.yml
+- name: Gateway Swamp control plane
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - swamp
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd: { daemon_reload: true }
+    - name: Reload Caddy
+      ansible.builtin.systemd: { name: caddy.service, state: restarted, enabled: true }
+  tasks:
+    - name: Apply the Swamp control plane
+      ansible.builtin.import_tasks: tasks/gateway-swamp.yml
