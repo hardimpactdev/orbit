@@ -397,7 +397,7 @@ jobs:
     uses: ./.github/workflows/swamp-shape.yml
     with:
       working-directory: swamp
-      changed-only: false
+      changed-only: true
     secrets:
       SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
       SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
