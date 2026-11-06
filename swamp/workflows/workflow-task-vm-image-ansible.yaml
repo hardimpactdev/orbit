@@ -19,7 +19,7 @@ jobs:
 - name: read
   labels: {role: swamp}
   steps:
-    # The guest's bridge address; Incus knows it, the Gateway cannot.
+    # The guest's bridge address; Incus knows it, the Gateway cannot. A guest with Docker lists its docker0 address first, so the line of the NIC counts.
   - name: Read the guest address
     labels: {role: swamp}
     task:
@@ -133,7 +133,7 @@ jobs:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
           ORBIT_KIND: ${{ inputs.kind }}
-          ORBIT_TARGET_HOST: ${{ steps["Read the guest address"].outputs.stdout.split(" ")[0] }}
+          ORBIT_TARGET_HOST: ${{ steps["Read the guest address"].outputs.stdout.split("\n").filter(l, l.contains("(enp") || l.contains("(eth"))[0].split("(")[0].split("\"").join("").trim() }}
           ORBIT_TARGET_KEY: ${{ steps["Read the guest host key"].outputs.stdout }}
 - name: run
   labels: {role: swamp}
