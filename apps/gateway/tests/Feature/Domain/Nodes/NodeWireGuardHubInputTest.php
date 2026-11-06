@@ -47,6 +47,7 @@ it('removes one Node from the hub by deleting its own file, and writes or keeps 
     // A removal admitted at the same time as another lists its Node as a peer; neither run may write or keep the other's file.
     expect($intent['peers'])->toBe([])->and($intent['peer_keys'])->toBe([])
         ->and($intent['prune_argv'])->toBe(['rm', '-f', '--', "/etc/wireguard/orbit-peers.d/{$removed->id}.conf"])
-        ->and($intent['config'])->toBe(NodeWireGuardHubInput::config($hub))
-        ->and(implode(' ', $intent['prune_argv']))->not->toContain("{$other->id}.conf");
+        ->and($intent['config'])->toBe(NodeWireGuardHubInput::config($hub));
+    // A rewrite lists the other Node, which is the snapshot a concurrent removal must not carry.
+    expect(array_column(NodeWireGuardHubInput::intent($hub)['peers'], 'node_id'))->toBe([$other->id]);
 });

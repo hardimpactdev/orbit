@@ -80,7 +80,7 @@ Before that restoration checkpoint, an exact `node.add` parent renders its conte
 
 `node:converge <node>` publishes the full peer list when its target is the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the files to keep, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
 
-A removal does not rewrite the list. It deletes the file of the removed Node, whether or not the Gateway recorded its key, and loads the files that remain, so the live peer goes at once. It writes no other peer and keeps none, because the intent is a snapshot and a removal admitted at the same time as another would otherwise put the other's peer back.
+A removal does not rewrite the list. It deletes the file of the removed Node, whether or not the Gateway recorded its key, and loads the files that remain, so the live peer goes at once. It does not prune the files of Nodes that are already gone; the next converge of the hub does. It writes no other peer and keeps none, because the intent is a snapshot and a removal admitted at the same time as another would otherwise put the other's peer back.
 
 The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders public files only:
 
