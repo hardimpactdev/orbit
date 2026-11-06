@@ -413,6 +413,10 @@ Missing or damaged protected files require their approved recovery procedure and
 | `node.footprint_caddy_package_failed` | 502 | The Caddy package step failed, for example because the download does not match the pin. The message names the cause |
 | `node.footprint_tmpfiles_failed` | 502 | The tmpfiles rule could not be written. The message names the cause |
 
+## Task VM role phases
+
+A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The playbook reads the pins of `recipe.json` from the intent and names none. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
+
 ## Role compatibility
 
 Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything.

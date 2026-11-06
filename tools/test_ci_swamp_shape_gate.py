@@ -38,12 +38,12 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
             self.assertIn('${{ runner.temp }}/' + report, WORKFLOW)
 
     def test_the_linter_pins_live_only_in_the_requirements_file(self):
-        pins = (ROOT / 'bin/swamp-shape-gate-requirements.txt').read_text()
+        pins = (ROOT / 'swamp/ansible/shape-gate-requirements.txt').read_text()
         for pin in ('ruff==', 'shellcheck-py==', 'shfmt-py==', 'ansible-lint=='):
             self.assertIn(pin, pins)
             self.assertNotIn(pin, WORKFLOW)
             self.assertNotIn(pin, (ROOT / 'bin/swamp-shape-gate').read_text())
-        self.assertIn('-r ../swamp/ansible/requirements.txt', pins)
+        self.assertIn("-r requirements.txt", pins)
 
 
 class PlanTest(unittest.TestCase):

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\TaskVms\TaskVmConvergeProjection;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
@@ -19,6 +20,12 @@ return ['task_vm.hub_converge' => [
     // No result step: the projector reads the end check's status and builds the result from the captured intent.
     'terminal_result' => ['job' => 'hub', 'step' => TaskVmHubProjection::EndCheck, 'native' => true],
     'projection' => TaskVmHubProjection::class,
+], 'task_vm.converge' => [
+    'workflow' => 'operation-task-vm-converge',
+    'projection' => TaskVmConvergeProjection::class,
+    'workflow_inputs' => true,
+    // No result step: the projector reads the check phase's status and builds the result from the captured intent.
+    'terminal_result' => ['job' => 'check', 'step' => TaskVmConvergeProjection::EndCheck, 'native' => true],
 ], 'task_vm.resume' => [
     'workflow' => 'operation-task-vm-resume',
     'projection' => TaskVmResumeProjection::class,

@@ -1,0 +1,36 @@
+---
+# The Pi server is an internal artifact: the run copies it to the controller, and the pin names its digest.
+- name: Read the Pi server
+  when: "'pi' in tool_by_name"
+  ansible.builtin.stat: { path: "{{ orbit_home }}/.local/bin/pi-server", checksum_algorithm: sha256 }
+  register: pi_server
+- name: Install the Pi server
+  when: "'pi' in tool_by_name and pi_server.stat.checksum | default('') != recipe.tools.pi.artifacts.amd64.sha256"
+  block:
+    - name: Require the Pi artifact
+      ansible.builtin.assert:
+        that: [intent.pi is not none]
+        fail_msg: The Pi server differs from its pin and the run brought no artifact.
+        quiet: true
+    - name: Create the Pi folder
+      ansible.builtin.file:
+        path: "{{ orbit_home }}/.local/bin"
+        state: directory
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0755"
+    - name: Copy the Pi server
+      ansible.builtin.copy:
+        src: "{{ intent.pi.path }}"
+        dest: "{{ orbit_home }}/.local/bin/pi-server"
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0755"
+    - name: Read the Pi server again
+      ansible.builtin.stat: { path: "{{ orbit_home }}/.local/bin/pi-server", checksum_algorithm: sha256 }
+      register: pi_copied
+    - name: Check the Pi server digest
+      ansible.builtin.assert:
+        that: [pi_copied.stat.checksum == recipe.tools.pi.artifacts.amd64.sha256]
+        fail_msg: The Pi server differs from its pin.
+        quiet: true

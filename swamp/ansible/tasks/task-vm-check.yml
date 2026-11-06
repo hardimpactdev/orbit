@@ -1,0 +1,62 @@
+---
+# The one end check of the role: every package, runtime and tool is at its pin. It changes nothing.
+- name: Read installed packages
+  ansible.builtin.package_facts: { manager: apt }
+- name: Read the tool versions
+  ansible.builtin.command: { argv: "{{ item.argv }}" }
+  loop:
+    - { name: node, argv: [/usr/local/bin/node, --version] }
+    - { name: pnpm, argv: [/usr/local/bin/pnpm, --version] }
+    - { name: bun, argv: [/usr/local/bin/bun, --version] }
+    - { name: vp, argv: [/usr/local/bin/vp, --version] }
+    - { name: rustc, argv: [/opt/orbit/rust/bin/rustc, --version] }
+    - { name: cargo, argv: [/opt/orbit/rust/bin/cargo, --version] }
+    - { name: nfs, argv: [systemctl, is-active, nfs-server.service] }
+  loop_control: { label: "{{ item.name }}" }
+  register: check_versions
+  changed_when: false
+- name: Read the binaries
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    checksum_algorithm: sha256
+  loop:
+    - { name: swamp, path: /usr/local/bin/swamp }
+    - { name: pi, path: "{{ orbit_home }}/.local/bin/pi-server" }
+    - { name: shape gate, path: "{{ shape_venv | default('/opt/orbit-shape-gate/none') }}/.complete" }
+  loop_control: { label: "{{ item.name }}" }
+  register: check_binaries
+- name: Read the exports
+  when: intent.nfs is not none
+  ansible.builtin.command: { argv: [exportfs, -s] }
+  register: check_exports
+  changed_when: false
+- name: Check the role
+  vars:
+    installed: "{{ ansible_facts.packages }}"
+    wrong: >-
+      {%- set out = [] -%}
+      {%- for tool in tool_list if tool.source == 'ubuntu' or tool.url is match('.*[.]deb$') -%}
+      {%- set name = tool.package if tool.source == 'ubuntu' else tool.name -%}
+      {%- if tool.version not in (installed[name] | default([]) | map(attribute='version') | list) -%}
+      {%- set _ = out.append(name) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+    seen: "{{ dict(check_versions.results | map(attribute='item.name') | zip(check_versions.results | map(attribute='stdout') | map('trim'))) }}"
+    stats: "{{ dict(check_binaries.results | map(attribute='item.name') | zip(check_binaries.results | map(attribute='stat'))) }}"
+  ansible.builtin.assert:
+    that:
+      - wrong | length == 0
+      - seen.node == 'v' ~ recipe.tools.node.version
+      - seen.pnpm == recipe.tools.pnpm.version
+      - seen.bun == recipe.tools.bun.version
+      - recipe.tools['vp-cli'].version in seen.vp
+      - ('rustc ' ~ recipe.tools.rust.version) in seen.rustc
+      - ('cargo ' ~ recipe.tools.cargo.version) in seen.cargo
+      - seen.nfs == 'active'
+      - stats.swamp.checksum == recipe.tools.swamp.artifacts.amd64.sha256
+      - stats.pi.checksum == recipe.tools.pi.artifacts.amd64.sha256
+      - stats['shape gate'].exists
+      - intent.nfs is none or intent.nfs.subnet in check_exports.stdout
+    fail_msg: The task VM role is not at the pins of the recipe.
+    quiet: true

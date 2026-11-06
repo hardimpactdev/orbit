@@ -1,0 +1,43 @@
+---
+- name: Read the OS
+  ansible.builtin.setup: { gather_subset: [min] }
+- name: Require the recipe release
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version == recipe.ubuntu.release
+    quiet: true
+- name: Resolve the tools of the profile
+  vars:
+    names: "{{ (recipe.common + recipe[profile]) | unique | list }}"
+    versions: "{{ names | select('match', '^php:') | map('regex_replace', '^php:', '') | list }}"
+    php_names: "{{ versions | map('extract', recipe.php.versions) | map(attribute='packages') | flatten + recipe.php.shared }}"
+  ansible.builtin.set_fact:
+    php_versions: "{{ versions }}"
+    tool_list: >-
+      {%- set out = [] -%}
+      {%- for name in (names | reject('match', '^php:') | list + php_names) | unique -%}
+      {%- set tool = recipe.tools[name] -%}
+      {%- set artifact = (tool.artifacts | default({}))['amd64'] | default({}) -%}
+      {%- set digest = artifact.sha256 | default(artifact.sha512 | default('')) -%}
+      {%- set _ = out.append({
+          'name': name, 'source': tool.source, 'package': tool.package | default(name),
+          'version': artifact.version | default(tool.version), 'url': artifact.url | default(''),
+          'sha256': artifact.sha256 | default(''), 'sha512': artifact.sha512 | default(''),
+          'path': '/var/cache/orbit/debs/' ~ name ~ '_' ~ digest ~ '.deb'}) -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Split the tools by how they install
+  ansible.builtin.set_fact:
+    ubuntu_tools: "{{ tool_list | selectattr('source', 'equalto', 'ubuntu') | list }}"
+    deb_tools: "{{ tool_list | selectattr('url', 'match', '.*[.]deb$') | list }}"
+    tool_by_name: "{{ dict(tool_list | map(attribute='name') | zip(tool_list)) }}"
+- name: Name the shape gate tools
+  vars:
+    pins: >-
+      {{ lookup('ansible.builtin.file', playbook_dir ~ '/shape-gate-requirements.txt', rstrip=False)
+      ~ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.txt', rstrip=False) }}
+    gate_collections: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.yml', rstrip=False) }}"
+  ansible.builtin.set_fact:
+    shape_venv: "/opt/orbit-shape-gate/venv-{{ pins | hash('sha256') | truncate(16, True, '') }}"
+    shape_collections: "/opt/orbit-shape-gate/collections-{{ gate_collections | hash('sha256') | truncate(16, True, '') }}"

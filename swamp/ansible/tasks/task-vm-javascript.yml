@@ -1,0 +1,183 @@
+---
+# Node, pnpm, Bun and Vite+ at the pins of the recipe, in the account's Vite+ home, behind launchers in /usr/local/bin.
+- name: Read the JavaScript tool versions
+  ansible.builtin.command: { argv: ["{{ item }}", --version] }
+  loop: [/usr/local/bin/node, /usr/local/bin/pnpm, /usr/local/bin/bun, /usr/local/bin/vp]
+  register: js_versions
+  changed_when: false
+  failed_when: false
+- name: Read the Vite+ runtime
+  ansible.builtin.stat: { path: "{{ vp_home }}/recipe/vp-runtime-{{ recipe.tools.vp.lock_sha256 }}/node_modules/vite-plus/package.json" }
+  register: vp_runtime
+- name: Find the JavaScript tools that miss their pin
+  vars:
+    out: "{{ js_versions.results | map(attribute='stdout') | list }}"
+  ansible.builtin.set_fact:
+    js_current: >-
+      {{ out[0] | trim == 'v' ~ recipe.tools.node.version
+      and out[1] | trim == recipe.tools.pnpm.version
+      and out[2] | trim == recipe.tools.bun.version
+      and recipe.tools['vp-cli'].version in out[3]
+      and vp_runtime.stat.exists }}
+- name: Install the JavaScript tools
+  when: not js_current
+  vars:
+    scope: "{{ vp_home }}"
+    node: "{{ recipe.tools.node }}"
+    node_home: "{{ vp_home }}/js_runtime/node/{{ recipe.tools.node.version }}"
+    vp_target: "{{ vp_home }}/recipe/vp-runtime-{{ recipe.tools.vp.lock_sha256 }}"
+    lock: "{{ intent.vp_lock | from_json }}"
+    runtimes: "{{ [recipe.tools.node, recipe.tools['vp-cli'], recipe.tools.pnpm, recipe.tools.bun] }}"
+  block:
+    - name: Create the Vite+ home
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0755"
+      loop:
+        - "{{ orbit_home }}/.local"
+        - "{{ orbit_home }}/.local/share"
+        - "{{ scope }}"
+        - "{{ scope }}/bin"
+        - "{{ scope }}/recipe"
+        - "{{ scope }}/recipe/vp-cli"
+        - "{{ scope }}/recipe/pnpm"
+        - "{{ scope }}/recipe/bun"
+        - "{{ scope }}/js_runtime"
+        - "{{ scope }}/js_runtime/node"
+        - "{{ node_home }}"
+        - "{{ scope }}/node_modules"
+        - /opt/orbit
+        - /opt/orbit/bun
+        - /opt/orbit/bun/bin
+    - name: Create the download folder
+      ansible.builtin.file: { path: /var/cache/orbit/js, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Download the runtimes
+      ansible.builtin.get_url:
+        url: "{{ item.artifacts.amd64.url }}"
+        dest: "/var/cache/orbit/js/{{ item.artifacts.amd64.url | basename }}"
+        checksum: "{{ 'sha256:' ~ item.artifacts.amd64.sha256 if item.artifacts.amd64.sha256 is defined else 'sha512:' ~ item.artifacts.amd64.sha512 }}"
+        mode: "0644"
+      loop: "{{ runtimes }}"
+      loop_control: { label: "{{ item.artifacts.amd64.url | basename }}" }
+    - name: Unpack the runtimes
+      ansible.builtin.unarchive:
+        src: "/var/cache/orbit/js/{{ item.tool.artifacts.amd64.url | basename }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+        extra_opts: "{{ item.opts }}"
+        creates: "{{ item.creates }}"
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+      loop:
+        - { tool: "{{ recipe.tools.node }}", dest: "{{ node_home }}", opts: [--strip-components=1], creates: "{{ node_home }}/bin/node" }
+        - { tool: "{{ recipe.tools['vp-cli'] }}", dest: "{{ scope }}/recipe/vp-cli", opts: [], creates: "{{ scope }}/recipe/vp-cli/vp" }
+        - { tool: "{{ recipe.tools.pnpm }}", dest: "{{ scope }}/recipe/pnpm", opts: [], creates: "{{ scope }}/recipe/pnpm/package/pnpm" }
+        - { tool: "{{ recipe.tools.bun }}", dest: "{{ scope }}/recipe/bun", opts: [], creates: "{{ scope }}/recipe/bun/bun-linux-x64/bun" }
+      loop_control: { label: "{{ item.tool.artifacts.amd64.url | basename }}" }
+    - name: Publish the executables
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0755"
+      loop:
+        - { src: "{{ scope }}/recipe/vp-cli/vp", dest: "{{ scope }}/bin/vp" }
+        - { src: "{{ scope }}/recipe/pnpm/package/pnpm", dest: "{{ scope }}/bin/pnpm" }
+        - { src: "{{ scope }}/recipe/bun/bun-linux-x64/bun", dest: /opt/orbit/bun/bin/bun }
+      loop_control: { label: "{{ item.dest }}" }
+    - name: Mark the Vite+ launcher set up
+      ansible.builtin.copy:
+        dest: "{{ scope }}/bin/.vp-setup-complete"
+        content: ""
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0644"
+    - name: Record the Node pin
+      ansible.builtin.copy:
+        dest: "{{ scope }}/.orbit-recipe-node.json"
+        content: '{"version":"{{ node.version }}"}'
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0644"
+    - name: Make the Vite+ runtime folder
+      ansible.builtin.file:
+        path: "{{ vp_target }}"
+        state: directory
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0755"
+    - name: Write the Vite+ manifest and lock
+      ansible.builtin.copy:
+        dest: "{{ vp_target }}/{{ item.name }}"
+        content: "{{ item.content }}"
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+        mode: "0644"
+      loop:
+        - name: package.json
+          content: "{{ {'name': lock.name, 'version': lock.version, 'private': true, 'dependencies': {'vite-plus': recipe.tools.vp.version}} | to_json }}"
+        - { name: package-lock.json, content: "{{ intent.vp_lock }}" }
+      loop_control: { label: "{{ item.name }}" }
+    - name: Install the Vite+ package
+      become: true
+      become_user: "{{ orbit_user }}"
+      ansible.builtin.command:
+        argv:
+          - "{{ node_home }}/bin/node"
+          - "{{ node_home }}/lib/node_modules/npm/bin/npm-cli.js"
+          - ci
+          - --ignore-scripts
+          - --no-audit
+          - --no-fund
+          - --prefix
+          - "{{ vp_target }}"
+        creates: "{{ vp_target }}/node_modules/vite-plus/package.json"
+      environment:
+        PATH: "{{ node_home }}/bin:/usr/bin:/bin"
+        npm_config_cache: "{{ scope }}/recipe/npm-cache"
+    - name: Link the Vite+ package
+      ansible.builtin.file:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        state: link
+        force: true
+        owner: "{{ orbit_user }}"
+        group: "{{ orbit_user }}"
+      loop:
+        - { src: "{{ vp_target }}/node_modules/vite-plus", dest: "{{ scope }}/node_modules/vite-plus" }
+        - { src: "{{ vp_target }}/node_modules/vite-plus", dest: "{{ scope }}/recipe/vp-current" }
+        - { src: vp, dest: "{{ scope }}/bin/node" }
+        - { src: vp, dest: "{{ scope }}/bin/npm" }
+        - { src: vp, dest: "{{ scope }}/bin/npx" }
+      loop_control: { label: "{{ item.dest }}" }
+    - name: Make the pinned Node the default
+      become: true
+      become_user: "{{ orbit_user }}"
+      ansible.builtin.command: { argv: ["{{ scope }}/bin/vp", env, default, "{{ node.version }}"] }
+      environment: { VP_HOME: "{{ scope }}" }
+      changed_when: true
+    - name: Write the launchers
+      ansible.builtin.copy:
+        dest: "/usr/local/bin/{{ item }}"
+        content: |
+          #!/bin/sh
+          export VP_HOME="{{ scope }}"
+          exec "{{ scope }}/bin/{{ item }}" "$@"
+        owner: root
+        group: root
+        mode: "0755"
+      loop: [vp, node, pnpm, npm, npx]
+    - name: Write the Bun launcher
+      ansible.builtin.copy:
+        dest: /usr/local/bin/bun
+        content: |
+          #!/bin/sh
+          exec /opt/orbit/bun/bin/bun "$@"
+        owner: root
+        group: root
+        mode: "0755"
