@@ -79,7 +79,7 @@ The target: the nested VMs hold their own checkout, with no code share from the 
 
 ## 6. Per-host task image and seed refresh
 
-**Partly built.** There is no image build per release. Each task VM host (Linux only: beast and shark) refreshes its own task image and topology seed, and the hosts work in parallel. Nothing is copied between hosts. The trigger is a release that changed playbooks, pins or lock files, plus a daily run. Per host, Swamp starts a refresh task VM from the current image and seed, then resets and syncs the release commit. It converges once if playbooks or pins changed. It re-mints the nested Swamp tokens. Then it saves the outer VM as the new task image and the nested VMs as new ready copies, key-free. It boot-checks both and promotes them. A recipe build runs only for a new host or a new base OS.
+**Partly built.** There is no image build per release. Each task VM host (Linux only: beast and shark) refreshes its own task image and topology seed, and the hosts work in parallel. Nothing is copied between hosts. No trigger runs it now: the release and daily triggers rebuilt on the nested-VM path and were removed; an operator starts it. Per host, Swamp starts a refresh task VM from the current image and seed, then resets and syncs the release commit. It converges once if playbooks or pins changed. It re-mints the nested Swamp tokens. Then it saves the outer VM as the new task image and the nested VMs as new ready copies, key-free. It boot-checks both and promotes them. A recipe build runs only for a new host or a new base OS.
 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 

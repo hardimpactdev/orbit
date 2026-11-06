@@ -14,13 +14,11 @@ sequenceDiagram
   participant H as Task VM host<br/>Incus over ssh
   participant VM as Refresh VM<br/>a task VM
   participant SL as Ready slots<br/>stopped task VMs
-  Note over GW: Start the refresh<br/>inputs changed · daily
+  Note over GW: Start the refresh<br/>operator only
   %%> Triggers:
-  %%> - a release that went live and passed its check (stage 5), only when it changed what the images carry: playbooks, pins or lock files; a code-only release needs no refresh, because a task mounts its own checkout
-  %%> - a daily schedule, so a seed never gets older than a day: the Swamp tokens in the ready copies last 24 hours and a ready copy expires after 20
-  %%> Built:
-  %%> - both triggers: the release projection admits the run of every Linux task VM host when the release that went live changed playbooks, pins or lock files (a digest over `swamp/ansible`, the recipe folder and the lock files of the release it replaced and of the new one), and a daily Gateway schedule admits every host; an operator runs `php artisan task-vms:refresh-image HOST` or `task-vms:refresh-images`
-  %%> - a host with a refresh open returns it, so the two triggers and a retry never start a second run; a host that refuses (an image build runs, no capacity) is skipped until the next trigger
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the release and daily triggers are removed. They rebuilt images and copies on the nested-VM path, which the container inner topology replaces; the container switch brings its own refresh trigger
+  %%> - an operator runs `php artisan task-vms:refresh-image HOST` or `task-vms:refresh-images`
+  %%> - a host with a refresh open returns it; a host that refuses (an image build runs, no capacity) is skipped
   %%> Built (task_vm.image_refresh, workflow `operation-task-vm-image-refresh`):
   %%> - the run of one host, admitted like `tasks:prep`: a group of its own in the proof Project, placed on that host only, with the whole intent captured in the admission of provision; only the clone step calls the Gateway, to mint its read credential
   %%> - a repeat admission for a host returns the open run

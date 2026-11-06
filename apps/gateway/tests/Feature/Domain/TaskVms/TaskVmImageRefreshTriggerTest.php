@@ -7,7 +7,6 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageInputs;
 use App\Domain\TaskVms\TaskVmImageRefreshTrigger;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
@@ -56,13 +55,6 @@ it('digests only what the image carries: playbooks, pins and lock files', functi
     expect($inputs->changed($this->base.'/releases/gone', $this->base.'/releases/bbbbbbbbbbbb'))->toBeTrue();
 });
 
-it('admits nothing after a release that changed none of them', function (): void {
-    triggerRelease($this->base.'/releases/aaaaaaaaaaaa');
-    triggerRelease($this->base.'/releases/bbbbbbbbbbbb', code: 'new code');
-
-    expect(app(TaskVmImageRefreshTrigger::class)->afterRelease('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->toBe(['*' => 'unchanged']);
-});
-
 it('asks every Linux task VM host and skips one that refuses', function (): void {
     triggerRelease($this->base.'/releases/aaaaaaaaaaaa');
     triggerRelease($this->base.'/releases/bbbbbbbbbbbb', playbook: 'b');
@@ -78,10 +70,5 @@ it('asks every Linux task VM host and skips one that refuses', function (): void
     TaskVmImageBuild::query()->create(['host_node_id' => $busy->id, 'recipe_identity' => 'recipe-2', 'state' => TaskVmImageBuildState::Running]);
 
     // The Linux host refuses while an image build runs; the macOS Node is no task VM host for this run.
-    expect(app(TaskVmImageRefreshTrigger::class)->afterRelease('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->toBe(['shark' => 'task_vm.image_build_running']);
-});
-
-it('keys the queued job by its release, so a repeat is one job', function (): void {
-    expect((new RefreshTaskVmImages)->uniqueId())->toBe('daily:')
-        ->and((new RefreshTaskVmImages('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->uniqueId())->toBe('bbbbbbbbbbbb:aaaaaaaaaaaa');
+    expect(app(TaskVmImageRefreshTrigger::class)->admitAll('operator'))->toBe(['shark' => 'task_vm.image_build_running']);
 });
