@@ -75,6 +75,7 @@ sequenceDiagram
   SW->>SW: Issue the model key<br/>model · task-vm-model-issue
   %%> What it does:
   %%> - adds VM 333's model key on the model router from 209 and confirms the anchor key stays
+  %%> - two Ansible phases on 209, `anchor` and `issue`: HTTPS calls to the router, no script
   %%> When:
   %%> - in parallel from the start of the run; it touches no guest (rule 18)
   %%> Held open:

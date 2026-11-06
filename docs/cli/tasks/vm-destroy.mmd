@@ -39,6 +39,7 @@ sequenceDiagram
   DC->>DC: Revoke the model key<br/>model · task-vm-model-revoke
   %%> What it does:
   %%> - removes VM 333's model key from the model router from 209 and confirms the anchor key stays
+  %%> - two Ansible phases on 209, `anchor` and `revoke`: HTTPS calls to the router, no script
   %%> When:
   %%> - a `guard` skips it when VM 333 has no model key
   %%> Why first:
