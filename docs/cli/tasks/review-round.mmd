@@ -1,0 +1,79 @@
+sequenceDiagram
+  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit a review round"): one Swamp run per round. The pattern of tasks:prep-fix: one admission, one parent Swamp run, existing workflows as children. It replaces the gate check driving the reviewer turn, the comment and the fix one admission at a time (decided by the orchestrator, for Nick's review).
+  %% status: draft
+  %% kind: tasks.review_round
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=terminal pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>reviewer · author
+  participant GH as GitHub<br/>PR
+  Note over GW: Admit the round<br/>group · head · round N
+  %%> Who calls it:
+  %%> - the gate check `tasks:pr-gate`, once for each head of a group in automatic mode; there is no command, route or MCP tool
+  %%> Requirements:
+  %%> - the group is an open external group of a review-and-merge Project, with a published PR that is out of draft, and no running operation
+  %%> - the PR head is a passed handoff candidate of the current subtask, and the group used fewer than 3 rounds
+  %%> What it does:
+  %%> - captures, in one transaction, the resume of the VM, the reviewer turn in a new thread, the comment, and, because the verdict is not known yet, the fix turn, the handoff check and the push of the fix
+  %%> - names the vault keys of the Pi token, the comment token and the push token; the run writes the Pi token when it starts, and each GitHub step mints its token when it runs
+  %%> - records the round (group, head, round number) so a repeat tick on the same head replays this Operation
+  GW->>SW: Start one run, full intent<br/>operation-task-review-round
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the whole intent above and the vault key names of the credentials, never their values
+  %%> - two steps of the run call the Gateway: each GitHub step mints its token when it starts, with the run id of this run
+  SW->>VM: Resume the VM<br/>operation-task-vm-resume
+  %%> What it does:
+  %%> - starts the parked VM and waits for its agent and Pi; the workspace and the Pi sessions are as the park left them
+  SW->>VM: Review the head<br/>operation-task-turn
+  %%> What it does:
+  %%> - a new reviewer thread, with the role `reviewer`: an agent that took no part in the spec, the code or an earlier round
+  %%> - it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the review rules; it changes no file
+  VM-->>SW: Pass<br/>or findings
+  Note over SW: Settle the review<br/>verdict · findings
+  %%> What it does:
+  %%> - turns the outcome of the reviewer into a verdict: pass, findings, or failed
+  SW->>GW: Mint the comment token<br/>operation:direct:github-token
+  %%> What it does:
+  %%> - mints a token with only `pull_requests: write` into the vault key that admission named
+  SW->>GH: Check the PR head<br/>Post the comment
+  %%> What it does:
+  %%> - refuses a PR that is not open or whose head is not the head of the round, with `tasks_pr.head_moved`; otherwise posts the verdict and the findings as a comment of the App, so Nick can read them
+  %%> Why:
+  %%> - the App opened the PR, and GitHub does not let an author approve its own PR, so the pass is recorded by the Gateway, not as a GitHub approval
+  SW->>GH: Clean up the token<br/>task-github-cleanup
+  %%> When:
+  %%> - always, on success and failure
+  opt the review has findings and the round is below 3
+    SW->>VM: Fix the findings<br/>operation-task-turn
+    %%> What it does:
+    %%> - the author thread of the group gets the findings as its prompt and fixes them in the workspace
+    SW->>VM: Check the fix<br/>operation-task-check
+    %%> What it does:
+    %%> - the handoff check of the Project on the workspace, as `tasks:check` runs it
+    %%> - the result carries what the Gateway needs to record the check row; the Gateway creates the row from that result and not at admission (decided by the orchestrator, for Nick's review)
+    SW->>GW: Mint the push token<br/>operation:direct:github-token
+    SW->>GH: Push the fix<br/>operation-task-publish
+    %%> What it does:
+    %%> - pushes the checked commit to the branch of the PR without force; the head moves, and the gate check admits the next round once CI on the new head is green
+    %%> - a check that did not pass, or a branch that moved, ends the run with no push
+  end
+  alt the run ended
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the round<br/>verdict · check row
+    %%> Result:
+    %%> - the Gateway records the verdict and the findings of that head and round, and creates the check row from the check result
+    %%> - a pass lets the gate check admit the merge step
+    %%> - after round 3 with findings, or when the round failed, the Gateway switches the group to manual mode; the ready step then requests the review of Nick
+  else a step failed
+    SW--xGW: Run failed<br/>error_code · failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code; the group falls back to manual mode
+  end
