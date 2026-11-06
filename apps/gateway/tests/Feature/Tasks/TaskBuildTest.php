@@ -31,6 +31,7 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -199,6 +200,9 @@ function buildSwampSocket(): object
         /** @var list<array<string,mixed>> */
         public array $frames = [];
 
+        /** The vault put of a key with this prefix is refused. */
+        public ?string $refuse = null;
+
         private bool $open = false;
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
@@ -214,6 +218,9 @@ function buildSwampSocket(): object
         public function receive(float $timeoutSeconds): array
         {
             $frame = end($this->frames);
+            if ($this->refuse !== null && str_starts_with((string) ($frame['payload']['key'] ?? ''), $this->refuse)) {
+                return [['id' => $frame['id'], 'type' => 'error', 'error' => ['code' => 'vault_put_failed']]];
+            }
 
             return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
                 'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
@@ -318,6 +325,28 @@ it('reads the Operation without writing a credential, and writes the Pi token an
     $vm->update(['pi_token' => null]);
     expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
 });
+
+it('fails a sync and a build run closed when the read-token vault write fails, and starts no run', function (string $kind): void {
+    [$operation, , $vm] = buildRun();
+    Project::query()->update(['source_access' => 'github_app']);
+    $socket = buildSwampSocket();
+    $socket->refuse = 'task-sync-token-';
+    $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-6b69badf-4f06-4f2e-82d7-21b62c1f587a'];
+    $operation->forceFill(['kind' => $kind, 'status' => OperationStatus::Queued, 'state' => [], 'cancel_requested_at' => null,
+        'input' => $kind === OperationKinds::TasksSync ? ['git_authorization' => $reference] : $operation->input])->save();
+
+    expect(fn () => app(StartSwampRun::class)->start($operation))->toThrow(ResourceOperationException::class, 'could not be stored');
+
+    $failed = $operation->fresh();
+
+    expect($failed->status)->toBe(OperationStatus::Failed)
+        ->and($failed->error_code)->toBe('swamp.vault_sync_unavailable')
+        ->and($failed->dispatched_at)->toBeNull()
+        ->and($failed->finished_at)->not->toBeNull()
+        // The Pi token goes first in a build run; the read token is the write that fails.
+        ->and(array_column(array_column($socket->frames, 'payload'), 'key'))->toBe($kind === OperationKinds::TasksBuild ? ['task-vm-pi-token-'.$vm->id, $reference['key']] : [$reference['key']])
+        ->and(array_column($socket->frames, 'type'))->not->toContain('workflow.run');
+})->with([OperationKinds::TasksSync, OperationKinds::TasksBuild]);
 
 it('starts the build from the gate on an approved head, appends the subtask once and admits nothing on the next tick', function (): void {
     config(['task_pull_requests.reviewer' => 'nick']);
