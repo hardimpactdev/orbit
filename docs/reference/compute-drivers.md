@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch},tools/task-vm-seed/*.sh}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-seed-refresh,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-seed-refresh,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet}.yaml,extensions/behaviors/operations/{task-vms/{agent_reply,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
