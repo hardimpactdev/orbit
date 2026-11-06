@@ -54,7 +54,7 @@ sequenceDiagram
   %%> - the facts and the composer.json come back as two files on the Swamp Node; `profile` reads and deletes them, as it deleted the composer.json before
   %%> - the old `account` check (`id -un`) is gone: the phases log in as the workspace account, so the account is that account by construction
   %%> - a Route access row that fails fails the provision, as before; the receipt now names the `checkout` phase and not `access-<n>`
-  %%> - the dependency files are written when the checkout is done, beside the profile and not after it: a source that the profile refuses has the token on the VM for a few seconds, and the removal and the revoke run on every outcome as before
+  %%> - the dependency files are written when the checkout is done, beside the profile and not after it: a source that the profile refuses has the token on the VM for a few seconds, and the removal and the revoke still run when the profile refuses, as on every other outcome: they wait for the writes and the setup steps with `always` edges and never for the profile
   %%> - the copy of the setup output and its redaction run beside the receipt, which does not read them; the two cleanups wait for the last reader of the run folders
   %%> - the longest chain is `guest`, `input`, `prepare`, `checkout`, `profile`, the setup steps, the output copy, the redaction and the cleanup. Expected for the whole step: about 34 s on a cold Composer cache, and about 26 s once the task image carries one (draft 3052)
   %%> Private dependencies:

@@ -141,3 +141,24 @@ Deno.test("every workflow that asks the provision data behavior for a guest pass
     // The workspace source, the fleet guest of a provision and the nested fleet workflow.
     assert(callers >= 3, `only ${callers} callers found`);
 });
+
+Deno.test("a profile that refuses the source still gets the token removed and revoked", async () => {
+    const steps = await source();
+    const byName = new Map(steps.map((step) => [step.name, step]));
+    // The files are written beside the profile, so neither the writes nor their cleanup may depend on its result.
+    for (const name of ["deps_write_composer", "deps_write_npm", "deps_remove_files", "deps_revoke"]) {
+        const step = byName.get(name)!;
+        assert(!parents(step).includes("profile"), `${name} must not wait for the profile`);
+        assert(!String(step.guard ?? "").includes("profile"), `${name} must not be guarded on the profile`);
+    }
+    // The removal and the revoke run on every outcome of what they wait for: each edge is `always`.
+    for (const name of ["deps_remove_files", "deps_revoke"]) {
+        const edges = byName.get(name)!.dependsOn ?? [];
+        assert(edges.length > 0 && edges.every((edge) => edge.condition?.type === "always"), `${name}: every edge must be always`);
+        for (const writer of ["deps_write_composer", "deps_write_npm", "setup-${{ self._index }}"]) {
+            assert(parents(byName.get(name)!).includes(writer), `${name} must wait for ${writer}`);
+        }
+    }
+    // The refusal stops only the setup steps, through their guard.
+    assert(String(byName.get("setup-${{ self._index }}")!.guard).includes("steps.profile.outputs.error_code"));
+});
