@@ -128,8 +128,6 @@ pub fn all() -> Vec<Entry> {
         entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectLaravelRoutes>(),
         entry::<production::ActivateRelease>(),
-        entry::<production::InspectRelease>(),
-        entry::<production::ListReleases>(),
         entry::<production::InspectRepositoryBinding>(),
         entry::<production::RebindRepository>(),
         entry::<application_log::ReadApplicationLog>(),

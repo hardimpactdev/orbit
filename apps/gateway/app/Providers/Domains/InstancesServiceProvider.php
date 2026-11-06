@@ -7,7 +7,6 @@ namespace App\Providers\Domains;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
-use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
@@ -37,7 +36,6 @@ use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
-use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Models\Operation;
@@ -61,7 +59,6 @@ final class InstancesServiceProvider extends ServiceProvider
         ProductionRepositoryBinding::class => RemoteProductionRepositoryBinding::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         DevelopmentSourceAccess::class => NativeDevelopmentSourceAccess::class,
-        ProductionDeployment::class => RemoteProductionDeployment::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
         InstanceEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceRouteEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
