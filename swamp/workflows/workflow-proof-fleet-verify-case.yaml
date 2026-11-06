@@ -73,11 +73,43 @@ jobs:
         - ${{ inputs.checkout_path + "/" + inputs.file }}
         - --evidence
         - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
+  # A case that did not pass leaves the fleet in a state it may not have had: restore `base` and apply the checkout before the batch setup.
+  - name: restore
+    labels: {role: swamp}
+    dependsOn:
+    - step: case
+      condition: {type: completed}
+    guard: '${{ inputs.last || steps.?case.?outputs.?stdout.orValue("").contains("\"verdict\": \"passed\"") }}'
+    allowFailure: true
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-restore
+      inputs:
+        ssh_execution: ${{ inputs.ssh_execution }}
+  # The batch reads this line: a case whose restore failed stops the rest of the batch, as a failed setup does.
+  - name: restored
+    labels: {role: swamp}
+    dependsOn:
+    - step: restore
+      condition: {type: completed}
+    guard: '${{ steps.?restore.?status.orValue("") != "failed" }}'
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("proof-verify-restored-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: |
+          printf '{"restore": "failed"}\n'
   - name: setup
     labels: {role: swamp}
     dependsOn:
     - step: case
       condition: {type: completed}
+    - step: restore
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     guard: '${{ inputs.last || !inputs.setup || steps.?case.?outputs.?stdout.orValue("").contains("\"verdict\": \"passed\"") }}'
     allowFailure: true
     writes: true

@@ -196,24 +196,19 @@ class FleetDiscoveryTest(unittest.TestCase):
                 'orbit': {'addresses': [{'family': 'inet', 'scope': 'global', 'address': '10.45.0.2'}]},
                 'enp5s0': {'addresses': [{'family': 'inet', 'scope': 'global', 'address': address}]}}}}
 
-    def test_discover_picks_the_one_complete_set_and_its_bridge_addresses(self):
-        guests = [self.guest(f'orbit-e2e-task-3187-aa-{role}', f'10.0.0.{n}') for n, role in enumerate(('gateway', 'app-dev', 'app-prod'), 1)]
-        guests.append(self.guest('orbit-e2e-task-3187-aa-operator'))
+    def test_discover_finds_the_guests_by_the_names_of_the_fleet_child(self):
+        guests = [self.guest(f'nested-{role}', f'10.0.0.{n}') for n, role in enumerate(('gateway', 'app-dev', 'app-prod'), 1)]
         guests.append(self.guest('fleet-ready-gateway', status='Stopped'))
+        guests.append(self.guest('orbit-e2e-task-3187-aa-gateway'))
         found = fleet_module.discover(guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
-        self.assertEqual(found.nodes['app-dev'], {'instance': 'orbit-e2e-task-3187-aa-app-dev', 'node_id': 2, 'bridge': '10.0.0.2'})
+        self.assertEqual(found.nodes['app-dev'], {'instance': 'nested-app-dev', 'node_id': 2, 'bridge': '10.0.0.2'})
 
-    def test_two_complete_sets_need_a_prefix(self):
-        guests = [self.guest(f'orbit-e2e-task-3187-{tag}-{role}') for tag in ('aa', 'bb') for role in ('gateway', 'app-dev', 'app-prod')]
+    def test_a_stopped_or_missing_guest_is_refused(self):
+        guests = [self.guest('nested-gateway'), self.guest('nested-app-dev', status='Stopped'), self.guest('nested-app-prod')]
         with self.assertRaises(fleet_module.FleetError):
-            fleet_module.discover(guests=guests, node_ids={})
-        found = fleet_module.discover('orbit-e2e-task-3187-bb', guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
-        self.assertTrue(found.nodes['gateway']['instance'].startswith('orbit-e2e-task-3187-bb'))
-
-    def test_an_incomplete_set_is_refused(self):
-        guests = [self.guest('orbit-e2e-task-3187-aa-gateway')]
+            fleet_module.discover(guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
         with self.assertRaises(fleet_module.FleetError):
-            fleet_module.discover(guests=guests, node_ids={})
+            fleet_module.discover(guests=[self.guest('nested-gateway')], node_ids={})
 
 
 if __name__ == '__main__':

@@ -21,7 +21,8 @@ sequenceDiagram
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
   %%> Not built:
   %%> - the command `orbit proof COMMAND`; today `proof:run` is the only way in
-  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below
+  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores `base`, sets the clocks, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
+  %%> - the runner finds the fleet by the guest names of `task-nested-fleet`, `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
   GW->>SW: Start the proof<br/>cases file · this VM
   SW->>NT: Restore the base snapshot<br/>memory included · about 16 s

@@ -1,0 +1,41 @@
+id: 5f38f2dd-af28-46ec-9ff0-8094ffd13208
+name: task-nested-ready
+description: >-
+  Check that the nested fleet of a task VM is ready, from the VM over the operator's WireGuard address and the API of the nested Gateway: every Node agent online, the operator known to the Gateway with its key, Doctor healthy. Used by the fleet start before it takes `base`, and by every restore of `base`.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    guest_node_id: {type: integer, minimum: 1}
+    ssh_execution: {type: object}
+  required: [guest_node_id, ssh_execution]
+  additionalProperties: false
+jobs:
+- name: ready
+  labels: {role: swamp}
+  steps:
+  # Over the operator's WireGuard address. The Swamp worker is checked by the apply step.
+  - name: 'Read the nodes'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-ready-" + string(inputs.guest_node_id) + "-read-the-nodes").split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("nested-ready-" + string(inputs.guest_node_id) + "-read-the-nodes").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh_execution.target.user }}', port: '${{ inputs.ssh_execution.target.port }}', identityFile: '${{ inputs.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.ssh_execution.target.host_keys }}'}}]},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'curl', '-sk', '--fail', '-m', '50', 'https://10.45.0.1/api/v1/nodes', '-H', 'Host: gateway.orbit', '-H', 'Accept: application/json'], timeoutSec: 70}}
+  - name: 'Check the agents'
+    labels: {role: swamp}
+    task: {type: assert, expr: 'steps["Read the nodes"].outputs.stdout.split("\"state\":\"online\"").size() == 4', severity: high, message: The three Node agents of the nested fleet are not all online}
+    dependsOn: [{step: 'Read the nodes', condition: {type: succeeded}}]
+  - name: 'Check the operator'
+    labels: {role: swamp}
+    task: {type: assert, expr: 'steps["Read the nodes"].outputs.stdout.contains("\"name\":\"operator\"") && !steps["Read the nodes"].outputs.stdout.contains("\"wireguard_public_key\":null")', severity: high, message: The nested Gateway does not know the operator and its key}
+    dependsOn: [{step: 'Read the nodes', condition: {type: succeeded}}]
+  - name: 'Run Doctor'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-ready-" + string(inputs.guest_node_id) + "-run-doctor").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-ready-" + string(inputs.guest_node_id) + "-run-doctor").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '90', 'curl', '-sk', '--fail', '-m', '80', '-X', 'POST', 'https://10.45.0.1/api/v1/doctor', '-H', 'Host: gateway.orbit', '-H', 'Accept: application/json', '-H', 'Content-Type: application/json', '-d', '{}'], timeoutSec: 100}}
+    dependsOn: [{step: 'Check the operator', condition: {type: succeeded}}, {step: 'Check the agents', condition: {type: succeeded}}]
+  - name: 'Check Doctor'
+    labels: {role: swamp}
+    task: {type: assert, expr: 'steps["Run Doctor"].outputs.stdout.startsWith("{\"data\":{\"healthy\":true")', severity: high, message: Doctor of the nested fleet has a finding}
+    dependsOn: [{step: 'Run Doctor', condition: {type: succeeded}}]
