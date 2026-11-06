@@ -137,7 +137,7 @@ jobs:
     labels: {role: swamp}
     queueTimeout: 30
     writes: true
-    guard: '!("Hold the Route Nodes" in steps)'
+    guard: '${{ !("Hold the Route Nodes" in steps) }}'
     task:
       type: behavior
       behaviorType: command/shell
