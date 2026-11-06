@@ -24,10 +24,13 @@ sequenceDiagram
   GW->>SW: Start the flow<br/>push-token vault key names
   %%> Inputs:
   %%> - the command and its family
+  %%> - the mode, `manual` or `automatic`
   %%> - the vault key names of the push token, never a token
   %%> Built or not:
   %%> - built: `tasks:prep` admits the run and Swamp runs it as the workflow `operation-task-prep`
-  %%> - not built: the automatic mode, which a flow input would set
+  %%> - built: the mode of the run, `manual` or `automatic`, is the review mode of the Task group (`tasks:create --review`), captured in the intent at admission
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the mode is part of the admitted intent, not a Swamp input: the run is the same in both modes and only the Gateway projection differs, so the Gateway records the mode once and Swamp learns nothing it does not use
   Note over SW: Child workflows<br/>provision · turn · publish
   %%> What it does:
   %%> - the arrows below from Swamp to the task VM and to GitHub are child workflows of one parent run: `operation-task-provision`, `operation-task-turn` for the draft, review and fix turns, and `operation-task-publish` with a draft
@@ -137,5 +140,9 @@ sequenceDiagram
   SW-->>GW: Record the outcome<br/>spec in draft PR
   %%> Result:
   %%> - the Gateway records the draft PR with its spec commit, for the CLI and web
+  %%> - in manual mode, the Gateway then admits `tasks:park`, which stops the VM while the spec waits for the owner; the workspace stays
+  %%> - in automatic mode it parks nothing: the VM keeps running and the flow continues
   %%> - the command is not ready and not merged; building starts in the same PR with stage 2, and stages 3 and 4 follow in it
   %%> - a command already prepared through a docs-only PR stays as it is; when its turn comes, this flow reviews and updates its spec
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the park follows the mode and needs no step in the run, like the park after `tasks:prep-fix`; a refused park is kept in the result as `park_refused`

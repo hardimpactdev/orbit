@@ -232,3 +232,77 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
         ->and([$author->refresh()->tokens, $reviews[0]->refresh()->tokens, $reviews[1]->refresh()->tokens])->toBe([100, 20, 30])
         ->and($vm->refresh()->state)->toBe(TaskVmState::Ready);
 });
+
+/** The terminal event of a prep run that opened its draft pull request. */
+function prepEnd(TaskVm $vm): array
+{
+    // A VM that is no longer provisioning keeps its state, so the enrollment of the receipt records nothing here.
+    $vm->update(['state' => TaskVmState::Ready]);
+
+    return [
+        'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subHour()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => [], 'summary' => ['status' => 'succeeded', 'failed_steps' => []],
+            'provision' => ['task_vm_id' => $vm->id, 'guest_node_id' => $vm->node_id, 'ready' => true, 'enrollment' => ['ready' => true], 'provider' => ['image_fingerprint' => 'fingerprint', 'running' => true, 'settled' => true],
+                'source' => ['branch' => 'main', 'commit' => str_repeat('a', 40), 'php_version' => '8.5', 'laravel' => false]],
+            'publish' => ['pull_request_number' => 2825, 'pull_request_url' => 'https://github.com/hardimpactdev/orbit/pull/2825']],
+    ];
+}
+
+/** A park that counts its calls and is refused, as it is for a group that is not parkable. */
+function refusedParks(): object
+{
+    $parks = new class
+    {
+        public int $calls = 0;
+
+        public function execute(Task $group, string $caller, ?string $request): never
+        {
+            $this->calls++;
+
+            throw new ResourceOperationException('tasks.park_refused', 'Refused.', 409);
+        }
+    };
+    app()->instance(StartTaskParkAction::class, $parks);
+
+    return $parks;
+}
+
+it('parks the group once after a manual-mode run opened its draft PR, and keeps a refused park', function (): void {
+    [$operation, $group, $vm] = prepRun();
+    $operation->update(['input' => [...$operation->input, 'mode' => 'manual']]);
+    $parks = refusedParks();
+
+    $projected = app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
+    $again = app(TaskPrepProjection::class)->apply($projected, prepEnd($vm));
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toMatchArray(['pull_request_number' => 2825, 'park_refused' => 'tasks.park_refused'])
+        ->and($parks->calls)->toBe(1)
+        ->and($again->result)->toBe($projected->result);
+});
+
+it('parks nothing after an automatic-mode run', function (): void {
+    [$operation, , $vm] = prepRun();
+    $operation->update(['input' => [...$operation->input, 'mode' => 'automatic']]);
+    $parks = refusedParks();
+
+    $projected = app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->not->toHaveKey('park_refused')
+        ->and($parks->calls)->toBe(0);
+});
+
+it('parks nothing after a manual-mode run that failed', function (): void {
+    [$operation] = prepRun();
+    $operation->update(['input' => [...$operation->input, 'mode' => 'manual']]);
+    $parks = refusedParks();
+
+    app(TaskPrepProjection::class)->apply($operation, [
+        'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => [], 'summary' => ['status' => 'failed', 'failed_steps' => ['Review has no findings']]],
+        'failure' => ['failed_step' => 'Review has no findings', 'detail' => 'tasks.prep_review_unresolved', 'stderr_recorded' => false],
+    ]);
+
+    expect($parks->calls)->toBe(0);
+});
