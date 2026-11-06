@@ -8,6 +8,11 @@ import subprocess
 
 JOBS = ('php', 'gateway-static', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
+# Gateway files that the Swamp gate and its Deno tests read: the grant renderer, the workflow definition that a Deno test parses, and the
+# frozen agent contract, whose check scans the Gateway and Swamp sources (the PHP job runs the same check for PHP files only).
+SWAMP_GATEWAY_INPUTS = ('apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php', 'apps/gateway/app/Support/ValidatedData.php',
+                        'apps/gateway/bin/render-swamp-grants', 'apps/gateway/app/Domain/Tasks/direct-operations.php')
+FROZEN_SCANNED = ('.ts', '.js', '.py', '.yaml', '.yml')
 SELECTION = 'swamp/proof/selection.txt'
 SELECTION_COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
 
@@ -78,8 +83,7 @@ def select(paths, main=False, selection=None):
     for path in paths:
         if path.startswith('apps/gateway/'):
             jobs['gateway-static'] = True
-        if path in ('apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php',
-                    'apps/gateway/app/Support/ValidatedData.php', 'apps/gateway/bin/render-swamp-grants'):
+        if path in SWAMP_GATEWAY_INPUTS or path.startswith('apps/gateway/resources/agent/') or (path.startswith(('apps/gateway/app/', 'apps/gateway/extensions/')) and path.endswith(FROZEN_SCANNED)):
             jobs['swamp'] = True
         if path.startswith('swamp/'):
             jobs['swamp'] = True

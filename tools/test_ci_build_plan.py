@@ -91,6 +91,17 @@ class BuildPlanTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn('swamp', self.selected([path]))
 
+    def test_gateway_files_that_the_swamp_gate_reads_select_it(self):
+        for path in ('apps/gateway/app/Domain/Tasks/direct-operations.php', 'apps/gateway/resources/agent/frozen-manifest.json',
+                     'apps/gateway/resources/agent/frozen-commands.json', 'apps/gateway/app/Domain/Routes/probe.ts', 'apps/gateway/extensions/thing/job.yml'):
+            with self.subTest(path=path):
+                self.assertIn('swamp', self.selected([path]))
+
+    def test_other_gateway_files_leave_the_swamp_gate_off(self):
+        for path in ('apps/gateway/app/Actions/Thing.php', 'apps/gateway/app/Domain/Tasks/TaskPrepIntent.php', 'apps/gateway/tests/Feature/X.php', 'apps/gateway/resources/views/x.blade.php'):
+            with self.subTest(path=path):
+                self.assertNotIn('swamp', self.selected([path]))
+
     def test_swamp_only_skips_gateway_builds_and_release_on_prs(self):
         paths = ['swamp/extensions/example.ts', 'swamp/bin/effect.php', 'swamp/composer.json']
         self.assertEqual({'swamp'}, self.selected(paths))
