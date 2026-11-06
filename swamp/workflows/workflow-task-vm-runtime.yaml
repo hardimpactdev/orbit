@@ -91,10 +91,10 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("task-vm-runtime-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-runtime-check-build-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_RUN/pi-server" | sha256sum -c --quiet
+        run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_RUN/pi-server" | timeout 60 sha256sum -c --quiet
         env:
           ORBIT_SHA: ${{ inputs.intent.pi_artifact.sha256 }}
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
@@ -107,7 +107,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("task-vm-runtime-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-runtime-input-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
@@ -124,7 +124,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("task-vm-runtime-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-runtime-install-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags install "$ORBIT_ANSIBLE/task-vm-runtime.yml"
@@ -144,7 +144,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("task-vm-runtime-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-runtime-check-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags check "$ORBIT_ANSIBLE/task-vm-runtime.yml"
@@ -154,7 +154,6 @@ jobs:
           ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
-          ORBIT_PI_MODELS: ${{ vault.get(inputs.execution_secrets.pi_models.vault, inputs.execution_secrets.pi_models.key) }}
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
   - name: result
     labels: {role: swamp}
@@ -164,7 +163,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("task-vm-runtime-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-runtime-result-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: printf '{"task_vm_id":%s,"guest_node_id":%s,"process_id":%s,"ready":true}\n' "$ORBIT_VM_ID" "$ORBIT_GUEST_ID" "$ORBIT_PROCESS_ID"
@@ -183,7 +182,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("task-vm-runtime-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-vm-runtime-cleanup-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

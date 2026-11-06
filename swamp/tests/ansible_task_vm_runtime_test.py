@@ -30,6 +30,8 @@ class TaskVmRuntimeTest(unittest.TestCase):
         for step in steps(play):
             if 'pi_models' in str(step) or 'pi_token' in str(step):
                 self.assertIs(step.get('no_log'), True, step['name'])
+        # A task that fails after a file changed must still run the handlers it queued.
+        self.assertIs(play['force_handlers'], True)
         self.assertEqual({handler['name'] for handler in play['handlers']}, {'Update the CA store', 'Restart the Pi server'})
 
     def test_the_runtime_intent_is_reached_with_its_pinned_host_key(self):

@@ -92,11 +92,12 @@ sequenceDiagram
   SW->>VM: Install the Pi server<br/>runtime · Ansible phase install
   %%> What it does:
   %%> - fetches the pinned Pi build to 209 and checks its digest there
-  %%> - one Ansible phase, `install`, over SSH with the pinned guest host key: copies the build, writes the Orbit root, the Pi models and the Pi token (0600, from `vault.get` through the environment, `no_log`), installs the unit, and restarts `pi-server` only when a file changed
+  %%> - Ansible phase `install`, over SSH with the pinned guest host key: copies the build (its digest is checked on the staged file first), writes the Orbit root, the Pi models and the Pi token (0600, from `vault.get` through the environment, `no_log`), installs the unit, and restarts `pi-server` when a file changed
+  %%> - Ansible phase `check`: the service is active and `/capabilities` answers 200 to the bearer
   %%> - the run folder, with the staged build, is removed in a last job
   %%> - not `@swamp/cfgmgmt`: it cannot pin a host key toward a task VM
   %%> Replaces:
-  %%> - the eleven `task-vm-runtime` steps and its `result` step
+  %%> - the eleven `task-vm-runtime` guest steps; its `result` step stays, because enrollment reads it
   SW->>VM: Check the guest is ready<br/>check · agent, Pi, private ssh
   %%> What it does:
   %%> - one pinned exec over WireGuard collects `orbit-agent` and `pi-server` state and the Pi capabilities on the bind address; Swamp's `assert` checks them

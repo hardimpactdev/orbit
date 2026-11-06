@@ -6,6 +6,8 @@
   hosts: task_vm
   become: true
   gather_facts: false
+  # A task that fails after a file changed still runs the handlers it queued; the next run sees no change and would not.
+  force_handlers: true
   vars:
     orbit_user: orbit
     pi_home: /home/orbit/.pi
@@ -15,7 +17,7 @@
     pi_token: "{{ lookup('ansible.builtin.env', 'ORBIT_PI_TOKEN') }}"
   handlers:
     - name: Update the CA store
-      ansible.builtin.command: update-ca-certificates
+      ansible.builtin.command: timeout 45 update-ca-certificates
       changed_when: true
     - name: Restart the Pi server
       ansible.builtin.systemd:
@@ -43,17 +45,9 @@
             owner: "{{ orbit_user }}"
             group: "{{ orbit_user }}"
             mode: "0755"
+            # The pin is checked on the staged file; a build that differs never replaces the installed one.
+            validate: "/bin/sh -c 'echo \"{{ intent.pi_artifact.sha256 }}  $0\" | sha256sum -c --quiet' %s"
           notify: Restart the Pi server
-        - name: Read the Pi build
-          ansible.builtin.stat:
-            path: "{{ pi_server }}"
-            checksum_algorithm: sha256
-          register: pi_copied
-        - name: Check the Pi build against its pin
-          ansible.builtin.assert:
-            that: pi_copied.stat.checksum == intent.pi_artifact.sha256
-            fail_msg: The Pi server differs from its pin.
-            quiet: true
         - name: Trust the Orbit root
           ansible.builtin.copy:
             content: "{{ intent.certificate }}"
@@ -62,6 +56,10 @@
             group: root
             mode: "0644"
           notify: Update the CA store
+        - name: Add the Orbit root to the CA store when it is missing there
+          ansible.builtin.command:
+            cmd: timeout 45 update-ca-certificates
+            creates: /etc/ssl/certs/orbit-root.pem
         - name: Write the Pi models
           no_log: true
           ansible.builtin.copy:
@@ -95,7 +93,6 @@
             name: "{{ service.unit_name }}"
             enabled: true
             state: started
-            daemon_reload: true
 
     - name: Check
       tags: [check]
@@ -116,4 +113,10 @@
             headers:
               Authorization: "Bearer {{ pi_token }}"
             timeout: 10
-            status_code: 200
+          failed_when: false
+          register: pi_probe
+        - name: Check that the Pi server answers
+          ansible.builtin.assert:
+            that: pi_probe.status == 200
+            fail_msg: "The Pi server answered {{ pi_probe.status | default('nothing') }} to /capabilities."
+            quiet: true
