@@ -2,7 +2,8 @@ sequenceDiagram
   %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
   %% Decided: Nick 2026-11-02, the Route is withdrawn first, before teardown; a failed teardown leaves the site down and a rerun completes.
-  %% status: migrated
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): an Instance without a Route skips the Route withdrawal and the DNS records (a bare destroy spent 33 s and 11 s there on nothing), and a destroyed name waits no DNS grace (it has no new target to move to; the 31 s wait was 27% of a 116 s destroy).
+  %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
   autonumber
@@ -96,6 +97,7 @@ sequenceDiagram
   SW->>N: Remove the git credential<br/>@swamp/cfgmgmt/file absent
   %%> When:
   %%> - always after the check, also when it refused
+  opt Instance has a Route
   SW->>N: Withdraw the Route<br/>@swamp/cfgmgmt/file absent
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
@@ -107,6 +109,8 @@ sequenceDiagram
   %%> Why first:
   %%> - unpublish before removing, so no request reaches a half-removed Instance
   %%> - accepted: a failed teardown leaves Instance 42 without its site until a rerun completes the removal
+  %%> No DNS grace:
+  %%> - the name is removed, not moved, so no client has a new target to switch to; the Route is withdrawn right after its DNS records go
   %%> Keeps:
   %%> - every other site, pool and certificate on Node 12
   opt domain outside the TLD
@@ -114,9 +118,10 @@ sequenceDiagram
     %%> When:
     %%> - only for a Route domain outside the Cluster or Node TLD; private DNS answers the whole TLD, so a domain inside it has no record
     %%> What it does:
-    %%> - removes the private DNS records of Instance 42's Routes, then waits the 31-second grace
+    %%> - removes the private DNS records of Instance 42's Routes; an Instance destroy does not wait the 31-second grace
     %%> How:
     %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
+  end
   end
   SW->>N: Stop, remove Processes<br/>@swamp/cfgmgmt/systemd absent
   %%> What it does:

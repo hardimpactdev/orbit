@@ -139,7 +139,7 @@ final readonly class StartInstanceDestroyAction
 
     /**
      * 60 s for the removal steps, the teardown timeouts of each member that runs its list (at most 540 s), 180 s for
-     * each Route it withdraws (CSR-free withdrawal, the 31 s private DNS grace, Caddy and PHP publication), and 180 s
+     * each Route it withdraws (CSR-free withdrawal, Caddy and PHP publication; an Instance removal waits no DNS grace), and 180 s
      * when it removes owned databases. A fixed or history budget misses a routed removal (op 9603).
      *
      * @param  array<string,mixed>  $input
