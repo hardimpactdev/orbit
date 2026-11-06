@@ -1051,7 +1051,7 @@ A pending or red check, a missing approval, a busy group, a moved head or a fail
 
 Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so a repeat tick on the same head replays the recorded step and starts nothing. A step that failed is not tried again on the same head. A push moves the head and the check starts again, or the operator calls the step by hand with a new key.
 
-The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code.
+The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code. The scheduler log keeps these results.
 
 Only manual mode exists. The automatic gate has no self-review run to admit.
 
