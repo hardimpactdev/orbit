@@ -13,8 +13,8 @@ use Throwable;
 
 /**
  * Publish a schedule definition (workflow, cadence and inputs) through the official workflow.trigger.set frame. A definition that serve
- * confirmed is not sent again: each frame rewrites serve.yaml and registers the schedule again, which costs serve CPU. A lost memo costs
- * one repeat, never a missing schedule.
+ * confirmed within the last day is not sent again: each frame rewrites serve.yaml and registers the schedule again, which costs serve CPU.
+ * The memo expires, so a definition that serve lost is sent again within a day; a lost memo costs one repeat.
  */
 final readonly class SwampSchedulePublisher
 {
@@ -40,6 +40,7 @@ final readonly class SwampSchedulePublisher
             return;
         }
         $id = bin2hex(random_bytes(16));
+        $confirmed = false;
         try {
             // Match the JSON data representation used by the real socket.
             $expectedInputs = json_decode(json_encode($inputs, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
@@ -60,17 +61,20 @@ final readonly class SwampSchedulePublisher
                         || ($entry['inputs'] ?? []) !== $expectedInputs) {
                         throw $this->unavailable();
                     }
-                    Cache::forever($memo, $hash);
+                    $confirmed = true;
 
-                    return;
+                    break 2;
                 }
             }
-            throw $this->unavailable();
         } catch (Throwable) {
             throw $this->unavailable();
         } finally {
             $this->socket->close();
         }
+        if (! $confirmed) {
+            throw $this->unavailable();
+        }
+        Cache::put($memo, $hash, now()->addDay());
     }
 
     private function unavailable(): ResourceOperationException

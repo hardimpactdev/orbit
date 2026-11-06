@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Projects;
 
-use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\ScheduledResultProjection;
@@ -54,7 +53,7 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
         try {
             app(SwampSchedulePublisher::class)->publish(self::Workflow, self::Schedule, []);
         } catch (Throwable $exception) {
-            Log::warning('The Project maintenance schedule was not confirmed.', ['exception_type' => $exception::class]);
+            Log::warning('The Project maintenance schedule was not confirmed.', ['error' => $exception instanceof ResourceOperationException ? $exception->errorCode : $exception::class]);
         }
     }
 
@@ -75,9 +74,8 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
             $admissions = ValidatedData::object($state['admissions'] ?? []);
             $usable = app(TaskExtensionState::class)->enabled() && ($run['status'] ?? null) === 'succeeded';
             if ($usable) {
-                foreach ($this->due($tick, $admissions) as [$candidate, $mode, $key]) {
-                    $project = Project::query()->lockForUpdate()->find($candidate->id);
-                    if ($project === null || Operation::query()->where('target_type', 'project')->where('target_id', $project->id)
+                foreach ($this->due($tick, $admissions) as [$project, $mode, $key]) {
+                    if (Operation::query()->where('target_type', 'project')->where('target_id', $project->id)
                         ->whereIn('kind', self::Kinds)->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                         continue;
                     }
@@ -142,20 +140,25 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
         return $due;
     }
 
-    /** @return iterable<Project> */
+    /** @return iterable<Project> the opted-in Projects, locked for the rest of the transaction so a settings change cannot slip in after the match */
     private function projects(): iterable
     {
-        return Project::query()->where('maintenance', true)->where('source_access', ProjectSourceAccess::GitHubApp)->whereNotNull('task_check')
+        return Project::query()->lockForUpdate()->where('maintenance', true)->where('source_access', ProjectSourceAccess::GitHubApp)->whereNotNull('task_check')
             ->where('task_check', '!=', '')->whereNotNull('default_branch')->orderBy('id')->get();
     }
 
-    /** The Swamp source configures the Project, and its settings are the ones the Gateway holds. */
-    /** @param  array<string,mixed>  $entry */
+    /**
+     * The Swamp source configures the Project, and its settings are the ones the Gateway holds. The repository is compared as Swamp does:
+     * `git@github.com:` or `https://github.com/`, without `.git`, in lower case.
+     *
+     * @param  array<string,mixed>  $entry
+     */
     private function matches(Project $project, array $entry): bool
     {
-        $repository = GitHubRepository::fromOrigin((string) $project->repository_url);
+        $identity = preg_match('#\A(?:git@github\.com:|https://github\.com/)([^?\#]+)\z#', (string) $project->repository_url, $match) === 1
+            ? strtolower('github.com/'.preg_replace('/\.git\z/', '', $match[1])) : null;
 
-        return $repository !== null && strtolower('github.com/'.$repository->owner.'/'.$repository->name) === ($entry['repository'] ?? null)
+        return $identity !== null && $identity === ($entry['repository'] ?? null)
             && $project->default_branch === ($entry['default_branch'] ?? null) && $project->task_check === ($entry['check'] ?? null);
     }
 

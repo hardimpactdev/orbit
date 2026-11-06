@@ -110,3 +110,16 @@ it('remembers each workflow and each Swamp address on its own', function (): voi
 
     expect($socket->frames)->toHaveCount(3);
 });
+
+it('sends the definition again after a day, in case serve lost it', function (): void {
+    $socket = triggerSocket();
+    $publisher = app(SwampSchedulePublisher::class);
+
+    $publisher->publish(ScheduledProjectMaintenance::Workflow, '40 17 * * * *', []);
+    $this->travel(23)->hours();
+    $publisher->publish(ScheduledProjectMaintenance::Workflow, '40 17 * * * *', []);
+    $this->travel(2)->hours();
+    $publisher->publish(ScheduledProjectMaintenance::Workflow, '40 17 * * * *', []);
+
+    expect($socket->frames)->toHaveCount(2);
+});

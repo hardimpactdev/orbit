@@ -51,11 +51,15 @@ function recordedStarts(OperationStatus $status = OperationStatus::Succeeded): o
         /** @var list<array{int, string}> */
         public array $calls = [];
 
+        /** @var list<bool> */
+        public array $opens = [];
+
         public function __construct(private readonly OperationStatus $status) {}
 
         public function start(Project $project, string $mode, ?string $requestId = null, bool $open = false): Operation
         {
             $this->calls[] = [$project->id, $mode];
+            $this->opens[] = $open;
 
             return Operation::query()->create(['kind' => 'project.'.$mode, 'target_type' => 'project', 'target_id' => $project->id, 'node_id' => null,
                 'input' => [], 'status' => $this->status, 'sequence' => 1, 'attempts' => 1]);
@@ -81,6 +85,7 @@ it('admits the weekly routine first, and the hourly inspection once the routine 
     fireTick([tickEntry($project)], startedAt: '2026-11-04T11:30:00Z');
 
     expect($starts->calls)->toBe([[$project->id, 'routine'], [$project->id, 'detect']])
+        ->and($starts->opens)->toBe([true, true])
         ->and(maintenanceState()['admissions'])->toMatchArray([$project->id.':routine' => ['key' => $project->id.'-routine-2026-11-02', 'operation_id' => Operation::query()->where('kind', 'project.routine')->value('id')],
             $project->id.':detect' => ['key' => $project->id.'-detect-2026-11-04T10:00', 'operation_id' => Operation::query()->where('kind', 'project.detect')->value('id')]]);
 });
@@ -134,9 +139,10 @@ it('skips a Project that the tick does not list, or lists with another repositor
     $noCheck = maintainedProject(['task_check' => '']);
     $cli = maintainedProject(['source_access' => 'gh_cli']);
     $ssh = maintainedProject(['repository_url' => 'git@github.com:nckrtl/launch-ssh.git']);
+    $url = maintainedProject(['repository_url' => 'ssh://git@github.com/nckrtl/launch-url.git']);
 
     fireTick([tickEntry($moved, ['repository' => 'github.com/nckrtl/other']), tickEntry($branch, ['default_branch' => 'trunk']), tickEntry($check, ['check' => 'composer test']),
-        tickEntry($off), tickEntry($noCheck), tickEntry($cli), tickEntry($ssh)]);
+        tickEntry($off), tickEntry($noCheck), tickEntry($cli), tickEntry($ssh), tickEntry($url, ['repository' => 'github.com/nckrtl/launch-url'])]);
 
     expect($starts->calls)->toBe([[$ssh->id, 'routine']]);
 });
@@ -217,4 +223,16 @@ it('drops the retired snapshot from the stored state and keeps the admissions', 
 
     expect(maintenanceState())->toBe(['admissions' => ['32:detect' => ['key' => '32-detect-2026-11-04T10:00', 'operation_id' => 7]],
         'terminal' => ['run_id' => 'r', 'started_at' => '2026-11-04T10:30:00Z', 'status' => 'recorded']]);
+});
+
+it('admits nothing for a result in the retired format, and still records the run', function (): void {
+    $starts = recordedStarts();
+    $project = maintainedProject();
+
+    app(ScheduledProjectMaintenance::class)->applyScheduled(ScheduledProjectMaintenance::Workflow,
+        ['id' => 'run-old', 'startedAt' => '2026-11-04T10:30:00Z', 'status' => 'succeeded'],
+        ['selection_json' => json_encode(['revision' => 940, 'requests' => [['project_id' => $project->id, 'mode' => 'detect', 'key' => $project->id.'-detect-2026-11-04T10:00']]], JSON_THROW_ON_ERROR)]);
+
+    expect($starts->calls)->toBe([])
+        ->and(maintenanceState()['terminal'])->toMatchArray(['run_id' => 'run-old', 'status' => 'recorded']);
 });
