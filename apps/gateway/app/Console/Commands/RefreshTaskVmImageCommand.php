@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\TaskVms\StartTaskVmImageRefreshAction;
 use App\Domain\Shared\ResourceOperationException;
+use App\Support\ValidatedData;
 use Illuminate\Console\Command;
 
 /**
@@ -33,7 +34,7 @@ final class RefreshTaskVmImageCommand extends Command
         }
         $this->line('Operation '.$operation->id.' '.$operation->status->value);
         $asked = (string) $this->option('seed');
-        $running = (string) data_get($operation->input, 'refresh.seed', 'build');
+        $running = ValidatedData::string(data_get($operation->input, 'refresh.seed', 'build'));
         if ($running !== $asked) {
             $this->warn('A refresh of this host is already open with seed='.$running.'; it is returned instead of seed='.$asked.'.');
         }
