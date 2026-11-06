@@ -51,6 +51,7 @@ sequenceDiagram
   %%> - from here on its own Swamp does everything
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), the first role run of a fresh Gateway:
   %%> - the control plane phase issues the Gateway's own certificate for `gateway.orbit` from the machine's CA, as for `swamp.orbit`, and installs it with the root certificate at the paths the rendered Caddyfile names (`/etc/caddy/orbit-cert-current`); the first role run publishes that Caddyfile and needs them
+  %%> - the control plane phase starts private DNS with empty records and an empty catalog and restarts dnsmasq on its loopback listener, so the first publication of a private name, in the first role run, finds both
   %%> - `orbit:gateway-web` is retired with its action: it only refused, and the role now does what it did
   %%> - the `swamp.orbit` Route is recorded in the same bootstrap, before the first Caddyfile publish, so a publication never drops the front the Gateway reaches Swamp through
   %%> - the rest of the Gateway role comes from the `gateway` role converge itself: the PHP-FPM pool and the Caddy site (its API), and units for the scheduler and Horizon, which record finished runs; a Gateway whose Node has a `schedule-work` or `horizon` Process keeps those, and Horizon runs only where a queue is configured
