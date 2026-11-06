@@ -14,7 +14,7 @@ covers:
 
 # Tasks
 
-Swamp is the only executor of task groups. Its groups driver and per-group runs choose provision, agent turns, checks, publication, review parking and cleanup. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
+Swamp is the only executor of task groups. It chooses provision, agent turns, checks, publication, review parking and cleanup. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
 
 Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
 
@@ -746,7 +746,7 @@ A failure in one source does not skip the others. The dispatch command exits suc
 
 Swamp drives each group through the API and MCP operations documented above. `tasks:tick` and tick orchestration are removed. Creating a todo group records intent; only Swamp starts its work.
 
-The Gateway retains task state, workspace leases, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase. Swamp owns admission capacity, lifecycle retries, PR observation and cleanup scheduling.
+The Gateway retains task state, workspace leases, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase.
 
 The group execution lock waits at most five seconds for every waiting caller, including HTTP actions, operation workers and VM jobs. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
 

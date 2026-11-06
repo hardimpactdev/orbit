@@ -19,7 +19,7 @@ import {
     projectFindings,
     scheduleKey,
 } from "../extensions/behaviors/_lib/project_schedule.ts";
-import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_projects.ts";
+import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 const original: DependencyProject = JSON.parse(
     await Deno.readTextFile(
         new URL(

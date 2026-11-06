@@ -1,5 +1,4 @@
 import { refreshMethod, scanResources } from "./dependency_scanner.ts";
-import { Admission as DependencyMergeAdmission } from "./operations/dependency-merge/admission.ts";
 import {
     pruneDependencyResults,
     type RetentionContext,
@@ -12,7 +11,7 @@ import { ProjectExtensionsSchema } from "./_lib/project_config.ts";
 import {
     DependencyProjectSchema,
     DependencyProjectsSchema,
-} from "./_lib/dependency_projects.ts";
+} from "./_lib/dependency_project_schema.ts";
 import { IndexSchema, ReportSchema } from "./_lib/dependency_results_schema.ts";
 import { z } from "npm:zod@4";
 
@@ -38,12 +37,6 @@ export const behavior = {
     globalArguments: GlobalArgsSchema,
     resources: {
         ...scanResources,
-        dependencyMergeAdmission: {
-            description: "Disabled-by-default exact-head merge admission",
-            schema: DependencyMergeAdmission,
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
         dependencyRefreshInput: {
             description: "Bounded credential-free PR refresh configuration",
             schema: z.object({

@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { DependencyProjectsSchema } from "../extensions/behaviors/_lib/dependency_projects.ts";
+import { DependencyProjectsSchema } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 import {
     SECOND_PROJECT,
     WEBSITE_PROJECT,

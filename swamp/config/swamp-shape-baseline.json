@@ -99,15 +99,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>",
-        "POST <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/dependency-merge/contents.ts",
       "rule": "custom-control",
       "count": 3,
