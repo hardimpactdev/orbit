@@ -32,6 +32,7 @@ sequenceDiagram
   %%> - the nested guests mount the export of that same path (`What=` in their mount units) at `/home/orbit/orbit` (`Where=`); the converge of the task VM role exports the workspace checkout, so the units name the export path and not the mount point
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - the ready copies keep the unit of the refresh VM's workspace path, so they serve the task VMs of the Project whose workspace path that is (the proof Project); a Project with another slug needs its own copies or a stable export path, which is a separate change of the task VM role
+  %%> - the waits for the nested Gateway's own runs (its roles, its Node, app-dev, app-prod) poll from the refresh VM with one short `incus exec` per check, inside a literal timeout: one `incus exec` held open for the whole wait lost its connection to the guest agent (`Lost connection to the event listener ... connection reset by peer`) while the nested Gateway enrolled the next Node, which a live run on beast showed after 17 minutes
   VM->>NG: Prepare the Gateway<br/>local Swamp · one run
   %%> What it does:
   %%> - the operator (here the refresh VM) runs the Gateway bootstrap workflow once with a local `swamp workflow run`; its steps request no worker, so the binary runs them itself
