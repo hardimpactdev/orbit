@@ -1066,6 +1066,8 @@ The command prints one JSON object with a result for each group: `admitted`, `re
 
 The Gateway keeps one row for each round, with the head, the round number, the reviewer turn and the verdict. A group has at most 3 rounds. The fix after findings is not built.
 
+A group is put in automatic mode with `orbit tasks:create --review=automatic`; without the option it is in manual mode.
+
 ### Not built
 
 These parts of stage 4 do not exist yet:
