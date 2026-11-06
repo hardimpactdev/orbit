@@ -35,6 +35,11 @@ sequenceDiagram
   %%> - runs `fstrim` so the freed blocks of the deleted key are discarded from the disk image that every task VM clones
   %%> Why:
   %%> - the seed is cloned into every task VM of the host; a key in it would reach all of them
+  SW->>VM: Order the state mounts<br/>_netdev on the units
+  %%> What it does:
+  %%> - sets `_netdev` on the three bind-mount units of the state in the Gateway and app-dev guests, then reloads systemd
+  %%> Why:
+  %%> - as local mounts they close an ordering cycle with the NFS mount of the checkout at boot (`local-fs.target`, the NFS mount, `network.target`, `ufw.service`), and systemd drops them; as network mounts they come up after the NFS mount, so the apply step need not start them by name
   SW->>VM: Stop the nested VMs<br/>incus stop
   %%> What it does:
   %%> - one clean stop of the three guests, so a copy holds finished file systems
@@ -57,7 +62,7 @@ sequenceDiagram
   %%> - runs after success, failure and cancellation
   SW->>SW: Check the ready copies<br/>assert
   %%> End check:
-  %%> - a native `assert`: no operator key in the record, all three copies stateful and without a NIC
+  %%> - a native `assert`: every state unit of a stored copy has `_netdev`, no operator key in the record, all three copies stateful and without a NIC
   alt every step passes
     SW-->>GW: Run succeeded<br/>ready copies saved
     %%> Result:
