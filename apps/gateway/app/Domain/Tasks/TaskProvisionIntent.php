@@ -85,6 +85,10 @@ final readonly class TaskProvisionIntent
             }
             $this->assertProvisionable($group);
             $project = $group->project;
+            // A routed workspace renders its Route from the Project's source facts, as instance:create does, so they must be valid.
+            if ($project->type->isWebServing() && $project->task_workspace_routed && $project->source_profile_error !== null) {
+                throw new ResourceOperationException($project->source_profile_error, 'The Project source metadata is invalid or unsupported for a routed task workspace.', 422);
+            }
             // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) get the proof club key, and no other task.
             $proof = ($project->id === 62 && $project->slug === 'swamp-proof') || $commit !== null;
             $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
@@ -105,10 +109,6 @@ final readonly class TaskProvisionIntent
             $account = new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
             $apps = $this->roots->resolveApps($this->settings->fromStored($node->settings), $account);
             $sourceRoot = $apps->append($project->slug);
-            // A routed workspace renders its Route from the Project's source facts, as instance:create does, so they must be valid.
-            if ($project->type->isWebServing() && $project->task_workspace_routed && $project->source_profile_error !== null) {
-                throw new ResourceOperationException($project->source_profile_error, 'The Project source metadata is invalid or unsupported for a routed task workspace.', 422);
-            }
             $checkout = $sourceRoot->append(TaskVmWorkspaceGuard::WorkspaceCheckout);
             $this->overlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
             $instance = Instance::query()->create([

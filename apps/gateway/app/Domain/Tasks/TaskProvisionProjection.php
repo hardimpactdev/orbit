@@ -121,8 +121,10 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
                 $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'stop_confirmed_at' => null, 'error_code' => null, 'error_message' => null]);
             }
             $source = ValidatedData::object($result['source']);
-            $instance->update(['branch' => $source['branch'], 'starting_commit' => $source['commit'],
-                'selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel'],
+            // A routed workspace keeps the Project facts its Route was published with, as instance:create does, so the Gateway's
+            // later render matches the published site.
+            $facts = $instance->task_workspace_routed ? [] : ['selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel']];
+            $instance->update(['branch' => $source['branch'], 'starting_commit' => $source['commit'], ...$facts,
                 'status' => InstanceState::SourceResolved, 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
             $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(),
                 'reserved_at' => null, 'capacity_wait_reason' => null]);

@@ -209,7 +209,6 @@ it('claims a ready enrolled slot, creates no VM, and starts the provision with t
 })->with(['the pins of its enrol' => [true], 'changed pins' => [false]]);
 
 it('captures the Route of a routed workspace served, with the admitted Project facts', function (): void {
-    $samePins = true;
     [$host, $project, $build, $group] = slotAdmissionWorld(2);
     // A routed Laravel app in a Cluster whose router is the task VM host.
     $project->update(['type' => 'laravel-app', 'task_workspace_routed' => true, 'php_version' => '8.5', 'is_laravel' => true]);
@@ -228,7 +227,7 @@ it('captures the Route of a routed workspace served, with the admitted Project f
     $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'provider' => TaskVmProviderKind::Incus,
         'size' => TaskVmSize::Large, 'name' => 'tvm-900', 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.190',
         'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => $build->recipe_identity, 'ready_at' => now(),
-        'slot_digest' => $samePins ? app(TaskVmSlotPool::class)->releaseDigest() : str_repeat('0', 64)]);
+        'slot_digest' => app(TaskVmSlotPool::class)->releaseDigest()]);
     $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-900', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.252.7.90', 'wireguard_ip' => '10.44.0.190', 'user' => 'orbit', 'ssh_jump_node_id' => $host->id, 'cluster_id' => Cluster::query()->sole()->id,
         'ssh_host_fingerprint' => 'SHA256:guest', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'guest-public-key']));
@@ -261,4 +260,20 @@ it('captures the Route of a routed workspace served, with the admitted Project f
         ->and($route)->not->toContain('Orbit Route unavailable')
         ->and($route)->toContain('reverse_proxy')
         ->and([$instance->selected_php_version, $instance->source_is_laravel])->toBe(['8.5', true]);
+});
+
+it('refuses a routed workspace whose Project source facts are invalid, and records nothing', function (): void {
+    [, $project, , $group] = slotAdmissionWorld(null);
+    $project->update(['type' => 'laravel-app', 'task_workspace_routed' => true, 'source_profile_error' => 'project.source_profile_unsupported']);
+
+    try {
+        app(TaskProvisionIntent::class)->start($group, 'test', null, SlotAdmissionCommit);
+        $code = null;
+    } catch (ResourceOperationException $e) {
+        $code = $e->errorCode;
+    }
+
+    expect($code)->toBe('project.source_profile_unsupported')
+        ->and(Instance::query()->count())->toBe(0)
+        ->and(Operation::query()->where('kind', 'tasks.provision')->count())->toBe(0);
 });
