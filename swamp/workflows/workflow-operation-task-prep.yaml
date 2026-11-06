@@ -151,10 +151,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+      behaviorName: '${{ ("task-prep-plan-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+        name: '${{ ("task-prep-plan-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
@@ -258,10 +258,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+      behaviorName: '${{ ("task-prep-plan-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+        name: '${{ ("task-prep-plan-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
@@ -371,10 +371,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+      behaviorName: '${{ ("task-prep-plan-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+        name: '${{ ("task-prep-plan-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
