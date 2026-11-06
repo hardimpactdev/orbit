@@ -83,6 +83,7 @@ sequenceDiagram
     %%> What it does:
     %%> - on each native schedule tick, `collect` shapes public observations for admitted checks after their SSH snapshots
     %%> - the existing reader takes these rows directly from the collector output; no reporting shell runs
+    %%> - Swamp inlines only a small step output in the run history; a larger one, such as a check with long output, is read as the `output` data artifact of `task-check-ci-data` with `data.get`, at the version the history names
   end
   alt every step passes
     SW-->>GW: Run succeeded<br/>outcome · commit · ci
