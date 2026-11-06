@@ -28,8 +28,14 @@ const CLI_ENV = {
 const REPORT_SECONDS = 65; // the agents report at a 60 s tick (swamp/proof/runner/steps.py)
 const PROBE_SECONDS = 3;
 const JOBS = ["discover", "setup", "act", "expect"] as const;
-const SSH_NAME =
-    '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}';
+/**
+ * Steps that share a behavior name run one after another: the model's data lock serializes them (measured: three 1 s steps
+ * took 3.4 s). The steps of a job are spread over a few lanes, each its own `@swamp/ssh` name, so they run in parallel
+ * while the names stay per target and few (docs/cli/README.md).
+ */
+const LANES = 4;
+const sshName = (lane: number) =>
+    `\${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id) + "-l${lane}").split(".").join("-") }}`;
 
 export class NotBuilt extends Error {}
 
@@ -121,7 +127,7 @@ export class CaseWorkflow {
             {
                 type: "behavior",
                 behaviorType: "@swamp/ssh",
-                behaviorName: SSH_NAME,
+                behaviorName: "LANE",
                 methodName: "exec",
                 globalArgs: "SSH",
                 inputs: {
@@ -218,6 +224,7 @@ export class CaseWorkflow {
         );
     }
     private bridge(node: string): Part {
+        // The address of the first interface that is not the Node's own tunnel or Docker, as the runner's bridge_address picks it.
         const read = this.cached(
             `bridge-${node}`,
             () =>
@@ -229,14 +236,15 @@ export class CaseWorkflow {
                         "-o",
                         "addr",
                         "show",
-                        "dev",
-                        "eth0",
                         "scope",
                         "global",
                     ]),
                 ),
         );
-        return out(read, '$.split("inet ")[1].split("/")[0]');
+        return out(
+            read,
+            '$.split("\\n").filter(l, l.contains("inet ") && !l.contains(" orbit ") && !l.contains(" docker0 "))[0].split("inet ")[1].split("/")[0]',
+        );
     }
     private source(node: string): Part {
         const read = this.cached(
@@ -718,8 +726,8 @@ export class CaseWorkflow {
 
     // ---- the document --------------------------------------------------------------------------------------------
     document(): Obj {
-        const ssh = {
-            name: SSH_NAME,
+        const ssh = (lane: number) => ({
+            name: sshName(lane),
             transport: {
                 kind: "ssh",
                 user: "${{ inputs.ssh_execution.target.user }}",
@@ -733,7 +741,9 @@ export class CaseWorkflow {
                     hostKeys: "${{ inputs.ssh_execution.target.host_keys }}",
                 },
             }],
-        };
+        });
+        const lanes = Array.from({ length: LANES }, (_, lane) => ssh(lane));
+        const used: Record<string, number> = {};
         const names = new Set(this.steps.map((step) => step.name));
         for (const step of this.steps) {
             for (const dep of step.deps) {
@@ -759,7 +769,12 @@ export class CaseWorkflow {
                     this.steps.find((other) => other.name === dep)!.job === job
                 );
                 const task = { ...step.task };
-                if (task.globalArgs === "SSH") task.globalArgs = ssh; // one shared object: the YAML writer turns it into an anchor
+                if (task.globalArgs === "SSH") {
+                    const lane = (used[job] = (used[job] ?? -1) + 1) %
+                        LANES;
+                    task.behaviorName = sshName(lane);
+                    task.globalArgs = lanes[lane]; // one shared object per lane: the YAML writer turns it into an anchor
+                }
                 return {
                     name: step.name,
                     labels: { role: "swamp" },

@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { generate, NotBuilt } from "./proof-case-workflow.ts";
+import { invalidNames, perRunNames } from "./lint-behavior-names.ts";
 
 const cases = await Deno.readTextFile(
     new URL("../proof/firewall/allow.cases.yaml", import.meta.url),
@@ -78,4 +79,20 @@ Deno.test("no reference is written as an object", () => {
     const yaml = generate(cases, "new-restricted-allow");
     assert(!yaml.includes("[object Object]"));
     assert(yaml.includes("l.contains((steps.src_gateway.outputs.stdout"));
+});
+
+Deno.test("the behavior names pass the repo lint", () => {
+    const workflow = parse(generate(cases, "new-restricted-allow"));
+    assertEquals(invalidNames(workflow), []);
+    assertEquals(perRunNames(workflow), []);
+});
+
+Deno.test("steps are spread over four behavior names so they can run in parallel", () => {
+    const names = new Set(
+        steps(generate(cases, "new-restricted-allow")).flatMap((step) => {
+            const name = (step.task as { behaviorName?: string }).behaviorName;
+            return name?.includes("proof-verify-ssh") ? [name] : [];
+        }),
+    );
+    assertEquals(names.size, 4);
 });
