@@ -69,6 +69,9 @@ sequenceDiagram
     %%> - the tokens of the ready copies last 24 hours, so every refresh starts them fresh
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
     %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
+    SW->>VM: Withdraw the enrollment<br/>files of enrolment out
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - a step of the refresh before the clean removes what the enrollment installed (the sudoers file `/etc/sudoers.d/orbit`, `authorized_keys2`, the observer binary and unit): an image that holds them makes the enrollment of the next VM fail with `install: No such file or directory`, which the first promoted image on shark did; the smoke is followed by a check that none of them is in the image
     SW->>VM: Clean the refresh VM<br/>identity out · stop
     %%> Decided by the orchestrator, for Nick's review:
     %%> - one explicit clean step before the publication, the workflow `task-vm-image-clean`; the image build's `Clean and stop` calls the same workflow for its builder (`enrolled: false`), so there is one clean step and not two
