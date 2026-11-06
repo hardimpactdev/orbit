@@ -51,16 +51,14 @@ sequenceDiagram
     %%> What it does:
     %%> - a job on the beast or shark runner passes only the full SHA and an idempotency key; it checks out only its own script and chooses no cases
     %%> - a new push cancels the proof run of the previous push on the same PR (GitHub concurrency), so only the latest push finishes its proof
-    %%> - the Gateway checks the commit, selects the cases and starts one Swamp run per selected command, each on its own proof VM, as in the chart of `proof:run`
-    %%> - the run starts a fresh task VM from the current images, mounts its checkout of the commit in the nested fleet, converges that VM once when the PR changes playbooks or pins, and takes `base`; each batch restores `base` once, nothing converges again
-    %%> - the base images stay as they are; only the merge and the seed refresh (stage 6) change them
+    %%> - the Gateway checks the commit, selects the cases and starts one run per selected command, as in the chart of `proof:run`; this chart depends only on that contract: the SHA and the key in, the verdict per case out
     %%> Built:
     %%> - the job `proof-run` runs only when a changed path selects a command in `selection.txt`, passes only the SHA and an idempotency key, and a new push cancels the run of the previous push; it follows the one `proof.run` record until the last command run ended
     %%> - it fails on a missing result, an outcome other than `passed` or `nothing_to_prove`, a passed proof with no case that ran, and any case that is not `passed`, such as `unrun`
     %%> Built, not yet passed live:
+    %%> - the proof CI as part of the one CI result: the job `proof-run` is in the `needs` of `Required checks`, so a red or missing proof blocks the merge
+    %%> - the scope rules stay: a change that selects no command (docs, charts, case descriptions) makes the job not required, so it may be skipped; a push and a pull request from outside never start it, so neither needs it; an outside PR still needs a maintainer's review plus the label `run-proofs` before the proof runs (not built)
     %%> - when the PR adds a case, the same proof VM then switches its checkout to the merge base with the new cases file and must see every new case fail; see `Prove the case can fail` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
-    %%> Not built:
-    %%> - the proof CI as part of the one CI result: the job `proof-run` calls `proof:run` but is report-only; today a merge needs `Required checks` alone, and the job joins it once a run passes end to end
     GW-->>CI: Verdict per case
     %%> Result:
     %%> - the job reads the operation until it ends; a missing result or a failed assertion fails the CI result

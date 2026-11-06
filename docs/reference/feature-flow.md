@@ -21,9 +21,9 @@ These terms distinguish the task images, topology seeds, their hosts and the sta
 
 ## The proof CI
 
-The job `proof-run` is built but report-only. It is not part of `Required checks` until a run passes end to end. Not built yet: the receipt store and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+The job `proof-run` is part of `Required checks`, so a red or missing proof blocks the merge. Not built yet: the receipt store and the label workflow. Execution is off by default; see [the execution switch](/cli/proof/run#the-execution-switch). Switch it on before the job is required, or every pull request that selects a command fails with `proof.execution_disabled`.
 
-The job is `proof-run` (`Proof run (report-only)`), a job of the one CI. It will be part of the one CI result that the merge requires. Until then the merge does not wait for it. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
+The job is `proof-run` (`Proof run`), a job of the one CI. It is part of the one CI result that the merge requires. A change that selects no command, a push and a pull request from outside do not need it. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
 
 A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on a self-hosted runner, waits for the verdict, and passes or fails. The runner reaches the Gateway over the private network as an enrolled Node. The job adds no runner and no access.
 
@@ -38,8 +38,8 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 
 - The job summary lists each case, the uncovered paths and the receipt link. It holds no command output and no host name. The receipt link needs access to the private network.
 - A run with uncovered paths and no case passes, and the summary says so. It never looks like a run that proved something.
-- The job exits with the verdict. The timeout is 45 minutes: the VM wait plus the run budget. A cancelled job cancels its run.
-- `Proofs` tests the pull request head, not its merge with `main`. It does not run again after the merge.
+- The job exits with the verdict. The timeout is 45 minutes, the CI cap on one proof run. A cancelled job cancels its run.
+- `Proof run` tests the pull request head, not its merge with `main`. It does not run again after the merge.
 
 **Triggers**
 
@@ -61,13 +61,12 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 - The workflow condition picks a self-hosted runner for a pull request from this repository. It picks a hosted runner for every other pull request.
 - `tools/test_ci_runner_policy.py` pins the condition. A fork controls its own copy of the workflow, so the approval is the gate and the condition is the second layer.
 - The job passes no secret.
-- The CI proof VM holds no Pi token and no model key.
+- The proof run holds no Pi token and no model key.
 - Orbit refuses a commit that is not on a branch of the repository, so a job that reaches a runner can still prove only trusted code.
 
 **Required check**
 
-- `proof-run` is report-only for now. It is not in `Required checks`, because `proof:run` has no passing end-to-end run yet.
-- Once a run passes end to end, it joins `Required checks`, and the merge requires it.
+- `proof-run` is in `Required checks`. It is required only for a pull request from this repository that selects a command.
 - Only the scope step may skip it, and only for a change that needs no proof.
 
 ## Choose the cases

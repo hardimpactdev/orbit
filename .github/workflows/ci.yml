@@ -353,10 +353,10 @@ jobs:
           "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
           "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest
 
-  # REPORT-ONLY: this job is not in `required.needs`, so it cannot block a merge. proof:run has no passing end-to-end
-  # run yet. Add it to `required.needs` (and to JOBS in bin/ci-build-plan) once a run passes end to end.
+  # Part of `Required checks` (`required.needs`): a red or missing proof blocks the merge. `required` treats it as
+  # selected only for a pull request from this repository whose changed paths select a command.
   proof-run:
-    name: Proof run (report-only)
+    name: Proof run
     needs: changes
     # Only a pull request from a branch of this repository. A fork or outside PR needs a maintainer's review and
     # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job. There is no queue run, and no
@@ -369,7 +369,7 @@ jobs:
     # from its WireGuard address and uses no secret. Set the variable ORBIT_PROOF_RUNNER to a JSON list of labels to
     # move the job to such a runner.
     runs-on: ${{ fromJSON(vars.ORBIT_PROOF_RUNNER || '["self-hosted","hardimpact","orbit-shard"]') }}
-    # The VM wait plus the 30 minute run budget.
+    # The CI cap on one proof run.
     timeout-minutes: 45
     # A new push cancels the proof run of the previous push on the same PR. A cancelled step cancels its Orbit run.
     concurrency:
@@ -412,12 +412,14 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, swamp, proof, gateway-release, changes]
+    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, swamp, proof, proof-run, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks
         env:
           NEEDS: ${{ toJSON(needs) }}
+          # The job `proof-run` starts only for a pull request from this repository (see its `if`).
+          PROOF_RUN_EVENT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           python3 - <<'PYTHON'
           import json, os, sys
@@ -426,6 +428,7 @@ jobs:
               sys.exit('Build input selection failed')
           selected = json.loads(needs['changes']['outputs']['jobs'])
           selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'
+          selected['proof-run'] = needs['changes']['outputs']['proof_run'] == 'true' and os.environ['PROOF_RUN_EVENT'] == 'true'
           expected = set(needs) - {'changes'}
           if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
               sys.exit('Incomplete build selections')

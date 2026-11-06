@@ -55,7 +55,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| Proof run (report-only) | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Not in Required checks yet, see [the proof run job](#the-proof-run-job) |
+| Proof run | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Part of Required checks, see [the proof run job](#the-proof-run-job) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
@@ -66,7 +66,7 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 ### The proof run job
 
-`proof-run` in `.github/workflows/ci.yml` is the CI job of [the proof CI](/reference/feature-flow#the-proof-ci). It is **report-only**. It is not in the `needs` of `Required checks`, so a red proof run does not block a merge. It joins Required checks once a run passes end to end. `proof:run` has no such run yet.
+`proof-run` in `.github/workflows/ci.yml` is the CI job of [the proof CI](/reference/feature-flow#the-proof-ci). It is in the `needs` of `Required checks`, so a red or missing proof run blocks the merge. `Required checks` requires it only for a pull request from this repository whose changed paths select a command. A docs-only change, a push and a pull request from outside do not need it.
 
 **When it runs**
 
@@ -138,7 +138,7 @@ Installed Gateway runtime and CLI build dependencies use lock-based caches. Comp
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The planned proof CI job `Proofs` will be part of the one CI result and is not built yet; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
+The proof CI job `Proof run` is part of the one CI result; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
