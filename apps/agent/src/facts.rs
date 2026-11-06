@@ -21,6 +21,7 @@ pub const RETRY_FIRST: Duration = Duration::from_secs(1);
 pub const RETRY_MAX: Duration = Duration::from_secs(4);
 /// The files an `accounts` fact is read from.
 pub const PASSWD: &str = "/etc/passwd";
+/// The group names of the accounts, by gid.
 pub const GROUP: &str = "/etc/group";
 const MAX_ACCOUNTS: usize = 512;
 /// Filesystems that hold data; pseudo, network and snap mounts are left out.
@@ -248,7 +249,7 @@ pub fn accounts_data(passwd: &str, group: &str) -> Value {
             }
         }
     }
-    let mut accounts = passwd
+    let mut accounts: Vec<(u32, &str, Value)> = passwd
         .lines()
         .filter_map(|line| {
             let fields: Vec<&str> = line.split(':').collect();
@@ -264,17 +265,16 @@ pub fn accounts_data(passwd: &str, group: &str) -> Value {
             .then(|| {
                 (
                     uid,
+                    user,
                     json!({"user": user, "uid": uid, "group": group, "home": home, "shell": shell}),
                 )
             })
         })
-        .collect::<Vec<_>>();
-    accounts.sort_by(|(left_uid, left), (right_uid, right)| {
-        left_uid
-            .cmp(right_uid)
-            .then_with(|| left["user"].as_str().cmp(&right["user"].as_str()))
+        .collect();
+    accounts.sort_by(|(left_uid, left, _), (right_uid, right, _)| {
+        left_uid.cmp(right_uid).then_with(|| left.cmp(right))
     });
-    json!({"accounts": accounts.into_iter().map(|(_, account)| account).take(MAX_ACCOUNTS).collect::<Vec<_>>()})
+    json!({"accounts": accounts.into_iter().map(|(_, _, account)| account).take(MAX_ACCOUNTS).collect::<Vec<_>>()})
 }
 
 /// A Linux account or group name: lower case letters, digits, `_` and `-`, not starting with a digit or `-`, and at
@@ -388,15 +388,19 @@ impl Reporter {
                 self.last_error = None;
             }
             Err(error) => {
-                self.failed.insert(
-                    key(kind, subject),
-                    (subject.map(str::to_owned), data.clone()),
-                );
-                if self.last_error.as_ref() != Some(&error) {
+                if error.retry {
+                    self.failed.insert(
+                        key(kind, subject),
+                        (subject.map(str::to_owned), data.clone()),
+                    );
+                } else {
+                    self.failed.remove(&key(kind, subject));
+                }
+                if self.last_error.as_ref() != Some(&error.message) {
                     let what = subject
                         .map_or_else(|| kind.to_owned(), |subject| format!("{kind} {subject}"));
-                    eprintln!("orbit-agent: {what} fact report failed: {error}");
-                    self.last_error = Some(error);
+                    eprintln!("orbit-agent: {what} fact report failed: {}", error.message);
+                    self.last_error = Some(error.message);
                 }
             }
         }
@@ -462,7 +466,7 @@ impl RetryTimer {
 }
 
 /// Sends one fact body to `POST /api/v1/agent/facts`.
-pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(), String> {
+pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(), PostError> {
     client
         .post(url)
         .json(body)
@@ -471,7 +475,21 @@ pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(
         .await
         .and_then(reqwest::Response::error_for_status)
         .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(|error| PostError {
+            // A 4xx other than a timeout or a rate limit means the Gateway refuses this exact report, such as a kind an
+            // older Gateway does not know; sending it again every few seconds cannot change that.
+            retry: error.status().is_none_or(|status| {
+                !status.is_client_error() || matches!(status.as_u16(), 408 | 429)
+            }),
+            message: error.to_string(),
+        })
+}
+
+/// Why the Gateway did not accept a report, and whether sending it again soon can help.
+#[derive(Debug)]
+pub struct PostError {
+    pub message: String,
+    pub retry: bool,
 }
 
 fn digest(kind: &str, data: &Value) -> String {
@@ -598,6 +616,57 @@ mod tests {
         assert!(!reporter.has_failed());
         reporter.retry().await;
         assert_eq!(seen.load(Ordering::SeqCst), 2);
+    }
+
+    /// A Gateway that answers every report with `status`, and counts them.
+    async fn gateway_answering(
+        status: u16,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let seen = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = seen.clone();
+        let app = axum::Router::new().route(
+            "/api/v1/agent/facts",
+            axum::routing::post(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move { axum::http::StatusCode::from_u16(status).unwrap() }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (url, seen)
+    }
+
+    #[tokio::test]
+    async fn a_report_the_gateway_refuses_for_good_is_not_retried_but_a_busy_gateway_is() {
+        use std::sync::atomic::Ordering;
+        for (status, retried) in [
+            (422, false),
+            (401, false),
+            (404, false),
+            (429, true),
+            (408, true),
+            (502, true),
+            (500, true),
+        ] {
+            let (url, seen) = gateway_answering(status).await;
+            let mut reporter = Reporter::new(client(), &url);
+
+            reporter
+                .report("accounts", None, &json!({"accounts": []}))
+                .await;
+
+            assert_eq!(reporter.has_failed(), retried, "status {status}");
+            reporter.retry().await;
+            assert_eq!(
+                seen.load(Ordering::SeqCst),
+                if retried { 2 } else { 1 },
+                "status {status}"
+            );
+        }
     }
 
     #[tokio::test]

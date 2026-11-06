@@ -772,12 +772,16 @@ async fn report_facts(
                 .unwrap_or_else(|_| facts::ufw_data(None, &[]));
                 reporter.report("ufw", None, &ufw).await;
                 // The local accounts ride the host tick too; the agent reads two files and starts no program.
+                // A file that cannot be read reports nothing, so a good fact is never replaced by an empty one.
                 let accounts = tokio::task::spawn_blocking(|| {
-                    let passwd = std::fs::read_to_string(facts::PASSWD).ok()?;
-                    Some(facts::accounts_data(
-                        &passwd,
-                        &std::fs::read_to_string(facts::GROUP).unwrap_or_default(),
-                    ))
+                    let read = |path: &str| {
+                        std::fs::read(path)
+                            .ok()
+                            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                    };
+                    let accounts =
+                        facts::accounts_data(&read(facts::PASSWD)?, &read(facts::GROUP)?);
+                    (!accounts["accounts"].as_array()?.is_empty()).then_some(accounts)
                 })
                 .await
                 .ok()
