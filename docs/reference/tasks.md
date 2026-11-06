@@ -7,9 +7,9 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-pr-comment,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation}.php"
 ---
 
 # Tasks
@@ -810,7 +810,7 @@ The local and data steps of `tasks.prep`, `tasks.prep_fix`, `tasks.script` and `
 
 The SSH steps keep their node id. An SSH definition holds the host keys and the identity of one VM, and the address returns to the pool for the next VM, so a name on the address would rewrite that definition. The Node id of a task VM is never reused.
 
-Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
+Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and the comment steps of `tasks.review_round` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
 
 The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
 
@@ -1086,7 +1086,7 @@ After the gate, the Gateway records `tasks.pr_merge` with the vault key `pr-merg
 
 Swamp reads nothing before the merge: admission read the head, and the squash merge carries the expected `sha`, so GitHub refuses a head that moved in the seconds between. If the head moved or the pull request conflicts with the base branch, the merge is refused with `tasks_pr.merge_refused` and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
 
-The ready, comment and merge steps end with the shared child `task-github-cleanup`. It revokes the token when the mint step succeeded, as a best effort, and removes the private GitHub CLI configuration directory of the run.
+The ready and merge steps, and the comment of a review round, end with the shared child `task-github-cleanup`. It revokes the token when the mint step succeeded, as a best effort, and removes the private GitHub CLI configuration directory of the run.
 
 ### Gate check
 
@@ -1099,13 +1099,33 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
-A round is a reviewer turn in a new thread on the handoff candidate of the head. Admission requires a green merge check on the head, and a passed handoff check of the current subtask on that commit.
+A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the resume of the task VM and a fresh reviewer turn in a new thread on the head. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 
-When the reviewer ends the round with `approved`, the Gateway records a pass for that head. The next tick posts the verdict and the findings of the round as a comment of the Orbit App on the pull request, so the reviewer can read them. The comment is its own step, `tasks.pr_comment`, with the Idempotency-Key `pr-gate:comment:<group>:<head>`, and the gate waits until it ended. A tick after that admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review.
+Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 
-When the reviewer ends with `changes_requested`, the Gateway records the findings and starts the fix, one step for each tick. First an author turn runs in the thread of the author, with the findings as its prompt. When it ends `ready_for_review`, the handoff check runs on the subtask. When that passes, the checked candidate is pushed to the branch of the pull request.
+The run resumes the VM and lets the reviewer judge the head. It posts the verdict and the findings as a comment of the Orbit App, so the owner can read them. The comment mints its own token when it runs. A comment that GitHub refuses does not fail the run.
 
-The new head gets a new CI run, and the next tick admits the next round on it once the merge check is green. A step that fails, or ends with a turn that is not ready or a check that did not pass, sends the group back to manual mode.
+When the reviewer ends with `approved`, the Gateway records a pass for that head from the end of the run. The next tick admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. A run that ends in error never records a pass.
+
+When the reviewer ends with `changes_requested` in round 1 or 2, the same run goes on. The author turn runs in the thread of the author, with the findings as its prompt. Then the handoff check of the subtask runs without hosted CI. Then the run pushes the checked candidate to the branch of the pull request.
+
+The pull request runs its own CI on the pushed head, so the push has no hosted handoff CI. The row of the local check stays on the board. No `tasks.check` operation backs it, so it is no candidate for a review turn or a manual publish. The Gateway records the pushed commit on the round, and the next admission accepts that commit through the round row.
+
+The new head gets a new CI run. The next tick admits the next round on it once the merge check is green. A step that fails, or ends with a turn that is not ready or a check that did not pass, leaves findings without a pushed commit. The gate check then sends the group back to manual mode.
+
+A failed round ends with one of these codes, and the round records the verdict it reached:
+
+| Code | Meaning |
+| --- | --- |
+| `task_vm.resume_failed` | The VM did not resume. |
+| `tasks.review_fix_not_ready` | The author turn did not end `ready_for_review`. |
+| `tasks.review_fix_not_passed` | The local check of the fix failed, changed the tree, or left no result. |
+| `tasks.review_round_failed` | The reviewer left no verdict, the token clean-up failed, or findings were not pushed. |
+| `tasks.review_round_refused` | At the start, the task VM or its Pi credential was gone. |
+| `tasks_pr.vm_unavailable` | At admission, the VM was neither parked nor running. |
+| `tasks_pr.no_author_thread` | At admission, the current subtask had no author thread to fix with. |
+
+A failed push ends with its own code, as for `tasks:publish`, for example `tasks.not_fast_forward`.
 
 A group switches to manual mode after round 3 with findings. It also switches after a round that failed or ended `blocked`, and when a new head finds the three rounds used. After the switch the ready step runs again and asks the reviewer. The pull request then waits for the approval of the head.
 
@@ -1115,7 +1135,7 @@ Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so 
 
 The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code. The scheduler log keeps these results.
 
-The Gateway keeps one row for each round, with the head, the round number, the reviewer turn and the verdict. The row also keeps the operation of each step of the fix. A group has at most 3 rounds.
+The Gateway keeps one row for each round, with the head, the round number, the operation of the run, the verdict, the commit that the run pushed and the check row of the fix. A group has at most 3 rounds.
 
 A group is put in automatic mode with `orbit tasks:create --review=automatic`; without the option it is in manual mode.
 

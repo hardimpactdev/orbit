@@ -18,6 +18,8 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
+use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -38,63 +40,78 @@ final readonly class TaskTurnIntent
             if (($existing = $this->idempotency->replay('tasks.turn')) !== null) {
                 return $existing;
             }
-            $group->load('taskable', 'project');
-            $instance = $group->taskable;
-            $vm = TaskVm::forGroup($group);
-            if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
-                throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
-            }
-            if (! $instance instanceof Instance || $instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
-                || ! $vm instanceof TaskVm || $vm->node_id !== $instance->node_id || $instance->checkout_path === '') {
-                throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
-            }
-            $task = $group->tasks()->findOrFail($data->subtask);
-            $current = $group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->orderBy('position')->orderBy('id')->value('id');
-            if ($task->id !== $current) {
-                throw new ResourceOperationException('tasks.subtask_not_current', 'Only the current open subtask can run.', 409);
-            }
-            $candidate = null;
-            if ($data->role === 'reviewer') {
+            $intent = $this->capture($group, $data, function (Task $task) use ($group, $data): string {
                 $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
                 if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
                     throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
                 }
-                $candidate = $check->commit_sha;
-            }
-            $thread = $data->thread === 'new' ? null : AgentThread::query()->where('task_group_id', $group->id)->find((int) $data->thread);
-            if ($data->thread !== 'new' && (! $thread instanceof AgentThread || $thread->role !== $data->threadRole()->value || $thread->isPending())) {
-                throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must belong to this group and role.', 422);
-            }
-            if ($thread !== null && $data->model !== null) {
-                throw new ResourceOperationException('tasks.model_fixed', 'A continued thread keeps its model.', 422);
-            }
-            $model = $thread->model ?? $data->model ?? ($data->threadRole() === TaskThreadRole::Implementer ? $group->implementer_model : $group->reviewer_model);
-            try {
-                $model = PiModel::onlyProvider($model, 'orbit-task-vm');
-            } catch (AgentDriverException $exception) {
-                throw new ResourceOperationException('tasks.model_refused', $exception->getMessage(), 422);
-            }
-            if (! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
-                throw new ResourceOperationException('tasks.pi_credential_unavailable', 'The task VM Pi credential is unavailable.', 409);
-            }
-            $piToken = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token);
-            $thread ??= AgentThread::query()->create([
-                'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
-                'driver' => 'pi', 'runtime_key' => 'node:'.$instance->node_id, 'external_id' => (string) Str::uuid(),
-                'role' => $data->threadRole()->value, 'model' => $model,
-                'effort' => config('orbit.tasks.'.$data->threadRole()->value.'_effort', 'high'),
-            ]);
-            ($data->threadRole() === TaskThreadRole::Implementer ? $task : $group)->update([$data->threadRole()->value.'_agent_thread_id' => $thread->id]);
 
-            return $this->start->execute('tasks.turn', 'task_group', $group->id, $instance->node_id, [
-                ...$data->toArray(), 'prompt' => TaskTurnPrompt::compose($task, $data->prompt), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
-                'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
-                'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id, 'new_session' => $data->thread === 'new',
-                'model' => $model, 'effort' => $thread->effort, 'pi_port' => app(PiConnection::class)->port(),
-                'pi_host' => $instance->node->wireguard_ip, 'candidate' => $candidate,
-                'deliverables' => $task->deliverables ?? [],
-                'execution_secrets' => ['pi_token' => $piToken],
-            ], $caller, $request);
+                return (string) $check->commit_sha;
+            });
+            $reference = ValidatedData::object(ValidatedData::object($intent['execution_secrets'])['pi_token']);
+            $intent['execution_secrets'] = ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), (string) TaskVm::forGroup($group)?->pi_token)];
+
+            return $this->start->execute('tasks.turn', 'task_group', $group->id, ValidatedData::integer($intent['node_id']), $intent, $caller, $request);
         });
+    }
+
+    /**
+     * The intent of one turn of the current subtask, with the vault key name of the Pi token and no value. It creates the thread of
+     * a new session and records it on the group or subtask. A review round captures its two turns here, inside its own admission.
+     *
+     * @param  Closure(Task): string  $candidate  the commit a reviewer restores; it refuses a head the caller does not accept
+     * @return array<string,mixed>
+     */
+    public function capture(Task $group, TaskTurnData $data, Closure $candidate): array
+    {
+        $group->load('taskable', 'project');
+        $instance = $group->taskable;
+        $vm = TaskVm::forGroup($group);
+        if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
+            throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
+        }
+        if (! $instance instanceof Instance || $instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
+            || ! $vm instanceof TaskVm || $vm->node_id !== $instance->node_id || $instance->checkout_path === '') {
+            throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
+        }
+        $task = $group->tasks()->findOrFail($data->subtask);
+        $current = $group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->orderBy('position')->orderBy('id')->value('id');
+        if ($task->id !== $current) {
+            throw new ResourceOperationException('tasks.subtask_not_current', 'Only the current open subtask can run.', 409);
+        }
+        $commit = $data->role === 'reviewer' ? $candidate($task) : null;
+        $thread = $data->thread === 'new' ? null : AgentThread::query()->where('task_group_id', $group->id)->find((int) $data->thread);
+        if ($data->thread !== 'new' && (! $thread instanceof AgentThread || $thread->role !== $data->threadRole()->value || $thread->isPending())) {
+            throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must belong to this group and role.', 422);
+        }
+        if ($thread !== null && $data->model !== null) {
+            throw new ResourceOperationException('tasks.model_fixed', 'A continued thread keeps its model.', 422);
+        }
+        $model = $thread->model ?? $data->model ?? ($data->threadRole() === TaskThreadRole::Implementer ? $group->implementer_model : $group->reviewer_model);
+        try {
+            $model = PiModel::onlyProvider($model, 'orbit-task-vm');
+        } catch (AgentDriverException $exception) {
+            throw new ResourceOperationException('tasks.model_refused', $exception->getMessage(), 422);
+        }
+        if (! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
+            throw new ResourceOperationException('tasks.pi_credential_unavailable', 'The task VM Pi credential is unavailable.', 409);
+        }
+        $thread ??= AgentThread::query()->create([
+            'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
+            'driver' => 'pi', 'runtime_key' => 'node:'.$instance->node_id, 'external_id' => (string) Str::uuid(),
+            'role' => $data->threadRole()->value, 'model' => $model,
+            'effort' => config('orbit.tasks.'.$data->threadRole()->value.'_effort', 'high'),
+        ]);
+        ($data->threadRole() === TaskThreadRole::Implementer ? $task : $group)->update([$data->threadRole()->value.'_agent_thread_id' => $thread->id]);
+
+        return [
+            ...$data->toArray(), 'prompt' => TaskTurnPrompt::compose($task, $data->prompt), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
+            'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id, 'new_session' => $data->thread === 'new',
+            'model' => $model, 'effort' => $thread->effort, 'pi_port' => app(PiConnection::class)->port(),
+            'pi_host' => $instance->node->wireguard_ip, 'candidate' => $commit,
+            'deliverables' => $task->deliverables ?? [],
+            'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]],
+        ];
     }
 }

@@ -122,6 +122,11 @@ final class OperationRunBudgets
         // is minted when the push step starts, so the hour of an installation token does not limit this run.
         // Replace with the 14-day p95 after the first success.
         'tasks.prep_fix' => 2700,
+        // No run yet. Basis: the task VM resume (about 90 s), a reviewer turn (p95 933 s), the comment (about 30 s), and in rounds 1 and 2
+        // an author turn bounded by the 3,600 s of `tasks.turn`, the local check (520 s, one run) and the push (about 60 s), so about 5,200 s,
+        // rounded to 6,300 s (105 min) as for a prep run. The comment and the push mint their tokens when they start.
+        // Replace with the 14-day p95 after the first success.
+        'tasks.review_round' => 6300,
         // The history of the kind held short reviewer and consult turns: its longest run of 12 minutes x 1.5 gave 18 minutes, and the first
         // implementation turn of group 3517 (operation 11737, firewall:allow) ended at that bound while the author was still working.
         // An author turn writes code, runs the Pest suite of its deliverables and fixes what the Project check finds. One hour; the
