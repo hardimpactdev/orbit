@@ -450,6 +450,8 @@ The `app` job sets up the Gateway app on the machine: it writes the `.env` (`orb
 
 Last, `orbit:bootstrap` runs on the machine from the Gateway's own code. It records the Gateway Node with its Gateway and VPN roles and sets the VPN settings. It also makes the root CA and the Gateway SSH key, and records the host key of the machine. It also records the `swamp` role on that Node, as provisioning. The Gateway finds the Swamp Node by that role, never by an id. The role and route workflows read the control Node from each intent (`control_node_id`) and accept any Node id. The VPN role stays provisioning until Swamp applies the hub.
 
+With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no roles, that WireGuard address, and access to the Gateway Node, so it holds Gateway authority. Its key comes later, from the machine that operates the Gateway. The fleet build of a task VM passes 10.45.0.10, the address stage 2 joins with.
+
 ### The Swamp control plane
 
 The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.

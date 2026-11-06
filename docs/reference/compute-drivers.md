@@ -1282,7 +1282,7 @@ A booted guest makes mount point directories there and writes a Laravel log, and
 
 The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and forgets its Gateway host key, and makes three VMs from the stock image with cloud-init, the key of the VM, the NFS client, and the state disk that stateful copies need. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
 
-The local bootstrap run needs the Swamp key on the VM. The build places it there from its vault copy, on stdin, just before that run, and removes it after the run, also after a failure, so no key stays on a VM where a task's agent may run. A build on a proof VM would remove the key that VM got at provision.
+The bootstrap input names the VM's operator address, 10.45.0.10, so the nested Gateway records the `operator` Node that stage 2 gives its key. The local bootstrap run needs the Swamp key on the VM. The build places it there from its vault copy, on stdin, just before that run, and removes it after the run, also after a failure, so no key stays on a VM where a task's agent may run. A build on a proof VM would remove the key that VM got at provision.
 
 Each VM has a 20 GiB root disk and a state volume as large as its memory, set as two device options, so that its copies can be stateful. The VMs live in the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed.
 
