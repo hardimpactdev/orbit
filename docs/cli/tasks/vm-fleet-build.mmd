@@ -20,16 +20,21 @@ sequenceDiagram
   %%> Result:
   %%> - full intent recorded: the refresh VM, the nested subnet, the three Node names and addresses, the release commit
   GW->>SW: Start run, full intent<br/>operation-task-vm-fleet-build
-  SW->>VM: Create the nested network<br/>subnet · three stock VMs
+  SW->>VM: Create the nested network<br/>subnet · three containers
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - the three nested Nodes are Incus system containers from the stock Ubuntu image (`security.nesting=true`, `limits.cpu=2`, the layout's memory), not VMs: no `--vm`, no `migration.stateful`, no state disk; the outer task VM stays a VM and is the isolation boundary (Nick, 2026-11-06)
+  %%> - cloud-init `bootcmd` disables Ubuntu's `wg` and `wg-quick` AppArmor profiles before anything installs WireGuard: under them `wg-quick` is killed with SEGV in a nested container
+  %%> - the checkout is not attached here: a disk device under `/home/orbit` before cloud-init made the `orbit` account leaves `/home/orbit` owned by root, and the bootstrap's clone fails
+  %%> - measured on beast (rvm-1): containers through cloud-init 15 s; the whole build to a healthy Doctor 20 min 24 s without the APT cache
   %%> What it does:
-  %%> - in the refresh VM: the nested Incus network from the intent's subnet, then three VMs from the stock Ubuntu image, each with cloud-init for the `orbit` account, the key that reaches it and the NFS client (`nfs-common`) that mounts the checkout, a 20 GiB root disk and a state volume as large as its memory (the copies are stateful), all on the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed
+  %%> - in the refresh VM: the nested Incus network from the intent's subnet, then three containers from the stock Ubuntu image, each with cloud-init for the `orbit` account, the key that reaches it and the NFS client (`nfs-common`) that mounts the checkout, a 20 GiB root disk and a state volume as large as its memory (the copies are stateful), all on the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed
   %%> - every action one `@swamp/ssh exec` argv on the refresh VM
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - a rebuild in the same VM removes the earlier fleet and forgets the earlier Gateway's host key in the operator's `known_hosts`: the new Gateway has the same address and a new key, and the bootstrap's `@swamp/cfgmgmt` steps trust `known_hosts` on first use (they take no pinned key), so the old entry refused them
-  %%> - the refresh VM makes the SSH key of its `orbit` account when it has none (`ssh-keygen`, no passphrase): a fresh task VM has no key, and the key reaches the nested VMs; its private half stays on the refresh VM, which is never published, and the guests keep only its public half
+  %%> - the refresh VM makes the SSH key of its `orbit` account when it has none (`ssh-keygen`, no passphrase): a fresh task VM has no key, and the key reaches the nested containers; its private half stays on the refresh VM, which is never published, and the guests keep only its public half
   %%> - the three VMs are created one at a time: three parallel `incus init` calls of the same remote image race on the client's image cache (`mkdir ~/.cache/incus/<fingerprint>: file exists`), which a live run on beast showed
   %%> - the checkout the build reads (the release commit, its remote, the Swamp repository of the bootstrap run) is the checkout of the refresh VM's own workspace, which the intent names (`operator_checkout`): a task VM keeps it under `/home/orbit/apps/<project>/workspace`, not at a fixed path, which a live run on beast showed (`fatal: cannot change to '/home/orbit/orbit'`)
-  %%> - the build needs a large task VM (12 GiB, 6 CPUs): the three nested VMs hold 10 GiB (Gateway 4, app-dev 3, app-prod 3), and a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer during a fleet build (VM 707, and runs 11720 and 11749); the Gateway admits the build only for a large VM, and the admission of the refresh sets the size large, so the Project size lists do not decide it
+  %%> - the build needs a large task VM (12 GiB, 6 CPUs): the three nested containers are limited to 10 GiB (Gateway 4, app-dev 3, app-prod 3), and a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer during a fleet build (VM 707, and runs 11720 and 11749); the Gateway admits the build only for a large VM, and the admission of the refresh sets the size large, so the Project size lists do not decide it
   %%> - the nested guests mount the export of that same path (`What=` in their mount units) at `/home/orbit/orbit` (`Where=`); the converge of the task VM role exports the workspace checkout, so the units name the export path and not the mount point
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - the ready copies keep the unit of the refresh VM's workspace path, so they serve the task VMs of the Project whose workspace path that is (the proof Project); a Project with another slug needs its own copies or a stable export path, which is a separate change of the task VM role
@@ -80,6 +85,8 @@ sequenceDiagram
   %%> What it does:
   %%> - the nested Gateway's own `node:add` with the roles `app-dev` and `app-prod`; its own Swamp converges them over SSH
   %%> - so a fleet build also proves node:add and the role phases on fresh machines
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - the Swamp worker units read their token files directly (`/etc/orbit/swamp-role-worker/<id>/*.token`, owner root, group orbit, mode 0640, folder 0750) instead of systemd `LoadCredential=`, which does nothing in a nested container; one unit form on every swamp Node
   %%> - the Nodes are named after their roles, `app-dev` and `app-prod` (the guests stay `nested-app-dev` and `nested-app-prod`): the proof runner and the cases find a Node by its role name
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), the package cache:
   %%> - the Composer tool setup of a nested Node refreshes the apt indexes of the Ubuntu snapshot; for a Node inside the nested subnet its plan reads them from the `apt-cacher-ng` of the outer VM (`http://10.232.2.1:3142`, apt proxy) instead of `https://snapshot.ubuntu.com`; the packages stay a direct download
@@ -92,27 +99,29 @@ sequenceDiagram
   %%> - on each of the three guests, one `ufw allow from 10.232.2.0/24 comment proof-network`, the subnet from the Gateway's intent
   %%> Why:
   %%> - the proof starts from a fleet where only Orbit's own rules and this allowance exist (`swamp/proof/batches.yaml`, `fresh-fleet`); the cases probe over the nested subnet and place their test rules above this row, so a copy without it leaves every case `unrun`
-  SW->>NG: Mount the checkout<br/>NFS from the outer VM
+  SW->>NG: Attach the checkout<br/>disk device · state binds
   %%> What it does:
   %%> - the Gateway and app-dev guests stop the Gateway services, move `.env`, `storage` and `bootstrap/cache` (and the Swamp repository's own state) to `/var/lib/orbit-checkout-state` on their own disk, and drop the checkout they built
-  %%> - the stock systemd units of stage 2 then mount the outer VM's export at `/home/orbit/orbit` and the state over it, and the services start again, now on the shared checkout
-  %%> - the export, its firewall rule and the nested network come from the task VM role phases of the outer VM (`task-vms:converge`); the build adds no mechanism
+  %%> - the outer VM's checkout is added to both as an Incus disk device at `/home/orbit/orbit` (`shift=true`); bind-mount units put the state over it, and the services start again on the shared checkout
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - the disk device replaces the NFS export and mount: no NFS server on the outer VM, no export rule, no `home-orbit-orbit.mount` unit; edits on the outer VM are in the guests at once, at local disk speed
+  %%> - with no NFS, a restore can no longer leave a guest on a stale NFS session (the cause of the hangs after a stateful restore)
   %%> Why:
-  %%> - the ready copies keep no checkout: every task VM mounts its own over NFS, so a fleet that is saved must already run that way
+  %%> - the ready copies keep no checkout: every task VM attaches its own, so a fleet that is saved must already run that way
   SW->>NG: Check readiness<br/>agents · Swamp · Doctor
   %%> What it does:
   %%> - the same check as stage 2: every agent online, the Swamp worker enrolled, Doctor has no finding
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), the kind `task_vm.fleet_build`:
   %%> - the kind targets a ready task VM, as `task_vm.ready_copies` does, and ends at the Doctor check of the nested Gateway; the save of the ready copies follows as its own kind
   %%> - the artisan commands of the nested Gateway run with `--env HOME=/home/orbit`, because `incus exec --user` leaves `HOME` unset and the commands would look for the state of the Gateway under `/root`
-  %%> - the nested VMs have fixed addresses and MACs in the Gateway's intent, because the ready copies store them and the records of the nested Gateway name them
+  %%> - the nested containers have fixed addresses and MACs in the Gateway's intent, because the ready copies store them and the records of the nested Gateway name them
   %%> - each Operation of the nested Gateway is admitted with an artisan command (`orbit:role-add`, `orbit:node-converge`, `orbit:node-add`); the nested Gateway has no CLI to follow it
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - a wait for an Operation of the nested Gateway, and the wait for its Doctor, is one Ansible task run from Node 209 against the refresh VM (`task-vm-fleet-wait.yml`): `ansible.builtin.command` with the tool's own `until`, `retries` and `delay`, one `incus exec` per check, every 5 seconds, bounded by the seconds the step gives it (each check takes some seconds on top of the delay, so the step's literal `timeout` is twice that and only guards against a hung connection); no shell loop
-  %%> - a wait stops as soon as the Gateway guest answers `Instance is not running`, and when it ends the task lists the nested VMs and fails naming any that is not running; so a dead nested VM fails the wait within seconds and not at its timeout (runs 11720 and 11749 lost the nested Gateway during the enrollment of app-dev, and the shell loop ran to its 2,000 second timeout)
+  %%> - a wait stops as soon as the Gateway guest answers `Instance is not running`, and when it ends the task lists the nested containers and fails naming any that is not running; so a dead nested VM fails the wait within seconds and not at its timeout (runs 11720 and 11749 lost the nested Gateway during the enrollment of app-dev, and the shell loop ran to its 2,000 second timeout)
   %%> - an Operation that ends without `succeeded` is read again for its `failed_step` and `error_code`, and the failure names them (op 11821: `app-dev was not added` hid why the nested enrollment failed after 14 minutes)
   %%> - the task also asserts the end state (the Operation `succeeded`, Doctor healthy), so the separate `Check` steps are gone; the last wait is the step `Check the nested fleet`, which the Gateway reads as the end of the run
-  %%> - the guests take their checkout from the outer VM's NFS export, as in stage 2, before the copies are saved: the build uses the same stock mount units as the copies, so the save finds them in place
+  %%> - the guests take their checkout from the outer VM as a disk device, as in stage 2, before the copies are saved: the build uses the same state bind units as the copies, so the save finds them in place
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), the lifetimes in a fleet that is saved:
   %%> - the nested Gateway makes its own root CA at bootstrap with a 10-year life and signs its leaves for 397 days; the fleet is private to a disposable task VM, so a long CA costs nothing, and a seed never holds a CA that runs out in days
   %%> - the Swamp key is written to `api-key`, the file the nested Swamp units read and a task VM pushes; the ready copies delete that file from the running Gateway and scan for the key, so a copy holds none
@@ -125,5 +134,5 @@ sequenceDiagram
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> Result:
-    %%> - the refresh VM and its nested VMs are destroyed; the host keeps the seed it had
+    %%> - the refresh VM and its nested containers are destroyed; the host keeps the seed it had
   end
