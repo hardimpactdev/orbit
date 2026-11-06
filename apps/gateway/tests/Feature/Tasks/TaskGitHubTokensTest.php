@@ -277,7 +277,7 @@ arch('the admission of a publish, a prep run and a provision mints nothing and w
     ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskPrepFixIntent::class, TaskProvisionIntent::class])
     ->not->toUse([RepositoryPullRequestAccess::class, RepositoryReadAccess::class, GitHubApi::class]);
 
-arch('the admission of a publish and of a prep run writes no vault value')
+arch('the admission of a publish, of a prep run and of its corrections does not itself write a vault value')
     ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskPrepFixIntent::class])
     ->not->toUse([SwampCommandStep::class]);
 

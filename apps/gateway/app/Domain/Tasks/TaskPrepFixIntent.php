@@ -34,9 +34,8 @@ final readonly class TaskPrepFixIntent
 
     public function start(Task $group, StartTaskPrepFixData $data, string $caller, ?string $request): Operation
     {
-        return $this->operations->start($group, 'tasks.prep_fix', [], function (Task $group): void {
-            $this->context($group);
-        }, $caller, $request, fn (Task $group): array => $this->capture($group, $data));
+        // The capture checks the group; the shared admission needs a validate step only for the checks it makes itself.
+        return $this->operations->start($group, 'tasks.prep_fix', [], static function (Task $group): void {}, $caller, $request, fn (Task $group): array => $this->capture($group, $data));
     }
 
     /**
@@ -56,7 +55,7 @@ final readonly class TaskPrepFixIntent
             ->where('status', OperationStatus::Succeeded)->latest('id')->first();
         if (! $prep instanceof Operation || ! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready], true) || ! $group->pr_url || $group->watched_pr_state !== 'open'
             || ! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
-            throw new ResourceOperationException('tasks.prep_fix_refused', 'The corrections need a prep group whose run succeeded, with its task VM parked and its pull request open.', 409);
+            throw new ResourceOperationException('tasks.prep_fix_refused', 'The corrections need a prep group whose run succeeded, with its task VM parked or running, its Pi credential and its pull request open.', 409);
         }
 
         return [$prep, $vm, $instance];
@@ -78,7 +77,7 @@ final readonly class TaskPrepFixIntent
         $instance->loadMissing('node');
         $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
         $reviewers = array_map(static fn (int $round): AgentThread => TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
-        $turn = static fn (AgentThread $thread, string $prompt, bool $new): array => TaskPrepThreads::turn($thread, $prompt, $new, $subtask, $instance, $ssh);
+        $turn = static fn (AgentThread $thread, string $prompt, bool $new): array => TaskPrepThreads::turn($thread, $prompt, $new, $group, $subtask, $instance, $ssh);
         $branch = 'task-'.$group->id;
 
         return [

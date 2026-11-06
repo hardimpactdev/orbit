@@ -55,7 +55,7 @@ final readonly class TaskPrepIntent
             Task::query()->whereKey($subtask->id)->update(['implementer_agent_thread_id' => $author->id]);
             $reviewers = array_map(fn (int $round): AgentThread => TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
             $group->update(['reviewer_agent_thread_id' => $reviewers[0]->id]);
-            $turn = fn (AgentThread $thread, string $prompt, bool $new): array => TaskPrepThreads::turn($thread, $prompt, $new, $subtask, $instance, $ssh);
+            $turn = fn (AgentThread $thread, string $prompt, bool $new): array => TaskPrepThreads::turn($thread, $prompt, $new, $group, $subtask, $instance, $ssh);
             $branch = 'task-'.$group->id;
             // Only the vault key names are admitted. The publish step is minutes to hours away, so it mints the token when it runs ({@see TaskGitHubTokens}).
             $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];

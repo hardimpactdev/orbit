@@ -61,11 +61,7 @@ final readonly class TaskPrepPrompts
         Rules:
         - Change no code. Edit only these three files. If a sibling command or the family page must change too, say so in your receipt summary and leave them as they are.
         - Run `bin/check-flows`, `composer docs-build` and `composer docs-lint` when the tools are installed, and fix what they report. Say in your summary what you ran.
-        - Run `{$this->plan()}`. It must exit 0. A refusal, such as `step X is not allowed in setup`, means the cases file uses a step or key that the runner does not have. Use only what the runner has, in the case-file format of `docs/reference/verification-cases.mdx`. List a case that needs something the runner lacks under `uncovered`, with the capability named, and never write it as a step. Do not change the runner.
-        - `fails_today` means the code fails a case. It never excuses a step the runner refuses. Keep every case that runs on the default branch, with its id and batch, unless the chart removes its behavior; never move a running case to `uncovered`. Keep each `uncovered` entry to one or two sentences.
-        - Run `python3 -m unittest discover -s swamp/proof/runner/tests`. If it fails because of the content of the cases file, change no test and name the failing tests in your summary.
-        - State a behavior as fact only when you found the code that does it, or when a case marked `fails_today` checks it. Say behavior that is the same for every command (keyed replay, `--json`, prompts) once, by link to the CLI standard; do not chart it or repeat it. Put no PR or issue number in the files.
-        - In your summary list the behaviors the code lacks, the case ids you removed or renamed, and the runner tests that fail.
+        {$this->specRules()}
         - Do not open a pull request and do not fetch or push. A separate review agent checks your work after you.
         - Commit the three files as ONE commit with `git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit` and the message `docs({$this->family}): spec for {$this->command}`. Leave the working tree clean.
         TEXT.$this->briefText(true);
@@ -122,6 +118,18 @@ final readonly class TaskPrepPrompts
         return $text;
     }
 
+    /** The rules of the cases file that the author follows and the reviewer enforces, in the first draft and in the corrections. */
+    private function specRules(): string
+    {
+        return <<<TEXT
+        - Run `{$this->plan()}`. It must exit 0. A refusal, such as `step X is not allowed in setup`, means the cases file uses a step or key that the runner does not have. Use only what the runner has, in the case-file format of `docs/reference/verification-cases.mdx`. List a case that needs something the runner lacks under `uncovered`, with the capability named, and never write it as a step. Do not change the runner.
+        - `fails_today` means the code fails a case. It never excuses a step the runner refuses. Keep every case that runs on the default branch, with its id and batch, unless the chart removes its behavior; never move a running case to `uncovered`. Keep each `uncovered` entry to one or two sentences.
+        - Run `python3 -m unittest discover -s swamp/proof/runner/tests`. If it fails because of the content of the cases file, change no test and name the failing tests in your summary.
+        - State a behavior as fact only when you found the code that does it, or when a case marked `fails_today` checks it. Say behavior that is the same for every command (keyed replay, `--json`, prompts) once, by link to the CLI standard; do not chart it or repeat it. Put no PR or issue number in the files.
+        - In your summary list the behaviors the code lacks, the case ids you removed or renamed, and the runner tests that fail.
+        TEXT;
+    }
+
     /** The author turn of the corrections: the review of the owner as the prompt, applied as a new commit on the pushed spec. */
     public function corrections(string $review): string
     {
@@ -131,7 +139,8 @@ final readonly class TaskPrepPrompts
         Rules:
         - Change only these three files: `{$this->chart()}`, `{$this->page()}` and `{$this->cases()}`. A correction that needs another file, a change of the runner or its tests, or a decision that the review leaves open is not yours to make: leave it out and say so in your receipt summary, with the reason.
         - Make the corrections as ONE new commit on top of the current HEAD, with `git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit` and the message `docs({$this->family}): apply the review of {$this->command}`. Never amend or rewrite a commit that is already on the branch. Leave the working tree clean.
-        - Run `bin/check-flows`, `composer docs-build` and `composer docs-lint` when the tools are installed, and `{$this->plan()}`, which must exit 0. Say in your summary what you ran.
+        - Run `bin/check-flows`, `composer docs-build` and `composer docs-lint` when the tools are installed, and fix what they report. Say in your summary what you ran.
+        {$this->specRules()}
         - Do not open a pull request and do not fetch or push. A separate review agent checks your work after you.
 
         The review of the owner:

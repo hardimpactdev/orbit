@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\StartTaskParkAction;
 use App\Data\Tasks\StartTaskPrepFixData;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -11,6 +12,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepFixIntent;
 use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
+use App\Domain\Tasks\TaskPrepThreads;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
@@ -150,24 +152,57 @@ it('refuses the corrections of a group that is busy or has no task VM workspace'
     expect($start)->toThrow(ResourceOperationException::class, 'owned task VM workspace');
 });
 
-it('records the commit and the rounds of a run that pushed, keeps the park refusal, and does not project the end twice', function (): void {
+it('reads the Operation without writing the Pi token, with an empty resume map as an object', function (): void {
     [$operation, $group, $vm] = prepRun();
+    $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id];
+    $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
+        'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => [], 'author' => [], 'fix' => [], 'reviews' => [], 'plan' => [],
+        'execution_secrets' => ['pi_token' => $reference], 'resume_secrets' => [], 'publish_secrets' => [],
+    ]]);
+
+    $input = app(TaskPrepFixProjection::class)->input($operation);
+
+    expect($input['execution_secrets'])->toBe(['pi_token' => $reference])
+        ->and(json_encode($input['resume_secrets']))->toBe('{}');
+});
+
+it('records the commit, the rounds and the thread metrics of a run that pushed, parks the group once, and keeps a refused park', function (): void {
+    [$operation, $group, $vm, $instance] = prepRun();
     $vm->update(['state' => TaskVmState::Parked]);
+    $subtask = Task::query()->create(['parent_id' => $group->id, 'title' => 'Spec', 'brief' => 'Brief', 'status' => TaskStatus::Completed, 'position' => 1]);
+    $author = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
+    $reviews = [TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), TaskPrepThreads::create($group, $subtask, $instance, 'reviewer')];
     $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
         'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-'.$group->id],
-        'author' => ['thread_id' => 11], 'fix' => ['thread_id' => 11], 'reviews' => [['thread_id' => 12], ['thread_id' => 13]],
+        'author' => ['thread_id' => $author->id], 'fix' => ['thread_id' => $author->id], 'reviews' => [['thread_id' => $reviews[0]->id], ['thread_id' => $reviews[1]->id]],
     ]]);
+    $turn = static fn (int $tokens): array => ['shape_result' => ['result_json' => json_encode(['state' => 'done', 'metrics' => ['tokens' => $tokens]])]];
     $end = [
         'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subMinutes(30)->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Resume the VM' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'head' => str_repeat('a', 40)],
+        'result' => ['steps' => ['Resume the VM' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'head' => str_repeat('a', 40),
+            'author' => $turn(100), 'review_1' => $turn(20), 'review_2' => $turn(30)],
     ];
+    // A park that counts its calls and is refused, as it is for a group that is not parkable yet.
+    $parks = new class
+    {
+        public int $calls = 0;
+
+        public function execute(Task $group, string $caller, ?string $request): never
+        {
+            $this->calls++;
+
+            throw new ResourceOperationException('tasks.park_refused', 'Refused.', 409);
+        }
+    };
+    app()->instance(StartTaskParkAction::class, $parks);
 
     $projected = app(TaskPrepFixProjection::class)->apply($operation, $end);
-
-    // The group is not parked-eligible in this fixture, so the park is refused and the run keeps the reason.
-    expect($projected->status)->toBe(OperationStatus::Succeeded)
-        ->and($projected->result)->toMatchArray(['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40), 'rounds' => 0])
-        ->and($projected->result['park_refused'])->toBeString();
     $again = app(TaskPrepFixProjection::class)->apply($projected, $end);
-    expect($again->result)->toBe($projected->result);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toMatchArray(['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40), 'rounds' => 2, 'park_refused' => 'tasks.park_refused'])
+        ->and($parks->calls)->toBe(1)
+        ->and($again->result)->toBe($projected->result)
+        ->and([$author->refresh()->tokens, $reviews[0]->refresh()->tokens, $reviews[1]->refresh()->tokens])->toBe([100, 20, 30])
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Ready);
 });

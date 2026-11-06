@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Actions\Tasks\StartTaskParkAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  * the metrics of each thread, and the result of the corrections. A run that pushed them parks the group again. See
  * docs/reference/tasks.md#apply-the-corrections.
  */
-final readonly class TaskPrepFixProjection implements DirectOperationProjection
+final readonly class TaskPrepFixProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
     /** The workflow steps whose failure has a code of its own; any other failed step of a turn is `tasks.turn_failed`. */
     private const array StepCodes = [
@@ -33,21 +34,28 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection
         'Review has no findings' => 'tasks.prep_review_unresolved',
     ];
 
-    /** @return array<string,mixed> */
+    /** The admitted input with vault key names only; a public read of the Operation calls this, so it has no effect. @return array<string,mixed> */
     public function input(Operation $operation): array
     {
         $input = ValidatedData::object($operation->input);
-        $pi = ValidatedData::object(ValidatedData::object($input['execution_secrets'])['pi_token']);
-        $vm = TaskVm::query()->findOrFail(ValidatedData::integer(ValidatedData::object($input['resume'])['task_vm_id']));
 
         return [
             'intent' => ['resume' => $input['resume'], 'author' => $input['author'], 'fix' => $input['fix'], 'reviews' => $input['reviews'], 'publish' => $input['publish'], 'plan' => $input['plan']],
-            // The run starts now, so the Pi token is written to the vault now, and not when the call was admitted.
-            'execution_secrets' => ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), ValidatedData::string($vm->pi_token))],
+            'execution_secrets' => $input['execution_secrets'],
             // An empty map must reach the workflow as an object, not as an empty JSON list.
             'resume_secrets' => (object) ValidatedData::object($input['resume_secrets']),
             'publish_secrets' => $input['publish_secrets'],
         ];
+    }
+
+    /** The run starts now, so the Pi token is written to the vault now, once, and not when the call was admitted or when someone reads the Operation. @return array<string,mixed> */
+    public function workflowInput(Operation $operation): array
+    {
+        $input = $this->input($operation);
+        $pi = ValidatedData::object(ValidatedData::object($input['execution_secrets'])['pi_token']);
+        $vm = TaskVm::query()->findOrFail(ValidatedData::integer(ValidatedData::object(ValidatedData::object($input['intent'])['resume'])['task_vm_id']));
+
+        return [...$input, 'execution_secrets' => ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), ValidatedData::string($vm->pi_token))]];
     }
 
     /** @param array<string,mixed> $data */

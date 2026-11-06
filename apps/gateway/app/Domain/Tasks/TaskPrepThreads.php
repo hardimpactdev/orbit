@@ -20,10 +20,10 @@ final readonly class TaskPrepThreads
      * @param  array<string,mixed>  $ssh
      * @return array<string,mixed>
      */
-    public static function turn(AgentThread $thread, string $prompt, bool $new, Task $subtask, Instance $instance, array $ssh): array
+    public static function turn(AgentThread $thread, string $prompt, bool $new, Task $group, Task $subtask, Instance $instance, array $ssh): array
     {
         return [
-            'new_session' => $new, 'group_id' => $subtask->parent_id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+            'new_session' => $new, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'subtask' => $subtask->id, 'thread_id' => $thread->id, 'checkout_path' => $instance->checkout_path,
             'session_id' => $thread->external_id, 'role' => $thread->role, 'prompt' => $prompt,
             'model' => $thread->model, 'effort' => $thread->effort, 'pi_host' => $instance->node->wireguard_ip,

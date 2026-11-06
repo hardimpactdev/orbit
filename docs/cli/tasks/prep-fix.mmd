@@ -24,7 +24,7 @@ sequenceDiagram
   %%> - group 42 is a prep group: a succeeded `tasks.prep` run, its task VM parked or still running, an open pull request, and no running operation
   %%> What it does:
   %%> - captures, in one transaction, the resume of the VM, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
-  %%> - names the vault keys of the push token; it mints no GitHub token
+  %%> - names the vault keys of the Pi token and the push token; the run writes the Pi token when it starts, and the push step mints its GitHub token when it runs
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the review of the owner is an input of the call; the gate check does not detect it yet, so a person or the orchestrator admits the run
   GW->>SW: Start one run, full intent<br/>operation-task-prep-fix
