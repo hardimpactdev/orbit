@@ -205,3 +205,10 @@ it('classifies every tracked path of the repository with the checked-in selectio
     $unmapped = array_values(array_filter($tracked, static fn (string $path): bool => $list->match($path) === null));
     expect($unmapped)->toBe([]);
 });
+
+it('carries the merge base of the commit into the selection, for the proof of a new case', function (): void {
+    $byCommand = ProofSelection::select(PROOF_LIST, proofChanges(['swamp/workflows/workflow-firewall-direct.yaml']), false, PROOF_CASES_FILES);
+    $everything = ProofSelection::select(PROOF_LIST, proofChanges(['docs/a.md']), true, PROOF_CASES_FILES);
+
+    expect($byCommand->mergeBase)->toBe(str_repeat('a', 40))->and($everything->mergeBase)->toBe(str_repeat('a', 40));
+});

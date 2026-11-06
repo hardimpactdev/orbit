@@ -33,7 +33,7 @@ Setup can use other commands, but the case must invoke the command under test th
 - Give every refusal guard one case per bypass form: no source, one address, a CIDR that covers the management network.
 - Exercise failures after meaningful side effects. Verify that cleanup keeps pre-existing resources and that retained targets stay inspectable.
 - Wait for readiness within a bounded deadline. Report infrastructure failures separately from failed assertions; neither is a pass.
-- Prove a new case can fail: the proof CI does it on its proof VM, after the main verdicts, on the merge base with only your cases file; every new case must fail there. Never change your own checkout to try it. Not built yet (stage 3 chart).
+- Prove a new case can fail: the proof CI does it on its proof VM, after the main verdicts, on the merge base with only your cases file; every new case must fail there. Never change your own checkout to try it. Built, not yet passed live (stage 3 chart).
 
 Cases have no undo. Each uses its own resources. A case that changes shared state (firewall off, an injected failure, a held lock) gets its own batch.
 

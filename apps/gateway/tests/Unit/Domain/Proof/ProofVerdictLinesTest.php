@@ -32,3 +32,13 @@ it('drops a line that is not a verdict, so a cut or noisy report never invents a
     expect(ProofVerdictLines::parse($report))->toBe([['id' => 'kept', 'verdict' => 'passed', 'seconds' => 1]])
         ->and(ProofVerdictLines::parse(''))->toBe([]);
 });
+
+it('reads the lines of a new case that was proven on the merge base, named CASE@merge-base', function (): void {
+    $report = implode("\n", [
+        '{"id": "new-case", "verdict": "passed", "secs": 9}',
+        '{"id": "new-case@merge-base", "verdict": "passed", "secs": 0}',
+        '{"id": "other@merge-base", "verdict": "failed", "cause": "assertion", "secs": 0, "failed": ["the new case did not fail with cause assertion on the merge base"]}',
+    ]);
+
+    expect(array_column(ProofVerdictLines::parse($report), 'id'))->toBe(['new-case', 'new-case@merge-base', 'other@merge-base']);
+});

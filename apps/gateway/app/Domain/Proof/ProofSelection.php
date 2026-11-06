@@ -70,8 +70,8 @@ final readonly class ProofSelection
         }
 
         return $everything !== null
-            ? new ProofSelectionResult(array_map(static fn (string $file): array => ['command' => self::labelOf($file), 'file' => $file], $casesFiles), $uncovered, $everything)
-            : self::byCommand($commands, $uncovered, $casesFiles);
+            ? new ProofSelectionResult(array_map(static fn (string $file): array => ['command' => self::labelOf($file), 'file' => $file], $casesFiles), $uncovered, $everything, $changes->mergeBase)
+            : self::byCommand($commands, $uncovered, $casesFiles, $changes->mergeBase);
     }
 
     /** The cases file of `family:a:b` is `swamp/proof/family/a-b.cases.yaml`: further colons of the name become `-`. */
@@ -87,7 +87,7 @@ final readonly class ProofSelection
      * @param  list<array{path:string,reason:string}>  $uncovered
      * @param  list<string>  $casesFiles
      */
-    private static function byCommand(array $commands, array $uncovered, array $casesFiles): ProofSelectionResult
+    private static function byCommand(array $commands, array $uncovered, array $casesFiles, string $mergeBase): ProofSelectionResult
     {
         ksort($commands);
         $cases = [];
@@ -100,7 +100,7 @@ final readonly class ProofSelection
             }
         }
 
-        return new ProofSelectionResult($cases, $uncovered, null);
+        return new ProofSelectionResult($cases, $uncovered, null, $mergeBase);
     }
 
     /** The label of a file that a wildcard selected: its family and its name. A file name cannot tell a `-` from a `:`, so the name keeps its dashes. */
