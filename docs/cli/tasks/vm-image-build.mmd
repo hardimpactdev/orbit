@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design (proposed 2026-11-06): the task image is built with the same Ansible phases as Nodes (node:converge), reading the pins of recipe.json; no orbit-agent in the build or in the image identity. Runs only for a new host or a new base OS; every release afterwards refreshes the image by converge (stage 6), using the same phases.
-  %% status: reviewed
+  %% status: draft
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the build never promotes an image without a seed for it. Without a seed it stops before the promote and keeps the candidate; the stage 6 refresh promotes the image together with its seed. Promoting seedless images broke all task VM provisioning (task_vm.base_image_missing).
   %% command: none · task image build for a task VM host
   %% kind: task_vm.image_build
@@ -41,6 +41,15 @@ sequenceDiagram
   %%> - the end check reads that the cache is active
   %%> Why:
   %%> - measured 2026-11-06 (fleet build, VM 714): each nested Node spent 11 min (app-dev) and 4 min (app-prod) refreshing 30 MB of indexes from snapshot.ubuntu.com; from a warm cache the same index refresh took 24 to 37 s on a task VM (measured with the cache tasks on a throwaway VM; a fleet build on an image that holds the cache is the next proof)
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), the Composer and npm cache of the task VM:
+  %%> - a software task after the JavaScript install fills the account's own caches: `composer install --no-scripts --no-autoloader` and `npm ci --ignore-scripts` run once in a throwaway folder from the reference locks pinned in the recipe (the Laravel skeleton and the locks of the Orbit apps), with `COMPOSER_CACHE_DIR=/home/orbit/.cache/composer` and the default npm cache `~/.npm`; then the folder goes and the caches stay
+  %%> - no workspace step changes: setup already sets `COMPOSER_CACHE_DIR` to that directory (`lifecycleArgv`), and npm reads `~/.npm`; a package the cache lacks downloads as before
+  %%> - the caches stay in the image, so every slot and task VM starts warm; the end check reads that both directories hold archives
+  %%> - the lock-driven host cache (`/var/lib/orbit/package-cache`, `package-cache.host`) is not mounted into any VM and nothing seeds from it, and it never covers a Project without a lockfile, such as laravel/laravel (Project 66); it stays as is and is not part of this change
+  %%> Why:
+  %%> - measured 2026-11-06 on beast (`composer install` of laravel/laravel, medians of 3): 8.6 s with an empty cache and 3.0 s with a warm one; that is the 5.6 s of `setup-0-0` in the slot claim of op 12083
+  %%> Limit:
+  %%> - resolution still runs for a Project without a lockfile, so about 3 s stay; a package version newer than the image's lock downloads
   SW->>H: Clean and stop<br/>cloud-init · host keys
   %%> What it does:
   %%> - `cloud-init clean`, an empty machine-id, removed SSH host keys, then stop; each one `@swamp/ssh exec` argv
