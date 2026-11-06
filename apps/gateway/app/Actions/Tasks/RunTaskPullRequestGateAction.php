@@ -14,20 +14,26 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskReviewMode;
+use App\Domain\Tasks\TaskReviewRoundVerdict;
+use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskReviewRound;
 use Closure;
 use Illuminate\Support\Str;
 
 /**
  * One tick of the gate check of stage 4 of the command development pipeline, run every minute by the Gateway
  * scheduler. It only reads GitHub and admits. For each open external group of a review-and-merge Project that has a
- * published pull request it reads the pull request. A draft gets the ready step, a pull request out of draft gets the
- * merge step. Admission makes the other reads: the CI result of the head, and for the merge the reviewer's approval of
- * that exact head. A pending check, a missing approval, a busy group or a failed read is a quiet skip; the next tick
- * reads again.
+ * published pull request it reads the pull request. A draft gets the ready step in the mode of the group. A pull
+ * request out of draft gets the merge step in manual mode; in automatic mode it gets one review round per head, and
+ * the merge step once the round on that exact head passed. Admission makes the other reads: the CI result of the head,
+ * and for the manual merge the reviewer's approval of that exact head. A pending check, a missing approval, a running
+ * round, a busy group or a failed read is a quiet skip; the next tick reads again.
  *
  * Each admission is keyed by group, step and head, so a repeat tick on the same head replays the recorded step and
- * starts nothing. A push moves the head and starts the check again. Only manual mode exists.
+ * starts nothing. A push moves the head and starts the check again. After round 3 with findings, or when a round
+ * fails, the group switches to manual mode and the ready step asks the reviewer.
  *
  * @phpstan-type Result array{group: int, pull_request: int|null, step: string|null, result: string, code: string|null, operation: int|null}
  */
@@ -35,7 +41,7 @@ final readonly class RunTaskPullRequestGateAction
 {
     public const string Caller = 'gateway:pr-gate';
 
-    public function __construct(private StartTaskPullRequestStepAction $steps, private RepositoryPullRequestAccess $access,
+    public function __construct(private StartTaskPullRequestStepAction $steps, private StartTaskReviewRoundAction $rounds, private RepositoryPullRequestAccess $access,
         private GitHubApi $github, private OperationIdempotency $idempotency) {}
 
     /** @return list<Result> */
@@ -81,12 +87,63 @@ final readonly class RunTaskPullRequestGateAction
         }
         $head = $pull->headSha;
         $request = (string) Str::uuid();
-        [$step, $kind] = $pull->draft ? ['ready', OperationKinds::TasksPrReady] : ['merge', OperationKinds::TasksPrMerge];
+        if ($pull->draft) {
+            return $this->admit($group, $number, 'ready', OperationKinds::TasksPrReady, $head, fn () => $this->steps->ready($group, $head, $group->review_mode->value, self::Caller, $request));
+        }
+        if ($group->review_mode === TaskReviewMode::Manual) {
+            return $this->merge($group, $number, $head, $request);
+        }
 
+        return $this->automatic($group, $number, $head, $request);
+    }
+
+    /** @return Result */
+    private function automatic(Task $group, int $number, string $head, string $request): array
+    {
+        $round = TaskReviewRound::query()->where('task_group_id', $group->id)->where('head_sha', $head)->first();
+        $used = TaskReviewRound::query()->where('task_group_id', $group->id)->count();
+        if ($round === null) {
+            return $used >= TaskReviewRound::Limit
+                ? $this->fallBack($group, $number, $head, $request)
+                : $this->admit($group, $number, 'review', OperationKinds::TasksTurn, $head, fn () => $this->rounds->execute($group, $head, self::Caller, $request));
+        }
+
+        return match ($round->verdict) {
+            null => $this->result($group, $number, 'review', 'skipped', 'tasks_pr.round_running'),
+            TaskReviewRoundVerdict::Pass => $this->merge($group, $number, $head, $request),
+            TaskReviewRoundVerdict::Findings => $used >= TaskReviewRound::Limit
+                ? $this->fallBack($group, $number, $head, $request)
+                : $this->result($group, $number, 'review', 'skipped', 'tasks_pr.round_findings'),
+            TaskReviewRoundVerdict::Failed => $this->fallBack($group, $number, $head, $request),
+        };
+    }
+
+    /**
+     * The group goes back to manual mode: the ready step runs again, and in manual mode it asks the reviewer.
+     *
+     * @return Result
+     */
+    private function fallBack(Task $group, int $number, string $head, string $request): array
+    {
+        $group->update(['review_mode' => TaskReviewMode::Manual]);
+
+        return $this->admit($group, $number, 'ready-manual', OperationKinds::TasksPrReady, $head, fn () => $this->steps->ready($group, $head, TaskReviewMode::Manual->value, self::Caller, $request));
+    }
+
+    /** @return Result */
+    private function merge(Task $group, int $number, string $head, string $request): array
+    {
+        return $this->admit($group, $number, 'merge', OperationKinds::TasksPrMerge, $head, fn () => $this->steps->merge($group, $head, self::Caller, $request));
+    }
+
+    /**
+     * @param  Closure(): Operation  $start
+     * @return Result
+     */
+    private function admit(Task $group, int $number, string $step, string $kind, string $head, Closure $start): array
+    {
         try {
-            $operation = $this->keyed($kind, $step, $group, $head, fn () => $pull->draft
-                ? $this->steps->ready($group, $head, 'manual', self::Caller, $request)
-                : $this->steps->merge($group, $head, self::Caller, $request));
+            $operation = $this->keyed($kind, $step, $group, $head, $start);
         } catch (ResourceOperationException $exception) {
             return $this->result($group, $number, $step, 'skipped', $exception->errorCode);
         }
