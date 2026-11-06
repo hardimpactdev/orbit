@@ -14,19 +14,21 @@ sequenceDiagram
   participant VM as Refresh VM<br/>a task VM
   Note over GW: Admit the refresh<br/>one run per host
   %%> Started by:
-  %%> - the release projection, when the release that went live changed playbooks, pins or lock files; a daily Gateway schedule; and the operator commands `php artisan task-vms:refresh-image HOST` and `task-vms:refresh-images`
+  %%> - the release projection, when the release that went live changed playbooks, pins or lock files; a daily Gateway schedule; and the operator commands `php artisan task-vms:refresh-image HOST` and `task-vms:refresh-images`. These always use `seed=build`
+  %%> - only `php artisan task-vms:refresh-image HOST --seed=keep` uses `keep`
+  %%> Input `seed`:
+  %%> - `build` (the default): the refresh VM builds or starts the nested fleet, and its disk becomes the new seed
+  %%> - Decided by the orchestrator, for Nick's review: `keep` is the image part alone, with no refresh VM, no group and no slots. It is milestone M1: an image refresh passes on one host, alone. The steps from `Create the VM` to `Stop the refresh VM` are skipped
   %%> Requirements:
   %%> - an active, configured task VM host with a promoted image and no image build running, and a Gateway release with a commit
-  %%> - with `--seed=keep` (proposal, decided by the orchestrator, for Nick's review): the host also holds the seed volume of its current image
-  %%> Input `seed`:
-  %%> - `build` (the default, as now): the refresh VM builds or starts the nested fleet and its disk becomes the new seed
-  %%> - `keep` (proposal): the image part alone, proven as milestone M1 on one host. No refresh VM, no group and no slots; the steps from `Create the VM` to `Stop the refresh VM` are skipped, and `Copy the seed` copies the host's current seed instead. A host without that seed is refused with `task_vm.seed_unavailable`
+  %%> - `keep` also needs the seed volume of the host's current image; a host without it is refused with `task_vm.seed_unavailable`
   %%> Result:
-  %%> - a group of its own in the proof Project, placed on this host only, and the full intent recorded; a second admission for the host returns the open run
+  %%> - `build`: a group of its own in the proof Project, placed on this host only, and the full intent recorded; a second admission for the host returns the open run
+  %%> - `keep`: the full intent is recorded on the Operation and there is no group; a second admission for the host still returns the open run
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
   SW->>VM: Create the VM<br/>image · seed · checkout
   %%> What it does:
-  %%> - the VM is large (12 GiB, 6 CPUs, 3 slots): the admission sets the size, so the refresh needs 3 free slots of its host
+  %%> - `build` only: the VM is large (12 GiB, 6 CPUs, 3 slots): the admission sets the size, so the refresh needs 3 free slots of its host
   %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit, the converge of the outer VM and the nested fleet from the ready copies
   SW->>VM: Pin the VM<br/>guest host key
   %%> What it does:
@@ -42,7 +44,7 @@ sequenceDiagram
   %%> - `incus stop` of the refresh VM: it yields only its seed disk and is never published
   SW->>H: Build the image<br/>task-vm-image-builder
   %%> What it does:
-  %%> - the child `task-vm-image-builder`: `incus init` of the builder from the image the refresh VM started from (its fingerprint), with the cloud-init key of Node 209; waits for the guest agent and cloud-init
+  %%> - the child `task-vm-image-builder`: `incus init` of the builder from the image the refresh VM started from (its fingerprint), or with `seed=keep`, from the host's current promoted image, with the cloud-init key of Node 209; waits for the guest agent and cloud-init
   %%> - runs the phases `software`, `tools` and `check` (the child `task-vm-image-ansible`), cleans and stops it (the child `task-vm-image-clean`)
   %%> - publishes the stopped builder under a candidate alias and reads its fingerprint
   %%> - the builder is never enrolled and has no seed
@@ -57,7 +59,9 @@ sequenceDiagram
   %%> - the child `task-vm-image-ansible` with the phases of a provision converge on the same VM; the promotion waits for this step and the one before
   SW->>H: Copy the seed<br/>under the host lock
   %%> What it does:
-  %%> - with `seed=keep`: the source is the seed volume of the host's current image (`zfs` copy under the same lock), not the seed disk of a refresh VM; the nested disks keep the content they had, and the first use of a task VM converges them (stage 2)
+  %%> - with `seed=keep`: the source is the seed volume of the host's current image (`zfs` copy under the same lock), not the seed disk of a refresh VM
+  %%> - `keep` leaves the seed content stale on purpose: the nested disks keep what they had, and the first use of a task VM converges them (stage 2). It is not a seed refresh
+  %%> - Gap, for Nick's review: with `keep` nothing boots the kept ready copies under the candidate image before the promotion. Only `build` does that (`Save the ready copies` boot-checks them). The first task VM from the new image starts the copies and shows a failure; a boot check of the copies under the candidate would close the gap
   %%> - copies the seed disk of the refresh VM to the seed name of the new fingerprint, then `zfs promote` so refreshes form no clone chain
   SW->>H: Promote the image<br/>under the host lock
   %%> What it does:
@@ -70,9 +74,9 @@ sequenceDiagram
     Note over GW: Record the new image<br/>cancel the group
     %%> Result:
     %%> - the new image is the host's latest promoted build, with the recipe identity of the release
-    %%> - the cancel of the group destroys the refresh VM
+    %%> - `build` only: the cancel of the group destroys the refresh VM; `keep` has no group and no refresh VM
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the host keeps the image and the seed it had; the group is cancelled and the refresh VM destroyed
+    %%> - the host keeps the image and the seed it had; with `build` the group is cancelled and the refresh VM destroyed
   end
