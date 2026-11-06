@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - the Gateway has the release commit, GitHub App read access to the repository, and the proof Swamp Club key
   GW->>SW: Start one run per host<br/>all in parallel
   %%> Why:
-  %%> - hosts differ in CPU, and a copy between hosts loses the storage sharing inside the seed; so each host refreshes its own
+  %%> - each host refreshes its own image and seed, and builds its own fleet when it has none: copying them between hosts is not a supported flow, so it needs no continuous proof (Nick, 2026-11-06)
   %%> - a second admission for a host returns the open task
   loop each task VM host, in parallel
     SW->>H: Start a refresh VM<br/>current image · seed
