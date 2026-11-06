@@ -111,42 +111,6 @@ pub fn download(
     }
     Err(last)
 }
-pub fn verify_deb(
-    host: &mut impl Host,
-    path: &Path,
-    name: &str,
-    pin: &Tool,
-    input: &Input,
-) -> Result<(), Failure> {
-    let output = run(
-        host,
-        &Invocation::new(&[
-            "dpkg-deb",
-            "-f",
-            &path.display().to_string(),
-            "Package",
-            "Version",
-            "Architecture",
-        ]),
-        true,
-    )?;
-    let fields: Vec<_> = output
-        .stdout
-        .lines()
-        .map(|line| line.split_once(": ").map_or(line, |(_, v)| v))
-        .collect();
-    if fields.len() != 3
-        || fields[0] != name
-        || fields[1] != pin.version
-        || ![input.architecture.name(), "all"].contains(&fields[2])
-    {
-        return Err(Failure::new(
-            "download",
-            "Debian artifact name, complete version, or architecture differs from its pin",
-        ));
-    }
-    Ok(())
-}
 fn normal(path: &Path) -> bool {
     !path.as_os_str().is_empty()
         && path

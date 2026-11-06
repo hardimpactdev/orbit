@@ -68,8 +68,7 @@ final readonly class TaskVmCloudInit
     /** The user-data of the base image builder, which boots from the stock image. */
     public function renderImageBuilder(string $gatewayPublicKey): string
     {
-        // The stock image creates the user's primary group. image.owner refuses a UID or GID mismatch
-        // before either image builder prepares the guest or runs recipe phases.
+        // The stock image creates the user's primary group. The image build's check phase refuses a UID or GID mismatch.
         return self::document([
             'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'no_user_group' => false]],
         ]);

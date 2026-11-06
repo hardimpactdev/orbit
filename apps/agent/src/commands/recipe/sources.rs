@@ -2,15 +2,12 @@
 use super::{Failure, Files};
 use regex::Regex;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs, io,
-    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
 
-pub const UBUNTU_KEYRING: &str = "/usr/share/keyrings/ubuntu-archive-keyring.gpg";
 pub type Fields = BTreeMap<String, String>;
-pub type SignedSources = BTreeSet<(String, String)>;
 fn expression(pattern: &str) -> Regex {
     Regex::new(pattern).expect("fixed source expression")
 }
@@ -87,84 +84,6 @@ pub fn paths(files: &Files) -> Result<Vec<PathBuf>, Failure> {
 pub fn read(path: &Path) -> Result<String, Failure> {
     fs::read_to_string(path).map_err(|e| Failure::io("apt-source", path, e))
 }
-pub fn signed_sources(files: &Files, source: Option<&Path>) -> Result<SignedSources, Failure> {
-    let mut trusted = SignedSources::new();
-    let candidates = match source {
-        Some(path) => vec![path.to_owned()],
-        None => paths(files)?,
-    };
-    for path in candidates {
-        if !path.is_file() {
-            continue;
-        }
-        let content = read(&path)?;
-        if path.extension().is_some_and(|s| s == "sources") {
-            for paragraph in expression(r"\n\s*\n").split(&content) {
-                let fields = deb822(paragraph, &path)?;
-                if fields.get("signed-by").map(String::as_str) != Some(UBUNTU_KEYRING)
-                    || !words(&fields, "types").contains(&"deb")
-                    || fields
-                        .get("enabled")
-                        .is_some_and(|v| v.eq_ignore_ascii_case("no"))
-                {
-                    continue;
-                }
-                for uri in words(&fields, "uris") {
-                    for suite in words(&fields, "suites") {
-                        for component in words(&fields, "components") {
-                            trusted.insert((
-                                uri.trim_end_matches('/').into(),
-                                format!("{suite}/{component}"),
-                            ));
-                        }
-                    }
-                }
-            }
-        } else {
-            let pattern = expression(r"\A\s*deb\s+\[([^]]+)\]\s+(\S+)\s+(\S+)\s+([^#]+)(?:#.*)?\z");
-            for line in content.lines() {
-                let Some(entry) = pattern.captures(line) else {
-                    continue;
-                };
-                if !entry[1]
-                    .split_whitespace()
-                    .any(|field| field == format!("signed-by={UBUNTU_KEYRING}"))
-                {
-                    continue;
-                }
-                for component in entry[4].split_whitespace() {
-                    trusted.insert((
-                        entry[2].trim_end_matches('/').into(),
-                        format!("{}/{component}", &entry[3]),
-                    ));
-                }
-            }
-        }
-    }
-    Ok(trusted)
-}
-pub fn snapshot_source(snapshot: &str) -> String {
-    format!("Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\nSuites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\nCheck-Valid-Until: no\n")
-}
-pub fn rolling_source() -> String {
-    format!("Types: deb\nURIs: http://archive.ubuntu.com/ubuntu\nSuites: resolute resolute-updates resolute-backports\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu\nSuites: resolute-security\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n")
-}
-pub fn ubuntu_repair(files: &Files) -> Result<Option<Vec<u8>>, Failure> {
-    let path = files.apt().join("sources.list.d/ubuntu.sources");
-    if !path.is_file() || path.is_symlink() {
-        return Ok(None);
-    }
-    let bytes = fs::read(&path).map_err(|e| Failure::io("apt-source", &path, e))?;
-    let Ok(content) = std::str::from_utf8(&bytes) else {
-        return Ok(None);
-    };
-    let pattern =
-        expression(r"\ATypes: deb\nURIs: https://snapshot\.ubuntu\.com/ubuntu/(\d{8}T\d{6}Z)/\n");
-    Ok(pattern
-        .captures(content)
-        .filter(|m| content == snapshot_source(&m[1]))
-        .map(|_| bytes.clone()))
-}
 pub fn backup(
     files: &Files,
     path: &Path,
@@ -208,55 +127,20 @@ pub fn backup(
     Ok(target)
 }
 
-#[derive(Clone, Copy)]
-pub enum Provider {
-    Git,
-    Node,
-    Incus,
+const OWNER: &str = "node";
+fn mentions(text: &str) -> bool {
+    expression(r"deb\.nodesource\.com").is_match(text)
 }
-impl Provider {
-    pub fn owner(self) -> &'static str {
-        match self {
-            Self::Git => "git",
-            Self::Node => "node",
-            Self::Incus => "incus",
-        }
+fn accepts(uris: &[&str], suites: &[&str], components: &[&str], types: &[&str]) -> bool {
+    if uris.is_empty() || types.is_empty() || types.iter().any(|t| !["deb", "deb-src"].contains(t))
+    {
+        return false;
     }
-    fn mentions(self, text: &str) -> bool {
-        expression(match self {
-            Self::Git => r"(?:ppa\.launchpadcontent\.net|ppa\.launchpad\.net)/git-core/ppa",
-            Self::Node => r"deb\.nodesource\.com",
-            Self::Incus => r"pkgs\.zabbly\.com/incus",
-        })
-        .is_match(text)
-    }
-    fn accepts(self, uris: &[&str], suites: &[&str], components: &[&str], types: &[&str]) -> bool {
-        if uris.is_empty()
-            || suites.len() != 1
-            || types.is_empty()
-            || types.iter().any(|t| !["deb", "deb-src"].contains(t))
-        {
-            return false;
-        }
-        let uri_ok = uris.iter().all(|uri| {
-            let uri = uri.trim_end_matches('/');
-            match self {
-                Self::Git => ["http", "https"].iter().any(|s| {
-                    ["ppa.launchpad.net", "ppa.launchpadcontent.net"]
-                        .iter()
-                        .any(|h| uri == format!("{s}://{h}/git-core/ppa/ubuntu"))
-                }),
-                Self::Incus => uri == "https://pkgs.zabbly.com/incus/lts-7.0",
-                Self::Node => (10..27)
-                    .any(|major| uri == format!("https://deb.nodesource.com/node_{major}.x")),
-            }
-        });
-        uri_ok
-            && match self {
-                Self::Git | Self::Incus => suites == ["resolute"] && components == ["main"],
-                Self::Node => suites == ["nodistro"] && components == ["main"],
-            }
-    }
+    uris.iter().all(|uri| {
+        let uri = uri.trim_end_matches('/');
+        (10..27).any(|major| uri == format!("https://deb.nodesource.com/node_{major}.x"))
+    }) && suites == ["nodistro"]
+        && components == ["main"]
 }
 #[derive(Debug)]
 pub struct Change {
@@ -264,14 +148,14 @@ pub struct Change {
     pub before: Vec<u8>,
     pub after: Vec<u8>,
 }
-pub fn provider_changes(files: &Files, provider: Provider) -> Result<Vec<Change>, Failure> {
+pub fn provider_changes(files: &Files) -> Result<Vec<Change>, Failure> {
     let mut changes = vec![];
     for path in paths(files)? {
         if !path.is_file() {
             continue;
         }
         let content = read(&path)?;
-        if !provider.mentions(&content) {
+        if !mentions(&content) {
             continue;
         }
         if path.is_symlink() {
@@ -302,7 +186,7 @@ pub fn provider_changes(files: &Files, provider: Provider) -> Result<Vec<Change>
                 .filter(|line| !line.trim_start().starts_with('#'))
                 .collect::<Vec<_>>()
                 .join("\n");
-            if !provider.mentions(&active) {
+            if !mentions(&active) {
                 replacement.push_str(block);
                 continue;
             }
@@ -339,7 +223,7 @@ pub fn provider_changes(files: &Files, provider: Provider) -> Result<Vec<Change>
             fn refs(v: &[String]) -> Vec<&str> {
                 v.iter().map(String::as_str).collect()
             }
-            if !provider.accepts(
+            if !accepts(
                 &refs(&uris),
                 &refs(&suites),
                 &refs(&components),
@@ -349,7 +233,7 @@ pub fn provider_changes(files: &Files, provider: Provider) -> Result<Vec<Change>
             }
         }
         if replacement != content {
-            backup(files, &path, content.as_bytes(), provider.owner(), true)?;
+            backup(files, &path, content.as_bytes(), OWNER, true)?;
             changes.push(Change {
                 path,
                 before: content.into_bytes(),
@@ -359,10 +243,10 @@ pub fn provider_changes(files: &Files, provider: Provider) -> Result<Vec<Change>
     }
     Ok(changes)
 }
-pub fn retire(files: &Files, changes: &[Change], owner: &str) -> Result<(), Failure> {
+pub fn retire(files: &Files, changes: &[Change]) -> Result<(), Failure> {
     // Preflight the complete set before touching any source.
     for change in changes {
-        backup(files, &change.path, &change.before, owner, true)?;
+        backup(files, &change.path, &change.before, OWNER, true)?;
         if change.path.is_symlink()
             || fs::read(&change.path).map_err(|e| Failure::io("apt-source", &change.path, e))?
                 != change.before
@@ -375,7 +259,7 @@ pub fn retire(files: &Files, changes: &[Change], owner: &str) -> Result<(), Fail
         }
     }
     for change in changes {
-        backup(files, &change.path, &change.before, owner, false)?;
+        backup(files, &change.path, &change.before, OWNER, false)?;
         if change.after.iter().all(u8::is_ascii_whitespace) {
             fs::remove_file(&change.path)
                 .map_err(|e| Failure::io("apt-source", &change.path, e))?;
@@ -385,32 +269,5 @@ pub fn retire(files: &Files, changes: &[Change], owner: &str) -> Result<(), Fail
     }
     Ok(())
 }
-pub fn artifact_owned(
-    files: &Files,
-    name: &str,
-    version: &str,
-    names: &BTreeSet<String>,
-    owner: &str,
-) -> bool {
-    let path = files.apt().join(format!("orbit-{owner}.json"));
-    let Ok(meta) = fs::symlink_metadata(&path) else {
-        return false;
-    };
-    if !meta.is_file() || meta.uid() != files.uid || meta.mode() & 0o022 != 0 {
-        return false;
-    }
-    let Ok(bytes) = fs::read(&path) else {
-        return false;
-    };
-    let Ok(receipt) = serde_json::from_slice::<BTreeMap<String, String>>(&bytes) else {
-        return false;
-    };
-    receipt.keys().cloned().collect::<BTreeSet<_>>() == *names
-        && receipt.get(name).is_some_and(|v| v == version)
-        && receipt
-            .values()
-            .all(|v| v == version && expression(r"\A[0-9][0-9A-Za-z.+:~_-]*\z").is_match(v))
-}
-
 #[cfg(test)]
 mod tests;

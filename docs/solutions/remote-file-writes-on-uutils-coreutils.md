@@ -2,8 +2,6 @@
 title: "Remote file writes on uutils coreutils"
 description: "Why writing a remote file from standard input with install fails on uutils coreutils, and the write sequence that works."
 covers:
-  - apps/agent/src/commands/metrics_runtime.rs
-  - apps/agent/src/commands/metrics_exporter.rs
   - apps/gateway/app/Infrastructure/Nodes/NodeAgentSshExecutor.php
   - apps/agent/src/commands/processes.rs
 ---
@@ -12,7 +10,7 @@ covers:
 
 ## Problem
 
-A convergence that writes a file on a Node succeeds once and fails on every later run. The remote command prints only `install: No such file or directory`, although the directory exists. In Metrics, the codes are `metrics.configuration_publish_failed` and `metrics.exporter_configuration_failed`.
+A convergence that writes a file on a Node succeeds once and fails on every later run. The remote command prints only `install: No such file or directory`, although the directory exists.
 
 ## Cause
 
@@ -28,7 +26,7 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Node commands publish files through Rust filesystem APIs. They create a fresh candidate, write it with the required mode and ownership, then rename it onto the live path. This avoids the standard-input overwrite problem and makes each replacement atomic. Metrics configuration and exporter commands use this sequence, and so does `process.stage-unit` for Process units.
+Node commands publish files through Rust filesystem APIs. They create a fresh candidate, write it with the required mode and ownership, then rename it onto the live path. This avoids the standard-input overwrite problem and makes each replacement atomic. `process.stage-unit` uses this sequence for Process units.
 
 ## Limits
 
@@ -38,4 +36,4 @@ Swamp workflow steps meet the same rule. The shared workflow `task-dependency-au
 
 ## Verification
 
-Converge the same role twice over existing configuration, which is the case that failed. The Rust Metrics runtime and exporter tests use temporary filesystems and cover repeated publication, ownership refusals, modes, and rollback.
+Converge the same role twice over existing configuration, which is the case that failed.

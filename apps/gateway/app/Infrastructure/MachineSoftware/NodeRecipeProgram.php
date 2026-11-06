@@ -35,8 +35,7 @@ final readonly class NodeRecipeProgram
     }
 
     /**
-     * The typed recipe input for the selected tools. `recipe.inspect`, `recipe.apply`, and `recipe.install-javascript`
-     * take the same shape.
+     * The typed recipe input for the selected tools, as `recipe.install-javascript` takes it.
      *
      * @param  array<string, ToolPin>  $tools
      * @return array<string, mixed>

@@ -1,8 +1,6 @@
 //! Inspect exact cached runtimes and install only the recipe's pinned JavaScript inputs.
 use super::{
-    apt, artifacts,
-    assessment::Versions,
-    run,
+    apt, artifacts, run,
     store::{self, Account},
     types::{Input, Source, Tools},
     Failure, Files, Host, WorkDir,
@@ -19,6 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const NAMES: [&str; 5] = ["node", "vp", "vp-cli", "pnpm", "bun"];
+pub type Versions = BTreeMap<String, Option<String>>;
 
 pub(crate) fn launcher(scope: &Path, binary: &str) -> Vec<u8> {
     format!(
@@ -155,9 +154,7 @@ pub fn inspect(
     };
     let mut versions = Versions::new();
     for (name, pin) in tools {
-        let version = if name == super::browser::NAME {
-            super::browser::installed(files, pin)?
-        } else if name == "swamp" {
+        let version = if name == "swamp" {
             super::swamp::installed(files, pin)
         } else if pin.source == Source::Ubuntu || pin.deb() {
             installed
