@@ -77,6 +77,22 @@ class TaskVmRoleTest(unittest.TestCase):
             self.assertEqual(host['ansible_host'], '10.251.78.50')
             self.assertEqual((folder / 'known_hosts').read_text(), '10.251.78.50 ssh-ed25519 guest root@guest\n192.0.2.5 ssh-ed25519 host\n')
 
+    def test_every_condition_of_the_role_is_a_string(self):
+        # A plain YAML scalar with a colon and a space parses as a mapping, and Ansible refuses it: "Conditional expressions must be strings".
+        def conditions(node, where):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key in ('when', 'that', 'failed_when', 'changed_when'):
+                        for item in value if isinstance(value, list) else [value]:
+                            self.assertIsInstance(item, (str, bool), f'{where}: a {key} is {type(item).__name__}, not a string')
+                    conditions(value, where)
+            elif isinstance(node, list):
+                for value in node:
+                    conditions(value, where)
+
+        for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
+            conditions(yaml.safe_load(path.read_text()), path.name)
+
     def test_the_clean_phase_is_for_an_image_only_and_leaves_incus_in_the_image(self):
         phase = yaml.safe_load((ANSIBLE / 'tasks/task-vm-clean.yml').read_text())
         self.assertEqual([task['when'] for task in phase], ['intent.image'])
