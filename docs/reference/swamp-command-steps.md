@@ -94,6 +94,12 @@ The shared Gateway cache stores the time of the last successful read, keyed by n
 
 A fire of a Schedule's own workflow is recorded as a task when its run ends, not when it starts. The job also tells each projection about its declared workflow every ten minutes, which the feed did when it connected. There is no timer on history reads of one run and no fallback to a family search.
 
+### Kept read connection
+
+Each PHP process keeps one read connection to serve and reuses it across jobs. Serve can close that connection while it sits idle, and PHP cannot see this before the connection is used. The first read on a kept connection then fails on a dead socket.
+
+When a read fails on a kept connection, the Gateway drops it and sends the same read once on a new connection. Every read in this file is idempotent. A read that fails on a new connection is final. The error keeps the exception that caused it as its previous exception, so the Gateway log names the cause. A reply that does not match its request is never sent again.
+
 ### Event connection
 
 The existing `orbit:agent-view` Gateway observer keeps the shared native run connection. It joins the private `orbit` record channel; a committed native binding publishes an Operation notice there. At startup and after subscription acknowledgement, it reads active bound Operations once to cover missed notices. It multiplexes `run.attach` requests on its run-authorized socket; receiving events never waits for a workflow to finish.

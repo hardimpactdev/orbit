@@ -18,19 +18,30 @@ final class SwampConnection
 
     public function socket(WebSocketEndpoint $endpoint, float $timeoutSeconds, WebSocketClient $own): WebSocketClient
     {
-        $key = hash('sha256', $endpoint->address."\0".$endpoint->port."\0".$endpoint->serverName."\0".$endpoint->path."\0".$endpoint->caPath."\0".$endpoint->bearerToken);
-        if ($this->shared === null || $this->sharedKey !== $key || ! $this->shared->isConnected()) {
+        $key = $this->key($endpoint);
+        if (! $this->holds($endpoint)) {
             $this->release();
             $own->connect($endpoint, $timeoutSeconds);
             [$this->shared, $this->sharedKey] = [$own, $key];
         }
 
-        return $this->shared;
+        return $this->shared ?? $own;
+    }
+
+    /** Whether a connection from an earlier request is still held for this endpoint. It may have been closed by serve while idle, which PHP cannot see until the connection is used. */
+    public function holds(WebSocketEndpoint $endpoint): bool
+    {
+        return $this->shared !== null && $this->sharedKey === $this->key($endpoint) && $this->shared->isConnected();
     }
 
     public function release(): void
     {
         $this->shared?->close();
         $this->shared = $this->sharedKey = null;
+    }
+
+    private function key(WebSocketEndpoint $endpoint): string
+    {
+        return hash('sha256', $endpoint->address."\0".$endpoint->port."\0".$endpoint->serverName."\0".$endpoint->path."\0".$endpoint->caPath."\0".$endpoint->bearerToken);
     }
 }

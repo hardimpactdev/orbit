@@ -18,6 +18,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use SensitiveParameter;
 use Throwable;
@@ -471,10 +472,31 @@ final readonly class SwampCommandStep
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
-        $id = bin2hex(random_bytes(16));
+        $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
         $connection = app(SwampConnection::class);
+        // A connection kept from an earlier job may have been closed by serve while idle. Then the first use fails on a dead
+        // socket, so one new connection answers the same read. Every read here is idempotent. A new connection that fails is a real failure.
+        $reused = $connection->holds($endpoint);
         try {
-            $socket = $connection->socket(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15, $this->socket);
+            return $this->exchange($connection, $endpoint, $type, $arguments);
+        } catch (SwampTerminalReadUnavailable $exception) {
+            if (! $reused) {
+                throw $exception;
+            }
+            Log::info('The kept Swamp read connection was closed; reading on a new one.', ['request_type' => $type, 'exception_type' => ($exception->getPrevious() ?? $exception)::class]);
+        }
+
+        return $this->exchange($connection, $endpoint, $type, $arguments);
+    }
+
+    /** @param array<string,mixed> $arguments
+     * @return array<string,mixed>
+     */
+    private function exchange(SwampConnection $connection, WebSocketEndpoint $endpoint, string $type, array $arguments): array
+    {
+        $id = bin2hex(random_bytes(16));
+        try {
+            $socket = $connection->socket($endpoint, 15, $this->socket);
             $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
             $deadline = microtime(true) + 30;
             while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
@@ -492,9 +514,9 @@ final readonly class SwampCommandStep
         } catch (ResourceOperationException $exception) {
             $connection->release();
             throw $exception;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $connection->release();
-            throw new SwampTerminalReadUnavailable;
+            throw new SwampTerminalReadUnavailable($exception);
         }
         $connection->release();
         throw new SwampTerminalReadUnavailable;
