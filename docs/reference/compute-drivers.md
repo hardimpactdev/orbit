@@ -1239,7 +1239,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 
 The refresh has no converge step of its own, because the provision converges the outer VM before the nested fleet. The builder never is enrolled and never has a seed, so the clean step has one case: it resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the builder. The image build runs the same clean step.
 
-The fleet build first makes the SSH key of the `orbit` account in the refresh VM, because a fresh task VM has none. The key reaches the nested VMs. Its private half stays on the refresh VM, which is never published. The build creates the three nested VMs one at a time, because three parallel `incus init` calls of one image race on the image cache of the client.
+The fleet build first makes the SSH key of the `orbit` account in the refresh VM, because a fresh task VM has none. The key reaches the nested VMs. Its private half stays on the refresh VM, which is never published. The build creates the three nested VMs one at a time, because three parallel `incus init` calls of one image race on the image cache of the client. Its waits for the runs of the nested Gateway poll with one short `incus exec` per check, because one long session lost its connection to the guest agent.
 
 The build reads the checkout of the refresh VM's own workspace, which its intent names as `operator_checkout`. A task VM keeps it under `/home/orbit/apps/<project>/workspace`. The nested guests mount the export of that path at `/home/orbit/orbit`, so their mount units name the export path as `What=`.
 
