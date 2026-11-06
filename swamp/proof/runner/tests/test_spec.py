@@ -1,4 +1,4 @@
-"""The loader: the real allow cases file loads, and each kind of mistake is refused with a message that names it."""
+"""The loader: the fixture copy of the allow cases file loads, and each kind of mistake is refused with a message that names it."""
 import sys
 import tempfile
 import unittest
@@ -9,6 +9,7 @@ import spec
 
 PROOF = Path(__file__).resolve().parents[2]
 CASES = Path(__file__).resolve().parent / 'fixtures' / 'allow.cases.yaml'
+LIST_CASES = Path(__file__).resolve().parent / 'fixtures' / 'list.cases.yaml'
 BATCHES = PROOF / 'batches.yaml'
 
 HEADER = 'command: firewall:allow\nchart: firewall/allow\ntarget: app-dev\nsources: [gateway, app-prod]\n'
@@ -32,7 +33,7 @@ def load_text(text, header=HEADER):
         return spec.load(path, BATCHES)
 
 
-class RealFileTest(unittest.TestCase):
+class FixtureFileTest(unittest.TestCase):
     def setUp(self):
         self.spec = spec.load(CASES, BATCHES)
 
@@ -43,7 +44,7 @@ class RealFileTest(unittest.TestCase):
         self.assertEqual(ids[6:9], ['protocols[tcp]', 'protocols[udp]', 'protocols[both]'])
 
     def test_the_list_cases_load_and_every_batch_they_name_exists(self):
-        loaded = spec.load(Path(__file__).resolve().parent / 'fixtures' / 'list.cases.yaml', BATCHES)
+        loaded = spec.load(LIST_CASES, BATCHES)
         names = {step.name for case in loaded.cases for step in case.setup + [item for stage in case.stages for item in stage.act + stage.expect]}
         self.assertTrue({'record', 'agent_report', 'node_down'} <= names)
         self.assertIn('node-access-required', [case.id for case in loaded.cases])

@@ -1,3 +1,4 @@
+# Frozen test fixture for the runner tests, not a real cases file. Spec PRs do not change it.
 # The cases of firewall:list in the case format of docs/reference/verification-cases. `orbit proof:run` selects the command and runs this file.
 # Format and step vocabulary: docs/reference/verification-cases.
 #
