@@ -56,7 +56,7 @@ final readonly class ProofRunSettlement
                 $passed = $passed && $child->status === OperationStatus::Succeeded && ProofVerdicts::passed($rows);
                 $ran = $ran || array_any($rows, static fn (array $row): bool => ($row['verdict'] ?? 'unrun') !== 'unrun');
                 // A run that no Swamp run ever started, because the request that admitted it stopped, timed out unstarted.
-                $interrupted = $interrupted || ($child->error_code === 'operation.timed_out' && ! isset($child->state['swamp_run_id']));
+                $interrupted = $interrupted || $child->error_code === self::AdmissionInterrupted || ($child->error_code === 'operation.timed_out' && ! isset($child->state['swamp_run_id']));
                 $childInput = ValidatedData::object($child->input);
                 // A run that ended with no record of its cases, such as one the Gateway timed out, is one unrun row.
                 $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $childInput['file'], 'command' => $childInput['command'], 'verdict' => 'unrun', 'seconds' => 0]])];

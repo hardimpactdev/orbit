@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\Proof\ProofGroup;
-use App\Domain\Proof\ProofRunWatch;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -52,8 +50,7 @@ final class OperationRunBudgets
     public static function seconds(Operation $operation): int
     {
         if (! isset($operation->state['swamp_run_id']) && $operation->attempts === 0) {
-            // The Gateway hands a proof run to Swamp within a minute of admitting it; one still unstarted after this lost its request.
-            return $operation->kind === ProofGroup::OwnerKind ? ProofRunWatch::AdmissionSeconds : self::AdmissionSeconds;
+            return self::AdmissionSeconds;
         }
         $captured = $operation->input['run_budget_seconds'] ?? null;
         if (in_array($operation->kind, self::CapturedKinds, true) && is_int($captured) && $captured > 0) {

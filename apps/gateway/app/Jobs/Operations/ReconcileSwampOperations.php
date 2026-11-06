@@ -83,7 +83,11 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         });
         $expire->releaseStaleHolds();
         // A proof.run has no Swamp run, so no budget of its own: this ends one whose request stopped, and closes one whose runs have ended.
-        app(ProofRunWatch::class)->sweep();
+        try {
+            app(ProofRunWatch::class)->sweep();
+        } catch (Throwable $exception) {
+            Log::warning('The proof runs could not be watched; the next pass tries again.', ['exception_type' => $exception::class]);
+        }
         app(RoutePublicationHolds::class)->sweep();
     }
 

@@ -74,6 +74,11 @@ final readonly class ProofRunIntent
             // the groups roll back with it, and Swamp starts no run before the whole proof is admitted. The router fence spans the
             // transaction, so a router teardown never sees a half-admitted proof.
             app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
+                // The watchdog may have ended this proof as lost while the request was slow. Then nothing is admitted, so no run is orphaned.
+                if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
+                    throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
+                }
+
                 $runs = [];
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
@@ -86,7 +91,7 @@ final readonly class ProofRunIntent
                 $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs]]);
 
                 return $runs;
-            }));
+            }), ProofRunWatch::lockOwner($proof->id));
         } catch (Throwable $exception) {
             $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                 'error_code' => $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,

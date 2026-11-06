@@ -7,21 +7,37 @@ namespace App\Domain\Proof;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The watchdog of `proof.run`, which has no Swamp run and so no other deadline. A proof either shows its runs, or ends with
- * `proof.admission_interrupted`; it never sits at `runs: []`. It also closes a proof whose runs have all ended, which the last run's
- * own projection normally does. See docs/cli/proof/run.mmd.
+ * The watchdog of `proof.run`, which has no Swamp run and so no other deadline. It ends a proof only when the request that admitted
+ * it is gone, never because a run is slow: a proof either shows its runs, or ends with `proof.admission_interrupted`, and never sits at
+ * `runs: []`. It also closes a proof whose runs have all ended, and frees the admission lock that the dead request held.
+ * A run that waits for VM capacity does not exist: capacity is decided at admission (docs/cli/proof/run.mmd).
  */
 final readonly class ProofRunWatch
 {
-    /** Admission takes a minute at most. A proof with no run after this long lost the request that admitted it. */
-    public const int AdmissionSeconds = 180;
+    /** Without a run: the request holds the admission lock for 60 s at most and admits in about a minute. Later, it is gone. */
+    public const int AdmissionSeconds = 150;
+
+    /**
+     * With runs: the request starts them one after another, and each start is answered within 120 s. A proof whose runs have all been
+     * quiet for longer has no request that will start the rest.
+     */
+    public const int DispatchSilenceSeconds = 300;
 
     public function __construct(private OperationStore $store, private ProofRunSettlement $settlement) {}
+
+    /** The owner of the admission lock while this proof is admitted, so the lock ends with the proof. */
+    public static function lockOwner(int $proofId): string
+    {
+        return 'proof.run:'.$proofId;
+    }
 
     /** @return int how many proofs it ended or settled */
     public function sweep(): int
@@ -30,25 +46,47 @@ final readonly class ProofRunWatch
         $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
             ->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))->pluck('id');
         foreach ($open as $id) {
-            $ended += DB::transaction(function () use ($id): int {
-                $proof = Operation::query()->lockForUpdate()->find($id);
-                if (! $proof instanceof Operation || $proof->status->terminal()) {
-                    return 0;
-                }
-                if (ProofRunSettlement::children($proof->id)->isEmpty()) {
-                    $input = ValidatedData::object($proof->input);
-                    $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
-                        'error_code' => ProofRunSettlement::AdmissionInterrupted,
-                        'result' => ['commit' => $input['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $input['uncovered'] ?? [], 'receipt_url' => null]]);
-
-                    return 1;
-                }
-                $this->settlement->settle($proof->id);
-
-                return $proof->refresh()->status->terminal() ? 1 : 0;
-            });
+            $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
         }
 
         return $ended;
+    }
+
+    private function watch(int $id): int
+    {
+        $proof = Operation::query()->lockForUpdate()->find($id);
+        if (! $proof instanceof Operation || $proof->status->terminal()) {
+            return 0;
+        }
+        $children = ProofRunSettlement::children($proof->id);
+        if ($children->isEmpty()) {
+            $input = ValidatedData::object($proof->input);
+            $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
+                'error_code' => ProofRunSettlement::AdmissionInterrupted,
+                'result' => ['commit' => $input['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $input['uncovered'] ?? [], 'receipt_url' => null]]);
+            $this->freeLock($proof->id);
+
+            return 1;
+        }
+        $unstarted = $children->filter(static fn (Operation $child): bool => ! $child->status->terminal() && ! isset($child->state['swamp_run_id']) && $child->attempts === 0);
+        $quiet = $children->every(static fn (Operation $child): bool => $child->updated_at !== null && $child->updated_at->lt(now()->subSeconds(self::DispatchSilenceSeconds)));
+        if ($unstarted->isNotEmpty() && $quiet) {
+            // No request is left to hand these runs to Swamp. End them the way an expired run ends, so the group and its VM go too.
+            foreach ($unstarted as $child) {
+                $this->store->change($child, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => ProofRunSettlement::AdmissionInterrupted,
+                    'current_step' => null, 'lock_key' => null, 'result' => ['error_code' => ProofRunSettlement::AdmissionInterrupted]]);
+                DB::afterCommit(static fn () => CancelProofGroup::dispatch($child->id));
+            }
+            $this->freeLock($proof->id);
+        }
+        $this->settlement->settle($proof->id);
+
+        return $proof->refresh()->status->terminal() ? 1 : 0;
+    }
+
+    /** Releases the admission lock only if this proof's request holds it; a lock another admission or a teardown holds stays. */
+    private function freeLock(int $proofId): void
+    {
+        Cache::restoreLock(ModelKeyIssuer::Lock, self::lockOwner($proofId))->release();
     }
 }
