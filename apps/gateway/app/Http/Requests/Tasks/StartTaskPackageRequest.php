@@ -18,7 +18,7 @@ final class StartTaskPackageRequest extends FormRequest
         // One pattern per manager, so a package is a registry name with an optional version, never a URL, a path, a Git source or an option.
         $package = match ($this->json('manager')) {
             'composer' => '#\A[a-z0-9]([_.-]?[a-z0-9]+)*/[a-z0-9]([_.-]?[a-z0-9]+)*(:[A-Za-z0-9._~^<>=|*,@-]+)?\z#D',
-            default => '#\A(@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*(@[A-Za-z0-9._~^<>=|*,-]+)?\z#D',
+            default => '#\A(@[a-z0-9~][a-z0-9._~-]*/)?[a-z0-9~][a-z0-9._~-]*(@[A-Za-z0-9._~^<>=|*,-]+)?\z#D',
         };
 
         return ['manager' => ['required', 'string', 'in:composer,npm'], 'package' => ['required', 'string', 'max:214', 'regex:'.$package]];

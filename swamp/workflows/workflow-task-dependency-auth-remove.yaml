@@ -51,7 +51,7 @@ jobs:
         - ${{ "/home/" + inputs.user + "/.config/composer/auth.json" }}
         - ${{ "/home/" + inputs.user + "/.npmrc" }}
   # The token is revoked as soon as the files are gone. It expires within the hour either way, but a failed command can echo it into its output.
-  # A run that minted no token revokes a placeholder: GitHub refuses, and the step is allowed to fail.
+  # A run whose mint did not run, or minted none, holds no live token here: GitHub refuses and the step is allowed to fail.
   - name: Revoke
     labels: {role: swamp}
     queueTimeout: 30
