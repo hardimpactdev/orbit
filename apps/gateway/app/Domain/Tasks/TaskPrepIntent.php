@@ -61,7 +61,8 @@ final readonly class TaskPrepIntent
             // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
             $ssh = app(PendingSshHostKey::class)->during($instance->node_id, fn (): array => app(SwampSshExecutionInput::class)->forNode($instance->node));
             $author = $this->thread($group, $subtask, $instance, 'implementer');
-            $subtask->update(['implementer_agent_thread_id' => $author->id]);
+            // A query update: since the review mode column has a default, every subtask row carries `review_mode`, and a model save of a subtask refuses it.
+            Task::query()->whereKey($subtask->id)->update(['implementer_agent_thread_id' => $author->id]);
             $reviewers = array_map(fn (int $round): AgentThread => $this->thread($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
             $group->update(['reviewer_agent_thread_id' => $reviewers[0]->id]);
             $turn = fn (AgentThread $thread, string $prompt, bool $new): array => [
