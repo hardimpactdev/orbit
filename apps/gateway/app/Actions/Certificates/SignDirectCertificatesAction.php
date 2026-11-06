@@ -72,8 +72,8 @@ final readonly class SignDirectCertificatesAction
 
     /**
      * The Node statuses that may be signed for. The Node that a `node.add` adds and the new guest of a `tasks.provision` turn
-     * `active` when the Gateway records their enrollment, which can land between the two checks of one signing request, so their
-     * admitted leaves are signed in both states.
+     * `active` only when the Gateway records their enrollment, which for a provision happens when its result is applied, after
+     * the Route step has asked for its leaf. Their admitted leaves are therefore signed while they are still `provisioning`.
      *
      * @return list<string>
      */

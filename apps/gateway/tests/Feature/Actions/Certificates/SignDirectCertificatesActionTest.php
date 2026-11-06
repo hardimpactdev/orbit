@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Certificates\SignDirectCertificatesAction;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -41,7 +41,7 @@ function signLeaves(Operation $operation, Node $caller): array
     return $authorize->invoke(app(SignDirectCertificatesAction::class), $operation, $caller->id, SIGN_RUN, false);
 }
 
-it('signs for the new guest of a task provision while its Node is provisioning, so activation cannot change the leaves of a request', function (): void {
+it('admits the leaf of the new guest of a task provision while its Node is provisioning, and the same leaves once it is active', function (): void {
     [$host, $router, $guest] = [signNode('shark', 'active', '10.44.0.11'), signNode('beast', 'active', '10.44.0.7'), signNode('tvm-1', 'provisioning', '10.44.0.200')];
     $operation = signProvision($host, $router, $guest);
 
