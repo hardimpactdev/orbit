@@ -15,7 +15,8 @@ final class PollSwampScheduledResults implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 1;
+    /** The shared Swamp read connection can be stale at the first read of a minute; the second try opens a new one. The read is idempotent. */
+    public int $tries = 2;
 
     public int $timeout = 120;
 

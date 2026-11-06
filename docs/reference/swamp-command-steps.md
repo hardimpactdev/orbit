@@ -82,7 +82,7 @@ The existing shared observer keeps its run-authorized connection for bound-root 
 
 A listed run is followed only when its workflow UUID is declared and its name matches the declared name, or when it is a `schedule-<uuid>` root of a Schedule the Gateway holds. Any other run is ignored. Each followed run queues one projection job, keyed by run ID. A run whose projector accepted it is remembered for two hours, and a run already queued is not queued again for 15 minutes. So a repeated read is a no-op. A failed projection is tried once more later, then left alone, because Swamp keeps only the latest versions of a result.
 
-The projector reads the exact history and still refuses a run that is not terminal, so the list is only a hint. A failed read or an unavailable Swamp ends the job without moving the cursor; the next minute reads again.
+The projector reads the exact history and still refuses a run that is not terminal, so the list is only a hint. A failed read is tried once more at once, because the shared read connection can be stale. If both fail, the job ends without moving the cursor, and the next minute reads again.
 
 Swamp inlines a step output in the run history only when it is small. A declaration can name the data behavior of its terminal step (`data`); when the history carries no output for that step, the shared history helper reads its single `output` artifact with `data.get`, at the version the history names. A check result with long output needs this. Swamp keeps only the latest versions of that data, so the read follows the native notice at once. A missing artifact refuses the projection like any unreadable history.
 
