@@ -29,23 +29,7 @@ mod doctor_role;
 mod doctor_route;
 pub mod environment;
 pub mod firewall;
-mod gateway_adoption;
-mod gateway_build;
-mod gateway_certificate;
-mod gateway_checkout;
-mod gateway_database;
-mod gateway_drain;
-mod gateway_fpm;
-mod gateway_horizon;
-mod gateway_identity;
-mod gateway_recovery;
-mod gateway_releases;
-mod gateway_scheduler;
-mod gateway_services;
 pub mod gateway_start_hooks;
-mod gateway_units;
-mod gateway_web;
-mod gateway_web_build;
 mod git_read;
 mod guest;
 pub mod health;
@@ -135,57 +119,6 @@ pub fn all() -> Vec<Entry> {
         entry::<task_topology::Start>(),
         entry::<task_topology::Inspect>(),
         entry::<agent::Status>(),
-        entry::<gateway_adoption::preparation::Check>(),
-        entry::<gateway_adoption::preparation::Repository>(),
-        entry::<gateway_adoption::preparation::Origin>(),
-        entry::<gateway_adoption::preparation::Target>(),
-        entry::<gateway_adoption::preparation::Environment>(),
-        entry::<gateway_adoption::preparation::RestoreEnvironment>(),
-        entry::<gateway_releases::Switch>(),
-        entry::<gateway_releases::Forward>(),
-        entry::<gateway_releases::Source>(),
-        entry::<gateway_build::Inspect>(),
-        entry::<gateway_build::Prepare>(),
-        entry::<gateway_build::Finish>(),
-        entry::<gateway_build::Refresh>(),
-        entry::<gateway_build::Remove>(),
-        entry::<gateway_build::Migrate>(),
-        entry::<gateway_build::CheckMigrations>(),
-        entry::<gateway_build::Handoff>(),
-        entry::<gateway_drain::InspectHold>(),
-        entry::<gateway_drain::InspectProcess>(),
-        entry::<gateway_recovery::Protect>(),
-        entry::<gateway_recovery::Verify>(),
-        entry::<gateway_recovery::WriteReceipt>(),
-        entry::<gateway_recovery::ReadReceipt>(),
-        entry::<gateway_web_build::Inspect>(),
-        entry::<gateway_web_build::Install>(),
-        entry::<gateway_web_build::Publish>(),
-        entry::<gateway_web_build::Restore>(),
-        entry::<gateway_web_build::Remove>(),
-        entry::<gateway_web_build::Prune>(),
-        entry::<gateway_units::Converge>(),
-        entry::<gateway_services::Fleet>(),
-        entry::<gateway_services::View>(),
-        entry::<gateway_services::Hibernator>(),
-        entry::<gateway_services::StartFleet>(),
-        entry::<gateway_horizon::Drain>(),
-        entry::<gateway_scheduler::Drain>(),
-        entry::<gateway_scheduler::Start>(),
-        entry::<gateway_scheduler::Stop>(),
-        entry::<gateway_scheduler::Restart>(),
-        entry::<gateway_units::Start>(),
-        entry::<gateway_units::Inspect>(),
-        entry::<gateway_database::Inspect>(),
-        entry::<gateway_database::Create>(),
-        entry::<gateway_identity::Prepare>(),
-        entry::<gateway_identity::SelfAccess>(),
-        entry::<gateway_adoption::Storage>(),
-        entry::<gateway_adoption::Switch>(),
-        entry::<gateway_adoption::Restore>(),
-        entry::<gateway_adoption::Finish>(),
-        entry::<gateway_fpm::Converge>(),
-        entry::<gateway_fpm::Connections>(),
         entry::<vp_store::Inspect>(),
         entry::<vp_store::Install>(),
         entry::<vp_store::Prune>(),
@@ -224,10 +157,6 @@ pub fn all() -> Vec<Entry> {
         entry::<swamp_worker::Start>(),
         entry::<swamp_worker::Stop>(),
         entry::<swamp_worker::Trust>(),
-        entry::<gateway_web::PrepareDirectory>(),
-        entry::<gateway_certificate::Publish>(),
-        entry::<gateway_checkout::Check>(),
-        entry::<gateway_checkout::Prepare>(),
         entry::<vpn_ordering::OrderCaddy>(),
         entry::<vpn_ordering::RemoveDnsOrdering>(),
         entry::<php_build::operations::Inspect>(),

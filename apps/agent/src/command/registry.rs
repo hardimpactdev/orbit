@@ -575,7 +575,6 @@ mod tests {
     fn shared_host_mutations_hold_one_lock_per_resource() {
         let packages = [
             "caddy.install-package",
-            "gateway.converge-release-units",
             "image.clean",
             "metrics.cadvisor",
             "metrics.node-exporter",
@@ -879,7 +878,7 @@ mod tests {
             Vec::<&str>::new(),
             "commands that no generated input reaches"
         );
-        assert!(probes > 400, "only {probes} probes ran");
+        assert!(probes > 100, "only {probes} probes ran");
     }
 
     /// Gateway tests read `contract/schemas.json`. The same variable rewrites it.
