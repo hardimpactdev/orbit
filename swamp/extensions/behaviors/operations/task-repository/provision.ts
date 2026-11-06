@@ -279,7 +279,7 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     // A guard skips `composer` when inspect found no regular composer.json; a
     // skipped step has no entry in `steps`.
     // The dependency steps are skipped with the setup steps when the profile failed or the Project has none.
-    const optional = new Set(["composer", "mint_deps", "deps_clear", "deps_composer", "deps_npm", "deps_remove"]);
+    const optional = new Set(["composer", "deps_write", "deps_remove"]);
     for (
         const name of [
             "prepare",
@@ -298,10 +298,7 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
             "composer",
             "profile",
             // The private-dependency configuration is written before the setup steps and removed after them.
-            "mint_deps",
-            "deps_clear",
-            "deps_composer",
-            "deps_npm",
+            "deps_write",
             "deps_remove",
             ...intent.workspace.setup.map((_, i) => `setup-${i}`),
         ]

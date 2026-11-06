@@ -32,6 +32,8 @@ final readonly class OperationKinds
 
     public const string TasksScript = 'tasks.script';
 
+    public const string TasksPackage = 'tasks.package';
+
     public const string TasksCheck = 'tasks.check';
 
     public const string TasksProvision = 'tasks.provision';

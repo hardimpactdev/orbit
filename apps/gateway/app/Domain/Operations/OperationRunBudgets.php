@@ -102,6 +102,9 @@ final class OperationRunBudgets
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
+        // No run yet. One package manager run, bounded to 900 s by its step, plus the write and the removal of the configuration.
+        // Replace with the 14-day p95 after the first success.
+        'tasks.package' => 1500,
         // No run yet. The publish step mints its own token, so the one-hour life of a token no longer bounds the run:
         // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each. Prep runs of 43 to 90 min
         // are expected (Nick, 2026-11-06), so 105 min. Replace with the 14-day p95 after the first success.

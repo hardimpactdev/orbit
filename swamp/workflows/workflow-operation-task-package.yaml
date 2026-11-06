@@ -1,0 +1,96 @@
+id: deb99080-703b-5cdb-a825-33f7ed5b0d48
+name: operation-task-package
+description: Install one private package in a task workspace. The dependency configuration exists on the VM only while the package manager runs.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: tasks.package}
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: package
+  labels: {role: swamp}
+  steps:
+  - name: Write the dependency auth
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-dependency-auth-write
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ run.id }}
+        user: ${{ inputs.intent.user }}
+        ssh_execution: ${{ inputs.intent.ssh_execution }}
+        dependency_auth: ${{ inputs.intent.dependency_auth }}
+  - name: Install the package
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-package-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: '${{ ("task-package-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 900
+        # The package is `$0` of a fixed command, so no shell ever parses it.
+        argv: '${{ ["env", "-C", inputs.intent.checkout_path, "COMPOSER_NO_INTERACTION=1", "COMPOSER_HOME=/home/" + inputs.intent.user + "/.config/composer", "/bin/bash", "-lc", inputs.intent.manager == "composer" ? "exec composer require --no-interaction --no-scripts --no-progress -- \"$0\"" : "exec npm install --ignore-scripts --no-audit --no-fund -- \"$0\"", inputs.intent.package] }}'
+    writes: true
+    dependsOn:
+    - step: Write the dependency auth
+      condition:
+        type: succeeded
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - job: package
+    condition:
+      type: completed
+  steps:
+  - name: Remove the dependency auth
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-dependency-auth-remove
+      inputs:
+        user: ${{ inputs.intent.user }}
+        ssh_execution: ${{ inputs.intent.ssh_execution }}
+        dependency_auth: ${{ inputs.intent.dependency_auth }}
+  - name: Confirm the package
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Remove the dependency auth
+      condition:
+        type: completed
+    task:
+      type: assert
+      expr: '"Install the package" in steps && steps["Install the package"].status == "succeeded" && steps["Remove the dependency auth"].status == "succeeded"'
+      message: Task package install or configuration removal failed.
+      severity: high

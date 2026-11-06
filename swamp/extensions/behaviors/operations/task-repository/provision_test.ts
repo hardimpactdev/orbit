@@ -121,10 +121,7 @@ Deno.test("source result requires every ordered setup step before exposing the s
             "inspect",
             "composer",
             "profile",
-            "mint_deps",
-            "deps_clear",
-            "deps_composer",
-            "deps_npm",
+            "deps_write",
             "deps_remove",
         ].map((name) => [name, { status: "succeeded", outputs: {} }]),
     );
@@ -145,7 +142,7 @@ Deno.test("source result requires every ordered setup step before exposing the s
         source,
     });
     // The private-dependency steps are part of the receipt: a failed mint, write or removal fails the provision.
-    for (const name of ["mint_deps", "deps_clear", "deps_composer", "deps_npm", "deps_remove"]) {
+    for (const name of ["deps_write", "deps_remove"]) {
         const before = steps[name].status;
         steps[name].status = "failed";
         assertEquals(sourceResult(input, steps), { error_code: "tasks.provision_failed", failed_step: name });
@@ -156,9 +153,6 @@ Deno.test("source result requires every ordered setup step before exposing the s
         assertEquals(sourceResult(input, steps), { source });
         steps[name] = kept;
     }
-    // The token revoke is not part of the receipt: the token expires within the hour, and a failed revoke must not fail a provision.
-    steps.deps_revoke = { status: "failed", outputs: {} };
-    assertEquals(sourceResult(input, steps), { source });
     const receipt = result(input, vm, {
         guest: { status: "succeeded" },
         ...steps,
@@ -186,10 +180,7 @@ Deno.test("proof provision requires private delivery before group readiness but 
                 "identity",
                 "inspect",
                 "composer",
-                "mint_deps",
-                "deps_clear",
-                "deps_composer",
-                "deps_npm",
+                "deps_write",
                 "deps_remove",
             ].map((name) => [name, { status: "succeeded", outputs: {} }]),
         ),

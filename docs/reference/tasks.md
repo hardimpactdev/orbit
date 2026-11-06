@@ -233,6 +233,16 @@ The program's output stays out of native history ([command output](#keep-command
 
 Cancellation uses native Swamp cancel and official SSH session teardown. It does not track or confirm remote descendant termination. A remaining process is removed by normal group cleanup or VM destruction. Native resume does not repeat a successful execution step when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 
+#### Install a private package
+
+`POST /api/v1/task-groups/{group}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `tasks-package`. There is no `orbit` command.
+
+An agent that cannot resolve a private package ends its turn `blocked` with the package as its question. That is assistance, and nothing else happens. The orchestrator decides, starts this install, and resolves the assistance.
+
+Admission needs an open external group with its owned task VM workspace and refuses other active work on the group. It records the request and names the vault keys of the dependency configuration. It mints no token. The run asks the Gateway for a read token (`purpose: dependencies`), writes the Composer and npm configuration of the task account from it, runs one `composer require --no-scripts` or `npm install --ignore-scripts` in the checkout, and removes both files. The package is `$0` of a fixed command, so no shell parses it.
+
+The package manager changes the manifest and the lock file in the workspace; nothing is committed. A failed install, or a failed removal, fails the run with `tasks.package_failed`. The removal step also revokes the token, so a command that echoed it holds a dead one; a failed revoke does not fail the run. A cancelled run keeps the files until the token expires or `tasks:cancel` removes the VM.
+
 #### Run an external turn
 
 `tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
@@ -1424,7 +1434,7 @@ Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` w
 
 Admission holds the group execution lock and names two vault keys. It mints no token. The first step of the run asks the Gateway for two repository-scoped tokens (`purpose: dependency_merge`): Contents and Pull requests write, and Contents, Pull requests, Checks and Actions read. The Gateway writes them to the named keys. Native `gh api` commands read tokens from the environment. No other execution step reads credentials or reports results through a Gateway callback.
 
-All Projects are disabled: `dependency_merge.projects` is empty and the Project's `dependencyAutoMerge` entry in `projects.json` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission verifies the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
+All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission verifies the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
 
 Fresh GitHub reads must show an open non-draft same-repository `task-{group}` PR into the current Project and repository default branch. Require GitHub Actions' `Required checks` on the exact head. Every enabled policy must name `smoke_workflow`, an exact `.github/workflows/*.yml` or `.yaml` path. Its active workflow and `Production smoke / smoke` are mandatory: the raw `smoke` job must belong to that exact workflow's latest PR suite. Removing or renaming the workflow refuses the merge.
 
