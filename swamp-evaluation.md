@@ -116,3 +116,14 @@ Pinned Swamp `20261103.000636.0-sha.db3f6373`. `swamp worker connect` starts a n
 Measured and ruled out as causes: repo size and repo loading (child CPU 1.063 s with a minimal repo, 1.066 s with a copy of the production code), extension loading (1.067 s against 1.068 s for `command/shell`), the serve-to-worker hand-off (median gap 6–12 ms), serve work per step (0.07–0.09 s CPU), worker CPU (0.003 s per step), datastore size, and per-step report writing (its timing did not change when skipped). A child process per dispatch gives isolation, per-dispatch credentials and process-group kill, so this is the design, not a defect.
 
 Flows with 20 to 70 steps spend most of their run time on this start. `instance.create` has about 48 dispatches on its critical path, which is an estimated 58–65 s of its 85 s. Could the worker keep a warm runner between dispatches, or start the child from a snapshot, while keeping that isolation? Estimated floor: about 0.35 s instead of about 1.3 s. Meanwhile Orbit can put the work of one phase on one Node into fewer, larger steps. Not filed upstream: this is a request, not a bug.
+
+## Ansible phases for the Gateway release: per-task cost
+
+We tried to run the Gateway release as Ansible phases (one Swamp step per phase). Two live releases took 92 s and 104 s against a median of 57 s, so we reverted. This is not a Swamp issue; it is a note on fit.
+
+On the real Gateway Node, a playbook start costs 0.36 s, a local task about 0.01 s, and every remote task or loop item 0.25 to 0.6 s. A loop saves nothing. One shell call that runs 20 commands costs 0.8 s in total.
+
+The release does many small remote steps: the build alone needs about 19 remote tasks after batching, and the old scripts had no per-task cost. A batched redesign measured 22.7 s for the build against 13.7 s, and about 68 s for the whole release.
+
+Ansible suits few, large, idempotent changes to many Nodes. For a latency-critical chain of small steps on one Node, a script is the better tool. We keep the release as scripts. The measurements are in the parked draft PR.
+
