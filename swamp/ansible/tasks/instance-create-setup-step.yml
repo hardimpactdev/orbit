@@ -1,0 +1,21 @@
+---
+# One Project setup step of a development Instance create, in the checkout, as the Node's configured user.
+# `step` is one item of the admitted `setup_steps`; its command is a literal bash text that stays on the Node's side.
+- name: "Run setup step {{ step.name }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/timeout
+      - "{{ step.timeout_seconds | string }}"
+      - /usr/bin/env
+      - -C
+      - "{{ step.directory }}"
+      - "ORBIT_INSTANCE_ID={{ step.instance_id | string }}"
+      - "ORBIT_INSTANCE_NAME={{ step.instance_name }}"
+      - "ORBIT_SEED_PATH={{ step.seed_path }}"
+      - "ORBIT_SEED_COMMIT={{ step.seed_commit }}"
+      - /bin/sh
+      - -c
+      - 'exec /bin/bash -eu -c "$1" >/dev/null'
+      - sh
+      - "{{ step.command }}"
+  changed_when: true
