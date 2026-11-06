@@ -54,11 +54,20 @@ sequenceDiagram
   %%> - replaces today's reset, which takes `.env`, storage, the agent manifest and the lease from an earlier fleet in the same VM, so it fails on a fresh VM
   %%> Time:
   %%> - about 75 seconds to a checked fleet, of which the boot is about 50
+  %%> Measured on Node 209, 22 runs (2026-11-06):
+  %%> - the 9 s median is the 10 runs that found no usable ready copies and started nothing; the 12 real starts took 74 to 174 s
+  %%> - the slow ones spent 61 s in the apply step restarting the earlier units (`orbit-proof-operations`, `orbit-proof-agent-view`, `orbit-node-worker`); `orbit-node-worker`, inactive after that restart, failed 4 runs and the readiness check 2; #2901 replaced these units
+  %%> - since #2901 every start fails at the apply step: the copies of VM 688 hold the old checkout path (fixed by the new copies of stage 6)
+  %%> - boot is 17 to 38 s; before the boot about 25 s; the join took 10 one-command steps, about 26 s, because each step waits for the whole wave before it
   SW->>NT: Join as operator<br/>this VM's WireGuard key
   %%> What it does:
   %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested VMs, so this needs no network yet)
   %%> - the nested Gateway puts the key on its hub; the outer VM brings up WireGuard as the operator `10.45.0.10`
   %%> - the private key never leaves this task VM; each task VM has its own
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - three steps instead of ten: the outer VM makes its key while the nested VMs boot; one `incus exec` on the nested Gateway records the key, starts the hub, adds the peer and prints the hub key; one step brings up `wg-nested` and pings the hub
+  %%> - the proof Club key goes into the nested Gateway beside the join, since it needs no network
+  %%> - tested on beast in two network namespaces: join 0.05 s, tunnel 0.02 s of command time; each step adds about 2 s of SSH and Swamp time
   %%> Proposed 2026-11-05:
   %%> - the ready copies hold the operator Node record without a key (stage 6), so the key of the VM that made them never works anywhere else
   opt no usable ready copies
