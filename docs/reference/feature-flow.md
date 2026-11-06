@@ -99,7 +99,7 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 - A change to the selection list selects every case. So do a file list that GitHub returns incomplete, and `--all`. A change cannot narrow its own selection.
 - List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
 - List a helper that several commands share with every one of them.
-- The PR of a command change maps the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files and the CLI and SDK files of the command, for every command of its family, in the PR that adds the first cases file of the family. Until then, they stay `skip`. The firewall family is mapped.
+- The PR of a command change maps the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files and the CLI and SDK files of the command, for every command of its family, in the PR that adds the first cases file of the family. Until then, they stay `skip`. The firewall family is mapped. The Operation machinery and the CLI and SDK base code select `*`.
 - A cases file selects its own command. Charts and pages are `skip`.
 
 A malformed line is refused with `proof.selection_invalid`. A commit without a selection list selects every case.
