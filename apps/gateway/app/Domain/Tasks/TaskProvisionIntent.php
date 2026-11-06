@@ -85,6 +85,10 @@ final readonly class TaskProvisionIntent
             }
             $this->assertProvisionable($group);
             $project = $group->project;
+            // A routed workspace renders its Route from the Project's source facts, as instance:create does, so they must be valid.
+            if ($project->type->isWebServing() && $project->task_workspace_routed && $project->source_profile_error !== null) {
+                throw new ResourceOperationException($project->source_profile_error, 'The Project source metadata is invalid or unsupported for a routed task workspace.', 422);
+            }
             // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) get the proof club key, and no other task.
             $proof = ($project->id === 62 && $project->slug === 'swamp-proof') || $commit !== null;
             $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
@@ -113,6 +117,8 @@ final readonly class TaskProvisionIntent
                 'checkout_path' => $checkout->value, 'root' => null, 'branch_override' => TaskWorkspaceName::for($group),
                 'task_workspace_routed' => $routed = $project->type->isWebServing() && $project->task_workspace_routed, 'task_workspace_owner_id' => $group->id,
                 'status' => InstanceState::Reserved, 'first_setup_pending' => true,
+                // Admitted Project facts, as instance:create records them: the Route site renders from them before the run.
+                'selected_php_version' => $project->php_version, 'source_is_laravel' => $project->is_laravel === true,
             ]);
             // The guest's host key is pinned only by this run's VM step; its SSH targets carry `host_keys: null`
             // until the workflow binds them. The Route comes first: it changes how Process units render.
@@ -120,7 +126,10 @@ final readonly class TaskProvisionIntent
                 $route = $routed ? app(CreateRouteAction::class)->ensureForInstance($instance, null) : null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
 
-                return [$route, $route === null ? null : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id),
+                return [$route, $route === null ? null : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id,
+                    // The run routes the workspace after its setup, so the Route publishes it served, not the 503 of a reserved
+                    // Instance, and keeps the .env the setup wrote; the Gateway's later render then matches what was published.
+                    preserveEnvironment: true, preparedWorkloads: true),
                     app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members']];
             });
             $values = app(LogRedactor::class)->valuesFor($instance);
