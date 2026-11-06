@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Operations\OperationStatus;
+
 /**
  * Swamp's step events carry no start or end time, but the terminal run history has both for each step. This fills the
  * times of the progress steps an Operation recorded from the events, once, when the run ends. A step still `running` then
- * takes its status from the history, or `interrupted` when the history holds no match: a finished run has no running step.
+ * takes its status from the history. {@see self::settle()} closes any step left `running` when the Operation ends.
  */
 final readonly class NativeRunStepTimes
 {
@@ -51,11 +53,6 @@ final readonly class NativeRunStepTimes
                 }
             }
         }
-        foreach ($steps as $key => $row) {
-            if (is_array($row) && ($row['status'] ?? null) === 'running') {
-                $steps[$key] = [...$row, 'status' => 'interrupted'];
-            }
-        }
 
         return $steps;
     }
@@ -74,6 +71,35 @@ final readonly class NativeRunStepTimes
         }
 
         return isset($history[$job."\0".$match[1]]) ? $job."\0".$match[1] : $exact;
+    }
+
+    /**
+     * A finished Operation has no running step: a step that never reported its end takes the outcome of the Operation, or
+     * `interrupted` when the Operation failed, since the step that failed is recorded on its own row.
+     *
+     * @param  array<mixed>|null  $state  the Operation state that holds `native_progress`
+     * @return array<mixed>|null
+     */
+    public static function settle(?array $state, OperationStatus $status): ?array
+    {
+        $progress = $state['native_progress'] ?? null;
+        $steps = is_array($progress) ? ($progress['steps'] ?? null) : null;
+        if (! is_array($progress) || ! is_array($steps) || ! $status->terminal()) {
+            return $state;
+        }
+        $ended = match ($status) {
+            OperationStatus::Succeeded => 'succeeded',
+            OperationStatus::Cancelled => 'cancelled',
+            default => 'interrupted',
+        };
+        foreach ($steps as $key => $row) {
+            if (is_array($row) && ($row['status'] ?? null) === 'running') {
+                $steps[$key] = [...$row, 'status' => $ended];
+            }
+        }
+        $state['native_progress'] = [...$progress, 'steps' => $steps, 'active' => []];
+
+        return $state;
     }
 
     private function time(mixed $value): ?string

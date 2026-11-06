@@ -35,7 +35,7 @@ final readonly class NativeRunProgress
             $index = is_int($event['forEachIndex'] ?? null) ? (string) $event['forEachIndex'] : '';
             $key = hash('sha256', $parent.'|'.$event['jobId'].'|'.$event['stepId'].'|'.$index);
             // The end of a forEach item comes without the `forEachIndex` its start carried: it ends the one started item of that step.
-            if ($event['kind'] !== 'step_started' && $index === '' && ! isset($active[$key])) {
+            if (in_array($event['kind'], ['step_completed', 'step_failed'], true) && $index === '' && ! isset($active[$key])) {
                 $started = array_keys(array_filter($active, static fn (array $row): bool => ($row['parent'] ?? null) === $parent
                     && ($row['job'] ?? null) === $event['jobId'] && $row['step'] === $event['stepId'] && ($row['index'] ?? '') !== ''));
                 if (count($started) === 1) {
