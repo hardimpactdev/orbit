@@ -25,8 +25,13 @@ final readonly class GatewayBootstrapPlan
     /** The PHP version of the Gateway profile in the recipe. */
     private const string Php = '8.5';
 
-    /** @return array<string,mixed> */
-    public static function make(): array
+    /**
+     * @param  string  $url  The Gateway's own address, `APP_URL`.
+     * @param  string  $home  `ORBIT_HOME`, the folder of its state.
+     * @param  string  $checkout  `ORBIT_GATEWAY_CHECKOUT`, the `apps/gateway` folder of the release.
+     * @return array<string,mixed>
+     */
+    public static function make(string $url, string $home, string $checkout): array
     {
         $catalog = new NodeBootstrapPackageCatalog;
         $node = new Node;
@@ -42,6 +47,23 @@ final readonly class GatewayBootstrapPlan
             'directories' => [['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755']],
             'bun' => null,
             'php_packages' => PhpBuildInstaller::packageFiles($build),
+            'environment' => self::environment((string) file_get_contents(base_path('.env.example')),
+                ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'APP_URL' => $url, 'ORBIT_HOME' => $home, 'ORBIT_GATEWAY_CHECKOUT' => $checkout]),
         ];
+    }
+
+    /**
+     * The `.env` of the new Gateway: the example file with production values. The application key stays empty; the machine makes it.
+     *
+     * @param  array<string,string>  $values
+     */
+    public static function environment(string $example, array $values): string
+    {
+        $lines = [];
+        foreach (explode("\n", $example) as $line) {
+            $lines[] = preg_match('/^([A-Z][A-Z0-9_]*)=/', $line, $match) === 1 && isset($values[$match[1]]) ? $match[1].'='.$values[$match[1]] : $line;
+        }
+
+        return implode("\n", $lines);
     }
 }

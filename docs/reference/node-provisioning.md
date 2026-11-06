@@ -433,6 +433,8 @@ A fresh Gateway cannot plan any role before its own app runs, and the app needs 
 
 The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
 
+Then the `app` job sets up the Gateway app on the machine: it writes the `.env` (`orbit:bootstrap-plan --environment`, production values from `.env.example`), installs the Composer dependencies, creates the database, makes the application key there and runs the migrations. The key never leaves the machine. The end check fails on a pending migration.
+
 ## Role compatibility
 
 Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything.
