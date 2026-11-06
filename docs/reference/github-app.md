@@ -231,7 +231,7 @@ An App merge is a push by the App to the default branch, so GitHub starts the `p
 
 ## Find the newest green commit
 
-The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks once a minute while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 15 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `hardimpactdev/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
+The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks every five minutes while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 5 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `hardimpactdev/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
 
 A commit qualifies when all of these hold.
 

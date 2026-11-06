@@ -399,7 +399,7 @@ Two stalls alert once with the kind `release_stalled`. The subject is the deploy
 - A GitHub error, a retryable failure, or a busy release lock lasted 30 minutes. The next tick that reaches GitHub ends the stall.
 - The branch head stayed unreleased for 6 hours. This check also runs during a pause. A deployed head ends it.
 
-While it is up to date, the runner reads the branch head at most every 15 minutes. The second stall covers a deployed commit that left the branch after a force push, because then no newer commit can qualify.
+While it is up to date, the runner reads the branch head at most every 5 minutes. The second stall covers a deployed commit that left the branch after a force push, because then no newer commit can qualify.
 
 ### Read the state
 
