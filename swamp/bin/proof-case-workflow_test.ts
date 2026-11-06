@@ -73,3 +73,9 @@ Deno.test("--skip-act leaves out the command so the expectations fail", () => {
 Deno.test("steps outside the built vocabulary stop the generator", () => {
     assertThrows(() => generate(cases, "interrupted-reorder"), NotBuilt);
 });
+
+Deno.test("no reference is written as an object", () => {
+    const yaml = generate(cases, "new-restricted-allow");
+    assert(!yaml.includes("[object Object]"));
+    assert(yaml.includes("l.contains((steps.src_gateway.outputs.stdout"));
+});

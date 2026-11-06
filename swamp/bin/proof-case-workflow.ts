@@ -48,6 +48,9 @@ export function render(parts: Part[]): string {
             typeof part === "string" ? JSON.stringify(part) : `(${part.cel})`
         ).join(" + ") + " }}";
 }
+/** Several parts as one part, so a single argv word can hold a reference. */
+const joined = (parts: Part[]): Part =>
+    parts.length === 1 ? parts[0] : { cel: cel(parts), deps: depsOf(parts) };
 const depsOf = (parts: Part[]) =>
     parts.flatMap((part) => typeof part === "string" ? [] : part.deps);
 const cel = (parts: Part[]) =>
@@ -60,21 +63,24 @@ export class CaseWorkflow {
     private names: Record<string, string> = {};
     private job = "discover";
     private barrier: string[] = [];
-    private baseline: Record<string, string> = {};
+    /** Per provider of `unchanged`: the step that read it before `act` and the CEL value that compares. */
+    private baseline: Record<string, { read: string; norm: string }> = {};
     private target: string;
     private sources: string[];
     private fixtures: Obj;
     private vars: Obj;
     private count: Record<string, number> = {};
 
-    constructor(file: Obj, private caseId: string, private skipAct = false) {
+    constructor(
+        private file: Obj,
+        private caseId: string,
+        private skipAct = false,
+    ) {
         this.target = String(file.target);
         this.sources = file.sources as string[];
         this.fixtures = (file.fixtures ?? {}) as Obj;
         this.vars = (file.vars ?? {}) as Obj;
-        this.file = file;
     }
-    private file: Obj;
 
     // ---- steps ---------------------------------------------------------------------------------------------------
     private add(
@@ -150,12 +156,7 @@ export class CaseWorkflow {
         const argv: Part[] = [
             "jq",
             ...flags,
-            ...args.flatMap(([key, value]) =>
-                ["--arg", key, ...[
-                    value.length === 1 ? value[0] : cel(value) &&
-                        { cel: cel(value), deps: depsOf(value) },
-                ]] as Part[]
-            ),
+            ...args.flatMap(([key, value]) => ["--arg", key, joined(value)]),
             filter,
         ];
         return this.exec(name, argv, [0], { stdin: [out(from)] });
@@ -276,8 +277,13 @@ export class CaseWorkflow {
         if (last < source.length) parts.push(source.slice(last));
         return parts;
     }
+    /** A value that holds no reference to another step, such as a port. */
     private plain(text: unknown): string {
-        return this.value(text).join("");
+        const parts = this.value(text);
+        if (parts.some((part) => typeof part !== "string")) {
+            throw new NotBuilt(`a literal is needed here, not ${text}`);
+        }
+        return parts.join("");
     }
 
     // ---- the case ------------------------------------------------------------------------------------------------
@@ -456,22 +462,19 @@ export class CaseWorkflow {
                 ...this.value(args.port),
             ]);
             this.exec(
-                `probe-${
-                    args.id ?? `${node}-${this.plain(args.port)}`
-                }-${node}`,
+                `probe-${args.id ?? `${this.plain(args.port)}`}-${node}`,
                 argv,
                 args.expect === "connect" ? [0] : [124],
                 { after: [...this.barrier], seconds: PROBE_SECONDS + 20 },
             );
         }
     }
+    private nodeFlag(node: string): Part {
+        return joined(["--node=", this.nodeId(node)]);
+    }
     private cliArgs(args: Obj): Part[] {
-        return this.splice(args.run as unknown[]).flatMap((word) =>
-            this.value(word).length ? [this.value(word)] : []
-        ).map((parts) =>
-            parts.length === 1
-                ? parts[0]
-                : { cel: cel(parts), deps: depsOf(parts) }
+        return this.splice(args.run as unknown[]).map((word) =>
+            joined(this.value(word))
         );
     }
     private cli(args: Obj) {
@@ -514,14 +517,14 @@ export class CaseWorkflow {
             args.min !== undefined
         ) throw new NotBuilt("record beyond count of firewall:list rules");
         const where = (args.where ?? {}) as Obj;
+        if (
+            Object.values(where).some((value) =>
+                typeof value === "object" || value === "present"
+            )
+        ) throw new NotBuilt("record where with a list or present");
         const read = this.cliExec("list-records", [
             "firewall:list",
-            ...(args.node
-                ? [{
-                    cel: cel(["--node=", this.nodeId(String(args.node))]),
-                    deps: depsOf([this.nodeId(String(args.node))]),
-                } as Part]
-                : []),
+            ...(args.node ? [this.nodeFlag(String(args.node))] : []),
         ]);
         const keys = Object.keys(where);
         const filter = `[.nodes[].rules[]|select(${
@@ -546,6 +549,9 @@ export class CaseWorkflow {
         );
     }
     private ufw(args: Obj) {
+        if (args.absent || Number(args.family ?? 4) !== 4) {
+            throw new NotBuilt("ufw absent or family");
+        }
         const read = this.ufwRead("read-ufw");
         const lines =
             `steps.${read}.outputs.stdout.split("\\n").filter(l, l.contains("]") && !l.contains("(v6)"))`;
@@ -553,7 +559,7 @@ export class CaseWorkflow {
             row.ref ? this.rule(String(row.ref)) : {
                 to: this.plain(row.to),
                 action: String(row.action),
-                from: row.from ? this.plain(row.from) : undefined,
+                from: row.from ? this.value(row.from) : undefined,
                 comment: undefined as string | undefined,
             }
         );
@@ -561,13 +567,13 @@ export class CaseWorkflow {
             row: {
                 to: string;
                 action: string;
-                from?: string;
+                from?: Part[];
                 comment?: string;
             },
         ) => [
             `l.contains(${JSON.stringify(row.to)})`,
             `l.contains(${JSON.stringify(row.action)})`,
-            ...(row.from ? [`l.contains(${JSON.stringify(row.from)})`] : []),
+            ...(row.from ? [`l.contains(${cel(row.from)})`] : []),
             ...(row.comment
                 ? [`l.contains(${JSON.stringify("# " + row.comment)})`]
                 : []),
@@ -578,7 +584,7 @@ export class CaseWorkflow {
             }).map(l, int(l.substring(l.indexOf("[") + 1, l.indexOf("]")).trim()))`
         );
         const checks = [
-            ...numbers.map((n, i) => `${n}.size() == 1`),
+            ...numbers.map((n) => `${n}.size() == 1`),
             ...numbers.slice(1).map((n, i) => `${numbers[i]}[0] < ${n}[0]`),
         ];
         this.assert(
@@ -593,7 +599,7 @@ export class CaseWorkflow {
         return {
             to: `${this.plain(rule.port)}/${rule.proto ?? "tcp"}`,
             action: String(rule.action).toUpperCase(),
-            from: undefined as string | undefined,
+            from: undefined as Part[] | undefined,
             comment: `proof:${name}`,
         };
     }
@@ -643,10 +649,10 @@ export class CaseWorkflow {
             };
         }
         if (provider === "firewall_records") {
-            const raw = this.cliExec(`${stage}-records-raw`, ["firewall:list", {
-                cel: cel(["--node=", this.nodeId(this.target)]),
-                deps: depsOf([this.nodeId(this.target)]),
-            }]);
+            const raw = this.cliExec(`${stage}-records-raw`, [
+                "firewall:list",
+                this.nodeFlag(this.target),
+            ]);
             const read = this.jq(
                 `${stage}-records`,
                 raw,
@@ -663,53 +669,45 @@ export class CaseWorkflow {
             throw new NotBuilt("unchanged since");
         }
         for (const provider of this.providers(args)) {
-            this.baseline[provider] = this.snapshot(provider, "before").norm +
-                "|" + this.steps.at(-1)!.name;
+            this.baseline[provider] = this.snapshot(provider, "before");
         }
     }
     private baselineSteps(): string[] {
-        return this.steps.filter((step) => step.name.startsWith("before_")).map(
-            (step) => step.name,
-        );
+        return Object.values(this.baseline).map((snapshot) => snapshot.read);
     }
     private unchanged(args: Obj) {
+        const except = (args.except ?? {}) as Obj;
+        if (Object.keys(except).some((key) => key !== "port")) {
+            throw new NotBuilt("unchanged except beyond port");
+        }
         for (const provider of this.providers(args)) {
+            const before = this.baseline[provider];
             const after = this.snapshot(provider, "after");
-            const before = this.steps.filter((step) =>
-                step.name.startsWith(
-                    "before_" +
-                        (provider === "firewall_records"
-                            ? "records"
-                            : provider),
-                )
-            ).at(-1)!.name;
-            const norm = this.baseline[provider].split("|")[0];
             this.assert(
                 `check-unchanged-${provider}`,
-                `${norm} == ${after.norm}`,
+                `${before.norm} == ${after.norm}`,
                 `${provider} changed beyond the case's port`,
-                [before, after.read],
+                [before.read, after.read],
             );
         }
     }
     private doctor(args: Obj) {
+        // The agents report at a 60 s tick, in a phase the case cannot know. The expect job starts after act, so a
+        // fixed wait under a literal `timeout` (swamp-shape rule 6) is enough. Budget: 70 s.
         const wait = this.exec(
             "wait-report",
-            ["sleep", String(REPORT_SECONDS)],
+            [
+                "timeout",
+                String(REPORT_SECONDS + 5),
+                "sleep",
+                String(REPORT_SECONDS),
+            ],
             [0],
-            {
-                seconds: REPORT_SECONDS + 30,
-                after: this.steps.filter((step) => step.job === "act").map((
-                    step,
-                ) => step.name),
-            },
+            { seconds: REPORT_SECONDS + 30 },
         );
         const run = this.cliExec(
             "doctor",
-            ["doctor", {
-                cel: cel(["--node=", this.nodeId(String(args.node))]),
-                deps: depsOf([this.nodeId(String(args.node))]),
-            }],
+            ["doctor", this.nodeFlag(String(args.node))],
             [0],
             [wait],
         );
@@ -737,6 +735,13 @@ export class CaseWorkflow {
             }],
         };
         const names = new Set(this.steps.map((step) => step.name));
+        for (const step of this.steps) {
+            for (const dep of step.deps) {
+                if (!names.has(dep)) {
+                    throw new Error(`${step.name} depends on unknown ${dep}`);
+                }
+            }
+        }
         const jobs = JOBS.map((job, index) => ({
             name: job,
             labels: { role: "swamp" },
