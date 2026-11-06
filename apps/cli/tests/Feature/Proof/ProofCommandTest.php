@@ -72,6 +72,17 @@ describe('proof', function (): void {
         $mock->assertSent(static fn ($request): bool => $request instanceof VerifyProofRequest && $request->body()->all() === ['command' => 'firewall:allow']);
     })->with([false, true]);
 
+    it('sends the task group that --group names, and refuses one that is not a number', function (): void {
+        $mock = proof_verify_gateway([proof_verify_running(), proof_verify_operation('passed')]);
+
+        expect(Artisan::call('proof', ['orbit-command' => 'firewall:allow', '--group' => '3682', '--json' => true, '--no-interaction' => true]))->toBe(0);
+        $mock->assertSent(static fn ($request): bool => $request instanceof VerifyProofRequest && $request->body()->all() === ['command' => 'firewall:allow', 'group' => 3682]);
+
+        expect(Artisan::call('proof', ['orbit-command' => 'firewall:allow', '--group' => 'abc', '--json' => true, '--no-interaction' => true]))->toBe(1)
+            ->and(Artisan::output())->toContain('proof.group_invalid');
+        $mock->assertSentCount(1, VerifyProofRequest::class);
+    });
+
     it('fails with the failed and the unrun case named', function (bool $json): void {
         proof_verify_gateway([proof_verify_operation('failed')]);
 

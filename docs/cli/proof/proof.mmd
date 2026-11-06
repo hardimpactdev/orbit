@@ -15,6 +15,10 @@ sequenceDiagram
   CLI->>GW: Prove the command<br/>proof COMMAND
   %%> Requirements:
   %%> - the call comes from a task VM of the Orbit Project that has its owned workspace and no other operation running, except the turn of the agent that calls; the Gateway finds the VM and its group by the calling Node
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the route keeps Gateway access, which no task VM holds; so a Node with Gateway access (an operator machine or the Swamp role) names the task group with `--group`, and the Gateway takes that group instead of the calling Node's
+  %%> Open question for Nick:
+  %%> - may a task VM prove its own group without Gateway access, through a narrower check (the caller is the guest Node of the group's VM)? That changes who may start work, so it waits for Nick
   %%> - the command names a cases file: `firewall:allow` is `swamp/proof/firewall/allow.cases.yaml` in the VM's own checkout, so the cases run against the code the author has now, committed or not
   %%> What it does:
   %%> - one command per run; in CI, `proof:run` proves each affected command on a VM of its own
@@ -24,7 +28,7 @@ sequenceDiagram
   %%> What it records:
   %%> - the group, the workspace and its checkout path, the pinned SSH target of the VM, the cases file, and two flags for the workflow: `restore_first` and `final_restore`; no step calls back
   %%> Refuses:
-  %%> - `proof.no_task_vm` when the caller is not a task VM, `proof.wrong_project` when its group is not on the Orbit Project, `operation.target_busy` while another operation holds the group, `tasks.no_workspace` without an owned workspace
+  %%> - `proof.no_task_vm` when the caller is not a task VM and names no group, `tasks.group_missing` when the named group does not exist, `proof.wrong_project` when its group is not on the Orbit Project, `operation.target_busy` while another operation holds the group, `tasks.no_workspace` without an owned workspace
   GW-->>CLI: 202 Accepted<br/>operation ID
   GW->>SW: Start the run<br/>proof-fleet-verify
   %%> What it does:

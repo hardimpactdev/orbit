@@ -31,9 +31,18 @@ final readonly class ProofVerifyIntent
         return 'swamp/proof/'.$family.'/'.$name.'.cases.yaml';
     }
 
-    public function start(Node $caller, string $command, string $triggeredBy, ?string $requestId): Operation
+    /**
+     * The route admits only a Node with Gateway access, so a named group comes from such a Node (an operator machine, the Swamp role).
+     * Without one, the group is the calling task VM's own.
+     */
+    public function start(Node $caller, string $command, ?int $groupId, string $triggeredBy, ?string $requestId): Operation
     {
-        $group = TaskVm::forNode($caller)?->group;
+        if ($groupId !== null) {
+            $group = Task::topLevel()->find($groupId)
+                ?? throw new ResourceOperationException('tasks.group_missing', "Task group [{$groupId}] does not exist.", 404);
+        } else {
+            $group = TaskVm::forNode($caller)?->group;
+        }
         if (! $group instanceof Task) {
             throw new ResourceOperationException('proof.no_task_vm', 'The proof runs on the task VM that calls it. This Node is not a task VM.', 409);
         }

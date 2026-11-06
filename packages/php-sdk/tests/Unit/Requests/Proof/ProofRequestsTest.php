@@ -147,6 +147,11 @@ function proof_verify_send(Request $request, string $fixture): MockClient
 }
 
 describe('proof verify requests', function (): void {
+    it('names the task group in the body only when it is given', function (): void {
+        expect((new VerifyProofRequest('firewall:allow', 'proof.verify.c1'))->body()->all())->toBe(['command' => 'firewall:allow'])
+            ->and((new VerifyProofRequest('firewall:allow', 'proof.verify.c1', 3682))->body()->all())->toBe(['command' => 'firewall:allow', 'group' => 3682]);
+    });
+
     it('starts proof.verify with a JSON body request to the verify route', function (): void {
         $request = new VerifyProofRequest('firewall:allow', 'proof.verify.c1');
 

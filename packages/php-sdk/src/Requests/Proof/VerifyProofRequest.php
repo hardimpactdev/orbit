@@ -23,6 +23,7 @@ final class VerifyProofRequest extends GatewayRequest implements HasBody
     public function __construct(
         public readonly string $command,
         private readonly string $idempotencyKey,
+        public readonly ?int $group = null,
     ) {
         if (preg_match('/\A[a-z][a-z0-9_]*:[a-z][a-z0-9_-]*\z/D', $command) !== 1) {
             throw new InvalidArgumentException('Name the command as family:action, for example firewall:allow.');
@@ -45,9 +46,9 @@ final class VerifyProofRequest extends GatewayRequest implements HasBody
         return ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{command: string} */
+    /** @return array{command: string, group?: int} */
     protected function defaultBody(): array
     {
-        return ['command' => $this->command];
+        return ['command' => $this->command, ...$this->group === null ? [] : ['group' => $this->group]];
     }
 }

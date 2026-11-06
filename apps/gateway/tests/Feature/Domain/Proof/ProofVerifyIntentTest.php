@@ -38,7 +38,7 @@ function verifyRefused(callable $callback): ResourceOperationException
 function verifyStart(Node $guest): void
 {
     try {
-        app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', 'tvm-700', null);
+        app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', null, 'tvm-700', null);
     } catch (ResourceOperationException $error) {
         if (! str_starts_with($error->errorCode, 'swamp.')) {
             throw $error;
@@ -70,9 +70,39 @@ describe('orbit proof admission', function (): void {
         $other = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'mini', 'status' => 'active', 'platform' => 'macos', 'architecture' => 'arm64',
             'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'nckrtl']));
 
-        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($other, 'firewall:allow', 'mini', null));
+        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($other, 'firewall:allow', null, 'mini', null));
 
         expect($refusal->errorCode)->toBe('proof.no_task_vm')->and(Operation::query()->count())->toBe(0);
+    });
+
+    it('records the intent of a named group for a Node with Gateway access, on that group\'s VM', function (): void {
+        $orbit = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $orbit->id]);
+        $guest = verifyVm($orbit->id);
+        $group = Task::topLevel()->sole();
+        $mini = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'mini', 'status' => 'active', 'platform' => 'macos', 'architecture' => 'arm64',
+            'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'nckrtl']));
+
+        try {
+            app(ProofVerifyIntent::class)->start($mini, 'firewall:allow', $group->id, 'mini', null);
+        } catch (ResourceOperationException $error) {
+            if (! str_starts_with($error->errorCode, 'swamp.')) {
+                throw $error;
+            }
+        }
+
+        $operation = Operation::query()->where('kind', 'proof.verify')->sole();
+        expect($operation->target_id)->toBe($group->id)->and($operation->node_id)->toBe($guest->id)
+            ->and($operation->input['ssh_execution']['target']['node_id'])->toBe($guest->id);
+    });
+
+    it('refuses a named group that does not exist, and records nothing', function (): void {
+        $mini = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'mini', 'status' => 'active', 'platform' => 'macos', 'architecture' => 'arm64',
+            'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'nckrtl']));
+
+        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($mini, 'firewall:allow', 999, 'mini', null));
+
+        expect($refusal->errorCode)->toBe('tasks.group_missing')->and($refusal->status)->toBe(404)->and(Operation::query()->count())->toBe(0);
     });
 
     it('refuses a task VM of another Project: the cases exist only for the Orbit repository', function (): void {
@@ -81,7 +111,7 @@ describe('orbit proof admission', function (): void {
         config(['proof.project' => $orbit->id]);
         $guest = verifyVm($other->id);
 
-        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', 'tvm-700', null));
+        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', null, 'tvm-700', null));
 
         expect($refusal->errorCode)->toBe('proof.wrong_project')->and(Operation::query()->count())->toBe(0);
     });
@@ -111,7 +141,7 @@ describe('orbit proof admission', function (): void {
             'status' => OperationStatus::Running, 'input' => []]);
 
         $held('tasks.check');
-        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', 'tvm-700', null));
+        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', null, 'tvm-700', null));
         expect($refusal->errorCode)->toBe('operation.target_busy')->and(Operation::query()->where('kind', 'proof.verify')->count())->toBe(0);
 
         Operation::query()->where('kind', 'tasks.check')->delete();
@@ -126,7 +156,7 @@ describe('orbit proof admission', function (): void {
         $guest = verifyVm($orbit->id);
         Task::topLevel()->sole()->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
 
-        expect(verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', 'tvm-700', null))->errorCode)->toBe('tasks.group_closed');
+        expect(verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', null, 'tvm-700', null))->errorCode)->toBe('tasks.group_closed');
     });
 
     it('refuses a group whose workspace is gone', function (): void {
@@ -134,7 +164,7 @@ describe('orbit proof admission', function (): void {
         config(['proof.project' => $orbit->id]);
         $guest = verifyVm($orbit->id, '');
 
-        expect(verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', 'tvm-700', null))->errorCode)->toBe('tasks.no_workspace');
+        expect(verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', null, 'tvm-700', null))->errorCode)->toBe('tasks.no_workspace');
     });
 
     it('names the cases file of a command', function (): void {

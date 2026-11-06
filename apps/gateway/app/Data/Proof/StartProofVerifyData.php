@@ -8,5 +8,5 @@ use Spatie\LaravelData\Data;
 
 final class StartProofVerifyData extends Data
 {
-    public function __construct(public string $command) {}
+    public function __construct(public string $command, public ?int $group = null) {}
 }
