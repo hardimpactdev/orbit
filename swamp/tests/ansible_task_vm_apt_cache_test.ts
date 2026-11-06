@@ -17,17 +17,32 @@ Deno.test("the software phase starts with the cache, before any read of the snap
     assertEquals(second["ansible.builtin.import_tasks"], "task-vm-apt.yml");
 });
 
-Deno.test("apt reads the snapshot through the cache over plain http", () => {
+Deno.test("the index read goes through the cache over plain http; the packages stay a direct download", () => {
     const config = text("task-vm-apt-config.yml");
+    assertStringIncludes(
+        config,
+        "URIs: https://snapshot.ubuntu.com/ubuntu/{{ recipe.ubuntu.snapshot }}/",
+    );
     assertStringIncludes(
         config,
         "URIs: http://snapshot.ubuntu.com/ubuntu/{{ recipe.ubuntu.snapshot }}/",
     );
-    assertEquals(config.includes("https://snapshot.ubuntu.com"), false);
+    const proxied = config.split("apt-cache.conf")[1];
     assertStringIncludes(
-        config,
+        proxied,
         'Acquire::http::Proxy "http://localhost:3142";',
     );
+    // apt pipelines its requests; the cache answers some of them with the body of another file.
+    assertStringIncludes(proxied, 'Acquire::http::Pipeline-Depth "0";');
+    // The configuration of the installs has no proxy: through the cache most packages failed.
+    const direct = config.split("apt-cache.conf")[0].split(
+        "{{ apt_directory }}/apt.conf",
+    )[1];
+    assertEquals(direct.includes("Proxy"), false);
+    const read = tasks("task-vm-apt-config.yml").find((task) =>
+        task.name === "Read the package indexes"
+    )!;
+    assertEquals(read.environment, "{{ apt_index_environment }}");
 });
 
 Deno.test("the cache installs from the own sources of the VM and keeps indexes, not packages", () => {
@@ -46,12 +61,17 @@ Deno.test("the cache installs from the own sources of the VM and keeps indexes, 
         "{{ apt_retries }}",
         "{{ apt_delay }}",
     ]);
-    const content = byName["Keep the packages out of the cache"][
-        "ansible.builtin.copy"
-    ].content;
-    assertStringIncludes(content, "DontCacheRequested: \\.deb$");
-    // A pattern for static files makes the cache answer some index files with the body of another one.
-    assertEquals(content.includes("SPfilePatternEx"), false);
+    // The cache serves the indexes only: no rule for packages, no pattern for static files (both broke the answers); it asks the
+    // snapshot service again before it answers with an error.
+    const content =
+        byName["Let the package cache ask the snapshot service again"][
+            "ansible.builtin.copy"
+        ].content;
+    assertStringIncludes(content, "DlMaxRetries: 10");
+    assertEquals(
+        content.includes("DontCache") || content.includes("SPfilePatternEx"),
+        false,
+    );
     const service = byName["Run the package cache"]["ansible.builtin.systemd"];
     assertEquals([service.name, service.enabled], [
         "apt-cacher-ng.service",

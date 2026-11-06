@@ -23,6 +23,11 @@
       APT_CONFIG: /var/tmp/orbit-image-apt/apt.conf
       DEBIAN_FRONTEND: noninteractive
       NEEDRESTART_MODE: l
+    # The index read goes through the package cache of the VM; the packages stay a direct download (task-vm-apt-config.yml).
+    apt_index_environment:
+      APT_CONFIG: /var/tmp/orbit-image-apt/apt-cache.conf
+      DEBIAN_FRONTEND: noninteractive
+      NEEDRESTART_MODE: l
   handlers:
     - name: Reload exports
       ansible.builtin.command: exportfs -ra

@@ -34,8 +34,9 @@ sequenceDiagram
   %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters, the NFS server), check
   %%> - versions come from recipe.json of the release commit; the same playbooks converge a running task VM in stage 2 and the refresh VM in stage 6
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), the package cache of the task VM:
-  %%> - the first software task installs stock `apt-cacher-ng` from the VM's own sources (not in the recipe: it is not a pinned tool) and starts it; a drop-in keeps `.deb` files out of its cache
-  %%> - the phases then read the Ubuntu snapshot through it (`http://snapshot.ubuntu.com` with the apt proxy `localhost:3142` and no request pipelining: the cache answers some of several requests in flight with the body of another file; apt still checks the signatures), so the build itself fills the cache with the snapshot indexes
+  %%> - the first software task installs stock `apt-cacher-ng` from the VM's own sources (not in the recipe: it is not a pinned tool) and starts it; a drop-in lets it ask the snapshot service again (`DlMaxRetries 10`) before it answers a client with an error: the service answers a check of a stored index with a 5xx now and then
+  %%> - the index read of the phases goes through it (`http://snapshot.ubuntu.com` with the apt proxy `localhost:3142` and no request pipelining: the cache answers some of several requests in flight with the body of another file; apt still checks the signatures), so the build itself fills the cache with the snapshot indexes
+  %%> - the packages stay a direct download over https: through the cache most of them failed (a 503 without a length, or a closed connection), and the cache then holds no `.deb`
   %%> - the cache stays in the image: every task VM starts with the indexes of the recipe's snapshot, and the nested Nodes of its fleet read them from the VM (fleet build, `Add app-dev and app-prod`)
   %%> - the end check reads that the cache is active
   %%> Why:

@@ -151,7 +151,7 @@ Tool installs and updates wait for a busy apt or dpkg lock, for example while un
 | --- | --- | --- |
 | First-use prerequisites (`brew`) | `apt-get update` | None. It takes the lists lock, `/var/lib/apt/lists/lock`, which `DPkg::Lock::Timeout` does not cover, and fails at once. |
 | First-use prerequisites (`brew`) | `apt-get install --no-remove` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | 300 s |
-| First-use prerequisites (`composer`) | Snapshot-pinned package transaction | 300 s for the install; its `apt-get update` fails at once on a busy lists lock |
+| First-use prerequisites (`composer`) | Snapshot-pinned package transaction | 300 s for the install; its `apt-get update` fails at once on a busy lists lock. A Node inside the nested subnet of a task VM reads the snapshot indexes through the package cache of that VM (`http://10.232.2.1:3142`, one request at a time) and downloads the packages directly; any other Node reads everything directly over https. |
 | `apt` install and update | `apt-get install --no-remove` | 300 s |
 | `apt` remove | `dpkg --remove` | None. dpkg refuses at once. |
 

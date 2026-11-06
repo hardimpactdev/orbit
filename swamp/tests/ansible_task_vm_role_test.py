@@ -120,7 +120,8 @@ class TaskVmRoleTest(unittest.TestCase):
             ['Install the Ubuntu packages', 'Install the packages', 'Install the packages that come as files', 'Read the package indexes'],
         )
         for name, task in found.items():
-            self.assertEqual(task['environment'], '{{ apt_environment }}', f'{name}: apt must read the snapshot configuration')
+            expected = '{{ apt_index_environment }}' if name == 'Read the package indexes' else '{{ apt_environment }}'
+            self.assertEqual(task['environment'], expected, f'{name}: apt must read the snapshot configuration')
         indexes = found['Read the package indexes']['ansible.builtin.apt']
         self.assertIs(indexes['update_cache'], True)
         self.assertEqual((indexes['update_cache_retries'], indexes['update_cache_retry_max_delay']), (12, 30))
