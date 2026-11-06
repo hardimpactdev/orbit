@@ -8,6 +8,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\PromoteRouteWrites;
 use App\Models\Operation;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -29,9 +30,33 @@ final class RoutePublicationHolds
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
     private const int UnconfirmedMinutes = 15;
 
+    /**
+     * Kinds that publish Route sites inside a longer run. They hold the Nodes of their Route-publish step only: the run asks for
+     * the hold before that step and gives it back after it, and the hold has a lease.
+     *
+     * @var list<string>
+     */
+    private const array StepKinds = ['tasks.provision', 'tasks.cancel', 'tasks.maintenance_finish', 'instance.register', 'cluster.router_set', 'cluster.router_unset'];
+
+    /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
+    private const int LeaseSeconds = 300;
+
+    /** The Operation holds its Nodes from admission to its end. */
     public static function applies(string $kind): bool
     {
         return in_array($kind, self::Kinds, true);
+    }
+
+    /** The Operation holds its Nodes for one step, through the hold call. */
+    public static function holdsPerStep(string $kind): bool
+    {
+        return in_array($kind, self::StepKinds, true);
+    }
+
+    /** Whether the terminal state of the kind has holds to free. */
+    public static function tracks(string $kind): bool
+    {
+        return self::applies($kind) || self::holdsPerStep($kind);
     }
 
     /** A Route write that waits for a held Node: native workflows report `waiting` too, and those are not ours. */
@@ -63,7 +88,7 @@ final class RoutePublicationHolds
      */
     public static function nodes(Operation $operation): array
     {
-        if (! self::applies($operation->kind)) {
+        if (! self::tracks($operation->kind)) {
             return [];
         }
         $nodes = [];
@@ -95,7 +120,8 @@ final class RoutePublicationHolds
     /** True when the Operation may start now. Otherwise it is set to `waiting` and starts when `promote` finds its Nodes free. */
     public function admit(Operation $operation): bool
     {
-        $nodes = self::nodes($operation);
+        // A kind that holds per step takes no Node at admission: its run calls for the hold around its Route-publish step.
+        $nodes = self::applies($operation->kind) ? self::nodes($operation) : [];
         if ($nodes === []) {
             return true;
         }
@@ -123,7 +149,7 @@ final class RoutePublicationHolds
      */
     public function sweep(): int
     {
-        $freed = 0;
+        $freed = DB::table('route_publication_holds')->whereNotNull('lease_until')->where('lease_until', '<', now())->delete();
         foreach (DB::table('route_publication_holds')->distinct()->pluck('operation_id') as $id) {
             $operation = Operation::query()->whereKey($id)->first();
             if ($operation === null || ($operation->status->terminal() && ! self::keepsNodes($operation))) {
@@ -194,23 +220,87 @@ final class RoutePublicationHolds
     }
 
     /**
-     * All the Nodes or none: the primary key refuses a Node that another Operation holds.
+     * Takes the Nodes of an Operation's Route-publish step, waiting up to `$waitSeconds` for the Nodes of a write that holds them. Returns
+     * the Nodes it holds, or null when they stayed busy. A Route write that waits for the same Nodes goes first.
+     *
+     * @return list<int>|null
+     */
+    public function holdStep(Operation $operation, int $waitSeconds): ?array
+    {
+        if (! self::holdsPerStep($operation->kind)) {
+            return null;
+        }
+        $nodes = self::nodes($operation);
+        $deadline = microtime(true) + $waitSeconds;
+        while ($nodes !== []) {
+            // A call repeated after a lost answer finds its own hold: renew it, whoever waits.
+            if ($this->holdsAll($operation->id, $nodes)) {
+                DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereIn('node_id', $nodes)->update(['lease_until' => now()->addSeconds(self::LeaseSeconds)]);
+
+                return $nodes;
+            }
+            if (! $this->waitingOverlaps($nodes) && $this->acquire($operation->id, $nodes, now()->addSeconds(self::LeaseSeconds))) {
+                return $nodes;
+            }
+            if (microtime(true) >= $deadline) {
+                return null;
+            }
+            usleep(250_000);
+        }
+
+        return [];
+    }
+
+    /** Gives back the Nodes of the Operation's Route-publish step, then asks for the waiting writes to start. */
+    public function releaseStep(Operation $operation): void
+    {
+        if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNotNull('lease_until')->delete() > 0) {
+            PromoteRouteWrites::dispatch()->afterCommit();
+        }
+    }
+
+    /** @param list<int> $nodes */
+    private function holdsAll(int $operationId, array $nodes): bool
+    {
+        return DB::table('route_publication_holds')->where('operation_id', $operationId)->whereIn('node_id', $nodes)->whereNotNull('lease_until')->count() === count($nodes);
+    }
+
+    /** @param list<int> $nodes */
+    private function waitingOverlaps(array $nodes): bool
+    {
+        foreach ($this->waiters() as $waiter) {
+            if (array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * All the Nodes or none: the primary key refuses a Node that another Operation holds. A hold with a lease that has run out is free.
      *
      * @param  list<int>  $nodes
      */
-    private function acquire(int $operationId, array $nodes): bool
+    private function acquire(int $operationId, array $nodes, ?CarbonInterface $lease = null): bool
     {
+        DB::table('route_publication_holds')->whereNotNull('lease_until')->where('lease_until', '<', now())->whereIn('node_id', $nodes)->delete();
         try {
-            DB::transaction(static function () use ($operationId, $nodes): void {
+            DB::transaction(static function () use ($operationId, $nodes, $lease): void {
                 foreach ($nodes as $node) {
-                    DB::table('route_publication_holds')->insert(['node_id' => $node, 'operation_id' => $operationId, 'created_at' => now()]);
+                    DB::table('route_publication_holds')->insert(['node_id' => $node, 'operation_id' => $operationId, 'created_at' => now(), 'lease_until' => $lease]);
                 }
             });
 
             return true;
         } catch (UniqueConstraintViolationException) {
-            // A promotion that already took them is not a conflict.
-            return DB::table('route_publication_holds')->where('operation_id', $operationId)->whereIn('node_id', $nodes)->count() === count($nodes);
+            // A promotion, or a repeated call of the same step, that already took them is not a conflict.
+            $held = DB::table('route_publication_holds')->where('operation_id', $operationId)->whereIn('node_id', $nodes);
+            if ($lease !== null && (clone $held)->count() === count($nodes)) {
+                $held->update(['lease_until' => $lease]);
+            }
+
+            return (clone $held)->count() === count($nodes);
         }
     }
 

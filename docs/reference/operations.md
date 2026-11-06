@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
-  - apps/gateway/database/migrations/2027_01_22_000000_create_route_publication_holds_table.php
+  - apps/gateway/database/migrations/*route_publication_holds*.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
@@ -392,6 +392,8 @@ An operation holds its target from the start request to its terminal status. A s
 ### One Route write per Node
 
 A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.destroy`, `instance.clone`, `instance.transfer`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
+
+Task provision and cancel, `instance.register` and the Cluster Router writes hold the same Nodes for one step only. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
 
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts. A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes.
 

@@ -1,4 +1,5 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, Nick 2026-11-06: the push step mints its token when it runs, and a task VM never holds a GitHub credential.
   %% Tightened: flow-tighten 2026-11-02, rules 16, 20 (no power read first: each guest step carries a guard on the VM's power, and the delete is safe to repeat).
   %% status: draft
@@ -61,11 +62,21 @@ sequenceDiagram
     %%> Guard:
     %%> - runs only while VM 88 runs; guest steps never run on a stopped VM, so no power read runs first
   end
+  SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
+  %%> What it does:
+  %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
+  %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
+  %%> - a Node that another Route write holds is waited for, up to 5 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+  %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
   Note over SW: Withdraw the Route<br/>@swamp/ssh · only this workspace
   %%> When:
   %%> - only when one Route targets this workspace alone; a shared or foreign Route refuses the end
   %%> What it does:
   %%> - removes the Route's Caddy site on its Node before the VM goes
+  SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
+  %%> What it does:
+  %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
+  %%> - runs beside the next step, so it adds no time
   opt VM still running
     SW->>VM: Run teardown steps<br/>Project teardown · own timeouts
     %%> When:

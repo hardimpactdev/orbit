@@ -17,10 +17,27 @@ jobs:
 - name: router
   labels: {role: swamp}
   steps:
+  - name: Hold the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ size(inputs.intent.retire_nodes) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-acquire" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn: []
     # Each Router Node's whole Caddyfile without the Router sites, then its certificates (route-target-retire).
   - name: 'Withdraw the Router sites'
     labels: {role: swamp}
-    dependsOn: []
+    dependsOn:
+    - {step: Hold the Route Nodes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
     task:
@@ -34,6 +51,28 @@ jobs:
         node_id: '${{ self.node.node_id }}'
         signed: []
         execution_secrets: {}
+  - name: Release the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '!("Hold the Route Nodes" in steps)'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-release" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Withdraw the Router sites
+      condition:
+        type: always
+    - step: Hold the Route Nodes
+      condition:
+        type: always
     # The Router LAN rules that no Route needs (route-remove-firewall).
   - name: 'Remove the LAN rules'
     labels: {role: swamp}

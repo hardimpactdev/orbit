@@ -1,5 +1,6 @@
 sequenceDiagram
-  %% status: reviewed
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
+  %% status: draft
   %% command: instance:register
   %% kind: instance.register
   autonumber
@@ -32,8 +33,18 @@ sequenceDiagram
         SW->>N: Create, start Processes<br/>child create · start
       end
       opt --domain
+        SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
+        %%> What it does:
+        %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
+        %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
+        %%> - a Node that another Route write holds is waited for, up to 5 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+        %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
         SW->>N: Create the Route<br/>child route-create
         %%> A completed registration needs --setup to check its Processes before marking the runtime awake.
+        SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
+        %%> What it does:
+        %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
+        %%> - runs beside the next step, so it adds no time
       end
       alt every step passes
         SW-->>GW: Run succeeded
