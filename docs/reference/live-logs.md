@@ -1,6 +1,6 @@
 ---
 title: "Live logs"
-description: "How a viewer tails an Instance log or a Process log live: opening, renewing, and closing a log stream, the events it receives, the limits, redaction, and the fallback to one-shot reads."
+description: "How a viewer tails an Instance log or a Process log live: opening, renewing, and closing a log stream, the events it receives, the limits, redaction, and the one-shot reads that use the same path."
 covers:
   - apps/gateway/app/Domain/Logs/**
   - apps/gateway/app/Actions/Logs/**
@@ -97,9 +97,9 @@ The Gateway publishes two server events on `private-log-stream.{stream}`, with t
 | `closed` | The client closed the stream. | None. |
 | `expired` | The lease ended without a renewal. | Open a new stream to keep watching. |
 | `revoked` | The opening Node lost its access grant to the serving Node. | Stop. |
-| `agent_left` | The Node's agent left its log channel, for example because it stopped, or it had no stream list for 60 seconds. | Fall back to one-shot reads. |
-| `source_unavailable` | The agent could not open or keep reading the source. | Fall back to one-shot reads. |
-| `relay_behind` | The Gateway could not relay the lines fast enough, for example because Reverb was slow. It dropped the lines that waited. | Fall back to one-shot reads. |
+| `agent_left` | The Node's agent left its log channel, for example because it stopped, or it had no stream list for 60 seconds. | A follow opens a new stream after 30 seconds. |
+| `source_unavailable` | The agent could not open or keep reading the source. | Stop. |
+| `relay_behind` | The Gateway could not relay the lines fast enough, for example because Reverb was slow. It dropped the lines that waited. | A follow opens a new stream after 30 seconds. |
 
 ## Sources
 
@@ -110,16 +110,17 @@ Each record has one source, the same one that its one-shot read uses.
 | Instance | `storage/logs/laravel.log` in the Instance's application directory (inside the checkout or selected release), or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
 | systemd Process | The journal entries that `journalctl --unit orbit-process-{id}-{name}.service` selects: the unit's own entries, systemd's messages about the unit, messages that root services log about it, and its core dumps | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
+| Schedule | The journal entries that `journalctl --unit orbit-schedule-{id}.service` selects, printed as for a systemd Process. A one-shot read only; there is no follow | `2026-09-25T10:15:02+00:00 host name[pid]: message` |
 
 The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
 
-The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, the command of the one-shot read, `process.logs`. So both reads select the same entries, and each journal line is the same text in both. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
+The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, which the one-shot read of a Process and of a Schedule also uses. So both reads select the same entries, and each journal line is the same text in both. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
 
 The agent first reads the cursor of the unit's newest entry. It reads the first lines from that entry backwards and then follows from the next entry, so an entry written in between is sent exactly once.
 
 The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, and keeps at most 512 KiB of one printed line, so a huge message cannot exhaust its memory. A longer entry ends with the line `[orbit] message cut at 256 KiB`. A single line longer than 256 KiB is cut there too, before a character rather than inside one. The one-shot read cuts each entry with the same code, so a follow can switch between the reads at any entry without a gap.
 
-The one-shot read of a systemd Process reads the journal newest entry first and stops after 4 MiB, because `journalctl --lines` counts entries and one entry can hold millions of lines. It cuts each entry at 256 KiB before that limit, so a huge entry does not hide the older entries. The one-shot read of a Docker Process also returns both streams in one, in the same order.
+A one-shot read returns the first lines of the tail, at most 256 KiB, and the agent cuts each journal entry at 256 KiB before that limit, so a huge entry does not hide the older entries. The first lines of a Docker Process hold both streams in one, in the order the container wrote them.
 
 The agent refuses a log file that `root` owns, a link at `storage/logs` or at the log file, and a container without the labels `orbit.managed=true` and `orbit.process.id={id}`. The stream then ends with `source_unavailable`.
 
@@ -210,19 +211,25 @@ A `log-streams.changed` event carries no data. It only prompts the agent to fetc
 
 ### The observer runs no program that changes the Node
 
-The observer is visibility-only. The only program it runs is read-only `journalctl`, with fixed arguments, to follow a systemd Process. Changes to a Node run in the agent's [command mode](/reference/node-agent#commands), which only SSH or the Gateway starts. `journalctl` changes nothing on the Node, and the Gateway already runs it over SSH for one-shot reads. So the live stream and the one-shot read share one command and one output, and their lines match on every systemd version.
+The observer is visibility-only. The only program it runs is read-only `journalctl`, with fixed arguments, to follow a systemd Process. Changes to a Node run in the agent's [command mode](/reference/node-agent#commands), which only SSH or the Gateway starts. `journalctl` changes nothing on the Node. The live stream and the one-shot read share one command and one output, so their lines match on every systemd version.
 
 Reading the journal through `libsystemd` is not possible, because the agent is a static musl binary and cannot load it. An earlier agent read the journal files with its own reader. It was rejected, because it had to follow the file format, its compression, and file rotation, and it still printed some rare entries differently from `journalctl`. The agent reads Instance log files itself and never starts `tail`.
 
 ### Production Instances read through a read-only group
 
-Decided by the orchestrator, for Nick's review (2026-11-06). A production Instance lives in its own home, and the agent's unit hides every home except the development Instance root and the production homes it binds back read-only for `.env` key names. The unit joins one more group, `orbit-logs`. A deploy gives that group a read ACL on the release's `storage/logs` and its files, and traverse on the directories above. The agent reads the log file itself and starts no program.
+Decided by the orchestrator, for Nick's review (2026-11-06). A production Instance lives in its own home, and the agent's unit hides every home except the development Instance root and the production homes it binds back read-only for `.env` key names. The unit joins one more group, `orbit-logs`, which `agent.configure` creates before it writes the unit.
+
+A deploy gives that group a read ACL, with a default ACL for new files, on the shared `storage/logs` directory of the application in the production home, and traverse on the directories above it. The release's `storage` is a link to that shared directory, so one grant covers every release. The agent reads the log file itself and starts no program.
 
 Widening the read to the whole home is rejected, because production `.env` files that their owner left readable would be exposed. Changing the production apps to log elsewhere is rejected, because it changes what runs in production.
 
+A production Instance created after the agent's last converge is read once the next converge binds its home. The group is one for the Node, so the agent refuses a link at `storage/logs` or at the file, and it reads only the path the Gateway derives. Production log lines pass through Reverb on the `websocket` Node; the agent redacts credential-shaped text, and the Gateway redacts the stored environment values before it answers.
+
 ### One-shot reads use the stream path
 
-A one-shot read opens a tail on the same typed source as a follow, waits at most 5 seconds for its first lines, and closes it. The agent then needs no command for these reads, and the one-shot and the follow select the same lines.
+A one-shot read opens a tail for the Gateway itself, with the line count of the request and no viewer channel. The Gateway starts the tail at once, takes the first batch the agent sends, and closes the tail, also when it waited 5 seconds in vain. The agent sends its first lines as one batch even when the batch is empty, so a missing file or an empty journal is an empty log and not a timeout. The batch holds at most the requested lines and 256 KiB, and the response sets `truncated` when either limit left out older lines.
+
+The tail holds one of the Node's 16 stream slots while it waits, so a refusal can be `logs.stream_limit`. The agent needs no command for these reads, and the one-shot and the follow select the same lines.
 
 ### Stream state in a cache, not SQLite
 

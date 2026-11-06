@@ -20,11 +20,13 @@ orbit process:logs <process> [--lines=COUNT] [--follow] [--json]
 
 Without `--follow`, the Gateway answers from the Node agent's log stream: it opens a one-shot tail and returns its first lines, with no SSH. With `--follow`, the CLI opens a [live log stream](/reference/live-logs): the Node agent reads the log, and the Gateway relays new lines to this CLI only. The CLI prints `[orbit] N lines dropped` or `[orbit] N MiB skipped` where the stream reports them.
 
-When the Gateway cannot open a stream, for example because realtime is not configured or the agent has not joined its log channel yet, the one-shot read has no other path. The CLI prints the error with its reason on stderr and exits with status 1. It does the same when it cannot connect to Reverb within 15 seconds, with reason `realtime_unreachable`, for example on a host that does not resolve `reverb.orbit`.
+Without `--follow`, when the Gateway cannot answer, for example because realtime is not configured or the agent has not joined its log channel yet, the CLI prints the error with its reason on stderr and exits with status 1. It does the same when it cannot connect to Reverb within 15 seconds, with reason `realtime_unreachable`, for example on a host that does not resolve `reverb.orbit`.
+
+With `--follow`, a reason that passes on its own, such as `agent_not_joined` during a `websocket` move, makes the CLI print a notice and open a stream after 30 seconds. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists the reasons. Any other reason exits with status 1.
 
 When a live stream ends because the agent stopped, the source became unreadable, or the Gateway fell behind, the CLI opens a new stream after 30 seconds for the reasons that pass on their own, such as `agent_not_joined` during a `websocket` move. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists the reasons. A new stream asks for 1,000 earlier lines and the CLI prints only the ones after the last printed line, or `[orbit] lines may be missing` and the newest `--lines` lines. It prints a part the Gateway sends again, with a `sequence` it already has, only once. For any other reason it exits with status 1.
 
-The stream cuts a line longer than 8 KiB and ends it with ` [truncated]`. A one-shot read returns at most 4 MiB of whole lines, and for a systemd Process it cuts each journal entry at 256 KiB, as the stream does. For a Docker Process both return standard output and standard error together, in the order the container wrote them.
+The stream cuts a line longer than 8 KiB and ends it with ` [truncated]`. A one-shot read returns at most 256 KiB of whole lines and sets `truncated` when it left out older lines. For a systemd Process it cuts each journal entry at 256 KiB, as the stream does. For a Docker Process both return standard output and standard error together, in the order the container wrote them.
 
 The CLI redacts credential-shaped text before it prints a line. It writes every redaction as `[redacted]`, also a value that the agent or the Gateway already replaced.
 

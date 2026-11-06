@@ -11,46 +11,46 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant A as Node agent<br/>orbit-agent
-  CLI->>GW: instance:logs 12
+  CLI->>GW: instance:logs <instance>
   %%> Command:
-  %%> - `orbit instance:logs 12`
+  %%> - `orbit instance:logs <instance>`
   %%> - syntax: `instance:logs <instance> [--lines=COUNT] [--follow] [--json]`
   %%> Input:
   %%> - the numeric Instance ID from `instance:list`
-  %%> Optional:
-  %%> - `--lines` sets the count from 1 through 1,000; `--follow` keeps the tail open (see the live logs page); neither adds a step here
   %%> Who can call it:
   %%> - the `orbit` CLI, the web app and the MCP tool send the same request
-  Note over GW: Validate, open a tail<br/>source: Instance 12 log
+  Note over GW: Validate, open a tail<br/>source: the Instance log
   %%> Requirements:
-  %%> - your Node has an access grant to the Node that serves Instance 12
+  %%> - your Node has an access grant to the Node that serves the Instance
   %%> - the agent of that Node has a fresh view and has joined its log channel
+  %%> - the Node has a free stream slot (16 for each Node)
   %%> Result:
-  %%> - a tail is recorded in the stream cache with the source the Gateway derives from the Instance: `storage/logs/laravel.log` in its application directory, or the newest `laravel-*.log` when that file is absent
-  %%> - the caller names no path
+  %%> - the Gateway opens the tail for itself with the requested line count and starts it at once; it needs no viewer channel
+  %%> - the source is derived by the Gateway: `storage/logs/laravel.log` in the Instance's application directory, or the newest `laravel-*.log` when that file is absent
+  %%> - the caller names no path or unit
   GW->>A: log-streams.changed
   %%> What it does:
-  %%> - prompts the agent to fetch its stream list; the event carries no data
-  A->>GW: Fetch the stream list
+  %%> - prompts the agent to fetch its stream list over HTTPS; the event carries no data
   Note over A: Read the newest lines<br/>log file, read-only
   %%> What it does:
   %%> - the agent reads the file itself and starts no program
-  %%> - a development Instance: the file is readable under the development Instance root
-  %%> - a production Instance: its release `storage/logs` carries a read ACL for the group `orbit-logs`, which the agent's unit joins; the unit binds the production home back read-only, as it does for `.env` key names
+  %%> - a development Instance: the file under the development Instance root
+  %%> - a production Instance: the shared `storage/logs` directory of the application in the production home carries a read ACL for the group `orbit-logs`, which the agent's unit joins; the unit already binds the production home back read-only
   %%> - it refuses a file that root owns and a link at `storage/logs` or at the file
-  %%> - each line is redacted
+  %%> - the agent redacts each line and sends the first lines as one batch, also when the batch is empty, so the Gateway knows the read is complete
   A->>GW: Lines<br/>log channel
-  Note over GW: Redact, close the tail<br/>stored environment values
   alt lines arrive within 5 s
+    Note over GW: Redact, close the tail<br/>stored environment values
     GW-->>CLI: 200 lines<br/>truncated flag
     %%> Result:
-    %%> - at most `--lines` newest lines and 4 MiB of whole lines; `truncated` is set when older lines were left out
-    %%> - an Instance without a log file returns an empty list
+    %%> - at most the requested number of newest lines and 256 KiB; `truncated` is set when either limit left out older lines
+    %%> - an Instance without a log file is an empty list
   else agent cannot answer
+    Note over GW: Close the tail<br/>frees the stream slot
     GW--xCLI: 409 logs.live_unavailable<br/>reason
     %%> When:
-    %%> - the agent view is stale, the agent has not joined its log channel, no line arrives within 5 s, or the file cannot be read
+    %%> - the agent view is stale, the agent has not joined its log channel, the source cannot be read, or no batch arrives within 5 s
+    %%> - `logs.stream_limit` (429) when the Node already has 16 open tails
     %%> Result:
-    %%> - there is no SSH fallback and nothing to clean up; read again once the agent is back
-    %%> - a production release created before the ACL step carries no read ACL until its next deploy; the read then ends with reason `source_unavailable`
+    %%> - there is no SSH fallback and no polling; read again once the agent is back
   end
