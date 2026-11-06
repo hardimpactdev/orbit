@@ -32,9 +32,13 @@ sequenceDiagram
   %%> - Gateway code: fast checks and the Gateway Pest suite
   %%> - web or CLI code: fast checks and that build
   %%> - command code (workflows, extensions, playbooks, roles, versions): fast checks and the proof CI
-  %%> - the proof CI starts only when a changed path selects a command in `swamp/proof/selection.txt`, the same list `proof:run` reads; docs, charts and case descriptions never start it
-  %%> Not built:
-  %%> - mapping each command's Gateway Action and CLI files in `selection.txt`; `apps/**` is `skip` until a command is ready
+  %%> - the proof CI starts only when a changed path selects a command (or `*`, every case) in `swamp/proof/selection.txt`, the same list `proof:run` reads; docs, charts and case descriptions never start it, also inside a directory that selects `*`
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the mapping is data in `selection.txt`, one block per command family: its Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, its CLI command and vocabulary files, and its SDK request and response files select every command of the family; code that serves another family stays out (for example the router LAN ingress files)
+  %%> - a family's block is added with the first cases file of the family, because a path that selects only commands with no cases file starts a proof run that reports them as uncovered and proves nothing; `apps/**` stays `skip` until then. Commands of a mapped family that have no cases file yet are listed as uncovered
+  %%> Decided by Nick (2026-11-06):
+  %%> - code that every command runs through selects `*`, which runs the cases of every command that has a cases file, so a shared change re-proves what it can break. The shared files are named in the list: the Gateway Operation machinery and Swamp run classes, the request middleware, the CLI base command and support, and the SDK core. Adding a command to the registries of Operation kinds and budgets is also a shared change and runs every case; for Nick to revisit if the cost bites
+  %%> Built: the firewall family (`firewall:allow`, `firewall:deny`, `firewall:list`, `firewall:remove`) and the shared files, checked by Pest tests against the checked-in list
   Note over CI: Fast checks<br/>about 2 minutes
   %%> What it does:
   %%> - the Project check fails on formatter drift: Rector and Pint run in fix mode, and a commit that they would change fails the check, so main stays formatter-clean and `composer check` in a task rewrites only the files the task touched
