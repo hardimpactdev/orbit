@@ -177,13 +177,21 @@ jobs:
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'ping', '-c', '1', '-w', '20', '10.45.0.1'], timeoutSec: 40}}
     dependsOn: [{step: 'Bring up the tunnel', condition: {type: succeeded}}]
   # The nested Gateway runs its own Swamp as part of the Orbit under test. The ready copies are key-free; the VM holds the proof Swamp Club key from the workspace step.
+  # `incus file push --create-dirs` makes the folders as root, which breaks the orbit user of the nested Gateway; the folders exist before the push, owned by orbit.
+  - name: 'Make the Club key folder'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required }}'
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-club-key-folder").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-club-key-folder").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/home/orbit/.config', '/home/orbit/.config/swamp'], timeoutSec: 70}}
+    dependsOn: [{step: 'Check the tunnel', condition: {type: succeeded}}]
   - name: 'Push the Club key'
     labels: {role: swamp}
     writes: true
     guard: '${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-push-the-club-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-push-the-club-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'file', 'push', '--create-dirs', '--mode=0600', '--uid=1000', '--gid=1000', '/home/orbit/.config/swamp/club-api-key', '${{ inputs.intent.fleet.guests.gateway }}/home/orbit/.config/swamp/club-api-key'], timeoutSec: 70}}
-    dependsOn: [{step: 'Check the tunnel', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Make the Club key folder', condition: {type: succeeded}}]
   - name: 'Restart the nested Swamp'
     labels: {role: swamp}
     writes: true
