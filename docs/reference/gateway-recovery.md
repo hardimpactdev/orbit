@@ -130,7 +130,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
-The activate child drains Horizon before the switch. The drain waits until the unit's whole control group is empty, as long as the drain allows. A process that a job leaves behind holds it; for this reason a command that runs inside Horizon opens its own [SSH connection](/reference/node-provisioning#ssh-connections), and no shared connection master stays in the group.
+The activate child drains Horizon before the switch. The Horizon unit carries the same stop policy in its own settings ([Horizon](/reference/gateway-queue#horizon)); a following change makes the drain rely on it alone. The drain waits until the unit's whole control group is empty, as long as the drain allows. A process that a job leaves behind holds it; for this reason a command that runs inside Horizon opens its own [SSH connection](/reference/node-provisioning#ssh-connections), and no shared connection master stays in the group.
 
 The child starts Horizon again as a step that runs after every end of the run, so a failed drain, a failed switch or a switch back leaves Horizon running. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application, and starts Horizon.
 
