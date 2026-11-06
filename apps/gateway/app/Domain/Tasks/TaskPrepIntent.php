@@ -77,6 +77,7 @@ final readonly class TaskPrepIntent
                 'draft' => $turn($author, $prompts->draft(), true),
                 'fix' => $turn($author, $prompts->fix(), false),
                 'reviews' => array_map(fn (AgentThread $thread): array => $turn($thread, $prompts->review(), true), $reviewers),
+                'plan' => ['cases_file' => $prompts->cases()],
                 'publish' => [
                     'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
                     'checkout_path' => $instance->checkout_path, 'repository' => $repository->owner.'/'.$repository->name,

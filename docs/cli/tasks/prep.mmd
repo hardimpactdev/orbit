@@ -46,6 +46,12 @@ sequenceDiagram
   %%> - the turn reports the commit and tree it left
   alt the draft moved HEAD
     loop until the review has no findings, at most 3 rounds
+      SW->>VM: Plan the cases<br/>runner.py plan
+      %%> What it does:
+      %%> - runs `python3 swamp/proof/runner/runner.py plan --file` on the cases file as one `@swamp/ssh exec` with literal arguments; exit 0 and 3 are accepted
+      %%> - runs after the draft and after each fix; the Gateway captured the path of the cases file at admission
+      %%> Result:
+      %%> - a refusal (exit 3) is added to the findings of the round, so the review cannot approve past it and the fix turn gets it
       SW->>VM: Review the spec<br/>operation-task-turn
       %%> What it does:
       %%> - a new reviewer thread restores the commit under review and reads the spec

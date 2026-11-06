@@ -581,3 +581,65 @@ Deno.test("the review loop keeps its state across a review and a fix, and refuse
         "tasks.prep_not_committed",
     );
 });
+
+Deno.test("a refused runner plan comes first in the findings and no review approves past it", () => {
+    const turn = (receipt: Record<string, string>) =>
+        JSON.stringify({
+            state: "done",
+            receipt,
+            before: { head, tree },
+            after: { head, tree },
+        });
+    const base = { approved: false, head, tree, fix: "" };
+    const refusal =
+        "cases file refused: case x setup[2]: step ufw_delete is not allowed in setup\n";
+    const approvedButRefused = settle({
+        ...base,
+        review: turn({ outcome: "approved", summary: "Clean." }),
+        plan_exit: 3,
+        plan_output: refusal,
+    });
+    assertEquals(approvedButRefused.approved, false);
+    assertEquals(
+        approvedButRefused.findings.includes(
+            "step ufw_delete is not allowed in setup",
+        ),
+        true,
+    );
+    assertEquals(
+        approvedButRefused.findings.startsWith(
+            "The runner plan of the cases file was refused (exit 3)",
+        ),
+        true,
+    );
+    const both = settle({
+        ...base,
+        review: turn({
+            outcome: "changes_requested",
+            summary: "1. Fix the title.",
+        }),
+        plan_exit: 3,
+        plan_output: refusal,
+    });
+    assertEquals(both.findings.endsWith("1. Fix the title."), true);
+    assertEquals(
+        both.findings.indexOf("refused") <
+            both.findings.indexOf("Fix the title"),
+        true,
+    );
+    // A plan that exited 0, one that did not run, and a round with no plan keep the review as it was.
+    for (
+        const plan of [
+            { plan_exit: 0, plan_output: "ok" },
+            { plan_exit: null },
+            {},
+        ]
+    ) {
+        const kept = settle({
+            ...base,
+            review: turn({ outcome: "approved", summary: "Clean." }),
+            ...plan,
+        });
+        assertEquals([kept.approved, kept.findings], [true, "Clean."]);
+    }
+});
