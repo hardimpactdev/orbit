@@ -29,6 +29,7 @@ final readonly class TaskCheckIntent
         if (($existing = $this->idempotency->replay('tasks.check')) !== null) {
             return $existing;
         }
+        TaskVmAwake::require($group);
 
         return DB::transaction(function () use ($group, $input, $caller, $request): Operation {
             $group->setRawAttributes(Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);

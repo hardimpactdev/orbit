@@ -31,6 +31,7 @@ final readonly class TaskTurnIntent
         if (($existing = $this->idempotency->replay('tasks.turn')) !== null) {
             return $existing;
         }
+        TaskVmAwake::require($group);
 
         return DB::transaction(function () use ($group, $data, $caller, $request): Operation {
             $group->setRawAttributes(Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);

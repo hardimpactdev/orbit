@@ -20,6 +20,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - group 42 is external and open; child 43 is current and open
   %%> - your Node has an access grant to the workspace Node
+  %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - a reviewer has an eligible check on the admitted candidate
   GW->>SW: Start one run<br/>operation-task-turn
   %%> Inputs:
