@@ -218,6 +218,34 @@ jobs:
             kind: '${{ self.member.kind }}'
             intent: '${{ self.member.intent }}'
             execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
+      # Route certificates: the Node-local key and CSR, then the Gateway's signature, beside the checkout. They touch only the
+      # certificate folder, so they wait for nothing; the Route child below takes the signed certificates.
+      - name: route-csr
+        labels: {role: swamp}
+        writes: true
+        dependsOn: []
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null }}'
+        forEach: {item: leaf, in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes }}'}
+        task:
+          type: workflow
+          workflowIdOrName: route-create-csr
+          inputs:
+            intent: '${{ inputs.intent.route }}'
+            leaf: '${{ self.leaf }}'
+      - name: route-sign
+        labels: {role: swamp}
+        dependsOn:
+          - {step: route-csr, condition: {type: always}}
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
+        forEach: {item: leaf, in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes }}'}
+        task:
+          type: workflow
+          workflowIdOrName: route-create-sign
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            parent_run_id: '${{ run.id }}'
+            leaf: '${{ inputs.intent.route.leaves[self.leaf] }}'
+            request: '${{ steps["route-csr-" + string(self.leaf)].outputs.csr.stdout }}'
       # Route: a web-serving Project's Route, through the same child that route:create runs, after setup and Processes.
       - name: route
         labels: {role: swamp}
@@ -226,6 +254,7 @@ jobs:
           - {step: checkout, condition: {type: always}}
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}
+          - {step: route-sign, condition: {type: always}}
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
         task:
           type: workflow
@@ -237,6 +266,7 @@ jobs:
             kind: route.create
             intent: '${{ inputs.intent.route }}'
             execution_secrets: '${{ inputs.intent.route_secrets }}'
+            signed: '${{ inputs.intent.route.leaf_indexes.map(i, steps["route-sign-" + string(i)].outputs.sign.stdout) }}'
       # Finish: map the first phase that did not finish to the public receipt. The cleanup of the run folder runs beside it.
       - name: finish
         labels: {role: swamp}
@@ -249,6 +279,8 @@ jobs:
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}
+          - {step: route-csr, condition: {type: always}}
+          - {step: route-sign, condition: {type: always}}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -261,6 +293,7 @@ jobs:
             setup: '${{ "setup" in steps ? steps.setup.status : "skipped" }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
+            certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") + inputs.intent.route.leaf_indexes.map(i, ("route-sign-" + string(i)) in steps ? steps["route-sign-" + string(i)].status : "skipped") }}'
       - name: accepted
         labels: {role: swamp}
         dependsOn: [{step: finish, condition: {type: succeeded}}]

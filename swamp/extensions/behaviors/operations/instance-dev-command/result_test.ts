@@ -129,3 +129,46 @@ Deno.test("a create that copies the default database needs that copy; others ski
     );
     assertEquals(JSON.parse(createResult(intent, phases).stdout).ready, true);
 });
+Deno.test("a Route certificate that failed is the Route's failure, not the setup it skipped", () => {
+    const routed = { ...intent, route: { route_id: 9 } };
+    const failed = JSON.parse(
+        createResult(routed, {
+            ...phases,
+            setup: "skipped",
+            processes: ["skipped"],
+            route: "skipped",
+            certificates: ["failed", "skipped"],
+        }).stdout,
+    );
+    assertEquals([failed.ready, failed.failed_step, failed.error_code], [
+        false,
+        "route",
+        "instance.create_route_failed",
+    ]);
+});
+Deno.test("a failed setup wins over the Route it skipped", () => {
+    const routed = { ...intent, route: { route_id: 9 } };
+    const failed = JSON.parse(
+        createResult(routed, {
+            ...phases,
+            setup: "failed",
+            processes: ["skipped"],
+            route: "skipped",
+            certificates: ["succeeded", "succeeded"],
+        }).stdout,
+    );
+    assertEquals([failed.failed_step, failed.error_code], [
+        "setup",
+        "instance.setup_step_failed",
+    ]);
+    assertEquals(
+        JSON.parse(
+            createResult(routed, {
+                ...phases,
+                route: "succeeded",
+                certificates: ["succeeded", "succeeded"],
+            }).stdout,
+        ).ready,
+        true,
+    );
+});

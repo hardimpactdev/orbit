@@ -10,6 +10,8 @@ inputs:
     parent_run_id: {type: string}
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: route.create}
+    # The signed certificates, when the caller already made and signed the CSRs; none from a plain route:create.
+    signed: {type: array, items: {type: string}}
     intent: {type: object}
     execution_secrets:
       type: object
@@ -31,7 +33,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: []
     writes: true
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
+    forEach: {item: leaf, in: '${{ has(inputs.signed) ? [] : inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
       workflowIdOrName: route-create-csr
@@ -44,7 +46,7 @@ jobs:
     dependsOn:
     - {step: 'Make a CSR on the Node', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
+    forEach: {item: leaf, in: '${{ has(inputs.signed) ? [] : inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
       workflowIdOrName: route-create-sign
@@ -88,7 +90,7 @@ jobs:
         intent: '${{ inputs.intent }}'
         node_id: '${{ self.node }}'
         execution_secrets: '${{ inputs.execution_secrets }}'
-        signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
+        signed: '${{ has(inputs.signed) ? inputs.signed : inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
     # From 209 to each serving Node and the Router on 443 with the Route domain as SNI; a failed chain fails the step.
   - name: 'Probe the site over TLS'
     labels: {role: swamp}

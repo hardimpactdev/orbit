@@ -3,6 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten, rules 1-28 (rule 22: Ansible phases, 0600 credential file for the private fetch).
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work is two Ansible phases, `checkout` (clone, check out, write .env) and `setup`, behind one input step. Measured on Node 209: every placed Swamp step costs about 1.1 s of dispatch before it does any work, and the old flow ran 8 steps for the checkout and one per setup step.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the run-folder cleanup runs beside the result step, not before it (a Swamp job runs steps by dependency depth, so they were one after the other in a create without setup or Route).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route's key, CSR and signature run at the start, beside the checkout, because they touch only the certificate folder and the Route child ran them in series after the setup steps (about 7 s of a 46 s create).
   %% status: draft
   %% command: instance:create
   %% kind: instance.create
@@ -49,6 +50,13 @@ sequenceDiagram
   SW->>SW: Write the playbook input<br/>intent file · assets
   %%> Why one input step:
   %%> - the intent is too large for an environment variable, and the same file serves both phases
+  opt web-serving Project
+    SW->>N: Make, sign Route key<br/>children route-create-csr, -sign
+    %%> When:
+    %%> - at the start, beside the checkout and the setup steps: the key and CSR touch only the certificate folder, and the Gateway signs them with the one certificate call
+    %%> Why here:
+    %%> - the Route child below then takes the signed certificates, so its 5 s of key and signature steps are off the critical path
+  end
   SW->>N: Clone, write .env<br/>Ansible · tags checkout
   %%> Why one phase:
   %%> - one placed step and one Ansible start cover every task of it

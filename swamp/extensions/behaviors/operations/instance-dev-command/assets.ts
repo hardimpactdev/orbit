@@ -6,7 +6,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.06.1",
+    version: "2026.11.06.2",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -21,6 +21,7 @@ export const behavior = {
                 setup: z.string(),
                 processes: z.array(z.string()),
                 route: z.string(),
+                certificates: z.array(z.string()).default([]),
             }),
             execute: async (
                 args: {
@@ -30,6 +31,7 @@ export const behavior = {
                     setup: string;
                     processes: string[];
                     route: string;
+                    certificates?: string[];
                 },
                 ctx: Context,
             ) => {
