@@ -178,18 +178,14 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 && $group->pr_url === $group->watched_pr_url && ! TaskExecutionHold::active($group)
                 && $group->tasks()->where('status', '!=', TaskStatus::Completed)->doesntExist()
                 && ! $group->assistance_requested) {
-                $identity = app(OperationIdempotency::class);
-                $prior = [$identity->kind, $identity->key, $identity->fingerprint];
-                $identity->kind = 'tasks.maintenance_finish';
-                $identity->key = 'maintenance-finish:'.$group->id.':'.ValidatedData::integer($group->maintenance['publish_operation_id']);
-                $identity->fingerprint = hash('sha256', $identity->key);
+                $key = 'maintenance-finish:'.$group->id.':'.ValidatedData::integer($group->maintenance['publish_operation_id']);
                 try {
-                    $group->update(['status' => TaskGroupStatus::Settling, 'watched_pr_completion' => $state]);
-                    app(TaskCancelIntent::class)->finishMaintenance($group);
+                    app(OperationIdempotency::class)->under('tasks.maintenance_finish', $key, hash('sha256', $key), function () use ($group, $state): void {
+                        $group->update(['status' => TaskGroupStatus::Settling, 'watched_pr_completion' => $state]);
+                        app(TaskCancelIntent::class)->finishMaintenance($group);
+                    });
                 } catch (ResourceOperationException $exception) {
                     TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: 'Maintenance cleanup admission refused: '.$exception->errorCode);
-                } finally {
-                    [$identity->kind, $identity->key, $identity->fingerprint] = $prior;
                 }
             }
         }
@@ -253,22 +249,18 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
 
     private function startProvision(Task $group): void
     {
-        $identity = app(OperationIdempotency::class);
-        $prior = [$identity->kind, $identity->key, $identity->fingerprint];
-        $identity->kind = 'tasks.provision';
-        $identity->key = 'maintenance:'.$group->id.':provision';
-        $identity->fingerprint = hash('sha256', $identity->key);
+        $key = 'maintenance:'.$group->id.':provision';
         try {
-            $provision = app(StartTaskProvisionAction::class)->execute($group, 'project-maintenance', null);
-            $group->update(['maintenance' => [...($group->maintenance ?? []), 'operation_id' => $provision->id, 'admission_pending' => false]]);
+            app(OperationIdempotency::class)->under('tasks.provision', $key, hash('sha256', $key), function () use ($group): void {
+                $provision = app(StartTaskProvisionAction::class)->execute($group, 'project-maintenance', null);
+                $group->update(['maintenance' => [...($group->maintenance ?? []), 'operation_id' => $provision->id, 'admission_pending' => false]]);
+            });
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode === 'tasks.capacity_unavailable') {
                 $group->update(['maintenance' => [...($group->maintenance ?? []), 'admission_pending' => true]]);
             } else {
                 TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'Maintenance provision admission refused: '.$exception->errorCode);
             }
-        } finally {
-            [$identity->kind, $identity->key, $identity->fingerprint] = $prior;
         }
     }
 

@@ -71,40 +71,36 @@ final readonly class TaskMaintenanceContinuation
             }
             $state['repair_attempted'] = true;
         }
-        $identity = app(OperationIdempotency::class);
-        $prior = [$identity->kind, $identity->key, $identity->fingerprint];
-        $identity->kind = $kind;
-        $identity->key = 'maintenance:'.$group->id.':'.$operation->id.':'.$kind;
-        $identity->fingerprint = hash('sha256', $identity->key);
+        $key = 'maintenance:'.$group->id.':'.$operation->id.':'.$kind;
         try {
-            if ($kind === 'tasks.maintenance_finish') {
-                $child->update(['status' => TaskStatus::Completed, 'settled_at' => now(), 'completion_summary' => 'No dependency changes; native check passed.']);
-                $group->update(['status' => TaskGroupStatus::Settling, 'maintenance' => $state]);
-                $next = app(TaskCancelIntent::class)->finishMaintenance($group);
-            } elseif ($kind === 'tasks.maintenance') {
-                $group->update(['maintenance' => $state]);
-                $next = app(TaskMaintenanceIntent::class)->start($group);
-            } elseif ($kind === 'tasks.check') {
-                $next = app(StartTaskCheckAction::class)->execute($group, new StartTaskCheckData($child->id, TaskCheckKind::Handoff), 'project-maintenance', null);
-            } elseif ($kind === 'tasks.turn') {
-                $prompt = 'Repair the failed dependency check in this checkout. Preserve manifest range style, release-age and advisory policy. Change no unrelated packages. This is the single maintenance repair turn. The native maintenance workflow will rerun and verify the exact captured batch. Captured intent: '.json_encode($state, JSON_THROW_ON_ERROR);
-                $next = app(StartTaskTurnAction::class)->execute($group, new TaskTurnData($child->id, 'implementer', $prompt, 'new'), 'project-maintenance', null);
-            } elseif ($kind === 'tasks.publish') {
-                $next = app(StartTaskPublishAction::class)->execute($group, new StartTaskPublishData(ValidatedData::integer($operation->input['check_id']),
-                    ['title' => $group->title, 'body' => $group->brief]), 'project-maintenance', null);
-            } else {
-                $child->update(['status' => TaskStatus::Completed, 'settled_at' => now()]);
-                $group->refresh();
-                $next = app(StartTaskParkAction::class)->execute($group, 'project-maintenance', null);
-            }
-            if ($next->kind === 'tasks.publish') {
-                $state['publish_operation_id'] = $next->id;
-            }
-            $group->update(['maintenance' => [...$state, 'stage' => $next->kind, 'operation_id' => $next->id]]);
+            app(OperationIdempotency::class)->under($kind, $key, hash('sha256', $key), function () use ($kind, $child, $group, $state, $operation): void {
+                if ($kind === 'tasks.maintenance_finish') {
+                    $child->update(['status' => TaskStatus::Completed, 'settled_at' => now(), 'completion_summary' => 'No dependency changes; native check passed.']);
+                    $group->update(['status' => TaskGroupStatus::Settling, 'maintenance' => $state]);
+                    $next = app(TaskCancelIntent::class)->finishMaintenance($group);
+                } elseif ($kind === 'tasks.maintenance') {
+                    $group->update(['maintenance' => $state]);
+                    $next = app(TaskMaintenanceIntent::class)->start($group);
+                } elseif ($kind === 'tasks.check') {
+                    $next = app(StartTaskCheckAction::class)->execute($group, new StartTaskCheckData($child->id, TaskCheckKind::Handoff), 'project-maintenance', null);
+                } elseif ($kind === 'tasks.turn') {
+                    $prompt = 'Repair the failed dependency check in this checkout. Preserve manifest range style, release-age and advisory policy. Change no unrelated packages. This is the single maintenance repair turn. The native maintenance workflow will rerun and verify the exact captured batch. Captured intent: '.json_encode($state, JSON_THROW_ON_ERROR);
+                    $next = app(StartTaskTurnAction::class)->execute($group, new TaskTurnData($child->id, 'implementer', $prompt, 'new'), 'project-maintenance', null);
+                } elseif ($kind === 'tasks.publish') {
+                    $next = app(StartTaskPublishAction::class)->execute($group, new StartTaskPublishData(ValidatedData::integer($operation->input['check_id']),
+                        ['title' => $group->title, 'body' => $group->brief]), 'project-maintenance', null);
+                } else {
+                    $child->update(['status' => TaskStatus::Completed, 'settled_at' => now()]);
+                    $group->refresh();
+                    $next = app(StartTaskParkAction::class)->execute($group, 'project-maintenance', null);
+                }
+                if ($next->kind === 'tasks.publish') {
+                    $state['publish_operation_id'] = $next->id;
+                }
+                $group->update(['maintenance' => [...$state, 'stage' => $next->kind, 'operation_id' => $next->id]]);
+            });
         } catch (ResourceOperationException $exception) {
             TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'Maintenance admission refused: '.$exception->errorCode);
-        } finally {
-            [$identity->kind, $identity->key, $identity->fingerprint] = $prior;
         }
     }
 }
