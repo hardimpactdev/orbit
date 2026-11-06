@@ -76,8 +76,8 @@ return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-image-build',
     'projection' => TaskVmImageProjection::class,
     'workflow_inputs' => true,
-    // No result step: the projector reads step statuses, the published fingerprint and each recipe phase's start and end.
-    'terminal_result' => ['job' => 'build', 'step' => 'complete', 'native' => true, 'captures' => TaskVmImageProjection::captures()],
+    // No result step: the projector reads the step statuses and the fingerprint that the publish step printed.
+    'terminal_result' => ['job' => 'publish', 'step' => TaskVmImageProjection::EndCheck, 'native' => true],
 ], 'task_vm.sweep_host' => [
     'workflow' => 'operation-task-vm-sweep',
     'projection' => TaskVmSweepProjection::class,
