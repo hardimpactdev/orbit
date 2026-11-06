@@ -48,9 +48,9 @@ sequenceDiagram
   AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
   %%> What it does:
   %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
-  %%> - refuses to stop a unit that lacks the stop policy (`SendSIGKILL=no`), because it would kill a running job: `gateway.release_horizon_unit_stale`
+  %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
   %%> On failure:
-  %%> - the run fails with `gateway.release_horizon_not_drained`; Horizon is started again below
+  %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
   AC->>GN: Switch the release<br/>gateway-rollback · Horizon
   %%> Why:
   %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart

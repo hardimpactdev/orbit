@@ -115,7 +115,7 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 
 ## Releases
 
-The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. The Horizon unit carries the stop policy, so `systemctl stop` blocks until the unit's control group is empty: SIGTERM reaches the master, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step refuses a unit that lacks the policy, then checks that the unit is inactive. A missing Horizon Process needs no drain.
+The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. The Horizon unit carries the stop policy, so `systemctl stop` blocks until the unit's control group is empty: SIGTERM reaches the master, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step refuses a unit that lacks `KillMode=mixed` or `SendSIGKILL=no`, then checks that the unit is inactive. A missing Horizon Process needs no drain.
 
 The drain is the longest supervisor job timeout plus 30 seconds, and it is fixed in the unit: after you change a supervisor timeout, update the Horizon Process to rewrite the unit. A failed drain prevents the switch. Inspect the Process journal and let running jobs finish before retrying. If the run ends after draining, Horizon can stay stopped; inspect the run before starting it again.
 
