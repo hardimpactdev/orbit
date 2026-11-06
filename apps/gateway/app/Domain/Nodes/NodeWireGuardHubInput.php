@@ -25,7 +25,8 @@ final readonly class NodeWireGuardHubInput
     /**
      * The hub's wg-quick file and one peer file per Node, from Gateway records. orbit.conf holds no peer: wg-quick loads
      * every file in the peer directory on start. A run that adds one peer writes only that peer's file, so concurrent
-     * runs never overwrite each other's peers. Stale files are pruned; a Node still provisioning keeps its file.
+     * runs never overwrite each other's peers. Only the files of Nodes that are gone or being removed are pruned: every
+     * other Node keeps its file, whatever its status and whether or not the Gateway has recorded its key, because its own run may have written it.
      *
      * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
      */
@@ -33,14 +34,12 @@ final readonly class NodeWireGuardHubInput
     {
         $peers = Node::query()->whereKeyNot($hub->id)->whereNotNull('wireguard_public_key')->whereNotNull('wireguard_ip')
             ->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->get();
-        $enrolling = ValidatedData::integerList(Node::query()->whereKeyNot($hub->id)->where('status', LifecycleStatus::Provisioning)->pluck('id')->all());
+        $keep = ValidatedData::integerList(Node::query()->whereKeyNot($hub->id)->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->pluck('id')->all());
         $settings = app(VpnSettings::class);
         $port = filter_var($settings->port(), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65_535]]);
         if (! is_int($port) || ! is_string($hub->wireguard_ip)) {
             throw new ResourceOperationException('node.network_unsupported', 'The hub needs its WireGuard address and a valid port.', 422);
         }
-        $keep = array_values(array_unique([...ValidatedData::integerList($peers->pluck('id')->all()), ...$enrolling]));
-        sort($keep);
 
         // The hub's private key never leaves the Node: orbit.conf reads its key file, and the apply step composes the key
         // with the peer files on the Node at apply time. No file, the intent nor the run holds it.
