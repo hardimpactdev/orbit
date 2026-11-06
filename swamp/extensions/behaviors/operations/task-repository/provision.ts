@@ -443,13 +443,14 @@ export const behavior = {
         guest: {
             description:
                 "Use the provision child's trusted observed pin for the admitted workspace, and build each setup command's SSH exec argv",
-            arguments: z.object({ intent: Intent, vm: z.unknown(), root: Path }),
+            // The fleet guest step of a provision and the nested fleet workflow ask for the connection only; the workspace run also passes `root`.
+            arguments: z.object({ intent: Intent, vm: z.unknown(), root: Path.optional() }),
             execute: (
-                args: { intent: unknown; vm: unknown; root: string },
+                args: { intent: unknown; vm: unknown; root?: string },
                 ctx: Context,
             ) => data(ctx, {
                 workspace: connection(args.intent, args.vm),
-                setup: setupArgv(args.intent, args.root),
+                ...(args.root === undefined ? {} : { setup: setupArgv(args.intent, args.root) }),
             }),
         },
         pin: {

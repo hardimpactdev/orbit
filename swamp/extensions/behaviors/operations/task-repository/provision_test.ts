@@ -586,4 +586,14 @@ Deno.test("the guest step builds the setup argv with the connection, and the rec
     assertEquals(Object.keys(written[0]).sort(), ["setup", "workspace"]);
     assertEquals(written[0].setup, setupArgv(intent, "/tmp/orbit-task-provision-run"));
     assertEquals("prepare" in behavior.methods, false);
+    // The fleet callers pass no root: they get the connection and no argv.
+    written.length = 0;
+    await behavior.methods.guest.execute({ intent, vm }, {
+        extensionFile: () => "unused",
+        writeResource: (_spec: string, _name: string, value: unknown) => {
+            written.push(value as Record<string, unknown>);
+            return Promise.resolve({});
+        },
+    });
+    assertEquals(Object.keys(written[0]), ["workspace"]);
 });

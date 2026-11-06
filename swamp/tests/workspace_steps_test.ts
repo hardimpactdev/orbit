@@ -37,7 +37,7 @@ Deno.test("the workspace source keeps its guest work in two Ansible phases and a
     }
     assert(names.every((name) => !name.startsWith("access-")), "the Route's rows of Caddy access run inside the checkout phase");
     assert(steps.length <= 22, `the source has ${steps.length} steps`);
-    // The longest chain of dispatches from the start to the last step. It was 24 before the phases.
+    // The longest chain of dispatches from the start to the last step. It was 20 before the phases (23 with the inner steps of the child workflows).
     const longest = Math.max(...names.filter((name) => !name.startsWith("proof_club")).map((name) => depth(steps, name)));
     assert(longest <= 9, `the longest chain is ${longest} dispatches`);
 });
@@ -91,9 +91,8 @@ Deno.test("the workflow hands the playbook every field of the workspace that it 
 
 Deno.test("the workspace playbook has the two parts, runs no script on the VM, and writes only the two result files on the Swamp Node", async () => {
     const text = await Deno.readTextFile(new URL("task-vm-workspace.yml", ansible));
-    const play = (parse(text) as { tasks: { name: string; tags: string[]; block: { name: string; [key: string]: unknown }[] }[] })[0] as unknown as {
-        tasks: { name: string; tags: string[]; block: { name: string; [key: string]: unknown }[] }[];
-    };
+    type Play = { tasks: { name: string; tags: string[]; block: Record<string, unknown>[] }[] };
+    const play = (parse(text) as Play[])[0];
     assertEquals(play.tasks.map((task) => task.tags[0]), ["prepare", "checkout"]);
     const modules = play.tasks.flatMap((task) => task.block.flatMap((step) => Object.keys(step).filter((key) => key.startsWith("ansible.builtin."))));
     assert(!modules.includes("ansible.builtin.shell") && !modules.includes("ansible.builtin.script") && !modules.includes("ansible.builtin.raw"), "no shell, script or raw task");
@@ -123,4 +122,20 @@ Deno.test("the vars builder reaches the workspace VM with its pinned host key an
     // Gateway text stays literal: a template in the repository URL must not be rendered by Ansible.
     assert((await Deno.readTextFile(`${folder}/vars.yml`)).includes("!unsafe"));
     await Deno.remove(folder, { recursive: true });
+});
+
+Deno.test("every workflow that asks the provision data behavior for a guest passes only the arguments the method knows", async () => {
+    const known = new Set(["intent", "vm", "root"]);
+    let callers = 0;
+    for await (const entry of Deno.readDir(workflows)) {
+        if (!entry.name.endsWith(".yaml")) continue;
+        const flow = parse(await Deno.readTextFile(new URL(entry.name, workflows))) as Workflow;
+        for (const step of flow.jobs.flatMap((job) => job.steps)) {
+            if (step.task?.behaviorType !== "@nckrtl/task-provision-data" || step.task.methodName !== "guest") continue;
+            callers += 1;
+            for (const key of Object.keys(step.task.inputs ?? {})) assert(known.has(key), `${entry.name}/${step.name}: unknown argument ${key}`);
+        }
+    }
+    // The workspace source, the fleet guest of a provision and the nested fleet workflow.
+    assert(callers >= 3, `only ${callers} callers found`);
 });

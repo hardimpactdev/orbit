@@ -157,7 +157,7 @@ jobs:
       behaviorName: '${{ "tp-workspace-checkout" }}'
       methodName: execute
       inputs:
-        run: "timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.yml\" -e \"@$ORBIT_RUN/vars.yml\" --tags checkout \"$ORBIT_ANSIBLE/task-vm-workspace.yml\"\n"
+        run: "timeout 3900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.yml\" -e \"@$ORBIT_RUN/vars.yml\" --tags checkout \"$ORBIT_ANSIBLE/task-vm-workspace.yml\"\n"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
