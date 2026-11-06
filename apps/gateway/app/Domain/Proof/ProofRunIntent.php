@@ -73,7 +73,13 @@ final readonly class ProofRunIntent
             // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
             // the groups roll back with it, and Swamp starts no run before the whole proof is admitted. The router fence spans the
             // transaction, so a router teardown never sees a half-admitted proof.
-            $runs = app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly): array {
+            app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
+                // The watchdog may have ended this proof as lost while the request was slow. Then nothing is admitted, so no run is orphaned.
+                // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
+                if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
+                    throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
+                }
+
                 $runs = [];
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
@@ -82,8 +88,11 @@ final readonly class ProofRunIntent
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 
+                // The run list commits with the groups. A request that stops after the commit leaves a proof that names its runs.
+                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs]]);
+
                 return $runs;
-            }));
+            }), ProofRunWatch::lockOwner($proof->id));
         } catch (Throwable $exception) {
             $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                 'error_code' => $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,
@@ -91,7 +100,6 @@ final readonly class ProofRunIntent
 
             throw $exception;
         }
-        $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs]]);
 
         return $proof;
     }
