@@ -1,7 +1,8 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, token minted at admission (vault.get), Gateway renders .env from the Project env template, run budget per swamp-operation-time-budgets.
-  %% Tightened: flow-tighten, rules 1-28 (rule 22: cfgmgmt file, 0600 credential file for the private fetch).
-  %% status: reviewed
+  %% Tightened: flow-tighten, rules 1-28 (rule 22: Ansible phases, 0600 credential file for the private fetch).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work is two Ansible phases, `checkout` (clone, check out, write .env) and `setup`, behind one input step. Measured on Node 209: every placed Swamp step costs about 1.1 s of dispatch before it does any work, and the old flow ran 8 steps for the checkout and one per setup step.
+  %% status: draft
   %% command: instance:create
   %% kind: instance.create
   autonumber
@@ -44,12 +45,16 @@ sequenceDiagram
   %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Clone, check out branch<br/>file 0600 cred · git clone
+  SW->>SW: Write the playbook input<br/>intent file · assets
+  %%> Why one input step:
+  %%> - the intent is too large for an environment variable, and the same file serves both phases
+  SW->>N: Clone, write .env<br/>Ansible · tags checkout
+  %%> Why one phase:
+  %%> - one placed step and one Ansible start cover every task of it
   %%> Why the file:
-  %%> - git reads the token from it, so the token never enters argv; the file is removed after the clone, success or failure
+  %%> - git reads the token from a 0600 file, so the token never enters argv; the file is removed after the fetch, success or failure
   %%> Branch:
   %%> - the requested origin branch, else the existing local branch, else a new branch from the default branch
-  SW->>N: Write .env<br/>cfgmgmt/file · 0640 orbit-env
   %%> Why 0640 orbit-env:
   %%> - the Node agent can report the key names and never the values
   %%> - `.env.testing` is written the same way, only for an owned MySQL or PostgreSQL database
@@ -63,9 +68,11 @@ sequenceDiagram
     %%> When:
     %%> - `--database-server` is given, or the default Instance's database is MySQL on a server; that dump is then copied in
   end
-  SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
+  SW->>N: Run Project setup steps<br/>Ansible · tags setup
   %%> As whom:
   %%> - the steps run as the Node's configured user, one after another; the first failure stops the run
+  %%> When:
+  %%> - a Project without setup steps runs no setup phase
   SW->>N: Create, start Processes<br/>child operation-process-create
   %%> Why after setup:
   %%> - Processes need the installed dependencies
