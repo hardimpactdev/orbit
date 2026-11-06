@@ -25,8 +25,9 @@ sequenceDiagram
   %%> Inputs:
   %%> - the command and its family
   %%> - the vault key name of the token, never the token itself
-  %%> Not built:
-  %%> - the flow as a Swamp workflow; today the orchestrator starts the agents by hand
+  %%> Built or not:
+  %%> - built: `tasks:prep` admits the run and Swamp runs it as the workflow `operation-task-prep`
+  %%> - not built: the automatic mode, which a flow input would set
   Note over SW: Child workflows<br/>provision · turn · publish
   %%> What it does:
   %%> - the arrows below from Swamp to the task VM and to GitHub are child workflows of one parent run: `operation-task-provision`, `operation-task-turn` for the draft, review and fix turns, and `operation-task-publish` with a draft
@@ -36,8 +37,6 @@ sequenceDiagram
   %%> What it does:
   %%> - the author agent drafts the chart, the docs page and the verification cases in a task VM
   %%> - this commit changes no code
-  %%> Not built:
-  %%> - Swamp starting the task VM and the agent as part of the flow
   Note over VM: Read first<br/>Recall · page · chart · code
   %%> What it does:
   %%> - Recall `resolve` for the command and its family, and `decisions` for the family; current decisions override older text
@@ -81,8 +80,8 @@ sequenceDiagram
   %%> - pushes the branch whose first commit holds the chart, page and cases of one command and nothing else
   %%> - opens the PR as a draft; it stays a draft until stage 4
   %%> - this is the one PR of the command: code and runnable proof cases join it later, and no separate docs PR exists
-  %%> Not built:
-  %%> - the flow that calls it; the Gateway opens the task PR as the App, as a draft, with `tasks:publish --draft`, but today the author opens the spec PR as `nckrtl`
+  %%> Built:
+  %%> - the run opens the PR with the child workflow of `tasks:publish --draft`, so the App opens the spec PR
   Note over GH: Docs checks only<br/>no VM job
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code
@@ -108,6 +107,8 @@ sequenceDiagram
       %%> - only when Nick asks for corrections
       %%> Result:
       %%> - the author agent applies them, checks the draft again and pushes
+      %%> Not built:
+      %%> - this step; today an agent applies Nick's corrections by hand on the PR branch
     end
   else automatic mode
     Note over GH: No checkpoint<br/>the flow continues
