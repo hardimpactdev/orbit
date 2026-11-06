@@ -124,7 +124,7 @@ orbit firewall:allow 25 --node=7                                      # everyone
 orbit firewall:deny 25 --node=7 --from=203.0.113.9                    # except this host
 ```
 
-Orbit checks the rules and their order after each change. If a concurrent change causes verification to fail, fix the cause and retry. A removal leaves the other lines in order.
+Orbit checks the rules and their order after each change. If a concurrent change causes verification to fail, fix the cause and retry. Unrelated reject, rate-limit, outbound, and routed rules keep their contents and relative order. Outbound and routed rules do not count as matching incoming rules. A removal leaves the other lines in order.
 
 ### Change rules without an exposure window
 
@@ -136,7 +136,7 @@ There is no atomic swap of a source set. Change rules in this order:
 
 Each step leaves the port at least as closed as the end state, so no request reaches it between steps.
 
-Every command accepts `--json` and requires `--node` with a numeric Node ID. In a terminal, a command prompts for an omitted port and Node, and `firewall:remove` asks which rule to remove. A noninteractive or `--json` call that omits one is refused with `firewall.port_invalid` or `firewall.node_id_invalid` and sends no request. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
+Every command accepts `--json` and requires `--node` with a numeric Node ID. In a terminal, a command prompts for an omitted port and Node, and `firewall:remove` asks which rule to remove. For allow and deny, the port prompt explains invalid input and asks again; the Node data list offers active Linux Nodes. A noninteractive or `--json` call that omits one is refused with `firewall.port_invalid` or `firewall.node_id_invalid` and sends no request. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
 
 ## Error codes
 
