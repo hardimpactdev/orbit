@@ -93,7 +93,8 @@ sequenceDiagram
   SW->>VM: Install the Pi server<br/>runtime · Ansible phase install
   %%> What it does:
   %%> - fetches the pinned Pi build to 209 and checks its digest there
-  %%> - Ansible phase `install`, over SSH with the pinned guest host key: copies the build (its digest is checked on the staged file first), writes the Orbit root, the Pi models and the Pi token (0600, from `vault.get` through the environment, `no_log`), installs the unit, and restarts `pi-server` when a file changed
+  %%> - Ansible phase `install`, over SSH with the pinned guest host key: copies the build (its digest is checked on the staged file first), writes the Orbit root (under the image's name `orbit-root.crt` and the fleet's `orbit-managed-root-ca.crt`), the Pi models and the Pi token (0600, from `vault.get` through the environment, `no_log`), installs the unit, and restarts `pi-server` when a file changed
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): the fleet's name is the file a Route writes; with it in place, the first Route on the VM keeps the CA store (op 12259 rebuilt it in 2.3 s).
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): the phase also creates the app-dev runtime folders and tmpfiles file (`AppDevRuntimeFootprint`, the same list the app-dev role add applies), because the VM records the app-dev role and a served workspace site writes its hibernation log to `/data/caddy/orbit/hibernation`; a ready slot gets them at its enrol, and slots enrolled before are replaced through the pool (its setting cleared, then set again)
   %%> - Ansible phase `check`: the service is active and `/capabilities` answers 200 to the bearer
   %%> - the run folder, with the staged build, is removed in a last job

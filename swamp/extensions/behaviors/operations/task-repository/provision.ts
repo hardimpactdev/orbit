@@ -33,6 +33,8 @@ const Workspace = z.object({
     entry_point: z.enum(["artisan", "bin/console"]),
     skip_profile: z.boolean(),
     php_versions: z.array(z.string()).min(1),
+    // The guest's rows of the Route's Caddy access, run before the setup steps.
+    access: z.array(z.array(z.string()).min(1)).max(16).default([]),
     setup: z.array(
         z.object({
             name: z.string(),
@@ -344,6 +346,7 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
             "origin",
             "branch",
             "identity",
+            ...intent.workspace.access.map((_, i) => `access-${i}`),
             "inspect",
             "composer",
             "profile",

@@ -273,6 +273,8 @@ jobs:
         kind: route.create
         intent: ${{ steps["Bind the workspace keys"].outputs.route }}
         execution_secrets: ${{ inputs.intent.route_secrets }}
+        # When the workspace step set the guest's Caddy access before the setup steps, the Route skips it there.
+        prepared: '${{ has(inputs.intent.workspace.access) && size(inputs.intent.workspace.access) > 0 ? string(inputs.intent.guest_node_id) : "" }}'
     dependsOn:
     - step: Bind the workspace keys
       condition:
