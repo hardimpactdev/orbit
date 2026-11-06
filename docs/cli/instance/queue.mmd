@@ -1,86 +1,56 @@
 sequenceDiagram
-  %% Target design: orchestrator 2026-11-06, agent strip blocker (b). Decided by the orchestrator, for Nick's review: the queue is live application data, so it takes the path of database:query. The Gateway records the read, a Swamp step reads the Instance's registered Redis connection, and no agent runs. Decided by the orchestrator, for Nick's review: the report keeps what Horizon's Redis data holds without running the application; it drops jobs_per_minute, which needs Horizon's metrics snapshots.
+  %% Target design: Nick 2026-11-06, agent strip (b): the queue is live application data. The Gateway reads it through the Instance's registered connection, with its own PHP and Laravel's Redis and database clients. No agent, no Swamp step, no application code. Decided by the orchestrator, for Nick's review: the report drops what needs Horizon's internals (jobs_per_minute, process counts, the completed list, the Horizon status and dashboard link) and keeps what the queue store itself holds.
   %% status: draft
   %% command: instance:queue
   %% kind: instance.queue
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
-  %% lane SW icon=workflow pill=executes tone=green
-  %% lane R icon=database pill=target tone=amber
+  %% lane S icon=database pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant R as Redis<br/>WireGuard
+  participant S as Queue store<br/>Redis or database
   CLI->>GW: instance:queue 12
   %%> Command:
   %%> - `orbit instance:queue 12`
-  %%> - syntax: `<instance> [--state=pending|completed|failed] [--limit=N] [--json]`
+  %%> - syntax: `<instance> [--state=pending|failed] [--limit=N] [--json]`
   %%> Input:
   %%> - the Instance ID
   %%> Not included:
   %%> - `--state` (default pending) and `--limit` (1 to 50, default 50) only change which jobs the report lists
-  Note over GW: Validate, record the read<br/>Instance 12 · task #5171
+  Note over GW: Find the connection<br/>Instance 12
   %%> Requirements:
   %%> - your Node has an access grant to the Instance's Node
-  %%> - the Instance owns a systemd Process whose command is `<php> artisan horizon`, and has a registered Redis connection with prefix REDIS, or the report is `available: false`
+  %%> - the stored environment has `QUEUE_CONNECTION=redis` and a registered Redis connection with prefix REDIS, or `QUEUE_CONNECTION=database` and a registered mysql or pgsql connection with prefix DB; otherwise the report is `available: false`
+  %%> - the Gateway takes the queue names and the key prefix from the stored environment, as Laravel does
   %%> Where the credential lives:
-  %%> - the Gateway stores the connection's password encrypted; at start it copies the password into the Swamp vault as `queue-read-intent-5171` (R3)
-  %%> Result:
-  %%> - task #5171 recorded with the full intent: the connection's host and port, the Horizon key prefix from the stored environment, and the state and limit; no lock, because a read changes nothing
-  GW->>SW: Start run, full intent<br/>operation-instance-queue
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the host, port and key prefix, the state and the limit
-  %%> - the vault key name of the password, never the value
-  GW-->>CLI: 202 Accepted<br/>task #5171
-  %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the CLI waits with progress, as for other tasks; a read is a short run, usually a few seconds
-  SW->>R: Read Horizon's keys<br/>redis-cli on 209
+  %%> - the Gateway stores the connection's password encrypted and uses it in its own process; nothing is copied to a vault
+  GW->>S: Read the queue<br/>Laravel Redis or database client
   %%> How:
-  %%> - the `redis-cli` client that the `swamp` role installs on 209; 209 reaches the host over WireGuard, with no SSH hop
-  %%> - only read commands: ZCARD, ZREVRANGE, LLEN, SCARD and HMGET, sent in one pipeline; the password reaches the client on stdin
-  %%> Reads:
-  %%> - masters and their status, the supervisors' process counts
-  %%> - the job counts of the three states, and the newest ids in the chosen state
-  %%> - for each id, only the hash fields `name`, `queue`, `status`, `completed_at`, `failed_at` and `exception`; never `payload`
-  %%> - each queue's length
-  %%> Both:
-  %%> - a 30 s limit; the output stops at 64 KiB
-  alt Redis answers
-    R-->>SW: values
+  %%> - the same way the Gateway reaches its own queue Redis: Laravel's client, over WireGuard, with a 5 s timeout
+  %%> - Redis: LLEN of each queue list, ZCARD of its delayed and reserved sets, and LRANGE for the newest pending jobs
+  %%> - database: the `jobs` table counted by queue and by reserved or not, and its newest rows
+  %%> - failed jobs: the Instance's `failed_jobs` table through the registered database connection, newest first
+  %%> - every statement is a read; a job payload is read only to take its `displayName` and is never returned
+  alt the store answers
+    S-->>GW: counts and rows
     %%> Returns:
-    %%> - the raw replies of the pipeline
-    SW-->>GW: Run succeeded<br/>terminal event + replies
-    %%> How the Gateway learns it:
-    %%> - the replies come back as the run's terminal result; its shared run reader sees it; Swamp never calls the Gateway
-    Note over GW: Shape the report<br/>task succeeded
+    %%> - queue lengths, the failed count, and up to `limit` rows of the chosen state
+    Note over GW: Shape the report<br/>bounded and cast
     %%> What it does:
-    %%> - casts and bounds every value again, builds the job links from the Instance's domain, and keeps only the fields of the report
+    %%> - casts and bounds every value, and keeps only the fields of the report
     %%> - the first line of an exception, never its trace
+    GW-->>CLI: 200 report
     %%> Result:
-    %%> - task #5171 succeeds with the report; no password and no job payload in it
-  else Redis refuses or times out
-    R--xSW: Error or timeout
+    %%> - `available`, the totals of pending and failed jobs, one row per queue with its `name` and `length`, and the jobs of `state` with `id`, `name`, `queue`, `pushed_at`, `failed_at` and `exception`
+    %%> - no password and no job payload
+  else the store refuses or times out
+    S--xGW: Error or timeout
     %%> When:
-    %%> - a wrong password, no route to the host, or no answer within 30 s
-    SW--xGW: Run failed<br/>instance.queue_failed
-    %%> The Gateway reads:
-    %%> - a bounded error code and message, without Redis output
-    Note over GW: Mark the task failed<br/>nothing changed · rerun is safe
+    %%> - a wrong password, no route to the host, or no answer within 5 s
+    GW--xCLI: 502 instance.queue_failed
     %%> Result:
-    %%> - task #5171 fails; nothing changed in Redis
+    %%> - a bounded error code and message, without store output; nothing changed
     %%> Retry:
     %%> - run the command again; a read is safe to repeat
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5171
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
-    GW-->>CLI: status + report
-    %%> Returns:
-    %%> - the current status, and the report once the task has ended
   end
