@@ -30,8 +30,8 @@ sequenceDiagram
   %%> Built today:
   %%> - clone the task image, boot, enrol (keys, WireGuard, observer), model key, Pi; takes minutes
   %%> Decided by the orchestrator, for Nick's review:
-  %%> - a task that needs the nested fleet (a proof) is placed only on a host whose seed holds usable ready copies of the current format; with no such host free, admission answers `tasks.capacity_unavailable`
-  %%> - the Gateway reads the fact from its own records: the seed follows the host's latest promoted image, and it holds usable copies when the refresh run that promoted that image saved copies of the current `user.ready.format`; no agent report and no ssh
+  %%> - a task that needs the nested fleet (a proof, or any VM with test nodes: medium or large) is placed only on a host whose seed holds usable ready copies of the current format; with no such host free, admission answers `tasks.capacity_unavailable`
+  %%> - the Gateway reads the fact from its own records: the seed follows the image the VM boots from, and it holds usable copies when the host's latest refresh run promoted that image and saved copies of the current `user.ready.format`; no agent report and no ssh
   %%> - the refresh of a host is pinned to that host and is not filtered, because it is what builds the copies; a task with no fleet (a plain task) still uses any host
   SW->>H: Attach the topology seed<br/>clone under the host lock
   %%> What it does:

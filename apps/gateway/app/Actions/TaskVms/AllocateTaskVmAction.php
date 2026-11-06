@@ -116,12 +116,6 @@ final readonly class AllocateTaskVmAction
                 if (! array_key_exists($host->nodeId, $free)) {
                     continue;
                 }
-                if ($needsFleet && ! $this->seeds->usable($host->nodeId)) {
-                    unset($free[$host->nodeId]);
-                    $unseeded[] = $node->name;
-
-                    continue;
-                }
                 $promoted = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('state', TaskVmImageBuildState::Succeeded)
                     ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id');
                 $build = $hostNodeId !== null ? (clone $promoted)->first() : (clone $promoted)->where('recipe_identity', $recipe->identity)->first();
@@ -134,6 +128,13 @@ final readonly class AllocateTaskVmAction
                 }
                 $base = $build?->images['base'] ?? null;
                 if ($build !== null && $base !== null && $base['project'] === $host->project && $base['type'] === 'virtual-machine') {
+                    // The seed follows the image the VM boots from, so a host with room is skipped when that image's seed holds no copies.
+                    if ($needsFleet && $free[$host->nodeId] >= $size->slots() && ! $this->seeds->usable($host->nodeId, $build->id)) {
+                        unset($free[$host->nodeId]);
+                        $unseeded[] = $node->name;
+
+                        continue;
+                    }
                     $images[$host->nodeId] = ['build' => $build, 'fingerprint' => $base['fingerprint'], 'fallback' => $fallback];
                 } else {
                     unset($free[$host->nodeId]);
@@ -151,7 +152,7 @@ final readonly class AllocateTaskVmAction
                 }
                 if ($unseeded !== []) {
                     throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::noCapacityFor($size)
-                        .' Hosts without a usable nested fleet seed are skipped: '.implode(', ', $unseeded).'.');
+                        .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'. Refresh their task image.');
                 }
                 throw $exception;
             }

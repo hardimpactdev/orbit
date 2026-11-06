@@ -11,6 +11,7 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
@@ -24,9 +25,10 @@ uses(LazilyRefreshDatabase::class);
 
 const FleetPlacementCommit = 'eeeeeeeeeeee0000000000000000000000000000';
 
-/** The Project whose VMs are large, so they need the nested fleet; the other Project's VMs are plain. */
+/** The Projects whose VMs are large or medium, so they need the nested fleet, and the Project whose VMs are plain. */
 const FleetPlacementFleetProject = 101;
 const FleetPlacementPlainProject = 102;
+const FleetPlacementMediumProject = 103;
 
 beforeEach(function (): void {
     // A release layout whose current release is FleetPlacementCommit, with the recipe the allocation reads.
@@ -63,7 +65,7 @@ function fleetPlacementHosts(int $beastMax = 6, int $sharkMax = 12): array
             'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat($name === 'beast' ? 'b' : 'c', 64)]]]);
     }
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', $hosts, 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'],
-        largeProjectIds: [FleetPlacementFleetProject]));
+        mediumProjectIds: [FleetPlacementMediumProject], largeProjectIds: [FleetPlacementFleetProject]));
 
     return [$nodes['beast'], $nodes['shark'], $builds['beast'], $builds['shark']];
 }
@@ -76,31 +78,30 @@ function fleetSeedRefreshed(Node $host, TaskVmImageBuild $build, string $format 
         'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
 }
 
-/** A group of the large Project, whose VM needs the nested fleet, or of the plain one. */
-function fleetPlacementGroup(bool $fleet): Task
+/** A group of the Project `$id`: large, medium or plain by the size lists of the settings. */
+function fleetPlacementGroup(int $id): Task
 {
-    $id = $fleet ? FleetPlacementFleetProject : FleetPlacementPlainProject;
     $project = Project::query()->forceCreate(['id' => $id, 'name' => 'p'.$id, 'slug' => 'p'.$id, 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
 
     return Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => 'todo']);
 }
 
-it('reads a seed as usable only when the refresh that promoted the host image saved copies of the current format', function (): void {
+it('reads a seed as usable only when the latest refresh of the host promoted that image and saved copies of the current format', function (): void {
     [$beast, $shark, $beastBuild, $sharkBuild] = fleetPlacementHosts();
     $seeds = app(TaskVmFleetSeed::class);
 
-    expect($seeds->usable($beast->id))->toBeFalse()->and($seeds->usable($shark->id))->toBeFalse();
+    expect($seeds->usable($beast->id, $beastBuild->id))->toBeFalse()->and($seeds->usable($shark->id, $sharkBuild->id))->toBeFalse();
 
     fleetSeedRefreshed($shark, $sharkBuild);
     fleetSeedRefreshed($beast, $beastBuild, 'old-format');
 
-    expect($seeds->usable($shark->id))->toBeTrue()->and($seeds->usable($beast->id))->toBeFalse();
+    expect($seeds->usable($shark->id, $sharkBuild->id))->toBeTrue()->and($seeds->usable($beast->id, $beastBuild->id))->toBeFalse();
 
-    // An image that a later build promoted has a seed with only the Node template.
-    TaskVmImageBuild::query()->create(['host_node_id' => $shark->id, 'recipe_identity' => 'recipe-2', 'state' => TaskVmImageBuildState::Succeeded,
+    // Another image, such as one that a plain build promoted, has a seed with only the Node template.
+    $later = TaskVmImageBuild::query()->create(['host_node_id' => $shark->id, 'recipe_identity' => 'recipe-2', 'state' => TaskVmImageBuildState::Succeeded,
         'promoted_at' => now()->addMinute(), 'images' => $sharkBuild->images]);
 
-    expect($seeds->usable($shark->id))->toBeFalse();
+    expect($seeds->usable($shark->id, $later->id))->toBeFalse();
 });
 
 it('places a VM that needs the nested fleet on the host with usable copies, though the other host has as many free slots', function (): void {
@@ -108,16 +109,45 @@ it('places a VM that needs the nested fleet on the host with usable copies, thou
     [$beast, $shark, $beastBuild, $sharkBuild] = fleetPlacementHosts(beastMax: 6, sharkMax: 6);
     fleetSeedRefreshed($shark, $sharkBuild);
 
-    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(fleet: true));
+    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject));
 
     expect($vm->size)->toBe(TaskVmSize::Large)->and($vm->host_node_id)->toBe($shark->id);
+});
+
+it('filters a medium VM too, because it holds a test node', function (): void {
+    [$beast, $shark, $beastBuild, $sharkBuild] = fleetPlacementHosts(beastMax: 6, sharkMax: 6);
+    fleetSeedRefreshed($shark, $sharkBuild);
+
+    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementMediumProject));
+
+    expect($vm->size)->toBe(TaskVmSize::Medium)->and($vm->host_node_id)->toBe($shark->id);
 });
 
 it('answers capacity when no host with usable copies has room for a VM that needs the fleet', function (): void {
     fleetPlacementHosts();
 
-    expect(fn () => app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(fleet: true)))
-        ->toThrow(TaskCapacityException::class, 'Hosts without a usable nested fleet seed are skipped: beast, shark.');
+    expect(fn () => app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject)))
+        ->toThrow(TaskCapacityException::class, 'Hosts with room but no usable nested fleet seed are skipped: beast, shark.');
+});
+
+it('names only the hosts that have room, not a full host', function (): void {
+    // Beast has 2 slots, too few for a large VM, so it is full for this VM whatever its seed holds.
+    fleetPlacementHosts(beastMax: 2, sharkMax: 12);
+
+    expect(fn () => app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject)))
+        ->toThrow(TaskCapacityException::class, 'are skipped: shark.');
+});
+
+it('reads the seed of the image that placement picks, the one of the current recipe, not the latest promoted', function (): void {
+    [$beast, $shark, $beastBuild, $sharkBuild] = fleetPlacementHosts(beastMax: 2, sharkMax: 12);
+    // Shark serves the build of the current recipe, promoted first and with no copies, while an older recipe's build, promoted later, has them.
+    $sharkBuild->update(['recipe_identity' => app(RecipeImageBuilds::class)->currentRecipe()->identity, 'promoted_at' => now()->subHour()]);
+    $older = TaskVmImageBuild::query()->create(['host_node_id' => $shark->id, 'recipe_identity' => 'recipe-old', 'state' => TaskVmImageBuildState::Succeeded,
+        'promoted_at' => now(), 'images' => $sharkBuild->images]);
+    fleetSeedRefreshed($shark, $older);
+
+    expect(fn () => app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject)))
+        ->toThrow(TaskCapacityException::class, 'are skipped: shark.');
 });
 
 it('still places a plain task on a host without usable copies', function (): void {
@@ -125,7 +155,7 @@ it('still places a plain task on a host without usable copies', function (): voi
     [$beast, $shark, , $sharkBuild] = fleetPlacementHosts(beastMax: 6, sharkMax: 3);
     fleetSeedRefreshed($shark, $sharkBuild);
 
-    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(fleet: false));
+    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementPlainProject));
 
     expect($vm->size)->toBe(TaskVmSize::Normal)->and($vm->host_node_id)->toBe($beast->id);
 });
@@ -133,7 +163,7 @@ it('still places a plain task on a host without usable copies', function (): voi
 it('does not filter a VM that a host refresh pins to its host, because it builds the copies', function (): void {
     [$beast] = fleetPlacementHosts();
 
-    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(fleet: true), $beast->id, TaskVmSize::Large);
+    $vm = app(AllocateTaskVmAction::class)->capture(fleetPlacementGroup(FleetPlacementFleetProject), $beast->id, TaskVmSize::Large);
 
     expect($vm->host_node_id)->toBe($beast->id);
 });
