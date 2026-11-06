@@ -56,19 +56,10 @@ jobs:
         intent: ${{ inputs.intent.provision }}
         converge: ${{ inputs.converge }}
         execution_secrets: ${{ inputs.execution_secrets }}
-  # A refresh saves the ready copies of the fleet it started. A seed without usable ready copies gives a VM without a fleet, so the run ends here, before anything is published.
-  - name: Check the fleet
-    labels: {role: swamp}
-    dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
-    task:
-      type: assert
-      expr: 'steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'')'
-      severity: high
-      message: The VM has no nested fleet, because the seed of this host has no usable ready copies. Build them with task_vm.fleet_build and task_vm.ready_copies, then refresh.
   # The guests' host keys are pinned only by the VM step; the ready copies intent carries `host_keys: null` until here.
   - name: Pin the VM
     labels: {role: swamp}
-    dependsOn: [{step: Create the VM, condition: {type: succeeded}}, {step: Check the fleet, condition: {type: succeeded}}]
+    dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -77,12 +68,27 @@ jobs:
       inputs:
         receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
         guest_node_id: '${{ inputs.intent.provision.guest_node_id }}'
-        intents: '${{ {"ready_copies": inputs.intent.refresh.ready_copies} }}'
+        intents: '${{ {"ready_copies": inputs.intent.refresh.ready_copies, "fleet_build": inputs.intent.refresh.fleet_build} }}'
+  # A seed without usable ready copies gives a VM without a nested fleet: the fleet is built here, from stock Ubuntu, and the save follows. A fleet that started from ready copies needs no build.
+  - name: 'Build the fleet'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'') }}'
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-fleet-build
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.provision.guest_node_id }}
+        kind: task_vm.fleet_build
+        intent: '${{ steps["Pin the VM"].outputs.fleet_build }}'
+        execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
   # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them.
   - name: 'Save the ready copies'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: workflow
       workflowIdOrName: operation-task-vm-ready-copies

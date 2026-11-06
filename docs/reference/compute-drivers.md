@@ -1222,8 +1222,8 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | Step | What it does |
 |---|---|
 | `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and seed, the release checkout, the converge of the outer VM, and the nested fleet from the ready copies. |
-| `Check the fleet` | Asserts that the VM step started the nested fleet. A seed without usable ready copies ends the run here, before the clean and the publication. |
-| `Pin the VM` | Fills the host key of the new guest into the ready copies intent. |
+| `Pin the VM` | Fills the host key of the new guest into the ready copies intent and the fleet build intent. |
+| `Build the fleet` | Runs `operation-task-vm-fleet-build` as a child, only when the VM step started no nested fleet because the seed has no usable ready copies. It builds the fleet from stock Ubuntu in the refresh VM. A fleet that started from ready copies skips it. |
 | `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
 | `Stop the refresh VM` | Runs `incus stop` on the refresh VM. It yields only its seed disk and is never published. |
 | `Build the image` | Runs `task-vm-image-builder` as a child: a builder cloned from the image the refresh VM started from, the phases `software`, `tools` and `check`, `task-vm-image-clean`, then `incus publish` of the stopped builder under a candidate alias. |
@@ -1251,7 +1251,6 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 
 The chart lists what the run still lacks:
 
-- The call of `task_vm.fleet_build` by the refresh of a host whose seed has no ready copies. Such a refresh fails at `Check the fleet`, before it publishes. The operator runs `task_vm.fleet_build` and `task_vm.ready_copies` first.
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
 - The re-mint of the nested Swamp tokens in a proof run (stage 3). The provision already renews them.
 - The replacement of old ready slots. Ready slots do not exist yet.

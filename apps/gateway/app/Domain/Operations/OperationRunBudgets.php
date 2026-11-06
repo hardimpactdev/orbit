@@ -94,11 +94,11 @@ final class OperationRunBudgets
         // the Gateway bootstrap (about 3 minutes), its first role and Node converges, the two Node enrollments (about 6 minutes each) and
         // the readiness wait, at their step bounds, plus margin. Replace with the 14-day p95 after the first successes.
         'task_vm.fleet_build' => 3600,
-        // No run yet. Basis: the provision of a task VM with its nested fleet (tasks.provision, 3,900 s), the converge (3,300 s at its
-        // step bounds; a VM at its pins takes a minute), the ready copies (3,600 s at their step bounds, about 10 min in practice), the
-        // clean, the publication of the image and its boot check (a few minutes each), plus margin. Replace with the 14-day p95 after
-        // the first successes.
-        'task_vm.image_refresh' => 7200,
+        // Provisional. Basis: the provision of a task VM (tasks.provision, 3,900 s), the fleet build when the seed has no ready copies
+        // (3,600 s at its bound, about 25 min in practice), the ready copies (3,600 s at their bound, about 10 min in practice), the clean
+        // builder with its phases (3,300 s at their bound; a VM at its pins takes a minute), the publication, the boot check and the
+        // enrollment and converge of the check VM (a few minutes each), plus margin. Replace with the 14-day p95 after the first successes.
+        'task_vm.image_refresh' => 10800,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,

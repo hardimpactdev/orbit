@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Models\Node;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -102,6 +103,19 @@ it('gives every nested VM an address inside the subnet of the nested network and
         ->and(array_unique(array_column($layout, 'hwaddr')))->toHaveCount(3)
         ->and(array_column($layout, 'address'))->each->toStartWith('10.232.2.')
         ->and(array_column($layout, 'wireguard'))->each->toStartWith('10.45.0.');
+});
+
+it('renders the intent of a VM that is still being provisioned, for the refresh that admits it before the VM exists', function (): void {
+    $vm = fleetBuildWorld(TaskVmState::Provisioning);
+    app()->instance(WebSocketClient::class, fleetBuildVault());
+
+    $input = app(PendingSshHostKey::class)->during((int) $vm->node_id, fn (): array => app(TaskVmFleetBuildIntent::class)->provisioning($vm));
+
+    expect($input)->toMatchArray(['task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $vm->node_id])
+        ->and($input)->toHaveKeys(['ssh_execution', 'fleet', 'bootstrap'])
+        ->and($input['ssh_execution']['target']['host_keys'])->toBeNull()
+        ->and($input['execution_secrets']['proof_club'])->toMatchArray(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key'])
+        ->and(json_encode($input))->not->toContain('proof-club-key');
 });
 
 it('refuses a VM that is not ready', function (): void {

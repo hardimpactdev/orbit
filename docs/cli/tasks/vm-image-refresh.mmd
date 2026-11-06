@@ -23,12 +23,12 @@ sequenceDiagram
   SW->>VM: Create the VM<br/>image · seed · checkout
   %%> What it does:
   %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit, the converge of the outer VM and the nested fleet from the ready copies
+  SW->>VM: Pin the VM<br/>guest host key
+  %%> What it does:
+  %%> - fills the host key the VM step observed into the ready copies intent and the fleet build intent
   SW->>VM: Build the fleet<br/>task_vm.fleet_build
   %%> What it does:
   %%> - the child `operation-task-vm-fleet-build` in the refresh VM, only when the VM step found no usable ready copies and so started no fleet: the nested network and three VMs from stock Ubuntu, a Gateway with its own Swamp, the Nodes and the readiness check; skipped when the fleet started from ready copies
-  SW->>VM: Pin the VM<br/>guest host key
-  %%> What it does:
-  %%> - fills the host key the VM step observed into the ready copies intent
   SW->>VM: Save the ready copies<br/>task_vm.ready_copies
   %%> What it does:
   %%> - the child `operation-task-vm-ready-copies`: key-free, self-contained copies in the seed disk, boot-checked
