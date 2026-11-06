@@ -1146,7 +1146,7 @@ The intent names these:
 Each Node action is one official `@swamp/ssh` step with pinned host keys and the 209 worker key, as one argv bounded by a literal `timeout`. The first four steps run in this order:
 
 1. **Remove earlier attempts.** `incus delete --force` for the builder and the smoke VM. A missing instance is fine.
-2. **Launch the builder.** `incus init` reads the cloud-init config from standard input. `incus start` boots the stock Ubuntu VM.
+2. **Launch the builder.** `incus init` reads the cloud-init config from standard input. `incus start` boots the stock Ubuntu VM. The config makes the `orbit` account and installs `openssh-server`, which the stock image lacks.
 3. **Wait for the builder.** `incus wait agent`, then `cloud-init status --wait`.
 4. **Run the task image phases.** The child workflow `task-vm-image-ansible` runs the `software`, `tools` and `check` phases of the [task VM role playbook](#converge-a-running-task-vm) through the host.
 
