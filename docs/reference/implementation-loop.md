@@ -295,7 +295,9 @@ The web checks and the repository checks run in the Gateway's group, after the G
 
 #### Formatters run in fix mode
 
-Each project's `composer check` runs Rector and Pint in fix mode first, then PHPStan on the fixed code. All three check every file in their paths; their caches keep a repeat run fast. A formatter edit becomes part of the candidate: the receipt names the tree the checks leave, and the gate prints `Formatters changed files; commit them with your change.` The gate fails only when HEAD moves during the run.
+Each project's `composer check` runs Rector and Pint in fix mode first, then PHPStan on the fixed code. All three check every file in their paths; their caches keep a repeat run fast. A formatter edit becomes part of the candidate: the receipt names the tree the checks leave, and the gate prints `Formatters changed files; commit them with your change.`
+
+The gate fails when HEAD moves during the run. It also fails on formatter drift: when the check starts on a clean commit and the formatters change files, the commit is not formatter-clean, and the gate prints `Formatters changed files of a clean commit: the commit is not formatter-clean. Run composer check and commit the result.` The receipt names it as `drift`. CI checks committed trees, so main stays formatter-clean, and `composer check` in a task rewrites only the files the task touched.
 
 #### Generated artifacts
 

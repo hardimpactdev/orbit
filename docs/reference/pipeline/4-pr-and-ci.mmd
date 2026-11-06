@@ -37,6 +37,7 @@ sequenceDiagram
   %%> - mapping each command's Gateway Action and CLI files in `selection.txt`; `apps/**` is `skip` until a command is ready
   Note over CI: Fast checks<br/>about 2 minutes
   %%> What it does:
+  %%> - the Project check fails on formatter drift: Rector and Pint run in fix mode, and a commit that they would change fails the check, so main stays formatter-clean and `composer check` in a task rewrites only the files the task touched
   %%> - runs the required job set `Required checks`; every main commit also builds the web artifact and `Gateway release inputs` for the release (stage 5)
   opt command code changed
     opt the PR is from outside

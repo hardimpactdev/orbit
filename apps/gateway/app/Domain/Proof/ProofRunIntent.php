@@ -82,7 +82,7 @@ final readonly class ProofRunIntent
                 CancelProofGroup::dispatch($run['operation_id']);
             }
             if (count($groups) > count($runs)) {
-                app(CancelTaskGroupAction::class)->execute($groups[array_key_last($groups)]);
+                app(CancelTaskGroupAction::class)->execute(array_last($groups));
             }
             $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $exception->errorCode,
                 'result' => ['commit' => $commit, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $selection->uncovered, 'receipt_url' => null]]);
