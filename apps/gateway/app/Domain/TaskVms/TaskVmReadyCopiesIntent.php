@@ -31,9 +31,10 @@ final readonly class TaskVmReadyCopiesIntent
 
     /**
      * The format of the ready copies, written to each copy as `user.ready.format`. A copy of another format, or none, is not usable: the
-     * provision skips the nested fleet. Raise it when the steps that start or apply a fleet need something new in the copies.
+     * provision skips the nested fleet. Raise it when the steps that start or apply a fleet need something new in the copies. Format 3: the nested
+     * Gateway holds the control plan of its Swamp (`/opt/orbit/bootstrap/control.yml`) that the re-mint of the Swamp tokens reads.
      */
-    public const string Format = '2';
+    public const string Format = '3';
 
     /**
      * The nested fleet of a task VM: the names of its VMs and of its network, for the steps that start it and the steps that save it.

@@ -55,11 +55,11 @@ sequenceDiagram
     %%> - creates the nested network from the subnet that the ready copies of the seed store (the converge may have made it; the fleet checks that its subnet is the stored one), copies the three ready copies, gives each its stored MAC and address, and starts them
     %%> - joins as operator: the VM makes its own WireGuard key, writes the public key into the nested Gateway's operator record with `incus exec`, puts it on the hub and brings up `wg-nested` as 10.45.0.10
     %%> - adds the CLI profile `nested` on the VM: the root CA of the nested Gateway is pinned and the candidate CLI of the checkout is pointed at it by address
-    %%> - pushes the proof Swamp Club key from the VM into the nested Gateway and restarts its Swamp
+    %%> - pushes the proof Swamp Club key from the VM into the nested Gateway, where the re-mint below restarts its Swamp
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
     %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet until the fleet build (`task_vm.fleet_build`) lands; the result records `nested_fleet: none`
-    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the migrations, and a restart of the queue worker, the agent-view subscriber and the Swamp worker
+    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the queue worker, the agent-view subscriber and the Swamp worker
     %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
     %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it
   end

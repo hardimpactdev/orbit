@@ -67,7 +67,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the outer VM exports its checkout over NFS to the nested network only; the nested Gateway and app-dev mount it as their checkout
   %%> - `.env`, `storage` and `bootstrap/cache` stay on each VM's own disk, mounted over the shared checkout
-  %%> - then the apply step: migrations and a restart of the long-running services (queue worker, Swamp worker), so they run the checked-out code
+  %%> - then the re-mint below and the apply step: migrations and a restart of the long-running services (queue worker, Swamp worker), so they run the checked-out code
   %%> - stock NFS and systemd mount units, set up by the image and Node playbooks; no sync program
   %%> Why:
   %%> - an edit on the outer VM is in the nested VMs at once; nothing can run against old code
@@ -76,6 +76,19 @@ sequenceDiagram
   %%> - memory snapshot with NFS mounted: create 21 s, restore 10 s; an edit after the restore is visible at once
   %%> - `artisan --version` 0.39 s against 0.23 s local; Gateway unit tests 3.9 s against 2.8 s; HTTP requests the same
   %%> - installs and tests run on the outer VM against its local disk, so the slower NFS writes (a full `composer install` 17 s against 9 s) do not apply
+  SW->>NT: Re-mint the Swamp tokens<br/>nested Gateway · 30 days
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> What it does:
+  %%> - runs the play `remint` of the Gateway bootstrap playbook on the nested Gateway, from the mounted checkout, with the control plan the build left on that machine (`/opt/orbit/bootstrap/control.yml`)
+  %%> - the Swamp CLI renews the tokens by the names and into the files the build used: `access token rotate` for the serve driver, the two workers and the Gateway's run and read tokens, a new enrollment token for each worker; each lasts 30 days
+  %%> - stops serve and both workers while the tokens change, then starts them; the apply step that follows restarts the Gateway's own services, which read the new tokens
+  %%> Why:
+  %%> - the tokens of the ready copies are as old as the copies, so a fleet started from them would otherwise run a Swamp whose tokens expired; this step makes the age of the copies irrelevant, and the seed refresh needs no step for it
+  %%> - the same fleet start does it every time, from the same mounted code the apply uses; it needs no key from the real Gateway, because these tokens belong to the nested Orbit
+  %%> - runs only when the VM has the proof Swamp Club key (a proof task): the Swamp CLI needs it, the start pushes it to `~/.config/swamp/api-key` of the nested Gateway before this step, and this step restarts serve and the workers so they read it
+  %%> - the certificates last 397 days and are issued again by the seed refresh; nothing else in the fleet expires within the life of a task
+  %%> Time:
+  %%> - not yet measured; recorded here when the first provision with it has run
   opt playbooks or pins changed, also after a rebase
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
@@ -93,7 +106,7 @@ sequenceDiagram
   %%> What it does:
   %%> - one Incus stateful snapshot `base` of the three nested VMs (`migration.stateful`, `size.state` = memory)
   %%> - every proof batch starts from it (stage 3)
-  %%> - holds the proof Swamp Club key, pushed in after the restore of the ready copies; accepted because `base` belongs to this task VM only and is destroyed with it; ready copies stay key-free
+  %%> - holds the proof Swamp Club key, pushed in after the restore of the ready copies, and the Swamp tokens renewed by this provision (30 days); accepted because `base` belongs to this task VM only and is destroyed with it; ready copies stay key-free
   %%> Why:
   %%> - possible because the checkout is an NFS mount, not an Incus shared folder
   SW-->>GW: Environment ready<br/>terminal event
