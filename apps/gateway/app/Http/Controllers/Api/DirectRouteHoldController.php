@@ -15,7 +15,7 @@ use Illuminate\Http\JsonResponse;
 final class DirectRouteHoldController extends Controller
 {
     /** The Gateway answers after this long when the Nodes stay busy; the step asks again. */
-    private const int WaitSeconds = 20;
+    private const int WaitSeconds = 5;
 
     private static function waitSeconds(): int
     {
@@ -26,6 +26,9 @@ final class DirectRouteHoldController extends Controller
 
     public function hold(DirectRouteHoldRequest $request, Operation $operation, RoutePublicationHolds $holds): JsonResponse
     {
+        if ($operation->status->terminal()) {
+            throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
+        }
         $nodes = $holds->holdStep($operation, self::waitSeconds());
         if ($nodes === null) {
             throw new ResourceOperationException('route_hold.busy', 'Another Route write holds a Node of this step.', 423);

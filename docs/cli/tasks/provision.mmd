@@ -102,7 +102,7 @@ sequenceDiagram
     %%> What it does:
     %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
     %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
-    %%> - a Node that another Route write holds is waited for, up to 20 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+    %%> - a Node that another Route write holds is waited for, up to 5 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
     %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
     SW->>VM: Route the workspace<br/>operation-route-create child
     %%> With access rows in the workspace intent, the Route gets `prepared` with the guest and skips them there; a Route with an APP_URL line on the guest keeps both, so the workspace step gets no rows

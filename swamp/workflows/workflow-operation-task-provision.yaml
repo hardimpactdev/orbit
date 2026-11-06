@@ -263,14 +263,14 @@ jobs:
     labels: {role: swamp}
     queueTimeout: 30
     writes: true
-    guard: '${{ inputs.intent.route == null }}'
+    guard: '${{ inputs.intent.route == null || has(inputs.run_id) }}'
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: ${{ "route-hold-acquire" }}
       methodName: execute
       inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 5 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
         env:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
@@ -300,7 +300,10 @@ jobs:
         type: succeeded
     - step: Hold the Route Nodes
       condition:
-        type: succeeded
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
   - name: Release the Route Nodes
     labels: {role: swamp}
     queueTimeout: 30
@@ -312,7 +315,7 @@ jobs:
       behaviorName: ${{ "route-hold-release" }}
       methodName: execute
       inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
         env:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'

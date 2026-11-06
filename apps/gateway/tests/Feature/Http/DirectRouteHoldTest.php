@@ -76,3 +76,12 @@ it('refuses a kind that holds per Operation, a stranger Node and a run that is n
     hold_call($stranger, hold_operation($root, 'tasks.provision', [5]), 'hold')->assertForbidden();
     hold_call($swamp, hold_operation($root, 'tasks.provision', [5]), 'hold', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')->assertStatus(409);
 });
+
+it('refuses a hold for an Operation that has ended', function (): void {
+    [$swamp, $root] = hold_nodes();
+    $operation = hold_operation($root, 'tasks.maintenance_finish', [5]);
+    $operation->forceFill(['status' => OperationStatus::Succeeded, 'finished_at' => now()])->save();
+
+    hold_call($swamp, $operation, 'hold')->assertStatus(409)->assertJsonPath('error.code', 'operation.finished');
+    expect(DB::table('route_publication_holds')->count())->toBe(0);
+});

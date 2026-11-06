@@ -36,7 +36,7 @@ final class RoutePublicationHolds
      *
      * @var list<string>
      */
-    private const array StepKinds = ['tasks.provision', 'tasks.cancel', 'instance.register', 'cluster.router_set', 'cluster.router_unset'];
+    private const array StepKinds = ['tasks.provision', 'tasks.cancel', 'tasks.maintenance_finish', 'instance.register', 'cluster.router_set', 'cluster.router_unset'];
 
     /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
     private const int LeaseSeconds = 300;
@@ -120,7 +120,8 @@ final class RoutePublicationHolds
     /** True when the Operation may start now. Otherwise it is set to `waiting` and starts when `promote` finds its Nodes free. */
     public function admit(Operation $operation): bool
     {
-        $nodes = self::nodes($operation);
+        // A kind that holds per step takes no Node at admission: its run calls for the hold around its Route-publish step.
+        $nodes = self::applies($operation->kind) ? self::nodes($operation) : [];
         if ($nodes === []) {
             return true;
         }
@@ -232,6 +233,12 @@ final class RoutePublicationHolds
         $nodes = self::nodes($operation);
         $deadline = microtime(true) + $waitSeconds;
         while ($nodes !== []) {
+            // A call repeated after a lost answer finds its own hold: renew it, whoever waits.
+            if ($this->holdsAll($operation->id, $nodes)) {
+                DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereIn('node_id', $nodes)->update(['lease_until' => now()->addSeconds(self::LeaseSeconds)]);
+
+                return $nodes;
+            }
             if (! $this->waitingOverlaps($nodes) && $this->acquire($operation->id, $nodes, now()->addSeconds(self::LeaseSeconds))) {
                 return $nodes;
             }
@@ -250,6 +257,12 @@ final class RoutePublicationHolds
         if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNotNull('lease_until')->delete() > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
+    }
+
+    /** @param list<int> $nodes */
+    private function holdsAll(int $operationId, array $nodes): bool
+    {
+        return DB::table('route_publication_holds')->where('operation_id', $operationId)->whereIn('node_id', $nodes)->whereNotNull('lease_until')->count() === count($nodes);
     }
 
     /** @param list<int> $nodes */

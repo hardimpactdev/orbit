@@ -293,3 +293,25 @@ it('finds the Nodes of a step-scoped kind in the Route mutations of its input', 
         ->and(RoutePublicationHolds::holdsPerStep('route.create'))->toBeFalse()
         ->and(RoutePublicationHolds::applies('tasks.provision'))->toBeFalse();
 });
+
+it('takes no Node at admission for a kind that holds per step, so two provisions on one Node both start', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$first, $second] = [routeWrite([5], 'tasks.provision'), routeWrite([5], 'tasks.provision')];
+
+    expect($holds->admit($first))->toBeTrue()
+        ->and($holds->admit($second))->toBeTrue()
+        ->and(DB::table('route_publication_holds')->count())->toBe(0)
+        ->and($second->refresh()->status)->toBe(OperationStatus::Queued);
+});
+
+it('renews a step hold that is asked for again after a lost answer, even while a Route write waits for its Node', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$provision, $waiter] = [routeWrite([5], 'tasks.provision'), routeWrite([5, 6])];
+    $holds->holdStep($provision, 0);
+    $holds->admit($waiter);
+    DB::table('route_publication_holds')->where('operation_id', $provision->id)->update(['lease_until' => now()->addSeconds(10)]);
+
+    expect($waiter->refresh()->status)->toBe(OperationStatus::Waiting)
+        ->and($holds->holdStep($provision, 0))->toBe([5])
+        ->and(DB::table('route_publication_holds')->where('operation_id', $provision->id)->value('lease_until'))->toBeGreaterThan(now()->addSeconds(200)->toDateTimeString());
+});

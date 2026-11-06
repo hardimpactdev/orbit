@@ -93,7 +93,7 @@ jobs:
       behaviorName: ${{ "route-hold-acquire" }}
       methodName: execute
       inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 5 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
         env:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
@@ -117,7 +117,7 @@ jobs:
     - {step: 'Request the certificates', condition: {type: always}}
     - {step: 'Sign the CSRs', condition: {type: always}}
     - {step: 'Open LAN paths', condition: {type: always}}
-    - {step: Hold the Route Nodes, condition: {type: succeeded}}
+    - {step: Hold the Route Nodes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.publish.site_nodes.map(n, {"node_id": n}) }}'}
@@ -140,7 +140,7 @@ jobs:
       behaviorName: ${{ "route-hold-release" }}
       methodName: execute
       inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
         env:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
@@ -212,11 +212,14 @@ jobs:
       behaviorName: ${{ "route-hold-acquire-retire" }}
       methodName: execute
       inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 5 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
         env:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
     dependsOn:
+    - step: Release the Route Nodes
+      condition:
+        type: always
     - step: Prepare the Router
       condition:
         type: always
@@ -248,7 +251,7 @@ jobs:
     - {step: 'Install certs, publish', condition: {type: always}}
     - {step: 'Probe the workloads', condition: {type: always}}
     - {step: 'Select the Router in DNS', condition: {type: always}}
-    - {step: Hold the Nodes to retire, condition: {type: succeeded}}
+    - {step: Hold the Nodes to retire, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
@@ -274,7 +277,7 @@ jobs:
       behaviorName: ${{ "route-hold-release-retire" }}
       methodName: execute
       inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
         env:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
@@ -297,7 +300,7 @@ jobs:
     - {step: 'Probe the workloads', condition: {type: always}}
     - {step: 'Select the Router in DNS', condition: {type: always}}
     - {step: 'Retire the old Router', condition: {type: always}}
-    guard: '${{ !steps.exists(k, steps[k].status == "failed" && !k.startsWith("Retire the old Router")) }}'
+    guard: '${{ !steps.exists(k, steps[k].status == "failed" && !k.startsWith("Retire the old Router") && !k.startsWith("Hold the Nodes to retire") && !k.startsWith("Release the retired Nodes")) }}'
     writes: true
     task:
       type: workflow
