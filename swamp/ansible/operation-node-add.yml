@@ -23,6 +23,9 @@
         path: "{{ observed.bootstrap_authorized_keys }}"
         line: "{{ intent.identity.public_key }}"
         create: false
+    - name: Point apt at the package cache
+      ansible.builtin.import_tasks: tasks/apt-proxy.yml
+      vars: { apt_proxy: "{{ intent.apt_proxy | default(none) }}" }
     - name: Install the base packages
       ansible.builtin.apt:
         name: "{{ intent.packages }}"

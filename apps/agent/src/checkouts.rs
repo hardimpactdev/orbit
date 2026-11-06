@@ -3,7 +3,7 @@
 //! program. It reacts to file events on the Git files that name a branch or commit, and rescans everything at start
 //! and every [`facts::RESYNC_INTERVAL`].
 
-use crate::facts::{self, FactSender};
+use crate::facts;
 use crate::workspace::{open_checkout, WatchFacts};
 use git2::Repository;
 use notify::{RecursiveMode, Watcher};
@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
 pub const MAX_CHECKOUTS: usize = 4096;
@@ -237,11 +237,11 @@ pub async fn watch_checkouts(
     gateway: String,
     mut listed: watch::Receiver<WatchFacts>,
 ) {
-    let url = format!("{}/api/v1/agent/facts", gateway.trim_end_matches('/'));
     let (events_tx, mut events) = mpsc::unbounded_channel::<PathBuf>();
     // Each rescan builds a new watcher; dropping the old one removes all its watches.
     let mut _watcher: Option<notify::RecommendedWatcher> = None;
-    let mut sender = FactSender::default();
+    let mut reporter = facts::Reporter::new(client, &gateway);
+    let mut retry = facts::RetryTimer::default();
     let mut resync = tokio::time::interval(facts::RESYNC_INTERVAL);
     resync.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Each checkout with the directories whose events belong to it.
@@ -251,12 +251,13 @@ pub async fn watch_checkouts(
     let mut applications = current.applications;
     let mut pending: BTreeSet<PathBuf> = BTreeSet::new();
     let mut rescan = true;
-    let mut last_error: Option<String> = None;
     loop {
         if root.is_none() {
             _watcher = None;
             watched.clear();
             pending.clear();
+            reporter.drop_failed("checkout");
+            reporter.drop_failed("checkouts");
             rescan = false;
         }
         if let (Some(apps_root), true) = (root.clone(), rescan || !pending.is_empty()) {
@@ -298,9 +299,6 @@ pub async fn watch_checkouts(
             } else {
                 std::mem::take(&mut pending).into_iter().collect()
             };
-            let now = Instant::now();
-            let observed_at = facts::observed_at();
-            let mut failed = None;
             // Reading every checkout on a large Node takes seconds of file I/O, so it runs off the async workers.
             let dirs = applications.clone();
             let read_all = tokio::task::spawn_blocking(move || {
@@ -317,38 +315,19 @@ pub async fn watch_checkouts(
             .await
             .unwrap_or_default();
             for (subject, data) in read_all {
-                if let Some(body) =
-                    sender.body("checkout", Some(&subject), &data, &observed_at, now)
-                {
-                    match facts::post(&client, &url, &body).await {
-                        Ok(()) => sender.sent("checkout", Some(&subject), &data, now),
-                        Err(error) => failed = Some(error),
-                    }
-                }
+                reporter.report("checkout", Some(&subject), &data).await;
             }
             if rescan {
                 let index =
                     json!({"paths": watched.keys().map(|path| text(path)).collect::<Vec<_>>()});
-                if let Some(body) = sender.body("checkouts", None, &index, &observed_at, now) {
-                    match facts::post(&client, &url, &body).await {
-                        Ok(()) => sender.sent("checkouts", None, &index, now),
-                        Err(error) => failed = Some(error),
-                    }
-                }
-                sender.retain("checkout", |subject| {
+                reporter.report("checkouts", None, &index).await;
+                reporter.retain("checkout", |subject| {
                     watched.contains_key(Path::new(subject))
                 });
             }
             rescan = false;
-            match failed {
-                Some(error) if last_error.as_ref() != Some(&error) => {
-                    eprintln!("orbit-agent: checkout fact report failed: {error}");
-                    last_error = Some(error);
-                }
-                Some(_) => {}
-                None => last_error = None,
-            }
         }
+        retry.update(reporter.has_failed());
         tokio::select! {
             changed = listed.changed() => {
                 if changed.is_err() {
@@ -363,6 +342,7 @@ pub async fn watch_checkouts(
                 }
             }
             _ = resync.tick() => rescan = true,
+            () = retry.due() => reporter.retry().await,
             Some(path) = events.recv() => {
                 let mut paths = vec![path];
                 let deadline = tokio::time::sleep(DEBOUNCE);

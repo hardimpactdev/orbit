@@ -45,6 +45,7 @@ sequenceDiagram
   SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
   %%> What it does:
   %%> - the role's repositories and packages, at the pins of the release
+  %%> - a Node of a task VM's nested fleet reads its apt packages through the VM's package cache (`apt_proxy` in the intent, else the archive)
   opt role needs Tool Managers
     SW->>N: Set up Tool Managers<br/>native child workflow
   end

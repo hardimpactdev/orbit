@@ -112,6 +112,15 @@ describe('proof:run', function (): void {
             ->and(Artisan::output())->toContain('Proof failed.', 'Error code: proof.no_vm');
     });
 
+    it('follows a proof refused at admission to its end and prints the reason from the Operation', function (): void {
+        $refused = [...proof_run_operation('no-vm'), 'error_code' => 'tasks.capacity_unavailable', 'result' => ['commit' => PROOF_RUN_SHA, 'outcome' => 'failed', 'cases' => [], 'uncovered' => [], 'receipt_url' => null],
+            'error' => ['code' => 'tasks.capacity_unavailable', 'detail' => 'Task VM: no host has 3 free slots for a large VM.']];
+        proof_run_gateway([$refused]);
+
+        expect(Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--no-interaction' => true]))->toBe(1)
+            ->and(Artisan::output())->toContain('Proof failed.', 'Reason: Task VM: no host has 3 free slots for a large VM.', 'Error code: tasks.capacity_unavailable');
+    });
+
     it('skips a proof that nothing needs and exits 0', function (bool $json): void {
         proof_run_gateway([proof_run_operation('nothing-to-prove')]);
 
@@ -142,6 +151,14 @@ describe('proof:run', function (): void {
             ->and($keys[0])->toMatch('/\Aproof\.run\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/')
             ->and($keys[1])->toMatch('/\Aproof\.run\.[0-9a-f-]{36}\z/')
             ->and($keys[1])->not->toBe($keys[0]);
+    });
+
+    it('sends report_only only when the run yields capacity', function (): void {
+        $mock = proof_run_gateway([proof_run_operation('passed')]);
+
+        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--report-only' => true, '--json' => true]);
+
+        $mock->assertSent(static fn ($request): bool => $request instanceof RunProofRequest && $request->body()->all() === ['commit' => PROOF_RUN_SHA, 'report_only' => true]);
     });
 
     it('sends the given idempotency key unchanged', function (): void {

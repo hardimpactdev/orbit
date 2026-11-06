@@ -328,6 +328,8 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
+A release that went live also queues the [refresh of the task images](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) when it changed playbooks, pins or lock files since the release it replaced. A release of code only starts nothing, and the refresh never holds the release.
+
 ```bash
 orbit gateway:release:auto:enable
 orbit gateway:release:auto:status

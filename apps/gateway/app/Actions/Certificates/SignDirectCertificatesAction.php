@@ -70,6 +70,24 @@ final readonly class SignDirectCertificatesAction
         return $certificates;
     }
 
+    /**
+     * The Node statuses that may be signed for. The Node that a `node.add` adds and the new guest of a `tasks.provision` turn
+     * `active` only when the Gateway records their enrollment, which for a provision happens when its result is applied, after
+     * the Route step has asked for its leaf. Their admitted leaves are therefore signed while they are still `provisioning`.
+     *
+     * @return list<string>
+     */
+    public static function leafStatuses(Operation $operation, int $nodeId): array
+    {
+        $enrolling = match ($operation->kind) {
+            'node.add' => $nodeId === $operation->target_id,
+            'tasks.provision' => $nodeId === ($operation->input['guest_node_id'] ?? null),
+            default => false,
+        };
+
+        return $enrolling ? ['active', 'provisioning'] : ['active'];
+    }
+
     /** @return array<string,array{node_id:int,scope:string,domain:string,root_hash:string}> */
     private function authorize(Operation $operation, int $callerNodeId, string $runId, bool $restoring): array
     {
@@ -114,9 +132,7 @@ final readonly class SignDirectCertificatesAction
                 if (! is_array($row) || ! is_int($row['node_id'] ?? null) || ! is_string($row['scope'] ?? null)
                     || ! is_string($row['domain'] ?? null) || ! RouteDomain::isValid($row['domain'])
                     || ! is_string($row['root_hash'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $row['root_hash']) !== 1
-                    || ! Node::query()->whereKey($row['node_id'])->whereIn('status',
-                        $operation->kind === 'node.add' && $row['node_id'] === $operation->target_id
-                            ? ['active', 'provisioning'] : ['active'])->exists()) {
+                    || ! Node::query()->whereKey($row['node_id'])->whereIn('status', self::leafStatuses($operation, $row['node_id']))->exists()) {
                     continue;
                 }
                 $leaf = ['node_id' => $row['node_id'], 'scope' => $row['scope'], 'domain' => $row['domain'], 'root_hash' => $row['root_hash']];

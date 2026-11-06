@@ -73,36 +73,7 @@ jobs:
     - step: Create and prepare the VM
       condition:
         type: succeeded
-  - name: Create the checkout folder
-    labels: {role: swamp}
-    writes: true
-    # The converge exports the Project's checkout path, which the claim's workspace step fills; it must exist first.
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-slot-stop-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-vm-slot-stop-" + string(inputs.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.host_ssh_execution.target.user }}
-          port: ${{ inputs.intent.host_ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.host_ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '60', incus, exec, --project, '${{ inputs.intent.vm.project }}', '${{ inputs.intent.name }}', --, runuser, -u, orbit, --, mkdir, -p, --, '${{ inputs.converge.nfs.checkout }}']
-    dependsOn:
-    - step: Create and prepare the VM
-      condition:
-        type: succeeded
-    # The task VM role phases on the slot: nested Incus with the seed pool, the NFS export of the Project's checkout path.
+    # The task VM role phases on the slot: nested Incus with the seed pool and the nested network.
   - name: Converge once
     labels: {role: swamp}
     writes: true
@@ -117,9 +88,6 @@ jobs:
         execution_secrets: '${{ {} }}'
     dependsOn:
     - step: Pin the converge
-      condition:
-        type: succeeded
-    - step: Create the checkout folder
       condition:
         type: succeeded
     # A stopped VM keeps disk, not memory. A VM that is already stopped makes `incus stop` exit 1 and counts as stopped.

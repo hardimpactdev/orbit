@@ -12,10 +12,10 @@ use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmAptCache;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
@@ -87,9 +87,8 @@ final readonly class NativeNodeRoleAddInput
             $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(
                 NodeSettingsData::from($node->settings ?? []), $node, new ManagedUserAccount($node->user, $node->user, $home));
             $directories[] = ['path' => $storage->value, 'owner' => $node->user, 'group' => $node->user, 'mode' => '0755'];
-            $directories[] = ['path' => '/dev/shm/orbit/hibernation', 'owner' => 'root', 'group' => 'caddy', 'mode' => '0755'];
-            $directories[] = ['path' => '/data/caddy/orbit/hibernation', 'owner' => 'root', 'group' => 'caddy', 'mode' => '2775'];
-            $files[] = ['path' => '/etc/tmpfiles.d/orbit.conf', 'content' => TmpfilesFootprintArtifact::Rule, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
+            array_push($directories, ...AppDevRuntimeFootprint::directories());
+            array_push($files, ...AppDevRuntimeFootprint::files());
         }
         foreach ($php as $configuration) {
             $services[] = 'php'.ValidatedData::string($configuration['version']).'-fpm.service';
@@ -143,6 +142,7 @@ final readonly class NativeNodeRoleAddInput
                     $service['caddy'] = null;
                 }
                 $exporters[] = ['exporter_node_id' => $target->id, 'enabled' => $enabled, 'metrics_address' => $metrics->wireguard_ip,
+                    'apt_proxy' => TaskVmAptCache::for($target),
                     'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
                     'runtime' => ['ssh_execution' => $metricsSsh, 'configuration' => $configuration], 'compose_only' => true,
                     'service' => $service];
@@ -159,6 +159,8 @@ final readonly class NativeNodeRoleAddInput
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
             'releases' => ValidatedData::object($snapshot['prerequisites'])['releases'],
             'packages' => array_values(array_diff($packages, ['caddy'])),
+            // The package cache of the task VM for a Node of its nested fleet; null for every other Node, which reads the archive directly.
+            'apt_proxy' => TaskVmAptCache::for($node),
             'caddy_package' => $caddy ? NativeCaddyPackageInput::make() : null,
             'directories' => $directories, 'files' => $files, 'php_packages' => $phpPackages, 'php' => $php,
             'managers' => $managers, 'bun' => $bun, 'certificates' => $snapshot['certificates'], 'publications' => $publications, 'runtime' => $runtime['intent'],

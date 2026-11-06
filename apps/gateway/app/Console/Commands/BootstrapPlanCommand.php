@@ -15,6 +15,7 @@ final class BootstrapPlanCommand extends Command
         {--url= : The Gateway address, APP_URL}
         {--home= : ORBIT_HOME}
         {--checkout= : ORBIT_GATEWAY_CHECKOUT, the apps/gateway folder of the release}
+        {--apt-proxy= : The package cache of the task VM that runs a nested fleet, such as http://10.232.2.1:3142; empty reads the archive directly}
         {--environment : Print only the .env text}';
 
     #[\Override]
@@ -32,7 +33,13 @@ final class BootstrapPlanCommand extends Command
             }
             $values[$name] = $value;
         }
-        $plan = GatewayBootstrapPlan::make($values['url'], $values['home'], $values['checkout']);
+        $proxy = $this->option('apt-proxy');
+        if ($proxy !== null && $proxy !== '' && preg_match('#^http://[^\s"/]+$#', $proxy) !== 1) {
+            $this->error('Pass --apt-proxy as a plain http origin, such as http://10.232.2.1:3142.');
+
+            return self::FAILURE;
+        }
+        $plan = GatewayBootstrapPlan::make($values['url'], $values['home'], $values['checkout'], $proxy === '' ? null : $proxy);
         if ($this->option('environment')) {
             $this->getOutput()->write(is_string($plan['environment']) ? $plan['environment'] : '');
 

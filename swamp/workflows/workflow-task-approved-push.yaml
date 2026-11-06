@@ -1,6 +1,6 @@
 id: 97cafe64-2c19-4eec-9087-b65fefa3a22c
 name: task-approved-push
-# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationBudgetTable::SecondsByKind).
 description: Push one approved task commit to its task branch without force; the VM bundles it, 209 pushes it with the admitted token.
 vaults:
 - orbit-control-inputs

@@ -24,14 +24,11 @@ pub mod hibernation;
 mod homebrew;
 mod homebrew_scope;
 pub mod http_check;
-mod image_boot;
 mod incus;
 pub mod instances;
 pub mod laravel;
 mod macos_enrollment;
-mod metrics_exporter;
 mod metrics_publication;
-mod metrics_runtime;
 mod node_bootstrap;
 mod node_identity;
 pub mod node_worker;
@@ -95,8 +92,6 @@ pub fn all() -> Vec<Entry> {
         entry::<php_build::operations::Inspect>(),
         entry::<php_build::operations::Install>(),
         entry::<php_profile::Configure>(),
-        entry::<recipe::operations::Inspect>(),
-        entry::<recipe::operations::Apply>(),
         entry::<recipe::javascript::Install>(),
         entry::<incus::ReadImages>(),
         entry::<incus::ReadInstances>(),
@@ -105,7 +100,6 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::volumes::ReadVolumes>(),
         entry::<incus::vm::ReadVm>(),
         entry::<incus::vm::ChangeVm>(),
-        entry::<image_boot::CheckOwner>(),
         entry::<guest::ReadCloudInit>(),
         entry::<guest::ReadFingerprint>(),
         entry::<incus::image::ReadInstanceImages>(),
@@ -137,8 +131,6 @@ pub fn all() -> Vec<Entry> {
         entry::<vite::SelectVitePort>(),
         entry::<vite::CheckViteListener>(),
         entry::<vite::SetViteTraffic>(),
-        entry::<firewall::native::Inspect>(),
-        entry::<firewall::native::Rule>(),
         entry::<firewall::native::rules::Rules>(),
         entry::<firewall::native::rules::Router>(),
         entry::<firewall::native::route::RouteLan>(),
@@ -153,11 +145,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_observation::ReadLive>(),
         entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
-        entry::<metrics_exporter::NodeExporter>(),
-        entry::<metrics_exporter::Cadvisor>(),
-        entry::<metrics_runtime::MetricsRuntime>(),
         entry::<metrics_publication::Publication>(),
-        entry::<metrics_runtime::MetricsCredentials>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<hibernation::PrepareDirectories>(),
         entry::<hibernation::MarkHibernation>(),

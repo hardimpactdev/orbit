@@ -166,19 +166,9 @@ it('registers the gate check on the Gateway schedule every minute', function ():
     expect(Artisan::output())->toMatch('/\*\s+\*\s+\*\s+\*\s+\*\s+php artisan tasks:pr-gate/');
 });
 
-/** The comment of the round on the head already ended, as the key of the head records it. */
-function gateCommented(Task $group, string $head = GATE_HEAD): void
+function gateRound(Task $group, int $round, ?TaskReviewRoundVerdict $verdict, string $head = GATE_HEAD, ?string $pushed = null): TaskReviewRound
 {
-    // An earlier gate pass may have admitted the comment under the same key and failed to start it; the comment ended on this head now.
-    Operation::query()->updateOrCreate(['kind' => OperationKinds::TasksPrComment, 'idempotency_key' => 'pr-gate:comment:'.$group->id.':'.$head],
-        ['target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
-            'idempotency_fingerprint' => hash('sha256', OperationKinds::TasksPrComment.'|'.$group->id.'|'.$head),
-            'input' => ['head_sha' => $head], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
-}
-
-function gateRound(Task $group, int $round, ?TaskReviewRoundVerdict $verdict, string $head = GATE_HEAD): TaskReviewRound
-{
-    return TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => $head, 'round' => $round, 'verdict' => $verdict]);
+    return TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => $head, 'round' => $round, 'verdict' => $verdict, 'pushed_commit' => $pushed]);
 }
 
 it('tries a review round on a head out of draft in automatic mode, and the round needs a passed handoff candidate', function (): void {
@@ -194,29 +184,22 @@ it('admits no review round while the merge check has not passed on the head', fu
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['group' => $group->id, 'step' => 'review', 'code' => 'tasks_pr.checks_not_passed']);
 });
 
-it('waits for a round that runs and starts the fix for findings that are not the third', function (): void {
+it('waits for a round that runs and leaves the comment, the fix and the push to its one run', function (): void {
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     $round = gateRound($group, 1, null);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'review', 'result' => 'skipped', 'code' => 'tasks_pr.round_running']);
 
-    $round->update(['verdict' => TaskReviewRoundVerdict::Findings]);
+    $round->update(['verdict' => TaskReviewRoundVerdict::Findings, 'pushed_commit' => str_repeat('c', 40)]);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
-
-    gateCommented($group);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-turn', 'result' => 'skipped', 'code' => 'tasks_pr.no_current_subtask'])
-        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'review', 'result' => 'skipped', 'code' => 'tasks_pr.fix_pushed'])
+        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic)
+        ->and(Operation::query()->count())->toBe(0);
 });
 
 it('tries the merge step once the round on the exact head passed', function (): void {
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     gateRound($group, 1, TaskReviewRoundVerdict::Pass);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
-
-    gateCommented($group);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
 });
@@ -230,12 +213,11 @@ it('refuses the automatic merge when no round passed the head', function (): voi
         ->toThrow(ResourceOperationException::class, 'No review round passed this head.');
 });
 
-it('falls back to manual mode after round 3 with findings and runs the ready step again', function (): void {
+it('falls back to manual mode for findings that no push followed, as after round 3, and runs the ready step again', function (): void {
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    gateRound($group, 1, TaskReviewRoundVerdict::Findings, str_repeat('1', 40));
-    gateRound($group, 2, TaskReviewRoundVerdict::Findings, str_repeat('2', 40));
+    gateRound($group, 1, TaskReviewRoundVerdict::Findings, str_repeat('1', 40), str_repeat('2', 40));
+    gateRound($group, 2, TaskReviewRoundVerdict::Findings, str_repeat('2', 40), str_repeat('3', 40));
     gateRound($group, 3, TaskReviewRoundVerdict::Findings);
-    gateCommented($group);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'code' => 'swamp.start_unavailable'])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
@@ -244,7 +226,6 @@ it('falls back to manual mode after round 3 with findings and runs the ready ste
 it('falls back to manual mode when a round failed', function (): void {
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     gateRound($group, 1, TaskReviewRoundVerdict::Failed);
-    gateCommented($group);
 
     app(RunTaskPullRequestGateAction::class)->execute();
 
@@ -260,78 +241,6 @@ it('falls back to manual mode when a new head finds the three rounds used', func
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual'])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
 });
-
-/** A task operation that ended with the given status and result, recorded on the fix of a round. */
-function gateFixOperation(Task $group, string $kind, OperationStatus $status, array $result = []): Operation
-{
-    return Operation::query()->create(['kind' => $kind, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
-        'input' => [], 'status' => $status, 'result' => $result, 'sequence' => 1, 'attempts' => 1]);
-}
-
-/** A group in automatic mode whose first round found something and whose comment ended. */
-function gateFixWorld(array $fix = []): array
-{
-    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    $round = gateRound($group, 1, TaskReviewRoundVerdict::Findings);
-    gateCommented($group);
-    $round->update($fix);
-
-    return [$group, $round];
-}
-
-it('waits while a step of the fix runs', function (): void {
-    [$group, $round] = gateFixWorld();
-    $running = gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Running);
-    $round->update(['fix_turn_operation_id' => $running->id]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-turn', 'result' => 'skipped', 'code' => 'tasks_pr.fix_running', 'operation' => $running->id]);
-});
-
-it('goes on to the handoff check when the author turn is ready for review', function (): void {
-    [$group, $round] = gateFixWorld();
-    $turn = gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review', 'summary' => 'Fixed.']]);
-    $round->update(['fix_turn_operation_id' => $turn->id]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-check', 'result' => 'skipped', 'code' => 'tasks_pr.no_current_subtask']);
-});
-
-it('pushes the checked fix when the handoff check passed', function (): void {
-    [$group, $round] = gateFixWorld();
-    $turn = gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review', 'summary' => 'Fixed.']]);
-    $check = gateFixOperation($group, OperationKinds::TasksCheck, OperationStatus::Succeeded, ['outcome' => 'passed', 'check_id' => 41]);
-    $round->update(['fix_turn_operation_id' => $turn->id, 'fix_check_operation_id' => $check->id]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-publish', 'result' => 'skipped', 'code' => 'tasks.no_workspace']);
-});
-
-it('waits for the new head after the push', function (): void {
-    [$group, $round] = gateFixWorld();
-    $round->update([
-        'fix_turn_operation_id' => gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review']])->id,
-        'fix_check_operation_id' => gateFixOperation($group, OperationKinds::TasksCheck, OperationStatus::Succeeded, ['outcome' => 'passed', 'check_id' => 41])->id,
-        'fix_publish_operation_id' => gateFixOperation($group, OperationKinds::TasksPublish, OperationStatus::Succeeded)->id,
-    ]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-publish', 'result' => 'skipped', 'code' => 'tasks_pr.fix_pushed'])
-        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic);
-});
-
-it('falls back to manual mode when a step of the fix does not end well', function (OperationStatus $status, string $kind, array $result, string $column): void {
-    [$group, $round] = gateFixWorld();
-    $before = $column === 'fix_turn_operation_id' ? [] : ['fix_turn_operation_id' => gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review']])->id];
-    if ($column === 'fix_publish_operation_id') {
-        $before['fix_check_operation_id'] = gateFixOperation($group, OperationKinds::TasksCheck, OperationStatus::Succeeded, ['outcome' => 'passed', 'check_id' => 41])->id;
-    }
-    $round->update([...$before, $column => gateFixOperation($group, $kind, $status, $result)->id]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual'])
-        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
-})->with([
-    'turn failed' => [OperationStatus::Failed, OperationKinds::TasksTurn, [], 'fix_turn_operation_id'],
-    'turn blocked' => [OperationStatus::Succeeded, OperationKinds::TasksTurn, ['receipt' => ['outcome' => 'blocked', 'summary' => 'x', 'question' => 'y']], 'fix_turn_operation_id'],
-    'check failed' => [OperationStatus::Succeeded, OperationKinds::TasksCheck, ['outcome' => 'failed'], 'fix_check_operation_id'],
-    'publish failed' => [OperationStatus::Failed, OperationKinds::TasksPublish, [], 'fix_publish_operation_id'],
-]);
 
 /** What a prep run leaves: its completed spec subtask and its succeeded run. */
 function gateSpecDone(Task $group): void

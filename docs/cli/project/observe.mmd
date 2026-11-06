@@ -12,19 +12,30 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant GH as GitHub<br/>repository · PRs
-  SW-->>GW: Hourly selection succeeded<br/>maintenance-projects · :17:40
+  SW-->>GW: Hourly tick succeeded<br/>maintenance-projects · :17:40
   %%> When:
-  %%> - every hour at :17:40; the Gateway publishes the Schedule and its full inputs with `workflow.trigger.set`
+  %%> - every hour at :17:40; the trigger is the one in the workflow file, and the Gateway publishes that same definition once: a `workflow.trigger.set` for a definition that serve already holds is not sent again
   %%> What it does:
-  %%> - the `maintenance-projects` Schedule's own run selects which opted-in Projects need an inspect, a routine or an observe now
-  %%> - it picks observe for a Project with a maintenance task group that waits on a pull request or on capacity
+  %%> - the `maintenance-projects` Schedule's own run only ticks: it lists the Projects that the Swamp source configures (`projects.json`), each with its repository identity, default branch, check and the three request keys of this fire
+  %%> - it reads no Gateway state, and the trigger carries no inputs
   %%> How the Gateway learns it:
   %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-  %%> - the Gateway captures result_json directly from the schedule producer `select`, in the same history read; no reporting step forwards it
+  %%> - the Gateway captures result_json directly from the schedule producer `tick`, in the same history read; no reporting step forwards it
   %%> Returns:
-  %%> - one request per Project and mode, with a key such as `4-observe-2026-11-02T17:17`
+  %%> - for each configured Project: `id`, `repository`, `default_branch`, `check` and `keys` with `routine`, `observe` and `detect`, such as `4-observe-2026-11-02T17:17`
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the schedule carries no Project or task group data. The earlier design published the Gateway's whole Project and task group snapshot (36,228 lines, 1.36 MB) as `trigger.inputs`, and every change of a Project, task group or open task wrote `serve.yaml` and registered the schedule again, 37 to 108 times an hour. The manual calls `trigger.inputs` baseline input values
+  %%> - a Swamp step may call the Gateway only for `github-token` and `certificates/sign` (the Swamp shape gate), and a push of the snapshot into the Swamp datastore would repeat the churn, so the Gateway reads its own tables when it projects the fire (next step), like the other dispatch-only schedules
   %%> Not included:
   %%> - no command: no person starts `project.observe` directly
+  Note over GW: Select what is due<br/>own Projects · groups · open tasks
+  %%> What it does:
+  %%> - takes the opted-in Projects (maintenance on, GitHub App repository, default branch, task check) that the tick lists as configured with the same repository, default branch and check
+  %%> - skips a Project with an open `project.detect`, `project.routine` or `project.observe` task
+  %%> - picks one mode for each Project: the weekly routine first, then an observation while a group that has not ended waits on a pull request or on capacity, else the hourly inspection
+  %%> - skips a mode whose key it admitted before, and takes the next mode
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - a group that ended no longer makes an observation due; the earlier selection counted any group that ever had a pull request, so a Project with one old pull request was observed every minute-key and never inspected, though an observation reads no ended group
   Note over GW: Admit observe, scope reads<br/>task #5152 · trigger: schedule
   %%> Requirements:
   %%> - maintenance is on for Project 4 (`project:maintenance:enable`); it is off by default

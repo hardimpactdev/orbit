@@ -15,14 +15,14 @@ final class StartProofRunRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['commit' => ['required', 'string', 'regex:/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/D'], 'all' => ['sometimes', 'boolean:strict']];
+        return ['commit' => ['required', 'string', 'regex:/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/D'], 'all' => ['sometimes', 'boolean:strict'], 'report_only' => ['sometimes', 'boolean:strict']];
     }
 
     /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['commit', 'all']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['commit', 'all', 'report_only']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }

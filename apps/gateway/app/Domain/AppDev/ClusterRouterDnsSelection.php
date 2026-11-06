@@ -8,16 +8,19 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteCertificateStaging;
+use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\StoredInteger;
+use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ClusterRouterDnsSelection
 {
@@ -306,7 +309,42 @@ final readonly class ClusterRouterDnsSelection
             $names[] = $tld;
         }
 
-        $routes = Route::query()
+        // A Route change captures the fleet as it will be, and its name follows the sites of that fleet whatever the status of the Route:
+        // a removal marks its Route retiring before it captures, so the status cannot tell the fleet before from the fleet after.
+        $prospective = app(RoutePublicationSites::class)->isCompleteFleet() ? app(RoutePublicationSites::class)->current() : null;
+        if ($prospective !== null) {
+            $served = $prospective->map(fn (DevelopmentSite $site): string => $this->normalizeName($site->domain))->all();
+            $routes = Route::query()->where('cluster_id', $clusterId)->orderBy('id')->get()
+                ->filter(fn (Route $route): bool => in_array($this->normalizeName($route->domain), $served, true));
+        } else {
+            $routes = $this->routesByStatus($clusterId);
+        }
+
+        foreach ($routes as $route) {
+            $names[] = $this->normalizeName($route->domain);
+        }
+
+        // A placement change into this Cluster names its domain once the candidate Router serves it,
+        // until a failure starts its restore or cutover makes the Cluster the Route's own.
+        $candidates = Route::query()
+            ->where('transition_cluster_id', $clusterId)
+            ->whereNull('failed_step')
+            ->orderBy('id')
+            ->get()
+            ->filter(static fn (Route $route): bool => RouteCertificateStaging::placementCandidate($route)
+                && RouteCertificateStaging::reached($route, RouteReplacementStep::RouterCaddy));
+
+        foreach ($candidates as $route) {
+            $names[] = $this->normalizeName($route->domain);
+        }
+
+        return array_values(array_unique(array_filter($names, static fn (string $name): bool => $name !== '')));
+    }
+
+    /** @return Collection<int, Route> */
+    private function routesByStatus(int $clusterId): Collection
+    {
+        return Route::query()
             ->where('cluster_id', $clusterId)
             ->whereIn('status', [
                 RouteStatus::Active->value,
@@ -340,26 +378,6 @@ final readonly class ClusterRouterDnsSelection
             })
             ->orderBy('id')
             ->get();
-
-        foreach ($routes as $route) {
-            $names[] = $this->normalizeName($route->domain);
-        }
-
-        // A placement change into this Cluster names its domain once the candidate Router serves it,
-        // until a failure starts its restore or cutover makes the Cluster the Route's own.
-        $candidates = Route::query()
-            ->where('transition_cluster_id', $clusterId)
-            ->whereNull('failed_step')
-            ->orderBy('id')
-            ->get()
-            ->filter(static fn (Route $route): bool => RouteCertificateStaging::placementCandidate($route)
-                && RouteCertificateStaging::reached($route, RouteReplacementStep::RouterCaddy));
-
-        foreach ($candidates as $route) {
-            $names[] = $this->normalizeName($route->domain);
-        }
-
-        return array_values(array_unique(array_filter($names, static fn (string $name): bool => $name !== '')));
     }
 
     /**

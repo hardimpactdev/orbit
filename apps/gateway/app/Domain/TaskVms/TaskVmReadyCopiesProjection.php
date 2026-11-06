@@ -20,7 +20,7 @@ use App\Support\ValidatedData;
  */
 final readonly class TaskVmReadyCopiesProjection implements DirectOperationProjection, NativeOperationProjection
 {
-    /** The end check: a native assert over the operator key, the stateful setting and the NICs of the copies. */
+    /** The end check: a native assert over the operator key, the Club key, and the NIC and checkout device of the copies. */
     public const string EndCheck = 'Check the ready copies';
 
     public function __construct(private TaskVmReadyCopiesIntent $intent) {}

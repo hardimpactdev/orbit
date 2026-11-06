@@ -33,6 +33,8 @@ const Workspace = z.object({
     entry_point: z.enum(["artisan", "bin/console"]),
     skip_profile: z.boolean(),
     php_versions: z.array(z.string()).min(1),
+    // The guest's rows of the Route's Caddy access, run before the setup steps.
+    access: z.array(z.array(z.string()).min(1)).max(16).default([]),
     setup: z.array(
         z.object({
             name: z.string(),
@@ -270,18 +272,20 @@ function nativeOutputs(steps: Record<string, unknown>, name: string) {
         z.record(z.string(), z.unknown()).safeParse(step.outputs).data ?? {};
     return { step, outputs };
 }
+/** The steps of the private-dependency configuration, in order; `deps_revoke` reports in the receipt and does not fail the provision. */
+const DEPENDENCY_STEPS = ["deps_mint", "deps_clear", "deps_write_composer", "deps_write_npm", "deps_remove_files"];
 const COULD_NOT_RUN = "The revoke step could not run.";
 const DependencyToken = z.object({
     state: z.enum(["revoked", "none", "unrevoked"]),
     reason: z.string().max(200).optional(),
 });
 /**
- * What became of the setup token, from the `Revoke` step of the remove child: curl prints the HTTP status of the
+ * What became of the setup token, from the revoke step (`deps_revoke`, or `Revoke` in the remove child of `tasks.package`): curl prints the HTTP status of the
  * revoke. 204 is a revoked token; 401 means GitHub holds no such token (none was minted, or it had expired or been
  * revoked), so there is nothing to revoke; anything else, or no answer, leaves a token that may still be valid.
  */
-export function revokeOutcome(steps: Record<string, unknown>) {
-    const { step, outputs } = nativeOutputs(steps, "Revoke");
+export function revokeOutcome(steps: Record<string, unknown>, name = "Revoke") {
+    const { step, outputs } = nativeOutputs(steps, name);
     if (step.status === undefined || step.status === "skipped") {
         return { state: "unrevoked" as const, reason: COULD_NOT_RUN };
     }
@@ -311,18 +315,12 @@ export function revokeOutcome(steps: Record<string, unknown>) {
         } to the revoke.`,
     };
 }
-/** The token outcome for the receipt, from the remove child's `result` output. */
+/** The token outcome for the receipt, from the `deps_revoke` step; no token was asked for when there is no `deps_mint`. */
 export function dependencyToken(steps: Record<string, unknown>) {
-    if (!("deps_write" in steps)) {
+    if (!("deps_mint" in steps)) {
         return { state: "none" as const, reason: "No setup step ran." };
     }
-    const reported = DependencyToken.safeParse(
-        nativeOutputs(steps, "deps_remove").outputs.result,
-    );
-    return reported.success ? reported.data : {
-        state: "unrevoked" as const,
-        reason: "The revoke result was not recorded.",
-    };
+    return DependencyToken.parse(revokeOutcome(steps, "deps_revoke"));
 }
 export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     const intent = Intent.parse(raw);
@@ -333,7 +331,7 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     // A guard skips `composer` when inspect found no regular composer.json; a
     // skipped step has no entry in `steps`.
     // The dependency steps are skipped with the setup steps when the profile failed or the Project has none.
-    const optional = new Set(["composer", "deps_write", "deps_remove"]);
+    const optional = new Set(["composer", ...DEPENDENCY_STEPS]);
     for (
         const name of [
             "prepare",
@@ -348,12 +346,12 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
             "origin",
             "branch",
             "identity",
+            ...intent.workspace.access.map((_, i) => `access-${i}`),
             "inspect",
             "composer",
             "profile",
             // The private-dependency configuration is written before the setup steps and removed after them.
-            "deps_write",
-            "deps_remove",
+            ...DEPENDENCY_STEPS,
             ...intent.workspace.setup.map((_, i) => `setup-${i}`),
         ]
     ) {

@@ -30,7 +30,7 @@ final readonly class TaskVmPlacementPolicy
      *
      * @throws TaskCapacityException when the VM fits nowhere
      */
-    public function choose(TaskVmSize $size, Task $group, array $free): TaskVmPlacementTarget
+    public function choose(TaskVmSize $size, Task $group, array $free, int $reserve = 0): TaskVmPlacementTarget
     {
         $best = null;
         $bestFree = $size->slots() - 1;
@@ -42,8 +42,9 @@ final readonly class TaskVmPlacementPolicy
         if ($best !== null) {
             return TaskVmPlacementTarget::incusHost($best);
         }
-        if (! TaskVmProviderKind::UpCloud->supports($size)) {
-            throw new TaskCapacityException(TaskWait::Capacity, self::noCapacityFor($size));
+        // A report-only proof yields: it keeps `$reserve` slots free on an Incus host and never spends on UpCloud.
+        if ($reserve > 0 || ! TaskVmProviderKind::UpCloud->supports($size)) {
+            throw new TaskCapacityException(TaskWait::Capacity, self::noCapacityFor($size, $reserve));
         }
         $upcloud = $this->settings->upcloud;
         if ($upcloud?->allows($group->project_id) === true
@@ -58,8 +59,16 @@ final readonly class TaskVmPlacementPolicy
      * free slots for a large VM.` for two test nodes or a Project in `task_vms.large_projects`, or 2 for a medium VM:
      * one test node or a Project in `task_vms.medium_projects`.
      */
-    public static function noCapacityFor(TaskVmSize $size): string
+    public static function noCapacityFor(TaskVmSize $size, int $reserve = 0): string
     {
-        return "Task VM: no host has {$size->slots()} free slots for a {$size->value} VM.";
+        $message = "Task VM: no host has {$size->slots()} free slots for a {$size->value} VM.";
+
+        return $reserve > 0 ? $message." A report-only proof leaves {$reserve} slots free for task and proof work." : $message;
+    }
+
+    /** The slots a report-only proof leaves free on a host: one large VM, so a critical-path run for one command still finds room. */
+    public static function reportOnlyReserve(): int
+    {
+        return TaskVmSize::Large->slots();
     }
 }

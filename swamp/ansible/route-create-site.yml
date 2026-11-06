@@ -42,7 +42,8 @@
         database: passwd
         key: "{{ node.account }}"
     # Caddy access by ACL, in order: deny the checkout, open the path, grant the served roots (one command for each kind of path).
-    # An Instance create has done this on its own Node in its checkout phase, before the setup commands write into the tree.
+    # An Instance create (its checkout phase) and a task provision (its workspace step) have done this on their own Node, before the
+    # setup commands write into the tree.
     - name: Set the Route access on this Node
       ansible.builtin.import_tasks: tasks/route-access.yml
       vars:

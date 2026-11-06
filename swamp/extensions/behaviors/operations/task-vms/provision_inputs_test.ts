@@ -143,6 +143,32 @@ Deno.test("public provision metadata preserves the pinned image and topology clo
     );
 });
 
+Deno.test("every created VM boots without the firmware's boot menu wait, and a topology VM keeps its balloon reporting", () => {
+    const menu = '[boot-opts]\nmenu = "on"\nsplash-time = "0"\n';
+    const topology =
+        JSON.parse(provisionCommandInput(intent()).config_json).config;
+    assertEquals(
+        topology["raw.qemu.conf"],
+        menu + '[device "qemu_balloon"]\nfree-page-reporting = "on"\n',
+    );
+    const plain = JSON.parse(
+        provisionCommandInput({
+            ...intent(),
+            create: { ...intent().create, topology: false },
+        }).config_json,
+    ).config;
+    assertEquals(plain["raw.qemu.conf"], menu);
+});
+
+Deno.test("the provider input holds only the provider fields, so a large workspace intent stays under the argument cap", () => {
+    const result = provisionCommandInput({ ...intent(), route: { caddy: "x".repeat(600_000) } });
+    const input = JSON.parse(result.input_json);
+    assertEquals(input.route, undefined);
+    assertEquals(input.vm, intent().vm);
+    assertEquals(input.create, intent().create);
+    assertEquals(result.input_json.length < 4096, true);
+});
+
 Deno.test("provision metadata refuses inconsistent admitted provider and host identity", () => {
     for (
         const patch of [{ name: "tvm-13" }, { host_node_id: 10 }, {

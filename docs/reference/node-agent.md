@@ -72,14 +72,21 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `packages` | One Tool Manager's packages, named by the manager in `subject`. See [Packages](#packages). | every 60 seconds |
 | `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
 | `env_keys` | One Instance `.env`, named by its path in `subject`: its `kind`, its key names in `keys`, and `testing_tracked`. See [Environment key names](#environment-key-names). | every 60 seconds |
+| `accounts` | The local accounts of the Node: each `user`, `uid`, primary `group`, `home` and `shell`, as `/etc/passwd` and `/etc/group` hold them. See below. | every 60 seconds |
 
 `ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
+
+`accounts` lists the accounts of `/etc/passwd` in uid order, at most 512, each with the name of its primary group from `/etc/group`. The agent leaves out an entry that has no group, a name that is not a plain account name, or a home or shell that is not an absolute path without control characters. It reads two files and starts no program. A later change moves the lookup of an account, such as a Process user or the Node's managed user, from the agent command `account.lookup` to this fact. Agents before 0.12.0 send no `accounts` fact.
 
 `units` lists each `orbit-process-*` unit, each Process container, and each role service and Process unit from the [watch list](#watch-list). `docker` is `available` or `absent`. A systemd unit also has its `load` and `sub` state; one that is not installed reads `not-found`. `awake` lists the watched awake markers that exist. Agents before 0.10.0 send neither `load`, `sub` nor `awake`.
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 
-The agent sends a fact when it changed, and again every 10 minutes. The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+The agent sends a fact when it changed, and again every 10 minutes.
+
+A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. A refusal that sending again cannot change, such as a `422` for a kind an older Gateway does not know, is not sent again before the next regular read. The retry sends the data of the failed read and reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
+
+The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
 
 ### Packages
 
@@ -138,7 +145,7 @@ The agent reports the Git state of each [task](/reference/tasks) checkout on its
 
 ### Watch list
 
-The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 seconds:
+The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 seconds. A request the Gateway does not answer is repeated after 1, 2 and 4 seconds, and then every 4 seconds:
 
 ```json
 {
@@ -241,7 +248,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-Gateway releases and desired fleet state use the pinned `cli-v0.9128.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
+Gateway releases and desired fleet state use the pinned `cli-v0.9830.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. `orbit:bootstrap` records that identity, and with `--operator-ip` the roleless `operator` Node, from the Gateway's own code and runs no agent command; until it has, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
@@ -565,7 +572,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Every Gateway release uses the pinned `cli-v0.9128.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
+Every Gateway release uses the pinned `cli-v0.9830.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {
@@ -611,6 +618,8 @@ The `ai-router` part on the collector Node has no step: it only versions that No
 
 The converge never writes the secret. Its end check is one `sha256sum --check` against the Gateway's hashes: the pinned binary, the recorded verifier and the agent's files. A missing or mismatched secret fails the converge with the agent part unapplied; [`orbit:node-agent-rekey`](#make-a-new-agent-key) makes a new one. A passing converge clears the Node's recorded failed pin. The role parts run beside the agent part in their own steps, and the Gateway reads each one's outcome from Swamp's run data; [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists them. `agent.remove` stops the agent and removes its unit, binary, and directory.
 
+The unit starts after `network-online.target` and `wg-quick@orbit.service`, so the first request to the Gateway finds the tunnel. Without that order, a Node that boots first waits for the 10 second connect timeout before its first report.
+
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, one read-only bind for each Tool Manager state path under `/home` (the Vite+ home and `/home/linuxbrew/.linuxbrew`) and one for each production home, `SupplementaryGroups=orbit-env`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
 The Instance root is the Node's [apps root](/reference/node-settings#derive-the-effective-root). The bind line appears only when the root lies under `/home` or `/root`. When the Gateway cannot resolve the managed user, or the root has characters other than letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes`, and the Gateway reads that Node's checkouts over SSH.
@@ -632,7 +641,7 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and The native convergence result records the drift. |
 
-Commands that no Gateway or Swamp code calls leave the agent in small pull requests. The Gateway release, Doctor, image, Pi, sqlite, source transfer and source removal commands have left. The last action commands leave with their Swamp ports; then one release ships the observer. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). `orbit self-update` itself replaces only the CLI.
+Commands that no Gateway or Swamp code calls leave the agent in small pull requests. The Gateway release, Doctor, image, Pi, sqlite, source transfer and source removal commands have left, and so have the firewall inspection, Metrics runtime and exporter, recipe apply and image owner commands. The last action commands leave with their Swamp ports; then one release ships the observer. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). `orbit self-update` itself replaces only the CLI.
 
 The rollout leaves out the Gateway's own Node. Gateway release runs leave its agent unchanged. Its CLI comes from the current release's `apps/cli`.
 
@@ -651,12 +660,13 @@ The agent recovers from each failure below without an operator.
 | The agent crashes | systemd restarts it after 2 seconds. The web app shows the Node offline until the agent joins again, and the Gateway reads over SSH. |
 | The agent stops cleanly | It closes its connection. The web app shows the Node offline at once, and the Gateway drops the Node's view. |
 | The Node loses power or network | Heartbeats stop. After 15 seconds, the web app shows the Node offline and the view turns stale. |
-| The watch list request fails | The agent keeps its last list and asks again after 60 seconds. |
+| The watch list request fails | The agent keeps its last list. |
 | A log source cannot be read, or `journalctl` is missing or stops | The agent ends that stream with `source_unavailable`. |
 | The agent leaves while it streams | The subscriber ends each stream of that Node with `agent_left`. |
 | Reverb is down, or no `websocket` role is active | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
 | The subscriber stops | systemd restarts it after 2 seconds. Meanwhile the view turns stale, and Gateway reads use Prometheus and SSH. |
 | A snapshot is lost | The subscriber asks for a new one within about 10 seconds. |
+| The Gateway does not accept a fact report or does not answer the watch list request | The agent tries again after 1, 2 and 4 seconds, and then every 4 seconds. |
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits, and systemd restarts it. |
 | The secret differs from the Gateway's hash, such as after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`. A converge verifies the stored secret and writes a new one when needed. |
@@ -733,7 +743,7 @@ Moving source into named Python programs improved linting but kept source assemb
 
 The exact binary digest identifies the contract. Version ranges and compatibility commands would keep multiple implementations active. The frozen mismatch response lets a released agent refuse a newer command before understanding its name or input. The Gateway can then install the pinned implementation once.
 
-Ordinary commands run from their open executable and do not hold the update lock. Atomic replacement leaves them valid while an update proceeds. Holding the lock throughout a long deploy would block updates unnecessarily. Installers and final recipe verification take it exclusively, so verification cannot record a pin while it is being replaced.
+Ordinary commands run from their open executable and do not hold the update lock. Atomic replacement leaves them valid while an update proceeds. Holding the lock throughout a long deploy would block updates unnecessarily. Installers and `agent.configure` take it exclusively.
 
 ### Rust
 

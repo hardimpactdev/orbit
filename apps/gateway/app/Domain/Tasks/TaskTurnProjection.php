@@ -47,7 +47,6 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $projected->status->terminal()) {
                 self::recordThread($operation->target_id, ValidatedData::integer($operation->input['thread_id']), $result);
-                TaskReviewRoundResult::record($projected, $result);
             }
 
             app(TaskMaintenanceContinuation::class)->apply($projected);

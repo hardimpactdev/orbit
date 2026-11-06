@@ -13,6 +13,9 @@ A proof of the verify-only Doctor needs a healthy baseline, exactly one declared
 
 **One fixture, one inspector.** Doctor reports one finding per inspector that fails, and it reads facts the Node agent reported: `units` every 10 seconds, and `host` and `ufw` every 60 seconds. Wait that long after you change a Node. A check whose fact has not arrived is unverifiable.
 
+- To prove the unverifiable condition, run Doctor with `--family=firewall` against a Node that was just enrolled and has not yet reported `ufw`.
+- For the healthy baseline, wait for the next report of every fact first.
+
 **Low disk spoils a baseline.** The Node inspector reads free space and free inodes for root and the managed user's home, including on the Gateway. Remove only fixtures the lease owns, or use a fresh topology. A role converge does not free disk.
 
 **A stable restart count is not drift.** `active` alone does not prove a Process is healthy. Doctor reports `process.crash_loop` when it sees auto-restart or a growing restart count. Restore the fixture and record a clean baseline first; Doctor does not restart it.
@@ -22,13 +25,6 @@ A proof of the verify-only Doctor needs a healthy baseline, exactly one declared
 **Planted repository callbacks.** Doctor's Git probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. A read-only Git verb alone is not evidence that a checkout-selected program cannot write files, so plant a hook or monitor in a disposable checkout the lease owns, save its Git configuration first, and restore it before release.
 
 **Drift: edit generated output, not `local.conf`.** The PHP-FPM check compares each generated file byte for byte. Change `listen.mode = 0660` to `0666` in `/etc/orbit/php-fpm/<user>/generated/pool.conf` of a production Instance. Do not edit `pm.max_children`: it is in `local.conf`, which Doctor checks only for structure, and the running master reads the pool file only at its next reload.
-
-**Unverifiable: deny one command with sudoers.** Add a drop-in that keeps `NOPASSWD: ALL` for `orbit` and denies `/usr/local/bin/orbit-agent command firewall.inspect`. Doctor then reports one `role.inspection_failed`. Check the file with `visudo -cf` before you install it, because a broken drop-in stops every `sudo` call.
-
-- Sudoers applies the last matching entry, so the drop-in name must sort after `orbit`.
-- The name must not contain a dot, because sudo skips such a file.
-- Do not deny `bash`. The production Instance, private Route, public Route edge, custom proxy Route, Schedule, and Caddy build inspectors all run `sudo bash`.
-- Use `--family=role` to isolate the finding.
 
 **Converge before the first scan.** A converge rewrites the files Orbit owns, including the pool file. `acquire` enrolls the Nodes with the worktree's Gateway code at that moment, so a later edit that changes an expected projection shows drift in the baseline until you converge the role.
 

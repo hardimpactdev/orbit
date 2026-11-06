@@ -1,14 +1,11 @@
 //! Shared recipe operations for Node convergence and image construction.
 pub mod apt;
 pub mod artifacts;
-pub mod assessment;
-pub mod browser;
 pub(crate) mod interruption;
 pub mod javascript;
 mod native;
 pub mod operations;
 pub mod ownership;
-pub mod services;
 pub mod sources;
 pub mod store;
 pub mod swamp;

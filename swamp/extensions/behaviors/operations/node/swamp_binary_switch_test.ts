@@ -30,7 +30,7 @@ Deno.test("the role installs beside the running binary, keeps it, links, then wr
     assertEquals(after("Keep the running Swamp"), ["Install Swamp"]);
     assertEquals(after("Link Swamp"), ["Keep the running Swamp"]);
     assertEquals(after("Apply Swamp serve"), ["Link Swamp"]);
-    assertEquals(after("Apply Swamp worker unit"), ["Link Swamp"]);
+    assertEquals(after("Apply Swamp worker unit"), ["Link Swamp", "Close the Swamp worker credentials"]);
     // Only the rename and the link touch the path serve and the workers run.
     const writers = steps().filter((s) =>
         s.task?.globalArgs?.path === "/usr/local/bin/swamp" &&

@@ -104,10 +104,6 @@ impl Input {
             return Err(invalid());
         }
         for (name, pin) in &self.tools {
-            if name == super::browser::NAME && !super::browser::valid(pin, self.architecture.name())
-            {
-                return Err(invalid());
-            }
             if !valid_package(name) || !valid_version(&pin.version) {
                 return Err(invalid());
             }
@@ -159,23 +155,6 @@ impl Input {
         }
         Ok(())
     }
-    pub fn git(&self) -> Tools {
-        self.git_packages
-            .iter()
-            .filter_map(|name| self.tools.get(name).map(|pin| (name.clone(), pin.clone())))
-            .collect()
-    }
-    pub fn incus(&self) -> Tools {
-        ["incus", "incus-base", "incus-client"]
-            .into_iter()
-            .filter_map(|name| {
-                self.tools
-                    .get(name)
-                    .filter(|p| p.source == Source::Artifact)
-                    .map(|p| (name.into(), p.clone()))
-            })
-            .collect()
-    }
 }
 impl Tool {
     pub fn deb(&self) -> bool {
@@ -185,24 +164,4 @@ impl Tool {
                 .values()
                 .any(|a| a.url.as_deref().is_some_and(|u| u.ends_with(".deb")))
     }
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum Status {
-    Current,
-    Missing,
-    Different,
-    OlderThanRecipe,
-    NewerThanRecipe,
-    UnsupportedNewer,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize)]
-pub struct Assessment {
-    pub source: Source,
-    pub version: String,
-    pub installed: Option<String>,
-    pub changed: bool,
-    pub status: Status,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub refusal: Option<String>,
 }

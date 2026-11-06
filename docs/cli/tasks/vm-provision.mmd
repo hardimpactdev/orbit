@@ -36,13 +36,15 @@ sequenceDiagram
   %%> - one `incus launch` argv on Node 13 creates and starts `tvm-333` from the admitted image, with its metadata and the read-only package cache
   %%> - a `guard` skips it when `tvm-333` already runs the admitted image, so a resumed run allocates no second VM
   %%> - a topology group clones its seed volume in the same step
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): `raw.qemu.conf` skips OVMF's 3 s boot menu wait (`[boot-opts]` menu on, splash-time 0); 10.3 s to 7.2 s to the agent, measured. `efibootmgr -t 0` in the image does not hold; older slots keep the wait
   %%> Per provider:
   %%> - UpCloud overflow: the `cloud` step creates the labelled server through the API from 209, with the token from the vault
   %%> Replaces:
   %%> - `observe-vm`, `plan`, `observe-seed`, `seed-plan`, `clone-seed`, `seed-ready`, `initialize-vm`, `read-metadata`, `metadata`, `write-metadata`, `start-vm`, `inspect-created-vm` and `provider`
-  SW->>H: Wait for first boot<br/>incus-first-visit · ipv4, host key
+  SW->>H: Wait for first boot<br/>first visit · agent, host key
   %%> What it does:
-  %%> - one bounded argv: `incus wait tvm-333 ipv4 --timeout 120`, then `cloud-init status --wait`, then prints the guest's public SSH host key
+  %%> - one bounded argv: `incus wait tvm-333 agent --timeout 120`, then `cloud-init status --wait`, then prints the guest's public SSH host key
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): the first wait is `incus wait tvm-333 agent --timeout 120`, as the slot start does: `cloud-init status --wait` runs through `incus exec`, which fails at once while the VM agent is not running (enrol 12264)
   %%> Why:
   %%> - the provider observation is the trusted source of the guest's host key
   %%> Replaces:
@@ -57,6 +59,7 @@ sequenceDiagram
   SW->>H: Bootstrap the guest<br/>bootstrap · incus exec
   %%> What it does:
   %%> - through `incus exec` on Node 13: the managed account, 209's authorized key, passwordless sudo, sshd with TCP 22 only from 209's WireGuard address, the firewall rules that also let 209 and the Gateway reach Pi on TCP 3774, and a new WireGuard key whose public half it prints
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): the same firewall step allows TCP 443 on the `orbit` interface (`orbit:task-vm-site`), and the hub's task VM filter lets 209 in on 443 (`orbit:task-vm-control-web`) beside its SSH rule, so the Cluster router and 209's TLS probe reach a routed workspace; Pi and SSH stay limited to 209 and the Gateway, so the Node's full WireGuard member trust is not applied
   %%> - each phase is one argv the Gateway rendered; no step reads bootstrap assets
   %%> Replaces:
   %%> - the five `bootstrap-*` exec and `-assets` pairs, `peer-key-command`, `peer-key` and the `ssh-prepare` child
@@ -92,7 +95,9 @@ sequenceDiagram
   SW->>VM: Install the Pi server<br/>runtime · Ansible phase install
   %%> What it does:
   %%> - fetches the pinned Pi build to 209 and checks its digest there
-  %%> - Ansible phase `install`, over SSH with the pinned guest host key: copies the build (its digest is checked on the staged file first), writes the Orbit root, the Pi models and the Pi token (0600, from `vault.get` through the environment, `no_log`), installs the unit, and restarts `pi-server` when a file changed
+  %%> - Ansible phase `install`, over SSH with the pinned guest host key: copies the build (its digest is checked on the staged file first), writes the Orbit root (under the image's name `orbit-root.crt` and the fleet's `orbit-managed-root-ca.crt`), the Pi models and the Pi token (0600, from `vault.get` through the environment, `no_log`), installs the unit, and restarts `pi-server` when a file changed
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): the fleet's name is the file a Route writes; with it in place, the first Route on the VM keeps the CA store (op 12259 rebuilt it in 2.3 s).
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): the phase also creates the app-dev runtime folders and tmpfiles file (`AppDevRuntimeFootprint`, the same list the app-dev role add applies), because the VM records the app-dev role and a served workspace site writes its hibernation log to `/data/caddy/orbit/hibernation`; a ready slot gets them at its enrol, and slots enrolled before are replaced through the pool (its setting cleared, then set again)
   %%> - Ansible phase `check`: the service is active and `/capabilities` answers 200 to the bearer
   %%> - the run folder, with the staged build, is removed in a last job
   %%> - not `@swamp/cfgmgmt`: it cannot pin a host key toward a task VM

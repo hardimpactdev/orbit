@@ -116,7 +116,7 @@ function pushOperation(string $kind, array $input = [], OperationStatus $status 
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Push', 'brief' => 'Push it', 'status' => TaskGroupStatus::Running]);
     $names = ['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()],
         'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()]];
-    $input = $input + ($kind === 'tasks.prep'
+    $input = $input + (in_array($kind, ['tasks.prep', 'tasks.review_round'], true)
         ? ['publish' => ['repository' => 'hardimpactdev/orbit'], 'publish_secrets' => $names]
         : ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => $names]);
     $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
@@ -153,7 +153,7 @@ it('mints the push token of a publish when its step asks, and writes it only und
         ->toBe([['orbit-control-inputs', $names['github_token']['key'], 'push-token-value'],
             ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:push-token-value')]])
         ->and(json_encode($copies))->not->toContain('push-token-value');
-})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep']]);
+})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep'], 'a review round' => ['tasks.review_round']]);
 
 it('mints the clone credential of a workspace when the clone step asks, and only a read credential', function (string $kind): void {
     $socket = tokenWorld();
@@ -286,7 +286,7 @@ it('mints the write token of a pull request step when the step asks, with the pe
         ->and($grants[0]->permissions)->toBe($permissions);
 })->with([
     'ready' => ['tasks.pr_ready', ['pull_requests' => 'write']],
-    'comment' => ['tasks.pr_comment', ['pull_requests' => 'write']],
+    'review round comment' => ['tasks.review_round', ['pull_requests' => 'write']],
     'merge' => ['tasks.pr_merge', ['contents' => 'write', 'pull_requests' => 'write']],
 ]);
 
@@ -367,7 +367,7 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.review_round', 'proof.command', 'task_vm.image_refresh']);
 
 it('gives a sync run and a build run no token mint, because the Gateway writes their read token as it starts the run', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind))->not->toHaveKey('github_token_issuer');

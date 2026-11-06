@@ -57,7 +57,7 @@ final readonly class OperationKinds
     /** The merge of a pull request that no Task group watches; it targets its Project. */
     public const string ProjectPrMerge = 'project.pr_merge';
 
-    public const string TasksPrComment = 'tasks.pr_comment';
+    public const string TasksReviewRound = 'tasks.review_round';
 
     public const string ProofRun = 'proof.run';
 

@@ -92,12 +92,6 @@ final readonly class TaskPullRequestEvidence
         }
     }
 
-    /** A comment needs the open pull request on the exact head; the merge check does not matter. */
-    public function comment(Task $group, string $head): TaskPullRequestTarget
-    {
-        return $this->target($group, $head, checks: false);
-    }
-
     private function target(Task $group, string $head, bool $checks = true): TaskPullRequestTarget
     {
         $group->loadMissing('project');

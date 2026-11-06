@@ -35,15 +35,21 @@ function proof_send(Request $request, string $fixture): MockClient
 
 describe('proof requests', function (): void {
     it('starts proof.run with a JSON body request to the proof route', function (): void {
-        $request = new RunProofRequest(PROOF_COMMIT, false, 'proof.run.c1');
+        $request = new RunProofRequest(PROOF_COMMIT, false, false, 'proof.run.c1');
 
         expect($request)->toBeInstanceOf(HasBody::class)
             ->and($request->getMethod())->toBe(Method::POST)
             ->and($request->resolveEndpoint())->toBe('/api/v1/proof/run');
     });
 
+    it('sends report_only only when the run yields capacity', function (): void {
+        $mock = proof_send(new RunProofRequest(PROOF_COMMIT, false, true, 'proof.run.c1'), 'queued');
+
+        expect((string) $mock->getLastPendingRequest()?->createPsrRequest()->getBody())->toBe('{"commit":"'.PROOF_COMMIT.'","report_only":true}');
+    });
+
     it('sends the key as a header and omits all unless it is set', function (string $commit, bool $all, string $body): void {
-        $mock = proof_send(new RunProofRequest($commit, $all, 'proof.run.c1'), 'queued');
+        $mock = proof_send(new RunProofRequest($commit, $all, false, 'proof.run.c1'), 'queued');
         $sent = $mock->getLastPendingRequest()?->createPsrRequest();
 
         expect((string) $sent?->getBody())->toBe($body)
@@ -56,7 +62,7 @@ describe('proof requests', function (): void {
     ]);
 
     it('refuses a commit that is not a full lowercase SHA', function (string $commit): void {
-        expect(static fn (): RunProofRequest => new RunProofRequest($commit, false, 'proof.run.c1'))->toThrow(InvalidArgumentException::class);
+        expect(static fn (): RunProofRequest => new RunProofRequest($commit, false, false, 'proof.run.c1'))->toThrow(InvalidArgumentException::class);
     })->with([
         'seven characters' => ['0123456'],
         'upper case' => [strtoupper(PROOF_COMMIT)],
@@ -76,7 +82,7 @@ describe('proof responses from recorded Gateway fixtures', function (): void {
         $connector = new GatewayConnector('https://10.70.0.1');
         $connector->withMockClient($mock);
 
-        $operation = $connector->send(new RunProofRequest(PROOF_COMMIT, false, 'proof.run.c1'))->dto();
+        $operation = $connector->send(new RunProofRequest(PROOF_COMMIT, false, false, 'proof.run.c1'))->dto();
 
         expect($operation)->toBeInstanceOf(OperationResponse::class)
             ->and($operation->kind)->toBe('proof.run')
@@ -110,7 +116,7 @@ describe('proof responses from recorded Gateway fixtures', function (): void {
 
     it('preserves the code and details of a recorded refusal', function (string $fixture, string $code, array $details): void {
         try {
-            proof_send(new RunProofRequest(PROOF_COMMIT, false, 'proof.run.c1'), $fixture);
+            proof_send(new RunProofRequest(PROOF_COMMIT, false, false, 'proof.run.c1'), $fixture);
             test()->fail('The refusal did not throw.');
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())->toBe($code)

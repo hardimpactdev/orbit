@@ -5,18 +5,35 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\TaskVms\StartTaskVmImageRefreshAction;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Starts the refresh of the image and seed of every Linux task VM host (stage 6) when an operator runs
- * `task-vms:refresh-images`. Each host gets one admission, and a host with a refresh open returns that refresh. A host that
- * refuses (a build runs, no capacity) is skipped; the other hosts are not held.
+ * Starts the refresh of the image and seed of every Linux task VM host (stage 6): after a release that went live and changed
+ * what the image carries, and daily. Each host gets one admission, and a host with a refresh open returns that refresh, so
+ * the two triggers and a retry never run twice on a host. A host that refuses (a build runs, no capacity) is skipped and
+ * asked again by the next trigger; the other hosts are not held.
  */
 final readonly class TaskVmImageRefreshTrigger
 {
-    public function __construct(private TaskVmSettings $settings, private StartTaskVmImageRefreshAction $start) {}
+    public function __construct(private TaskVmSettings $settings, private TaskVmImageInputs $inputs, private StartTaskVmImageRefreshAction $start) {}
+
+    /**
+     * The refresh after a release: only when the release changed playbooks, pins or lock files since the one it replaced.
+     *
+     * @return array<string,string> host name => the Operation, or the refusal code, or `unchanged`
+     */
+    public function afterRelease(string $releaseId, string $previousId): array
+    {
+        $layout = GatewayReleaseLayout::fromConfig();
+        if (! $this->inputs->changed($layout->releasePath($previousId), $layout->releasePath($releaseId))) {
+            return ['*' => 'unchanged'];
+        }
+
+        return $this->admitAll('release');
+    }
 
     /** @return array<string,string> host name => `operation:<id>` or the refusal code */
     public function admitAll(string $reason): array

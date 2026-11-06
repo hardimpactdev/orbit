@@ -55,7 +55,7 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
             'ssh' => [...Arr::only($ssh->identity(), ['identity_file', 'public_key']), 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
             // The Pi build lives in the Gateway home; 209 fetches it with the same pinned SSH as every other step.
             'pi' => ['sha256' => ValidatedData::string($pi['sha256']), 'source' => ['ssh' => $ssh->forNode($gateway), 'path' => ValidatedData::string($pi['path'])]],
-            'profile' => 'base', 'image' => true, 'nfs' => null,
+            'profile' => 'base', 'image' => true, 'nested' => null,
             'pinned_templates' => TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud)
                 ->whereNull('provider_id')->whereNotNull('image_fingerprint')->pluck('image_fingerprint')->all(),
             'template_data' => json_encode(['storage' => ['title' => 'orbit-task-base-'.$stamp.'-unverified']], JSON_THROW_ON_ERROR),

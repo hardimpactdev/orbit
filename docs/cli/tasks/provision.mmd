@@ -1,8 +1,9 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; Swamp composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
   %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route and Processes through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
-  %% status: reviewed
+  %% status: draft
   %% command: tasks:provision
   %% kind: tasks.provision
   autonumber
@@ -41,10 +42,17 @@ sequenceDiagram
   SW->>H: Wait for the slot boot<br/>incus exec · systemctl --wait
   %%> The agent answers before sshd, WireGuard and Pi; this waits for the boot to finish, and a degraded boot still counts
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): with a Route, the workspace step runs the guest's rows of the Route's Caddy access right after the fetch, before the setup steps write into the tree, as instance:create does in its checkout phase:
+  %%> - what the setup creates inherits the default entries, so the walk covers the fetched files only
+  %%> - the rows run beside the steps that only read the tree (identity, inspect, composer, profile); the dependency writes wait for them, so the setup steps start after them: each row is one SSH step of about 2 s, and run in line the five rows cost 10.2 s (op 12305)
+  %%> - the Route then gets `prepared` with the guest and skips those rows there; in op 12259 the walk over the set-up tree took 4.6 s of the Route
+  %%> - an APP_URL line on the guest exists only after the setup steps; a Route with one keeps its rows, and the workspace step gets none
   %%> Private dependencies:
   %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` (`http-basic` for `github.com`, user `x-access-token`) and the `.npmrc` of the task account from it, mode 0600
   %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
-  %%> - then it revokes the token (`DELETE installation/token`), so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - beside the removal, not after it, it revokes the token (`DELETE installation/token`): a revoked token is dead whether or not the files are gone, so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the dependency steps stay off the critical path. The token is asked for beside the clone credential, right after the control step, and the old files are cleared early. The two files are written by two parallel steps in one stage, and the removal and the revoke are two parallel steps in one stage. All are plain argv steps, not child workflows and not an Ansible phase: a phase costs three dispatches (input, vars, playbook), each about 1.3 s, more than the two parallel steps it would replace
+  %%> - measured in op 12083: the write took 6 s and the removal 4.3 s on the critical path; the target is one dispatch each, under 4 s together
   %%> - the revoke reports what became of the token in the receipt, as `dependency_token`: `revoked` (GitHub answered 204), `none` (GitHub answered 401: no token was minted, or it had expired or been revoked) or `unrevoked` with the reason (any other answer, or no answer)
   %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the provision. The files are already gone from the VM, the token reads for at most an hour, and a failed provision would not shorten that hour; the receipt and the operation result name the reason instead
   %%> - when no setup step runs, nothing is written, removed or revoked
@@ -63,7 +71,7 @@ sequenceDiagram
     %%> - the guest's host key exists only after the VM step pins it; the converge intent leaves it unset until then
     SW->>VM: Converge once<br/>operation-task-vm-converge child
     %%> What it does:
-    %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the NFS server with the export of the checkout to the nested network, the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
+    %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
     %%> Why:
     %%> - the image may predate these phases; a VM at the pins reports no change
     SW->>VM: Find the fleet guest<br/>its address and host key
@@ -81,9 +89,9 @@ sequenceDiagram
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
     %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM; placement already keeps a VM that needs the fleet off a host whose seed has no usable copies (stage 2 chart), so the guard is the exception
-    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
+    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the checkout (a disk device of the containers), the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
     %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
-    %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it
+    %%> - takes the plain snapshot `base` of the three nested containers; the proof batches restore it (a reboot)
   end
   opt the workspace has a Route or Processes
     Note over SW: Bind the workspace keys<br/>pin the guest host key
@@ -91,9 +99,21 @@ sequenceDiagram
     %%> - the guest's host key exists only after the VM step pins it; the Gateway leaves only the guest's targets unpinned
   end
   opt Project serves a web root and task_workspace_routed is on
+    SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
+    %%> What it does:
+    %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
+    %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
+    %%> - a Node that another Route write holds is waited for, up to 5 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+    %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
     SW->>VM: Route the workspace<br/>operation-route-create child
+    %%> With access rows in the workspace intent, the Route gets `prepared` with the guest and skips them there; a Route with an APP_URL line on the guest keeps both, so the workspace step gets no rows
     %%> Why a child:
     %%> - the same Route child instance:create runs; its signing authorizes against this root run
+    %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the signing accepts the leaf of the new guest while its Node is still `provisioning` as well as `active`. On the plain VM create path the Gateway activates that Node only when it applies the provision result, after this Route step, so the guest's admitted leaf was never signable and the step failed with `certificate.intent_mismatch` (409), as group 3780 (op 12284) showed. A claimed slot is already active and never met it
+    SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
+    %%> What it does:
+    %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
+    %%> - runs beside the next step, so it adds no time
   end
   opt Project has Process definitions
     SW->>VM: Create, start Processes<br/>operation-process-create · forEach
@@ -109,6 +129,13 @@ sequenceDiagram
     Note over GW: Mark the task failed<br/>group asks for help
     %%> On the VM:
     %%> - VM 88 and its checkout stay; there is no rollback; `tasks:cancel 42` ends the group and removes the VM
+  else the run is cancelled
+    SW--xGW: Run cancelled<br/>terminal event
+    Note over GW: End the group<br/>tasks.cancel · VM 88 removed
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+    %%> - a cancel can stop the run while it creates VM 88 or the workspace; group 42 ends `cancelled`, and the Gateway admits the group's `tasks.cancel` itself, once per provision
+    %%> - that ending destroys VM 88, whether it exists yet or not, and removes the workspace and its Route
+    %%> - a refused ending asks for help (`removal_failure`), so no row stays `provisioning` with a VM running, as tvm-791 did after provision 12239
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5140

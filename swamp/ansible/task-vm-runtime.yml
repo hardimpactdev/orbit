@@ -38,6 +38,27 @@
           loop: "{{ ['/home/orbit/.local', '/home/orbit/.local/bin', pi_home, pi_home + '/agent'] }}"
           vars:
             item_mode: "{{ '0700' if item.startswith(pi_home) else '0755' }}"
+        # The VM records the app-dev role; a served workspace site needs its runtime folders (AppDevRuntimeFootprint).
+        - name: Create the app-dev runtime folders
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: "{{ item.owner }}"
+            group: "{{ item.group }}"
+            mode: "{{ item.mode }}"
+          loop: "{{ intent.runtime.app_dev.directories | default([]) }}"
+          loop_control:
+            label: "{{ item.path }}"
+        - name: Write the app-dev runtime files
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ item.path }}"
+            owner: "{{ item.owner }}"
+            group: "{{ item.group }}"
+            mode: "{{ item.mode }}"
+          loop: "{{ intent.runtime.app_dev.files | default([]) }}"
+          loop_control:
+            label: "{{ item.path }}"
         - name: Copy the Pi build
           ansible.builtin.copy:
             src: "{{ pi_path }}"
@@ -48,18 +69,20 @@
             # The pin is checked on the staged file; a build that differs never replaces the installed one.
             validate: "/bin/sh -c 'echo \"{{ intent.pi_artifact.sha256 }}  $0\" | sha256sum -c --quiet' %s"
           notify: Restart the Pi server
+        # Under the image's name and the fleet's, which a Route writes: the first Route on the VM then finds it and keeps the CA store.
         - name: Trust the Orbit root
           ansible.builtin.copy:
             content: "{{ intent.certificate }}"
-            dest: /usr/local/share/ca-certificates/orbit-root.crt
+            dest: "{{ item }}"
             owner: root
             group: root
             mode: "0644"
+          loop: [/usr/local/share/ca-certificates/orbit-root.crt, /usr/local/share/ca-certificates/orbit-managed-root-ca.crt]
           notify: Update the CA store
         - name: Add the Orbit root to the CA store when it is missing there
           ansible.builtin.command:
             cmd: timeout 45 update-ca-certificates
-            creates: /etc/ssl/certs/orbit-root.pem
+            creates: /etc/ssl/certs/orbit-managed-root-ca.pem
         - name: Write the Pi models
           no_log: true
           ansible.builtin.copy:

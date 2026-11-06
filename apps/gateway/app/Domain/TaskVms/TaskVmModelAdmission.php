@@ -18,14 +18,16 @@ final class TaskVmModelAdmission
      * @template TReturn
      *
      * @param  Closure():TReturn  $admit
+     * @param  string|null  $owner  the owner of the lock, so that its work can release it; random when omitted
      * @return TReturn
      */
-    public function run(Closure $admit): mixed
+    public function run(Closure $admit, ?string $owner = null): mixed
     {
         if ($this->held) {
             return $admit();
         }
-        $lock = Cache::lock(ModelKeyIssuer::Lock, 600);
+        // A named owner ties the lock to its work (a proof.run): whoever ends that work can free the lock a killed request still holds.
+        $lock = Cache::lock(ModelKeyIssuer::Lock, 600, $owner);
         try {
             $lock->block(60);
         } catch (LockTimeoutException $exception) {

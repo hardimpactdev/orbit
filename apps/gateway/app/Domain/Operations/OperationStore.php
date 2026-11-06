@@ -110,5 +110,9 @@ final readonly class OperationStore
             $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
         });
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
+        // The terminal state frees the Nodes of a Route write; a timed-out one keeps them until Swamp confirms that its run stopped.
+        if ($operation->status->terminal() && RoutePublicationHolds::tracks($operation->kind) && ! RoutePublicationHolds::keepsNodes($operation)) {
+            app(RoutePublicationHolds::class)->release($operation->id, $before === OperationStatus::Waiting);
+        }
     }
 }

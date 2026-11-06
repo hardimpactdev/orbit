@@ -80,7 +80,7 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
             }
             $data['result'] = $result;
             $data['error_code'] = $code;
-            DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id));
+            DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id, 'image-refresh'));
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });

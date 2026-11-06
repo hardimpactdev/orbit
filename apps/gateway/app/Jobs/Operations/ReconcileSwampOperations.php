@@ -11,6 +11,8 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Proof\ProofRunWatch;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
@@ -80,6 +82,13 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             }
         });
         $expire->releaseStaleHolds();
+        // A proof.run has no Swamp run, so no budget of its own: this ends one whose request stopped, and closes one whose runs have ended.
+        try {
+            app(ProofRunWatch::class)->sweep();
+        } catch (Throwable $exception) {
+            Log::warning('The proof runs could not be watched; the next pass tries again.', ['exception_type' => $exception::class]);
+        }
+        app(RoutePublicationHolds::class)->sweep();
     }
 
     /** Remote text can contain inputs: log identity and type only. */

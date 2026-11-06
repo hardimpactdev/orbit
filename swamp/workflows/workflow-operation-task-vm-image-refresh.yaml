@@ -84,7 +84,7 @@ jobs:
         kind: task_vm.fleet_build
         intent: '${{ steps["Pin the VM"].outputs.fleet_build }}'
         execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
-  # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them. With `seed=keep` it is skipped: the seed disk stays as the refresh VM cloned it.
+  # Stops the nested containers and copies them into the seed disk as key-free ready copies, then boot-checks them. With `seed=keep` it is skipped: the seed disk stays as the refresh VM cloned it.
   - name: 'Save the ready copies'
     labels: {role: swamp}
     writes: true

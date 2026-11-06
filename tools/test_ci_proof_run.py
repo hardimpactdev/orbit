@@ -72,6 +72,22 @@ class EvaluateTest(unittest.TestCase):
         self.assertIn('Uncovered: swamp/x.yaml (none: no case yet)', lines)
 
 
+    def test_a_proof_refused_at_admission_fails_and_says_why(self):
+        output = json.dumps({'status': 'failed', 'error_code': 'tasks.capacity_unavailable', 'result': {'outcome': 'failed', 'cases': [], 'uncovered': []},
+                             'error': {'code': 'tasks.capacity_unavailable', 'detail': 'Task VM: no host has 3 free slots for a large VM.'}})
+        passed, lines = proof.evaluate(1, output)
+        self.assertFalse(passed)
+        self.assertIn('No case ran.', lines)
+        self.assertIn('Error: tasks.capacity_unavailable Task VM: no host has 3 free slots for a large VM.', lines)
+
+
+    def test_a_failed_proof_without_a_result_still_says_why(self):
+        output = json.dumps({'status': 'failed', 'error': {'code': 'proof.queue_unavailable', 'detail': 'The Gateway could not queue the admission of the proof.'}})
+        passed, lines = proof.evaluate(1, output)
+        self.assertFalse(passed)
+        self.assertIn('Error: proof.queue_unavailable The Gateway could not queue the admission of the proof.', lines)
+
+
 class RunTest(unittest.TestCase):
     def run_script(self, orbit_body, env=None):
         with tempfile.TemporaryDirectory() as tmp:
@@ -89,6 +105,13 @@ class RunTest(unittest.TestCase):
         self.assertEqual(0, done.returncode, done.stderr)
         self.assertIn(f'proof:run {SHA} --json --idempotency-key ci-proof.7.2', done.stderr)
         self.assertIn('passed', summary)
+
+    def test_the_report_only_job_asks_to_yield_capacity(self):
+        body = 'printf "%s\\n" "$*" >&2\ncat <<\'JSON\'\n' + document('passed') + '\nJSON\n'
+        done, _ = self.run_script(body, {'PROOF_REPORT_ONLY': '1'})
+        self.assertIn(f'proof:run {SHA} --report-only --json --idempotency-key ci-proof.7.2', done.stderr)
+        done, _ = self.run_script(body, {'PROOF_REPORT_ONLY': '0'})
+        self.assertNotIn('--report-only', done.stderr)
 
     def test_a_failed_case_fails_the_job(self):
         done, _ = self.run_script('cat <<\'JSON\'\n' + document('failed') + '\nJSON\n')

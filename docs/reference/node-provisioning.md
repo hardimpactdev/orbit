@@ -426,7 +426,7 @@ A task VM is a Node with the `app-dev` role, and its software has its own Ansibl
 
 The wait for a nested fleet is not a phase of the role: it is the playbook `swamp/ansible/task-vm-fleet-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
 
-The role exports the checkout to the nested guests over NFS; see [the restore of `base`](/reference/compute-drivers) for why a restore restarts that NFS server.
+The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
 On an image build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that an image build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
@@ -434,7 +434,7 @@ The role reads the package indexes of the Ubuntu snapshot with the `apt` module'
 
 The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` and `jq` from the same Ubuntu snapshot: the shape gate linters need the first, and its Swamp load test needs the second. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 
-The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested VMs. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
+The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested containers. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
 
 ### The topology seed pool
 
@@ -442,7 +442,7 @@ A task image made by a refresh VM carries the Incus database of that VM, with st
 
 A task VM that has the topology seed disk also recovers the pool on it (`topology-seed`, btrfs) with `incus admin recover`, so the ready copies it holds show in the VM. The phase first deletes the other instances of the seed disk, which is a clone of the VM, and bounds every command with `timeout`. The provision of a task with a topology runs this converge before the nested fleet starts; a VM at the pins reports no change.
 
-A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested VMs get an address and reach the internet. Nothing else is opened; the checkout export has its own rule.
+A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested containers get an address and reach the internet. Nothing else is opened.
 
 ## Gateway bootstrap prerequisites
 
@@ -537,6 +537,12 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.de
 
 New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result.
 
+A Node inside the nested subnet of a [task VM](/reference/compute-drivers) (`10.232.2.0/24`) reads its apt packages through the `apt-cacher-ng` of that VM, at `http://10.232.2.1:3142`. The Gateway puts that address in the `apt_proxy` field of the intent of the Node enrollment (`node.add`), of each role add and converge, and of each metrics exporter.
+
+A play with an `apt_proxy` writes `/etc/apt/apt.conf.d/90orbit-package-cache` before its first apt call: `Acquire::http::Proxy` with the cache, no pipelining, and `Acquire::https::Proxy "DIRECT"`, because the cache refuses https tunnels. A play without one removes that file. Every other Node has no `apt_proxy` and reads the archive.
+
+The [Gateway bootstrap](#gateway-bootstrap-prerequisites) of a nested fleet takes the value from its input, and `php artisan orbit:bootstrap-plan --apt-proxy=URL` puts it in the plan.
+
 Application roles fetch the recipe's PHP packages and Bun archive with checksums, install PHP in one APT transaction, and converge the shared Tool Managers. Role add applies role-owned resources even when an earlier Node footprint has the same digest. It leaves the observer and Orbit CLI to `node:converge`.
 
 The native Gateway role installs an enabled `orbit-gateway-dns.service` oneshot. It applies the resolver policy when the Orbit interface exists and no peer-owned DNS policy is present. Role removal disables and removes that unit. Native role failures retain completed resources and the failed assignment; there is no rollback chain.
@@ -579,7 +585,9 @@ Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollba
 
 Another installer can put a plain file back at `/usr/local/bin/swamp`, such as the Node worker installer. The next converge renames that file into a new directory and links the path again, so no running process loses its binary. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
 
-The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with 8 dispatch slots each and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (root, `0600`) before adding the role. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
+The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with one dispatch slot per CPU core each (`--concurrency auto`) and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (`root` and the group of the swamp account, `0640`, in folders of `0750`) before adding the role.
+
+The workers run as that account and read the files themselves. The role sets the folders to `0750` and the files to `0640`, with `chown` and `chmod` in two steps, before it writes the worker unit. The next converge repairs a Node whose tokens were placed as `root` `0600`. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
 
 The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orbit/swamp-role-worker/ssh-identity` (`0440`, the serve account's group). An operator bootstraps the first swamp Node, because no worker holds the key before that. The role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 
@@ -619,7 +627,11 @@ Retained provisioning and removal paths use the role lock before claiming the as
 
 Retained provisioning and removal paths return each failed step's own code in `details.error_code`, such as `node_role.tool_manager_locked`, a `metrics.*` code, or `ingress.caddy_config_failed` for a Caddy removal. `node:add` and `node:remove` do the same when a role step failed.
 
-Cluster Router changes take the lock only around the baseline step. `node:role:relocate` holds its operation's target lock on the target Node until the run ends. For role addition and convergence, the Node Operation hold covers Metrics reconciliation. The retained removal and provisioning paths reconcile Metrics inside their role lock. Metrics reconciliation converges exporters on other Nodes without their locks, so two operations cannot wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
+Cluster Router changes take the lock only around the baseline step.
+
+They also hold the Route-serving Nodes around the steps that install and retire Router sites, for the seconds of those steps. The revert of a failed set is not held ([Coordinate publication](/reference/routes#coordinate-publication)).
+
+`node:role:relocate` holds its operation's target lock on the target Node until the run ends. For role addition and convergence, the Node Operation hold covers Metrics reconciliation. The retained removal and provisioning paths reconcile Metrics inside their role lock. Metrics reconciliation converges exporters on other Nodes without their locks, so two operations cannot wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
 
 A retained provisioning or removal path that dies can leave its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no Operation holds the Node. `node:role:add --converge` and `node:role:remove` can then take it over. Swamp runs continue if a Gateway worker exits. Doctor reports the inactive role lifecycle.
 

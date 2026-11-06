@@ -1,0 +1,370 @@
+id: 4b7b23f4-b2d0-4a6b-8f93-527231d1cffd
+name: operation-task-review-round
+description: >-
+  One review round of the automatic mode in one run from full inputs on 209: resume the task VM, let a fresh reviewer judge the
+  pull request head, post the verdict as a comment of the App, and, when the review has findings, let the author fix them, check
+  the fix locally and push it to the same branch. The existing resume, turn, check and publish workflows run as children. The comment
+  and the push mint their tokens when they start.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: tasks.review_round}
+    intent:
+      type: object
+      properties:
+        project_id: {type: integer, minimum: 1}
+        group_id: {type: integer, minimum: 1}
+        repository: {type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'}
+        pr_number: {type: integer, minimum: 1}
+        round: {type: integer, minimum: 1, maximum: 3}
+        head: {type: string, pattern: '^[a-f0-9]{40}$'}
+        resume: {type: object}
+        review: {type: object}
+        fix: {type: object}
+        check: {type: object}
+        publish: {type: object}
+      required: [project_id, group_id, repository, pr_number, round, head, resume, review, publish]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        pi_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-pi-token-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        write_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^pr-comment-write-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [pi_token, write_token]
+      additionalProperties: false
+    resume_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^task-vm-upcloud-token$'}
+        required: [vault, key]
+        additionalProperties: false
+    publish_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+        git_authorization:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [github_token, git_authorization]
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - resume_secrets
+  - publish_secrets
+  additionalProperties: false
+jobs:
+- name: round
+  labels: {role: swamp}
+  steps:
+  - name: Resume the VM
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-resume
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.resume.node_id }}'
+        kind: task_vm.resume
+        intent: '${{ inputs.intent.resume }}'
+        execution_secrets: '${{ inputs.resume_secrets }}'
+  - name: Review the head
+    labels: {role: swamp}
+    dependsOn:
+    - step: Resume the VM
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.review.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "review-round-" + string(inputs.operation_id) + "-review" }}'
+        intent: '${{ inputs.intent.review }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        candidate: '${{ inputs.intent.head }}'
+  - name: Settle the review
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review the head
+      condition:
+        type: completed
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-review-round-settle-the-review-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: round
+      inputs:
+        result_json: '${{ ("Review the head" in steps && "outputs" in steps["Review the head"] && "shape_result" in steps["Review the head"].outputs) ? steps["Review the head"].outputs.shape_result.result_json : "" }}'
+        round: '${{ inputs.intent.round }}'
+        head: '${{ inputs.intent.head }}'
+  - name: Mint the comment token
+    labels: {role: swamp}
+    queueTimeout: 30
+    allowFailure: true
+    dependsOn:
+    - step: Settle the review
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ run.id }}
+        purpose: pull_request
+  - name: Read the PR
+    labels: {role: swamp}
+    queueTimeout: 30
+    allowFailure: true
+    dependsOn:
+    - step: Mint the comment token
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-comment-read" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 gh api "$ORBIT_PATH" --jq '[.state, .head.sha] | join(" ")'
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-comment-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) }}
+  - name: Check the PR head
+    labels: {role: swamp}
+    queueTimeout: 30
+    allowFailure: true
+    dependsOn:
+    - step: Read the PR
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: 'steps["Read the PR"].outputs.stdout.trim() == "open " + inputs.intent.head'
+      message: tasks_pr.head_moved
+      severity: high
+  - name: Post the comment
+    labels: {role: swamp}
+    queueTimeout: 30
+    allowFailure: true
+    writes: true
+    dependsOn:
+    - step: Check the PR head
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-comment-post" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 gh api --method POST "$ORBIT_PATH" -f "body=$ORBIT_BODY" --jq '{comment: .id}'
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-comment-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/issues/" + string(inputs.intent.pr_number) + "/comments" }}
+          ORBIT_BODY: ${{ steps["Settle the review"].outputs.body }}
+  - name: Clean up the token
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Settle the review
+      condition:
+        type: succeeded
+    - step: Mint the comment token
+      condition:
+        type: always
+    - step: Read the PR
+      condition:
+        type: always
+    - step: Check the PR head
+      condition:
+        type: always
+    - step: Post the comment
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: task-github-cleanup
+      inputs:
+        name: pr-comment
+        run_id: ${{ run.id }}
+        write_token: ${{ inputs.execution_secrets.write_token }}
+        mint_status: '${{ "Mint the comment token" in steps ? steps["Mint the comment token"].status : "skipped" }}'
+  - name: Fix the findings
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'
+    dependsOn:
+    - step: Clean up the token
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ has(inputs.intent.fix) ? inputs.intent.fix.node_id : inputs.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "review-round-" + string(inputs.operation_id) + "-fix" }}'
+        intent: '${{ has(inputs.intent.fix) ? inputs.intent.fix : {} }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        prompt_append: '${{ steps["Settle the review"].outputs.findings }}'
+  - name: Read the fix
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'
+    dependsOn:
+    - step: Fix the findings
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-review-round-read-the-fix-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: outcome
+      inputs:
+        result_json: ${{ steps["Fix the findings"].outputs.shape_result.result_json }}
+  - name: Check the fix turn
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'
+    dependsOn:
+    - step: Read the fix
+      condition:
+        type: succeeded
+    task: {type: assert, expr: 'steps["Read the fix"].outputs.outcome == "ready_for_review"', severity: high, message: tasks.review_fix_not_ready}
+  - name: Check the fix
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'
+    dependsOn:
+    - step: Check the fix turn
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-check
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: '${{ has(inputs.intent.check) ? inputs.intent.check.node_id : inputs.node_id }}'
+        kind: tasks.check
+        intent: '${{ has(inputs.intent.check) ? inputs.intent.check : {} }}'
+        execution_secrets: {}
+  - name: Settle the check
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'
+    dependsOn:
+    - step: Check the fix
+      condition:
+        type: completed
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-review-round-settle-the-check-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: checked
+      inputs:
+        result_json: '${{ ("Check the fix" in steps && "outputs" in steps["Check the fix"] && "Push the candidate" in steps["Check the fix"].outputs && "finish" in steps["Check the fix"].outputs["Push the candidate"]) ? steps["Check the fix"].outputs["Push the candidate"].finish.result_json : "" }}'
+  - name: Check the fix passed
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'
+    dependsOn:
+    - step: Settle the check
+      condition:
+        type: succeeded
+    task: {type: assert, expr: 'steps["Settle the check"].outputs.passed', severity: high, message: tasks.review_fix_not_passed}
+  - name: Push the fix
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'
+    dependsOn:
+    - step: Check the fix passed
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.publish.node_id }}
+        kind: tasks.publish
+        intent:
+          group_id: ${{ inputs.intent.publish.group_id }}
+          instance_id: ${{ inputs.intent.publish.instance_id }}
+          node_id: ${{ inputs.intent.publish.node_id }}
+          check: null
+          checkout_path: ${{ inputs.intent.publish.checkout_path }}
+          commit: ${{ steps["Settle the check"].outputs.commit }}
+          tree: ${{ steps["Settle the check"].outputs.tree }}
+          repository: ${{ inputs.intent.publish.repository }}
+          base: ${{ inputs.intent.publish.base }}
+          branch: ${{ inputs.intent.publish.branch }}
+          remote: ${{ inputs.intent.publish.remote }}
+          refspec: '${{ steps["Settle the check"].outputs.commit + ":refs/heads/" + inputs.intent.publish.branch }}'
+          object_format: '${{ size(steps["Settle the check"].outputs.commit) == 64 ? "sha256" : "sha1" }}'
+          pull_head: ${{ inputs.intent.publish.pull_head }}
+          pull_request: null
+          ssh_execution: ${{ inputs.intent.publish.ssh_execution }}
+        run_id: ${{ run.id }}
+        execution_secrets: '${{ {"github_token": inputs.publish_secrets.github_token, "git_authorization": inputs.publish_secrets.git_authorization} }}'
+  - name: Confirm the round
+    labels: {role: swamp}
+    dependsOn:
+    - step: Settle the review
+      condition:
+        type: succeeded
+    - step: Clean up the token
+      condition:
+        type: succeeded
+    - step: Push the fix
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    task:
+      type: assert
+      expr: 'steps["Settle the review"].outputs.verdict != "failed" && (steps["Settle the review"].outputs.verdict != "findings" || !has(inputs.intent.fix) || steps["Push the fix"].status == "succeeded")'
+      severity: high
+      message: tasks.review_round_failed

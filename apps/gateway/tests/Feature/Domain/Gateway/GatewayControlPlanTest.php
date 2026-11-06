@@ -55,6 +55,13 @@ it('keeps the production checkout of the swamp Node when no repository is named'
     expect($units['serve'])->toContain('--repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp ');
 });
 
+it('renders the worker unit to read its token files itself, so one unit form runs in a VM and in a container', function (): void {
+    $worker = SwampRoleUnits::for('orbit', 209)['worker'];
+
+    expect($worker)->toContain('--token-file=/etc/orbit/swamp-role-worker/%i/enrollment.token ', '--server-token-file=/etc/orbit/swamp-role-worker/%i/server.token ', "User=orbit\n")
+        ->and($worker)->not->toContain('LoadCredential', '%d');
+});
+
 it('records the public key of the hub the machine made, and refuses anything that is not a WireGuard key', function (): void {
     $node = SwampNodeFixture::ensure();
     $key = base64_encode(str_repeat('k', 32));

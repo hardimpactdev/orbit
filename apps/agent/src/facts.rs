@@ -1,6 +1,8 @@
 //! Facts the agent observes and reports to `POST /api/v1/agent/facts`, one kind per request. The agent only
 //! observes: it reads files, statvfs, systemd and Docker, and starts no program. It sends a fact when it changed, and
-//! again every [`RESYNC_INTERVAL`] so the Gateway recovers its state after a restore.
+//! again every [`RESYNC_INTERVAL`] so the Gateway recovers its state after a restore. A report the Gateway does not
+//! accept is sent again after a short, bounded delay ([`RetryTimer`]), so a Node that boots before the Gateway answers
+//! is reported within seconds.
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -13,6 +15,15 @@ pub const UNITS_INTERVAL: Duration = Duration::from_secs(10);
 pub const HOST_INTERVAL: Duration = Duration::from_secs(60);
 /// An unchanged fact is sent again after this long.
 pub const RESYNC_INTERVAL: Duration = Duration::from_secs(600);
+/// The first wait before a failed report is sent again; each further wait doubles up to [`RETRY_MAX`].
+pub const RETRY_FIRST: Duration = Duration::from_secs(1);
+/// The longest wait between two tries of a failed report.
+pub const RETRY_MAX: Duration = Duration::from_secs(4);
+/// The files an `accounts` fact is read from.
+pub const PASSWD: &str = "/etc/passwd";
+/// The group names of the accounts, by gid.
+pub const GROUP: &str = "/etc/group";
+const MAX_ACCOUNTS: usize = 512;
 /// Filesystems that hold data; pseudo, network and snap mounts are left out.
 const DATA_FILESYSTEMS: [&str; 7] = ["ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs"];
 const MAX_FILESYSTEMS: usize = 64;
@@ -226,6 +237,64 @@ fn hex_text(hex: &str) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
+/// The local accounts of `passwd`, each with the name of its primary group from `group`, in uid order. An entry that is
+/// malformed, has no group, or holds a name or a path the Gateway would refuse is left out.
+pub fn accounts_data(passwd: &str, group: &str) -> Value {
+    let mut groups: BTreeMap<u32, &str> = BTreeMap::new();
+    for line in group.lines() {
+        let mut fields = line.split(':');
+        if let (Some(name), Some(_), Some(gid)) = (fields.next(), fields.next(), fields.next()) {
+            if let Ok(gid) = gid.parse() {
+                groups.entry(gid).or_insert(name);
+            }
+        }
+    }
+    let mut accounts: Vec<(u32, &str, Value)> = passwd
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            let [user, _, uid, gid, _, home, shell] = fields[..] else {
+                return None;
+            };
+            let (uid, gid) = (uid.parse::<u32>().ok()?, gid.parse::<u32>().ok()?);
+            let group = *groups.get(&gid)?;
+            (account_name(user)
+                && account_name(group)
+                && absolute_path(home)
+                && absolute_path(shell))
+            .then(|| {
+                (
+                    uid,
+                    user,
+                    json!({"user": user, "uid": uid, "group": group, "home": home, "shell": shell}),
+                )
+            })
+        })
+        .collect();
+    accounts.sort_by(|(left_uid, left, _), (right_uid, right, _)| {
+        left_uid.cmp(right_uid).then_with(|| left.cmp(right))
+    });
+    json!({"accounts": accounts.into_iter().map(|(_, _, account)| account).take(MAX_ACCOUNTS).collect::<Vec<_>>()})
+}
+
+/// A Linux account or group name: lower case letters, digits, `_` and `-`, not starting with a digit or `-`, and at
+/// most 32 characters, with an optional trailing `$`.
+fn account_name(name: &str) -> bool {
+    let name = name.strip_suffix('$').unwrap_or(name);
+    (1..=32).contains(&name.len())
+        && name.bytes().enumerate().all(|(index, byte)| match byte {
+            b'a'..=b'z' | b'_' => true,
+            b'0'..=b'9' | b'-' => index > 0,
+            _ => false,
+        })
+}
+
+fn absolute_path(path: &str) -> bool {
+    path.starts_with('/')
+        && path.len() <= 4096
+        && !path.bytes().any(|byte| byte < 32 || byte == 127)
+}
+
 /// A role service name from the watch list, such as `caddy.service`, only when it is a plain unit name.
 pub fn valid_service(name: &str) -> bool {
     name.len() <= 255
@@ -283,8 +352,121 @@ fn key(kind: &str, subject: Option<&str>) -> (String, String) {
     (kind.to_owned(), subject.unwrap_or_default().to_owned())
 }
 
+/// Sends facts and remembers the ones the Gateway did not accept, so [`Reporter::retry`] sends exactly those again
+/// with the data they had, without reading the Node again.
+pub struct Reporter {
+    client: reqwest::Client,
+    url: String,
+    sender: FactSender,
+    failed: BTreeMap<(String, String), (Option<String>, Value)>,
+    last_error: Option<String>,
+}
+
+impl Reporter {
+    pub fn new(client: reqwest::Client, gateway: &str) -> Self {
+        Self {
+            client,
+            url: format!("{}/api/v1/agent/facts", gateway.trim_end_matches('/')),
+            sender: FactSender::default(),
+            failed: BTreeMap::new(),
+            last_error: None,
+        }
+    }
+
+    /// Sends the fact when it changed or is due. A failure is kept for [`Reporter::retry`] and logged once until the
+    /// next success.
+    pub async fn report(&mut self, kind: &str, subject: Option<&str>, data: &Value) {
+        let now = Instant::now();
+        let Some(body) = self.sender.body(kind, subject, data, &observed_at(), now) else {
+            self.failed.remove(&key(kind, subject));
+            return;
+        };
+        match post(&self.client, &self.url, &body).await {
+            Ok(()) => {
+                self.sender.sent(kind, subject, data, now);
+                self.failed.remove(&key(kind, subject));
+                self.last_error = None;
+            }
+            Err(error) => {
+                if error.retry {
+                    self.failed.insert(
+                        key(kind, subject),
+                        (subject.map(str::to_owned), data.clone()),
+                    );
+                } else {
+                    self.failed.remove(&key(kind, subject));
+                }
+                if self.last_error.as_ref() != Some(&error.message) {
+                    let what = subject
+                        .map_or_else(|| kind.to_owned(), |subject| format!("{kind} {subject}"));
+                    eprintln!("orbit-agent: {what} fact report failed: {}", error.message);
+                    self.last_error = Some(error.message);
+                }
+            }
+        }
+    }
+
+    /// Whether a report is waiting to be sent again.
+    pub fn has_failed(&self) -> bool {
+        !self.failed.is_empty()
+    }
+
+    /// Sends the facts that failed again.
+    pub async fn retry(&mut self) {
+        for ((kind, _), (subject, data)) in std::mem::take(&mut self.failed) {
+            self.report(&kind, subject.as_deref(), &data).await;
+        }
+    }
+
+    /// Stops retrying the failed reports of a kind, for a source that is gone.
+    pub fn drop_failed(&mut self, kind: &str) {
+        self.failed
+            .retain(|(failed_kind, _), _| failed_kind != kind);
+    }
+
+    /// Forgets the items of a kind that `keep` rejects, so an item that comes back is sent again.
+    pub fn retain(&mut self, kind: &str, keep: impl Fn(&str) -> bool) {
+        self.sender.retain(kind, &keep);
+        self.failed
+            .retain(|(failed_kind, subject), _| failed_kind != kind || keep(subject));
+    }
+}
+
+/// When to try a failed call to the Gateway again: after [`RETRY_FIRST`], then twice as long each time up to
+/// [`RETRY_MAX`], and from the start again once nothing is outstanding. The deadline stays until it fires, so other
+/// events in the same loop cannot postpone it.
+#[derive(Default)]
+pub struct RetryTimer {
+    failures: u32,
+    at: Option<tokio::time::Instant>,
+}
+
+impl RetryTimer {
+    /// Call after each pass: arms the timer when a call is outstanding and none is armed, and disarms it when none is.
+    pub fn update(&mut self, outstanding: bool) {
+        if !outstanding {
+            self.failures = 0;
+            self.at = None;
+        } else if self.at.is_none() {
+            let delay = (RETRY_FIRST * 2u32.pow(self.failures)).min(RETRY_MAX);
+            self.failures = (self.failures + 1).min(3);
+            self.at = Some(tokio::time::Instant::now() + delay);
+        }
+    }
+
+    /// Completes when the armed deadline passes, and disarms the timer; never completes when none is armed. A caller
+    /// that drops the future early keeps the deadline.
+    pub async fn due(&mut self) {
+        match self.at {
+            Some(at) => tokio::time::sleep_until(at).await,
+            None => std::future::pending().await,
+        }
+        self.at = None;
+    }
+}
+
 /// Sends one fact body to `POST /api/v1/agent/facts`.
-pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(), String> {
+pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(), PostError> {
     client
         .post(url)
         .json(body)
@@ -293,7 +475,21 @@ pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(
         .await
         .and_then(reqwest::Response::error_for_status)
         .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(|error| PostError {
+            // A 4xx other than a timeout or a rate limit means the Gateway refuses this exact report, such as a kind an
+            // older Gateway does not know; sending it again every few seconds cannot change that.
+            retry: error.status().is_none_or(|status| {
+                !status.is_client_error() || matches!(status.as_u16(), 408 | 429)
+            }),
+            message: error.to_string(),
+        })
+}
+
+/// Why the Gateway did not accept a report, and whether sending it again soon can help.
+#[derive(Debug)]
+pub struct PostError {
+    pub message: String,
+    pub retry: bool,
 }
 
 fn digest(kind: &str, data: &Value) -> String {
@@ -317,6 +513,179 @@ pub fn observed_at() -> String {
 mod tests {
     use super::*;
 
+    #[tokio::test(start_paused = true)]
+    async fn the_retry_timer_waits_1_2_4_then_4_seconds_and_a_success_starts_it_again() {
+        let mut timer = RetryTimer::default();
+        for expected in [1, 2, 4, 4, 4] {
+            timer.update(true);
+            let armed = tokio::time::Instant::now();
+            timer.due().await;
+            assert_eq!(armed.elapsed(), Duration::from_secs(expected));
+        }
+        timer.update(false);
+        timer.update(true);
+        let armed = tokio::time::Instant::now();
+        timer.due().await;
+        assert_eq!(armed.elapsed(), RETRY_FIRST);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_armed_retry_deadline_is_not_postponed_by_later_passes() {
+        let mut timer = RetryTimer::default();
+        timer.update(true);
+        tokio::time::advance(Duration::from_millis(600)).await;
+        timer.update(true);
+        let armed = tokio::time::Instant::now();
+        timer.due().await;
+        assert_eq!(armed.elapsed(), Duration::from_millis(400));
+    }
+
+    /// A client that ignores any proxy in the environment, so the test reaches its local Gateway.
+    fn client() -> reqwest::Client {
+        reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_unarmed_retry_timer_never_completes() {
+        let mut timer = RetryTimer::default();
+        assert!(tokio::time::timeout(Duration::from_secs(3600), timer.due())
+            .await
+            .is_err());
+    }
+
+    /// A Gateway that refuses the first requests and accepts the rest, and counts what it saw.
+    async fn gateway(refusals: usize) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let seen = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = seen.clone();
+        let app = axum::Router::new().route(
+            "/api/v1/agent/facts",
+            axum::routing::post(move || {
+                let count = counter.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if count < refusals {
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE
+                    } else {
+                        axum::http::StatusCode::NO_CONTENT
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (url, seen)
+    }
+
+    #[tokio::test]
+    async fn a_refused_report_is_kept_and_sent_again_until_the_gateway_accepts_it() {
+        use std::sync::atomic::Ordering;
+        let (url, seen) = gateway(2).await;
+        let mut reporter = Reporter::new(client(), &url);
+        let data = json!({"os": "linux"});
+
+        reporter.report("host", None, &data).await;
+        reporter
+            .report("checkout", Some("/apps/a/main"), &data)
+            .await;
+        assert!(reporter.has_failed());
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+
+        reporter.retry().await;
+        assert!(!reporter.has_failed());
+        assert_eq!(seen.load(Ordering::SeqCst), 4);
+
+        // The accepted facts are not sent again until they change or the resync is due.
+        reporter.report("host", None, &data).await;
+        reporter.retry().await;
+        assert_eq!(seen.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn a_newer_accepted_report_replaces_an_older_refused_one() {
+        use std::sync::atomic::Ordering;
+        let (url, seen) = gateway(1).await;
+        let mut reporter = Reporter::new(client(), &url);
+
+        reporter.report("host", None, &json!({"free": 1})).await;
+        assert!(reporter.has_failed());
+        reporter.report("host", None, &json!({"free": 2})).await;
+
+        assert!(!reporter.has_failed());
+        reporter.retry().await;
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+    }
+
+    /// A Gateway that answers every report with `status`, and counts them.
+    async fn gateway_answering(
+        status: u16,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let seen = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = seen.clone();
+        let app = axum::Router::new().route(
+            "/api/v1/agent/facts",
+            axum::routing::post(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move { axum::http::StatusCode::from_u16(status).unwrap() }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (url, seen)
+    }
+
+    #[tokio::test]
+    async fn a_report_the_gateway_refuses_for_good_is_not_retried_but_a_busy_gateway_is() {
+        use std::sync::atomic::Ordering;
+        for (status, retried) in [
+            (422, false),
+            (401, false),
+            (404, false),
+            (429, true),
+            (408, true),
+            (502, true),
+            (500, true),
+        ] {
+            let (url, seen) = gateway_answering(status).await;
+            let mut reporter = Reporter::new(client(), &url);
+
+            reporter
+                .report("accounts", None, &json!({"accounts": []}))
+                .await;
+
+            assert_eq!(reporter.has_failed(), retried, "status {status}");
+            reporter.retry().await;
+            assert_eq!(
+                seen.load(Ordering::SeqCst),
+                if retried { 2 } else { 1 },
+                "status {status}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refused_item_that_leaves_the_set_is_not_sent_again() {
+        use std::sync::atomic::Ordering;
+        let (url, seen) = gateway(1).await;
+        let mut reporter = Reporter::new(client(), &url);
+        reporter
+            .report("checkout", Some("/apps/gone/main"), &json!({}))
+            .await;
+        assert!(reporter.has_failed());
+
+        reporter.retain("checkout", |subject| subject != "/apps/gone/main");
+        reporter.retry().await;
+
+        assert!(!reporter.has_failed());
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn data_mounts_keep_data_filesystems_once_and_skip_pseudo_and_snap_mounts() {
         let mounts = "sysfs /sys sysfs rw 0 0\n\
@@ -331,6 +700,46 @@ mod tests {
             data_mounts(mounts),
             vec!["/".to_owned(), "/var/lib/my data".to_owned()]
         );
+    }
+
+    #[test]
+    fn accounts_data_lists_accounts_by_uid_with_their_group_and_leaves_out_unusable_entries() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+            orbit:x:1000:1000:Orbit:/home/orbit:/bin/bash\n\
+            www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\n\
+            ghost:x:1500:1500::/home/ghost:/bin/bash\n\
+            Bad Name:x:1600:1000::/home/bad:/bin/bash\n\
+            relative:x:1700:1000::home/relative:/bin/bash\n\
+            short:x:1800:1000\n\
+            nologin:x:abc:1000::/home/n:/bin/bash\n\
+            dollar$:x:1900:1000::/home/dollar:/bin/bash\n";
+        let group = "root:x:0:\norbit:x:1000:\nwww-data:x:33:\ndup:x:1000:\n";
+
+        let data = accounts_data(passwd, group);
+        let users: Vec<&str> = data["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|account| account["user"].as_str().unwrap())
+            .collect();
+
+        assert_eq!(users, ["root", "www-data", "orbit", "dollar$"]);
+        assert_eq!(
+            data["accounts"][2],
+            json!({"user": "orbit", "uid": 1000, "group": "orbit", "home": "/home/orbit", "shell": "/bin/bash"})
+        );
+    }
+
+    #[test]
+    fn accounts_data_lists_at_most_512_accounts() {
+        let passwd: String = (1000..1600)
+            .map(|uid| format!("u{uid}:x:{uid}:1000::/home/u{uid}:/bin/sh\n"))
+            .collect();
+
+        let data = accounts_data(&passwd, "g:x:1000:\n");
+
+        assert_eq!(data["accounts"].as_array().unwrap().len(), 512);
+        assert_eq!(data["accounts"][511]["uid"], 1511);
     }
 
     #[test]

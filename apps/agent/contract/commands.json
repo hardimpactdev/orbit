@@ -307,32 +307,6 @@
       ]
     },
     {
-      "name": "recipe.inspect",
-      "summary": "Inspect recipe versions, package origins, and planned ownership changes.",
-      "mutates": false,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "recipe.failed"
-      ]
-    },
-    {
-      "name": "recipe.apply",
-      "summary": "Converge pinned recipe packages and runtimes, then verify their services.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "recipe.failed"
-      ]
-    },
-    {
       "name": "recipe.install-javascript",
       "summary": "Install and verify recipe JavaScript runtimes before retiring duplicate Node packages.",
       "mutates": true,
@@ -470,19 +444,6 @@
         "task_vm.image_mismatch",
         "task_vm.base_image_missing",
         "task_vm.topology_seed_missing"
-      ]
-    },
-    {
-      "name": "image.owner",
-      "summary": "Check the image builder's pinned orbit UID and GID.",
-      "mutates": false,
-      "timeout_seconds": 10,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_check_failed"
       ]
     },
     {
@@ -958,52 +919,6 @@
       ]
     },
     {
-      "name": "firewall.inspect",
-      "summary": "Inspect typed firewall shapes and exact managed ownership.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "firewall.input_invalid",
-        "firewall.status_failed",
-        "firewall.status_unrecognized",
-        "firewall.rule_collision",
-        "firewall.apply_failed",
-        "firewall.reconcile_failed",
-        "firewall.verify_failed",
-        "firewall.remove_failed",
-        "firewall.remove_verify_failed",
-        "node.firewall_convergence_failed",
-        "router.lan_ingress_recovery_failed"
-      ]
-    },
-    {
-      "name": "firewall.rule",
-      "summary": "Converge or remove one owned named firewall rule.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "firewall.input_invalid",
-        "firewall.status_failed",
-        "firewall.status_unrecognized",
-        "firewall.rule_collision",
-        "firewall.apply_failed",
-        "firewall.reconcile_failed",
-        "firewall.verify_failed",
-        "firewall.remove_failed",
-        "firewall.remove_verify_failed",
-        "node.firewall_convergence_failed",
-        "router.lan_ingress_recovery_failed"
-      ]
-    },
-    {
       "name": "firewall.rules",
       "summary": "Converge exact managed role rules and retire owned rules under one lock.",
       "mutates": true,
@@ -1018,7 +933,6 @@
         "firewall.status_unrecognized",
         "firewall.rule_collision",
         "firewall.apply_failed",
-        "firewall.reconcile_failed",
         "firewall.verify_failed",
         "firewall.remove_failed",
         "firewall.remove_verify_failed",
@@ -1041,7 +955,6 @@
         "firewall.status_unrecognized",
         "firewall.rule_collision",
         "firewall.apply_failed",
-        "firewall.reconcile_failed",
         "firewall.verify_failed",
         "firewall.remove_failed",
         "firewall.remove_verify_failed",
@@ -1064,7 +977,6 @@
         "firewall.status_unrecognized",
         "firewall.rule_collision",
         "firewall.apply_failed",
-        "firewall.reconcile_failed",
         "firewall.verify_failed",
         "firewall.remove_failed",
         "firewall.remove_verify_failed",
@@ -1236,191 +1148,6 @@
       ]
     },
     {
-      "name": "metrics.node-exporter",
-      "summary": "Snapshot, converge, remove, or restore one Metrics exporter.",
-      "mutates": true,
-      "timeout_seconds": 420,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.exporter_input_invalid",
-        "metrics.cadvisor_input_invalid",
-        "metrics.exporter_address_invalid",
-        "metrics.cadvisor_address_invalid",
-        "metrics.exporter_platform_unsupported",
-        "metrics.cadvisor_platform_unsupported",
-        "metrics.exporter_configuration_inspection_failed",
-        "metrics.cadvisor_configuration_inspection_failed",
-        "metrics.exporter_configuration_ownership_drift",
-        "metrics.cadvisor_configuration_ownership_drift",
-        "metrics.exporter_configuration_failed",
-        "metrics.cadvisor_configuration_failed",
-        "metrics.exporter_configuration_verify_failed",
-        "metrics.cadvisor_configuration_verify_failed",
-        "metrics.exporter_configuration_remove_failed",
-        "metrics.cadvisor_configuration_remove_failed",
-        "metrics.exporter_configuration_remove_verify_failed",
-        "metrics.cadvisor_configuration_remove_verify_failed",
-        "metrics.exporter_service_inspection_failed",
-        "metrics.cadvisor_service_inspection_failed",
-        "metrics.exporter_service_failed",
-        "metrics.cadvisor_service_failed",
-        "metrics.exporter_service_verify_failed",
-        "metrics.cadvisor_service_verify_failed",
-        "metrics.exporter_service_remove_failed",
-        "metrics.cadvisor_service_remove_failed",
-        "metrics.exporter_service_remove_verify_failed",
-        "metrics.cadvisor_service_remove_verify_failed",
-        "metrics.exporter_firewall_inspection_failed",
-        "metrics.cadvisor_firewall_inspection_failed",
-        "metrics.exporter_firewall_inactive",
-        "metrics.cadvisor_firewall_inactive",
-        "metrics.exporter_firewall_ownership_drift",
-        "metrics.cadvisor_firewall_ownership_drift",
-        "metrics.exporter_firewall_failed",
-        "metrics.cadvisor_firewall_failed",
-        "metrics.exporter_firewall_remove_failed",
-        "metrics.cadvisor_firewall_remove_failed",
-        "metrics.exporter_firewall_verify_failed",
-        "metrics.cadvisor_firewall_verify_failed",
-        "metrics.exporter_firewall_remove_verify_failed",
-        "metrics.cadvisor_firewall_remove_verify_failed",
-        "metrics.exporter_install_failed",
-        "metrics.cadvisor_install_failed",
-        "metrics.exporter_binary_download_failed",
-        "metrics.cadvisor_binary_download_failed",
-        "metrics.exporter_binary_inspection_failed",
-        "metrics.cadvisor_binary_inspection_failed",
-        "metrics.exporter_checksum_mismatch",
-        "metrics.cadvisor_checksum_mismatch",
-        "metrics.exporter_binary_install_failed",
-        "metrics.cadvisor_binary_install_failed",
-        "metrics.exporter_binary_remove_failed",
-        "metrics.cadvisor_binary_remove_failed",
-        "metrics.exporter_rollback_failed",
-        "metrics.cadvisor_rollback_failed",
-        "metrics.exporter_configuration_rollback_verify_failed",
-        "metrics.cadvisor_configuration_rollback_verify_failed",
-        "metrics.exporter_service_rollback_verify_failed",
-        "metrics.cadvisor_service_rollback_verify_failed",
-        "metrics.exporter_firewall_rollback_verify_failed",
-        "metrics.cadvisor_firewall_rollback_verify_failed"
-      ]
-    },
-    {
-      "name": "metrics.cadvisor",
-      "summary": "Snapshot, converge, remove, or restore one Metrics exporter.",
-      "mutates": true,
-      "timeout_seconds": 420,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.exporter_input_invalid",
-        "metrics.cadvisor_input_invalid",
-        "metrics.exporter_address_invalid",
-        "metrics.cadvisor_address_invalid",
-        "metrics.exporter_platform_unsupported",
-        "metrics.cadvisor_platform_unsupported",
-        "metrics.exporter_configuration_inspection_failed",
-        "metrics.cadvisor_configuration_inspection_failed",
-        "metrics.exporter_configuration_ownership_drift",
-        "metrics.cadvisor_configuration_ownership_drift",
-        "metrics.exporter_configuration_failed",
-        "metrics.cadvisor_configuration_failed",
-        "metrics.exporter_configuration_verify_failed",
-        "metrics.cadvisor_configuration_verify_failed",
-        "metrics.exporter_configuration_remove_failed",
-        "metrics.cadvisor_configuration_remove_failed",
-        "metrics.exporter_configuration_remove_verify_failed",
-        "metrics.cadvisor_configuration_remove_verify_failed",
-        "metrics.exporter_service_inspection_failed",
-        "metrics.cadvisor_service_inspection_failed",
-        "metrics.exporter_service_failed",
-        "metrics.cadvisor_service_failed",
-        "metrics.exporter_service_verify_failed",
-        "metrics.cadvisor_service_verify_failed",
-        "metrics.exporter_service_remove_failed",
-        "metrics.cadvisor_service_remove_failed",
-        "metrics.exporter_service_remove_verify_failed",
-        "metrics.cadvisor_service_remove_verify_failed",
-        "metrics.exporter_firewall_inspection_failed",
-        "metrics.cadvisor_firewall_inspection_failed",
-        "metrics.exporter_firewall_inactive",
-        "metrics.cadvisor_firewall_inactive",
-        "metrics.exporter_firewall_ownership_drift",
-        "metrics.cadvisor_firewall_ownership_drift",
-        "metrics.exporter_firewall_failed",
-        "metrics.cadvisor_firewall_failed",
-        "metrics.exporter_firewall_remove_failed",
-        "metrics.cadvisor_firewall_remove_failed",
-        "metrics.exporter_firewall_verify_failed",
-        "metrics.cadvisor_firewall_verify_failed",
-        "metrics.exporter_firewall_remove_verify_failed",
-        "metrics.cadvisor_firewall_remove_verify_failed",
-        "metrics.exporter_install_failed",
-        "metrics.cadvisor_install_failed",
-        "metrics.exporter_binary_download_failed",
-        "metrics.cadvisor_binary_download_failed",
-        "metrics.exporter_binary_inspection_failed",
-        "metrics.cadvisor_binary_inspection_failed",
-        "metrics.exporter_checksum_mismatch",
-        "metrics.cadvisor_checksum_mismatch",
-        "metrics.exporter_binary_install_failed",
-        "metrics.cadvisor_binary_install_failed",
-        "metrics.exporter_binary_remove_failed",
-        "metrics.cadvisor_binary_remove_failed",
-        "metrics.exporter_rollback_failed",
-        "metrics.cadvisor_rollback_failed",
-        "metrics.exporter_configuration_rollback_verify_failed",
-        "metrics.cadvisor_configuration_rollback_verify_failed",
-        "metrics.exporter_service_rollback_verify_failed",
-        "metrics.cadvisor_service_rollback_verify_failed",
-        "metrics.exporter_firewall_rollback_verify_failed",
-        "metrics.cadvisor_firewall_rollback_verify_failed"
-      ]
-    },
-    {
-      "name": "metrics.runtime",
-      "summary": "Converge or remove the owned Metrics configuration and containers.",
-      "mutates": true,
-      "timeout_seconds": 1200,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.runtime_input_invalid",
-        "metrics.wireguard_ip_missing",
-        "metrics.configuration_ownership_drift",
-        "metrics.configuration_snapshot_failed",
-        "metrics.configuration_publish_failed",
-        "metrics.configuration_remove_failed",
-        "metrics.runtime_rollback_failed",
-        "metrics.prometheus_configuration_invalid",
-        "metrics.prometheus_configuration_check_timed_out",
-        "metrics.image_pull_failed",
-        "metrics.image_pull_timed_out",
-        "metrics.docker_unavailable",
-        "metrics.container_inspection_failed",
-        "metrics.volume_inspection_failed",
-        "metrics.container_inspection_invalid",
-        "metrics.volume_inspection_invalid",
-        "metrics.container_ownership_drift",
-        "metrics.volume_ownership_drift",
-        "metrics.container_convergence_failed",
-        "metrics.container_rollback_failed",
-        "metrics.container_cleanup_failed",
-        "metrics.container_remove_failed",
-        "metrics.volume_purge_failed",
-        "metrics.remote_command_timed_out",
-        "metrics.credentials_reset_failed"
-      ]
-    },
-    {
       "name": "metrics.publication-firewall",
       "summary": "Converge or remove Grafana's ordered Gateway-only firewall boundary.",
       "mutates": true,
@@ -1438,43 +1165,6 @@
         "metrics.publication_firewall_remove_failed",
         "metrics.publication_firewall_remove_verify_failed",
         "metrics.remote_command_timed_out"
-      ]
-    },
-    {
-      "name": "metrics.credentials",
-      "summary": "Verify or reset Grafana's administrator credential.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.runtime_input_invalid",
-        "metrics.wireguard_ip_missing",
-        "metrics.configuration_ownership_drift",
-        "metrics.configuration_snapshot_failed",
-        "metrics.configuration_publish_failed",
-        "metrics.configuration_remove_failed",
-        "metrics.runtime_rollback_failed",
-        "metrics.prometheus_configuration_invalid",
-        "metrics.prometheus_configuration_check_timed_out",
-        "metrics.image_pull_failed",
-        "metrics.image_pull_timed_out",
-        "metrics.docker_unavailable",
-        "metrics.container_inspection_failed",
-        "metrics.volume_inspection_failed",
-        "metrics.container_inspection_invalid",
-        "metrics.volume_inspection_invalid",
-        "metrics.container_ownership_drift",
-        "metrics.volume_ownership_drift",
-        "metrics.container_convergence_failed",
-        "metrics.container_rollback_failed",
-        "metrics.container_cleanup_failed",
-        "metrics.container_remove_failed",
-        "metrics.volume_purge_failed",
-        "metrics.remote_command_timed_out",
-        "metrics.credentials_reset_failed"
       ]
     },
     {

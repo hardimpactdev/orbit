@@ -15,12 +15,12 @@ use App\Models\TaskVm;
 
 /**
  * Renders "Save the new images" of the seed refresh (docs/cli/tasks/vm-ready-copies.mmd) as the full workflow input: the
- * VM that runs the nested fleet, with its SSH identity and host key pin, the fixed names of the nested VMs and their
+ * VM that runs the nested fleet, with its SSH identity and host key pin, the fixed names of the nested containers and their
  * network, and the proof Swamp Club key as a vault name. No host effects.
  */
 final readonly class TaskVmReadyCopiesIntent
 {
-    /** The nested VMs in a task VM, by role. The stage 2 steps create them under these names. */
+    /** The nested guests (system containers) in a task VM, by role. The stage 2 steps create them under these names. */
     public const array Guests = ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'];
 
     /** The nested network of a task VM. The stage 2 steps create it from the subnet the ready copies store. */
@@ -31,13 +31,14 @@ final readonly class TaskVmReadyCopiesIntent
 
     /**
      * The format of the ready copies, written to each copy as `user.ready.format`. A copy of another format, or none, is not usable: the
-     * provision skips the nested fleet. Raise it when the steps that start or apply a fleet need something new in the copies. Format 3: the nested
-     * Gateway holds the control plan of its Swamp (`/opt/orbit/bootstrap/control.yml`) that the re-mint of the Swamp tokens reads.
+     * provision skips the nested fleet. Raise it when the steps that start or apply a fleet need something new in the copies. Format 4: the
+     * nested guests are Incus system containers, not VMs; a copy of format 3 is a VM and no container step can start it. Format 3 had the nested
+     * Gateway hold the control plan of its Swamp (`/opt/orbit/bootstrap/control.yml`) that the re-mint of the Swamp tokens reads, and format 4 keeps it.
      */
-    public const string Format = '3';
+    public const string Format = '4';
 
     /**
-     * The nested fleet of a task VM: the names of its VMs and of its network, for the steps that start it and the steps that save it.
+     * The nested fleet of a task VM: the names of its containers and of its network, for the steps that start it and the steps that save it.
      *
      * @return array{guests:array<string,string>,network:string,format:string}
      */

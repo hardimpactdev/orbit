@@ -13,12 +13,15 @@ use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\Fleet\AdmitFleetRollout;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
+use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -136,14 +139,32 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}."),
         ), $record);
         if ($code === null) {
+            // Stage 6: a release that went live refreshes the task images when it changed playbooks, pins or lock files.
             $id = GatewayReleaseCommit::id($sha);
-            DB::afterCommit(static function () use ($id): void {
+            DB::afterCommit(static function () use ($id, $previous): void {
+                try {
+                    GatewaySchedule::dispatch(new RefreshTaskVmImages($id, $previous));
+                } catch (Throwable $failure) {
+                    // The daily trigger asks again; a release is never held by it.
+                    Log::warning('The task image refresh after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
+                }
                 try {
                     // Stage 8: the verified release is the fleet's desired state, so its footprint rollout follows.
                     GatewaySchedule::dispatch(new AdmitFleetRollout);
                 } catch (Throwable $failure) {
                     // The daily window trigger asks again; a release is never held by it.
                     Log::warning('The fleet rollout after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
+                }
+                try {
+                    // A release may change the agent pin: the pool of each host replaces slots that hold another agent.
+                    foreach (app(TaskVmSettings::class)->hosts as $host) {
+                        if ($host->slots !== null) {
+                            RefillTaskVmSlots::dispatchFor($host->nodeId);
+                        }
+                    }
+                } catch (Throwable $failure) {
+                    // The periodic host sweep runs the refill rule too; a release is never held by it.
+                    Log::warning('The slot refill after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
                 }
             });
         }
