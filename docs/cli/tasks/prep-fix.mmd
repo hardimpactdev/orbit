@@ -50,6 +50,7 @@ sequenceDiagram
       SW->>VM: Review the spec<br/>operation-task-turn
       %%> What it does:
       %%> - a new reviewer thread restores the commit under review, reads the spec as it stands and checks that each correction is applied or has its reason
+      %%> - runner tests that fail only because they pin the old cases file are a note and not a finding when the owner's review defers that change, so the loop can end
       VM-->>SW: Findings or none
       SW->>VM: Fix the findings<br/>operation-task-turn
       %%> When:
@@ -82,5 +83,5 @@ sequenceDiagram
   loop until terminal
     CLI->>GW: operation:show<br/>Operation number
     %%> Returns:
-    %%> - the Operation status, and the commit when the run succeeded
+    %%> - the Operation status, and the commit and the notes of the last review when the run succeeded
   end
