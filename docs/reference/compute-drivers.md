@@ -1234,7 +1234,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | `Copy the seed`, `Detach the seed` | Copy the seed disk of the refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
 | `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
 
-The clean step removes the nested guests and network. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets cloud-init, the machine-id and the SSH host keys, and trims the disk. The image build calls the same workflow for its builder with `enrolled: false`.
+The clean step removes the nested guests and network. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets cloud-init, the machine-id and the SSH host keys, and trims the disk. The image build calls the same workflow for its builder with `enrolled: false`. The nested and identity steps run only for a VM that has them, and each step waits for the one before it, whether that one ran or was skipped.
 
 The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had.
 
