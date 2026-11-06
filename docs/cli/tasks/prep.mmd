@@ -41,7 +41,7 @@ sequenceDiagram
   %%> - the host key of the new VM is unknown at admission; a step pins it into the SSH targets of the later children
   SW->>VM: Draft the spec<br/>operation-task-turn
   %%> What it does:
-  %%> - the author agent drafts the chart, the page and the cases, checks them, and commits the three files as one commit
+  %%> - the author agent drafts the chart, the page and the cases, checks them (including the runner plan of the cases file), and commits the three files as one commit
   %%> - the turn reports the commit and tree it left
   alt the draft moved HEAD
     loop until the review has no findings, at most 3 rounds

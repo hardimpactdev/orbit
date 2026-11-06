@@ -63,7 +63,7 @@ it('names the thread of each turn from the intent a run recorded, whose reviews 
 it('limits a review to findings the rules require', function (): void {
     $review = TaskPrepPrompts::for('firewall:deny')->review();
 
-    expect($review)->toContain('at most five findings', 'A matter of taste', 'run no proof')
+    expect($review)->toContain('at most five findings', 'A matter of taste', 'Run no other proof')
         ->and(TaskPrepPrompts::for('firewall:deny')->fix())->toContain('change nothing else');
 });
 
@@ -81,4 +81,14 @@ it('accepts the optional brief and reference of a prep request', function (): vo
 
     expect(Validator::make(['command' => 'firewall:allow', 'brief' => 'x', 'reference' => 'y'], $rules)->passes())->toBeTrue()
         ->and(Validator::make(['command' => 'firewall:allow', 'brief' => str_repeat('x', 8001)], $rules)->fails())->toBeTrue();
+});
+
+it('puts the runner plan of the cases file in the author, review and fix prompts', function (): void {
+    $prompts = TaskPrepPrompts::for('firewall:allow');
+    $plan = 'python3 swamp/proof/runner/runner.py plan --file swamp/proof/firewall/allow.cases.yaml';
+
+    expect($prompts->plan())->toBe($plan)
+        ->and($prompts->draft())->toContain($plan, 'must exit 0', 'under `uncovered`', 'Do not change the runner')
+        ->and($prompts->review())->toContain($plan, 'that is a finding', 'do not approve')
+        ->and($prompts->fix())->toContain($plan);
 });

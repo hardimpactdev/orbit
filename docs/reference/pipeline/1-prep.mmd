@@ -58,9 +58,11 @@ sequenceDiagram
   %%> - writes `swamp/proof/FAMILY/COMMAND.cases.yaml` from the chart and the page, never from the code; each case names its chart path and its batch from `swamp/proof/batches.yaml`
   %%> - covers required arguments only, each flag, each error on the chart, a repeat, and a failure after a partial change
   %%> - marks a case that the code fails today; never weakens a case to fit the code
-  Note over VM: Check the draft<br/>bin/check-flows · docs lint
+  Note over VM: Check the draft<br/>check-flows · docs lint · plan
   %%> What it does:
   %%> - runs `bin/check-flows`, `composer docs-build` and `composer docs-lint`
+  %%> - runs `python3 swamp/proof/runner/runner.py plan --file` on the cases file of the command; the plan must exit 0, so a cases file that the runner refuses, such as a step it does not have, goes back to the author
+  %%> - a case that needs something the runner lacks is listed under `uncovered`, never written as a step; the runner is not changed
   %%> - walks every error code, flag and repeat of the page against the cases
   loop until the review has no findings
     SW->>VM: Review the spec<br/>fresh read-only agent
@@ -69,6 +71,7 @@ sequenceDiagram
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the chart names no model. The Pi policy of task agents allows only the group's provider and refuses Claude models, so the review agent runs on the reviewer model of the group, which differs from the author's
     %%> - it never wrote the spec
+    %%> - it runs the same plan; a refusal is a finding it cannot approve past
     VM-->>SW: Findings<br/>or none
     SW->>VM: Fix the findings<br/>author agent
     %%> When:

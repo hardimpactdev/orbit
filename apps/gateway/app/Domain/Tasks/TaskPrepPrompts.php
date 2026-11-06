@@ -39,6 +39,12 @@ final readonly class TaskPrepPrompts
         return 'swamp/proof/'.$this->family.'/'.$this->name.'.cases.yaml';
     }
 
+    /** The runner's plan of the cases file: it loads and checks the file and runs no case. */
+    public function plan(): string
+    {
+        return 'python3 swamp/proof/runner/runner.py plan --file '.$this->cases();
+    }
+
     public function draft(): string
     {
         return <<<TEXT
@@ -55,6 +61,7 @@ final readonly class TaskPrepPrompts
         Rules:
         - Change no code. Edit only these three files. If a sibling command or the family page must change too, say so in your receipt summary and leave them as they are.
         - Run `bin/check-flows`, `composer docs-build` and `composer docs-lint` when the tools are installed, and fix what they report. Say in your summary what you ran.
+        - Run `{$this->plan()}`. It must exit 0. A refusal, such as `step X is not allowed in setup`, means the cases file uses a step or key that the runner does not have. Use only what the runner has, in the case-file format of `docs/reference/verification-cases.mdx`. List a case that needs something the runner lacks under `uncovered`, with the capability named, and never write it as a step. Do not change the runner.
         - Do not open a pull request and do not fetch or push. A separate review agent checks your work after you.
         - Commit the three files as ONE commit with `git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit` and the message `docs({$this->family}): spec for {$this->command}`. Leave the working tree clean.
         TEXT.$this->briefText(true);
@@ -72,7 +79,9 @@ final readonly class TaskPrepPrompts
 
         Check them against `.agents/skills/preparing-commands/SKILL.md`, `.agents/skills/flow-tighten/SKILL.md`, `docs/cli/README.md`, `docs/reference/cli-ux.md`, `docs/reference/verification-cases.mdx` and the approved sibling command, if there is one. Read the code only to learn what exists. Walk every error code, flag, repeat and refusal of the page against the cases. Check that the commit holds these three files and nothing else.
 
-        The author already ran `bin/check-flows`, `composer docs-build` and `composer docs-lint`. Run them again only to check a doubt, and run no proof.
+        The author already ran `bin/check-flows`, `composer docs-build` and `composer docs-lint`. Run them again only to check a doubt.
+
+        Run `{$this->plan()}` yourself. It reads the cases file and runs no case. If it exits with anything but 0, that is a finding: quote the refusal line, and do not approve. Run no other proof.
 
         A finding is a place where the spec breaks a rule of those documents, contradicts itself or the sibling, or promises something that no case covers. A matter of taste or an optional improvement is not a finding; mention it in your summary after the findings and still approve. Report at most five findings, the most important first. A review may end with outcome `approved` and notes.
 
@@ -85,7 +94,7 @@ final readonly class TaskPrepPrompts
         return <<<TEXT
         An independent review of your spec of `{$this->command}` found the problems listed below. Fix every one that the skill and the Recall decisions settle, in the same three files, and change nothing else. If you disagree with a finding, say why in your receipt summary.
 
-        Keep the spec as ONE commit: make the fixes, then run `git add -A && git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit --amend --no-edit`. Run the three checks once, after the last fix. Do not fetch or push.
+        Keep the spec as ONE commit: make the fixes, then run `git add -A && git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit --amend --no-edit`. Run the checks once, after the last fix, including `{$this->plan()}`, which must exit 0. Do not fetch or push.
         TEXT.$this->briefText(false);
     }
 
