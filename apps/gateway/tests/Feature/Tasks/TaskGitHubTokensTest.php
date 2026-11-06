@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\StartDependencyBatchMergeAction;
 use App\Actions\Tasks\StartTaskPullRequestStepAction;
 use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubApi;
@@ -182,6 +183,43 @@ it('mints the write token of a pull request step when the step asks, with the pe
     'merge' => ['tasks.pr_merge', ['contents' => 'write', 'pull_requests' => 'write']],
 ]);
 
+it('mints the read and the write token of a dependency merge when its first step asks', function (): void {
+    $grants = [];
+    $socket = tokenWorld(scoped: $grants);
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Batch', 'brief' => 'Batch it', 'status' => TaskGroupStatus::Running]);
+    $references = ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'dependency-merge-write-'.fake()->uuid()],
+        'read_token' => ['vault' => 'orbit-control-inputs', 'key' => 'dependency-merge-read-'.fake()->uuid()]];
+    $operation = Operation::query()->create(['kind' => 'tasks.dependency_merge', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => $references]]);
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependency_merge');
+
+    expect($copies)->toEqual($references)
+        ->and(array_column(tokenPuts($socket), 1))->toBe([$references['read_token']['key'], $references['write_token']['key']])
+        ->and(array_map(fn ($grant) => $grant->permissions, $grants))->toBe([
+            ['contents' => 'read', 'pull_requests' => 'read', 'checks' => 'read', 'actions' => 'read'],
+            ['contents' => 'write', 'pull_requests' => 'write'],
+        ]);
+});
+
+it('refuses a dependency merge token for another kind or purpose, and for an intent without both keys', function (): void {
+    $socket = tokenWorld();
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Batch', 'brief' => 'Batch it', 'status' => TaskGroupStatus::Running]);
+    $reference = fn (string $name): array => ['vault' => 'orbit-control-inputs', 'key' => 'dependency-merge-'.$name.'-'.fake()->uuid()];
+    $make = fn (string $kind, array $secrets): Operation => Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id,
+        'node_id' => SwampNodeFixture::Id, 'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN],
+        'input' => ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => $secrets]]);
+    $both = ['write_token' => $reference('write'), 'read_token' => $reference('read')];
+    $issue = fn (Operation $subject, string $purpose) => fn () => app(TaskGitHubTokens::class)->issue($subject, SwampNodeFixture::Id, TOKEN_RUN, $purpose);
+
+    expect($issue($make('tasks.dependency_merge', $both), 'pull_request'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('tasks.pr_merge', $both), 'dependency_merge'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('tasks.dependency_merge', ['write_token' => $reference('write')]), 'dependency_merge'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+});
+
 it('mints the approved push of a cancel with the token only, for the remote the group publishes to', function (): void {
     $socket = tokenWorld();
     [$operation, $names] = pushOperation('tasks.cancel', ['push' => ['remote' => 'https://github.com/hardimpactdev/orbit.git',
@@ -222,7 +260,7 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
 
 it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
     tokenWorld();
@@ -281,6 +319,6 @@ arch('the admission of a publish, of a prep run and of its corrections does not 
     ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskPrepFixIntent::class])
     ->not->toUse([SwampCommandStep::class]);
 
-arch('the admission of a pull request step and of a cancel mints no token')
-    ->expect([StartTaskPullRequestStepAction::class, TaskCancelIntent::class])
+arch('the admission of a pull request step, a dependency merge and a cancel mints no token')
+    ->expect([StartTaskPullRequestStepAction::class, StartDependencyBatchMergeAction::class, TaskCancelIntent::class])
     ->not->toUse([RepositoryPullRequestAccess::class, GitHubApi::class, GitHubAppStore::class]);

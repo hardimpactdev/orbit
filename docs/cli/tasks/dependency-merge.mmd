@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS 1 (tokens minted at admission, vault; no private-material callback) and R2-R3. docs/reference/tasks.md#dependency-batch-squash-admission.
+  %% Target design: ADR 0244 task, R2-R3. Nick 2026-11-06: a task never holds a GitHub credential at admission; the first step of the run mints the two tokens when it runs. docs/reference/tasks.md#dependency-batch-squash-admission.
   %% Tightened: flow-tighten 2026-11-02; native command boundaries remain visible, independent reads and content requests fan out.
   %% status: migrated
   %% command: none · API / MCP (tasks-dependency-merge)
@@ -19,16 +19,14 @@ sequenceDiagram
   %%> - syntax: the MCP tool `tasks-dependency-merge` with `group`, `publish_operation_id`, `head_sha`
   %%> Who can call it:
   %%> - only the configured Services Node; there is no `orbit` command
-  Note over GW: Check the batch<br/>task #5166 · mint 2 tokens
+  Note over GW: Check the batch<br/>task #5166 · key names
   %%> Requirements:
   %%> - the Project has dependency merge enabled; today every Project is off
   %%> - the Project is an app with a hosted production Instance; packages and unclassified monorepos are refused
   %%> - group 42 is an external dependency batch the Services Node created, with a passed handoff check and the exact successful publish task #5165 for this head
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> What it does:
-  %%> - mints a write token with only `contents: write` and `pull_requests: write`, never `workflows: write`
-  %%> - mints a read token with `contents`, `pull_requests`, `checks` and `actions` read
-  %%> - pushes both to the vault as `dependency-merge-write-<uuid>` and `dependency-merge-read-<uuid>` after commit (R3); no step fetches them from the Gateway
+  %%> - names the vault keys `dependency-merge-write-<uuid>` and `dependency-merge-read-<uuid>`; it mints no token
   %%> Result:
   %%> - task #5166 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-dependency-merge
@@ -36,7 +34,7 @@ sequenceDiagram
   %%> - starts one Swamp run on serve (Node 209); no Node is a target
   %%> Inputs:
   %%> - the repository, default branch, PR branch `task-42`, expected head, and the smoke workflow path
-  %%> - the vault key names of the tokens, never the tokens
+  %%> - the vault key names of the tokens, never the tokens; no token exists yet
   GW-->>CLI: 202 Accepted<br/>task #5166
   %%> What you get:
   %%> - the task number, at once
@@ -45,6 +43,11 @@ sequenceDiagram
   Note over SW: Create merge scratch
   %%> What it does:
   %%> - creates a private temporary directory for native replies; no repository content enters run data
+  SW->>GW: Mint the tokens<br/>operation:direct:github-token
+  %%> What it does:
+  %%> - the step posts the run id with `purpose: dependency_merge`; the Gateway checks the Operation, the run and the repository
+  %%> - it mints a write token with only `contents: write` and `pull_requests: write`, never `workflows: write`, and a read token with `contents`, `pull_requests`, `checks` and `actions` read
+  %%> - it writes both to the vault keys that admission named; the reply holds descriptors only
   SW->>GH: Read the PR
   Note over SW: Inspect the PR
   %%> Recovery:
