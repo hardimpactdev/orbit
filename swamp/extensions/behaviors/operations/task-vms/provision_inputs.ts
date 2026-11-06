@@ -33,8 +33,22 @@ export function provisionCommandInput(raw: unknown) {
         config["raw.qemu.conf"] =
             '[device "qemu_balloon"]\nfree-page-reporting = "on"\n';
     }
+    // Each provider step passes this as one argument (`ORBIT_VM_INTENT=…`), which Linux caps at 128 KiB; the whole intent of a
+    // routed workspace holds its Route capture (about 590 KiB) and failed the spawn. The provider steps read only these fields.
+    const provider = {
+        task_vm_id: input.task_vm_id,
+        node_id: input.node_id,
+        host_node_id: input.host_node_id,
+        guest_node_id: input.guest_node_id,
+        provider: input.provider,
+        name: input.name,
+        image_fingerprint: input.image_fingerprint,
+        recipe_identity: input.recipe_identity,
+        vm: input.vm,
+        create: input.create,
+    };
     return {
-        input_json: JSON.stringify(input),
+        input_json: JSON.stringify(provider),
         config_json: JSON.stringify({ config, devices }),
     };
 }
@@ -214,7 +228,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-provision-inputs",
-    version: "2026.10.31.1",
+    version: "2026.11.06.1",
     resources: {
         input: {
             lifetime: "infinite",
