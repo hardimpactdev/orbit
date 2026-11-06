@@ -106,10 +106,10 @@ Each pass reads every open Operation of a direct kind against Swamp:
 - An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. So does a timed-out one that still holds its target. The lookup repeats each pass until it binds the run or the hold ends.
 - A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
-- An open Operation whose kind has no registry entry gets no read from the pass above. The same pass settles it.
-- With a recorded cancel request it is set to `cancelled`. Cancel does the same at once.
-- Without a cancel request it is set to `failed` with `operation.timed_out` at its budget. The budget is 600 seconds when no run is bound.
-- Either end clears the target hold.
+
+An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
+
+A recorded cancel request sets it to `cancelled`, and cancel does the same at once. Without a request it fails with `operation.timed_out` at its budget. The budget is 600 seconds for an unbound admission with attempts `0`, and the history budget of the kind otherwise. Either end clears the target hold.
 
 The pass has no retry, backoff or per-Operation job. Only one pass runs at a time.
 

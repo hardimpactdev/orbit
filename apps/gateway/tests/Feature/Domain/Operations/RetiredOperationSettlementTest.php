@@ -68,3 +68,23 @@ it('leaves an Operation of a registered kind to its own path', function (): void
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and($operation->lock_key)->toBe('recipe_pr:2563');
 });
+
+it('gives a retired Operation with a bound run the history budget, 30 minutes without history', function (): void {
+    $running = retiredKindOperation(minutes: 20, state: ['swamp_run_id' => 'ea55ab37-bcbe-4459-81dc-cbb397e7d870'], attempts: 1);
+    $over = retiredKindOperation(minutes: 31, state: ['swamp_run_id' => 'ea55ab37-bcbe-4459-81dc-cbb397e7d871'], attempts: 1, target: 7);
+
+    passOverRetiredKinds();
+
+    expect($running->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($over->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($over->lock_key)->toBeNull();
+});
+
+it('leaves a finished Operation of a retired kind as it is', function (): void {
+    $done = retiredKindOperation(minutes: 90);
+    $done->forceFill(['status' => OperationStatus::Succeeded, 'finished_at' => now()->subHour(), 'lock_key' => null])->save();
+
+    passOverRetiredKinds();
+
+    expect($done->refresh()->status)->toBe(OperationStatus::Succeeded)->and($done->error_code)->toBeNull();
+});
