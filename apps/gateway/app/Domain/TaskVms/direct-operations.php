@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\TaskVms\TaskVmConvergeProjection;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
+use App\Domain\TaskVms\TaskVmFleetBuildProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmImageRefreshProjection;
@@ -61,6 +62,14 @@ return ['task_vm.hub_converge' => [
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-git-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']],
+], 'task_vm.fleet_build' => [
+    'workflow' => 'operation-task-vm-fleet-build',
+    'projection' => TaskVmFleetBuildProjection::class,
+    'workflow_inputs' => true,
+    // No result step: the projector reads the run's step statuses; the native assert is the end check.
+    'terminal_result' => ['job' => 'end', 'step' => TaskVmFleetBuildProjection::EndCheck, 'native' => true],
+    // The proof Swamp Club key, which the new Gateway's Swamp runs with.
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
 ], 'task_vm.ready_copies' => [
     'workflow' => 'operation-task-vm-ready-copies',
     'projection' => TaskVmReadyCopiesProjection::class,

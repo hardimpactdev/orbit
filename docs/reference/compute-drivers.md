@@ -3,13 +3,13 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
-  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{ConvergeTaskVmCommand,RefreshTaskVmImageCommand,RefreshTaskVmImagesCommand,SaveTaskVmReadyCopiesCommand}.php}
+  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{BuildTaskVmFleetCommand,ConvergeTaskVmCommand,RefreshTaskVmImageCommand,RefreshTaskVmImagesCommand,SaveTaskVmReadyCopiesCommand}.php}
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -1256,7 +1256,7 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 
 The chart lists what the run still lacks:
 
-- The first refresh of a host whose seed holds no ready copies. The run calls `task_vm.fleet_build` as a child once that kind exists. Until then the run skips the save, and the result says `ready_copies: false`.
+- The call of `task_vm.fleet_build` by the refresh of a host whose seed has no ready copies. Until it exists, the run skips the save and the result says `ready_copies: false`.
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
 - The re-mint of the nested Swamp tokens. It is the product command that the fleet build uses.
 - The replacement of old ready slots. Ready slots do not exist yet.
@@ -1274,6 +1274,16 @@ The step edits the unit files in `/etc/systemd/system` and leaves the links in `
 It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked. It holds no Club key and no file of a checkout.
 
 A booted guest makes mount point directories there and writes a Laravel log, and those are no checkout. Its state is on its own disk, and the Gateway copy has no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
+
+##### Build the nested fleet
+
+`php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested VM, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
+
+The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and makes three VMs from the stock image with cloud-init, the key of the VM, and the state disk that stateful copies need. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
+
+The new Gateway then does the rest through its own Orbit. It converges its `gateway` role and its own Node, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
+
+The end check passes when Doctor of the nested Gateway has no finding. The budget of the kind is 3,600 seconds. The run does not save ready copies: `task_vm.ready_copies` does, and it needs the guests to keep their checkout on the NFS mount and their state under `/var/lib/orbit-checkout-state`.
 
 ##### Start the nested fleet
 

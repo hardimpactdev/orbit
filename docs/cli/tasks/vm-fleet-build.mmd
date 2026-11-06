@@ -68,6 +68,11 @@ sequenceDiagram
   SW->>NG: Check readiness<br/>agents · Swamp · Doctor
   %%> What it does:
   %%> - the same check as stage 2: every agent online, the Swamp worker enrolled, Doctor has no finding
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), the kind `task_vm.fleet_build`:
+  %%> - the kind targets a ready task VM, as `task_vm.ready_copies` does, and ends at the Doctor check of the nested Gateway; the save of the ready copies follows as its own kind
+  %%> - the nested VMs have fixed addresses and MACs in the Gateway's intent, because the ready copies store them and the records of the nested Gateway name them
+  %%> - each Operation of the nested Gateway is admitted with an artisan command (`orbit:role-add`, `orbit:node-converge`, `orbit:node-add`), and a step waits for its end at a fixed 5-second interval inside a literal timeout; the nested Gateway has no CLI to follow it
+  %%> - the fleet keeps its checkout on its own disk, while the format-2 ready copies keep it on the NFS mount of the task VM and their state under `/var/lib/orbit-checkout-state`; moving the checkout out of the guests before the save is open
   alt the fleet is ready
     SW->>VM: Save the ready copies<br/>stage 6 · task_vm.ready_copies
     %%> What it does:
