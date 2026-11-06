@@ -58,6 +58,8 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Proof run (report-only) | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Not in Required checks yet, see [the proof run job](#the-proof-run-job) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
+The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
+
 The Swamp Deno test job uses `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
 
 Runner containers are unprivileged. Install or repair their toolchain with `tools/ci-runners/setup.sh container NAME` while idle; jobs verify the managed PHP build and use fake privileged boundaries. Ordinary Deno tests need no sudo or Docker daemon; real Docker proofs run only on disposable proof VMs.

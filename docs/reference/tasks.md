@@ -771,6 +771,16 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
 
+### Behavior names
+
+The local and data steps of `tasks.prep`, `tasks.prep_fix`, `tasks.script` and `tasks.check` are named by the task VM: the name ends in the address of the VM (its WireGuard address). Addresses come from a bounded pool and are reused, so the set of names stays fixed. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
+
+The SSH steps keep their node id. An SSH definition holds the host keys and the identity of one VM, and the address returns to the pool for the next VM, so a name on the address would rewrite that definition. The Node id of a task VM is never reused.
+
+Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
+
+The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
+
 ## Task workspace
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.

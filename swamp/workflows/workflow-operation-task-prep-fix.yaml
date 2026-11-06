@@ -119,7 +119,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-fix-read-the-corrections
+      behaviorName: '${{ ("task-prep-fix-read-the-corrections-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: outcome
       inputs:
         result_json: ${{ steps["Apply the corrections"].outputs.shape_result.result_json }}
@@ -190,7 +190,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-fix-settle-review-1
+      behaviorName: '${{ ("task-prep-fix-settle-review-1-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Read the corrections"].outputs.approved }}'
@@ -228,7 +228,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-fix-settle-fix-1
+      behaviorName: '${{ ("task-prep-fix-settle-fix-1-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Settle review 1"].outputs.approved }}'
@@ -303,7 +303,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-fix-settle-review-2
+      behaviorName: '${{ ("task-prep-fix-settle-review-2-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Settle fix 1"].outputs.approved }}'

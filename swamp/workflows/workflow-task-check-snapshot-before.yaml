@@ -192,7 +192,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-before" }}
+      behaviorName: '${{ ("task-check-before-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: snapshot
       inputs:
         phase: before
