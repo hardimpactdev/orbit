@@ -110,11 +110,15 @@ export function bindHostKeys<T>(
  * receipt is the provision receipt as the run printed it.
  */
 export function pinIntents<T>(
-    receipt: string,
+    receipt: string | Record<string, unknown>,
     guestNodeId: number,
     intents: T,
 ): T {
-    return bindHostKeys(intents, JSON.parse(receipt), guestNodeId);
+    return bindHostKeys(
+        intents,
+        typeof receipt === "string" ? JSON.parse(receipt) : receipt,
+        guestNodeId,
+    );
 }
 export function connection(raw: unknown, receipt: unknown) {
     const intent = Intent.parse(raw), vm = Vm.parse(receipt);
@@ -391,13 +395,13 @@ export const behavior = {
             description:
                 "Pin the guest targets of the named intents of a run (prep, image refresh) to the host key the VM step observed",
             arguments: z.object({
-                receipt: z.string(),
+                receipt: z.union([z.string(), z.record(z.string(), z.unknown())]),
                 guest_node_id: z.number().int().positive(),
                 intents: z.record(z.string(), z.unknown()),
             }),
             execute: (
                 args: {
-                    receipt: string;
+                    receipt: string | Record<string, unknown>;
                     guest_node_id: number;
                     intents: Record<string, unknown>;
                 },

@@ -38,9 +38,14 @@ sequenceDiagram
   %%> Why redacted:
   %%> - setup output stays on the VM; only a redacted 4 KiB tail reaches history
   opt the task declares a topology
+    SW->>VM: Converge once<br/>operation-task-vm-converge child
+    %%> What it does:
+    %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the NFS server with the export of the checkout to the nested network, the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
+    %%> Why:
+    %%> - the image may predate these phases; a VM at the pins reports no change
     SW->>VM: Start the nested fleet<br/>task-nested-fleet child
     %%> What it does:
-    %%> - creates the nested network from the subnet that the ready copies of the seed store, copies the three ready copies, gives each its stored MAC and address, and starts them
+    %%> - creates the nested network from the subnet that the ready copies of the seed store (the converge may have made it; the fleet checks that its subnet is the stored one), copies the three ready copies, gives each its stored MAC and address, and starts them
     %%> - joins as operator: the VM makes its own WireGuard key, writes the public key into the nested Gateway's operator record with `incus exec`, puts it on the hub and brings up `wg-nested` as 10.45.0.10
     %%> - pushes the proof Swamp Club key from the VM into the nested Gateway and restarts its Swamp
     %%> Why:

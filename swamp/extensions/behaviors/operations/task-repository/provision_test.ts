@@ -438,6 +438,13 @@ Deno.test("bind pins only the unpinned guest targets to the key the VM step obse
     );
 });
 
+Deno.test("pin takes the provision receipt as an object, as a provision run holds it", () => {
+    const key = ["ssh-ed25519 PUBLIC"];
+    const intents = { converge: { ssh: { target: { host: "10.44.0.20", host_keys: null } } } };
+    const pinned = pinIntents(vm, 20, intents);
+    assertEquals(pinned.converge.ssh.target.host_keys, key);
+});
+
 Deno.test("pin fills the host key of every guest target of a prep run from the printed receipt", () => {
     const target = (key: unknown) => ({
         ssh_execution: { target: { host: "10.44.0.20", host_keys: key } },

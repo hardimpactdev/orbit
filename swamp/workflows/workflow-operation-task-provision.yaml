@@ -70,6 +70,40 @@ jobs:
     - step: Create and prepare the VM
       condition:
         type: succeeded
+  # Stage 2, "Converge once": the task VM role phases on the outer VM (the NFS export of the checkout to the nested network, Incus with the seed pool); a VM at the pins reports no change.
+  - name: Pin the converge
+    labels: {role: swamp}
+    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: tp-data-pin-converge
+      methodName: pin
+      inputs:
+        receipt: ${{ steps["Create and prepare the VM"].outputs.result }}
+        guest_node_id: ${{ inputs.intent.guest_node_id }}
+        intents: '${{ {"converge": inputs.intent.converge} }}'
+    dependsOn:
+    - step: Set up the workspace
+      condition:
+        type: succeeded
+  - name: Converge once
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-converge
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.guest_node_id }}
+        kind: task_vm.converge
+        intent: '${{ steps["Pin the converge"].outputs.converge }}'
+        execution_secrets: '${{ {} }}'
+    dependsOn:
+    - step: Pin the converge
+      condition:
+        type: succeeded
   - name: Start the nested fleet
     labels: {role: swamp}
     writes: true
@@ -87,6 +121,10 @@ jobs:
     - step: Set up the workspace
       condition:
         type: succeeded
+    - step: Converge once
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     # The Gateway left the guest's SSH targets unpinned; the VM step just pinned its key.
   - name: Bind the workspace keys
     labels: {role: swamp}
