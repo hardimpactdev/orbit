@@ -3,6 +3,7 @@
 # with it when Swamp or the Gateway cannot run `gateway:release:rollback`. Run it on the Gateway Node with sudo.
 # It switches the application link, and the web link when the release keeps its web build, reloads PHP-FPM so every
 # request runs the release, and restarts each running service that runs from the application, such as the scheduler.
+# A restart of Horizon waits for its running jobs, up to the drain, because the unit carries the stop policy.
 # It changes no schema and restores no snapshot. docs/reference/gateway-recovery.md#roll-back-without-swamp
 set -euo pipefail
 

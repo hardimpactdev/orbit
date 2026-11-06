@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: docs/reference/feature-flow.md section 6, one Swamp workflow per Gateway release, manual or automatic.
   %% A failed check switches back; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
-  %% status: reviewed
+  %% status: draft
   %% command: gateway:release:deploy
   %% kind: gateway.release
   %% behavior name: gateway-release-<step>-209 (fixed)
@@ -48,6 +48,7 @@ sequenceDiagram
   AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
   %%> What it does:
   %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
+  %%> - refuses to stop a unit that lacks the stop policy (`SendSIGKILL=no`), because it would kill a running job: `gateway.release_horizon_unit_stale`
   %%> On failure:
   %%> - the run fails with `gateway.release_horizon_not_drained`; Horizon is started again below
   AC->>GN: Switch the release<br/>gateway-rollback · Horizon
@@ -60,7 +61,9 @@ sequenceDiagram
   AC->>GN: Start Horizon<br/>always · also after a failure
   %%> Why:
   %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
-  %%> - starting a running unit changes nothing; the rollback script starts a stopped Horizon the same way
+  %%> - starting a running unit changes nothing
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
   AC->>GN: Resume document cleanup<br/>best effort
   %%> Why:
   %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
