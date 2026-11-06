@@ -18,6 +18,7 @@ use App\Console\Commands\MachineRecipeCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
+use App\Console\Commands\RoleAddCommand;
 use App\Console\Commands\RuntimeHibernatorCommand;
 use App\Console\Commands\ServePrivateDnsCommand;
 use App\Domain\Gateway\GatewayCacheStore;
@@ -46,6 +47,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             MachineRecipeCommand::class,
             ProvisionNodeCommand::class,
             ReconcilePeerDnsCommand::class,
+            RoleAddCommand::class,
             RenderNodeRecipeCommand::class,
             RuntimeHibernatorCommand::class,
             ServePrivateDnsCommand::class,
