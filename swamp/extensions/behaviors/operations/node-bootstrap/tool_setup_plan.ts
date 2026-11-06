@@ -54,14 +54,10 @@ export async function toolSetupPlan(raw: unknown, home: string) {
     let aptArgs: string[] = [], aptOptions: string[] = [];
     if (apt !== null) {
         const source = cache + "/sources.list";
-        // Through a package cache the Node speaks plain http to it and the cache fetches over https; apt still checks the signatures.
-        const proxy = apt.proxy ?? null;
         file(
             source,
             ["resolute", "resolute-updates", "resolute-security"].map((suite) =>
-                "deb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] " +
-                (proxy === null ? "https" : "http") +
-                "://snapshot.ubuntu.com/ubuntu/" +
+                "deb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/" +
                 apt.snapshot + "/ " + suite +
                 " main restricted universe multiverse\n"
             ).join(""),
@@ -77,17 +73,6 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             "Dir::State::Lists=" + cache + "/lists",
             "-o",
             "APT::Get::List-Cleanup=false",
-            // Through the cache the Node asks for the index files the image build asked for (it ignores the drop-ins of
-            // apt.conf.d, which add the appstream and command-not-found files), and tries a failed download again at once, five times:
-            // the snapshot service answers 502 now and then while the cache fills.
-            ...(proxy === null ? [] : [
-                "-o",
-                "Acquire::http::Proxy=" + proxy,
-                "-o",
-                "Dir::Etc::parts=-",
-                "-o",
-                "Acquire::Retries=5",
-            ]),
         ];
         aptArgs = apt.packages.map((pkg, index) =>
             pkg.artifact === null

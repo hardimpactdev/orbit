@@ -14,12 +14,6 @@ use RuntimeException;
  */
 final readonly class HostCapacity
 {
-    /**
-     * The slot of `10.232.2.0/24`, the nested network of every task VM (the Gateway's TaskVmReadyCopiesIntent::Subnet). The Gateway reads the
-     * package cache of a Node inside that subnet from the task VM, so no topology gets it.
-     */
-    private const int TaskVmSlot = 2;
-
     public function __construct(
         private IncusHost $host,
         private int $maxVms,
@@ -45,7 +39,7 @@ final readonly class HostCapacity
 
         $occupied = $this->occupiedNetworkSlots();
         for ($slot = 1; $slot <= 200; $slot++) {
-            if ($slot !== self::TaskVmSlot && ! isset($occupied[$slot])) {
+            if (! isset($occupied[$slot])) {
                 return $slot;
             }
         }
