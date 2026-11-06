@@ -17,6 +17,8 @@ inputs:
   additionalProperties: false
 jobs:
 # One apt call: the tools the next jobs need on a stock Ubuntu. apt's own lock wait covers a cloud-init run that still holds it.
+# On a Node of a nested fleet the intent names the package cache of the task VM (`apt_proxy`); the call reads through it the way the Ansible
+# drop-in does for every later apt run (swamp/ansible/tasks/apt-proxy.yml). Any other machine reads the archive directly.
 - name: prerequisites
   steps:
   - name: Install the prerequisites
@@ -33,7 +35,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '900', apt-get, -o, 'DPkg::Lock::Timeout=300', install, --yes, --no-install-recommends, ca-certificates, curl, git, python3-pip, python3-venv]
+        argv: '${{ ["timeout", "900", "apt-get", "-o", "DPkg::Lock::Timeout=300"] + (has(inputs.intent.apt_proxy) && inputs.intent.apt_proxy != null ? ["-o", "Acquire::http::Proxy=" + inputs.intent.apt_proxy, "-o", "Acquire::http::Pipeline-Depth=0", "-o", "Acquire::https::Proxy=DIRECT"] : []) + ["install", "--yes", "--no-install-recommends", "ca-certificates", "curl", "git", "python3-pip", "python3-venv"] }}'
         timeoutSec: 905
 # The release checkout: its swamp/ folder is the Swamp repository of this Gateway, and its swamp/ansible/ holds the pins.
 - name: release
@@ -175,8 +177,9 @@ jobs:
       behaviorName: gb-plan
       methodName: execute
       inputs:
-        run: timeout 120 php "$ORBIT_CHECKOUT/apps/gateway/artisan" orbit:bootstrap-plan --url "$ORBIT_URL" --home "$ORBIT_HOME" --checkout "$ORBIT_APP"
+        run: timeout 120 php "$ORBIT_CHECKOUT/apps/gateway/artisan" orbit:bootstrap-plan --url "$ORBIT_URL" --home "$ORBIT_HOME" --checkout "$ORBIT_APP" --apt-proxy="$ORBIT_APT_PROXY"
         env: &gateway
+          ORBIT_APT_PROXY: '${{ has(inputs.intent.apt_proxy) && inputs.intent.apt_proxy != null ? inputs.intent.apt_proxy : "" }}'
           ORBIT_CHECKOUT: '${{ inputs.intent.operator.checkout }}'
           ORBIT_URL: '${{ inputs.intent.gateway.url }}'
           ORBIT_HOME: '${{ "/home/" + inputs.intent.ssh.user + "/.orbit" }}'

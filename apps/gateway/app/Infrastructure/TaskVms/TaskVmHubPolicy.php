@@ -14,11 +14,16 @@ use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Config;
 
 /** One public policy for the hub's task VM filter and managed ingress rules. */
 final readonly class TaskVmHubPolicy
 {
     public const string Comment = 'orbit:task-vm-control-ssh';
+
+    public const string WebComment = 'orbit:task-vm-control-web';
+
+    public const string PiComment = 'orbit:task-vm-swamp-pi';
 
     public const string Marker = '# Managed by Orbit (task VMs). Filters only the reserved range ';
 
@@ -42,6 +47,49 @@ final readonly class TaskVmHubPolicy
 
         return new UfwManagedRule(new UfwRuleShape(self::Comment, 'allow', 'fwd', $source, $destination, '22', 'tcp', 'orbit', 'orbit', 'v4'),
             ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', '22', 'comment', self::Comment]);
+    }
+
+    /**
+     * The control Node also reaches a task VM's routed workspace site on 443: the Route create probes it over TLS from there.
+     */
+    public function controlWebRule(UfwManagedRule $control): UfwManagedRule
+    {
+        $source = $control->shape->source;
+        $destination = $control->shape->destination;
+
+        return new UfwManagedRule(new UfwRuleShape(self::WebComment, 'allow', 'fwd', $source, $destination, '443', 'tcp', 'orbit', 'orbit', 'v4'),
+            ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', '443', 'comment', self::WebComment]);
+    }
+
+    /**
+     * The `swamp` Node's workers run each task turn's Pi steps (session, message, observe) against the VM's Pi server port,
+     * the same direction as the control SSH and TLS rules. Null without an active `swamp` Node.
+     */
+    public function swampPiRule(?string $swamp, string $range, int $port): ?UfwManagedRule
+    {
+        if ($swamp === null) {
+            return null;
+        }
+        $destination = TaskVmConfig::wireguardRange($range)->value();
+
+        return new UfwManagedRule(new UfwRuleShape(self::PiComment, 'allow', 'fwd', $swamp, $destination, (string) $port, 'tcp', 'orbit', 'orbit', 'v4'),
+            ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', $swamp, 'to', $destination, 'port', (string) $port, 'comment', self::PiComment]);
+    }
+
+    /** The WireGuard address of the active `swamp` Node, selected by its role; null when there is none. */
+    public function swampAddress(): ?string
+    {
+        $node = Node::query()->where('status', LifecycleStatus::Active)
+            ->whereHas('roles', static fn (Builder $roles): Builder => $roles->where('role', RoleName::Swamp)->where('status', LifecycleStatus::Active))
+            ->orderBy('id')->first();
+        if ($node === null) {
+            return null;
+        }
+        if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new TaskVmException('task_vm.fleet_unavailable', 'The swamp Node requires a recorded IPv4 WireGuard address.');
+        }
+
+        return $node->wireguard_ip;
     }
 
     /** Recorded candidates need web access before the Router selection changes.
@@ -92,14 +140,18 @@ final readonly class TaskVmHubPolicy
 
         $range = TaskVmConfig::wireguardRange(config('task_vms.wireguard_range'))->value();
 
-        return [...array_filter([$this->controlRule()]), ...$this->routerRules($this->routerAddresses($clusterId), $range)];
+        $control = $this->controlRule();
+        $pi = $this->swampPiRule($this->swampAddress(), $range, Config::integer('orbit.pi.port'));
+
+        return [...($control === null ? [] : [$control, $this->controlWebRule($control)]), ...($pi === null ? [] : [$pi]),
+            ...$this->routerRules($this->routerAddresses($clusterId), $range)];
     }
 
     /**
-     * The control SSH and Router web rules exactly as `nft list` prints them; the file holds them in this form, and
-     * the workflow's end check requires each as a line of the live chain.
+     * The control SSH and TLS, swamp Pi and Router web rules exactly as `nft list` prints them; the file holds them in this
+     * form, and the workflow's end check requires each as a line of the live chain.
      *
-     * @param  array{range:string,routers:list<string>}  $input
+     * @param  array{range:string,pi_port:int,swamp?:string|null,routers:list<string>}  $input
      * @return list<string>
      */
     public function liveRules(array $input, UfwManagedRule $control): array
@@ -107,11 +159,12 @@ final readonly class TaskVmHubPolicy
         $range = TaskVmConfig::wireguardRange($input['range'])->value();
 
         return array_map(static fn (UfwManagedRule $rule): string => 'ip saddr '.$rule->shape->source.' ip daddr '.$range
-            .' tcp dport '.$rule->shape->port.' accept comment "'.$rule->shape->comment.'"', [$control, ...$this->routerRules($input['routers'], $range)]);
+            .' tcp dport '.$rule->shape->port.' accept comment "'.$rule->shape->comment.'"', [$control, $this->controlWebRule($control),
+                ...array_filter([$this->swampPiRule($input['swamp'] ?? null, $range, $input['pi_port'])]), ...$this->routerRules($input['routers'], $range)]);
     }
 
     /** Render the admitted endpoints using the same rules as the managed catalog.
-     * @param  array{range:string,dns:string,gateway:string,pi_port:int,reverb:string,model:string,routers:list<string>}  $input
+     * @param  array{range:string,dns:string,gateway:string,pi_port:int,swamp?:string|null,reverb:string,model:string,routers:list<string>}  $input
      */
     public function render(array $input, UfwManagedRule $control): string
     {

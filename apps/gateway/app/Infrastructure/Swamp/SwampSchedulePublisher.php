@@ -8,15 +8,20 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
-/** Publish captured public intent through the official workflow.trigger.set frame. */
+/**
+ * Publish a schedule definition (workflow, cadence and inputs) through the official workflow.trigger.set frame. A definition that serve
+ * confirmed within the last day is not sent again: each frame rewrites serve.yaml and registers the schedule again, which costs serve CPU.
+ * The memo expires, so a definition that serve lost is sent again within a day; a lost memo costs one repeat.
+ */
 final readonly class SwampSchedulePublisher
 {
     public function __construct(private DirectOperation $direct, private WebSocketClient $socket) {}
 
     /** The family owns capture, revision, cadence and commit-time invalidation.
-     * @param  array<string,mixed>  $inputs  Full non-secret inputs; private values stay in named vault copies.
+     * @param  array<string,mixed>  $inputs  Small non-secret baseline inputs; private values stay in named vault copies.
      */
     public function publish(string $workflowId, string $schedule, array $inputs): void
     {
@@ -29,7 +34,13 @@ final readonly class SwampSchedulePublisher
             throw $this->unavailable();
         }
         $name = $definition['workflow'];
+        $memo = 'swamp:schedule-definition:'.hash('sha256', $address).':'.$workflowId;
+        $hash = hash('sha256', json_encode([$name, $schedule, $inputs], JSON_THROW_ON_ERROR));
+        if (Cache::get($memo) === $hash) {
+            return;
+        }
         $id = bin2hex(random_bytes(16));
+        $confirmed = false;
         try {
             // Match the JSON data representation used by the real socket.
             $expectedInputs = json_decode(json_encode($inputs, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
@@ -50,16 +61,20 @@ final readonly class SwampSchedulePublisher
                         || ($entry['inputs'] ?? []) !== $expectedInputs) {
                         throw $this->unavailable();
                     }
+                    $confirmed = true;
 
-                    return;
+                    break 2;
                 }
             }
-            throw $this->unavailable();
         } catch (Throwable) {
             throw $this->unavailable();
         } finally {
             $this->socket->close();
         }
+        if (! $confirmed) {
+            throw $this->unavailable();
+        }
+        Cache::put($memo, $hash, now()->addDay());
     }
 
     private function unavailable(): ResourceOperationException

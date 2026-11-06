@@ -453,7 +453,7 @@ Each file then arrives on stdin of one `install` command: the Orbit root, `model
 
 The Gateway makes the guest's agent secret when it admits the enrollment, as it does for `node:add`, and keeps only the SHA-256 of the 64 hex characters. The vault copy `agent-secret-node-<id>` arrives on stdin of one `install` command that writes `/etc/orbit/agent/secret` (0600, root) with no trailing newline. The `observer-identity` step hashes the file and the run stops with `agent.secret_mismatch` unless it equals the Gateway's value. The agent sends the secret and the Gateway compares its hash, so the file and the record must describe the same bytes.
 
-The guest firewall denies incoming traffic by default. The SSH preparation step allows TCP 22 from 209, and TCP 3774, Pi's port, from 209 (`orbit:task-vm-pi-209`) and from the Gateway (`orbit:task-vm-pi-gateway`), on the `orbit` interface, before it enables ufw. Resume writes the same rules again. Without them every turn fails at `session_create` with curl exit 28.
+The guest firewall denies incoming traffic by default. The SSH preparation step allows TCP 22 from 209, and TCP 3774, Pi's port, from 209 (`orbit:task-vm-pi-209`) and from the Gateway (`orbit:task-vm-pi-gateway`), on the `orbit` interface, and TCP 443 for a routed workspace site (`orbit:task-vm-site`), before it enables ufw. The hub filter lets the Cluster Routers and 209 (`orbit:task-vm-control-web`, for the Route's TLS probe) reach that port. Resume writes the same rules again. Without them every turn fails at `session_create` with curl exit 28.
 
 The official cfgmgmt behaviors are not used here: they trust the worker's shared `known_hosts`, and task VMs reuse addresses. The Gateway retains the model-key record and creates the normal `pi-server` Process. Resume checks `agent.status` before requesting Pi capabilities.
 
@@ -710,15 +710,15 @@ No task file names a version.
 
 The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
 
-The `tools` phase installs the NFS server and the shape gate linters.
+The `tools` phase installs the shape gate linters. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
 
-- With `--nfs-checkout`, `--nfs-subnet` and `--nfs-interface` (default `nested`), the VM exports the checkout to the nested subnet only, with `rw,async,no_subtree_check`.
-- UFW then allows TCP 2049 from the nested bridge.
-- Without those options the server runs with no export.
+- With `--nested-subnet` and `--nested-interface` (default `nested`), the VM leads the nested network of that subnet.
+- UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
+- Without those options Incus keeps the network it has.
 - The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.
 - `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
 
-The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, the NFS server active and the export as named.
+The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
 
 The `check` phase also asserts that `orbit` has UID and GID 1000. The `template` phase asserts that ufw is active, denies incoming connections by default and has the recovery rule; the smoke of an UpCloud template runs it after `check`.
 
@@ -876,7 +876,7 @@ Swamp runs task VM effects through recorded Operations. Each effect fixes its ho
 
 The fixed `incus.vm` agent command runs on the Operation's host Node as its managed user. `IncusTaskVmProvider` exposes observations only. It launches the row's `image_fingerprint` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
-A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Their config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
+A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Every task VM's config on stdin sets `raw.qemu.conf`. Its `[boot-opts]` keys `menu = "on"` and `splash-time = "0"` tell OVMF to skip its 3 s boot menu wait on every boot. A medium or large VM's key also turns on free page reporting for the balloon device `qemu_balloon`. Incus applies the key only when the VM starts, so the launch sets it.
 
 A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#build-the-base-image) of its `image_fingerprint`:
 
@@ -1193,11 +1193,11 @@ The build leaves the promoted image and, from the first promotion on, the `-prev
 
 A new task image comes from the recipe build only for a new host or a new base OS. Every release after that brings the image and the seed up to date by converge ([stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh)).
 
-The seed that the image build leaves holds only the stopped `node-template`. A refresh adds the ready nested topology of the running release. That is three stopped VMs: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They run on the nested WireGuard network 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
+The seed that the image build leaves holds only the stopped `node-template`. A refresh adds the ready nested topology of the running release. That is three stopped system containers: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They run on the nested WireGuard network 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
 
-Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. There is no CLI command of its own. Nothing triggers it automatically: the release and daily triggers rebuilt on the nested-VM path, which the container inner topology replaces, so they were removed. A host with a refresh open returns it, and a host that refuses is skipped.
+Each task VM host refreshes its own image and seed. Nothing is copied between hosts: copying across hosts is not a supported flow, so each host refreshes and, if needed, builds its own. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. There is no CLI command of its own. Two triggers admit every Linux host: a release that went live and changed playbooks, pins or lock files, and a daily schedule at 03:20. A host with a refresh open returns it, and a host that refuses is skipped until the next trigger.
 
-`php artisan task-vms:refresh-image <host> --seed=keep` runs the image part alone. It skips `Build the fleet` and `Save the ready copies`; the refresh VM still clones the current seed, and the clone is copied under the new image. The seed content stays stale on purpose, the first use of a task VM converges it, and the Gateway never counts a `keep` run as a usable seed. `task-vms:refresh-images` always uses `build`.
+`php artisan task-vms:refresh-image <host> --seed=keep` runs the image part alone. It skips `Build the fleet` and `Save the ready copies`; the refresh VM still clones the current seed, and the clone is copied under the new image. The seed content stays stale on purpose, the first use of a task VM converges it, and the Gateway never counts a `keep` run as a usable seed. The triggers always use `build`.
 
 The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. It keeps the root disk of the host's base VM: a published image is as large as its VM's root disk, and no VM can be smaller than its image.
 
@@ -1221,13 +1221,13 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 
 The refresh has no converge step of its own, because the provision converges the outer VM before the nested fleet. The builder never is enrolled and never has a seed, so the clean step has one case: it resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the builder. The image build runs the same clean step.
 
-The fleet build first makes the SSH key of the `orbit` account in the refresh VM, because a fresh task VM has none. The key reaches the nested VMs. Its private half stays on the refresh VM, which is never published. The build creates the three nested VMs one at a time, because three parallel `incus init` calls of one image race on the image cache of the client.
+The fleet build first makes the SSH key of the `orbit` account in the refresh VM, because a fresh task VM has none. The key reaches the nested containers. Its private half stays on the refresh VM, which is never published. The build creates the three nested containers one at a time, because three parallel `incus init` calls of one image race on the image cache of the client.
 
-The fleet build runs only in a large task VM (12 GiB, 6 CPUs), because the three nested VMs hold 10 GiB and a medium VM lost its nested Gateway to the out-of-memory killer. The Gateway refuses the build for any other size. The admission of the refresh sets the size to large, so the Project size lists do not decide it, and the refresh needs three free slots of its host.
+The fleet build runs only in a large task VM (12 GiB, 6 CPUs), because the three nested containers may use 10 GiB and a medium VM lost its nested Gateway to the out-of-memory killer. The Gateway refuses the build for any other size. The admission of the refresh sets the size to large, so the Project size lists do not decide it, and the refresh needs three free slots of its host.
 
-Every wait of the build for the nested Gateway is one run of the playbook `task-vm-fleet-wait.yml` from Node 209 against the refresh VM. A task with `until`, `retries` and `delay` checks with one `incus exec` every 5 seconds. A check that finds the Gateway guest not running ends the wait at once. The playbook then lists the nested VMs, fails naming any that is not running, and asserts the end state. An Operation that did not succeed fails with its failed step and error code. The last wait is the step `Check the nested fleet`, which the Gateway reads as the end of the run.
+Every wait of the build for the nested Gateway is one run of the playbook `task-vm-fleet-wait.yml` from Node 209 against the refresh VM. A task with `until`, `retries` and `delay` checks with one `incus exec` every 5 seconds. A check that finds the Gateway guest not running ends the wait at once. The playbook then lists the nested containers, fails naming any that is not running, and asserts the end state. An Operation that did not succeed fails with its failed step and error code. The last wait is the step `Check the nested fleet`, which the Gateway reads as the end of the run.
 
-The build reads the checkout of the refresh VM's own workspace, which its intent names as `operator_checkout`. A task VM keeps it under `/home/orbit/apps/<project>/workspace`. The nested guests mount the export of that path at `/home/orbit/orbit`, so their mount units name the export path as `What=`.
+The build reads the checkout of the refresh VM's own workspace, which its intent names as `operator_checkout`. A task VM keeps it under `/home/orbit/apps/<project>/workspace`. The nested containers have that path as the disk device `checkout` at `/home/orbit/orbit`.
 
 The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM and the builder. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The builder starts only after the VM step and the save of the ready copies passed, so a VM whose fleet failed its readiness check promotes nothing.
 
@@ -1250,35 +1250,31 @@ The chart lists what the run still lacks:
 
 ##### Save the ready copies
 
-`php artisan task-vms:save-ready-copies <VM-ID>` saves the nested fleet that runs in one task VM as the ready copies of the VM's seed disk. It is the step "Save the new images" of the seed refresh, as a kind of its own (`task_vm.ready_copies`, chart `docs/cli/tasks/vm-ready-copies.mmd`); the refresh runs the same workflow as a child once it starts its own refresh VM. The VM must be `ready` and hold the nested VMs `nested-gateway`, `nested-app-dev` and `nested-app-prod` on the network `nested`.
+`php artisan task-vms:save-ready-copies <VM-ID>` saves the nested fleet that runs in one task VM as the ready copies of the VM's seed disk. It is the step "Save the new images" of the seed refresh, as a kind of its own (`task_vm.ready_copies`, chart `docs/cli/tasks/vm-ready-copies.mmd`); the refresh runs the same workflow as a child once it starts its own refresh VM. The VM must be `ready` and hold the nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod` on the network `nested`.
 
-The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. A step for each nested VM runs once per role with `forEach`, and Swamp names its steps `<name>-<role>`. Each step has its own behavior name, per task VM, so steps that run together do not wait for each other's model lock. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub file. It deletes the proof Swamp Club key and searches every file of the three guests for it. It trims the disks and stops the guests.
+The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. A step for each nested container runs once per role with `forEach`, and Swamp names its steps `<name>-<role>`. Each step has its own behavior name, per task VM, so steps that run together do not wait for each other's model lock. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub's peer files. It deletes the proof Swamp Club key and searches every file of the three guests for it. It then stops the guests.
 
-Before the stop, the step `Order the state mounts` sets `_netdev` on the NFS mount of the checkout and on the bind-mount units of the state in the Gateway and app-dev guests.
-
-The step edits the unit files in `/etc/systemd/system` and leaves the links in `multi-user.target.wants` alone: an edit through a link would replace it with a regular file, and the unit would count as disabled. Without `_netdev` on the NFS mount itself, the guest hangs at shutdown on the unmount, and it fails to mount the checkout at boot. As local mounts they close an ordering cycle with the NFS mount of the checkout and systemd drops them at boot; as network mounts they come up in order. The end check fails a stored copy whose NFS mount or state unit lacks `_netdev`.
-
-It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked. It holds no Club key and no file of a checkout.
+It deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy, and the `checkout` disk device from the Gateway and app-dev copies, and stores the subnet of the network, the MAC and the address on them. A throwaway copy of each ready copy then boots and is checked. It holds no Club key, no file of a checkout and no `eth0` or `checkout` device.
 
 A booted guest makes mount point directories there and writes a Laravel log, and those are no checkout. Its state is on its own disk, and the Gateway copy has no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
 
 ##### Build the nested fleet
 
-`php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested VM, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
+`php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested container, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
 
-The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and forgets its Gateway host key, and makes three VMs from the stock image with cloud-init, the key of the VM, the NFS client, and the state disk that stateful copies need. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
+The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and forgets its Gateway host key, and makes three system containers from the stock image with cloud-init and the key of the VM. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
 
 The bootstrap input names the VM's operator address, 10.45.0.10, so the nested Gateway records the `operator` Node that stage 2 gives its key. The local bootstrap run needs the Swamp key on the VM. The build places it there from its vault copy, on stdin, just before that run, and removes it after the run, also after a failure, so no key stays on a VM where a task's agent may run. A build on a proof VM would remove the key that VM got at provision.
 
-Each VM has a 20 GiB root disk and a state volume as large as its memory, set as two device options, so that its copies can be stateful. The VMs live in the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed.
+Each container allows nesting and has a memory limit and no root size. Cloud-init disables the `wg` and `wg-quick` AppArmor profiles at boot, because the profile of Ubuntu 26.04 kills `wg-quick` in a nested container. The containers live in the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed.
 
-The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM.
+The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
 
 The new Gateway then does the rest through its own Orbit. It converges its own Node, then its `gateway` role, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
 
-The Gateway and app-dev guests then take their checkout from the outer VM, as they do when a task VM starts from ready copies. The Gateway stops its services and moves its state to `/var/lib/orbit-checkout-state` on its own disk: `.env`, `storage`, `bootstrap/cache` and the state of the Swamp repository. It drops the checkout it built, and the stock systemd mount units mount the NFS export of the outer VM and the state over it. The services start again on the shared checkout.
+The Gateway and app-dev guests then take their checkout from the outer VM, as they do when a task VM starts from ready copies. The Gateway stops its services and moves its state to `/var/lib/orbit-checkout-state` on its own disk: `.env`, `storage`, `bootstrap/cache` and the state of the Swamp repository. It drops the checkout it built. The step `Attach the checkout` adds the checkout of the outer VM as the disk device `checkout` of both guests, after cloud-init made the `orbit` account, and stock systemd mount units put the state over it. The services start again on the shared checkout.
 
-The outer VM must export its checkout to the nested network: the converge of the task VM role does that, with the NFS settings of a task VM. The end check waits until Doctor of the nested Gateway answers healthy for the whole fleet, not only for one Node, and passes when it has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
+The end check waits until Doctor of the nested Gateway answers healthy for the whole fleet, not only for one Node, and passes when it has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
 
 ##### Start the nested fleet
 
@@ -1286,11 +1282,13 @@ A task that declares a topology gets its nested fleet from the ready copies of t
 
 The save writes the format as the key `user.ready.format`, and the child lists only the copies that carry the current value, so copies from before a change to the steps that start or apply a fleet are not used.
 
-The step `Start the nested fleet` of `operation-task-provision` calls the child `task-nested-fleet`, which runs one command per step over official SSH to the task VM. It creates the network `oe-nested` from the subnet that the copies store and copies the three ready copies to `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Each Node gets its stored MAC and address back, and the three VMs start.
+The step `Start the nested fleet` of `operation-task-provision` calls the child `task-nested-fleet`, which runs one command per step over official SSH to the task VM. It creates the network `oe-nested` from the subnet that the copies store and copies the three ready copies to `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Each Node gets its stored MAC and address back, and the three containers start.
+
+The Gateway and app-dev containers get the checkout of the task as the disk device `checkout` before they start. The task VM joins as operator: the key goes into the nested Gateway's `operator` Node record, and the peer goes into a file of the hub's peer folder `/etc/wireguard/orbit-peers.d`, in the form the hub rendering writes. The hub loads that folder at every start, so a restore of `base` keeps the peer.
 
 The provider step `observe-seed` lists the volumes of the pool and prints only the two it needs: the seed of the image and the seed clone of this VM. Swamp cuts step output at 4,096 bytes, and the whole list of a host with many seeds is longer.
 
-The step `Converge once` runs before it. A task with a topology carries the converge intent as the workflow input `converge`. It stays outside the provision intent, because the VM provider passes that whole in one argument. It has the NFS export of its checkout to the nested subnet `10.232.2.0/24` and the bridge `oe-nested`.
+The step `Converge once` runs before it. A task with a topology carries the converge intent as the workflow input `converge`. It stays outside the provision intent, because the VM provider passes that whole in one argument. It has the nested subnet `10.232.2.0/24` and the bridge `oe-nested`.
 
 The step `Pin the converge` fills the guest host key that the VM step pinned, and `Converge once` runs the child `operation-task-vm-converge`. Its Incus phase recovers the topology seed pool with `incus admin recover` from the seed disk `scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`, so the three ready copies show in the VM.
 
@@ -1298,13 +1296,15 @@ The recovery needs every instance in the pool to have its network and devices, a
 
 The fleet child creates the network only when the converge has not, and then checks that the network has the subnet that the copies store.
 
-The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. It makes an empty `.env` in the shared checkout as the mount point, from each guest. It starts the three bind mount units of the Gateway and of app-dev, which put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the NFS checkout. It runs the migrations of the checked-out code on the nested Gateway, restarts its queue worker, agent-view subscriber and Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
+The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. The containers start with the checkout already attached. At boot, the bind mount units of the copies put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout. systemd makes the mount point `.env` that the checkout lacks.
+
+The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail. The child then runs the migrations of the checked-out code on the nested Gateway. It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
 The behavior name of `Check the services` carries the index of the unit, not its name. Swamp opens an SSH control socket under `/tmp/swamp-ssh/<behavior name>`, and a path over 108 bytes cannot be a Unix socket.
 
-The fleet child then calls the child `task-nested-ready`, which checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. It first waits up to 120 seconds, with one Ansible task, until Doctor of the nested Gateway is healthy, because the agents read online only after their next heartbeats. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one stateful snapshot `base` of the three nested VMs with memory.
+The fleet child then calls the child `task-nested-ready`, which checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. It first waits up to 120 seconds, with one Ansible task, until Doctor of the nested Gateway is healthy, because the agents read online only after their next heartbeats. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one plain snapshot `base` of the three nested containers.
 
-The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested VMs statefully with a limit of 45 seconds and no retry, and sets each guest clock from the task VM. It then restarts the NFS server of the task VM, so the restored guests open new connections to the checkout, and calls `task-nested-ready` and then `task-nested-apply`.
+The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested containers with a limit of 45 seconds and no retry, which is a reboot, starts them, fails unless all three are `RUNNING`, and calls `task-nested-ready` and then `task-nested-apply`.
 
 The batch workflow calls it before every batch but the first. The case workflow calls it after a case that did not pass and is not the last of its batch, so the next case starts from a clean fleet. A restore that fails stops the rest of the batch.
 
@@ -1316,7 +1316,7 @@ The VM then joins as operator. It makes its own WireGuard key and writes the pub
 
 One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the role, when the copy was made, the MAC, the IP and the subnet. ``user.ready.complete` is written last.
 
-The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 3 carry the control plan that the play reads; copies of another format are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
+The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 4 carry the control plan that the play reads; copies of another format are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
 
 The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
 
@@ -1366,7 +1366,7 @@ This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb and t
 
 Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints `Operation #<id>`; submission does not mean the filter is ready. Its native workflow runs on 209 and reaches the VPN Node through official SSH with the recorded host pins. No Swamp binary or worker is installed on the VPN Node.
 
-The workflow checks the complete nft ruleset with the hub's own `nft`. One step then writes the filter and its systemd unit, enables and restarts the unit, and lists the live chain. After the filter loads, UFW allows TCP 22 from 209 and TCP 80 and 443 from each Cluster Router, one rule at a time.
+The workflow checks the complete nft ruleset with the hub's own `nft`. One step then writes the filter and its systemd unit, enables and restarts the unit, and lists the live chain. After the filter loads, UFW allows TCP 22 and 443 (the Route's TLS probe) from 209, and TCP 80 and 443 from each Cluster Router, one rule at a time.
 
 A native assert is the end check: every expected control and Router rule must be a line of the live chain. Only then does the Gateway record the hub ready, with the sources from its intent. A failed step leaves the Operation failed; a rerun writes and loads the same file again.
 
@@ -1389,7 +1389,7 @@ The table filters only the reserved range. Its first rule passes every packet th
 | From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
 | To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
 
-The209 SSH rule and Cluster Router web rules come from the same canonical definitions shown by `firewall:list --managed` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall:list --live` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
+The 209 SSH and TLS probe rules and the Cluster Router web rules come from the same canonical definitions shown by `firewall:list --managed` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall:list --live` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 

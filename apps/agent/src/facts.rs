@@ -19,6 +19,11 @@ pub const RESYNC_INTERVAL: Duration = Duration::from_secs(600);
 pub const RETRY_FIRST: Duration = Duration::from_secs(1);
 /// The longest wait between two tries of a failed report.
 pub const RETRY_MAX: Duration = Duration::from_secs(4);
+/// The files an `accounts` fact is read from.
+pub const PASSWD: &str = "/etc/passwd";
+/// The group names of the accounts, by gid.
+pub const GROUP: &str = "/etc/group";
+const MAX_ACCOUNTS: usize = 512;
 /// Filesystems that hold data; pseudo, network and snap mounts are left out.
 const DATA_FILESYSTEMS: [&str; 7] = ["ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs"];
 const MAX_FILESYSTEMS: usize = 64;
@@ -232,6 +237,64 @@ fn hex_text(hex: &str) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
+/// The local accounts of `passwd`, each with the name of its primary group from `group`, in uid order. An entry that is
+/// malformed, has no group, or holds a name or a path the Gateway would refuse is left out.
+pub fn accounts_data(passwd: &str, group: &str) -> Value {
+    let mut groups: BTreeMap<u32, &str> = BTreeMap::new();
+    for line in group.lines() {
+        let mut fields = line.split(':');
+        if let (Some(name), Some(_), Some(gid)) = (fields.next(), fields.next(), fields.next()) {
+            if let Ok(gid) = gid.parse() {
+                groups.entry(gid).or_insert(name);
+            }
+        }
+    }
+    let mut accounts: Vec<(u32, &str, Value)> = passwd
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            let [user, _, uid, gid, _, home, shell] = fields[..] else {
+                return None;
+            };
+            let (uid, gid) = (uid.parse::<u32>().ok()?, gid.parse::<u32>().ok()?);
+            let group = *groups.get(&gid)?;
+            (account_name(user)
+                && account_name(group)
+                && absolute_path(home)
+                && absolute_path(shell))
+            .then(|| {
+                (
+                    uid,
+                    user,
+                    json!({"user": user, "uid": uid, "group": group, "home": home, "shell": shell}),
+                )
+            })
+        })
+        .collect();
+    accounts.sort_by(|(left_uid, left, _), (right_uid, right, _)| {
+        left_uid.cmp(right_uid).then_with(|| left.cmp(right))
+    });
+    json!({"accounts": accounts.into_iter().map(|(_, _, account)| account).take(MAX_ACCOUNTS).collect::<Vec<_>>()})
+}
+
+/// A Linux account or group name: lower case letters, digits, `_` and `-`, not starting with a digit or `-`, and at
+/// most 32 characters, with an optional trailing `$`.
+fn account_name(name: &str) -> bool {
+    let name = name.strip_suffix('$').unwrap_or(name);
+    (1..=32).contains(&name.len())
+        && name.bytes().enumerate().all(|(index, byte)| match byte {
+            b'a'..=b'z' | b'_' => true,
+            b'0'..=b'9' | b'-' => index > 0,
+            _ => false,
+        })
+}
+
+fn absolute_path(path: &str) -> bool {
+    path.starts_with('/')
+        && path.len() <= 4096
+        && !path.bytes().any(|byte| byte < 32 || byte == 127)
+}
+
 /// A role service name from the watch list, such as `caddy.service`, only when it is a plain unit name.
 pub fn valid_service(name: &str) -> bool {
     name.len() <= 255
@@ -325,15 +388,19 @@ impl Reporter {
                 self.last_error = None;
             }
             Err(error) => {
-                self.failed.insert(
-                    key(kind, subject),
-                    (subject.map(str::to_owned), data.clone()),
-                );
-                if self.last_error.as_ref() != Some(&error) {
+                if error.retry {
+                    self.failed.insert(
+                        key(kind, subject),
+                        (subject.map(str::to_owned), data.clone()),
+                    );
+                } else {
+                    self.failed.remove(&key(kind, subject));
+                }
+                if self.last_error.as_ref() != Some(&error.message) {
                     let what = subject
                         .map_or_else(|| kind.to_owned(), |subject| format!("{kind} {subject}"));
-                    eprintln!("orbit-agent: {what} fact report failed: {error}");
-                    self.last_error = Some(error);
+                    eprintln!("orbit-agent: {what} fact report failed: {}", error.message);
+                    self.last_error = Some(error.message);
                 }
             }
         }
@@ -399,7 +466,7 @@ impl RetryTimer {
 }
 
 /// Sends one fact body to `POST /api/v1/agent/facts`.
-pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(), String> {
+pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(), PostError> {
     client
         .post(url)
         .json(body)
@@ -408,7 +475,21 @@ pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(
         .await
         .and_then(reqwest::Response::error_for_status)
         .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(|error| PostError {
+            // A 4xx other than a timeout or a rate limit means the Gateway refuses this exact report, such as a kind an
+            // older Gateway does not know; sending it again every few seconds cannot change that.
+            retry: error.status().is_none_or(|status| {
+                !status.is_client_error() || matches!(status.as_u16(), 408 | 429)
+            }),
+            message: error.to_string(),
+        })
+}
+
+/// Why the Gateway did not accept a report, and whether sending it again soon can help.
+#[derive(Debug)]
+pub struct PostError {
+    pub message: String,
+    pub retry: bool,
 }
 
 fn digest(kind: &str, data: &Value) -> String {
@@ -537,6 +618,57 @@ mod tests {
         assert_eq!(seen.load(Ordering::SeqCst), 2);
     }
 
+    /// A Gateway that answers every report with `status`, and counts them.
+    async fn gateway_answering(
+        status: u16,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let seen = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = seen.clone();
+        let app = axum::Router::new().route(
+            "/api/v1/agent/facts",
+            axum::routing::post(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move { axum::http::StatusCode::from_u16(status).unwrap() }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (url, seen)
+    }
+
+    #[tokio::test]
+    async fn a_report_the_gateway_refuses_for_good_is_not_retried_but_a_busy_gateway_is() {
+        use std::sync::atomic::Ordering;
+        for (status, retried) in [
+            (422, false),
+            (401, false),
+            (404, false),
+            (429, true),
+            (408, true),
+            (502, true),
+            (500, true),
+        ] {
+            let (url, seen) = gateway_answering(status).await;
+            let mut reporter = Reporter::new(client(), &url);
+
+            reporter
+                .report("accounts", None, &json!({"accounts": []}))
+                .await;
+
+            assert_eq!(reporter.has_failed(), retried, "status {status}");
+            reporter.retry().await;
+            assert_eq!(
+                seen.load(Ordering::SeqCst),
+                if retried { 2 } else { 1 },
+                "status {status}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn a_refused_item_that_leaves_the_set_is_not_sent_again() {
         use std::sync::atomic::Ordering;
@@ -568,6 +700,46 @@ mod tests {
             data_mounts(mounts),
             vec!["/".to_owned(), "/var/lib/my data".to_owned()]
         );
+    }
+
+    #[test]
+    fn accounts_data_lists_accounts_by_uid_with_their_group_and_leaves_out_unusable_entries() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+            orbit:x:1000:1000:Orbit:/home/orbit:/bin/bash\n\
+            www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\n\
+            ghost:x:1500:1500::/home/ghost:/bin/bash\n\
+            Bad Name:x:1600:1000::/home/bad:/bin/bash\n\
+            relative:x:1700:1000::home/relative:/bin/bash\n\
+            short:x:1800:1000\n\
+            nologin:x:abc:1000::/home/n:/bin/bash\n\
+            dollar$:x:1900:1000::/home/dollar:/bin/bash\n";
+        let group = "root:x:0:\norbit:x:1000:\nwww-data:x:33:\ndup:x:1000:\n";
+
+        let data = accounts_data(passwd, group);
+        let users: Vec<&str> = data["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|account| account["user"].as_str().unwrap())
+            .collect();
+
+        assert_eq!(users, ["root", "www-data", "orbit", "dollar$"]);
+        assert_eq!(
+            data["accounts"][2],
+            json!({"user": "orbit", "uid": 1000, "group": "orbit", "home": "/home/orbit", "shell": "/bin/bash"})
+        );
+    }
+
+    #[test]
+    fn accounts_data_lists_at_most_512_accounts() {
+        let passwd: String = (1000..1600)
+            .map(|uid| format!("u{uid}:x:{uid}:1000::/home/u{uid}:/bin/sh\n"))
+            .collect();
+
+        let data = accounts_data(&passwd, "g:x:1000:\n");
+
+        assert_eq!(data["accounts"].as_array().unwrap().len(), 512);
+        assert_eq!(data["accounts"][511]["uid"], 1511);
     }
 
     #[test]

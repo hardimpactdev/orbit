@@ -20,7 +20,7 @@ spec.loader.exec_module(builder)
 def intent(**extra):
     return {'ssh': {'identity_file': '/role/identity', 'target': {
         'host': '10.252.7.9', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 vm']}},
-        'recipe': {'tools': {}}, 'profile': 'base', 'image': False, 'vp_lock': '{}', 'pi': None, 'nfs': None, **extra}
+        'recipe': {'tools': {}}, 'profile': 'base', 'image': False, 'vp_lock': '{}', 'pi': None, 'nested': None, **extra}
 
 
 class TaskVmRoleTest(unittest.TestCase):
@@ -39,7 +39,7 @@ class TaskVmRoleTest(unittest.TestCase):
     def test_a_task_vm_is_reached_directly(self):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
-            (folder / 'intent.json').write_text(json.dumps(intent(nfs={'checkout': '/home/orbit/c', 'subnet': '10.232.2.0/24', 'interface': 'nested'})))
+            (folder / 'intent.json').write_text(json.dumps(intent(nested={'subnet': '10.232.2.0/24', 'interface': 'nested'})))
             builder.build(folder, 'task_vm.converge')
             host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
             self.assertEqual(host['ansible_host'], '10.252.7.9')

@@ -5,6 +5,8 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { behavior } from "./metadata.ts";
+import projects from "./projects.json" with { type: "json" };
+import { scheduleKey } from "../../_lib/project_schedule.ts";
 
 const project = {
     id: 32,
@@ -174,4 +176,80 @@ Deno.test("observe maps a bounded PR reading to its captured group", async () =>
         resume_group_ids: [],
         requests: [],
     });
+});
+
+Deno.test("the tick lists every configured Project with its identity and the request keys of the fire, and reads no Gateway state", async () => {
+    const { context, getWrittenResources } = createModelTestContext();
+    const before = new Date();
+    // No queryData is given: a tick that read data would fail here.
+    await behavior.methods.schedule.execute({}, context);
+    const after = new Date();
+    const result = JSON.parse(
+        getWrittenResources()[0].data.result_json as string,
+    ) as {
+        projects: {
+            id: number;
+            repository: string;
+            default_branch: string;
+            check: string;
+            keys: Record<string, string>;
+        }[];
+        skipped: unknown[];
+    };
+    assertEquals(result.skipped, []);
+    assertEquals(
+        result.projects.map((entry) => entry.id),
+        projects.map((entry) => entry.projectId),
+    );
+    const observe = (id: number, at: Date) =>
+        `${id}-observe-${at.toISOString().slice(0, 16)}`;
+    for (const entry of result.projects) {
+        assertEquals(
+            /^github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(entry.repository),
+            true,
+        );
+        assertEquals(entry.default_branch, "main");
+        assertEquals(Object.keys(entry.keys).sort(), [
+            "detect",
+            "observe",
+            "routine",
+        ]);
+        for (const [mode, key] of Object.entries(entry.keys)) {
+            const expected = new Set(
+                [before, after].map((at) =>
+                    mode === "observe" ? observe(entry.id, at) : scheduleKey(
+                        entry.id,
+                        mode as "routine" | "detect",
+                        at,
+                    )
+                ),
+            );
+            assertEquals(expected.has(key), true, `${mode} key ${key}`);
+        }
+    }
+});
+
+Deno.test("the request keys use the formats that the Gateway validates", () => {
+    // The Gateway admits a request only when its key has these shapes (ScheduledProjectMaintenanceTest pins the same examples).
+    const wednesday = new Date("2026-11-04T10:30:45Z");
+    assertEquals(
+        scheduleKey(32, "routine", wednesday),
+        "32-routine-2026-11-02",
+    );
+    assertEquals(
+        scheduleKey(32, "detect", wednesday),
+        "32-detect-2026-11-04T10:00",
+    );
+    assertEquals(
+        `32-observe-${wednesday.toISOString().slice(0, 16)}`,
+        "32-observe-2026-11-04T10:30",
+    );
+    assertEquals(
+        scheduleKey(32, "routine", new Date("2026-11-08T23:59:59Z")),
+        "32-routine-2026-11-02",
+    );
+    assertEquals(
+        scheduleKey(32, "routine", new Date("2026-11-09T00:00:00Z")),
+        "32-routine-2026-11-09",
+    );
 });

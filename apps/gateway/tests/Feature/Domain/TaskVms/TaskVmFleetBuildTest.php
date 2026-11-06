@@ -102,7 +102,8 @@ it('renders the whole public intent of the fleet build, with the layout of the n
         ->and($input['execution_secrets']['proof_club'])->toMatchArray(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key'])
         ->and(json_encode($input))->not->toContain('proof-club-key');
     $members = json_decode('{'.$input['bootstrap']['fragment'].'}', true, flags: JSON_THROW_ON_ERROR);
-    expect(array_keys($members))->toBe(['swamp', 'gateway', 'operator', 'agent_delivery'])
+    expect(array_keys($members))->toBe(['swamp', 'apt_proxy', 'gateway', 'operator', 'agent_delivery'])
+        ->and($members['apt_proxy'])->toBe('http://10.232.2.1:3142')
         ->and($members['swamp']['sha256'])->toMatch('/^[a-f0-9]{64}$/')
         ->and($members['operator']['checkout'])->toBe('/home/orbit/apps/orbit/workspace')
         ->and($members['operator']['wireguard_ip'])->toBe('10.45.0.10')
@@ -161,21 +162,37 @@ it('refuses a VM that is not ready', function (): void {
     );
 });
 
-it('renders the mount units of the shared checkout under the names the stage 2 apply step starts, as network mounts', function (): void {
+it('renders the checkout as a disk device and the state mounts under the names the stage 2 apply step checks', function (): void {
     $vm = fleetBuildWorld();
     app()->instance(WebSocketClient::class, fleetBuildVault());
 
     $checkout = app(TaskVmFleetBuildIntent::class)->capture($vm)['fleet']['checkout'];
 
-    expect($checkout['server'])->toBe('10.232.2.1')
+    expect($checkout)->not->toHaveKey('server')
+        ->and($checkout['source'])->toBe('/home/orbit/apps/orbit/workspace')
+        ->and($checkout['path'])->toBe('/home/orbit/orbit')
         ->and($checkout['binds']['app-dev'])->toBe(['home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'])
         ->and($checkout['binds']['gateway'])->toContain('home-orbit-orbit-swamp-.swamp.mount', 'home-orbit-orbit-swamp-vaults.mount');
     $units = collect($checkout['units'])->groupBy('guest');
-    expect($units['nested-gateway'])->toHaveCount(7)
-        ->and($units['nested-app-dev'])->toHaveCount(4);
+    expect($units['nested-gateway'])->toHaveCount(6)
+        ->and($units['nested-app-dev'])->toHaveCount(3)
+        ->and(collect($checkout['units'])->pluck('name'))->not->toContain('home-orbit-orbit.mount');
     foreach ($checkout['units'] as $unit) {
-        expect($unit['content'])->toContain('_netdev', "[Install]\nWantedBy=multi-user.target\n");
+        expect($unit['content'])->toContain("Type=none\nOptions=bind\n", "[Install]\nWantedBy=multi-user.target\n")->not->toContain('_netdev', 'nfs');
     }
-    $nfs = collect($checkout['units'])->firstWhere('name', 'home-orbit-orbit.mount');
-    expect($nfs['content'])->toContain("What=10.232.2.1:/home/orbit/apps/orbit/workspace\n", "Where=/home/orbit/orbit\n", "Type=nfs\n");
+});
+
+it('never starts the state mounts with their requirements, whose device no udev confirms in a container', function (): void {
+    $vm = fleetBuildWorld();
+    app()->instance(WebSocketClient::class, fleetBuildVault());
+    $binds = app(TaskVmFleetBuildIntent::class)->capture($vm)['fleet']['checkout']['binds']['app-dev'];
+    $apply = file_get_contents(base_path('../../swamp/workflows/workflow-task-nested-apply.yaml'));
+    $build = file_get_contents(base_path('../../swamp/workflows/workflow-operation-task-vm-fleet-build.yaml'));
+
+    // Stage 2 starts the containers with the checkout attached, so the boot mounts the state and the apply step only checks it.
+    expect($apply)->toContain("'sh', '-c', 'for u; do systemctl is-active --quiet \"\$u\" || { echo \"\$u is not active\" >&2; exit 1; }; done', 'sh', '".implode("', '", $binds)."'")
+        ->and(preg_match("/'systemctl', 'start', 'home-orbit-orbit-/", $apply))->toBe(0)
+        // The fleet build attaches the checkout to running containers and starts the units by name, without their requirements.
+        ->and($build)->toContain('"systemctl", "start", "--job-mode=ignore-requirements"] + inputs.intent.fleet.checkout.binds[self.role]')
+        ->and(substr_count($build, '"systemctl", "start"]'))->toBe(0);
 });

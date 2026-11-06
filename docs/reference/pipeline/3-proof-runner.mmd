@@ -26,11 +26,11 @@ sequenceDiagram
   %%> - `runner plan --lines` prints one line a batch, `BATCH SETUP CASE...`, which the workflow reads; the workflow `proof-fleet-verify` is built
   VM-->>SW: Ordered plan<br/>batches · cases
   loop each batch, one at a time
-    SW->>NT: Restore base<br/>memory snapshot · about 16 s
+    SW->>NT: Restore base<br/>snapshot and start · about 16 s
     %%> What it does:
-    %%> - restores the task's stateful snapshot `base` of the three nested VMs; skipped when the fleet is still at `base`, as for the first batch
+    %%> - restores the task's plain snapshot `base` of the three nested containers (a reboot); skipped when the fleet is still at `base`, as for the first batch
     %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
-    %%> - built, not yet passed live: the step is the workflow `proof-fleet-restore` (restore, clock, NFS server restart, readiness, apply the checkout), which `proof-fleet-verify-batch` calls; 0 of 2 runs succeeded by 2026-11-06; the old `runner restore` was removed
+    %%> - built, not yet passed live: the step is the workflow `proof-fleet-restore` (restore, start, boot wait, readiness, apply the checkout), which `proof-fleet-verify-batch` calls; 0 of 2 runs succeeded by 2026-11-06; the old `runner restore` was removed
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>batch setup steps
       %%> What it does:

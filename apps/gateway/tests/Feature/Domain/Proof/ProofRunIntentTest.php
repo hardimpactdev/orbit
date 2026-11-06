@@ -17,12 +17,21 @@ use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Jobs\Proof\AdmitProofRun;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -188,48 +197,157 @@ describe('which commits Orbit proves', function (): void {
     ]);
 });
 
+/** The request, then the queue job: the proof as the admission left it. */
+function proofAdmitted(bool $all = false, bool $reportOnly = false): Operation
+{
+    Queue::fake();
+    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, $all, 'tester', null, reportOnly: $reportOnly);
+    app(ProofRunIntent::class)->admit($proof->id);
+
+    return $proof->refresh();
+}
+
+/** The message of the failure, as the Operation shows it. */
+function proofFailureDetail(Operation $proof): ?string
+{
+    return $proof->state['native_failure']['detail'] ?? null;
+}
+
 describe('proof:run admission', function (): void {
-    it('succeeds at once with nothing to prove when only documentation changed, and lists the uncovered paths', function (): void {
+    it('answers after one insert: the proof is recorded and the admission is queued, with no read of GitHub and no run', function (): void {
+        Queue::fake();
+        $source = proofSource();
+        $source->exists = false;
+        proofWorld($source);
+
+        $started = microtime(true);
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $seconds = microtime(true) - $started;
+
+        expect($proof->status)->toBe(OperationStatus::Running)
+            ->and($proof->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'runs' => []])
+            ->and($seconds)->toBeLessThan(1.0)
+            ->and(Task::query()->count())->toBe(0)->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
+        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
+    });
+
+    it('refuses the request itself only for what the database shows: no Swamp Node', function (): void {
+        Queue::fake();
+
+        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.swamp_unavailable');
+        Queue::assertNothingPushed();
+    });
+
+    it('does nothing for a proof that is no longer running or already has its runs', function (): void {
+        Queue::fake();
+        proofWorld(proofSource());
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $proof->update(['status' => OperationStatus::Cancelled]);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($proof->input)->not->toHaveKey('cases');
+    });
+
+    it('ends the proof with a code when the queue refuses the job, instead of leaving it for the watchdog', function (): void {
+        proofWorld(proofSource());
+        app()->instance('queue', new class
+        {
+            /** @param  array<int, mixed>  $arguments */
+            public function __call(string $method, array $arguments): never
+            {
+                throw new RuntimeException('The queue is down.');
+            }
+        });
+
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.queue_unavailable')
+            ->and(proofFailureDetail($proof))->toContain('could not queue');
+    });
+
+    it('leaves a proof that was cancelled while the job read GitHub cancelled', function (): void {
+        proofWorld(proofSource());
+        Queue::fake();
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $armed = true;
+        // The proof is cancelled right after the job records the selection, before it admits anything.
+        Operation::updated(static function (Operation $operation) use (&$armed): void {
+            if ($armed && $operation->kind === 'proof.run' && isset($operation->input['cases'])) {
+                $armed = false;
+                Operation::query()->whereKey($operation->id)->update(['status' => OperationStatus::Cancelled->value]);
+            }
+        });
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        $armed = false;
+        expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($proof->error_code)->toBeNull();
+    });
+
+    it('returns the same proof for a repeated key and a proof that already has its runs is not admitted again', function (): void {
+        Queue::fake();
+        proofWorld(proofSource());
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $proof->update(['input' => [...$proof->input, 'runs' => [['command' => 'a:b', 'file' => 'f', 'group_id' => 1, 'operation_id' => 2]]]]);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->input)->not->toHaveKey('cases')->and($proof->status)->toBe(OperationStatus::Running);
+        Queue::assertPushed(AdmitProofRun::class, 1);
+    });
+
+    it('queues the admission on the tasks queue of the Gateway connection and hands the proof to the intent', function (): void {
+        $job = new AdmitProofRun(7);
+
+        expect($job->connection)->toBe('gateway')->and($job->queue)->toBe('tasks')->and($job->tries)->toBe(1)->and($job->timeout)->toBe(1200)
+            ->and($job->operationId)->toBe(7);
+    });
+
+    it('succeeds with nothing to prove when only documentation changed, and lists the uncovered paths', function (): void {
         $source = proofSource();
         $source->files = [new ProofChangedFile('docs/a.md', 'modified'), new ProofChangedFile('swamp/workflows/workflow-vault-sync.yaml', 'modified')];
         proofWorld($source);
 
-        $operation = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $operation = proofAdmitted();
 
         expect($operation->kind)->toBe('proof.run')->and($operation->status)->toBe(OperationStatus::Succeeded)
             ->and($operation->result)->toBe(['commit' => PROOF_SHA, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
                 'uncovered' => [['path' => 'swamp/workflows/workflow-vault-sync.yaml', 'reason' => 'none: no case yet']], 'receipt_url' => null]);
     });
 
-    it('refuses an unmapped path and records nothing', function (): void {
+    it('fails the proof for an unmapped path, with the code and the message on the Operation', function (): void {
         $source = proofSource();
         $source->files = [new ProofChangedFile('unknown/new.file', 'added')];
         proofWorld($source);
 
-        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.path_unmapped')
-            ->and(Operation::query()->count())->toBe(0);
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.path_unmapped')
+            ->and(proofFailureDetail($proof))->not->toBeNull()->and($proof->result['outcome'])->toBe('failed');
     });
 
-    it('refuses an untrusted commit before it reads the diff', function (): void {
+    it('fails the proof for an untrusted commit before it reads the diff', function (): void {
         $source = proofSource();
         $source->branches = [];
         proofWorld($source);
 
-        expect(proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null))->errorCode)->toBe('proof.commit_untrusted')
-            ->and(Operation::query()->count())->toBe(0);
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.commit_untrusted')
+            ->and($proof->input)->not->toHaveKey('cases');
     });
 
-    it('selects the cases and refuses while execution is switched off, which is the default', function (): void {
+    it('selects the cases and fails while execution is switched off, which is the default', function (): void {
         $source = proofSource();
         $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
         proofWorld($source);
 
-        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null));
+        $proof = proofAdmitted();
 
         expect(config('proof.execution'))->toBeFalse()
-            ->and($refusal->errorCode)->toBe('proof.execution_disabled')
-            ->and($refusal->details['cases'])->toBe(['swamp/proof/firewall/allow.cases.yaml'])
-            ->and(Operation::query()->count())->toBe(0);
+            ->and($proof->error_code)->toBe('proof.execution_disabled')
+            ->and(array_column($proof->input['cases'], 'file'))->toBe(['swamp/proof/firewall/allow.cases.yaml']);
     });
 
     it('runs every case for --all and never lets a docs-only commit skip it', function (): void {
@@ -237,9 +355,9 @@ describe('proof:run admission', function (): void {
         $source->files = [new ProofChangedFile('docs/a.md', 'modified')];
         proofWorld($source);
 
-        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, true, 'tester', null));
+        $proof = proofAdmitted(all: true);
 
-        expect($refusal->errorCode)->toBe('proof.execution_disabled')->and($refusal->details['cases'])->toHaveCount(1);
+        expect($proof->error_code)->toBe('proof.execution_disabled')->and($proof->input['cases'])->toHaveCount(1);
     });
 
     it('keeps nothing when a command cannot start: no group, no run, and the proof fails with the reason', function (): void {
@@ -251,13 +369,83 @@ describe('proof:run admission', function (): void {
         $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
         proofWorld($source);
 
-        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null));
+        $proof = proofAdmitted();
 
-        $proof = Operation::query()->where('kind', 'proof.run')->sole();
-        expect($refusal->errorCode)->toBe('tasks.capacity_unavailable')
-            ->and($proof->status)->toBe(OperationStatus::Failed)
-            ->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and(proofFailureDetail($proof))->toBe('Task VM: no capacity.')
             ->and(Task::query()->count())->toBe(0)
+            ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
+    });
+
+    it('records a report-only run as such and fails it for capacity like any other run', function (): void {
+        config(['proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        $proof = proofAdmitted(reportOnly: true);
+
+        expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and($proof->input['report_only'])->toBeTrue()->and(Task::query()->count())->toBe(0);
+    });
+
+    it('passes the reserve of a report-only run down to the placement of its VM', function (): void {
+        // The release layout whose recipe the allocation reads, and one host with usable copies and room for exactly one large VM.
+        $base = sys_get_temp_dir().'/orbit-proof-reserve-'.bin2hex(random_bytes(4));
+        $commit = 'eeeeeeeeeeee0000000000000000000000000000';
+        $release = $base.'/releases/'.substr($commit, 0, 12);
+        mkdir($release.'/apps/gateway/resources/machine-software', 0700, true);
+        file_put_contents($release.'/REVISION', $commit."\n");
+        symlink('releases/'.substr($commit, 0, 12), $base.'/orbit');
+        copy(base_path('resources/machine-software/recipe.json'), $release.'/apps/gateway/resources/machine-software/recipe.json');
+        config(['orbit.gateway_checkout' => $base.'/orbit/apps/gateway', 'proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+            'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']));
+        $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
+            'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)]]]);
+        Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
+            'input' => ['refresh' => ['host_node_id' => $host->id, 'ready_copies' => ['fleet' => ['format' => TaskVmReadyCopiesIntent::Format]]]],
+            'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
+        $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
+        // Three slots: one large VM fits, but not beside the reserve of a report-only run.
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 3, 4, '8GiB', '20GiB')],
+            'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        $proof = proofAdmitted(reportOnly: true);
+
+        Process::run(['rm', '-rf', $base]);
+        expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and(proofFailureDetail($proof))->toContain('A report-only proof leaves 3 slots free');
+    });
+
+    it('admits nothing when the watchdog ended the proof while the job was slow', function (): void {
+        config(['proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+        // The proof is ended behind the job's back once the cases are recorded, as the watchdog does for a lost job.
+        $armed = true;
+        Operation::updated(static function (Operation $operation) use (&$armed): void {
+            if ($armed && $operation->kind === 'proof.run' && isset($operation->input['cases'])) {
+                $armed = false;
+                Operation::query()->whereKey($operation->id)->update(['status' => OperationStatus::Failed->value]);
+            }
+        });
+
+        $proof = proofAdmitted();
+
+        $armed = false;
+        expect($proof->status)->toBe(OperationStatus::Failed)->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
 });

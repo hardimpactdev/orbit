@@ -14,7 +14,6 @@ use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Cancels unstarted intent; a bound native workflow owns its terminal result, and Swamp stops it. */
@@ -42,14 +41,13 @@ final readonly class CancelOperationAction
         $operation->refresh();
         // A proof owns a task group with a VM for each of its runs; cancelling the proof without the groups would leave the VMs running.
         if ($operation->kind === OperationKinds::ProofRun && $operation->status === OperationStatus::Cancelled) {
-            foreach (ProofRunSettlement::runs($operation) as $run) {
-                $run = ValidatedData::object($run);
-                DB::afterCommit(static fn () => CancelProofGroup::dispatch(ValidatedData::integer($run['operation_id'])));
+            foreach (ProofRunSettlement::children($operation->id) as $run) {
+                DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
             }
         }
         // A refresh owns a task group with a VM too. One cancelled before its run started has no terminal event to project, so the group is cancelled here.
         if ($operation->kind === TaskVmImageRefreshIntent::Kind && $operation->status === OperationStatus::Cancelled) {
-            DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id));
+            DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id, 'image-refresh'));
         }
         if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
             if (DirectOperation::owns($operation) && app(DirectOperation::class)->usesNativeTerminal($operation)) {

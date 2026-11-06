@@ -146,7 +146,7 @@ final readonly class TaskVmImageRefreshIntent
                     'cpus' => $location->cpus, 'memory' => $location->memory, 'disk' => $location->disk,
                     'launch_config' => TaskVmLaunchConfig::for($jump['public_key']),
                     'ssh' => ['identity_file' => $jump['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
-                    'profile' => 'base', 'image' => true, 'nfs' => null,
+                    'profile' => 'base', 'image' => true, 'nested' => null,
                     'recipe' => $converge['recipe'], 'vp_lock' => $converge['vp_lock'], 'pi' => $converge['pi'],
                 ],
                 'ready_copies' => Arr::except($pinned['ready_copies'], ['execution_secrets']),

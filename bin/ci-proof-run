@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run `orbit proof:run` for a pull request head in CI and fail unless every case passed.
 
+With PROOF_REPORT_ONLY=1 (the report-only job of ci.yml) it passes `--report-only`, and its VMs yield capacity to task and proof work.
+
 The job passes only the full commit SHA and an idempotency key built from the workflow run and its attempt. Orbit
 fetches the commit and chooses the cases itself. The runner acts as an enrolled Node, so no secret is involved.
 """
@@ -27,21 +29,36 @@ def find_result(document):
     return None
 
 
+def find_error(document):
+    """The `error` of the final operation (its code and detail), which a proof refused at admission carries instead of a case."""
+    if not isinstance(document, dict):
+        return None
+    for holder in (document, document.get('data'), document.get('operation')):
+        if isinstance(holder, dict) and isinstance(holder.get('error'), dict):
+            return holder['error']
+    return None
+
+
 def evaluate(code, output):
     """Return (passed, summary lines). Only a clean exit with a result is a pass, and only when the proof passed with at least
     one case that ran, and every case passed. Nothing to prove passes. A missing result, an unrun case or any other outcome fails."""
     try:
-        result = find_result(json.loads(output))
+        document = json.loads(output)
     except ValueError:
-        result = None
+        document = None
+    result = find_result(document)
+    error = find_error(document)
+    reason = f"Error: {error.get('code') or ''} {error.get('detail') or ''}".rstrip() if error and (error.get('code') or error.get('detail')) else None
     if result is None:
-        return False, [f'The proof printed no result (exit status {code}).']
+        return False, [f'The proof printed no result (exit status {code}).', *([reason] if reason else [])]
     cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
     lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
     lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('verdict', '')} |"
               for case in cases]
     if not cases:
         lines.append('No case ran.')
+    if reason:
+        lines.append(reason)
     for path in result.get('uncovered') or []:
         if isinstance(path, dict):
             lines.append(f"Uncovered: {path.get('path', '')} ({path.get('reason', '')})")
@@ -54,7 +71,8 @@ def evaluate(code, output):
 
 
 def run(sha, key, orbit):
-    child = subprocess.Popen([orbit, 'proof:run', sha, '--json', '--idempotency-key', key],
+    flags = ['--report-only'] if os.environ.get('PROOF_REPORT_ONLY') == '1' else []
+    child = subprocess.Popen([orbit, 'proof:run', sha, *flags, '--json', '--idempotency-key', key],
                              stdout=subprocess.PIPE, text=True)
     # A cancelled job gets SIGINT, then SIGTERM. Orbit cancels its run on both.
     for name in (signal.SIGINT, signal.SIGTERM):

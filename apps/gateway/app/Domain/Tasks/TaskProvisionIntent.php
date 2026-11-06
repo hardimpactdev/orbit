@@ -64,11 +64,12 @@ final readonly class TaskProvisionIntent
      * that runs provision as one step of a larger run, such as `tasks.prep`, adds its own intent through `$extend`,
      * which receives the provision intent, the group, its workspace Instance and its VM, and returns the whole input of
      * the Operation; the node of the Operation stays the VM host of the provision intent. `$host` pins the VM to one task VM
-     * host, and `$size` sets its size, as the refresh of that host's task image does.
+     * host, and `$size` sets its size, as the refresh of that host's task image does. `$reserveSlots` makes the VM yield: it
+     * claims no ready slot, never overflows to UpCloud and is placed only where that many slots stay free after it.
      *
      * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
      */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, ?int $host = null, ?TaskVmSize $size = null): Operation
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, ?int $host = null, ?TaskVmSize $size = null, int $reserveSlots = 0): Operation
     {
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
@@ -78,7 +79,7 @@ final readonly class TaskProvisionIntent
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit, $kind, $extend, $host, $size): Operation {
+        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit, $kind, $extend, $host, $size, $reserveSlots): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
@@ -96,9 +97,9 @@ final readonly class TaskProvisionIntent
                 throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
             }
             try {
-                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) always clones.
-                $slot = $host === null ? $this->slots->claim($group) : null;
-                $vm = $slot ?? $this->allocate->capture($group, $host, $size);
+                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) and a report-only one always clone.
+                $slot = $host === null && $reserveSlots === 0 ? $this->slots->claim($group) : null;
+                $vm = $slot ?? $this->allocate->capture($group, $host, $size, $reserveSlots);
             } catch (TaskCapacityException $exception) {
                 throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
                     previous: $exception, details: ['reason' => $exception->wait->value]);
@@ -142,7 +143,7 @@ final readonly class TaskProvisionIntent
                 return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
             }, $this->steps->ordered($project, LifecyclePhase::Setup));
             // A claimed slot converged at its enrol; it converges again only when the release changed playbooks, pins or lock files since.
-            $converge = $slot !== null && $slot->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $checkout->value, $input);
+            $converge = $slot !== null && $slot->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $input);
             // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
             $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                 'swamp-proof-club-api-key', $proofClub) : null;
@@ -159,7 +160,7 @@ final readonly class TaskProvisionIntent
                     'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
-                    'setup' => $setup],
+                    'setup' => $setup, 'access' => self::access($routeInput, $node->id)],
                 'fleet' => TaskVmReadyCopiesIntent::fleet(), 'converge' => $converge,
                 'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
                 'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
@@ -171,13 +172,13 @@ final readonly class TaskProvisionIntent
     }
 
     /**
-     * "Converge once" of stage 2: the task VM role phases on the outer VM, with the NFS export of its checkout to the nested network, run
+     * "Converge once" of stage 2: the task VM role phases on the outer VM, with Incus and the nested network, run
      * before the fleet starts. The guest's host key is pinned by this run's VM step, so its SSH target carries `host_keys: null` until then.
      *
      * @param  array<string,mixed>  $input  the VM intent
      * @return array<string,mixed>|null null for a task without a topology
      */
-    private function converge(TaskVm $vm, Node $node, string $checkout, array $input): ?array
+    private function converge(TaskVm $vm, Node $node, array $input): ?array
     {
         $create = $input['create'] ?? null;
         if (! is_array($create) || ($create['topology'] ?? false) !== true) {
@@ -185,7 +186,7 @@ final readonly class TaskProvisionIntent
         }
 
         return app(PendingSshHostKey::class)->during($node->id, fn (): array => app(TaskVmConvergeIntent::class)->provisioning($vm,
-            ['checkout' => $checkout, 'subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
+            ['subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
     }
 
     private function assertProvisionable(Task $group): void
@@ -199,5 +200,26 @@ final readonly class TaskProvisionIntent
         if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
             throw TaskGroupGuard::alreadyClaimed();
         }
+    }
+
+    /**
+     * The guest's rows of the Route's Caddy access, as argv lists. The workspace step runs them after the fetch and before the setup
+     * steps write into the tree, so what the setup creates inherits the default entries; the Route then skips them for the guest.
+     * None when the Route also writes an APP_URL line on the guest, which only exists after the setup steps: the Route keeps both.
+     *
+     * @param  array<string,mixed>|null  $route
+     * @return list<list<string>>
+     */
+    private static function access(?array $route, int $guestNodeId): array
+    {
+        $create = $route === null ? [] : ValidatedData::object($route['route_create'] ?? []);
+        $guest = static fn (mixed $row): bool => ValidatedData::integer(ValidatedData::object($row)['node_id']) === $guestNodeId;
+        if (array_filter(is_array($create['url_lines'] ?? null) ? $create['url_lines'] : [], $guest) !== []) {
+            return [];
+        }
+        $rows = is_array($create['acl'] ?? null) ? $create['acl'] : [];
+
+        return array_values(array_map(static fn (mixed $row): array => ValidatedData::stringList(ValidatedData::object($row)['argv']),
+            array_filter($rows, $guest)));
     }
 }

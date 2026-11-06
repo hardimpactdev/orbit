@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
-  - apps/gateway/database/migrations/2027_01_22_000000_create_route_publication_holds_table.php
+  - apps/gateway/database/migrations/*route_publication_holds*.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
@@ -83,7 +83,7 @@ Renewal stays a hand procedure. When an alert names a worker token, follow the [
 
 Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 30 seconds for setup or destroy. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.
 
-The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create`, `instance.destroy` and `instance.deploy` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The deploy admission sets the frozen deploy step timeouts plus 900 seconds. The Gateway does not re-read the Project.
+The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationBudgetTable` reads `instance.create`, `instance.destroy` and `instance.deploy` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The deploy admission sets the frozen deploy step timeouts plus 900 seconds. The Gateway does not re-read the Project.
 
 An explicit kind budget wins. Long-running kinds have a fixed budget in the same table: the 14-day p95 of successful runs, rounded up to the next five minutes. For example, `task_vm.image_build` has 3,600 seconds and `node.converge` 3,900 seconds. A kind without a successful run gets an explicit budget only from the measured work of a real run. For example, `cluster.router_set` and `cluster.router_unset` have 3,900 seconds. That is 1.5 times the 2,417 seconds of work in their only run, rounded up to five minutes. A first success replaces it with a p95. The create fallback is 60 seconds when no captured phase budget exists. Clients cannot choose the captured budget.
 
@@ -109,7 +109,7 @@ The workflows set the captured number as the native `timeoutSec` of each of thei
 
 The other task VM workflows (`task-workspace-source`, `task-vm-workspace`, `task-approved-push` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
 
-The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, `composer install` where lock files differ from the seed (31 to 35 seconds for five) and the memory snapshot `base` (about 19 seconds); 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
+The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, and `composer install` where lock files differ from the seed (31 to 35 seconds for five). The plain snapshot `base` takes a fraction of a second. 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
 `proof.command` has a provisional 3,600 seconds, and `proof.run` 3,900. They have no run yet. A run proves one command in its own task VM through the workflow `operation-proof-run`: the task provision, then the cases through `proof-fleet-verify`, then the destruction of the VM.
 
@@ -393,6 +393,8 @@ An operation holds its target from the start request to its terminal status. A s
 
 A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.destroy`, `instance.clone`, `instance.transfer`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
+Task provision and cancel, `instance.register` and the Cluster Router writes hold the same Nodes for one step only. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
+
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts. A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes.
 
 ## Errors
@@ -583,6 +585,11 @@ transfer intent. Node, scope, domain and `root_hash` come from that stored inten
 The request cannot supply a domain, root or signing policy. A current leaf returns
 no new bundle. Node removal selects its admitted restoration leaves only when
 `restoring` is true.
+
+A leaf is signed while its Node is `active`. The Node that a `node.add` adds is also signed while it
+is `provisioning`. So is the new guest Node of a `tasks.provision` (`guest_node_id`). The Gateway
+activates a guest only when it applies the provision result, and that is after the Route step has
+asked for the leaf.
 
 For registered `websocket.app_attach` and `websocket.app_detach` parents, signing reads only `websocket_attachment.route_mutations.forward.prepare_certificates` and `websocket_attachment.route_mutations.forward.certificates`. Restoration reads only `websocket_attachment.route_mutations.restore.certificates`. Other containers and the opposite phase grant no authority. Route children carry the actual parent run ID; the Operation and its bound run still scope every request.
 

@@ -13,6 +13,8 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, enum: [tasks.cancel, tasks.maintenance_finish]}
+    # The root run of the Operation, passed by a parent run (the proof run); a run the Gateway starts is the root.
+    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
       type: object
     execution_secrets:
@@ -56,6 +58,28 @@ jobs:
         run_id: ${{ run.id }}
         intent: '${{ inputs.intent.push == null ? {} : inputs.intent.push }}'
         execution_secrets: '${{ inputs.intent.push == null ? {} : {"github_token": inputs.intent.push.github_token} }}'
+  - name: Hold the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ size(inputs.intent.workspace_routes) == 0 || has(inputs.run_id) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-acquire" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Push approved work
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
   - name: Withdraw the Route
     labels: {role: swamp}
     guard: ${{ size(inputs.intent.workspace_routes) == 0 }}
@@ -76,6 +100,34 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
+    - step: Hold the Route Nodes
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: Release the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ !("Hold the Route Nodes" in steps) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-release" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Hold the Route Nodes
+      condition:
+        type: always
   - name: Run teardown steps
     labels: {role: swamp}
     # Teardown steps are admitted only while the VM is ready; a parked or stopped VM has none.
@@ -93,6 +145,8 @@ jobs:
     - step: Push approved work
       condition: *done
     - step: Withdraw the Route
+      condition: *done
+    - step: Hold the Route Nodes
       condition: *done
   - name: Destroy the task VM
     labels: {role: swamp}
@@ -112,6 +166,8 @@ jobs:
     - step: Withdraw the Route
       condition: *done
     - step: Run teardown steps
+      condition: *done
+    - step: Hold the Route Nodes
       condition: *done
   - name: Check the VM is gone
     labels: {role: swamp}

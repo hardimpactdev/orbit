@@ -27,11 +27,23 @@ Deno.test("the package result captures the token outcome from a step that runs t
     assertEquals(reporter?.task?.methodName, "revoke");
 });
 
-Deno.test("the provision receipt reads the same reporting step from the remove child, and skips it when nothing was written", async () => {
-    const source = await workflow("task-workspace-source");
-    const remove = steps(source, "source").find((candidate) => candidate.name === "deps_remove");
+Deno.test("provision asks for the token beside the clone credential, writes both files in one stage, and revokes beside the removal", async () => {
+    const source = steps(await workflow("task-workspace-source"), "source");
+    const byName = Object.fromEntries(source.map((step) => [step.name, step]));
+    const needs = (name: string) => ((byName[name] as unknown as { dependsOn?: { step: string }[] }).dependsOn ?? []).map((edge) => edge.step);
 
-    assertEquals(remove?.task?.workflowIdOrName, "task-dependency-auth-remove");
+    assertEquals(byName.deps_mint.task?.workflowIdOrName, "task-github-mint");
+    assertEquals(needs("deps_mint"), ["control"]);
+    assertEquals(byName.deps_revoke.task?.behaviorType, "command/shell");
+    // The two writes depend on the same steps, so one barrier covers both; neither waits for the other.
+    assertEquals(needs("deps_write_composer"), needs("deps_write_npm"));
+    assert(!needs("deps_write_npm").includes("deps_write_composer"), "the npm write must not wait for the composer write");
+    // The removal and the revoke wait for the mint themselves: their guard reads it, and a skipped write must not let them be skipped early.
+    for (const name of ["deps_remove_files", "deps_revoke"]) {
+        assert(needs(name).includes("deps_mint") && needs(name).includes("deps_clear"), `${name} must name the mint and the clear as dependencies`);
+    }
+    // The removal and the revoke are siblings: the revoke does not wait for the files to go.
+    assert(!needs("deps_revoke").includes("deps_remove_files") && !needs("deps_remove_files").includes("deps_revoke"));
     const text = await Deno.readTextFile(new URL("workflow-task-workspace-source.yaml", workflows));
-    assert(text.includes('guard: ${{ !("deps_write" in steps) }}'), "deps_remove must be skipped when deps_write never ran");
+    assertEquals(text.split('guard: ${{ !("deps_mint" in steps) }}').length - 1, 2, "the removal and the revoke are skipped when no token was asked for");
 });

@@ -72,8 +72,11 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `packages` | One Tool Manager's packages, named by the manager in `subject`. See [Packages](#packages). | every 60 seconds |
 | `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
 | `env_keys` | One Instance `.env`, named by its path in `subject`: its `kind`, its key names in `keys`, and `testing_tracked`. See [Environment key names](#environment-key-names). | every 60 seconds |
+| `accounts` | The local accounts of the Node: each `user`, `uid`, primary `group`, `home` and `shell`, as `/etc/passwd` and `/etc/group` hold them. See below. | every 60 seconds |
 
 `ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
+
+`accounts` lists the accounts of `/etc/passwd` in uid order, at most 512, each with the name of its primary group from `/etc/group`. The agent leaves out an entry that has no group, a name that is not a plain account name, or a home or shell that is not an absolute path without control characters. It reads two files and starts no program. A later change moves the lookup of an account, such as a Process user or the Node's managed user, from the agent command `account.lookup` to this fact. Agents before 0.12.0 send no `accounts` fact.
 
 `units` lists each `orbit-process-*` unit, each Process container, and each role service and Process unit from the [watch list](#watch-list). `docker` is `available` or `absent`. A systemd unit also has its `load` and `sub` state; one that is not installed reads `not-found`. `awake` lists the watched awake markers that exist. Agents before 0.10.0 send neither `load`, `sub` nor `awake`.
 
@@ -81,7 +84,7 @@ The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space mov
 
 The agent sends a fact when it changed, and again every 10 minutes.
 
-A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. The retry sends the data of the failed read and reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
+A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. A refusal that sending again cannot change, such as a `422` for a kind an older Gateway does not know, is not sent again before the next regular read. The retry sends the data of the failed read and reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
 
 The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
 
@@ -245,7 +248,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-Gateway releases and desired fleet state use the pinned `cli-v0.9128.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
+Gateway releases and desired fleet state use the pinned `cli-v0.9830.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. `orbit:bootstrap` records that identity, and with `--operator-ip` the roleless `operator` Node, from the Gateway's own code and runs no agent command; until it has, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
@@ -569,7 +572,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Every Gateway release uses the pinned `cli-v0.9128.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
+Every Gateway release uses the pinned `cli-v0.9830.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {
@@ -614,6 +617,8 @@ The converge intent carries the Node's roles, the agent key verifier and the foo
 The `ai-router` part on the collector Node has no step: it only versions that Node by its agent pin, the ai-router extension runs the collector itself, and the part counts as applied with the agent. Its Route residue part re-applies the Router LAN rules the Node's sites need. It migrates no rules: every Node finished the one-time LAN migration. The `caddy-package` footprint part carries the same SHA-256 package pin for `node:converge`, which installs it through the shared `node-caddy-package` workflow.
 
 The converge never writes the secret. Its end check is one `sha256sum --check` against the Gateway's hashes: the pinned binary, the recorded verifier and the agent's files. A missing or mismatched secret fails the converge with the agent part unapplied; [`orbit:node-agent-rekey`](#make-a-new-agent-key) makes a new one. A passing converge clears the Node's recorded failed pin. The role parts run beside the agent part in their own steps, and the Gateway reads each one's outcome from Swamp's run data; [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists them. `agent.remove` stops the agent and removes its unit, binary, and directory.
+
+The unit starts after `network-online.target` and `wg-quick@orbit.service`, so the first request to the Gateway finds the tunnel. Without that order, a Node that boots first waits for the 10 second connect timeout before its first report.
 
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, one read-only bind for each Tool Manager state path under `/home` (the Vite+ home and `/home/linuxbrew/.linuxbrew`) and one for each production home, `SupplementaryGroups=orbit-env`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 

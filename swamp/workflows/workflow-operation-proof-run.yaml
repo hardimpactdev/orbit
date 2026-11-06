@@ -131,6 +131,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.intent.cancel.node_id }}
         kind: tasks.cancel
+        run_id: ${{ run.id }}
         intent: ${{ inputs.intent.cancel.intent }}
         execution_secrets: ${{ inputs.intent.cancel.execution_secrets }}
   # The verdict lines of the command, one JSON object a line. The Gateway reads this step once, when the run ends.

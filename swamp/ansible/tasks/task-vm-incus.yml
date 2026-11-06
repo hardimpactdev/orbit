@@ -1,7 +1,7 @@
 ---
 # Incus on a task VM, initialised once: a directory storage pool, the default profile's root disk and, on a task VM, the nested
-# network. intent.nfs names the nested subnet and the bridge (see task-vm-nfs.yml); it is null on an image, which gets the pool and
-# the root disk only, because the subnet belongs to a task VM. The nested VMs are launched by Swamp steps into this network.
+# network. intent.nested names the nested subnet and the bridge; it is null on an image, which gets the pool and
+# the root disk only, because the subnet belongs to a task VM. The nested containers are launched by Swamp steps into this network.
 - name: Read the Incus storage pools
   ansible.builtin.command: { argv: [incus, storage, list, --format, csv] }
   register: incus_pools
@@ -15,10 +15,13 @@
     incus_seed_disk: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed
     incus_pool_missing: "{{ incus_pools.stdout_lines | select('match', '^default,') | list | length == 0 }}"
     incus_network_missing: >-
-      {{ intent.nfs is not none and (incus_networks.stdout_lines | select('match', '^' ~ intent.nfs.interface ~ ',') | list | length == 0) }}
+      {{ intent.nested is not none
+         and (incus_networks.stdout_lines | select('match', '^' ~ intent.nested.interface ~ ',')
+              | list | length == 0) }}
     # The bridge takes the first address of the nested subnet.
     incus_bridge: >-
-      {{ (intent.nfs.subnet.split('/')[0].split('.')[:3] + ['1']) | join('.') ~ '/' ~ intent.nfs.subnet.split('/')[1] if intent.nfs is not none else '' }}
+      {{ (intent.nested.subnet.split('/')[0].split('.')[:3] + ['1']) | join('.') ~ '/' ~ intent.nested.subnet.split('/')[1]
+         if intent.nested is not none else '' }}
 - name: Initialise Incus
   when: incus_pool_missing or incus_network_missing
   ansible.builtin.command: { argv: [incus, admin, init, --preseed] }
@@ -30,24 +33,24 @@
     root_disk:
       - { name: default, devices: { root: { path: /, pool: default, type: disk } } }
     network:
-      - name: "{{ intent.nfs.interface | default('') }}"
+      - name: "{{ intent.nested.interface | default('') }}"
         type: bridge
         config: { ipv4.address: "{{ incus_bridge }}", ipv4.nat: "true", ipv6.address: none }
     preseed: >-
       {{ ({'storage_pools': pool, 'profiles': root_disk} if incus_pool_missing | bool else {})
          | combine({'networks': network} if incus_network_missing | bool else {}) }}
   changed_when: true
-# The topology seed disk of a task VM holds the ready copies of the nested fleet as Incus volumes on a btrfs file system. Incus does not
+# The topology seed disk of a task VM holds the ready copies of the nested fleet (system containers) as Incus volumes on a btrfs file system. Incus does not
 # know the pool in a fresh VM, so this attaches it, and every command is bounded well under the phase.
 # - A blank disk gets the pool with `incus storage create`. Incus refuses to format a disk that holds a file system, so that path
 #   never overwrites a seed.
-# - A disk with a btrfs file system is mounted first and tidied. Only `node-template` and the three `fleet-ready-*` copies are
-#   self-contained. Any other instance of an old seed (an earlier nested fleet, an operator VM of an old proof) names networks that this
+# - A disk with a btrfs file system is mounted first and tidied. Only the VM `node-template` and the three `fleet-ready-*` container
+#   copies are self-contained. Any other instance of an old seed (an earlier nested fleet, an operator VM of an old proof) names networks that this
 #   VM lacks, and `incus admin recover` then waits for the networks forever. The seed disk is a clone that belongs to this VM, so
 #   those instances go before `incus admin recover` reads the pool: recover a pool named topology-seed on btrfs from the disk, no
 #   further property, no further pool, scan, recover what it found.
 - name: Look for the topology seed disk
-  when: intent.nfs is not none
+  when: intent.nested is not none
   ansible.builtin.stat: { path: "{{ incus_seed_disk }}" }
   register: incus_seed
 # A task image made from a refresh VM carries that VM's Incus database: the pool topology-seed and the records of the ready copies it held
@@ -55,13 +58,13 @@
 # `user.ready.format`). Before a nested guest exists, the records of the seed pool are forgotten; the recovery below reads the disk again.
 # The data stays on the disk: only database rows go.
 - name: Look for nested guests
-  when: intent.nfs is not none
+  when: intent.nested is not none
   ansible.builtin.command: { argv: [incus, list, "nested-", --format, csv, --columns, n] }
   register: incus_nested
   changed_when: false
 - name: Forget the stale records of the topology seed pool
   when: >-
-    intent.nfs is not none and incus_seed.stat.exists and (incus_nested.stdout_lines | length == 0)
+    intent.nested is not none and incus_seed.stat.exists and (incus_nested.stdout_lines | length == 0)
     and (incus_pools.stdout_lines | select('match', '^topology-seed,') | list | length > 0)
   ansible.builtin.command: { argv: [incus, admin, sql, global, "{{ item }}"] }
   loop:
@@ -75,9 +78,11 @@
 - name: Work out whether the topology seed pool is missing
   ansible.builtin.set_fact:
     incus_seed_attach: >-
-      {{ intent.nfs is not none and incus_seed.stat.exists and (incus_pools_now.stdout_lines | select('match', '^topology-seed,') | list | length == 0) }}
+      {{ intent.nested is not none and incus_seed.stat.exists and (incus_pools_now.stdout_lines | select('match', '^topology-seed,') | list | length == 0) }}
     incus_seed_mount: /run/orbit-seed-tidy
-    incus_seed_keep: '^(node-template|fleet-ready-(gateway|app-dev|app-prod))$'
+    # The VM template and the container copies of the fleet; the folders of their snapshots stay, the snapshots go.
+    incus_seed_keep: '^(virtual-machines/node-template|containers/fleet-ready-(gateway|app-dev|app-prod))$'
+    incus_seed_keep_snapshots: '^(virtual-machines-snapshots/node-template|containers-snapshots/fleet-ready-(gateway|app-dev|app-prod))$'
 - name: Read the file system of the topology seed disk
   when: incus_seed_attach | bool
   ansible.builtin.command: { argv: [timeout, "30", blkid, --output, value, --match-tag, TYPE, "{{ incus_seed_disk }}"] }
@@ -106,14 +111,14 @@
     - name: Delete the instances that are not ready copies
       ansible.builtin.command: { argv: [timeout, "120", btrfs, subvolume, delete, "{{ incus_seed_mount }}/{{ item }}"] }
       loop: >-
-        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path ', '') | select('match', '^virtual-machines(-snapshots)?/')
-           | reject('match', '^virtual-machines/(node-template|fleet-ready-(gateway|app-dev|app-prod))$') | list }}
+        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path ', '') | select('match', '^(virtual-machines|containers)(-snapshots)?/')
+           | reject('match', incus_seed_keep) | list }}
       changed_when: true
     - name: Delete the folders of the snapshots they had
-      ansible.builtin.file: { path: "{{ incus_seed_mount }}/virtual-machines-snapshots/{{ item }}", state: absent }
+      ansible.builtin.file: { path: "{{ incus_seed_mount }}/{{ item }}", state: absent }
       loop: >-
-        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path virtual-machines-snapshots/([^/]+)/.*$', '\1')
-           | select('match', '^[^ /]+$') | reject('match', incus_seed_keep) | unique | list }}
+        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path ((virtual-machines|containers)-snapshots/[^/]+)/.*$', '\1')
+           | select('match', '^(virtual-machines|containers)-snapshots/[^ /]+$') | reject('match', incus_seed_keep_snapshots) | unique | list }}
   always:
     - name: Unmount the topology seed
       ansible.builtin.command: { argv: [timeout, "60", umount, "{{ incus_seed_mount }}"] }

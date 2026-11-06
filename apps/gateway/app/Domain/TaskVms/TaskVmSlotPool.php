@@ -7,12 +7,10 @@ namespace App\Domain\TaskVms;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\TaskVms\RecordTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmDestroyAction;
-use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
-use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
@@ -52,13 +50,12 @@ final readonly class TaskVmSlotPool
         private TaskVmConvergeIntent $converge,
         private TaskVmEnrollmentIntent $enrollment,
         private StartOperationAction $start,
-        private StorageRootResolver $roots,
-        private NodeSettingsNormalizer $nodeSettings,
         private PendingSshHostKey $pendingKeys,
         private StartTaskVmDestroyAction $destroy,
         private RecipeImageBuilds $recipes,
         private SwampSshExecutionInput $ssh,
         private TaskVmFleetSeed $seeds,
+        private AgentDelivery $agents,
     ) {}
 
     /** Runs the refill rule of the host; returns the Operation it started, or null when the pool needs nothing now. */
@@ -185,6 +182,14 @@ final readonly class TaskVmSlotPool
             'slot' => ['receipt' => [...$receipt, 'result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]];
     }
 
+    /** Whether the slot's enrol installed another agent than the current pin: a release changed the pin since. */
+    private function otherAgent(TaskVm $vm): bool
+    {
+        $installed = $this->enrolOf($vm)?->input['agent_sha256'] ?? null;
+
+        return is_string($installed) && $vm->node instanceof Node && $installed !== $this->agents->pin($vm->node);
+    }
+
     /** The succeeded enrol of a slot, whose intent and receipt its claim reuses. */
     private function enrolOf(TaskVm $vm): ?Operation
     {
@@ -194,7 +199,8 @@ final readonly class TaskVmSlotPool
 
     /**
      * Whether a ready slot can no longer serve a claim: no setting, another Project or size, an image that is not the
-     * host's last promoted image, or older than {@see self::MaxAgeHours}. An unknown current image makes no slot stale,
+     * host's last promoted image, older than {@see self::MaxAgeHours}, or an enrol that installed another agent than the
+     * current pin. An unknown current image makes no slot stale,
      * so a missing promotion record never drains the pool.
      *
      * @param  array{build_id:int,fingerprint:string,recipe_identity:string}|null  $current
@@ -203,7 +209,7 @@ final readonly class TaskVmSlotPool
     {
         return $setting === null || $vm->slot_project_id !== $setting->projectId || $vm->size !== $setting->size
             || ($current !== null && $vm->image_build_id !== $current['build_id'])
-            || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours));
+            || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours)) || $this->otherAgent($vm);
     }
 
     /**
@@ -228,15 +234,6 @@ final readonly class TaskVmSlotPool
         return $build === null ? null : ['build_id' => $build->id, ...$image];
     }
 
-    /** The checkout path of a Project's workspace on a task VM: `<apps root>/<project slug>/workspace`, as `tasks:provision` names it. */
-    public function checkoutPath(Node $guest, Project $project): string
-    {
-        $account = new ManagedUserAccount($guest->user, $guest->user, '/home/'.$guest->user);
-
-        return $this->roots->resolveApps($this->nodeSettings->fromStored($guest->settings), $account)
-            ->append($project->slug)->append(TaskVmWorkspaceGuard::WorkspaceCheckout)->value;
-    }
-
     /** The digest of what a task image carries in the release this Gateway runs: playbooks, pins and lock files. */
     public function releaseDigest(): string
     {
@@ -259,9 +256,9 @@ final readonly class TaskVmSlotPool
         $input = $this->provision->capture($vm);
         $guest = $vm->refresh()->node;
         assert($guest instanceof Node);
-        // "Converge once" of the enrol: the task VM role phases, with the nested network and the NFS export of the Project's checkout path.
+        // "Converge once" of the enrol: the task VM role phases, with the nested network.
         $input['converge'] = $this->pendingKeys->during($guest->id, fn (): array => $this->converge->provisioning($vm,
-            ['checkout' => $this->checkoutPath($guest, $project), 'subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
+            ['subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
 
         return $this->start->execute(self::EnrolKind, 'task_vm', $vm->id, ValidatedData::integer($input['node_id']), $input, 'task-vm-slots', null);
     }

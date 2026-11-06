@@ -82,6 +82,34 @@ jobs:
         nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
       inputs: {}
     # Per Node: certificates and the prepared Caddyfile with the candidate's Router sites (route-create-site).
+  - name: Hold the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-acquire" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Prepare the Router
+      condition:
+        type: always
+    - step: Request the certificates
+      condition:
+        type: always
+    - step: Sign the CSRs
+      condition:
+        type: always
+    - step: Open LAN paths
+      condition:
+        type: always
   - name: 'Install certs, publish'
     labels: {role: swamp}
     dependsOn:
@@ -89,6 +117,7 @@ jobs:
     - {step: 'Request the certificates', condition: {type: always}}
     - {step: 'Sign the CSRs', condition: {type: always}}
     - {step: 'Open LAN paths', condition: {type: always}}
+    - {step: Hold the Route Nodes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.publish.site_nodes.map(n, {"node_id": n}) }}'}
@@ -100,6 +129,28 @@ jobs:
         node_id: '${{ self.node.node_id }}'
         signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSRs-" + string(i)].outputs.sign.stdout) }}'
         execution_secrets: {}
+  - name: Release the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ !("Hold the Route Nodes" in steps) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-release" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Install certs, publish
+      condition:
+        type: always
+    - step: Hold the Route Nodes
+      condition:
+        type: always
     # From the candidate over the LAN: each Route workload answers with a chain the Orbit root trusts.
   - name: 'Probe the workloads'
     labels: {role: swamp}
@@ -150,6 +201,46 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
     # The old Router's lasting Caddyfile, certificates and the LAN rules only it needed (route-target-retire).
+  - name: Hold the Nodes to retire
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ size(inputs.intent.retire_nodes) == 0 || steps.exists(k, steps[k].status == "failed") }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-acquire-retire" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Release the Route Nodes
+      condition:
+        type: always
+    - step: Prepare the Router
+      condition:
+        type: always
+    - step: Request the certificates
+      condition:
+        type: always
+    - step: Sign the CSRs
+      condition:
+        type: always
+    - step: Open LAN paths
+      condition:
+        type: always
+    - step: Install certs, publish
+      condition:
+        type: always
+    - step: Probe the workloads
+      condition:
+        type: always
+    - step: Select the Router in DNS
+      condition:
+        type: always
   - name: 'Retire the old Router'
     labels: {role: swamp}
     dependsOn:
@@ -160,6 +251,7 @@ jobs:
     - {step: 'Install certs, publish', condition: {type: always}}
     - {step: 'Probe the workloads', condition: {type: always}}
     - {step: 'Select the Router in DNS', condition: {type: always}}
+    - {step: Hold the Nodes to retire, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
@@ -174,6 +266,28 @@ jobs:
         node_id: '${{ self.node.node_id }}'
         signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSRs-" + string(i)].outputs.sign.stdout) }}'
         execution_secrets: {}
+  - name: Release the retired Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ !("Hold the Nodes to retire" in steps) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-release-retire" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Retire the old Router
+      condition:
+        type: always
+    - step: Hold the Nodes to retire
+      condition:
+        type: always
     # Only when preparing or publishing failed: the before Caddy, LAN and DNS state (cluster-router-revert).
   - name: 'Restore the before state'
     labels: {role: swamp}
@@ -186,7 +300,7 @@ jobs:
     - {step: 'Probe the workloads', condition: {type: always}}
     - {step: 'Select the Router in DNS', condition: {type: always}}
     - {step: 'Retire the old Router', condition: {type: always}}
-    guard: '${{ !steps.exists(k, steps[k].status == "failed" && !k.startsWith("Retire the old Router")) }}'
+    guard: '${{ !steps.exists(k, steps[k].status == "failed" && !k.startsWith("Retire the old Router") && !k.startsWith("Hold the Nodes to retire") && !k.startsWith("Release the retired Nodes")) }}'
     writes: true
     task:
       type: workflow

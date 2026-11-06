@@ -100,31 +100,8 @@ def build_node_add(folder):
                                          'secrets': secrets, 'hub_files': hub_files}) + '\n')
 
 
-def build_gateway_release(folder, kind):
-    """The inventory, known hosts and variables of a Gateway release. The Gateway Node is reached with its pinned host key; Swamp is local."""
-    folder = Path(folder)
-    intent = json.loads((folder / 'intent.json').read_text())
-    ssh = intent['ssh']
-    target = ssh['target']
-    hosts = {'swamp': {'ansible_connection': 'local', 'ansible_python_interpreter': '{{ ansible_playbook_python }}'},
-             'gateway-node': {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
-                         'ansible_ssh_private_key_file': ssh['identity_file']}}
-    secrets = {}
-    for path in folder.glob('secret-*'):
-        secrets[path.name.removeprefix('secret-')] = path.read_text()
-        path.unlink()
-    inventory = {'all': {'hosts': hosts, 'children': {'gateway': {'hosts': {'gateway-node': {}}}, 'controller': {'hosts': {'swamp': {}}}}}}
-    (folder / 'inventory.yml').write_text(json.dumps(inventory))
-    (folder / 'known_hosts').write_text(''.join(line + '\n' for line in sorted(known_host_lines(target))))
-    # The SSH blocks belong to the Swamp steps that still use them; the playbook gets the rest.
-    kept = {key: value for key, value in intent.items() if key not in ('ssh', 'swamp_ssh')}
-    (folder / 'vars.yml').write_text(unsafe({'intent': kept, 'kind': kind, 'secrets': secrets}) + '\n')
-
-
 def build(folder, kind):
     os.umask(0o077)
-    if kind == 'gateway.release':
-        return build_gateway_release(folder, kind)
     if kind == 'node.add':
         return build_node_add(folder)
     if kind in TASK_VM_KINDS:

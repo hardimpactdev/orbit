@@ -14,14 +14,22 @@ sequenceDiagram
   participant VM as Proof task VM<br/>nested topology
   CLI->>GW: proof:run COMMIT
   %%> The CI job on a beast or shark runner, or a person, passes only the commit SHA.
+  Note over GW: Record the proof<br/>one insert · queue the admission
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the request records the proof Operation (commit, options, no runs yet), queues the admission job and answers 202 at once; it reads no GitHub, takes no lock and starts nothing
+  %%> - why: the request used to do all of the admission and hand the runs to Swamp one after another, which took 40 to 66 s, and a release that reloads PHP-FPM (`process_control_timeout` 30 s) ended it in the middle (proof.run 12343). A queue job is drained by the release with the Horizon workers, which it already waits for
+  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `tasks.capacity_unavailable`, `ai_router.keys_busy`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
+  %%> - the job runs on the `tasks` queue (three workers), not on `operations`, whose one worker settles every Operation
+  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> The CLI follows the proof and reads the refusal, the verdicts or the receipt from it.
   Note over GW: Check the commit<br/>orbit branch or approved PR
-  %%> Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
+  %%> Runs in the admission job. Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
   Note over GW: Select the cases<br/>diff · selection.txt
   %%> Docs-only changes end here: skipped, nothing to prove.
   Note over GW: Record intent<br/>proof group + full inputs
   %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
   %%> - the intent of each run also holds `head` and `merge_base`, for the proof that a new case fails on the merge base (stage 3 chart)
-  GW-->>CLI: 202 Accepted<br/>task ID
+  %%> - each run starts with the check of the head (stage 3 chart, "Check the head"): `proof.head_behind_platform` when the head lacks a platform change that main has, `proof.sync_needed` when the proof VM has no `origin/main` to compare with; not built yet
   GW->>SW: Start one run per command<br/>operation-proof-run · parallel
   %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
   %%> Built:
@@ -32,13 +40,28 @@ sequenceDiagram
   %%> - the Gateway closes `proof.run` from the records of the runs and runs nothing; it passes only when every run passed
   %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers `tasks.capacity_unavailable`, even when a skipped host has free slots
   %%> - if one run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` fails with the reason
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - a run started with `--report-only` (the report-only proof CI job) yields capacity to task and proof work: its VMs are admitted only on a host that keeps the slots of one large VM free after them, and it never overflows to UpCloud. With less room it fails at admission with `tasks.capacity_unavailable`, whose message names the reserve, and starts nothing. It uses the same admission as every run, with the free slots reduced; no queue and no loop
+  %%> - why: two report-only proofs of a Swamp unit change started a run for every case, filled the host and made the Gateway refuse a critical-path proof; the report-only job never has to win capacity
+  %%> - the flag goes when the proof CI becomes a required check
+  %%> - a report-only VM is always a clone (it claims no ready slot), so a host of 6 slots, such as beast, takes one only when idle (one per idle host); a report-only proof of more commands fails at admission and the job goes red, which is acceptable for a job that is not required
+  %%> - the reserve keeps one large VM free; a critical proof of several commands, which admits one large VM for each, can still be refused while report-only VMs run, and nothing queues
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06; inferred from the records of the stall of proof.run 12343, with no Gateway log):
+  %%> - what happened: the `proof:run` request ended (activity `activity.interrupted`) while it admitted; it overlapped Gateway release 1737. The groups and the `proof.command` Operations had committed, but the request did not start their Swamp runs or write the run list into `proof.run`. The proof stayed `running` with `runs: []`, because nothing watches a `proof.run`, and it held the admission lock until the lock's 600 s limit
+  %%> - the runs of a proof are the `proof.command` Operations whose input names the proof (`proof_operation_id`); the Gateway reads, settles and cancels them by that key, never from a list in the proof and never by commit, title or kind
+  %%> - the run list is written inside the admission transaction, with the groups, so it commits with them; the transaction first checks that the proof is still open, so a proof that the watchdog ended admits nothing
+  %%> - the admission lock is owned by the proof (`proof.run:ID`), so the proof can free it
+  %%> - two cases, kept apart. (a) The request is gone: no Swamp run was started and nothing is left to start one. (b) A run waits: it has a Swamp run, which has its own budget, and it is never touched by (a)
+  %%> - (a) is detected from the absence of the request, not from the age of a run: a proof with no run 300 s after it started (the job may wait in the queue, the lock wait is 60 s and admission takes about a minute); a proof whose runs have all been quiet for 300 s while some were never handed to Swamp (the job hands them over one after another and each hand-over is answered within 120 s). The reconcile pass then ends the unstarted runs with `proof.admission_interrupted`, cancels their groups, closes the proof and frees the lock the proof owns (a lock that another admission or a teardown holds stays)
+  %%> - (b) does not exist before the run is handed to Swamp: capacity is decided at admission and refused at once with `tasks.capacity_unavailable` (`AllocateTaskVmAction::place`, caught in `TaskProvisionIntent::admit`); no scheduler waits for capacity; `capacity_wait_reason` is set only while a parked VM resumes. The generic 600 s admission limit stays as the backstop for an unstarted run and no run is ended earlier because it is slow
+  %%> - not changed here: PHP-FPM reload (`gateway-rollback`) waits `process_control_timeout` (30 s) for requests in flight, so a request longer than that dies at a release; the release flow does not drain or reject HTTP admissions
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
   SW->>VM: Reset and mount<br/>ready copies · the commit
   %%> What it does:
   %%> - Orbit's own Swamp reaches into the task VM over SSH, like every other step, and resets the nested topology from the ready copies
   %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
-  %%> - the nested Gateway and app-dev mount the VM's checkout of the commit over NFS (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
+  %%> - the nested Gateway and app-dev have the VM's checkout of the commit as a disk device (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
   %%> Built, not yet passed live:
   %%> - the reset is the workflow `task-nested-fleet` inside `operation-task-provision` (start from the ready copies, apply, readiness, take `base`); the old direct reset was removed. By 2026-11-06, 12 of 22 fleet starts succeeded; the build of a fleet from scratch (`task_vm.fleet_build`) has not succeeded yet
   opt the commit changes playbooks or pins
@@ -48,9 +71,9 @@ sequenceDiagram
     %%> - the nested Orbit reads the playbooks from the mounted checkout; the proof never resets the outer VM, so this lasts the whole run
     %%> - the base images are not touched; only the merge and the seed refresh change them
   end
-  SW->>VM: Take base<br/>memory snapshot
+  SW->>VM: Take base<br/>snapshot
   %%> What it does:
-  %%> - an Incus stateful snapshot `base` of the three nested VMs, with any converged state in it
+  %%> - a plain Incus snapshot `base` of the three nested containers, with any converged state in it
   %%> - it holds the Club key; accepted because the VM and its snapshots are destroyed after the run
   SW->>VM: Run the proof<br/>child flow · proof-fleet verify
   %%> What it does:
@@ -64,6 +87,7 @@ sequenceDiagram
   %%> Runs after success or failure, so no proof VM is left behind.
   %%> Built:
   %%> - the child `operation-task-cancel` with the input that the Gateway captured with the VM at admission; if it did not run or failed, the Gateway cancels the group the normal way, which destroys the VM
+  %%> - the Gateway cancels the group of a run with the trigger `proof-run`; a group is cancelled only through the Operation that owns it (its `proof.command`, or its image refresh with the trigger `image-refresh`)
   alt every case of every command passes
     SW-->>GW: Run succeeded<br/>verdicts + receipt
     Note over GW: Record the result once<br/>PASS

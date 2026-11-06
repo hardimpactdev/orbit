@@ -15,6 +15,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Infrastructure\WebSocket\WebSocketServiceUnitRenderer;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -117,11 +118,7 @@ final readonly class NativeNodeRoleRelocateInput
 
         return ['user' => $target->user, 'install_path' => $install, 'releases' => $releases, 'release' => $release,
             'repository' => config('orbit.websocket.repository'), 'ref' => config('orbit.websocket.ref'), 'port' => $port,
-            'unit' => ['path' => self::WebSocketUnit, 'content' => implode("\n", ['# Managed by Orbit. Do not edit; the websocket role converge overwrites this file.',
-                '[Unit]', 'Description=Orbit websocket role: Reverb realtime server', 'After=network.target', '',
-                '[Service]', 'Type=simple', 'User='.$target->user, 'WorkingDirectory='.$install,
-                "ExecStart=/usr/bin/php {$install}/artisan orbit:reverb:start --host=127.0.0.1 --port={$port}",
-                'Restart=always', 'RestartSec=1', '', '[Install]', 'WantedBy=multi-user.target', ''])]];
+            'unit' => ['path' => self::WebSocketUnit, 'content' => app(WebSocketServiceUnitRenderer::class)->render($install, $target->user, $target->user, $port)]];
     }
 
     /** A managed DNS peer keeps the resolver policy that peer convergence owns, so it gets no route.

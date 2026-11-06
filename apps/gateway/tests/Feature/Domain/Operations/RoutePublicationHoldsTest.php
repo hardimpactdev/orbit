@@ -238,3 +238,80 @@ it('gives a held waiting write no deadline, and counts the budget of a started o
     expect(OperationRunBudgets::deadline($waiting))->toBeNull()
         ->and(OperationRunBudgets::deadline($running))->not->toBeNull();
 });
+
+it('holds the Nodes of a step-scoped kind only between its hold and its release, and never past the write that waits for them', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$provision, $other] = [routeWrite([5, 6], 'tasks.provision'), routeWrite([6], 'tasks.cancel')];
+
+    expect($holds->holdStep($provision, 0))->toBe([5, 6])
+        ->and(DB::table('route_publication_holds')->where('operation_id', $provision->id)->whereNotNull('lease_until')->count())->toBe(2)
+        ->and($holds->holdStep($other, 0))->toBeNull()
+        ->and($holds->holdStep($provision, 0))->toBe([5, 6]);
+
+    $holds->releaseStep($provision);
+    Queue::assertPushed(PromoteRouteWrites::class);
+
+    expect(DB::table('route_publication_holds')->count())->toBe(0)
+        ->and($holds->holdStep($other, 0))->toBe([6]);
+});
+
+it('does not grant a step hold past a Route write that waits for the same Node, and refuses a kind that holds per Operation', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$holder, $waiter, $register, $create] = [routeWrite([5]), routeWrite([5, 6]), routeWrite([6], 'instance.register'), routeWrite([6])];
+    $holds->admit($holder);
+    $holds->admit($waiter);
+
+    expect($holds->holdStep($register, 0))->toBeNull()
+        ->and($holds->holdStep($create, 0))->toBeNull();
+});
+
+it('frees a step hold when its lease has run out, and when its Operation ends', function (): void {
+    startedOperations();
+    $holds = app(RoutePublicationHolds::class);
+    [$first, $second] = [routeWrite([5], 'instance.register'), routeWrite([5], 'tasks.cancel')];
+    $holds->holdStep($first, 0);
+    DB::table('route_publication_holds')->where('operation_id', $first->id)->update(['lease_until' => now()->subSecond()]);
+
+    expect($holds->holdStep($second, 0))->toBe([5])
+        ->and(DB::table('route_publication_holds')->where('node_id', 5)->value('operation_id'))->toBe($second->id);
+
+    finish($second);
+    expect(DB::table('route_publication_holds')->count())->toBe(0);
+
+    $holds->holdStep($first, 0);
+    DB::table('route_publication_holds')->where('operation_id', $first->id)->update(['lease_until' => now()->subSecond()]);
+    expect($holds->sweep())->toBe(1)
+        ->and(DB::table('route_publication_holds')->count())->toBe(0);
+});
+
+it('finds the Nodes of a step-scoped kind in the Route mutations of its input', function (): void {
+    $cancel = routeWrite([7, 9], 'tasks.cancel', other: [3]);
+    $cancel->forceFill(['input' => ['workspace_routes' => [['route_mutations' => ['forward' => $cancel->input['route_lifecycle']['route_mutations']['forward']]]]]]);
+
+    expect(RoutePublicationHolds::nodes($cancel))->toBe([7, 9])
+        ->and(RoutePublicationHolds::holdsPerStep('tasks.provision'))->toBeTrue()
+        ->and(RoutePublicationHolds::holdsPerStep('route.create'))->toBeFalse()
+        ->and(RoutePublicationHolds::applies('tasks.provision'))->toBeFalse();
+});
+
+it('takes no Node at admission for a kind that holds per step, so two provisions on one Node both start', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$first, $second] = [routeWrite([5], 'tasks.provision'), routeWrite([5], 'tasks.provision')];
+
+    expect($holds->admit($first))->toBeTrue()
+        ->and($holds->admit($second))->toBeTrue()
+        ->and(DB::table('route_publication_holds')->count())->toBe(0)
+        ->and($second->refresh()->status)->toBe(OperationStatus::Queued);
+});
+
+it('renews a step hold that is asked for again after a lost answer, even while a Route write waits for its Node', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$provision, $waiter] = [routeWrite([5], 'tasks.provision'), routeWrite([5, 6])];
+    $holds->holdStep($provision, 0);
+    $holds->admit($waiter);
+    DB::table('route_publication_holds')->where('operation_id', $provision->id)->update(['lease_until' => now()->addSeconds(10)]);
+
+    expect($waiter->refresh()->status)->toBe(OperationStatus::Waiting)
+        ->and($holds->holdStep($provision, 0))->toBe([5])
+        ->and(DB::table('route_publication_holds')->where('operation_id', $provision->id)->value('lease_until'))->toBeGreaterThan(now()->addSeconds(200)->toDateTimeString());
+});

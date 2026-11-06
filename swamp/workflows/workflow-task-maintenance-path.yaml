@@ -1,6 +1,6 @@
 id: 85856d40-df44-408b-92dd-7769c6e6fed3
 name: task-maintenance-path
-# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationBudgetTable::SecondsByKind).
 description: One captured maintenance directory; every task VM action is one official SSH
   exec argv, visible in native history.
 vaults: []

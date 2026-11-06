@@ -39,7 +39,9 @@ sequenceDiagram
   %%> Decided 2026-11-06:
   %%> - the mapping is data in `selection.txt`, one block per command family: its Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, its CLI command and vocabulary files, and its SDK request and response files select every command of the family; code that serves another family stays out, for example the router LAN ingress files
   %%> - a family's block is added with the first cases file of the family, because a path that selects only commands with no cases file starts a proof run that proves nothing; `apps/**` stays `skip` until then
-  %%> - code that every command runs through selects `*`, which runs the cases of every command that has a cases file, so a shared change re-proves what it can break; the shared files are named in the list, and the Operation kind and budget registries are among them, so adding a command to them runs every case
+  %%> - code that every command runs through selects `*`, which runs the cases of every command that has a cases file, so a shared change re-proves what it can break; the shared files are named in the list
+  %%> - a file is chosen by what a change to it can affect: `OperationBudgetTable.php` (the run budget of each kind, one entry per kind, and the serve cap derived from it) is data and selects nothing; the rules that read it (`OperationRunBudgets.php`) and the kind registry stay shared. A change to a Swamp unit, a role template or the manifest touches no command and selects nothing; `everything` stays for a change whose reach is unknown, such as the selection list or the proof runner
+  %%> - the report-only proof CI job yields to task and proof work with `--report-only` (rule and reason: the chart of `proof:run`, `docs/cli/proof/run.mmd`)
   %%> Built:
   %%> - the firewall family (`firewall:allow`, `firewall:deny`, `firewall:list`, `firewall:remove`) and the shared files, checked by Pest tests against the checked-in list
   Note over CI: Fast checks<br/>about 2 minutes

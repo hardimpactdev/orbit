@@ -74,8 +74,8 @@
     remote_src: true
     dest: "{{ swamp_credentials }}/{{ item.worker }}/{{ item.token }}.token"
     owner: root
-    group: root
-    mode: "0600"
+    group: "{{ swamp_user }}"
+    mode: "0640"
   loop:
     - { worker: a, kind: enrollment, token: enrollment }
     - { worker: a, kind: server, token: server }

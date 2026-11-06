@@ -1,13 +1,13 @@
 ---
 # What the nested fleet needs from the task VM's own firewall, which denies incoming and routed traffic by default: the bridge's
-# DHCP and DNS server, the package cache, and the nested VMs' way out. Nothing else is opened; the NFS export has its own rule (task-vm-nfs.yml).
-# intent.nfs is null on an image, which has no nested bridge.
+# DHCP and DNS server, the package cache, and the nested containers' way out. Nothing else is opened; nothing else is served to them.
+# intent.nested is null on an image, which has no nested bridge.
 - name: Allow DHCP, DNS and the package cache from the nested bridge
-  when: intent.nfs is not none
+  when: intent.nested is not none
   community.general.ufw:
     rule: allow
     direction: in
-    interface: "{{ intent.nfs.interface }}"
+    interface: "{{ intent.nested.interface }}"
     proto: "{{ item.proto }}"
     to_port: "{{ item.port }}"
     comment: orbit:task-vm-nested
@@ -19,9 +19,21 @@
     - { proto: tcp, port: "3142" }
   loop_control: { label: "{{ item.proto }}/{{ item.port }}" }
 - name: Route the nested bridge out
-  when: intent.nfs is not none
+  when: intent.nested is not none
   community.general.ufw:
     rule: allow
     route: true
-    interface_in: "{{ intent.nfs.interface }}"
+    interface_in: "{{ intent.nested.interface }}"
     comment: orbit:task-vm-nested
+# The nested VMs of earlier images mounted the checkout over NFS. Their rule goes; absent is the end state.
+- name: Withdraw the NFS rule of the earlier nested VMs
+  when: intent.nested is not none
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: "{{ intent.nested.interface }}"
+    from_ip: "{{ intent.nested.subnet }}"
+    to_port: "2049"
+    proto: tcp
+    comment: orbit:task-vm-nfs
+    delete: true

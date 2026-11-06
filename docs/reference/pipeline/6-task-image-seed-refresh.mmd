@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). When an operator starts it (the release and daily triggers are removed), every task VM host brings its current task image and topology seed up to the release, in parallel, and saves them as the new ones: no build from the recipe; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
+  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). When a release that changed playbooks, pins or lock files, a daily run or an operator starts it, every task VM host brings its current task image and topology seed up to the release, in parallel, and saves them as the new ones: no build from the recipe; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
   %% status: draft
   %% command: development pipeline stage 6 · per-host task image and seed refresh
   %% kind: pipeline.6-task-image-seed-refresh

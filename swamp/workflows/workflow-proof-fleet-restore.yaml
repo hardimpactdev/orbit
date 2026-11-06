@@ -1,7 +1,7 @@
 id: b86db038-a619-468c-9c35-d3d30673b762
 name: proof-fleet-restore
 description: >-
-  Put the nested fleet of a proof task VM back to its `base` snapshot and make it ready and current (stage 3 of the command development pipeline): a stateful restore of the three nested VMs, 45 seconds at most and no retry, the guest clocks, a restart of the task VM's NFS server, the readiness check, then the apply step. Each step is one command over official SSH to the task VM.
+  Put the nested fleet of a proof task VM back to its `base` snapshot and make it ready and current (stage 3 of the command development pipeline): a plain restore of the three nested containers, 45 seconds at most and no retry, a start of the containers, the readiness check, then the apply step. Each step is one command over official SSH to the task VM.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -14,36 +14,44 @@ jobs:
 - name: restore
   labels: {role: swamp}
   steps:
-  # `base` holds the memory of the three nested VMs, so the restore is stateful and brings them back running. The limit is 45 seconds; a restore that takes longer fails the batch.
+  # `base` holds the disks of the three nested containers, not their memory, so the restore is a reboot. The limit is 45 seconds; a restore that takes longer fails the batch.
   - name: 'Restore the base snapshot'
     labels: {role: swamp}
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-restore-the-base-snapshot" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-restore-the-base-snapshot" + "-" + self.role).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh_execution.target.user }}', port: '${{ inputs.ssh_execution.target.port }}', identityFile: '${{ inputs.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: ['timeout', '45', 'incus', 'snapshot', 'restore', '${{ "nested-" + self.role }}', 'base', '--stateful'], timeoutSec: 50}}
-  # A restore puts the guest clocks back to snapshot time; each guest takes the time of the task VM.
-  - name: 'Set the clock'
+      inputs: {hosts: 'name:target', argv: ['timeout', '45', 'incus', 'snapshot', 'restore', '${{ "nested-" + self.role }}', 'base'], timeoutSec: 50}}
+  # A restore of a running container starts it again; a stopped one stays stopped. A container that already runs makes `incus start` exit 1, so the exit code decides nothing: the two steps after it read the state and fail unless it is RUNNING.
+  - name: 'Start the containers'
     labels: {role: swamp}
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-set-the-clock" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-set-the-clock" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '20', 'sh', '-c', 'incus exec "$1" -- date -u -s "@$(date +%s)"', 'sh', '${{ "nested-" + self.role }}'], timeoutSec: 30}}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-start-the-containers" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-start-the-containers" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'start', '${{ "nested-" + self.role }}'], okExitCodes: [0, 1], timeoutSec: 40}}
     dependsOn: [{step: 'Restore the base snapshot', condition: {type: succeeded}}]
-  # The restore brings back each guest's TCP state from the snapshot, while the NFS server of the task VM has moved on: the guest firewall
-  # drops the server's packets as invalid and the hard mount of the checkout hangs. A restart of the server ends the old connections, and the
-  # guests open new ones (proof 12000).
-  - name: 'Restart the NFS server'
+  - name: 'Read the container state'
     labels: {role: swamp}
-    writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-restart-the-nfs-server").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-restart-the-nfs-server").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', sudo: true, argv: ['timeout', '60', 'systemctl', 'restart', 'nfs-server.service'], timeoutSec: 70}}
-    dependsOn: [{step: 'Set the clock', condition: {type: succeeded}}]
+    forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-read-the-container-state" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-read-the-container-state" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'list', '${{ "nested-" + self.role }}', '-c', 's', '-f', 'csv'], timeoutSec: 30}}
+    dependsOn: [{step: 'Start the containers', condition: {type: succeeded}}]
+  - name: 'Check the containers run'
+    labels: {role: swamp}
+    task: {type: assert, expr: '["gateway", "app-dev", "app-prod"].all(role, steps["Read the container state-" + role].outputs.stdout.trim() == "RUNNING")', severity: high, message: A nested container is not running after the restore}
+    dependsOn: [{step: 'Read the container state', condition: {type: succeeded}}]
+  # A container has no guest agent: `cloud-init status --wait` blocks from the first moment of the boot (exit 2 is a finished boot with a recoverable warning).
+  - name: 'Wait for cloud-init'
+    labels: {role: swamp}
+    forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ "nested-" + self.role }}', '--', 'cloud-init', 'status', '--wait'], okExitCodes: [0, 2], timeoutSec: 70}}
+    dependsOn: [{step: 'Check the containers run', condition: {type: succeeded}}]
   # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, shared with the fleet start).
   - name: 'Check readiness'
     labels: {role: swamp}
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.ssh_execution }}'}}
-    dependsOn: [{step: 'Restart the NFS server', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
   # The checkout and the state of the restored fleet run the current code again.
   - name: 'Apply the checkout'
     labels: {role: swamp}

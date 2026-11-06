@@ -24,6 +24,8 @@ The Gateway also runs `orbit:auto-deploy` every minute without overlap for [auto
 
 While task VMs are enabled, the Gateway checks the deployed recipe each minute and queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 10 minutes. The sweep also runs while only the [UpCloud](/reference/compute-drivers#sweep-upcloud) token file is set. The same recipe reconcile queues the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) when UpCloud is configured and no verified template matches the deployed recipe. UpCloud has no separate nightly schedule.
 
+The Gateway also queues the [refresh of the task images](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) of the Linux task VM hosts every day at 03:20 while task VMs are enabled. A host with a refresh open returns it.
+
 While the [fleet rollout](/reference/gateway-recovery#fleet-rollout) is on, the Gateway queues its admission every day at 03:05 Europe/Amsterdam, when the window of the non-daytime Nodes opens. A verified release queues the same admission. The job waits a minute at a time while the commit has no CLI release yet or a rollout runs.
 
 Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).

@@ -693,7 +693,13 @@ Route writes also hold their Nodes (decided by the orchestrator, for Nick's revi
 
 A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
 
-A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed, and the apply phase refuses a file that changed since the read. Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, and they are not held.
+A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed, and the apply phase refuses a file that changed since the read.
+
+Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.
+
+The call is repeated for up to 2 minutes. Then the step fails (the Gateway answered `423 route_hold.busy`) and the Route step does not run. After the Route step the run calls `operation:direct:route-release`, which cannot fail the run. The hold has a 5-minute lease that only a repeated hold call renews, and the end of the Operation frees it too. A Route write that waits for a Node starts before a new hold on that Node is granted.
+
+Three cases are not held yet. A task provision that runs as a child of another Operation (`tasks.prep`, a proof or an image refresh), and a cancel that a proof run starts, keep their Route steps unheld. The revert of a failed Cluster Router set (`Restore the before state`) is not held either.
 
 Each Cluster also has a Router lock. Setting or clearing a Router holds it through validation, setup, activation, and cleanup. Cluster state and TLD changes use it too. A competitor for the same Cluster waits up to 30 seconds and then returns HTTP 409 `cluster.router_busy`. Different Clusters use separate locks.
 

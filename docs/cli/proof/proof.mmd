@@ -65,6 +65,7 @@ sequenceDiagram
     Note over GW: Record the result once<br/>FAIL
     GW--xCLI: Failed check per case<br/>exit nonzero
     %%> Result:
+    %%> - `proof.head_behind_platform` before any restore, when the checkout lacks a platform change that `origin/main` has, and `proof.sync_needed` when it has no `origin/main` to compare with (run `tasks:sync`); neither is built yet (stage 3 chart, "Check the head")
     %%> - `proof.cases_failed` when a case failed or did not run after some case ran; `proof.run_failed` when no case ran; `proof.restore_failed` when every case passed and the last restore failed, so the fleet is not clean
     %%> - the receipt of each case stays in the VM's evidence directory (`.orbit-artifacts/GROUP/verify`)
   end

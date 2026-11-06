@@ -101,7 +101,7 @@ jobs:
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     guard: '${{ steps["Read the token age"].outputs.stdout.trim() == "" }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-take-base-again" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-take-base-again" + "-" + self.role).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'snapshot', 'create', '${{ "nested-" + self.role }}', 'base', '--stateful', '--reuse'], timeoutSec: 190}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'snapshot', 'create', '${{ "nested-" + self.role }}', 'base', '--reuse'], timeoutSec: 190}}
     dependsOn: [{step: 'Check readiness', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Read the token age', condition: {type: succeeded}}]
 - name: batches
   labels: {role: swamp}
@@ -190,7 +190,7 @@ jobs:
         env:
           IDS: '${{ (steps["Check the main verdicts"].outputs.stdout.trim() == "yes") ? [steps["Plan the merge base"].outputs.stdout.trim().split("\n").filter(l, l.split(" ").size() >= 3).map(l, l.split(" ", 3)[2]).join(" ").split(" ")].map(old, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !(c in old))).map(ids, ids.join(" "))[0] : "" }}'
     dependsOn: [{step: 'Remove the merge base checkout', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-  # The one checkout switches to the merge base, with only the cases file of the command and the batches of the head. The nested VMs mount it over NFS, so they see the switch at once.
+  # The one checkout switches to the merge base, with only the cases file of the command and the batches of the head. The nested containers have it as a disk device, so they see the switch at once.
   - name: 'Switch the checkout to the merge base'
     labels: {role: swamp}
     writes: true
@@ -198,7 +198,7 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-switch-the-checkout-to-the-merge-base").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-switch-the-checkout-to-the-merge-base").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?merge_base.orValue("") }}'], timeoutSec: 130}}
     dependsOn: [{step: 'Name the new cases', condition: {type: succeeded}}]
-  # The nested Gateway reads the checkout over NFS: it must show the merge base before the apply.
+  # The nested Gateway reads the checkout as a disk device: it must show the merge base before the apply.
   - name: 'Read the nested checkout'
     labels: {role: swamp}
     guard: '${{ steps["Name the new cases"].outputs.stdout.trim() == "" }}'

@@ -1,6 +1,6 @@
 id: 005e43f4-02fc-4bca-b43a-5e2456cb4258
 name: operation-task-maintenance
-# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationBudgetTable::SecondsByKind).
 description: Run captured package/routine maintenance as official SSH exec argv from
   Node 209, without a guest worker or shipped scripts.
 vaults: []

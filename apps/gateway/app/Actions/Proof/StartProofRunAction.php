@@ -17,6 +17,6 @@ final readonly class StartProofRunAction
     {
         $this->extension->execute();
 
-        return $this->intent->start($input->commit, $input->all, $triggeredBy, $requestId);
+        return $this->intent->start($input->commit, $input->all, $triggeredBy, $requestId, $input->reportOnly);
     }
 }
