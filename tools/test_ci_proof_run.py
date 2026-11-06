@@ -45,6 +45,25 @@ class EvaluateTest(unittest.TestCase):
             with self.subTest(output=output):
                 self.assertFalse(proof.evaluate(0, output)[0])
 
+    def test_a_passed_proof_without_a_case_that_ran_fails(self):
+        self.assertFalse(proof.evaluate(0, json.dumps({'result': {'outcome': 'passed', 'cases': []}}))[0])
+
+    def test_any_outcome_other_than_passed_or_nothing_to_prove_fails(self):
+        for outcome in ('failed', 'unrun', '', None):
+            with self.subTest(outcome=outcome):
+                output = json.dumps({'result': {'outcome': outcome, 'cases': [{'command': 'firewall:allow', 'case': 'a', 'verdict': 'passed'}]}})
+                self.assertFalse(proof.evaluate(0, output)[0])
+
+    def test_nothing_to_prove_with_a_case_row_fails(self):
+        output = json.dumps({'result': {'outcome': 'nothing_to_prove', 'cases': [{'command': 'firewall:allow', 'case': 'a', 'verdict': 'passed'}]}})
+        self.assertFalse(proof.evaluate(0, output)[0])
+
+    def test_a_row_of_the_gateway_names_its_program(self):
+        output = json.dumps({'result': {'outcome': 'passed', 'cases': [{'command': 'firewall:allow', 'program': 'swamp/proof/firewall/allow.cases.yaml', 'verdict': 'passed'}]}})
+        passed, lines = proof.evaluate(0, output)
+        self.assertTrue(passed)
+        self.assertIn('| firewall:allow | allow.cases.yaml | passed |', lines)
+
     def test_nothing_to_prove_passes_and_lists_uncovered_paths(self):
         output = json.dumps({'result': {'outcome': 'nothing_to_prove', 'cases': [],
                                         'uncovered': [{'path': 'swamp/x.yaml', 'reason': 'none: no case yet'}]}})
