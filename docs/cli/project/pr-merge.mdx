@@ -16,7 +16,7 @@ curl -X POST "$GATEWAY/api/v1/projects/7/pr-merge" \
 
 The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. The reply is `202` with the operation; follow it with `operation:show` until it ends. A refusal at admission starts nothing, so a caller can call the command again every few seconds until the merge check is green. The Gateway has no webhooks.
 
-The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. This includes a pull request from a fork: the caller has reviewed it, and the merge check runs no code of the fork beyond the fast checks. A Task group that has ended no longer holds its PR.
+The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. This includes a pull request from a fork: the caller has reviewed it, and the merge check runs no code of the fork beyond the fast checks. A Task group that has ended does not hold its PR.
 
 | Input | Meaning |
 | --- | --- |
