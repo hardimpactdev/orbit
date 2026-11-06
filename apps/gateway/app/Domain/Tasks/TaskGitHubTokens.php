@@ -33,7 +33,8 @@ use Illuminate\Support\Str;
  * A task VM receives no token. The clone, the push and the pull request calls run on Node 209, and the VM gets the clone as a bundle.
  * The one exception is the `dependencies` purpose: its token files live on the VM while the setup steps run.
  *
- * - `clone` writes the Git authorization header of a read of the Project repository, or an empty value for a repository that needs none. A sync run asks for it as well.
+ * - `clone` writes the Git authorization header of a read of the Project repository, or an empty value for a repository that needs none.
+ *   A sync run gets the same header without asking: the Gateway writes it as it starts the run ({@see self::writeClone()}).
  * - `dependencies` writes the Composer `auth.json` and the `.npmrc` of the setup steps: a read token of the installation, or an empty configuration,
  *   and the token alone for the step that revokes it.
  * - `publish` writes the write token for the pull request and its Git authorization header. An approved push of a cancel takes the token only.
@@ -125,7 +126,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     }
 
     /**
-     * A provision holds its workspace in its own intent. A prep run, a proof run and an image refresh hold the intent of their provision child, and a build run the intent of its sync child.
+     * A provision holds its workspace in its own intent. A prep run, a proof run and an image refresh hold the intent of their provision child.
      *
      * @return array<string,mixed>
      */
@@ -134,10 +135,21 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         return match ($operation->kind) {
             'tasks.provision', 'tasks.package' => $operation->input,
             'tasks.prep', 'proof.command', 'task_vm.image_refresh' => ValidatedData::object($operation->input['provision'] ?? []),
-            'tasks.sync' => $operation->input,
-            'tasks.build' => ValidatedData::object($operation->input['sync'] ?? []),
             default => throw $this->forbidden(),
         };
+    }
+
+    /**
+     * The Git authorization header of a read of the Project repository, written to the vault key an admission named.
+     *
+     * @param  array<string,mixed>  $reference
+     * @return array{vault:string,key:string}
+     */
+    public function writeClone(Task $group, array $reference): array
+    {
+        $git = $this->reads->for($group->project->repository_url, $group->project->source_access);
+
+        return $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $git->isEmpty() ? '' : $git->variables['GIT_CONFIG_VALUE_0']);
     }
 
     /** @return array<string,array{vault:string,key:string}> */
@@ -150,10 +162,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         if (! is_string($repository) || $repository !== $group->project->repository_url || ($intent['project_id'] ?? null) !== $group->project_id || ! is_array($reference)) {
             throw $this->forbidden();
         }
-        $git = $this->reads->for($repository, $group->project->source_access);
-        $reference = ValidatedData::object($reference);
-        $copy = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']),
-            $git->isEmpty() ? '' : $git->variables['GIT_CONFIG_VALUE_0']);
+        $copy = $this->writeClone($group, ValidatedData::object($reference));
         $this->record($operation, 'Issued the scoped clone credential of a Task workspace.', $callerNodeId, $runId, $repository, [['contents' => 'read']]);
 
         return ['git_authorization' => $copy];

@@ -12,6 +12,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -43,7 +44,7 @@ final readonly class TaskBuildProjection implements DirectOperationProjection, D
     }
 
     /**
-     * The run starts now, so the Pi token is written to the vault now, once, and not when the call was admitted or when someone reads the Operation.
+     * The run starts now, so the Pi token and the read token of the sync child are written to the vault now, once, and not when the call was admitted or when someone reads the Operation.
      *
      * @return array<string,mixed>
      */
@@ -55,6 +56,13 @@ final readonly class TaskBuildProjection implements DirectOperationProjection, D
         if (! $vm instanceof TaskVm || ! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
             throw new ResourceOperationException('tasks.build_refused', 'The task VM or its Pi credential is gone, so the build cannot start.', 409);
         }
+
+        $group = Task::topLevel()->with('project')->find($operation->target_id);
+        if (! $group instanceof Task) {
+            throw new ResourceOperationException('tasks.build_refused', 'The task group is gone, so the build cannot start.', 409);
+        }
+        // The read token of the sync child: the Gateway writes it to the admitted key, so no step of the run asks for it.
+        app(TaskGitHubTokens::class)->writeClone($group, ValidatedData::object(ValidatedData::object(ValidatedData::object($operation->input)['sync'])['git_authorization']));
 
         return [...$input, 'execution_secrets' => ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), $vm->pi_token)]];
     }

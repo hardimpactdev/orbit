@@ -6,12 +6,31 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowInput;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Models\Task;
 use App\Support\ValidatedData;
 
 /** Projects the terminal event of one `operation-task-sync` run: the two commits that the fetch stored, or the step that failed. */
-final readonly class TaskSyncProjection implements DirectOperationProjection
+final readonly class TaskSyncProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
+    /**
+     * The run starts now, so the Gateway mints the read token now and writes it to the vault key that admission named.
+     *
+     * @return array<string,mixed>
+     */
+    public function workflowInput(Operation $operation): array
+    {
+        $group = Task::topLevel()->with('project')->find($operation->target_id);
+        if (! $group instanceof Task) {
+            throw new ResourceOperationException('tasks.no_workspace', 'The task group is gone, so the sync cannot start.', 409);
+        }
+        app(TaskGitHubTokens::class)->writeClone($group, ValidatedData::object(ValidatedData::object($operation->input)['git_authorization']));
+
+        return $this->input($operation);
+    }
+
     /** @return array<string,mixed> */
     public function input(Operation $operation): array
     {

@@ -21,7 +21,7 @@ use App\Support\ValidatedData;
 /**
  * Admits `tasks.build`: the run that starts the implementation of a command once its spec is approved. The gate check calls it. It records
  * the approval, appends the implementation subtask, moves the group to `running` and captures the whole intent, so no step of the run
- * calls the Gateway but the read-token mint of the sync child. See docs/cli/tasks/build.mmd.
+ * calls the Gateway. See docs/cli/tasks/build.mmd.
  */
 final readonly class TaskBuildIntent
 {
@@ -85,7 +85,7 @@ final readonly class TaskBuildIntent
             'sync' => $sync,
             'turn' => TaskPrepThreads::turn($thread, TaskTurnPrompt::compose($subtask, $prompts->buildTurn()), true, $group, $subtask, $instance, $ssh),
             // Only vault key names are admitted. The Pi token is written when the run starts ({@see TaskBuildProjection::workflowInput()}),
-            // and the sync child mints its read token when it runs ({@see TaskGitHubTokens}).
+            // and so is the read token of the sync child ({@see TaskGitHubTokens::writeClone()}).
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]],
             'resume_secrets' => $resume['execution_secrets'],
         ];
