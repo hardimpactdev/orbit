@@ -65,13 +65,21 @@ sequenceDiagram
   %%> - a case that needs something the runner lacks is listed under `uncovered`, never written as a step; the runner is not changed
   %%> - walks every error code, flag and repeat of the page against the cases
   loop until the review has no findings
+    SW->>VM: Plan the cases<br/>runner.py plan
+    %%> What it does:
+    %%> - runs `python3 swamp/proof/runner/runner.py plan --file` on the cases file of the command in the task VM, with literal arguments; it loads the file and runs no case
+    %%> - runs after the draft and after each fix, before the review of that round
+    %%> - a refusal, such as a step the runner does not have, becomes the first finding of the round: the review cannot approve past it, and the fix turn sends the author back
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - a Swamp step, not only a prompt: the prep run has no handoff check, so a command deliverable on the spec subtask would never be verified
+    %%> - the runner is not changed; a case it cannot express is listed under `uncovered`
     SW->>VM: Review the spec<br/>fresh read-only agent
     %%> What it does:
     %%> - a separate review agent, on another model than the author's and at high effort, checks the spec against the skills and the CLI standard
+    %%> - it never wrote the spec
+    %%> - it runs the same plan too
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the chart names no model. The Pi policy of task agents allows only the group's provider and refuses Claude models, so the review agent runs on the reviewer model of the group, which differs from the author's
-    %%> - it never wrote the spec
-    %%> - it runs the same plan; a refusal is a finding it cannot approve past
     VM-->>SW: Findings<br/>or none
     SW->>VM: Fix the findings<br/>author agent
     %%> When:

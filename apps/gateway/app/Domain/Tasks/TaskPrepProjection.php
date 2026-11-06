@@ -22,7 +22,8 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
     /** The workflow steps whose failure has a code of its own; any other failed step of a turn is `tasks.turn_failed`. */
     private const array StepCodes = [
         'Create the VM' => 'tasks.provision_failed', 'Pin the VM' => 'tasks.provision_failed',
-        'Check the draft' => 'tasks.prep_not_committed', 'Settle fix 1' => 'tasks.prep_not_committed', 'Settle fix 2' => 'tasks.prep_not_committed',
+        'Check the draft' => 'tasks.prep_not_committed',
+        'Plan the cases 0' => 'tasks.prep_plan_failed', 'Plan the cases 1' => 'tasks.prep_plan_failed', 'Plan the cases 2' => 'tasks.prep_plan_failed', 'Settle fix 1' => 'tasks.prep_not_committed', 'Settle fix 2' => 'tasks.prep_not_committed',
         'Review has no findings' => 'tasks.prep_review_unresolved',
     ];
 
@@ -35,7 +36,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
         $intent = ValidatedData::object($operation->input);
 
         return [
-            'intent' => ['provision' => $provision['intent'], 'draft' => $intent['draft'], 'fix' => $intent['fix'], 'reviews' => $intent['reviews'], 'publish' => $intent['publish']],
+            'intent' => ['provision' => $provision['intent'], 'draft' => $intent['draft'], 'fix' => $intent['fix'], 'reviews' => $intent['reviews'], 'publish' => $intent['publish'], 'plan' => $intent['plan']],
             'execution_secrets' => $provision['execution_secrets'],
             'publish_secrets' => $intent['publish_secrets'],
         ];
