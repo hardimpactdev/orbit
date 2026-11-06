@@ -1242,7 +1242,7 @@ The firewall reset matters: enrollment denies SSH except from Node 209 over the 
 
 The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The clean waits for the VM step to pass, so a VM whose fleet failed its readiness check promotes nothing.
 
-A refresh that is cancelled before its Swamp run starts has no terminal event, so the cancel itself cancels the group of the refresh. That destroys the refresh VM and frees its slot at once. When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
+A cancelled refresh cancels its group, whether it ends before its Swamp run starts or the run ends cancelled. A cancelled run marks the group cancelled and leaves its VM in provisioning, so the group cancel still runs while that VM is not destroyed. It destroys the refresh VM and frees its slot. When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
 
 ##### How a claim selects the new seed
 
