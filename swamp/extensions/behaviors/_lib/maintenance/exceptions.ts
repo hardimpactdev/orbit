@@ -16,27 +16,6 @@ export const emptyExceptions = (): Exceptions => ({
     exceptions: [],
 });
 
-/** Keep the first date and all metadata for each package, path and ecosystem. */
-export function mergeExceptions(...documents: unknown[]): Exceptions {
-    let merged = emptyExceptions();
-    const seen = new Set<string>();
-    for (const input of documents) {
-        const document = ExceptionsSchema.parse(input);
-        const rows = document.exceptions.filter((row) => {
-            const key = JSON.stringify([row.path, row.manager, row.package]);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-        merged = {
-            ...merged,
-            ...document,
-            exceptions: [...merged.exceptions, ...rows],
-        };
-    }
-    return merged;
-}
-
 /** Report elapsed exclusions without changing the policy or exception records. */
 export function dueExceptions<M extends string>(
     document: Exceptions,

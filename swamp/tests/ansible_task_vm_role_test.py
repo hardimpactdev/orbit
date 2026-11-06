@@ -28,7 +28,7 @@ class TaskVmRoleTest(unittest.TestCase):
         play = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[0]
         self.assertEqual(play['hosts'], 'task_vm')
         self.assertEqual({task['name']: task['tags'] for task in play['tasks']},
-                         {'Resolve the recipe': ['always'], 'Software': ['software'], 'Tools': ['tools'], 'Check': ['check']})
+                         {'Wait for a new server': ['always'], 'Resolve the recipe': ['always'], 'Software': ['software'], 'Tools': ['tools'], 'Check': ['check'], 'Clean': ['clean'], 'Template': ['template']})
 
     def test_the_files_name_no_version(self):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
@@ -76,6 +76,55 @@ class TaskVmRoleTest(unittest.TestCase):
             host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
             self.assertEqual(host['ansible_host'], '10.251.78.50')
             self.assertEqual((folder / 'known_hosts').read_text(), '10.251.78.50 ssh-ed25519 guest root@guest\n192.0.2.5 ssh-ed25519 host\n')
+
+    def test_every_condition_of_the_role_is_a_string(self):
+        # A plain YAML scalar with a colon and a space parses as a mapping, and Ansible refuses it: "Conditional expressions must be strings".
+        def conditions(node, where):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key in ('when', 'that', 'failed_when', 'changed_when', 'until'):
+                        for item in value if isinstance(value, list) else [value]:
+                            self.assertIsInstance(item, (str, bool), f'{where}: a {key} is {type(item).__name__}, not a string')
+                    conditions(value, where)
+            elif isinstance(node, list):
+                for value in node:
+                    conditions(value, where)
+
+        for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
+            conditions(yaml.safe_load(path.read_text()), path.name)
+
+    def test_the_wait_for_a_new_server_is_for_an_image_only(self):
+        phase = yaml.safe_load((ANSIBLE / 'tasks/task-vm-ready.yml').read_text())
+        self.assertEqual([task['when'] for task in phase], ['intent.image'])
+        steps = {task['name']: task for task in phase[0]['block']}
+        self.assertIn('ansible.builtin.wait_for_connection', steps['Wait until SSH answers'])
+        wait = steps['Wait for cloud-init']
+        self.assertEqual(wait['ansible.builtin.command']['argv'][:2], ['timeout', '900'])
+        self.assertEqual(wait['failed_when'], 'ready_cloud_init.rc not in [0, 2]')
+
+    def test_the_clean_phase_is_for_an_image_only_and_leaves_incus_in_the_image(self):
+        phase = yaml.safe_load((ANSIBLE / 'tasks/task-vm-clean.yml').read_text())
+        self.assertEqual([task['when'] for task in phase], ['intent.image'])
+        text = (ANSIBLE / 'tasks/task-vm-clean.yml').read_text()
+        self.assertNotIn('/var/lib/incus', text)
+        self.assertIn('orbit:public-ssh-recovery', text)
+        argvs = [item for task in phase[0]['block'] for item in (task.get('loop') or []) if isinstance(item, list)]
+        tmp = next(argv for argv in argvs if argv[:3] == ['find', '/tmp', '/var/tmp'])
+        self.assertIn(['!', '-name', 'ansible_*'], [tmp[i:i + 3] for i in range(tmp.index('-exec'))], 'the clean phase must not delete the module that is running it')
+
+    def test_a_template_builder_is_reached_directly_on_the_address_of_the_run(self):
+        placeholder = intent()
+        placeholder['ssh']['target'] = {'host': '', 'user': 'orbit', 'port': 22, 'host_keys': []}
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'intent.json').write_text(json.dumps(placeholder))
+            with mock.patch.dict(os.environ, {'ORBIT_TARGET_HOST': '203.0.113.7\n', 'ORBIT_TARGET_KEY': 'ssh-ed25519 admitted\n'}):
+                builder.build(folder, 'task_vm.upcloud_image_build')
+            host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
+            self.assertEqual(host['ansible_host'], '203.0.113.7')
+            self.assertNotIn('ansible_ssh_common_args', host)
+            self.assertEqual((folder / 'known_hosts').read_text(), '203.0.113.7 ssh-ed25519 admitted\n')
+            self.assertIn('"kind": "task_vm.upcloud_image_build"', (folder / 'vars.yml').read_text())
 
 
 if __name__ == '__main__':

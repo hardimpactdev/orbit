@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: docs/reference/feature-flow.md section 6, one Swamp workflow per Gateway release, manual or automatic.
   %% A failed check switches back; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
-  %% status: reviewed
+  %% status: draft
   %% command: gateway:release:deploy
   %% kind: gateway.release
   %% behavior name: gateway-release-<step>-209 (fixed)
@@ -29,9 +29,14 @@ sequenceDiagram
   %%> What it does:
   %%> - at run start, mints one read token (contents, actions) into the vault
   GW-->>TR: 202 Accepted<br/>running release record
+  SW->>GN: Fetch the commit<br/>shared repository
+  %%> What it does:
+  %%> - fetches the commit with the read token when the shared repository lacks it; the token reaches git only in its environment
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the fetch is its own step, so that the build runs its script from the commit being released, not from the live release
   SW->>GN: Build the release<br/>worktree · composer · REVISION
   %%> What it does:
-  %%> - fetches the commit, refuses one that does not descend from the current release
+  %%> - refuses a commit that does not descend from the current release
   %%> - links shared env and storage, installs dependencies, seals with `REVISION` and a cached config
   %%> - a sealed release of the commit is reused
   SW->>GN: Install the web build<br/>artifact · digest · rename
@@ -48,8 +53,9 @@ sequenceDiagram
   AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
   %%> What it does:
   %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
+  %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
   %%> On failure:
-  %%> - the run fails with `gateway.release_horizon_not_drained`; Horizon is started again below
+  %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
   AC->>GN: Switch the release<br/>gateway-rollback · Horizon
   %%> Why:
   %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
@@ -60,7 +66,9 @@ sequenceDiagram
   AC->>GN: Start Horizon<br/>always · also after a failure
   %%> Why:
   %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
-  %%> - starting a running unit changes nothing; the rollback script starts a stopped Horizon the same way
+  %%> - starting a running unit changes nothing
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
   AC->>GN: Resume document cleanup<br/>best effort
   %%> Why:
   %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release

@@ -41,8 +41,11 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         return ['vault' => 'orbit-control-inputs', 'key' => 'instance-git-credential-'.$operation->id];
     }
 
-    public function issue(Operation $operation, int $callerNodeId, string $runId): array
+    public function issue(Operation $operation, int $callerNodeId, string $runId, ?string $purpose = null): array
     {
+        if ($purpose !== null) {
+            throw $this->forbidden();
+        }
         $authority = $this->authorize($operation, $callerNodeId, $runId);
 
         return ['git_read' => $this->copy($operation, $authority['repository'],

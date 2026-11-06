@@ -9,7 +9,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use Closure;
 
-/** The same runner with the existing workspace lease and operation journal around every command. */
+/** The same runner for commands inside a task workspace. */
 interface WorkspaceAgentCommandRunner
 {
     /**

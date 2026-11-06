@@ -1,5 +1,6 @@
 sequenceDiagram
-  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit the ready step"), DECISIONS 1 (tokens minted at admission, vault) and R2-R3. It follows tasks.dependency_merge: the Gateway admits and mints, Swamp calls GitHub. docs/reference/tasks.md#ready-and-merge-a-task-pull-request.
+  %% Nick 2026-11-06: a task VM never holds a GitHub credential, and the step mints its token when it runs, not at admission.
+  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit the ready step"), R2-R3. The Gateway admits and names the vault key, the step mints its token, and Swamp calls GitHub. docs/reference/tasks.md#ready-and-merge-a-task-pull-request.
   %% status: draft
   %% command: none · API / MCP (tasks-pr-ready)
   %% kind: tasks.pr_ready
@@ -22,14 +23,14 @@ sequenceDiagram
   %%> What it does:
   %%> - reads the PR and the check runs of the head with read-only App tokens (`pull_requests: read`, `checks: read`)
   GH-->>GW: PR state · check runs
-  Note over GW: Check the PR<br/>head · CI green · mint token
+  Note over GW: Check the PR<br/>head · CI green · key name
   %%> Requirements:
   %%> - the tasks extension is on, and the group is an open external group with a published PR that is open
   %%> - the PR head is exactly `head_sha`, and the Project's merge check (`Required checks`) passed on that head
   %%> - in manual mode, the PR author is not the reviewer, because GitHub refuses a review request from the author
   %%> - no other task runs on the group; the Gateway holds one lock per group
   %%> What it does:
-  %%> - mints a write token with only `pull_requests: write` and pushes it to the vault as `pr-ready-write-<uuid>` after commit (R3)
+  %%> - names the vault key `pr-ready-write-<uuid>` for the write token; it mints no token
   %%> Result:
   %%> - a task recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-task-pr-ready
@@ -43,6 +44,12 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller follows the task with `operation:show`
+  SW->>GW: Mint the token<br/>operation:direct:github-token
+  %%> What it does:
+  %%> - the first step posts the run id to the Gateway; the Gateway checks the Operation, the run and the repository, mints a token with only `pull_requests: write`, and writes it to the vault key that admission named
+  %%> Why here and not at admission:
+  %%> - an installation token lives one hour; the token is minted when the step that uses it runs
+  %%> - no task VM holds a GitHub credential
   SW->>GH: Read the PR
   %%> What it does:
   %%> - one `gh api` read of state, draft flag, head SHA and GraphQL node id
@@ -66,12 +73,11 @@ sequenceDiagram
   SW->>GH: Read the PR result
   %%> What it does:
   %%> - reads the head, the draft flag and the requested reviewers; the Gateway keeps this as the task result
-  SW->>GH: Revoke the token
-  %%> When:
-  %%> - always, on success and failure; best effort because the token expires within one hour
-  Note over SW: Remove CLI config
+  SW->>GH: Clean up the token<br/>task-github-cleanup
   %%> What it does:
-  %%> - removes the private GitHub CLI configuration directory of this run
+  %%> - runs the shared cleanup child: it revokes the token, best effort because the token expires within one hour, and removes the private GitHub CLI configuration directory of this run
+  %%> When:
+  %%> - always, on success and failure
   Note over SW: Confirm the ready step
   alt ready
     GH-->>SW: PR ready · head sha

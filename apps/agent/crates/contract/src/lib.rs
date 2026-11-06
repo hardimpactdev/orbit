@@ -55,8 +55,6 @@ pub trait Command {
     const KEYED_EFFECT: bool = Self::MUTATES;
     /// The longest the command may run. The envelope's remaining deadline can shorten it.
     const TIMEOUT: Duration;
-    /// A read may emit framed binary bytes before its result. Zero means JSON output only.
-    const OUTPUT_MAX_BYTES: u64 = 0;
     /// Maximum raw bytes after the envelope line. Zero means JSON input only.
     const INPUT_MAX_BYTES: u64 = 0;
     /// The input and output shapes are exported as JSON Schemas in the contract, so Gateway tests send and expect

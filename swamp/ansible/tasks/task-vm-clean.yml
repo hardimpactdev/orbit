@@ -1,0 +1,62 @@
+---
+# The last phase of a template build: the build server leaves as an image. It does nothing on a Node or on a running task VM.
+# It is what the agent's image commands (boot, firewall, clean) did, as modules and one argv per effect. The state of Incus stays:
+# the tools phase initialises Incus on the image (task-vm-incus.yml), so the clean phase does not remove it as the agent did.
+- name: Prepare and clean the image
+  when: intent.image
+  block:
+    - name: Look for the identity of an enrolled server
+      ansible.builtin.stat: { path: "{{ item }}" }
+      loop: [/etc/orbit/agent/secret, /etc/wireguard/orbit.conf]
+      register: clean_enrolled
+    - name: Refuse a server that was enrolled
+      ansible.builtin.assert:
+        that: clean_enrolled.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: The server was enrolled and cannot become an image.
+        quiet: true
+    - name: Mask the services of a first boot
+      ansible.builtin.systemd: { name: "{{ item }}", masked: true }
+      loop: [systemd-firstboot.service, apt-daily.timer, apt-daily-upgrade.timer, motd-news.timer, unattended-upgrades.service]
+    - name: Stop the services that make an identity
+      ansible.builtin.systemd: { name: "{{ item }}", state: stopped }
+      loop: [caddy.service, docker.service, docker.socket, containerd.service]
+      register: clean_stopped
+      failed_when: clean_stopped.failed and 'Could not find the requested service' not in (clean_stopped.msg | default(''))
+    - name: Remove the identities of the services
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop:
+        - /var/lib/docker/engine-id
+        - /var/lib/containerd/io.containerd.grpc.v1.introspection/uuid
+        - /var/lib/caddy/.local/share/caddy/instance.uuid
+        - /var/lib/caddy/.local/share/caddy/last_clean.json
+        - /var/lib/caddy/.config/caddy/autosave.json
+        - /var/lib/systemd/credential.secret
+        - /var/lib/systemd/random-seed
+    - name: Allow public SSH, the one way back in
+      community.general.ufw: { rule: allow, direction: in, proto: tcp, port: "22", comment: "orbit:public-ssh-recovery" }
+    - name: Deny every other incoming connection
+      community.general.ufw: { default: deny, direction: incoming }
+    - name: Turn the firewall on
+      community.general.ufw: { state: enabled }
+    - name: Empty the journal, the logs, the temporary files and the shell histories
+      ansible.builtin.command: { argv: "{{ item }}" }
+      loop:
+        - [journalctl, --rotate]
+        - [journalctl, --vacuum-time=1s]
+        - [find, /var/log, -type, f, "(", -name, "*.gz", -o, -regex, ".*[.][0-9]", ")", -delete]
+        - [find, /var/log, -type, f, -exec, truncate, -s, "0", "{}", "+"]
+        # Ansible unpacks the module that runs this task into /tmp/ansible_*; removing it under the module crashes it.
+        - [find, /tmp, /var/tmp, -mindepth, "1", -maxdepth, "1", "!", -name, "systemd-private-*", "!", -name, "ansible_*", -exec, rm, -rf, "{}", "+"]
+        - [find, /root, /home, -maxdepth, "2", -name, .bash_history, -delete]
+      loop_control: { label: "{{ item[0] }} {{ item[1] }}" }
+      changed_when: true
+    # The last three run over the open session, whose connection stays up through them.
+    - name: Clean the cloud-init state and the machine id
+      ansible.builtin.command: { argv: [cloud-init, clean, --logs, --seed, --machine-id, --configs, all] }
+      changed_when: true
+    - name: Remove the SSH host keys
+      ansible.builtin.command: { argv: [find, /etc/ssh, -maxdepth, "1", -name, "ssh_host_*", -delete] }
+      changed_when: true
+    - name: Empty the authorized keys
+      ansible.builtin.command: { argv: [find, /root, /home, -maxdepth, "3", -path, "*/.ssh/authorized_keys", -type, f, -exec, truncate, -s, "0", "{}", "+"] }
+      changed_when: true

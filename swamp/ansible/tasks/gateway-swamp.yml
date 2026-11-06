@@ -1,6 +1,6 @@
 ---
 # The Swamp control plane of a new Gateway, on its own machine (docs/cli/tasks/vm-fleet-build.mmd, "Converge itself").
-# `control` is the plan of `php artisan orbit:bootstrap-control-plan`: the units for this machine's checkout and the release grants.
+# `control` is the plan of `php artisan orbit:bootstrap-control-plan`: the units for this machine's checkout, the release grants, and the scheduler and Horizon units.
 # The tokens are minted here with the Swamp CLI and stay here: no run input or output holds one. Every file is written only when
 # it is missing, so a repeat changes nothing. The Swamp key (`api-key`) is already on the machine: the refresh VM pushes it.
 - name: Name the paths of the control plane
@@ -47,6 +47,17 @@
   loop:
     - { name: orbit-swamp-serve.service, content: "{{ control.units.serve }}" }
     - { name: "orbit-swamp-worker@.service", content: "{{ control.units.worker }}" }
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload units
+# The scheduler and Horizon record finished runs; the Gateway's first run, the converge of its own Node, comes before its role.
+- name: Write the recorder units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ control.recorder }}"
   loop_control: { label: "{{ item.name }}" }
   notify: Reload units
 - name: Make the grants folder
@@ -171,6 +182,26 @@
   no_log: true
   register: gateway_settings
   changed_when: gateway_settings.rc == 0
+# The Gateway serves the private DNS of its network as the hub. The first converge of its Node installs the listener and the records and
+# restarts dnsmasq, which must already listen on loopback and not on port 53 of every address, where systemd-resolved listens too.
+- name: Write the private DNS backend
+  ansible.builtin.copy:
+    dest: /etc/dnsmasq.d/orbit-vpn.conf
+    content: "{{ control.dns_backend }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: dns_backend
+# The first publish of a private name reads the records and the catalog, so a new Gateway starts with the empty ones.
+- name: Make the private DNS folder
+  ansible.builtin.file: { path: /var/lib/orbit/private-dns, state: directory, owner: root, group: root, mode: "0755" }
+- name: Write the empty private DNS records
+  ansible.builtin.copy: { dest: /etc/dnsmasq.d/orbit-records.conf, content: "# Managed by Orbit.\n", force: false, owner: root, group: root, mode: "0644" }
+- name: Write the empty private DNS catalog
+  ansible.builtin.copy: { dest: /var/lib/orbit/private-dns/catalog.json, content: "{}\n", force: false, owner: root, group: root, mode: "0644" }
+- name: Restart dnsmasq on the loopback listener
+  ansible.builtin.systemd: { name: dnsmasq, state: restarted }
+  when: dns_backend.changed
 # The hub of the Gateway's own private network. Swamp reaches every Node, this one too, by its WireGuard address, so the hub is up
 # before any role runs. The private key is made here and never leaves; only the public key is recorded.
 - name: Make the hub folders
@@ -250,6 +281,10 @@
 - name: Start the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", enabled: true, state: started }
   loop: [a, b]
+- name: Start the recorder
+  ansible.builtin.systemd: { name: "{{ item.name }}", enabled: true, state: started }
+  loop: "{{ control.recorder }}"
+  loop_control: { label: "{{ item.name }}" }
 # The Gateway's own certificate, signed by the same CA, at the paths its rendered Caddyfile names. The first role run publishes that
 # Caddyfile and needs them, so they exist before it.
 - name: Issue the Gateway certificate
@@ -272,3 +307,54 @@
     - { source: key, name: gateway.key, mode: "0640" }
     - { source: root, name: root-ca.pem, mode: "0644" }
   loop_control: { label: "{{ item.name }}" }
+# The Gateway machine trusts the Orbit CA that signs its certificates: the services on it call the Gateway by name over TLS, as the
+# Reverb server of the websocket role does for its registry.
+- name: Place the Orbit root certificate in the system trust
+  ansible.builtin.copy:
+    src: "{{ (gateway_certificate.stdout | from_json).root }}"
+    remote_src: true
+    dest: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+    owner: root
+    group: root
+    mode: "0644"
+  register: orbit_trust
+- name: Update the system trust store # noqa no-handler
+  when: orbit_trust is changed
+  ansible.builtin.command: { argv: [update-ca-certificates] }
+# The key of the Gateway's own agent, made here as a rekey makes it: the Node keeps the key and the Gateway records its verifier, so
+# the converge that installs the agent has a verifier to render.
+- name: Make the agent folder
+  ansible.builtin.file: { path: /etc/orbit/agent, state: directory, owner: root, group: root, mode: "0755" }
+- name: Make the agent key
+  ansible.builtin.shell:
+    cmd: umask 077 && printf %s "$(openssl rand -hex 32)" > /etc/orbit/agent/secret
+    creates: /etc/orbit/agent/secret
+  no_log: true
+- name: Read the agent key verifier
+  ansible.builtin.shell:
+    cmd: sha256sum < /etc/orbit/agent/secret | cut -d' ' -f1
+  register: agent_verifier
+  changed_when: false
+  no_log: true
+- name: Record the agent key verifier
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--agent-secret-hash={{ agent_verifier.stdout }}"] }
+  become_user: "{{ swamp_user }}"
+  changed_when: true
+# Serve and both workers run: the machine serves Swamp, so the swamp role of its Node stands.
+- name: Record that this machine serves Swamp
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--serving"] }
+  become_user: "{{ swamp_user }}"
+  changed_when: true
+# The firewall of the Gateway machine starts here with the recovery SSH, the trust of the network members and the port of the hub.
+# The recovery rule is kept until the first role converge of the Gateway retires it.
+- name: Open the port of the hub
+  ansible.builtin.command: { argv: [ufw, allow, in, proto, udp, to, any, port, "{{ control.firewall.hub_port }}", comment, orbit-hub-endpoint] }
+  changed_when: true
+- name: Add the firewall rules of the Gateway Node
+  ansible.builtin.command: { argv: "{{ item }}" }
+  loop: "{{ control.firewall.rules }}"
+  loop_control: { label: "{{ item[-1] }}" }
+  changed_when: true
+- name: Enable the firewall
+  ansible.builtin.command: { argv: [ufw, --force, enable] }
+  changed_when: true

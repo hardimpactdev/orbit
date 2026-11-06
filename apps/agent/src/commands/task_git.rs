@@ -36,7 +36,7 @@ pub(super) fn object_id(value: &str) -> bool {
 }
 
 fn read(input: &Input, host: &mut impl Host) -> Result<Refs, Error> {
-    if !super::doctor_route::absolute(&input.checkout) {
+    if !super::source::absolute(&input.checkout) {
         return Err(Error::Invalid {});
     }
     let checkout = input.checkout.to_str().ok_or(Error::Invalid {})?;

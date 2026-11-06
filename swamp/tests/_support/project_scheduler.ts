@@ -1,6 +1,5 @@
 import { taskInputs, todoError } from "./task_contract.ts";
 import { behavior } from "../../extensions/behaviors/orbit_gateway.ts";
-import { behavior as projectBehavior } from "../../extensions/behaviors/projects/nckrtl-com/mod.ts";
 import { type Findings } from "../../extensions/behaviors/_lib/project_schedule.ts";
 import {
     policyIdentity,
@@ -112,10 +111,6 @@ export function fixture(token?: Record<string, unknown>) {
             // Loopback HTTP uses no TLS, but curl still requires the --cacert path to exist.
             caFile: "/dev/null",
             gatewayUrl: `http://127.0.0.1:${server.addr.port}`,
-            projectExtensions: [{
-                projectId: 20,
-                type: "@nckrtl/project-nckrtl-com",
-            }],
         }),
         definition: { name: "orbit-gateway" },
         queryData: (predicate: string, select?: string) => {
@@ -164,32 +159,6 @@ export function fixture(token?: Record<string, unknown>) {
                 arguments?: Record<string, unknown>;
             },
         ) => {
-            if (args.modelType === projectBehavior.type) {
-                await projectBehavior.methods.configuration.execute({}, {
-                    readResource: (name) =>
-                        Promise.resolve(
-                            data.get(`${args.name}/${name}`) as Record<
-                                string,
-                                unknown
-                            > ??
-                                null,
-                        ),
-                    writeResource: (_spec, name, value) => {
-                        data.set(`${args.name}/${name}`, value);
-                        return Promise.resolve({ name });
-                    },
-                });
-                return { ok: true };
-            }
-            if (
-                args.modelType === "@swamp/git" && args.method === "remote_ref"
-            ) {
-                data.set(`${args.name}/remote-ref-refs-heads-main`, {
-                    sha: "a".repeat(40),
-                    ref: "refs/heads/main",
-                });
-                return { ok: true };
-            }
             if (args.method === "start") {
                 starts++;
                 data.set(

@@ -90,18 +90,27 @@ final class OperationRunBudgets
         // No run yet. Basis: the serial bounded steps: scan 900 s, stop 300 s, a copy 600 s, the agent wait 130 s and the scan on the stored
         // copy 900 s, plus the shorter steps and margin. Replace with the 14-day p95 after the first successes.
         'task_vm.ready_copies' => 3600,
-        // No run yet. Basis: the provision of a task VM with its nested fleet (tasks.provision, 3,900 s), the converge (3,300 s at its
-        // step bounds; a VM at its pins takes a minute), the ready copies (3,600 s at their step bounds, about 10 min in practice), the
-        // clean, the publication of the image and its boot check (a few minutes each), plus margin. Replace with the 14-day p95 after
-        // the first successes.
-        'task_vm.image_refresh' => 7200,
+        // No run yet. Basis: the stage-2 timings of a fresh nested fleet (docs/cli/tasks/vm-fleet-build.mmd): the VMs and their first boot,
+        // the Gateway bootstrap (about 3 minutes), its first role and Node converges, the two Node enrollments (about 6 minutes each) and
+        // the readiness wait, at their step bounds, plus margin. Replace with the 14-day p95 after the first successes.
+        'task_vm.fleet_build' => 3600,
+        // Provisional. Basis: the provision of a task VM (tasks.provision, 3,900 s), the fleet build when the seed has no ready copies
+        // (3,600 s at its bound, about 25 min in practice), the ready copies (3,600 s at their bound, about 10 min in practice), the clean
+        // builder with its phases (3,300 s at their bound; a VM at its pins takes a minute), the publication, the boot check and the
+        // enrollment and converge of the check VM (a few minutes each), plus margin. Replace with the 14-day p95 after the first successes.
+        'task_vm.image_refresh' => 10800,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
-        // No run yet. The pull request token is minted at admission and lives one hour, so the run must end before it:
-        // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each, rounded down to 55 min.
+        // No run yet. The publish step mints its own token, so the one-hour life of a token no longer bounds the run:
+        // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each. Prep runs of 43 to 90 min
+        // are expected (Nick, 2026-11-06), so 105 min. Replace with the 14-day p95 after the first success.
+        'tasks.prep' => 6300,
+        // No run yet. Basis: the task VM resume (about 90 s), one author turn of about 10 minutes, two review rounds of about 4
+        // minutes with the runner plans, and one fix of 4 minutes, so about 25 minutes, x 1.5, rounded to 45 minutes. The push token
+        // is minted when the push step starts, so the hour of an installation token does not limit this run.
         // Replace with the 14-day p95 after the first success.
-        'tasks.prep' => 3300,
+        'tasks.prep_fix' => 2700,
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the

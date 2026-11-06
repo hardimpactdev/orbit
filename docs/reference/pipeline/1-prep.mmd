@@ -18,20 +18,20 @@ sequenceDiagram
   %%> What it does:
   %%> - authorizes the request to start the PR of one command
   %%> - records the operation, so the CLI and web show its state
-  %%> - mints a short-lived GitHub App token for the flow
+  %%> - names the vault keys of the push token; the publish step mints the token when it runs
   %%> Why:
   %%> - the Gateway only authorizes; Swamp owns the flow and all of its state
-  GW->>SW: Start the flow<br/>token as vault key name
+  GW->>SW: Start the flow<br/>push-token vault key names
   %%> Inputs:
   %%> - the command and its family
-  %%> - the vault key name of the token, never the token itself
+  %%> - the vault key names of the push token, never a token
   %%> Built or not:
   %%> - built: `tasks:prep` admits the run and Swamp runs it as the workflow `operation-task-prep`
   %%> - not built: the automatic mode, which a flow input would set
   Note over SW: Child workflows<br/>provision · turn · publish
   %%> What it does:
   %%> - the arrows below from Swamp to the task VM and to GitHub are child workflows of one parent run: `operation-task-provision`, `operation-task-turn` for the draft, review and fix turns, and `operation-task-publish` with a draft
-  %%> - the Gateway captured their whole intent at admission and Swamp passes it down as inputs; no step calls the Gateway
+  %%> - the Gateway captured their whole intent at admission and Swamp passes it down as inputs; the clone and publish steps each mint their own GitHub credential at the Gateway
   %%> - the commit and tree the draft leaves, which the Gateway cannot know at admission, pass from step to step inside the run
   SW->>VM: Draft the spec<br/>preparing-commands skill
   %%> What it does:
@@ -58,17 +58,30 @@ sequenceDiagram
   %%> - writes `swamp/proof/FAMILY/COMMAND.cases.yaml` from the chart and the page, never from the code; each case names its chart path and its batch from `swamp/proof/batches.yaml`
   %%> - covers required arguments only, each flag, each error on the chart, a repeat, and a failure after a partial change
   %%> - marks a case that the code fails today; never weakens a case to fit the code
-  Note over VM: Check the draft<br/>bin/check-flows · docs lint
+  Note over VM: Check the draft<br/>check-flows · docs lint · plan
   %%> What it does:
   %%> - runs `bin/check-flows`, `composer docs-build` and `composer docs-lint`
+  %%> - runs `python3 swamp/proof/runner/runner.py plan --file` on the cases file of the command; the plan must exit 0, so a cases file that the runner refuses, such as a step it does not have, goes back to the author
+  %%> - a case that needs something the runner lacks is listed under `uncovered`, never written as a step; the runner is not changed
+  %%> - runs the runner unit tests (`python3 -m unittest discover -s swamp/proof/runner/tests`); a failure caused by the content of the cases file is named in the report as a blocker for the owner, and no test is changed
+  %%> - compares the case ids with the default branch: a case that runs there stays a case, and none moves to `uncovered`
   %%> - walks every error code, flag and repeat of the page against the cases
   loop until the review has no findings
+    SW->>VM: Plan the cases<br/>runner.py plan
+    %%> What it does:
+    %%> - runs `python3 swamp/proof/runner/runner.py plan --file` on the cases file of the command in the task VM, with literal arguments; it loads the file and runs no case
+    %%> - runs after the draft and after each fix, before the review of that round
+    %%> - a refusal, such as a step the runner does not have, becomes the first finding of the round: the review cannot approve past it, and the fix turn sends the author back
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - a Swamp step, not only a prompt: the prep run has no handoff check, so a command deliverable on the spec subtask would never be verified
+    %%> - the runner is not changed; a case it cannot express is listed under `uncovered`
     SW->>VM: Review the spec<br/>fresh read-only agent
     %%> What it does:
     %%> - a separate review agent, on another model than the author's and at high effort, checks the spec against the skills and the CLI standard
+    %%> - it never wrote the spec
+    %%> - it runs the same plan too
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the chart names no model. The Pi policy of task agents allows only the group's provider and refuses Claude models, so the review agent runs on the reviewer model of the group, which differs from the author's
-    %%> - it never wrote the spec
     VM-->>SW: Findings<br/>or none
     SW->>VM: Fix the findings<br/>author agent
     %%> When:
@@ -78,7 +91,7 @@ sequenceDiagram
   end
   SW->>GH: Open a draft PR<br/>as the Orbit App
   %%> What it does:
-  %%> - reads the token from the vault by its key name
+  %%> - asks the Gateway for a token at this step, then reads it from the vault by its key name; no task VM holds it
   %%> - pushes the branch whose first commit holds the chart, page and cases of one command and nothing else
   %%> - opens the PR as a draft; it stays a draft until stage 4
   %%> - this is the one PR of the command: code and runnable proof cases join it later, and no separate docs PR exists
@@ -108,9 +121,13 @@ sequenceDiagram
       %%> When:
       %%> - only when Nick asks for corrections
       %%> Result:
-      %%> - the author agent applies them, checks the draft again and pushes
-      %%> Not built:
-      %%> - this step; today an agent applies Nick's corrections by hand on the PR branch
+      %%> - the parked prep group resumes: the author agent gets the review as its prompt and applies it as a new commit, the runner plan and a review round check it, and the App pushes it to the same draft PR
+      %%> - the group then parks again
+      %%> Built or not:
+      %%> - built: `tasks:prep-fix`, with the review of the owner as its input (`docs/cli/tasks/prep-fix.mmd`)
+      %%> - not built: the gate check does not detect the review of the owner yet
+      %%> Decided by the orchestrator, for Nick's review:
+      %%> - the run is admitted with the review as text, so a decision made after the review can go with it; two review rounds follow the corrections
     end
   else automatic mode
     Note over GH: No checkpoint<br/>the flow continues

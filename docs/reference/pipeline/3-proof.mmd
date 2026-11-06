@@ -35,7 +35,7 @@ sequenceDiagram
   %%> - stock Incus restore and agent wait, no tuning: restore about 9 s, healthy about 16 s
   SW->>NT: Apply the code<br/>migrate · restart services
   %%> What it does:
-  %%> - runs the migrations and restarts the long-running services (queue worker, Swamp worker) in the nested Gateway, so they run the checked-out code
+  %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
   %%> - the code itself needs no step: the nested VMs mount the task VM's checkout over NFS (stage 2), and PHP reads changed files on the next request
   %%> - also runs after every restore below: a memory restore brings back processes that loaded older code
   opt playbooks or pins changed
@@ -47,12 +47,13 @@ sequenceDiagram
     %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
     %%> - the base images are not touched; only the merge and the seed refresh change them
   end
-  opt the tokens in base are older than 20 hours
+  opt the tokens in base are older than 20 days
     SW->>NT: Re-mint Swamp tokens<br/>in the nested Gateway
     %%> What it does:
-    %%> - the nested Gateway mints new serve and worker tokens for its own Swamp, with the same step as the fleet build
+    %%> - the nested Gateway renews the tokens of its own Swamp with the step of the provision (stage 2, `Re-mint the Swamp tokens`)
+    %%> Not built: the provision step exists; the proof run does not call it yet
     %%> Why:
-    %%> - the tokens a build mints last 24 hours and its certificates 2 days; `base` inherits them, so a task older than a day would otherwise prove with an expired nested Swamp
+    %%> - the provision renews the tokens for 30 days and `base` inherits them, so a task older than that would otherwise prove with an expired nested Swamp
     %%> - these tokens belong to the nested Orbit; the real Gateway mints nothing for them
   end
   opt the converge or the re-mint changed something

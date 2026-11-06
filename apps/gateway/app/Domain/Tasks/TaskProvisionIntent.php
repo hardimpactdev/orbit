@@ -8,7 +8,6 @@ use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
-use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -132,12 +131,16 @@ final readonly class TaskProvisionIntent
             // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
             $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                 'swamp-proof-club-api-key', $proofClub) : null;
-            $git = app(RepositoryReadAccess::class)->for($project->repository_url, $project->source_access);
-            $gitAuthorization = $git->isEmpty() ? null : app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-                'task-provision-git-'.$vm->id, $git->variables['GIT_CONFIG_VALUE_0']);
+            // Only the vault key name is admitted. The clone step mints the credential when it runs ({@see TaskGitHubTokens}):
+            // the VM step before it can wait for capacity longer than the hour that an installation token lives.
+            $gitAuthorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-git-'.$vm->id];
+            // The setup steps get the same: the key names of the Composer and npm configuration, written when the step runs.
+            $dependencyAuth = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-'.$vm->id],
+                'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-'.$vm->id],
+                'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-'.$vm->id]];
             $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
                 'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
-                'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization,
+                'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization, 'dependency_auth' => $dependencyAuth,
                 'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
                     'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
                     'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,

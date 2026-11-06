@@ -22,7 +22,8 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
     /** The workflow steps whose failure has a code of its own; any other failed step of a turn is `tasks.turn_failed`. */
     private const array StepCodes = [
         'Create the VM' => 'tasks.provision_failed', 'Pin the VM' => 'tasks.provision_failed',
-        'Check the draft' => 'tasks.prep_not_committed', 'Settle fix 1' => 'tasks.prep_not_committed', 'Settle fix 2' => 'tasks.prep_not_committed',
+        'Check the draft' => 'tasks.prep_not_committed',
+        'Plan the cases 0' => 'tasks.prep_plan_failed', 'Plan the cases 1' => 'tasks.prep_plan_failed', 'Plan the cases 2' => 'tasks.prep_plan_failed', 'Settle fix 1' => 'tasks.prep_not_committed', 'Settle fix 2' => 'tasks.prep_not_committed',
         'Review has no findings' => 'tasks.prep_review_unresolved',
     ];
 
@@ -35,7 +36,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
         $intent = ValidatedData::object($operation->input);
 
         return [
-            'intent' => ['provision' => $provision['intent'], 'draft' => $intent['draft'], 'fix' => $intent['fix'], 'reviews' => $intent['reviews'], 'publish' => $intent['publish']],
+            'intent' => ['provision' => $provision['intent'], 'draft' => $intent['draft'], 'fix' => $intent['fix'], 'reviews' => $intent['reviews'], 'publish' => $intent['publish'], 'plan' => $intent['plan']],
             'execution_secrets' => $provision['execution_secrets'],
             'publish_secrets' => $intent['publish_secrets'],
         ];
@@ -52,8 +53,8 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
-            $step = $failed ? $this->failedStep($native, $data) : null;
-            $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Open a draft PR' ? self::publishCode($data) : 'tasks.turn_failed')) : null;
+            $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
+            $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Open a draft PR' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
             $receipt = TaskPrepResults::receipt($native['provision'] ?? null);
             if ($status === 'succeeded' && $receipt === null) {
                 throw new ResourceOperationException('operation.invalid_result', 'The prep run reports no ready VM.', 422);
@@ -84,12 +85,24 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
                     'pull_request_url' => $pull['pull_request_url'], 'rounds' => $rounds];
                 Task::topLevel()->whereKey($operation->target_id)->update(['pr_url' => $pull['pull_request_url'], 'watched_pr_url' => $pull['pull_request_url'],
                     'watched_pr_number' => $pull['pull_request_number'], 'watched_pr_state' => 'open']);
+                self::completeSubtasks($operation->target_id, $pull['pull_request_number']);
             }
             $data['result'] = $result;
             $data['error_code'] = $code;
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * The spec is done once the App has opened its PR, so the group has no open subtask and `tasks:park` can stop its VM while the
+     * spec waits for review.
+     */
+    public static function completeSubtasks(int $group, int $pullRequest): void
+    {
+        Task::query()->where('parent_id', $group)->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->get()
+            ->each(static fn (Task $subtask): bool => $subtask->update(['status' => TaskStatus::Completed, 'settled_at' => now(),
+                'completion_summary' => 'The spec is in draft PR #'.$pullRequest.'.']));
     }
 
     /**
@@ -121,28 +134,5 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
         $view->input = [...ValidatedData::object($intent['provision']), 'execution_secrets' => $intent['execution_secrets']];
 
         return $view;
-    }
-
-    /**
-     * @param  array<string,mixed>  $native
-     * @param  array<string,mixed>  $data
-     */
-    private function failedStep(array $native, array $data): ?string
-    {
-        $failure = ValidatedData::object($data['failure'] ?? []);
-        $steps = ValidatedData::object($native['summary'] ?? [])['failed_steps'] ?? [];
-        $step = $failure['failed_step'] ?? (is_array($steps) ? ($steps[0] ?? null) : null);
-
-        return is_string($step) ? $step : null;
-    }
-
-    /** @param array<string,mixed> $data */
-    private static function publishCode(array $data): string
-    {
-        $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
-        $detail = $failure['detail'] ?? null;
-
-        return in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-            ? $detail : 'tasks.publish_failed';
     }
 }

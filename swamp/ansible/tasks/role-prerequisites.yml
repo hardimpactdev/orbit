@@ -70,11 +70,12 @@
       | default([]) | map(attribute='version') else []) }}
   loop: "{{ intent.php_packages }}"
   loop_control: { index_var: index, label: "{{ item.name }}" }
+# Only the pinned files named here are replaced; a package the archive installed first at an older version is upgraded to its pin.
 - name: Install missing PHP packages
   when: php_missing | default([]) | length > 0
   ansible.builtin.command:
     argv: >-
-      {{ ['apt-get', '--no-remove', '--no-upgrade', 'install', '--yes', '--no-install-recommends', '-o', 'Dpkg::Options::=--force-confold']
+      {{ ['apt-get', '--no-remove', 'install', '--yes', '--no-install-recommends', '-o', 'Dpkg::Options::=--force-confold']
       + php_missing }}
   environment: { DEBIAN_FRONTEND: noninteractive, NEEDRESTART_MODE: l }
   changed_when: true

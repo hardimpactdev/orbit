@@ -50,10 +50,32 @@
   when: intent.nfs is not none
   ansible.builtin.stat: { path: "{{ incus_seed_disk }}" }
   register: incus_seed
+# A task image made from a refresh VM carries that VM's Incus database: the pool topology-seed and the records of the ready copies it held
+# then. Incus trusts those records over the seed disk of this VM, so a new copy set on the disk would stay unseen (the old keys and no
+# `user.ready.format`). Before a nested guest exists, the records of the seed pool are forgotten; the recovery below reads the disk again.
+# The data stays on the disk: only database rows go.
+- name: Look for nested guests
+  when: intent.nfs is not none
+  ansible.builtin.command: { argv: [incus, list, "nested-", --format, csv, --columns, n] }
+  register: incus_nested
+  changed_when: false
+- name: Forget the stale records of the topology seed pool
+  when: >-
+    intent.nfs is not none and incus_seed.stat.exists and (incus_nested.stdout_lines | length == 0)
+    and (incus_pools.stdout_lines | select('match', '^topology-seed,') | list | length > 0)
+  ansible.builtin.command: { argv: [incus, admin, sql, global, "{{ item }}"] }
+  loop:
+    - "delete from instances where name like 'fleet-ready-%' or name = 'node-template'"
+    - "delete from storage_pools where name = 'topology-seed'"
+  changed_when: true
+- name: Read the Incus storage pools again
+  ansible.builtin.command: { argv: [incus, storage, list, --format, csv] }
+  register: incus_pools_now
+  changed_when: false
 - name: Work out whether the topology seed pool is missing
   ansible.builtin.set_fact:
     incus_seed_attach: >-
-      {{ intent.nfs is not none and incus_seed.stat.exists and (incus_pools.stdout_lines | select('match', '^topology-seed,') | list | length == 0) }}
+      {{ intent.nfs is not none and incus_seed.stat.exists and (incus_pools_now.stdout_lines | select('match', '^topology-seed,') | list | length == 0) }}
     incus_seed_mount: /run/orbit-seed-tidy
     incus_seed_keep: '^(node-template|fleet-ready-(gateway|app-dev|app-prod))$'
 - name: Read the file system of the topology seed disk

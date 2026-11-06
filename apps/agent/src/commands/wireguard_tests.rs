@@ -77,13 +77,11 @@ impl Fixture {
         Self {
             host: Host {
                 wireguard: root.join("wireguard"),
-                dns_records: root.join("orbit-records.conf"),
                 peer_lock: root.join("peer.lock"),
                 bin: Some(root.join("bin")),
                 root_uid: rustix::process::getuid().as_raw(),
                 root_gid: rustix::process::getgid().as_raw(),
                 lock_wait: Duration::from_millis(200),
-                inspect_lock_wait: Duration::from_millis(200),
                 provider_wait: Duration::from_secs(1),
                 fail_rename: None,
             },
@@ -235,26 +233,6 @@ fn refuses_a_configuration_wg_quick_rejects_without_touching_the_hub() {
     assert_eq!(
         fixture.commands(),
         ["wg-quick strip WG/orbit-candidate.conf"]
-    );
-}
-
-#[test]
-fn inspects_the_interface_and_the_file_digests() {
-    let fixture = Fixture::new(true, true);
-    let state = inspect(&fixture.host).unwrap();
-    assert!(state.active);
-    assert_eq!(
-        state.config_sha256,
-        Some(format!("{:x}", sha2::Sha256::digest(OLD)))
-    );
-    assert_eq!(state.dns_records_sha256, None);
-    fs::write(&fixture.host.dns_records, "records").unwrap();
-    fs::remove_file(fixture.root.join("state/active")).unwrap();
-    let state = inspect(&fixture.host).unwrap();
-    assert!(!state.active);
-    assert_eq!(
-        state.dns_records_sha256,
-        Some(format!("{:x}", sha2::Sha256::digest("records")))
     );
 }
 

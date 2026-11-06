@@ -22,6 +22,7 @@ use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Swamp\SwampScheduledResults;
 use App\Jobs\Operations\PollSwampScheduledResults;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -67,6 +68,10 @@ $app = Application::configure(basePath: dirname(__DIR__))
         GatewaySchedule::command($schedule, 'activitylog:clean', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--days='.config()->integer('retention.activity_log_days'), '--force'])->daily();
         // Horizon's metrics for its dashboard, only while Horizon runs.
         GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
+            ->when(static fn (): bool => GatewayQueueRedis::configured());
+        // The one reconciler of Operations with their Swamp runs: it projects ended runs, expires budgets, finds lost starts,
+        // forwards cancels and frees the target of a run that nothing proves ended.
+        GatewaySchedule::job($schedule, new ReconcileSwampOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
         GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()

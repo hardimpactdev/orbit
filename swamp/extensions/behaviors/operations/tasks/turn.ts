@@ -400,6 +400,8 @@ export function settle(
         tree: string;
         review: string;
         fix: string;
+        plan_exit?: number | null;
+        plan_output?: string;
     },
 ) {
     let { approved, head, tree } = raw;
@@ -414,6 +416,21 @@ export function settle(
         if (!fixed.moved) throw new Error("tasks.prep_not_committed");
         head = fixed.head;
         tree = fixed.tree;
+    }
+    // The runner plan of the cases file comes first in the findings, and no review approves past it.
+    if (
+        raw.plan_exit !== undefined && raw.plan_exit !== null &&
+        raw.plan_exit !== 0
+    ) {
+        approved = false;
+        const refusal = redactTurnText(raw.plan_output ?? "").trim().slice(
+            0,
+            1500,
+        );
+        findings = "The runner plan of the cases file was refused (exit " +
+            raw.plan_exit +
+            "). The cases file uses something the runner does not have: list that case under `uncovered` and do not change the runner.\n" +
+            refusal + (findings === "" ? "" : "\n\n" + findings);
     }
     return { approved, head, tree, findings };
 }
@@ -589,6 +606,8 @@ export const turnDataMethods = {
             tree: z.string(),
             review: z.string(),
             fix: z.string(),
+            plan_exit: z.number().int().nullable().default(null),
+            plan_output: z.string().default(""),
         }),
         execute: async (
             args: {
@@ -597,6 +616,8 @@ export const turnDataMethods = {
                 tree: string;
                 review: string;
                 fix: string;
+                plan_exit?: number | null;
+                plan_output?: string;
             },
             ctx: PublicContext,
         ) => ({

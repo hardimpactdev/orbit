@@ -1,4 +1,12 @@
 ---
+# Caddy serves the Gateway from the home of its account, which a new Ubuntu keeps at 0750: the group of the account lets it in. A group
+# applies to a running service only after a restart, so Caddy restarts when it joins.
+- name: Let Caddy into the Gateway account's group
+  ansible.builtin.user: { name: caddy, groups: "{{ rt.gateway.account }}", append: true }
+  register: caddy_group
+- name: Restart Caddy for its new group # noqa no-handler
+  when: caddy_group is changed
+  ansible.builtin.systemd: { name: caddy.service, state: restarted }
 # Write runtime files validated the pool before it replaced the live one. A reload replaces the workers after their
 # requests end; it runs only when the pool changed.
 - name: Reload PHP-FPM # noqa no-handler

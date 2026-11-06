@@ -10,8 +10,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -22,18 +22,16 @@ use Illuminate\Support\Facades\DB;
 /** Admission only. Swamp builds and verifies every template. */
 final readonly class UpCloudTaskVmImageBuilder
 {
-    public function __construct(private RecipeImageBuilds $builds, private StartOperationAction $operations,
-        private RecipeImageInput $recipes, private TaskVmSettings $settings, private UpCloudGuest $guest) {}
+    public function __construct(private RecipeImageBuilds $builds, private StartOperationAction $operations, private TaskVmSettings $settings, private UpCloudGuest $guest) {}
 
     public function build(?MachineRecipe $recipe = null, ?int $afterAttemptId = null, ?int $generation = null): Operation
     {
         $recipe ??= $this->builds->currentRecipe();
         $upcloud = $this->settings->upcloud ?? throw new TaskVmException('task_vm.upcloud_not_configured', 'UpCloud is not configured.');
         $node = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
-        // This target carries only architecture while compiling public recipe data. It makes no connection.
-        $payload = $this->recipes->payload(AgentGuest::incus($node, 'upcloud', 'image-input'), $recipe, 'base');
+        $pi = $recipe->tools['pi']->artifacts['amd64'] ?? throw new TaskVmException('task_vm.image_build_failed', 'The recipe holds no Pi server for this architecture.');
 
-        return DB::transaction(function () use ($recipe, $afterAttemptId, $generation, $node, $payload, $upcloud): Operation {
+        return DB::transaction(function () use ($recipe, $afterAttemptId, $generation, $node, $pi, $upcloud): Operation {
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $desired = DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail();
             if ($desired->identity !== $recipe->identity || ($generation !== null && (int) $desired->generation !== $generation)
@@ -59,9 +57,8 @@ final readonly class UpCloudTaskVmImageBuilder
             $bootstrap = $this->guest->generateHostKey('tvm-image-'.$stamp);
             $input = ['build_id' => $build->id, 'node_id' => $node->id, 'identity' => $recipe->identity, 'generation' => (int) $desired->generation,
                 'stamp' => $stamp, 'name' => 'tvm-image-'.$stamp, 'source' => $upcloud->sourceTemplate,
-                'pi_artifact' => isset($recipe->tools['pi']->artifacts['amd64']) ? ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$recipe->tools['pi']->artifacts['amd64']->location, 'sha256' => $recipe->tools['pi']->artifacts['amd64']->digest] : null,
-                'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-                'agent_sha256' => $payload['agent_sha256'], 'host_key' => $bootstrap['public'],
+                'pi' => ['sha256' => $pi->digest, 'path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location],
+                'recipe' => $recipe->json, 'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']), 'host_key' => $bootstrap['public'],
                 'upcloud' => ['zone' => $upcloud->zone, 'plan' => $upcloud->plan, 'disk_gb' => $upcloud->diskGb],
                 'pinned_templates' => TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud)->whereNull('provider_id')->whereNotNull('image_fingerprint')->pluck('image_fingerprint')->all()];
             $build->forceFill(['intent' => $input, 'resources' => [], 'bootstrap' => $bootstrap])->save();

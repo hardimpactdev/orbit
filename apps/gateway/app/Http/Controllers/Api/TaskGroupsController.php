@@ -15,6 +15,7 @@ use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskParkAction;
 use App\Actions\Tasks\StartTaskPrepAction;
+use App\Actions\Tasks\StartTaskPrepFixAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
@@ -42,6 +43,7 @@ use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
+use App\Http\Requests\Tasks\StartTaskPrepFixRequest;
 use App\Http\Requests\Tasks\StartTaskPrepRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskScriptRequest;
@@ -113,6 +115,17 @@ final class TaskGroupsController extends Controller
     #[StartsOperation(OperationKinds::TasksPrep, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function prep(StartTaskPrepRequest $request, Task $group, StartTaskPrepAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    /** Apply the review of the owner to a parked prep group and push the corrections to its draft pull request. */
+    #[StartsOperation(OperationKinds::TasksPrepFix, requiresKey: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function prepFix(StartTaskPrepFixRequest $request, Task $group, StartTaskPrepFixAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);

@@ -210,34 +210,12 @@ final readonly class RunTaskPullRequestGateAction
     private function admit(Task $group, int $number, string $step, string $kind, string $head, Closure $start): array
     {
         try {
-            $operation = $this->keyed($kind, $step, $group, $head, $start);
+            $operation = $this->idempotency->under($kind, "pr-gate:{$step}:{$group->id}:{$head}", hash('sha256', "{$kind}|{$group->id}|{$head}"), $start);
         } catch (ResourceOperationException $exception) {
             return $this->result($group, $number, $step, 'skipped', $exception->errorCode);
         }
 
         return $this->result($group, $number, $step, $operation->wasRecentlyCreated ? 'admitted' : 'replayed', null, $operation->id);
-    }
-
-    /**
-     * Runs one admission under the key of the group, step and head, as the HTTP boundary does for a request header.
-     *
-     * @template T
-     *
-     * @param  Closure(): T  $admit
-     * @return T
-     */
-    private function keyed(string $kind, string $step, Task $group, string $head, Closure $admit): mixed
-    {
-        $previous = [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint];
-        $this->idempotency->kind = $kind;
-        $this->idempotency->key = "pr-gate:{$step}:{$group->id}:{$head}";
-        $this->idempotency->fingerprint = hash('sha256', "{$kind}|{$group->id}|{$head}");
-
-        try {
-            return $admit();
-        } finally {
-            [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint] = $previous;
-        }
     }
 
     /** @return Result */
