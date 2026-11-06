@@ -494,3 +494,110 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
         true,
     );
 });
+
+Deno.test("a failed create takes back its publication: the reverse states remove the site, the pool and the DNS name, and keep what else is live", async () => {
+    // A create publishes before -> after; its withdrawal applies after -> before.
+    const without = await section(config(block("kept", "a")), true);
+    const published = await section(
+        config(block("kept", "a"), block("made", "a")),
+        true,
+    );
+    const dnsWithout = await dnsState(["kept.test"]);
+    const dnsPublished = await dnsState(["kept.test", "made.test"]);
+    const phpPublished = {
+        account_user: "orbit",
+        configurations: { "8.4": pool(1, 5) + pool(2, 5) },
+    };
+    const phpWithout = {
+        account_user: "orbit",
+        configurations: { "8.4": pool(1, 5) },
+    };
+    const input = (live: string, pools: string, dns: typeof dnsPublished) => ({
+        ...placement,
+        plan_path: planPath,
+        read: read({
+            account,
+            pools: { [poolPath]: resolved(pools) },
+            caddy: live,
+            records: dns.records,
+            catalog: dns.catalog,
+        }),
+        php: { before: phpPublished, after: phpWithout },
+        caddy: {
+            before: published,
+            prepared: published,
+            withdrawn: published,
+            after: without,
+        },
+        dns: {
+            before: dnsPublished,
+            prepared: dnsPublished,
+            withdrawn: dnsPublished,
+            after: dnsWithout,
+        },
+        cleanup: [{ scope: "route-7-router", user: "orbit" }],
+    });
+    const extra = block("elsewhere", "z");
+    const plan = await composeWithdrawal(
+        input(
+            config(block("kept", "a"), block("made", "a"), extra),
+            pool(1, 5) + pool(2, 5),
+            dnsPublished,
+        ),
+    );
+    assertEquals(plan.caddy?.content.includes("made.test"), false);
+    assertEquals(plan.caddy?.content.includes("kept.test"), true);
+    assertEquals(plan.caddy?.content.includes("elsewhere.test"), true);
+    assertEquals(plan.pools[0].content.includes("orbit-instance-2]"), false);
+    assertEquals(plan.pools[0].content.includes("orbit-instance-1]"), true);
+    assertEquals(plan.dns?.records.includes("made.test"), false);
+    assertEquals(plan.dns?.records.includes("kept.test"), true);
+    assertEquals(plan.cleanup, [{ scope: "route-7-router", user: "orbit" }]);
+    // A create that failed before it published anything: the same withdrawal finds nothing to remove and does not fail.
+    const nothing = await composeWithdrawal(
+        input(
+            config(block("kept", "a"), extra),
+            pool(1, 5),
+            dnsWithout,
+        ),
+    );
+    assertEquals(nothing.caddy?.content.includes("made.test"), false);
+    assertEquals(nothing.caddy?.content.includes("elsewhere.test"), true);
+    assertEquals(nothing.dns?.records.includes("made.test"), false);
+});
+
+Deno.test("the create workflow withdraws the Route of a failed create before it reports the failure", async () => {
+    type Step = {
+        name: string;
+        guard?: string;
+        dependsOn?: { step: string }[];
+        task: { workflowIdOrName?: string; inputs?: Record<string, unknown> };
+    };
+    const load = async (name: string) =>
+        parse(
+            await Deno.readTextFile(`${ROOT}/workflows/workflow-${name}.yaml`),
+        ) as {
+            inputs: { properties: Record<string, { enum?: string[] }> };
+            jobs: { steps: Step[] }[];
+        };
+    const create = await load("operation-instance-create");
+    const steps = create.jobs.flatMap((job) => job.steps);
+    const withdraw = steps.find((step) => step.name === "withdraw-route")!;
+    assertEquals(withdraw.task.workflowIdOrName, "route-withdraw");
+    assertEquals(withdraw.task.inputs?.side, "restore");
+    assertEquals(withdraw.dependsOn?.map((d) => d.step), ["finish"]);
+    // It runs only for a create that failed after its Route key was made.
+    assertEquals(
+        /steps\.finish\.outputs\.ready == true/.test(withdraw.guard ?? ""),
+        true,
+    );
+    assertEquals(/route-csr-0/.test(withdraw.guard ?? ""), true);
+    // accepted waits for it, so the failing assertion does not cut it short.
+    const accepted = steps.find((step) => step.name === "accepted")!;
+    assertEquals(
+        accepted.dependsOn?.map((d) => d.step).includes("withdraw-route"),
+        true,
+    );
+    const route = await load("route-withdraw");
+    assertEquals(route.inputs.properties.side.enum, ["forward", "restore"]);
+});
