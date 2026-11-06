@@ -453,7 +453,7 @@ Each file then arrives on stdin of one `install` command: the Orbit root, `model
 
 The Gateway makes the guest's agent secret when it admits the enrollment, as it does for `node:add`, and keeps only the SHA-256 of the 64 hex characters. The vault copy `agent-secret-node-<id>` arrives on stdin of one `install` command that writes `/etc/orbit/agent/secret` (0600, root) with no trailing newline. The `observer-identity` step hashes the file and the run stops with `agent.secret_mismatch` unless it equals the Gateway's value. The agent sends the secret and the Gateway compares its hash, so the file and the record must describe the same bytes.
 
-The guest firewall denies incoming traffic by default. The SSH preparation step allows TCP 22 from 209, and TCP 3774, Pi's port, from 209 (`orbit:task-vm-pi-209`) and from the Gateway (`orbit:task-vm-pi-gateway`), on the `orbit` interface, before it enables ufw. Resume writes the same rules again. Without them every turn fails at `session_create` with curl exit 28.
+The guest firewall denies incoming traffic by default. The SSH preparation step allows TCP 22 from 209, and TCP 3774, Pi's port, from 209 (`orbit:task-vm-pi-209`) and from the Gateway (`orbit:task-vm-pi-gateway`), on the `orbit` interface, and TCP 443 for a routed workspace site (`orbit:task-vm-site`), before it enables ufw. The hub filter lets the Cluster Routers and 209 (`orbit:task-vm-control-web`, for the Route's TLS probe) reach that port. Resume writes the same rules again. Without them every turn fails at `session_create` with curl exit 28.
 
 The official cfgmgmt behaviors are not used here: they trust the worker's shared `known_hosts`, and task VMs reuse addresses. The Gateway retains the model-key record and creates the normal `pi-server` Process. Resume checks `agent.status` before requesting Pi capabilities.
 
@@ -1364,7 +1364,7 @@ This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb and t
 
 Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints `Operation #<id>`; submission does not mean the filter is ready. Its native workflow runs on 209 and reaches the VPN Node through official SSH with the recorded host pins. No Swamp binary or worker is installed on the VPN Node.
 
-The workflow checks the complete nft ruleset with the hub's own `nft`. One step then writes the filter and its systemd unit, enables and restarts the unit, and lists the live chain. After the filter loads, UFW allows TCP 22 from 209 and TCP 80 and 443 from each Cluster Router, one rule at a time.
+The workflow checks the complete nft ruleset with the hub's own `nft`. One step then writes the filter and its systemd unit, enables and restarts the unit, and lists the live chain. After the filter loads, UFW allows TCP 22 and 443 (the Route's TLS probe) from 209, and TCP 80 and 443 from each Cluster Router, one rule at a time.
 
 A native assert is the end check: every expected control and Router rule must be a line of the live chain. Only then does the Gateway record the hub ready, with the sources from its intent. A failed step leaves the Operation failed; a rerun writes and loads the same file again.
 
@@ -1387,7 +1387,7 @@ The table filters only the reserved range. Its first rule passes every packet th
 | From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
 | To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
 
-The209 SSH rule and Cluster Router web rules come from the same canonical definitions shown by `firewall:list --managed` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall:list --live` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
+The 209 SSH and TLS probe rules and the Cluster Router web rules come from the same canonical definitions shown by `firewall:list --managed` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall:list --live` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 

@@ -23,7 +23,9 @@ final readonly class TaskVmHubFilter
         $intent = ['policy' => $input, 'node_id' => $node->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
             'source' => $rule->shape->source, 'range' => $input['range'], 'nft' => $this->policy->render($input, $rule),
             'unit' => TaskVmHubPolicy::Unit, 'live_rules' => $this->policy->liveRules($input, $rule), 'control_rule' => array_slice($rule->arguments, 1),
-            'router_rules' => array_map(static fn (UfwManagedRule $router): array => array_slice($router->arguments, 1), $this->policy->routerRules($input['routers'], $input['range']))];
+            // The web rules the hub applies beside the control SSH rule: the control Node's TLS probe, then each Router's web access.
+            'router_rules' => array_map(static fn (UfwManagedRule $web): array => array_slice($web->arguments, 1),
+                [$this->policy->controlWebRule($rule), ...$this->policy->routerRules($input['routers'], $input['range'])])];
 
         return $this->operations->execute('task_vm.hub_converge', 'node_firewall', $node->id, $node->id, ['intent' => $intent], 'operator', null);
     }

@@ -20,7 +20,7 @@ sequenceDiagram
   %%> - the task VM Cluster has an active Router; no Node other than a task VM holds an address in the reserved range
   %%> - Node 209 is active with an IPv4 address outside the range; Node 1 has stored SSH host keys
   %%> Builds:
-  %%> - the complete nft file and its systemd unit, the UFW rules for 209 SSH and Router web, and the exact live rule lines the end check expects
+  %%> - the complete nft file and its systemd unit, the UFW rules for 209 SSH, 209's TLS probe on 443 and Router web, and the exact live rule lines the end check expects
   %%> Result:
   %%> - task #5190 recorded with the full public intent; the command prints `Operation #5190`
   GW->>SW: Start run, full intent<br/>operation-task-vm-hub-converge
@@ -43,7 +43,7 @@ sequenceDiagram
   %%> - the unit loads the filter at boot, before `wg-quick@orbit`
   SW->>N: Allow 209 SSH, Router web<br/>ufw route allow · forEach
   %%> What it does:
-  %%> - one `ufw route allow` per rule: TCP 22 from Node 209 and TCP 80 and 443 from each Cluster Router into the range
+  %%> - one `ufw route allow` per rule: TCP 22 and 443 (the Route's TLS probe) from Node 209, and TCP 80 and 443 from each Cluster Router, into the range
   %%> How:
   %%> - `concurrency: 1`: the rules run one at a time, so UFW never runs twice at once; UFW skips a rule that exists
   Note over SW: Confirm the filter<br/>native assert

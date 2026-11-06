@@ -57,6 +57,7 @@ sequenceDiagram
   SW->>H: Bootstrap the guest<br/>bootstrap · incus exec
   %%> What it does:
   %%> - through `incus exec` on Node 13: the managed account, 209's authorized key, passwordless sudo, sshd with TCP 22 only from 209's WireGuard address, the firewall rules that also let 209 and the Gateway reach Pi on TCP 3774, and a new WireGuard key whose public half it prints
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): the same firewall step allows TCP 443 on the `orbit` interface (`orbit:task-vm-site`), and the hub's task VM filter lets 209 in on 443 (`orbit:task-vm-control-web`) beside its SSH rule, so the Cluster router and 209's TLS probe reach a routed workspace; Pi and SSH stay limited to 209 and the Gateway, so the Node's full WireGuard member trust is not applied
   %%> - each phase is one argv the Gateway rendered; no step reads bootstrap assets
   %%> Replaces:
   %%> - the five `bootstrap-*` exec and `-assets` pairs, `peer-key-command`, `peer-key` and the `ssh-prepare` child
