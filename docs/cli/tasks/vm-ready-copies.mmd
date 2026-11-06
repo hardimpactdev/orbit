@@ -16,7 +16,7 @@ sequenceDiagram
   %%> - later, the seed refresh of stage 6, as a child workflow in its refresh VM
   %%> Requirements:
   %%> - the task VM is `ready`, its guest Node is active with a recorded host key
-  %%> - the nested fleet runs in it: `nested-gateway`, `nested-app-dev` and `nested-app-prod`, on the network `nested`
+  %%> - the nested fleet runs in it: `nested-gateway`, `nested-app-dev` and `nested-app-prod`, on the network `oe-nested`
   %%> - no other task holds `task_vm:<id>`; a repeated admission returns the open task
   %%> Result:
   %%> - the task records the VM, its guest Node, its host key pin and the names of the nested VMs

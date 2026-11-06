@@ -1,4 +1,4 @@
-id: a9c148e0-6cae-47d3-b220-7914ba2bf988
+id: 29042bb2-eb7f-4029-9937-7761198d0ad6
 name: task-nested-fleet
 description: >-
   Start the nested fleet of a task VM from the ready copies of its seed and join it as operator (stage 2 of the command development pipeline). Each step is one command over official SSH to the task VM.
@@ -97,11 +97,18 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-record-the-operator-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-record-the-operator-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'sqlite3', '${{ steps["Read the database path"].outputs.stdout.split("\n")[0].split("=")[1] }}', '${{ "update nodes set wireguard_public_key = ''" + steps["Make the operator key"].outputs.stdout.split("\n")[0] + "'' where name = ''operator''" }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Read the database path', condition: {type: succeeded}}, {step: 'Make the operator key', condition: {type: succeeded}}]
+  # The agent answers early in the boot. `systemctl start` returns when the hub tunnel is up, so the next steps find the interface.
+  - name: 'Start the hub'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-hub").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-start-the-hub").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'start', 'wg-quick@orbit'], timeoutSec: 130}}
+    dependsOn: [{step: 'Record the operator key', condition: {type: succeeded}}]
   - name: 'Read the hub key'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-hub-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-hub-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'wg', 'show', 'orbit', 'public-key'], timeoutSec: 40}}
-    dependsOn: [{step: 'Record the operator key', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Start the hub', condition: {type: succeeded}}]
   # The hub learns the key; the nested network keeps its address 10.45.0.10 for the operator.
   - name: 'Add the operator peer'
     labels: {role: swamp}
@@ -144,14 +151,14 @@ jobs:
   - name: 'Push the Club key'
     labels: {role: swamp}
     writes: true
-    guard: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}'
+    guard: '${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-push-the-club-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-push-the-club-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'file', 'push', '--create-dirs', '--mode=0600', '--uid=1000', '--gid=1000', '/home/orbit/.config/swamp/club-api-key', '${{ inputs.intent.fleet.guests.gateway }}/home/orbit/.config/swamp/club-api-key'], timeoutSec: 70}}
     dependsOn: [{step: 'Check the tunnel', condition: {type: succeeded}}]
   - name: 'Restart the nested Swamp'
     labels: {role: swamp}
     writes: true
-    guard: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}'
+    guard: '${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-restart-the-nested-swamp").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-restart-the-nested-swamp").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'restart', 'orbit-swamp-serve', 'orbit-node-worker'], timeoutSec: 70}}
     dependsOn: [{step: 'Push the Club key', condition: {type: succeeded}}]
