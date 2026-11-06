@@ -101,6 +101,7 @@ sequenceDiagram
     %%> With access rows in the workspace intent, the Route gets `prepared` with the guest and skips them there; a Route with an APP_URL line on the guest keeps both, so the workspace step gets no rows
     %%> Why a child:
     %%> - the same Route child instance:create runs; its signing authorizes against this root run
+    %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the signing accepts the leaf of the new guest while its Node is still `provisioning` as well as `active`. On the plain VM create path the Gateway activates that Node only when it applies the provision result, after this Route step, so the guest's admitted leaf was never signable and the step failed with `certificate.intent_mismatch` (409), as group 3780 (op 12284) showed. A claimed slot is already active and never met it
   end
   opt Project has Process definitions
     SW->>VM: Create, start Processes<br/>operation-process-create · forEach

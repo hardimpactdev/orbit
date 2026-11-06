@@ -584,6 +584,11 @@ The request cannot supply a domain, root or signing policy. A current leaf retur
 no new bundle. Node removal selects its admitted restoration leaves only when
 `restoring` is true.
 
+A leaf is signed while its Node is `active`. The Node that a `node.add` adds is also signed while it
+is `provisioning`. So is the new guest Node of a `tasks.provision` (`guest_node_id`). The Gateway
+activates a guest only when it applies the provision result, and that is after the Route step has
+asked for the leaf.
+
 For registered `websocket.app_attach` and `websocket.app_detach` parents, signing reads only `websocket_attachment.route_mutations.forward.prepare_certificates` and `websocket_attachment.route_mutations.forward.certificates`. Restoration reads only `websocket_attachment.route_mutations.restore.certificates`. Other containers and the opposite phase grant no authority. Route children carry the actual parent run ID; the Operation and its bound run still scope every request.
 
 The signer verifies the CSR signature, RSA 2048 public key, exact common name and
