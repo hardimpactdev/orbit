@@ -25,11 +25,11 @@ orbit instance:logs 12 --follow
 
 In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer. A `--lines` value outside 1 through 1,000 is refused with `instance.log_lines_invalid` before any request.
 
-The command returns the end of the Instance's application log: `storage/logs/laravel.log`, or the newest `laravel-*.log` when that file is absent, in the Instance's application directory. The Gateway reads it from the Instance's Node. An Instance without either file has an empty log, and the command still succeeds. Stored environment values and credential-shaped data are redacted. [Instance logs](/reference/instance-logs) describes the file, the redaction and the 4 MiB limit.
+The command returns the end of the Instance's application log: `storage/logs/laravel.log`, or the newest `laravel-*.log` when that file is absent, in the Instance's application directory. The Node agent reads it, development or production, and the Gateway answers from the agent's log stream, not over SSH. An Instance without either file has an empty log, and the command still succeeds. Stored environment values and credential-shaped data are redacted. [Instance logs](/reference/instance-logs) describes the file, the redaction and the 256 KiB limit.
 
 Without `--follow`, the log is printed with control characters shown as visible escapes, followed by a `Request ID: <id>` line. An empty log prints only that line, and machine output omits it. The CLI redacts credential-shaped text again before it prints, and writes every redaction as `[redacted]`, also a value the Gateway already replaced. With `--json` the result is `{ id, name, lines, logs, request_id }`: `lines` is the requested count, and `logs` is the redacted text.
 
-`--follow` works as it does for [`process:logs`](/cli/process/logs): the CLI opens a [live log stream](/reference/live-logs), and it polls the one-shot read every 5 seconds when the Gateway cannot open one. The Gateway declines a stream for a production Instance, so with realtime available the CLI prints `Following over SSH; polling every 5 seconds.` and polls from the start; with `--json` the notice has reason `ssh_only`. Without realtime, the reason is `realtime_not_configured`, or `realtime_unreachable` after 15 seconds. With `--json` and `--follow`, stdout holds one JSON object on each line, in the shapes `process:logs` describes, and no request ID. Ctrl-C and SIGTERM end a follow with exit code 0: stopping is its normal end, so it is an exception to the CLI standard's cancel status. A follow that loses its access ends with `node_access.required`.
+`--follow` works as it does for [`process:logs`](/cli/process/logs): the CLI opens a [live log stream](/reference/live-logs). When the Gateway cannot open one it prints the error and exits with status 1. Without realtime, the reason is `realtime_not_configured`, or `realtime_unreachable` after 15 seconds. With `--json` and `--follow`, stdout holds one JSON object on each line, in the shapes `process:logs` describes, and no request ID. Ctrl-C and SIGTERM end a follow with exit code 0: stopping is its normal end, so it is an exception to the CLI standard's cancel status. A follow that loses its access ends with `node_access.required`.
 
 ## Errors
 
@@ -39,6 +39,11 @@ Without `--follow`, the log is printed with control characters shown as visible 
 | `input.cancelled` | You cancelled the Instance list. |
 | `instance.log_lines_invalid` | `--lines` is not an integer from 1 through 1,000. |
 | `instance.checkout_path_invalid` | The recorded checkout path is not a valid storage path. |
-| `instance.logs_failed` | The Node did not answer, or the read failed. |
+| `logs.live_unavailable` | The agent cannot answer; `error.details.reason` says why. |
+| `logs.stream_limit` | The Node already has 16 open tails. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node, or lost it during a follow. |
+
+## How it works
+
+<div className="flow-at" data-chart="instance/logs"></div>

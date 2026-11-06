@@ -143,7 +143,7 @@ Enable uses `operation-schedule-control` to enable and start the timer, check sy
 
 ## Logs
 
-Logs read only the Schedule's service, with fixed `journalctl --output cat` arguments. `lines` is 1 through 1,000, and the default is 100. The read has a 10-second deadline and returns at most 1 MiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when the byte limit removed older lines. Logs need an `active` Schedule; otherwise the Gateway returns `schedule.state_invalid`. Orbit does not store journal output, and it does not redact it: Process and Instance logs are redacted, Schedule logs are not. Keep secrets out of command output. The host Node's journal settings decide how long lines stay, and Orbit keeps no copy elsewhere.
+Logs read only the Schedule's service, through the Node agent's [log stream](/reference/live-logs#one-shot-reads-use-the-stream-path), with a fixed `journalctl --output short-iso --utc` read. `lines` is 1 through 1,000, and the default is 100. The read waits at most 5 seconds and returns at most 256 KiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when a limit removed older lines. Logs need an `active` Schedule; otherwise the Gateway returns `schedule.state_invalid`. Orbit stores no journal output. The agent and the Gateway redact credential-shaped text and stored environment values, but keep secrets out of command output. The host Node's journal settings decide how long lines stay.
 
 ## Latest run
 
@@ -170,7 +170,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 | `schedule.state_invalid` | The Schedule status does not allow the operation, or another operation on the Instance is running. |
 | `schedule.target_in_use` | The change would move or remove the target of an existing Schedule. |
 | `schedule.artifact_conflict` | A file at a Node timer's owned path is not the Schedule's own file. |
-| `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.logs_failed`, `schedule.remove_failed` | The operation did not finish. |
+| `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.remove_failed` | The operation did not finish. |
 | `schedule.node_unreachable` | SSH to the host Node failed. |
 
 ## Inspect Schedule drift

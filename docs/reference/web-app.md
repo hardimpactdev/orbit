@@ -203,7 +203,7 @@ The fleet firewall list reads every Node's rules with one request, `GET /api/v1/
 
 The Instance and Process log panes follow their log through a [live log stream](/reference/live-logs) while realtime is live. A pane opens a stream with the lines it shows, 500 for an Instance and 100 for a Process. It renews the stream every 20 seconds and closes it when the pane closes. It shows `[orbit] N lines dropped` and `[orbit] N MiB skipped` where the stream reports them.
 
-A pane polls the one-shot read every 10 seconds instead when the Gateway refuses the stream, when the stream ends, or when realtime is down. A production Instance pane always polls. For a reason that passes on its own, such as `agent_not_joined`, the pane tries a new stream every 30 seconds while it polls. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists the reasons.
+A pane shows the reason when the Gateway refuses the stream, when the stream ends, or when realtime is down. For a reason that passes on its own, such as `agent_not_joined`, the pane tries a new stream every 30 seconds. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists the reasons.
 
 ## Installed app on iPhone and iPad
 
