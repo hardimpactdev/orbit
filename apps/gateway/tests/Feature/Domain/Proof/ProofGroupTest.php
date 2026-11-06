@@ -44,6 +44,18 @@ it('cancels the group of each run of a proof that is cancelled', function (): vo
     Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
 });
 
+it('cancels the group of a task image refresh that is cancelled before its run starts, so its VM does not keep a slot', function (): void {
+    Queue::fake();
+    $run = proofRunning();
+    $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => $run->target_id, 'node_id' => $run->node_id,
+        'input' => ['group_id' => $run->target_id], 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0]);
+
+    app(CancelOperationAction::class)->execute($refresh);
+
+    expect($refresh->refresh()->status)->toBe(OperationStatus::Cancelled);
+    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $refresh->id);
+});
+
 it('does not touch the group when another operation is cancelled', function (): void {
     Queue::fake();
     $proof = proofRunning();
