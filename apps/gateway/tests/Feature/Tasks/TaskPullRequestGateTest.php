@@ -113,6 +113,14 @@ it('registers the gate check on the Gateway schedule every minute', function ():
     expect(Artisan::output())->toMatch('/\*\s+\*\s+\*\s+\*\s+\*\s+php artisan tasks:pr-gate/');
 });
 
+/** The comment of the round on the head already ended, as the key of the head records it. */
+function gateCommented(Task $group, string $head = GATE_HEAD): void
+{
+    Operation::query()->create(['kind' => OperationKinds::TasksPrComment, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+        'idempotency_key' => 'pr-gate:comment:'.$group->id.':'.$head, 'idempotency_fingerprint' => hash('sha256', OperationKinds::TasksPrComment.'|'.$group->id.'|'.$head),
+        'input' => ['head_sha' => $head], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
+}
+
 function gateRound(Task $group, int $round, ?TaskReviewRoundVerdict $verdict, string $head = GATE_HEAD): TaskReviewRound
 {
     return TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => $head, 'round' => $round, 'verdict' => $verdict]);
@@ -139,6 +147,10 @@ it('waits for a round that runs and for findings that are not the third', functi
 
     $round->update(['verdict' => TaskReviewRoundVerdict::Findings]);
 
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
+
+    gateCommented($group);
+
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'review', 'result' => 'skipped', 'code' => 'tasks_pr.round_findings'])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic);
 });
@@ -146,6 +158,10 @@ it('waits for a round that runs and for findings that are not the third', functi
 it('tries the merge step once the round on the exact head passed', function (): void {
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     gateRound($group, 1, TaskReviewRoundVerdict::Pass);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
+
+    gateCommented($group);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
 });
@@ -164,6 +180,7 @@ it('falls back to manual mode after round 3 with findings and runs the ready ste
     gateRound($group, 1, TaskReviewRoundVerdict::Findings, str_repeat('1', 40));
     gateRound($group, 2, TaskReviewRoundVerdict::Findings, str_repeat('2', 40));
     gateRound($group, 3, TaskReviewRoundVerdict::Findings);
+    gateCommented($group);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'code' => 'tasks_pr.github_unreadable'])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
@@ -172,6 +189,7 @@ it('falls back to manual mode after round 3 with findings and runs the ready ste
 it('falls back to manual mode when a round failed', function (): void {
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     gateRound($group, 1, TaskReviewRoundVerdict::Failed);
+    gateCommented($group);
 
     app(RunTaskPullRequestGateAction::class)->execute();
 

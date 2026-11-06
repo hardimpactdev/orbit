@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskParkProjection;
 use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\Tasks\TaskPublishProjection;
+use App\Domain\Tasks\TaskPullRequestCommentProjection;
 use App\Domain\Tasks\TaskPullRequestMergeProjection;
 use App\Domain\Tasks\TaskPullRequestReadyProjection;
 use App\Domain\Tasks\TaskScriptProjection;
@@ -42,6 +43,11 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the merge', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'merge', 'step' => 'Squash on expected head', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-merge-write-[a-f0-9-]{36}$']],
+        ], 'tasks.pr_comment' => [
+            'workflow' => 'operation-task-pr-comment', 'projection' => TaskPullRequestCommentProjection::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the comment step', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'comment', 'step' => 'Post the comment', 'field' => 'stdout']]],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-comment-write-[a-f0-9-]{36}$']],
         ], 'tasks.prep' => [
             'workflow' => 'operation-task-prep', 'projection' => TaskPrepProjection::class,
             'workflow_inputs' => true,

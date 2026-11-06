@@ -108,6 +108,10 @@ final readonly class RunTaskPullRequestGateAction
                 : $this->admit($group, $number, 'review', OperationKinds::TasksTurn, $head, fn () => $this->rounds->execute($group, $head, self::Caller, $request));
         }
 
+        if ($round->verdict !== null && ($pending = $this->comment($group, $number, $head, $round, $request)) !== null) {
+            return $pending;
+        }
+
         return match ($round->verdict) {
             null => $this->result($group, $number, 'review', 'skipped', 'tasks_pr.round_running'),
             TaskReviewRoundVerdict::Pass => $this->merge($group, $number, $head, $request),
@@ -116,6 +120,23 @@ final readonly class RunTaskPullRequestGateAction
                 : $this->result($group, $number, 'review', 'skipped', 'tasks_pr.round_findings'),
             TaskReviewRoundVerdict::Failed => $this->fallBack($group, $number, $head, $request),
         };
+    }
+
+    /**
+     * The verdict goes to the pull request as a comment of the App, once for each head. The result holds the comment while it is
+     * admitted, busy or running, and is null once the comment ended, so the gate goes on.
+     *
+     * @return Result|null
+     */
+    private function comment(Task $group, int $number, string $head, TaskReviewRound $round, string $request): ?array
+    {
+        $result = $this->admit($group, $number, 'comment', OperationKinds::TasksPrComment, $head, fn () => $this->steps->comment($group, $head, $round, self::Caller, $request));
+        if ($result['result'] !== 'replayed') {
+            return $result;
+        }
+        $operation = Operation::query()->find($result['operation']);
+
+        return $operation instanceof Operation && ! $operation->status->terminal() ? $this->result($group, $number, 'comment', 'skipped', 'tasks_pr.round_commenting', $operation->id) : null;
     }
 
     /**
