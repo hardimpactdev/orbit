@@ -523,7 +523,6 @@ cases:
     batch: fresh-fleet
     covers: [main, operator-rule, changes-needed, succeeded]
     summary: Supplying the port but no Node prompts for the target instead of inferring it or refusing.
-    fails_today: The Node prompt uses SelectPrompt and does not show the data-list columns or search hint required by the CLI standard.
     setup:
       - use: reachable-port
     act:
