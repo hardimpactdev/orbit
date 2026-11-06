@@ -24,13 +24,14 @@ sequenceDiagram
   %%> - the command is `family:command` in lower case
   %%> What it does:
   %%> - captures, in one transaction, the provision intent, the author and reviewer threads, the prompts, the pull request title and body, and the repository, base and branch `task-42`
-  %%> - mints the GitHub installation token for the pull request and pushes it to the vault under key names
+  %%> - names the vault keys of the push token; it mints no GitHub token, because the run takes longer than the hour that an installation token lives
   %%> Result:
   %%> - Operation recorded with the full intent
   GW->>SW: Start one run, full intent<br/>operation-task-prep
   %%> Inputs:
-  %%> - the whole intent above, and the vault key names of the model, Pi and GitHub credentials, never their values
-  %%> - no step of the run calls the Gateway
+  %%> - the whole intent above, and the vault key names of the model, Pi and push-token credentials, never their values
+  %%> - one step of the run calls the Gateway: the publish step mints its push token when it starts, with the run id of this run
+  %%> - no task VM holds a GitHub credential: it receives the workspace in the provision bundle, and the push and the pull request run on Node 209
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Next:
   %%> - the CLI follows the Operation with `operation:show`
@@ -57,6 +58,9 @@ sequenceDiagram
       %%> - the author thread fixes them and commits again
     end
     alt the last review has no findings
+      SW->>GW: Mint the push token<br/>operation:direct:github-token
+      %%> What it does:
+      %%> - the publish child asks for the token only now, right before the push
       SW->>GH: Open a draft PR<br/>operation-task-publish
       %%> What it does:
       %%> - pushes the commit to `task-42` without force and opens the PR as the Orbit App, as a draft
