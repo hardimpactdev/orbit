@@ -90,6 +90,10 @@ final class OperationRunBudgets
         // No run yet. Basis: the serial bounded steps: scan 900 s, stop 300 s, a copy 600 s, the agent wait 130 s and the scan on the stored
         // copy 900 s, plus the shorter steps and margin. Replace with the 14-day p95 after the first successes.
         'task_vm.ready_copies' => 3600,
+        // No run yet. Basis: the stage-2 timings of a fresh nested fleet (docs/cli/tasks/vm-fleet-build.mmd): the VMs and their first boot,
+        // the Gateway bootstrap (about 3 minutes), its first role and Node converges, the two Node enrollments (about 6 minutes each) and
+        // the readiness wait, at their step bounds, plus margin. Replace with the 14-day p95 after the first successes.
+        'task_vm.fleet_build' => 3600,
         // No run yet. Basis: the provision of a task VM with its nested fleet (tasks.provision, 3,900 s), the converge (3,300 s at its
         // step bounds; a VM at its pins takes a minute), the ready copies (3,600 s at their step bounds, about 10 min in practice), the
         // clean, the publication of the image and its boot check (a few minutes each), plus margin. Replace with the 14-day p95 after

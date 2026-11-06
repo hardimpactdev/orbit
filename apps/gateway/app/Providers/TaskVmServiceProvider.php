@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\BuildTaskVmFleetCommand;
 use App\Console\Commands\BuildTaskVmImageCommand;
 use App\Console\Commands\BuildTaskVmRecipeCommand;
 use App\Console\Commands\BuildUpCloudTaskVmImageCommand;
@@ -42,6 +43,7 @@ final class TaskVmServiceProvider extends ServiceProvider
             BuildTaskVmImageCommand::class,
             BuildTaskVmRecipeCommand::class,
             BuildUpCloudTaskVmImageCommand::class,
+            BuildTaskVmFleetCommand::class,
             ConvergeTaskVmCommand::class,
             ListTaskVmImageBuildsCommand::class,
             PackageCacheUsageCommand::class,

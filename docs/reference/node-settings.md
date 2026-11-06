@@ -117,6 +117,8 @@ The Gateway reads Node settings only. It does not copy `ORBIT_TASK_VMS_INCUS_HOS
 
 Verify the stored settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `gateway.env`; use [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change) to apply that removal.
 
+A configured task VM host builds the nested fleet of its VMs with `php artisan task-vms:build-fleet <VM-ID>` (see [Build the nested fleet](/reference/compute-drivers#build-the-nested-fleet)).
+
 ## Derive the effective root
 
 The apps root is `apps.path`, or `<managed-user-home>/apps` when the path is not set. The Gateway computes the default each time and does not store it.
