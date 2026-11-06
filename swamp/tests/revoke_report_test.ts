@@ -38,6 +38,10 @@ Deno.test("provision asks for the token beside the clone credential, writes both
     // The two writes depend on the same steps, so one barrier covers both; neither waits for the other.
     assertEquals(needs("deps_write_composer"), needs("deps_write_npm"));
     assert(!needs("deps_write_npm").includes("deps_write_composer"), "the npm write must not wait for the composer write");
+    // The removal and the revoke wait for the mint themselves: their guard reads it, and a skipped write must not let them be skipped early.
+    for (const name of ["deps_remove_files", "deps_revoke"]) {
+        assert(needs(name).includes("deps_mint") && needs(name).includes("deps_clear"), `${name} must name the mint and the clear as dependencies`);
+    }
     // The removal and the revoke are siblings: the revoke does not wait for the files to go.
     assert(!needs("deps_revoke").includes("deps_remove_files") && !needs("deps_remove_files").includes("deps_revoke"));
     const text = await Deno.readTextFile(new URL("workflow-task-workspace-source.yaml", workflows));

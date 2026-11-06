@@ -491,6 +491,7 @@ jobs:
     allowFailure: true
   - name: deps_clear
     labels: {role: swamp}
+    queueTimeout: 10
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -527,6 +528,7 @@ jobs:
     allowFailure: true
   - name: deps_write_composer
     labels: {role: swamp}
+    queueTimeout: 10
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -571,6 +573,7 @@ jobs:
     allowFailure: true
   - name: deps_write_npm
     labels: {role: swamp}
+    queueTimeout: 10
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -654,6 +657,7 @@ jobs:
     allowFailure: true
   - name: deps_remove_files
     labels: {role: swamp}
+    queueTimeout: 10
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -683,6 +687,12 @@ jobs:
         - ${{ "/home/" + inputs.intent.workspace.user + "/.config/composer/auth.json" }}
         - ${{ "/home/" + inputs.intent.workspace.user + "/.npmrc" }}
     dependsOn:
+    - step: deps_mint
+      condition:
+        type: always
+    - step: deps_clear
+      condition:
+        type: always
     - step: deps_write_composer
       condition:
         type: always
@@ -710,6 +720,12 @@ jobs:
         env:
           ORBIT_TOKEN: ${{ vault.get(inputs.intent.dependency_auth.token.vault, inputs.intent.dependency_auth.token.key) }}
     dependsOn:
+    - step: deps_mint
+      condition:
+        type: always
+    - step: deps_clear
+      condition:
+        type: always
     - step: deps_write_composer
       condition:
         type: always

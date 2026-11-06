@@ -278,7 +278,7 @@ const DependencyToken = z.object({
     reason: z.string().max(200).optional(),
 });
 /**
- * What became of the setup token, from the `Revoke` step of the remove child: curl prints the HTTP status of the
+ * What became of the setup token, from the revoke step (`deps_revoke`, or `Revoke` in the remove child of `tasks.package`): curl prints the HTTP status of the
  * revoke. 204 is a revoked token; 401 means GitHub holds no such token (none was minted, or it had expired or been
  * revoked), so there is nothing to revoke; anything else, or no answer, leaves a token that may still be valid.
  */
