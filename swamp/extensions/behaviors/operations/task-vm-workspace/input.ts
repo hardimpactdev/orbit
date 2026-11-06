@@ -9,7 +9,7 @@ export const WorkspaceInput = z.object({
     checkout_path: z.string().min(2).max(4096).startsWith("/")
         .refine((value) => !value.includes("\0")),
     ssh_execution: z.object({
-        control_node_id: z.literal(209),
+        control_node_id: z.number().int().positive(),
         identity_file: z.string().startsWith("/"),
         public_key: z.string().min(1),
         target: z.object({

@@ -31,7 +31,7 @@ jobs:
         kind: '${{ inputs.kind }}'
         intent:
           caddy_publication:
-            control_node_id: 209
+            control_node_id: '${{ inputs.intent.ssh.control_node_id }}'
             connection: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
               nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
             host_keys: '${{ inputs.intent.ssh.target.host_keys }}'
@@ -122,7 +122,7 @@ jobs:
         node_id: '${{ inputs.node_id }}'
         kind: '${{ inputs.kind }}'
         intent:
-          control_node_id: 209
+          control_node_id: '${{ inputs.intent.ssh.control_node_id }}'
           connection: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
             nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
           host_keys: '${{ inputs.intent.ssh.target.host_keys }}'
@@ -145,7 +145,7 @@ jobs:
         node_id: '${{ inputs.node_id }}'
         kind: '${{ inputs.kind }}'
         intent:
-          control_node_id: 209
+          control_node_id: '${{ inputs.intent.ssh.control_node_id }}'
           connection: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
             nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
           host_keys: '${{ inputs.intent.ssh.target.host_keys }}'

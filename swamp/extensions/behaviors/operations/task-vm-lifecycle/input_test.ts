@@ -170,12 +170,12 @@ Deno.test("UpCloud power requests target the admitted UUID only", () => {
     assertEquals(cloudRequest(cloud, "inspect"), null);
     assertEquals(cloudRequest(incus, "stop"), null);
 });
-Deno.test("provider input retains original VM and canonical209 SSH", () => {
+Deno.test("provider input retains original VM and the control Node as an id", () => {
     assertThrows(() => ProviderInput.parse({ ...incus, name: "other" }));
     assertThrows(() =>
         ProviderInput.parse({
             ...incus,
-            host_ssh_execution: { ...ssh, control_node_id: 14 },
+            host_ssh_execution: { ...ssh, control_node_id: "swamp" },
         })
     );
     assertEquals(

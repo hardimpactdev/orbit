@@ -257,7 +257,7 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
             {
                 node_id: ex("self.publication.node_id"),
                 user: ex("self.publication.connection.nodeUser"),
-                control_node_id: 209,
+                control_node_id: ex("self.publication.control_node_id"),
                 host_keys: ex("self.publication.host_keys"),
                 connection: ex("self.publication.connection"),
                 before: ex("self.publication.before.php"),
@@ -273,7 +273,7 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
                 caddy_publication: {
                     node_id: ex("self.publication.node_id"),
                     user: ex("self.publication.connection.nodeUser"),
-                    control_node_id: 209,
+                    control_node_id: ex("self.publication.control_node_id"),
                     host_keys: ex("self.publication.host_keys"),
                     connection: ex("self.publication.connection"),
                     caddy: ex("self.publication.after.caddy"),
