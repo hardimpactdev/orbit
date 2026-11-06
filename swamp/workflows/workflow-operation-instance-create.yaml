@@ -1,4 +1,4 @@
-id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
+guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("route" in steps && steps.route.status != "skipped")) }}'id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
 description: Development Instance create from 209; the checkout with its .env and the Project setup steps are two Ansible phases, the database, Process and Route work are children.
 vaults: [orbit-control-inputs]
@@ -294,7 +294,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: finish, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !("route-csr-0" in steps) || steps["route-csr-0"].status == "skipped" }}'
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("route" in steps && steps.route.status != "skipped")) }}'
         task:
           type: workflow
           workflowIdOrName: route-withdraw
@@ -303,7 +303,7 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             side: restore
-            intent: '${{ {"route_mutations": inputs.intent.route_lifecycle.route_mutations} }}'
+            intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
             execution_secrets: {}
       - name: accepted
         labels: {role: swamp}

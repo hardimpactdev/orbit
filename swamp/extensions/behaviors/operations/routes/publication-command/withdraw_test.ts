@@ -585,6 +585,19 @@ Deno.test("the create workflow withdraws the Route of a failed create before it 
     const withdraw = steps.find((step) => step.name === "withdraw-route")!;
     assertEquals(withdraw.task.workflowIdOrName, "route-withdraw");
     assertEquals(withdraw.task.inputs?.side, "restore");
+    // The create intent carries the captured reverse publication under route_mutations (NativeDevelopmentInstanceInput::routeWithdrawal).
+    assertEquals(
+        JSON.stringify(withdraw.task.inputs?.intent).includes(
+            "inputs.intent.route_mutations",
+        ),
+        true,
+    );
+    assertEquals(
+        JSON.stringify(withdraw.task.inputs?.intent).includes(
+            "route_lifecycle",
+        ),
+        false,
+    );
     assertEquals(withdraw.dependsOn?.map((d) => d.step), ["finish"]);
     // It runs only for a create that failed after its Route key was made.
     assertEquals(
