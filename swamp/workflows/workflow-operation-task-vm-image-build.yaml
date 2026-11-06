@@ -231,7 +231,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        fingerprint: ${{ steps["Publish the candidate"].outputs.stdout.split("fingerprint: ")[1].trim() }}
+        fingerprint: '${{ steps["Publish the candidate"].outputs.stdout.split("fingerprint: ")[1].trim() }}'
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
