@@ -48,13 +48,21 @@ final readonly class TaskVmSlotPool
         private StartOperationAction $start,
         private StorageRootResolver $roots,
         private NodeSettingsNormalizer $nodeSettings,
+        private PendingSshHostKey $pendingKeys,
+        private StartTaskVmDestroyAction $destroy,
     ) {}
 
     /** Runs the refill rule of the host; returns the Operation it started, or null when the pool needs nothing now. */
     public function refill(int $hostNodeId): ?Operation
     {
+        // Most hosts keep no pool: they take no lock.
+        if (! $this->settings->enabled || ! $this->settings->hasHost($hostNodeId)
+            || ($this->settings->host($hostNodeId)->slots === null && ! TaskVm::query()->unclaimedSlots()->where('host_node_id', $hostNodeId)->exists())) {
+            return null;
+        }
+
         return $this->enrollment->admit(fn (): ?Operation => DB::transaction(function () use ($hostNodeId): ?Operation {
-            // Serialize with placement, the claim and image promotion.
+            // Serialize with placement and image promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             [$step, $vm] = $this->next($hostNodeId) ?? [null, null];
 
@@ -104,15 +112,17 @@ final readonly class TaskVmSlotPool
     }
 
     /**
-     * Whether a ready slot can serve a claim now: its Project and size are the setting's, its image is the host's last
-     * promoted image, and it is younger than {@see self::MaxAgeHours}.
+     * Whether a ready slot can no longer serve a claim: no setting, another Project or size, an image that is not the
+     * host's last promoted image, or older than {@see self::MaxAgeHours}. An unknown current image makes no slot stale,
+     * so a missing promotion record never drains the pool.
      *
      * @param  array{build_id:int,fingerprint:string,recipe_identity:string}|null  $current
      */
     public function stale(TaskVm $vm, ?TaskVmSlotSetting $setting, ?array $current): bool
     {
-        return $setting === null || $current === null || $vm->slot_project_id !== $setting->projectId || $vm->size !== $setting->size
-            || $vm->image_build_id !== $current['build_id'] || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours));
+        return $setting === null || $vm->slot_project_id !== $setting->projectId || $vm->size !== $setting->size
+            || ($current !== null && $vm->image_build_id !== $current['build_id'])
+            || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours));
     }
 
     /** @return array{build_id:int,fingerprint:string,recipe_identity:string}|null the host's last promoted image */
@@ -160,7 +170,7 @@ final readonly class TaskVmSlotPool
         $guest = $vm->refresh()->node;
         assert($guest instanceof Node);
         // "Converge once" of the enrol: the task VM role phases, with the nested network and the NFS export of the Project's checkout path.
-        $input['converge'] = app(PendingSshHostKey::class)->during($guest->id, fn (): array => $this->converge->provisioning($vm,
+        $input['converge'] = $this->pendingKeys->during($guest->id, fn (): array => $this->converge->provisioning($vm,
             ['checkout' => $this->checkoutPath($guest, $project), 'subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
 
         return $this->start->execute(self::EnrolKind, 'task_vm', $vm->id, ValidatedData::integer($input['node_id']), $input, 'task-vm-slots', null);
@@ -169,7 +179,7 @@ final readonly class TaskVmSlotPool
     private function destroy(TaskVm $vm): ?Operation
     {
         try {
-            return app(StartTaskVmDestroyAction::class)->execute($vm->id);
+            return $this->destroy->execute($vm->id);
         } catch (ResourceOperationException $refused) {
             report($refused);
 

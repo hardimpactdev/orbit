@@ -17,6 +17,16 @@ use App\Domain\TaskVms\TaskVmSlotEnrolProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
+$provision = [
+    'workflow' => 'operation-task-vm-provision',
+    'projection' => TaskVmProvisionProjection::class,
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'provision', 'step' => 'result'],
+    'private_material' => [],
+    'secret_outputs' => [],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
+];
+
 return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-hub-converge',
     'workflow_inputs' => true,
@@ -43,23 +53,9 @@ return ['task_vm.hub_converge' => [
     // No result step: the projector reads the run's step statuses and builds the cleanup receipt from the captured intent.
     'terminal_result' => ['job' => 'destroy', 'step' => 'Destroy the task VM', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
-], 'task_vm.provision' => [
-    'workflow' => 'operation-task-vm-provision',
-    'projection' => TaskVmProvisionProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'provision', 'step' => 'result'],
-    'private_material' => [],
-    'secret_outputs' => [],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
-], 'task_vm.slot_enrol' => [
+], 'task_vm.provision' => $provision, 'task_vm.slot_enrol' => [
     // A ready slot (docs/cli/tasks/vm-slots.mmd): the VM child of task_vm.provision, the converge and a stop.
-    'workflow' => 'operation-task-vm-slot-enrol',
-    'projection' => TaskVmSlotEnrolProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'provision', 'step' => 'result'],
-    'private_material' => [],
-    'secret_outputs' => [],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
+    ...$provision, 'workflow' => 'operation-task-vm-slot-enrol', 'projection' => TaskVmSlotEnrolProjection::class,
 ], 'task_vm.image_refresh' => [
     'workflow' => 'operation-task-vm-image-refresh',
     'projection' => TaskVmImageRefreshProjection::class,

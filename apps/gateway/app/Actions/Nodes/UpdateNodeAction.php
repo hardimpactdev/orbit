@@ -67,6 +67,10 @@ final readonly class UpdateNodeAction
             if ($settings->isEmpty()) {
                 return $node;
             }
+            if ($settings->hasTaskVms) {
+                // A changed `slots` setting fills or empties the host's ready slots (docs/cli/tasks/vm-slots.mmd).
+                RefillTaskVmSlots::dispatchFor($node->id);
+            }
             $merged = $settings->merge($this->normalizer->fromStored($node->settings));
             $normalized = $this->normalizer->normalize($merged);
             $this->validateHostBridge($node, $normalized);
@@ -74,10 +78,6 @@ final readonly class UpdateNodeAction
             if (! $settings->hasApps || (! $create && $normalized?->appsPath() === null)) {
                 $this->persist($node, $normalized);
                 $written = true;
-                if ($settings->hasTaskVms) {
-                    // A changed `slots` setting fills or empties the host's ready slots (docs/cli/tasks/vm-slots.mmd).
-                    RefillTaskVmSlots::dispatchFor($node->id);
-                }
 
                 return $node;
             }

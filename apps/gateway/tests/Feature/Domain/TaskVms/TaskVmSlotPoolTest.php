@@ -10,11 +10,13 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmSlotEnrolProjection;
 use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotSetting;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
@@ -22,6 +24,7 @@ use App\Models\Project;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -115,7 +118,8 @@ it('counts a slot stale by image, age, Project and size', function (): void {
         ->and($pool->stale(slotPoolSlot($host, $project, $build, ['ready_at' => now()->subHours(21)]), $setting, $current))->toBeTrue()
         ->and($pool->stale(slotPoolSlot($host, $project, $build, ['size' => TaskVmSize::Medium]), $setting, $current))->toBeTrue()
         ->and($pool->stale(slotPoolSlot($host, $project, $build), $setting, [...$current, 'build_id' => $build->id + 1]))->toBeTrue()
-        ->and($pool->stale(slotPoolSlot($host, $project, $build), null, $current))->toBeTrue();
+        ->and($pool->stale(slotPoolSlot($host, $project, $build), null, $current))->toBeTrue()
+        ->and($pool->stale(slotPoolSlot($host, $project, $build), $setting, null))->toBeFalse();
 });
 
 it('empties the pool when the setting goes, one slot at a time', function (): void {
@@ -165,3 +169,27 @@ it('reads the slots setting of a host and rejects a bad one', function (): void 
         ->and(fn () => TaskVmHost::fromConfig([...$entry, 'slots' => ['count' => 5, 'project_id' => 46, 'size' => 'huge']], 0, $vpn, []))
         ->toThrow(TaskVmException::class);
 });
+
+it('takes no lock and starts nothing on a host without a pool', function (): void {
+    [$host] = slotPoolHost(null);
+
+    expect(app(TaskVmSlotPool::class)->refill($host->id))->toBeNull()
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('fails an interrupted or cancelled enrol, so the refill rule destroys it', function (string $status): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $slot = slotPoolSlot($host, $project, $build, ['state' => TaskVmState::Provisioning]);
+    $operation = Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $slot->id,
+        'node_id' => $host->id, 'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $slot->id, 'node_id' => $host->id, 'host_node_id' => $host->id,
+            'name' => $slot->name, 'provider' => 'incus', 'wireguard_ip' => $slot->wireguard_ip, 'image_fingerprint' => $slot->image_fingerprint,
+            'recipe_identity' => $slot->recipe_identity], 'sequence' => 1, 'attempts' => 1, 'state' => ['swamp_run_id' => 'fixture-slot-enrol']]);
+    Bus::fake();
+
+    app(TaskVmSlotEnrolProjection::class)->apply($operation, ['run_id' => 'fixture-slot-enrol', 'status' => $status, 'error_code' => null, 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+    expect($slot->fresh()->state)->toBe(TaskVmState::Failed)
+        ->and(app(TaskVmSlotPool::class)->next($host->id)[1]->id)->toBe($slot->id);
+    Bus::assertDispatched(RefillTaskVmSlots::class);
+})->with(['interrupted', 'cancelled']);
