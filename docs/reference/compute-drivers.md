@@ -1170,7 +1170,7 @@ The child reads the builder's bridge address and host key from the host before i
 
 The last six steps follow:
 
-5. **Clean and stop.** The child workflow `task-vm-image-clean` cleans the VM and stops it. The stage 6 refresh shares it. The builder has no nested fleet, so it passes an empty `nested` object.
+5. **Clean and stop.** The child workflow `task-vm-image-clean` cleans the VM and stops it.
 6. **Publish the candidate.** `incus publish --quiet` with the properties `orbit.recipe` and `orbit.profile`.
    The quiet flag leaves only the fingerprint line, and the Gateway reads it from the output.
 7. **Smoke the candidate.** The child workflow `task-vm-image-smoke` boots a throwaway VM from the candidate and runs the `check` phase on it.
@@ -1227,21 +1227,17 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | `Check the fleet` | Asserts that the VM step started the nested fleet. A seed without usable ready copies ends the run here, before the clean and the publication. |
 | `Pin the VM` | Fills the host key of the new guest into the ready copies intent. |
 | `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
-| `Withdraw the enrollment` | Removes what the enrollment installed: the sudoers file, the key file of Node 209, the observer binary and its unit. |
-| `Clean the refresh VM` | Runs `task-vm-image-clean` and stops the VM. |
-| `Publish the image` | Runs `incus publish` of the stopped VM under a candidate alias and reads its fingerprint. |
+| `Stop the refresh VM` | Runs `incus stop` on the refresh VM. It yields only its seed disk and is never published. |
+| `Build the image` | Runs `task-vm-image-builder` as a child: a builder cloned from the image the refresh VM started from, the phases `software`, `tools` and `check`, `task-vm-image-clean`, then `incus publish` of the stopped builder under a candidate alias. |
 | `Smoke the candidate` | Runs `task-vm-image-smoke`, the smoke of the image build: a throwaway VM from the candidate and the check phase of the task VM role on it. |
 | `Enroll the check VM` | Runs `task-vm-bootstrap`, the bootstrap steps of an enrollment, on the smoke VM: the account, the key, the sudoers file and the observer install with their checks. |
 | `Converge the check VM` | Runs `task-vm-image-ansible` on the smoke VM with the phases `software`, `tools` and `check`, as the converge of a provision does. |
-| `Check the image identity` | Looks on the smoke VM for the enrollment files and the identity of the refresh VM. |
-| `Copy the seed`, `Detach the seed` | Copy the seed disk of the refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
+| `Copy the seed`, `Detach the seed` | Copy the seed disk of the stopped refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
 | `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
 
-The refresh has no converge step of its own, because the provision converges the outer VM before the nested fleet. The clean step removes the nested guests and network, the export of the checkout and the firewall rules that the converge added. It removes the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout. It resets the firewall, cloud-init, the machine-id and the SSH host keys, and trims the disk.
+The refresh has no converge step of its own, because the provision converges the outer VM before the nested fleet. The builder never is enrolled and never has a seed, so the clean step has one case: it resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the builder. The image build runs the same clean step.
 
-The firewall reset matters: enrollment denies SSH except from Node 209 over the VPN, and a clone of the image has no VPN. The image build calls the same workflow for its builder with `enrolled: false`. The nested and identity steps run only for a VM that has them, and each step waits for the one before it, whether that one ran or was skipped.
-
-The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The clean waits for the VM step to pass, so a VM whose fleet failed its readiness check promotes nothing.
+The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM and the builder. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The builder starts only after the VM step and the save of the ready copies passed, so a VM whose fleet failed its readiness check promotes nothing.
 
 A cancelled refresh cancels its group, whether it ends before its Swamp run starts or the run ends cancelled. A cancelled run marks the group cancelled and leaves its VM in provisioning, so the group cancel still runs while that VM is not destroyed. It destroys the refresh VM and frees its slot. When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
 
