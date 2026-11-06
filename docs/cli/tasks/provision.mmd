@@ -71,7 +71,7 @@ sequenceDiagram
     %%> - pushes the proof Swamp Club key from the VM into the nested Gateway, where the re-mint below restarts its Swamp
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
-    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM
+    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM; placement already keeps a VM that needs the fleet off a host whose seed has no usable copies (stage 2 chart), so the guard is the exception
     %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
     %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
     %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it

@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
+use App\Domain\TaskVms\TaskVmFleetSeed;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -37,6 +38,7 @@ final readonly class AllocateTaskVmAction
         private RecordTaskVmAction $record,
         private RecipeImageBuilds $images,
         private TaskVmEnrollmentIntent $enrollment,
+        private TaskVmFleetSeed $seeds,
     ) {}
 
     /** @throws TaskCapacityException when no host has a free slot */
@@ -106,6 +108,10 @@ final readonly class AllocateTaskVmAction
             $free = $this->capacity->freeSlots($hosts);
             $images = [];
             $waiting = [];
+            $unseeded = [];
+            // A VM with test nodes starts the nested fleet from the ready copies of its host's seed (docs/reference/pipeline/2-development-environment.mmd).
+            // The refresh of a host is pinned to it and builds those copies, so it is not filtered.
+            $needsFleet = $hostNodeId === null && $size->resources()->testNodes > 0;
             foreach ($hosts as [$host, $node]) {
                 if (! array_key_exists($host->nodeId, $free)) {
                     continue;
@@ -122,6 +128,13 @@ final readonly class AllocateTaskVmAction
                 }
                 $base = $build?->images['base'] ?? null;
                 if ($build !== null && $base !== null && $base['project'] === $host->project && $base['type'] === 'virtual-machine') {
+                    // The seed follows the image the VM boots from, so a host with room is skipped when that image's seed holds no copies.
+                    if ($needsFleet && $free[$host->nodeId] >= $size->slots() && ! $this->seeds->usable($host->nodeId, $build->id)) {
+                        unset($free[$host->nodeId]);
+                        $unseeded[] = $node->name;
+
+                        continue;
+                    }
                     $images[$host->nodeId] = ['build' => $build, 'fingerprint' => $base['fingerprint'], 'fallback' => $fallback];
                 } else {
                     unset($free[$host->nodeId]);
@@ -136,6 +149,10 @@ final readonly class AllocateTaskVmAction
             } catch (TaskCapacityException $exception) {
                 if ($waiting !== []) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for recipe '.substr($recipe->identity, 7, 12).' images on '.implode(', ', $waiting).'.');
+                }
+                if ($unseeded !== []) {
+                    throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::noCapacityFor($size)
+                        .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'. Refresh their task image.');
                 }
                 throw $exception;
             }

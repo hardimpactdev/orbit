@@ -30,6 +30,7 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the CLI follows one Gateway record, `proof.run`, because it needs one task ID; each run is an Operation of its own, so each has one Swamp run, one terminal event and one projection
   %%> - the Gateway closes `proof.run` from the records of the runs and runs nothing; it passes only when every run passed
+  %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers `tasks.capacity_unavailable`, even when a skipped host has free slots
   %%> - if one run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` fails with the reason
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.

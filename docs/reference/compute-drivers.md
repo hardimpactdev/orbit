@@ -1300,7 +1300,7 @@ The outer VM must export its checkout to the nested network: the converge of the
 
 ##### Start the nested fleet
 
-A task that declares a topology gets its nested fleet from the ready copies of the seed. The step is skipped for a task without a topology. It is also skipped when the seed holds no three ready copies of the current format, and the result then says `nested_fleet: none`. The provision decides that once, in the step `Look for ready copies`, and the child has no guard of its own.
+A task that declares a topology gets its nested fleet from the ready copies of the seed. The step is skipped for a task without a topology. It is also skipped when the seed holds no three ready copies of the current format, and the result then says `nested_fleet: none`. The provision decides that once, in the step `Look for ready copies`, and the child has no guard of its own. Placement already keeps a VM that needs the fleet (a large or medium VM) off a host whose seed holds no such copies, so a skipped step is the exception.
 
 The save writes the format as the key `user.ready.format`, and the child lists only the copies that carry the current value, so copies from before a change to the steps that start or apply a fleet are not used.
 

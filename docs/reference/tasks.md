@@ -1347,6 +1347,8 @@ An external orchestrator needs the same task VM and workspace as the other keyed
 
 A group that declares a topology also gets its nested fleet. Provision then calls the child `task-nested-fleet`, which starts the three ready copies of the seed in the VM and joins the VM to them as operator. A group without a topology skips the step. So does a group whose seed holds no ready copies; the result records `nested_fleet: none`. One step of provision, `Look for ready copies`, decides this, and the refresh of a task image builds the fleet in such a VM.
 
+Placement keeps a VM that needs the fleet (a large or medium VM) off a host whose seed holds no such copies: with no other host free, the admission answers `tasks.capacity_unavailable`.
+
 That VM is always large: the admission of the refresh passes the size to `TaskProvisionIntent`, so no Project size list decides it. The [compute drivers](/reference/compute-drivers#start-the-nested-fleet) page has the steps.
 
 ### An optional, generic extension
