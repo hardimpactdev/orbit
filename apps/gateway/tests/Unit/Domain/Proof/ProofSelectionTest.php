@@ -266,3 +266,34 @@ it('selects the firewall commands for every tracked file of the firewall directo
     $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->commands !== FIREWALL_COMMANDS));
     expect($unselected)->toBe([]);
 });
+
+it('runs every case for the code that every command runs through', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Everything);
+})->with([
+    'the start action' => ['apps/gateway/app/Actions/Operations/StartOperationAction.php'],
+    'the operation store' => ['apps/gateway/app/Domain/Operations/OperationStore.php'],
+    'the operation request' => ['apps/gateway/app/Http/Requests/Operations/StartsOperation.php'],
+    'the operations controller' => ['apps/gateway/app/Http/Controllers/Api/OperationsController.php'],
+    'the operation model' => ['apps/gateway/app/Models/Operation.php'],
+    'the Swamp run starter' => ['apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php'],
+    'the CLI base command' => ['apps/cli/app/Commands/GatewayCommand.php'],
+    'the CLI operation follower' => ['apps/cli/app/Commands/Concerns/FollowsOperations.php'],
+    'the CLI connector factory' => ['apps/cli/app/Services/GatewayConnectorFactory.php'],
+    'the CLI failure renderer' => ['apps/cli/app/Support/GatewayFailureRenderer.php'],
+    'the SDK connector' => ['packages/php-sdk/src/GatewayConnector.php'],
+    'the SDK operation response' => ['packages/php-sdk/src/Responses/Operations/OperationResponse.php'],
+]);
+
+it('selects every case for every tracked file of the shared Operation directories', function (): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $root = dirname(base_path(), 2);
+    $tracked = array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files')));
+    $directories = ['apps/gateway/app/Actions/Operations/', 'apps/gateway/app/Domain/Operations/', 'apps/gateway/app/Http/Requests/Operations/', 'apps/cli/app/Commands/Operations/'];
+    $files = array_values(array_filter($tracked, static fn (string $path): bool => array_filter($directories, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
+
+    expect($files)->not->toBeEmpty();
+    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
+    expect($unselected)->toBe([]);
+});

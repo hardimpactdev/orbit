@@ -54,6 +54,30 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
+# Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break
+# any command, so it runs every case (`*`), which is every command that has a cases file.
+apps/gateway/app/Actions/Operations/**                     *
+apps/gateway/app/Data/Operations/**                        *
+apps/gateway/app/Domain/Operations/**                      *
+apps/gateway/app/Http/Controllers/Api/OperationsController.php  *
+apps/gateway/app/Http/Requests/Operations/**               *
+apps/gateway/app/Infrastructure/Swamp/**                   *
+apps/gateway/app/Models/Operation.php                      *
+apps/gateway/routes/api/operation.php                      *
+apps/cli/app/Commands/GatewayCommand.php                   *
+apps/cli/app/Commands/Concerns/**                          *
+apps/cli/app/Commands/Operations/**                        *
+apps/cli/app/Repositories/**                               *
+apps/cli/app/Services/GatewayConnectorFactory.php          *
+apps/cli/app/Services/Profile/**                           *
+apps/cli/app/Support/Console/**                            *
+apps/cli/app/Support/GatewayFailureRenderer.php            *
+apps/cli/app/Support/Operations/**                         *
+packages/php-sdk/src/Gateway*.php                          *
+packages/php-sdk/src/Support/**                            *
+packages/php-sdk/src/Requests/Operations/**                *
+packages/php-sdk/src/Responses/Operations/**               *
+
 # The proof tooling is shared code of every case.
 swamp/proof/selection.txt                        *
 tools/swamp-proof-guest/**                       *

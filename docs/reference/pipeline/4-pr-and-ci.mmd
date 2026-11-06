@@ -37,8 +37,9 @@ sequenceDiagram
   %%> - the mapping is data in `selection.txt`, one block per command family: its Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, its CLI command and vocabulary files, and its SDK request and response files select every command of the family; code that serves another family stays out (for example the router LAN ingress files)
   %%> - a family's block is added with the first cases file of the family, because a path that selects only commands with no cases file starts a proof run that reports them as uncovered and proves nothing; `apps/**` stays `skip` until then. Commands of a mapped family that have no cases file yet are listed as uncovered
   %%> Built: the firewall family (`firewall:allow`, `firewall:deny`, `firewall:list`, `firewall:remove`), checked by a Pest test against the checked-in list
-  %%> Not built:
-  %%> - code that every command shares (the Operation machinery, the CLI base classes) maps to no family; it needs a rule from Nick for the commands that have cases
+  %%> Decided by the orchestrator, for Nick's review (Nick ruled 2026-11-06):
+  %%> - code that every command runs through (the Gateway's Operation actions, domain, data, requests, controller, model and route, its Swamp run classes, the CLI base command, concerns, operation commands, repositories, connector factory, profile and console support, and the SDK core and operation requests) selects `*`, which runs the cases of every command that has a cases file; a shared change must re-prove what it can break
+  %%> - a new command needs no change there: its cases file joins the `*` set
   Note over CI: Fast checks<br/>about 2 minutes
   %%> What it does:
   %%> - the Project check fails on formatter drift: Rector and Pint run in fix mode, and a commit that they would change fails the check, so main stays formatter-clean and `composer check` in a task rewrites only the files the task touched
