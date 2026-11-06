@@ -19,7 +19,10 @@ sequenceDiagram
   %%> - a release that went live and passed its check (stage 5), only when it changed what the images carry: playbooks, pins or lock files; a code-only release needs no refresh, because a task mounts its own checkout
   %%> - a daily schedule, so a seed never gets older than a day: the Swamp tokens in the ready copies last 24 hours and a ready copy expires after 20
   %%> Not built:
-  %%> - both triggers (B8); today an operator runs `php artisan task-vms:refresh-seed HOST`
+  %%> - both triggers (B8); today an operator runs `php artisan task-vms:refresh-image HOST`
+  %%> Built (task_vm.image_refresh, workflow `operation-task-vm-image-refresh`):
+  %%> - the run of one host, admitted like `tasks:prep`: a group of its own in the proof Project, placed on that host only, with the whole intent captured in the admission of provision; no step calls the Gateway
+  %%> - a repeat admission for a host returns the open run
   %%> Hosts:
   %%> - Linux only: the task VM hosts beast and shark, with Incus
   %%> Requirements per host:
@@ -33,20 +36,38 @@ sequenceDiagram
     SW->>H: Start a refresh VM<br/>current image · seed
     %%> What it does:
     %%> - starts a task VM from the host's current task image, with a clone of its current topology seed, as for any task
+    %%> Built: the child `operation-task-provision`, which does this step and the next; the VM starts from the image the host promoted last, whatever its recipe or age
     SW->>VM: Start and mount<br/>the release commit
     %%> What it does:
     %%> - checks out the release commit in the refresh VM, with `composer install` and `bun install` where a lock file changed
     %%> - starts the nested fleet from the current ready copies, mounts that checkout over NFS and runs the apply step, as in stage 2
+    opt no usable ready copies
+      SW->>VM: Build the fleet<br/>task_vm.fleet_build
+      %%> Decided by the orchestrator, for Nick's review:
+      %%> - the first refresh of a host whose seed holds no ready copies calls the nested fleet build as a child (chart `docs/cli/tasks/vm-fleet-build.mmd`), which ends by saving ready copies; the refresh then goes on
+      %%> Not built: the child is wired when `task_vm.fleet_build` lands; until then the first refresh needs ready copies in the seed
+    end
     opt playbooks or pins changed since the current image
       SW->>VM: Converge once<br/>outer VM · nested Nodes
       %%> What it does:
       %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
       %%> - the same step as in the proof CI (stage 4)
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
+    %%> Built: the outer VM through `operation-task-vm-converge`; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) are the last piece, with the NFS child of stage 2
     end
     SW->>VM: Re-mint Swamp tokens<br/>in the nested Gateway
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - an SSH step into the nested Gateway that runs the product command the fleet build uses to mint its Swamp serve and worker tokens; it is the last piece to wire, because that command does not exist yet
     %%> Why:
     %%> - the tokens of the ready copies last 24 hours, so every refresh starts them fresh
-    SW->>H: Save the new images<br/>image · ready copies
+    SW->>VM: Save the ready copies<br/>key-free · boot-checked
+    %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
+    SW->>VM: Clean the refresh VM<br/>identity out · stop
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - one explicit clean step before the publication, the workflow `task-vm-image-clean`; the image build's `Clean and stop` calls the same workflow for its builder (`enrolled: false`), so there is one clean step and not two
+    %%> - it removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout, resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
+    SW->>H: Publish the image<br/>image · seed
     %%> What it does:
     %%> - stops the nested VMs and copies them into a clone of the seed as the new ready copies, key-free: the proof Club key is deleted, every file is scanned for it, and freed blocks are trimmed
     %%> Proposed 2026-11-05:
@@ -55,6 +76,10 @@ sequenceDiagram
     %%> - removes the refresh VM's WireGuard key from the operator Node record, so a new task VM joins with its own key (stage 2)
     %%> - publishes the outer VM as the new task image
     SW->>H: Boot-check, promote<br/>under the host lock
+    %%> Built: the smoke is the child `task-vm-image-smoke` and the alias move is the child `task-vm-image-promote`, the same children as the image build
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the new image has a new fingerprint, and a seed is named from its image, so the new seed is a copy of the refresh VM's seed disk under the new name (`zfs promote` after the copy, so refreshes form no clone chain); the old image and the old seed stay under their own names, and the old image keeps the alias `-previous`, which is the rollback copy
+    %%> - the Gateway records the new image as the host's latest promoted build when the run ends, then cancels the group of the run, which destroys the refresh VM
     %%> What it does:
     %%> - boots a throwaway copy of each ready copy and of the image to check them, then promotes both and destroys the refresh VM
     %%> - keeps the old image and seed as `-previous`, the rollback copy; cleanup always runs

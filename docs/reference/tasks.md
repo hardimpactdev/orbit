@@ -106,6 +106,8 @@ A resource observation job checks every parked VM once a minute, including group
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
+A run that provisions its own VM as one step can pin the VM to one task VM host. The [refresh of a host's task image](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) does: its VM goes to that host only and starts from the image the host promoted last.
+
 Admission pins the commit the workspace starts from, so a group never starts on a red commit. Before its transaction, the Gateway walks the first-parent history of the Project's default branch from its head through the [GitHub App](/reference/github-app). It pins the newest commit whose Project `merge_check` passed on exactly that commit, by the same rule as the [review-and-merge gate](#handoff-ci): every run of that name comes from GitHub Actions and completed with `success`. It examines at most 20 commits, the bound of [automatic deploy source reads](/reference/deployments).
 
 A Project without a `merge_check` has no gate, so admission pins the branch head, as an automatic deploy does. Admission never falls back to the head of a gated Project:

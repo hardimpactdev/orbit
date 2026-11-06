@@ -37,9 +37,9 @@ The target: the nested VMs hold their own checkout, with no code share from the 
 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
-- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), and the [seed refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-seed-refresh.mmd) that makes the ready copies.
+- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), and the [ready copies](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-ready-copies.mmd) that the refresh saves.
 - Not built: the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd), a draft. A slot is a normal task VM, enrolled ahead of time and kept stopped; a claim starts it, a release destroys it, and the pool refills by enrolling a new one.
-- Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
+- Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the task image and the topology seed](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
 - Files: [`swamp/proof/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md).
 
@@ -83,11 +83,11 @@ The target: the nested VMs hold their own checkout, with no code share from the 
 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
-- Interim, until the stage 6 refresh exists: the recipe image build, and a seed refresh that an operator starts with `php artisan task-vms:refresh-seed <host>`. The stage 6 refresh replaces both.
-- Not built: the release trigger, the daily schedule (B8), and the refresh from a running task VM instead of a build.
+- Built: the refresh run `task_vm.image_refresh`, which an operator starts with `php artisan task-vms:refresh-image <host>`: a refresh VM, the converge, the ready copies, the clean, the new image and seed, the boot check and the promotion. The recipe image build stays for a new host or a new base OS.
+- Not built: the release trigger and the daily schedule (B8), the first refresh of a host with no ready copies (the fleet build child), the NFS mount and apply, the re-mint of the nested Swamp tokens, and the replacement of ready slots.
 - Charts: the stage chart above, the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd) (draft; a refresh replaces ready slots built from the old image, one at a time).
 - Docs: [Build the base image](/reference/compute-drivers#build-the-base-image), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
-- Files: [`tools/task-vm-seed`](https://github.com/hardimpactdev/orbit/tree/main/tools/task-vm-seed), [`swamp/workflows/workflow-operation-task-vm-seed-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-seed-refresh.yaml).
+- Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml), [`swamp/workflows/workflow-task-vm-image-clean.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-task-vm-image-clean.yaml).
 
 ## Change the development pipeline
 

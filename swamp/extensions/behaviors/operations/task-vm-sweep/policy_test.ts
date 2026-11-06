@@ -186,7 +186,7 @@ Deno.test("a seed refresh's builder, clone and previous seed are owned of a kept
     const strays = incusStrays(
         scope,
         false,
-        [...rows(["tvm-seed-refresh", "tvm-seed-refresh-2"])],
+        [...rows(["tvm-seed-refresh-2"])],
         [
             ...rows(names),
             ...rows([
@@ -206,7 +206,7 @@ Deno.test("a seed refresh's builder, clone and previous seed are owned of a kept
     ]);
     const orphans = selectIncusOrphans(
         scope,
-        rows(["tvm-seed-refresh"]),
+        rows([]),
         rows(names),
     );
     assertEquals([orphans.instances, orphans.volumes], [[], []]);

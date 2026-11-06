@@ -9,7 +9,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Domain\TaskVms\TaskVmSeedRefresh;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -174,17 +173,8 @@ final readonly class TaskVmHostAudit
         return $claimed === 1 || ! $build->exists();
     }
 
-    /** The builder VM of a seed refresh: owned, never an orphan or a stray. The refresh deletes it itself. */
-    public static function isSeedRefreshBuilder(string $name): bool
-    {
-        return $name === TaskVmSeedRefresh::BuilderName;
-    }
-
     private function ownsInstance(Node $node, string $name): bool
     {
-        if (self::isSeedRefreshBuilder($name)) {
-            return true;
-        }
         if (preg_match(self::TaskVmName, $name) === 1) {
             return true;
         }

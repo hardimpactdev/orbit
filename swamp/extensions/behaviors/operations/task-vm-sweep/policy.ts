@@ -116,7 +116,6 @@ export function incusStrays(
             return !excluded(row.project, row.name) &&
                 !(row.project === scope.project &&
                     (/^tvm-[0-9]+$/.test(row.name) ||
-                        row.name === "tvm-seed-refresh" ||
                         build !== null &&
                             scope.protected_build_ids.includes(
                                 Number(build[1]),

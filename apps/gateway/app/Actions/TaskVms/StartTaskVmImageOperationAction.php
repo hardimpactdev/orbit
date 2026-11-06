@@ -6,11 +6,12 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageRefreshIntent;
+use App\Domain\TaskVms\TaskVmLaunchConfig;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -36,10 +37,9 @@ final readonly class StartTaskVmImageOperationAction
         if ($existing !== null) {
             return $existing;
         }
-        if (Operation::query()->where('kind', 'task_vm.seed_refresh')->where('target_type', 'task_vm_host')->where('target_id', $build->host_node_id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+        if (TaskVmImageRefreshIntent::open($build->host_node_id) instanceof Operation) {
             // The caller's transaction rolls the build row back; the scheduler tries again after the refresh.
-            throw new TaskVmException('task_vm.image_build_running', 'A seed refresh is running on this host. The image build starts after it ends.', 409);
+            throw new TaskVmException('task_vm.image_build_running', 'An image refresh is running on this host. The image build starts after it ends.', 409);
         }
         $host = $this->settings->host($build->host_node_id);
         $node = $build->hostNode;
@@ -61,7 +61,7 @@ final readonly class StartTaskVmImageOperationAction
             'candidate_alias' => ($build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, 'base', $build->id)).'-attempt-'.$build->attempt,
             'base_alias' => $host->imageAlias, 'previous_alias' => $host->imageAlias.'-previous',
             // The orbit account of the builder and of every clone accepts the key of the Swamp control Node.
-            'launch_config' => $this->launchConfig($identity['public_key']),
+            'launch_config' => TaskVmLaunchConfig::for($identity['public_key']),
             // The host runs Incus; Node 209 reaches the builder through it. The builder's address and host key come from the host during the run.
             'jump' => $this->keys->forNode($node),
             'ssh' => ['identity_file' => $identity['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
@@ -71,15 +71,5 @@ final readonly class StartTaskVmImageOperationAction
             // The Pi build lives in the Gateway home; 209 copies it with the same pinned SSH as every other step.
             'pi' => ['sha256' => $pi->digest, 'source' => ['ssh' => $this->keys->forNode($gateway), 'path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location]],
         ], 'task-vm-image', null, lockKey: OperationStore::lockKey('task_vm_host', $node->id));
-    }
-
-    /** The instance config that `incus init` reads: the cloud-init user data and the drive that carries it into the VM. */
-    private function launchConfig(string $publicKey): string
-    {
-        $cloud = ['users' => [['name' => 'orbit', 'uid' => 1000, 'no_user_group' => false, 'lock_passwd' => true, 'shell' => '/bin/bash',
-            'sudo' => 'ALL=(ALL) NOPASSWD:ALL', 'ssh_authorized_keys' => [$publicKey]]]];
-
-        return json_encode(['config' => ['cloud-init.user-data' => "#cloud-config\n".json_encode($cloud, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n"],
-            'devices' => ['cloud-init' => ['type' => 'disk', 'source' => 'cloud-init:config']]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 }

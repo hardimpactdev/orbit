@@ -46,13 +46,13 @@ final readonly class AllocateTaskVmAction
     }
 
     /** State-only placement for an owning Task admission transaction. Starts no Operation or job. */
-    public function capture(Task $group): TaskVm
+    public function capture(Task $group, ?int $hostNodeId = null): TaskVm
     {
-        return $this->allocate($group);
+        return $this->allocate($group, null, $hostNodeId);
     }
 
     /** @param null|Closure(TaskVm):mixed $admit */
-    private function allocate(Task $group, ?Closure $admit = null): TaskVm
+    private function allocate(Task $group, ?Closure $admit = null, ?int $hostNodeId = null): TaskVm
     {
         $existing = TaskVm::forGroup($group);
         if ($existing instanceof TaskVm) {
@@ -61,7 +61,7 @@ final readonly class AllocateTaskVmAction
         }
         $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
         try {
-            $vm = $this->place($group, $size, $admit);
+            $vm = $this->place($group, $size, $admit, $hostNodeId);
         } catch (Throwable $exception) {
             if (! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception)) {
                 throw $exception;
@@ -72,8 +72,13 @@ final readonly class AllocateTaskVmAction
         return $vm;
     }
 
-    /** @param null|Closure(TaskVm):mixed $admit */
-    private function place(Task $group, TaskVmSize $size, ?Closure $admit): TaskVm
+    /**
+     * A refresh of one host's task image passes `$hostNodeId`: the VM goes to that host only, and starts from the image
+     * the host promoted last, whatever its recipe or age, because the refresh brings that image up to date.
+     *
+     * @param  null|Closure(TaskVm):mixed  $admit
+     */
+    private function place(Task $group, TaskVmSize $size, ?Closure $admit, ?int $hostNodeId): TaskVm
     {
         $resolvedIdentity = $this->images->currentRecipe()->identity;
         $template = null;
@@ -86,7 +91,7 @@ final readonly class AllocateTaskVmAction
             // Admission rechecks capacity under the row lock.
         }
 
-        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit): TaskVm {
+        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit, $hostNodeId): TaskVm {
             // Serialize admission with desired-recipe changes and image promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $existing = TaskVm::forGroup($group);
@@ -94,7 +99,7 @@ final readonly class AllocateTaskVmAction
                 return $existing;
             }
             $recipe = $this->images->currentRecipe();
-            $hosts = $this->capacity->activeHosts();
+            $hosts = array_values(array_filter($this->capacity->activeHosts(), static fn (array $entry): bool => $hostNodeId === null || $entry[0]->nodeId === $hostNodeId));
             $free = $this->capacity->freeSlots($hosts);
             $images = [];
             $waiting = [];
@@ -104,7 +109,7 @@ final readonly class AllocateTaskVmAction
                 }
                 $promoted = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('state', TaskVmImageBuildState::Succeeded)
                     ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id');
-                $build = (clone $promoted)->where('recipe_identity', $recipe->identity)->first();
+                $build = $hostNodeId !== null ? (clone $promoted)->first() : (clone $promoted)->where('recipe_identity', $recipe->identity)->first();
                 $fallback = false;
                 if (! $build instanceof TaskVmImageBuild && $group->current_recipe !== true) {
                     // While the current recipe builds or after its build failed, the host's last promoted image serves for one day.

@@ -139,35 +139,18 @@ jobs:
   dependsOn:
   - {job: phases, condition: {type: succeeded}}
   steps:
-    # The clone makes its own cloud-init state, machine id and host keys at its first boot.
+    # The clone makes its own cloud-init state, machine id and host keys at its first boot. The refresh of an image (stage 6) runs the same workflow on its enrolled VM.
   - name: Clean and stop
     labels: {role: swamp}
     writes: true
-    concurrency: 1
-    forEach:
-      item: clean
-      in: '${{ [["incus", "exec", "--project", inputs.intent.project, "--", inputs.intent.builder, "cloud-init", "clean", "--logs"], ["incus", "exec", "--project", inputs.intent.project, "--", inputs.intent.builder, "truncate", "--size", "0", "/etc/machine-id"], ["incus", "exec", "--project", inputs.intent.project, "--", inputs.intent.builder, "rm", "-f", "/etc/ssh/ssh_host_ed25519_key", "/etc/ssh/ssh_host_ed25519_key.pub", "/etc/ssh/ssh_host_ecdsa_key", "/etc/ssh/ssh_host_ecdsa_key.pub", "/etc/ssh/ssh_host_rsa_key", "/etc/ssh/ssh_host_rsa_key.pub"], ["incus", "stop", "--project", inputs.intent.project, "--timeout", "120", "--", inputs.intent.builder]] }}'
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-image-clean-" + string(inputs.node_id) + "-" + string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-vm-image-clean-" + string(inputs.node_id) + "-" + string(self._index) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.jump.target.user }}
-          port: ${{ inputs.intent.jump.target.port }}
-          identityFile: ${{ inputs.intent.jump.identity_file }}
-        hosts:
-        - name: host
-          address: ${{ inputs.intent.jump.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
+      type: workflow
+      workflowIdOrName: task-vm-image-clean
       inputs:
-        hosts: name:host
-        sudo: true
-        argv: '${{ ["timeout", "180"] + self.clean }}'
-        timeoutSec: 200
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ {"host_ssh_execution": inputs.intent.jump, "vm": {"name": inputs.intent.builder, "project": inputs.intent.project}, "enrolled": false, "nested": {}} }}'
 - name: publish
   labels: {role: swamp}
   dependsOn:
