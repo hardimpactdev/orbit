@@ -417,6 +417,8 @@ Missing or damaged protected files require their approved recovery procedure and
 
 A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only. The [UpCloud template build](/reference/compute-drivers#build-the-upcloud-template) runs it to make the server ready for a template.
 
+A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
+
 The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` from the same Ubuntu snapshot, which the shape gate linters need. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 
 The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested VMs. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.

@@ -64,8 +64,9 @@
       - stats.swamp.checksum == recipe.tools.swamp.artifacts.amd64.sha256
       - stats.pi.checksum == recipe.tools.pi.artifacts.amd64.sha256
       - stats['shape gate'].exists
-      - getent_passwd.orbit[1] == '1000' and getent_passwd.orbit[2] == '1000'
-      - not (intent.firewall | default(false)) or ('Status: active' in check_firewall.stdout and 'orbit:public-ssh-recovery' in check_firewall.stdout)
+      - ansible_facts.getent_passwd.orbit[1] == '1000' and ansible_facts.getent_passwd.orbit[2] == '1000'
+      # Quoted: a plain scalar with a colon and a space is a mapping, and an assert refuses a mapping.
+      - "not (intent.firewall | default(false)) or ('Status: active' in check_firewall.stdout and 'orbit:public-ssh-recovery' in check_firewall.stdout)"
       - intent.nfs is none or intent.nfs.subnet in check_exports.stdout
     fail_msg: The task VM role is not at the pins of the recipe.
     quiet: true
