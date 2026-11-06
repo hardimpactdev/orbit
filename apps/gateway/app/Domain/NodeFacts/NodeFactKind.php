@@ -36,6 +36,9 @@ enum NodeFactKind: string
      */
     case EnvKeys = 'env_keys';
 
+    /** The Node's local accounts with their primary group, home and shell, read from `/etc/passwd` and `/etc/group`. */
+    case Accounts = 'accounts';
+
     /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
     public const int FreeStepBytes = 268_435_456;
 
@@ -118,6 +121,14 @@ enum NodeFactKind: string
                 'keys' => ['present', 'nullable', 'array', 'list', 'max:2000'],
                 'keys.*' => ['required', 'string', 'max:255', 'regex:/\\A[A-Za-z_][A-Za-z0-9_.]*\\z/'],
                 'testing_tracked' => ['required', 'boolean'],
+            ],
+            self::Accounts => [
+                'accounts' => ['present', 'array', 'list', 'max:512'],
+                'accounts.*.user' => ['required', 'string', 'regex:/\A[a-z_][a-z0-9_-]{0,31}\$?\z/'],
+                'accounts.*.uid' => ['required', 'integer', 'min:0'],
+                'accounts.*.group' => ['required', 'string', 'regex:/\A[a-z_][a-z0-9_-]{0,31}\$?\z/'],
+                'accounts.*.home' => ['required', 'string', 'starts_with:/', 'max:4096'],
+                'accounts.*.shell' => ['required', 'string', 'starts_with:/', 'max:4096'],
             ],
             self::Ufw => [
                 'installed' => ['required', 'boolean'],
