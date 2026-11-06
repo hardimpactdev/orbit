@@ -179,6 +179,21 @@ it('replays a keyed allow without a second Operation and refuses changed keyed i
         ->and($this->starts)->toHaveCount(1);
 });
 
+it('replays a keyed protected allow as the same succeeded Operation without a native run', function (): void {
+    $headers = ['Idempotency-Key' => 'protected-allow-retry'];
+    $response = $this->postJson($this->url, ['port' => '22'], $headers)
+        ->assertAccepted()->assertJsonPath('data.status', 'succeeded')
+        ->assertJsonPath('data.result.skipped', 'firewall.rule_exists');
+    $this->postJson($this->url, ['port' => '22'], $headers)
+        ->assertAccepted()->assertJsonPath('data.id', $response->json('data.id'))
+        ->assertJsonPath('data.status', 'succeeded')
+        ->assertJsonPath('data.result.skipped', 'firewall.rule_exists');
+
+    expect(Operation::query()->count())->toBe(1)->and(FirewallRule::query()->count())->toBe(0)
+        ->and(Operation::query()->sole()->status)->toBe(OperationStatus::Succeeded)
+        ->and($this->starts)->toBe([]);
+});
+
 it('skips a source contained by one protected range but admits a wider range or source as an operator rule', function (string $port, string $source, bool $skipped, string $protected = '192.0.2.0/24'): void {
     $target = new FirewallInspectionTarget($this->node, new FirewallInspectionShape(
         comment: 'orbit:test-metrics', action: 'allow', direction: 'in', source: $protected, destination: 'any',
