@@ -18,6 +18,7 @@ use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotSetting;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Cluster;
@@ -146,6 +147,26 @@ it('counts a slot stale by image, age, Project and size', function (): void {
         ->and($pool->stale(slotPoolSlot($host, $project, $build), $setting, [...$current, 'build_id' => $build->id + 1]))->toBeTrue()
         ->and($pool->stale(slotPoolSlot($host, $project, $build), null, $current))->toBeTrue()
         ->and($pool->stale(slotPoolSlot($host, $project, $build), $setting, null))->toBeFalse();
+});
+
+it('counts a slot stale when its enrol installed another agent than the current pin', function (): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $pool = app(TaskVmSlotPool::class);
+    $setting = app(TaskVmSettings::class)->host($host->id)->slots;
+    $current = ['build_id' => $build->id, 'fingerprint' => str_repeat('b', 64), 'recipe_identity' => 'recipe-1'];
+    $guest = static fn (string $name): Node => Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.1.'.random_int(2, 250), 'user' => 'orbit']));
+    $enrolled = function (string $sha) use ($host, $project, $build, $guest): TaskVm {
+        $slot = slotPoolSlot($host, $project, $build);
+        $slot->update(['node_id' => $guest($slot->name)->id]);
+        slotPoolEnrol($slot)->forceFill(['input' => ['task_vm_id' => $slot->id, 'agent_sha256' => $sha]])->save();
+
+        return $slot->refresh();
+    };
+    $pin = app(AgentDelivery::class)->pin(new Node(['platform' => 'linux', 'architecture' => 'x86_64']));
+
+    expect($pool->stale($enrolled($pin), $setting, $current))->toBeFalse()
+        ->and($pool->stale($enrolled(str_repeat('c', 64)), $setting, $current))->toBeTrue();
 });
 
 it('empties the pool when the setting goes, one slot at a time', function (): void {

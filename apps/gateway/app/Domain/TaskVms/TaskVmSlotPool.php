@@ -10,6 +10,7 @@ use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
@@ -54,6 +55,7 @@ final readonly class TaskVmSlotPool
         private RecipeImageBuilds $recipes,
         private SwampSshExecutionInput $ssh,
         private TaskVmFleetSeed $seeds,
+        private AgentDelivery $agents,
     ) {}
 
     /** Runs the refill rule of the host; returns the Operation it started, or null when the pool needs nothing now. */
@@ -180,6 +182,14 @@ final readonly class TaskVmSlotPool
             'slot' => ['receipt' => [...$receipt, 'result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]];
     }
 
+    /** Whether the slot's enrol installed another agent than the current pin: a release changed the pin since. */
+    private function otherAgent(TaskVm $vm): bool
+    {
+        $installed = $this->enrolOf($vm)?->input['agent_sha256'] ?? null;
+
+        return is_string($installed) && $vm->node instanceof Node && $installed !== $this->agents->pin($vm->node);
+    }
+
     /** The succeeded enrol of a slot, whose intent and receipt its claim reuses. */
     private function enrolOf(TaskVm $vm): ?Operation
     {
@@ -189,7 +199,8 @@ final readonly class TaskVmSlotPool
 
     /**
      * Whether a ready slot can no longer serve a claim: no setting, another Project or size, an image that is not the
-     * host's last promoted image, or older than {@see self::MaxAgeHours}. An unknown current image makes no slot stale,
+     * host's last promoted image, older than {@see self::MaxAgeHours}, or an enrol that installed another agent than the
+     * current pin. An unknown current image makes no slot stale,
      * so a missing promotion record never drains the pool.
      *
      * @param  array{build_id:int,fingerprint:string,recipe_identity:string}|null  $current
@@ -198,7 +209,7 @@ final readonly class TaskVmSlotPool
     {
         return $setting === null || $vm->slot_project_id !== $setting->projectId || $vm->size !== $setting->size
             || ($current !== null && $vm->image_build_id !== $current['build_id'])
-            || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours));
+            || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours)) || $this->otherAgent($vm);
     }
 
     /**
