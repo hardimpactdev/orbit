@@ -88,8 +88,8 @@ jobs:
       behaviorName: '${{ ("certificate-sign-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
       methodName: sign
       inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        run_id: '${{ inputs.parent_run_id }}'
+        operation_id: '${{ has(inputs.operation_id) ? inputs.operation_id : 1 }}'
+        run_id: '${{ has(inputs.parent_run_id) ? inputs.parent_run_id : run.id }}'
         node_id: '${{ inputs.intent.leaves[inputs.leaf].node_id }}'
         scope: '${{ inputs.intent.leaves[inputs.leaf].scope }}'
         request: '${{ steps.csr.outputs.stdout }}'

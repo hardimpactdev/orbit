@@ -1,0 +1,25 @@
+---
+# A Route's access on one Node: Caddy denied the checkout and granted the served roots (one command for each kind of path, in order),
+# and the URL line of the served directories' .env. The importing play sets `access` (the Route intent with `acl` and `url_lines`)
+# and `node_ids` (the Node, as a number and as text); each row names its Node.
+- name: Grant Caddy access to the served roots
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '120'] + item.argv }}"
+  register: acl
+  become: true
+  loop: "{{ access.acl | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
+  loop_control:
+    label: "{{ item.argv | join(' ') | truncate(100) }}"
+    break_when: acl is failed
+  changed_when: true
+# The .env keeps its owner and mode, and a missing one fails the step.
+- name: Set APP_URL
+  ansible.builtin.lineinfile:
+    path: "{{ item.path }}"
+    regexp: "^APP_URL="
+    line: "{{ item.line }}"
+    create: false
+  become: true
+  loop: "{{ access.url_lines | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
+  loop_control:
+    label: "{{ item.path }}"

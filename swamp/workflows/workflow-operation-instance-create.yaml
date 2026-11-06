@@ -238,6 +238,7 @@ jobs:
             parent_run_id: '${{ run.id }}'
       # Route: a web-serving Project's Route, through the same child that route:create runs, beside the setup (same depth as it). The
       # checkout phase has granted Caddy its access and written the URL, so the child skips both on this Node.
+      # It waits for the same steps as the setup, so a Swamp job puts both at one depth and does not make one wait for the other.
       - name: route
         labels: {role: swamp}
         writes: true

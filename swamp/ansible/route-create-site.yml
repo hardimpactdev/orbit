@@ -47,16 +47,11 @@
         account_home: "{{ account.stdout.split(':')[5] }}"
     # Caddy access by ACL, in order: deny the checkout, open the path, grant the served roots (one command for each kind of path).
     # An Instance create has done this on its own Node in its checkout phase, before the setup commands write into the tree.
-    - name: Grant Caddy access to the served roots
-      ansible.builtin.command:
-        argv: "{{ ['timeout', '120'] + item.argv }}"
-      register: acl
+    - name: Set the Route access on this Node
+      ansible.builtin.import_tasks: tasks/route-access.yml
+      vars:
+        access: "{{ intent }}"
       when: not prepared
-      loop: "{{ intent.acl | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
-      loop_control:
-        label: "{{ item.argv | join(' ') | truncate(100) }}"
-        break_when: acl is failed
-      changed_when: true
     - name: Link the shared environment files
       ansible.builtin.file:
         src: "{{ item.target }}"
@@ -178,17 +173,6 @@
           ansible.builtin.command:
             argv: [timeout, "60", systemctl, reload, caddy]
           changed_when: true
-    # One APP_URL line per served directory; the .env keeps its owner and mode, and a missing one fails the step.
-    - name: Set APP_URL
-      ansible.builtin.lineinfile:
-        path: "{{ item.path }}"
-        regexp: "^APP_URL="
-        line: "{{ item.line }}"
-        create: false
-      when: not prepared
-      loop: "{{ intent.url_lines | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
-      loop_control:
-        label: "{{ item.path }}"
     # A development Instance is published awake: the marker makes its first request reach the application.
     - name: Mark the Instance awake
       ansible.builtin.copy:
