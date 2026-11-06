@@ -43,7 +43,7 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
             self.assertIn(pin, pins)
             self.assertNotIn(pin, WORKFLOW)
             self.assertNotIn(pin, (ROOT / 'bin/swamp-shape-gate').read_text())
-        self.assertIn('-r ../swamp/ansible/requirements.txt', pins)
+        self.assertIn("-r requirements.txt", pins)
 
 
 class PlanTest(unittest.TestCase):
