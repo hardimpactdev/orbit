@@ -204,6 +204,7 @@ final readonly class TaskProvisionIntent
     /**
      * The guest's rows of the Route's Caddy access, as argv lists. The workspace step runs them after the fetch and before the setup
      * steps write into the tree, so what the setup creates inherits the default entries; the Route then skips them for the guest.
+     * None when the Route also writes an APP_URL line on the guest, which only exists after the setup steps: the Route keeps both.
      *
      * @param  array<string,mixed>|null  $route
      * @return list<list<string>>
@@ -211,9 +212,13 @@ final readonly class TaskProvisionIntent
     private static function access(?array $route, int $guestNodeId): array
     {
         $create = $route === null ? [] : ValidatedData::object($route['route_create'] ?? []);
+        $guest = static fn (mixed $row): bool => ValidatedData::integer(ValidatedData::object($row)['node_id']) === $guestNodeId;
+        if (array_filter(is_array($create['url_lines'] ?? null) ? $create['url_lines'] : [], $guest) !== []) {
+            return [];
+        }
         $rows = is_array($create['acl'] ?? null) ? $create['acl'] : [];
 
         return array_values(array_map(static fn (mixed $row): array => ValidatedData::stringList(ValidatedData::object($row)['argv']),
-            array_filter($rows, static fn (mixed $row): bool => ValidatedData::integer(ValidatedData::object($row)['node_id']) === $guestNodeId)));
+            array_filter($rows, $guest)));
     }
 }

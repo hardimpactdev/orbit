@@ -263,6 +263,7 @@ it('captures the Route of a routed workspace served, with the admitted Project f
     // The workspace step runs the guest's Route access rows before the setup steps; the Route keeps all rows, and skips the guest's.
     $guestRows = array_values(array_filter($operation->input['route']['route_create']['acl'], fn (array $row): bool => $row['node_id'] === $guest->id));
     expect($guestRows)->not->toBeEmpty()
+        ->and(array_filter($operation->input['route']['route_create']['url_lines'], fn (array $row): bool => $row['node_id'] === $guest->id))->toBe([])
         ->and($operation->input['workspace']['access'])->toBe(array_column($guestRows, 'argv'));
 });
 

@@ -402,7 +402,7 @@ jobs:
         type: succeeded
     forEach:
       item: access
-      in: ${{ inputs.intent.workspace.access }}
+      in: '${{ has(inputs.intent.workspace.access) ? inputs.intent.workspace.access : [] }}'
     concurrency: 1
     guard: ${{ self._index > 0 && (!("access-"+string(self._index-1) in steps) || steps["access-"+string(self._index-1)].status != "succeeded") }}
     allowFailure: true
@@ -562,7 +562,7 @@ jobs:
       in: ${{ inputs.intent.workspace.setup }}
     concurrency: 1
     # The access rows stop at the first that fails, so the last one succeeded only when all did.
-    guard: ${{ has(steps.profile.outputs.error_code) || (size(inputs.intent.workspace.access) > 0
+    guard: ${{ has(steps.profile.outputs.error_code) || (has(inputs.intent.workspace.access) && size(inputs.intent.workspace.access) > 0
       && (!("access-"+string(size(inputs.intent.workspace.access)-1) in steps) || steps["access-"+string(size(inputs.intent.workspace.access)-1)].status != "succeeded"))
       || (self._index > 0 && (!("setup-"+string(self._index-1) in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
     allowFailure: true
