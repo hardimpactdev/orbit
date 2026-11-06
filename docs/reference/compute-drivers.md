@@ -1239,7 +1239,8 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | `Withdraw the enrollment` | Removes what the enrollment installed: the sudoers file, the key file of Node 209, the observer binary and its unit. |
 | `Clean the refresh VM` | Runs `task-vm-image-clean` and stops the VM. |
 | `Publish the image` | Runs `incus publish` of the stopped VM under a candidate alias and reads its fingerprint. |
-| `Smoke the candidate`, `Check the image identity` | Run `task-vm-image-smoke`, the smoke of the image build: a throwaway VM from the candidate and the check phase of the task VM role on it. The identity check then looks for the enrollment files and the identity of the refresh VM on that VM. |
+| `Smoke the candidate` | Runs `task-vm-image-smoke`, the smoke of the image build: a throwaway VM from the candidate and the check phase of the task VM role on it. |
+| `Check the image identity` | Looks on the smoke VM for the enrollment files and the identity of the refresh VM. |
 | `Copy the seed`, `Detach the seed` | Copy the seed disk of the refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
 | `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
 
