@@ -34,6 +34,8 @@ sequenceDiagram
       SW->>N: Allow the Router on LAN<br/>@swamp/cfgmgmt/firewall
     end
     SW->>N: Install cert, publish site<br/>child route-create-site · Ansible
+    %%> How:
+    %%> - each PHP-FPM unit is reloaded and enabled; a stopped one starts (a task VM image keeps PHP-FPM off)
     opt domain outside the TLD
       SW->>V: Publish private DNS<br/>records + catalog, then restart
       %%> When:

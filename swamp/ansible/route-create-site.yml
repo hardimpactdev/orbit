@@ -76,14 +76,15 @@
       loop_control:
         label: "{{ item.argv[0] }}"
       changed_when: false
-    # A reload keeps open requests.
+    # A reload keeps open requests. A task VM image keeps PHP-FPM off and disabled, so a stopped unit starts and stays enabled.
     - name: Reload PHP-FPM
-      ansible.builtin.command:
-        argv: [timeout, "30", systemctl, reload, "{{ item.unit }}"]
+      ansible.builtin.systemd:
+        name: "{{ item.unit }}"
+        state: reloaded
+        enabled: true
       loop: "{{ intent.php_reloads | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.unit }}"
-      changed_when: true
     # The signed leaf beside its key, root:caddy 0644; current points at the new version, which the Caddy site names.
     - name: Write the signed certificate
       ansible.builtin.copy:
