@@ -42,7 +42,7 @@ final class EndCancelledTaskProvision implements ShouldQueue
         $group = Task::topLevel()->find($this->groupId);
         // An ending already admitted or done, by this job or the caller's own retry, leaves nothing to start.
         if ($group === null || Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->where('target_id', $group->id)
-            ->where('id', '>', $this->provisionId)->where('status', '!=', OperationStatus::Failed)->exists()
+            ->where('id', '>', $this->provisionId)->whereNotIn('status', [OperationStatus::Failed, OperationStatus::Cancelled, OperationStatus::Interrupted])->exists()
             || ($group->taskable_id === null && ! TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists())) {
             return;
         }

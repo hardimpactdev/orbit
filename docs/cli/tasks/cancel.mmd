@@ -40,7 +40,7 @@ sequenceDiagram
   %%> - cancels the group's root task; Swamp cancels its running Pi turn or check and tears down their SSH sessions
   %%> Busy:
   %%> - the Gateway waits briefly for the terminal event within the budget; a run that does not end returns `operation.target_busy`, and nothing changes
-  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the cancel of the provision run stands even though this request is refused; when that provision ends `cancelled`, the Gateway admits this ending itself, unless one was admitted since, so the VM it was creating is destroyed (docs/cli/tasks/provision.mmd)
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): this request changes nothing itself, but a provision run it cancelled stays cancelled; when that provision ends, the Gateway admits this ending itself, unless one was admitted since, so the VM it was creating is destroyed (docs/cli/tasks/provision.mmd)
   GW->>SW: Start run, full intent<br/>operation-task-cancel
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
