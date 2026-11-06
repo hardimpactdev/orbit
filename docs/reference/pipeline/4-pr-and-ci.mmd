@@ -26,6 +26,9 @@ sequenceDiagram
   GH->>CI: Start CI<br/>on the PR head, every push
   %%> What it does:
   %%> - GitHub runs `ci.yml` for the PR head on every push, also while the PR is a draft; there is one CI, and the merge requires its one result
+  %%> - the handoff branch `task-N-handoff`, which only the Orbit App pushes, runs the same CI before `tasks:publish`; its Swamp workflow validation step gets the read-only Swamp CI token for a push by the App
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - without the token, no handoff that changes `swamp/` could pass hosted CI; the token goes to that one step, never to `pull_request_target` or a fork
   Note over CI: Scope the change<br/>changed files pick the jobs
   %%> Rules:
   %%> - documentation only (`docs/`, `*.md`, charts): docs checks only, never the proof CI; this is the spec commit alone
