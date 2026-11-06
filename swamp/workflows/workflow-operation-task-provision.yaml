@@ -127,7 +127,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
-        vm: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
+        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
     dependsOn:
     - step: Create and prepare the VM
       condition:
@@ -147,7 +147,7 @@ jobs:
       behaviorName: tp-data-pin-converge
       methodName: pin
       inputs:
-        receipt: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
+        receipt: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
         guest_node_id: ${{ inputs.intent.guest_node_id }}
         # The inputs of a skipped step are still evaluated, so a provision without a nested topology (no converge input) needs a value here.
         intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {} } }}'
@@ -210,7 +210,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        vm: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
+        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
     dependsOn:
     - step: Set up the workspace
       condition:
@@ -233,7 +233,7 @@ jobs:
       behaviorName: '${{ "tp-data-bind" }}'
       methodName: bind
       inputs:
-        vm: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
+        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
         guest_node_id: ${{ inputs.intent.guest_node_id }}
         route: ${{ inputs.intent.route }}
         processes: ${{ inputs.intent.processes }}
