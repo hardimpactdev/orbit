@@ -54,10 +54,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id002
-        name: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ self.check.attributes.inputs.intent.ssh_execution.target.user }}
@@ -89,7 +89,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -114,7 +114,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -139,7 +139,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -163,7 +163,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -202,7 +202,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:

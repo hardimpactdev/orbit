@@ -65,10 +65,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
