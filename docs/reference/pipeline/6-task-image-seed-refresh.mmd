@@ -89,7 +89,7 @@ sequenceDiagram
     %%> What it does:
     %%> - boots a throwaway copy of each ready copy and of the image to check them, then promotes both and destroys the refresh VM
     %%> - keeps the old image and seed as `-previous`, the rollback copy; cleanup always runs
-    %%> - a failed step keeps the old image and seed
+    %%> - a failed step keeps the old image and seed: the clean, and with it the publication and the promotion, run only after the VM step passed, so a VM whose fleet failed its readiness check promotes nothing
     %%> Not built:
     %%> - the whole refresh from a running task VM; today the seed refresh boots a builder from the image and has no topology build or ready copies (the old reset was removed), and the image is built from the recipe
     SW->>SL: Replace old ready slots<br/>one at a time
