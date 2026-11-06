@@ -72,7 +72,7 @@ jobs:
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-operator-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['cat', '${{ "/home/" + inputs.intent.ssh_execution.target.user + "/.ssh/id_ed25519.pub" }}'], timeoutSec: 30}}
     dependsOn: [{step: 'Make the operator key', condition: {type: succeeded}}]
-  # Stock Ubuntu with cloud-init: the orbit account and the key of this VM. Stateful, with the state disk the memory needs, as the ready copies require. One at a time: parallel `incus init` calls of one remote image race on the client's image cache.
+  # Stock Ubuntu with cloud-init: the orbit account, the key of this VM, and the NFS client the checkout mount needs. Stateful, with the state disk the memory needs, as the ready copies require. One at a time: parallel `incus init` calls of one remote image race on the client's image cache.
   - name: 'Create the VMs'
     labels: {role: swamp}
     writes: true
@@ -80,7 +80,7 @@ jobs:
     concurrency: 1
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-create-the-vms" + "-" + self.role).split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-create-the-vms" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'incus', 'init', 'images:ubuntu/resolute/cloud', '${{ inputs.intent.fleet.guests[self.role] }}', '--vm', '--storage', 'topology-seed', '--network', '${{ inputs.intent.fleet.network }}', '-c', 'limits.cpu=2', '-c', '${{ "limits.memory=" + inputs.intent.fleet.layout[self.role].memory }}', '-c', 'migration.stateful=true', '-d', 'root,size=20GiB', '-d', '${{ "root,size.state=" + inputs.intent.fleet.layout[self.role].memory }}', '-c', '${{ "cloud-init.user-data=#cloud-config\npackage_update: true\npackages: [openssh-server]\nusers:\n  - name: orbit\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - " + steps["Read the operator key"].outputs.stdout.split("\n")[0] + "\n" }}'], timeoutSec: 610}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'incus', 'init', 'images:ubuntu/resolute/cloud', '${{ inputs.intent.fleet.guests[self.role] }}', '--vm', '--storage', 'topology-seed', '--network', '${{ inputs.intent.fleet.network }}', '-c', 'limits.cpu=2', '-c', '${{ "limits.memory=" + inputs.intent.fleet.layout[self.role].memory }}', '-c', 'migration.stateful=true', '-d', 'root,size=20GiB', '-d', '${{ "root,size.state=" + inputs.intent.fleet.layout[self.role].memory }}', '-c', '${{ "cloud-init.user-data=#cloud-config\npackage_update: true\npackages: [openssh-server, nfs-common]\nusers:\n  - name: orbit\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - " + steps["Read the operator key"].outputs.stdout.split("\n")[0] + "\n" }}'], timeoutSec: 610}}
     dependsOn: [{step: 'Read the operator key', condition: {type: succeeded}}]
   - name: 'Set the addresses'
     labels: {role: swamp}
