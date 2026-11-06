@@ -180,7 +180,7 @@ jobs:
           withdraw_node: ${{ size(inputs.intent.route_mutations[inputs.side].publications.filter(p,p.serves_routes || p.prepared.dns != null || inputs.intent.route_mutations[inputs.side].cleanup.exists(leaf,leaf.node_id == p.node_id))) }}
           withdraw_retire_lan: ${{ size(inputs.intent.route_mutations[inputs.side].retire_lan) }}
           withdraw_retire_ingress: ${{ size(inputs.intent.route_mutations[inputs.side].retire_ingress) }}
-          withdraw_unsupported: '${{ (has(inputs.intent.route_mutations[inputs.side].prepare_certificates) ? size(inputs.intent.route_mutations[inputs.side].prepare_certificates) : 0) + size(inputs.intent.route_mutations[inputs.side].certificates) + size(inputs.intent.route_mutations[inputs.side].url_writes) }}'
+          withdraw_unsupported: '${{ ("prepare_certificates" in inputs.intent.route_mutations[inputs.side] ? size(inputs.intent.route_mutations[inputs.side].prepare_certificates) : 0) + size(inputs.intent.route_mutations[inputs.side].certificates) + size(inputs.intent.route_mutations[inputs.side].url_writes) }}'
         outcomes: ${{ steps }}
     allowFailure: true
   - name: result
