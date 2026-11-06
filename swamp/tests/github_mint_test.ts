@@ -142,5 +142,30 @@ Deno.test("a workflow that writes the dependency auth removes it on every outcom
             }
         }
     }
-    assert(writers >= 2, `expected the workspace source and the package install to write the dependency auth, found ${writers}`);
+    assert(writers >= 1, `expected the package install to write the dependency auth through the shared child, found ${writers}`);
+});
+
+Deno.test("the workspace source writes the dependency files inline, and every setup step waits for both writes", async () => {
+    const { workflow } = (await workflows()).find(({ file }) => file.includes("task-workspace-source"))!;
+    const steps = workflow.jobs.flatMap((job) => job.steps);
+    const named = (name: string) => steps.find((step) => step.name === name)!;
+    const job = workflow.jobs.find((candidate) => candidate.steps.some((step) => step.name === "deps_write_composer"))!;
+
+    for (const name of ["deps_write_composer", "deps_write_npm"]) {
+        assert(before(job.steps, named(name)).has("deps_mint"), `${name} does not wait for the mint`);
+    }
+    for (const step of job.steps.filter((candidate) => candidate.name.startsWith("setup-"))) {
+        for (const write of ["deps_write_composer", "deps_write_npm"]) {
+            assert(before(job.steps, step).has(write), `"${step.name}" does not wait for ${write}`);
+        }
+    }
+    // The removal and the revoke run whatever the setup steps did.
+    for (const name of ["deps_remove_files", "deps_revoke"]) {
+        for (const parent of named(name).dependsOn ?? []) {
+            assert(ends.includes(String(parent.condition?.type)), `${name} waits for "${parent.step}" only on success`);
+        }
+        for (const write of ["deps_write_composer", "deps_write_npm"]) {
+            assert(before(job.steps, named(name)).has(write), `${name} does not wait for ${write}`);
+        }
+    }
 });

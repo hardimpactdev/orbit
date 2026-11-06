@@ -470,21 +470,147 @@ jobs:
         - type: succeeded
         - type: skipped
     allowFailure: true
-  # Private dependencies. The token is minted here, minutes before the setup steps, and lives in two 0600 files of the task account
-  # for as long as they run: `deps_remove` deletes both whatever the setup steps did.
-  - name: deps_write
+  # Private dependencies (docs/cli/tasks/provision.mmd). The token is minted beside the clone credential, so its dispatch is off the critical path; the old
+  # files are cleared early for the same reason (uutils `install` cannot overwrite from stdin). Right before the first setup step the two files are written
+  # by two parallel steps, so the write costs one dispatch. `deps_remove_files` and `deps_revoke` run together after the last setup step, whatever it did:
+  # a revoked token is dead whether or not the files are gone yet.
+  - name: deps_mint
     labels: {role: swamp}
     task:
       type: workflow
-      workflowIdOrName: task-dependency-auth-write
+      workflowIdOrName: task-github-mint
       inputs:
         operation_id: ${{ inputs.operation_id }}
         run_id: ${{ inputs.run_id }}
-        user: ${{ inputs.intent.workspace.user }}
-        ssh_execution: ${{ steps.guest.outputs.workspace.ssh_execution }}
-        dependency_auth: ${{ inputs.intent.dependency_auth }}
+        purpose: dependencies
+    dependsOn:
+    - step: control
+      condition:
+        type: succeeded
+    guard: ${{ size(inputs.intent.workspace.setup) == 0 }}
+    allowFailure: true
+  - name: deps_clear
+    labels: {role: swamp}
+    queueTimeout: 10
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-deps-clear-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-deps-clear-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - timeout
+        - "30"
+        - rm
+        - -f
+        - --
+        - ${{ "/home/" + inputs.intent.workspace.user + "/.config/composer/auth.json" }}
+        - ${{ "/home/" + inputs.intent.workspace.user + "/.npmrc" }}
+    dependsOn:
+    - step: guest
+      condition:
+        type: succeeded
+    guard: ${{ size(inputs.intent.workspace.setup) == 0 }}
+    allowFailure: true
+  - name: deps_write_composer
+    labels: {role: swamp}
+    queueTimeout: 10
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-deps-composer-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-deps-composer-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - timeout
+        - "30"
+        - install
+        - -D
+        - -m
+        - '0600'
+        - /dev/stdin
+        - ${{ "/home/" + inputs.intent.workspace.user + "/.config/composer/auth.json" }}
+        stdin: ${{ vault.get(inputs.intent.dependency_auth.composer.vault, inputs.intent.dependency_auth.composer.key) }}
     dependsOn:
     - step: profile
+      condition:
+        type: succeeded
+    - step: deps_mint
+      condition:
+        type: succeeded
+    - step: deps_clear
+      condition:
+        type: succeeded
+    guard: ${{ has(steps.profile.outputs.error_code) || size(inputs.intent.workspace.setup) == 0 }}
+    allowFailure: true
+  - name: deps_write_npm
+    labels: {role: swamp}
+    queueTimeout: 10
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-deps-npm-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-deps-npm-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - timeout
+        - "30"
+        - install
+        - -m
+        - '0600'
+        - /dev/stdin
+        - ${{ "/home/" + inputs.intent.workspace.user + "/.npmrc" }}
+        stdin: ${{ vault.get(inputs.intent.dependency_auth.npm.vault, inputs.intent.dependency_auth.npm.key) }}
+    dependsOn:
+    - step: profile
+      condition:
+        type: succeeded
+    - step: deps_mint
+      condition:
+        type: succeeded
+    - step: deps_clear
       condition:
         type: succeeded
     guard: ${{ has(steps.profile.outputs.error_code) || size(inputs.intent.workspace.setup) == 0 }}
@@ -516,7 +642,10 @@ jobs:
     - step: profile
       condition:
         type: succeeded
-    - step: deps_write
+    - step: deps_write_composer
+      condition:
+        type: succeeded
+    - step: deps_write_npm
       condition:
         type: succeeded
     forEach:
@@ -526,24 +655,88 @@ jobs:
     guard: ${{ has(steps.profile.outputs.error_code) || (self._index > 0 && (!("setup-"+string(self._index-1)
       in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
     allowFailure: true
-  - name: deps_remove
+  - name: deps_remove_files
     labels: {role: swamp}
+    queueTimeout: 10
     task:
-      type: workflow
-      workflowIdOrName: task-dependency-auth-remove
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-deps-remove-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-deps-remove-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
-        user: ${{ inputs.intent.workspace.user }}
-        ssh_execution: ${{ steps.guest.outputs.workspace.ssh_execution }}
-        dependency_auth: ${{ inputs.intent.dependency_auth }}
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - timeout
+        - "30"
+        - rm
+        - -f
+        - --
+        - ${{ "/home/" + inputs.intent.workspace.user + "/.config/composer/auth.json" }}
+        - ${{ "/home/" + inputs.intent.workspace.user + "/.npmrc" }}
     dependsOn:
-    - step: deps_write
+    - step: deps_mint
+      condition:
+        type: always
+    - step: deps_clear
+      condition:
+        type: always
+    - step: deps_write_composer
+      condition:
+        type: always
+    - step: deps_write_npm
       condition:
         type: always
     - step: setup-${{ self._index }}
       condition:
         type: always
-    # A skipped write step wrote nothing: there is no file to remove and no token to revoke.
-    guard: ${{ !("deps_write" in steps) }}
+    # A skipped mint asked for no token: there is no file to remove and no token to revoke.
+    guard: ${{ !("deps_mint" in steps) }}
+    allowFailure: true
+  # curl prints the HTTP status instead of failing on it, so the receipt can tell a revoked token (204) from one that GitHub does not know (401, none minted
+  # or already expired) and from a revoke that failed. The step itself fails only when GitHub could not be reached.
+  - name: deps_revoke
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-deps-revoke" }}
+      methodName: execute
+      inputs:
+        run: "curl --silent --show-error --proto =https --max-time 30 --request DELETE \\\n  --variable %ORBIT_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_TOKEN}}' \\\n  --header 'Accept: application/vnd.github+json' \\\n  --output /dev/null --write-out '%{http_code}' https://api.github.com/installation/token\n"
+        env:
+          ORBIT_TOKEN: ${{ vault.get(inputs.intent.dependency_auth.token.vault, inputs.intent.dependency_auth.token.key) }}
+    dependsOn:
+    - step: deps_mint
+      condition:
+        type: always
+    - step: deps_clear
+      condition:
+        type: always
+    - step: deps_write_composer
+      condition:
+        type: always
+    - step: deps_write_npm
+      condition:
+        type: always
+    - step: setup-${{ self._index }}
+      condition:
+        type: always
+    guard: ${{ !("deps_mint" in steps) }}
+    writes: true
     allowFailure: true
   - name: setup_copy
     labels: {role: swamp}
@@ -756,10 +949,22 @@ jobs:
     - step: clone
       condition:
         type: always
-    - step: deps_write
+    - step: deps_mint
       condition:
         type: always
-    - step: deps_remove
+    - step: deps_clear
+      condition:
+        type: always
+    - step: deps_write_composer
+      condition:
+        type: always
+    - step: deps_write_npm
+      condition:
+        type: always
+    - step: deps_remove_files
+      condition:
+        type: always
+    - step: deps_revoke
       condition:
         type: always
     - step: bundle
