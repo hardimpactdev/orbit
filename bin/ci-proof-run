@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 SHA = re.compile(r'[0-9a-f]{40}([0-9a-f]{24})?')
-# The proof budget is 30 minutes after the fleet is ready; the job timeout in ci.yml is 45.
+# The CI cap on one proof run; the job timeout in ci.yml is 45 minutes.
 WAIT = 45 * 60
 
 
@@ -35,6 +35,14 @@ def evaluate(code, output):
     except ValueError:
         result = None
     if result is None:
+        error = None
+        try:
+            document = json.loads(output)
+            error = (document.get('error') or {}).get('code') if isinstance(document, dict) else None
+        except ValueError:
+            pass
+        if isinstance(error, str) and error:
+            return False, [f'Orbit refused the proof: {error} (exit status {code}).']
         return False, [f'The proof printed no result (exit status {code}).']
     cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
     lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']

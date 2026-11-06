@@ -26,7 +26,7 @@ In a terminal, an omitted commit is asked for with a text prompt. A noninteracti
 
 The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
 
-Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` exists but is report-only until a run passes end to end. Not built yet: the receipt store.
+Built so far: the trust check, the case selection, the proof run and the verdict of each case. The CI job `proof-run` is part of `Required checks`: a red or missing proof blocks the merge. Not built yet: the receipt store.
 
 ## Which commits Orbit proves
 

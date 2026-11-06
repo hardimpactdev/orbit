@@ -129,7 +129,7 @@ def select(paths, main=False, selection=None):
     jobs['web'] |= main
     if selection is None and (ROOT / SELECTION).is_file():
         selection = (ROOT / SELECTION).read_text()
-    # The proof-run job is report-only and outside `jobs`, so `Required checks` does not see it yet.
+    # The proof-run job is outside `jobs`: `Required checks` selects it from `proof_run` and the event.
     return {'jobs': jobs, 'agent': agent, 'gateway_release': main or not swamp_only, 'proof_run': proof_run(paths, selection)}
 
 

@@ -25,6 +25,11 @@ def document(*verdicts, wrapper=None):
 
 
 class EvaluateTest(unittest.TestCase):
+    def test_a_refusal_names_its_error_code(self):
+        passed, lines = proof.evaluate(1, json.dumps({'error': {'code': 'proof.execution_disabled', 'message': 'off'}}))
+        self.assertFalse(passed)
+        self.assertIn('proof.execution_disabled', lines[0])
+
     def test_all_cases_passed(self):
         for wrapper in (None, 'data', 'operation'):
             with self.subTest(wrapper=wrapper):
