@@ -1118,13 +1118,13 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 **Old path.** Stage 6 of the [command development pipeline](/reference/command-development-pipeline) replaces this per-release recipe image build with a refresh of the topology seed by converge. Keep the build working until that refresh exists, and do not extend it ([old paths](/reference/old-paths)).
 
-The Gateway compiles image input from the stored machine recipe and the pinned agent delivery. This compilation selects architecture-specific tools, separates PHP and Rust inputs, and keeps empty tool maps as JSON objects. A mismatched agent pin refuses the build before a guest phase starts.
+An Incus build puts the `recipe.json` and the Vite+ lock of the stored machine recipe in its intent. The recipe identity does not name the Orbit agent, and an image holds none; the guest gets the observer when it enrols. The UpCloud build still compiles its image input from the stored recipe and the pinned agent delivery. It selects architecture-specific tools, separates PHP and Rust inputs, and keeps empty tool maps as JSON objects. A mismatched agent pin refuses the UpCloud build before a guest phase starts.
 
 Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; start another stock attempt for a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.
 
 Use `php artisan task-vms:build-recipe --rebuild` after an image-builder fix, or whenever the current recipe needs a fresh image. It rebuilds the unchanged recipe from stock on every configured Incus host and UpCloud. It cannot be combined with `--retry`. It refuses while a build for the same recipe is running or its UpCloud rebuild request is pending, or while a configured Incus host is building another recipe.
 
-Each candidate runs the normal build, verify, smoke, topology-seed (Incus), and promote path with the desired-recipe and generation fences. A cold rebuild stays inside the current desired generation: it does not resume a halted Node rollout or resolve its incident. If the deployed recipe is not yet desired, reconcile it before requesting a cold rebuild.
+Each candidate runs the normal build, smoke and promote path
 
 A failed or cancelled image Operation also marks its owning build attempt failed, including a Gateway run-budget timeout. That records failure, not native termination: the Operation keeps its native-settlement hold until the shared reader verifies the terminal run. When the shared reader corrects an expiry to verified native success, the same attempt and recipe become succeeded with the already promoted fingerprint; recipe retry reuses that image.
 
@@ -1134,82 +1134,80 @@ A recipe revert builds the selected identity from stock. Swamp retains completed
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
-Each Incus image attempt starts one native Swamp workflow, `operation-task-vm-image-build`. Every step runs on a 209 worker with `labels: {role: swamp}`; the build host needs no Swamp worker. The Gateway passes the full admitted intent as workflow inputs and checks at the run start that the attempt owns its build and that its recipe is still current. Steps make no Gateway calls. A recipe that changes during the run does not stop it; the next reconcile builds the new recipe.
+Each Incus image attempt starts one native Swamp workflow, `operation-task-vm-image-build`, in the steps of the chart `docs/cli/tasks/vm-image-build.mmd`. Every step runs on a 209 worker with `labels: {role: swamp}`; the build host needs no Swamp worker and no agent. The Gateway passes the full admitted intent as workflow inputs. It checks at the run start that the attempt owns its build and that its recipe is still current. Steps make no Gateway calls. A recipe that changes during the run does not stop it; the next reconcile builds the new recipe.
 
-The first step installs the release's pinned agent on the build host. Official `@swamp/cfgmgmt/fetch` downloads the agent build from the intent's `agent_url` to `/usr/local/bin/orbit-agent` and checks its SHA-256 against the pin. One `systemctl try-restart orbit-agent.service` then restarts the observer if it runs. Without this step, a release that moves the agent pin would fail every later agent call with `agent.version_mismatch`. The Gateway refuses the build with `task_vm.image_agent_unavailable` when the release has no HTTPS build for the host.
+The intent names these:
 
-Each Node action is one official `@swamp/ssh` step with pinned host keys and the 209 worker key, as one argv bounded by a literal `timeout`. A host action runs `sudo -n -- /usr/local/bin/orbit-agent command NAME`. A guest action runs the guest's agent through `sudo -n -- incus --project P exec --mode=non-interactive --user 0 --group 0 --env SUDO_USER=orbit -- VM`. The agent envelope `{agent_sha256, deadline_ms, input}` is the step's stdin, so each call proves the admitted agent pin. A typed TypeScript step builds the envelopes and checks each reply before the next step runs. A refused reply fails that step with the agent's own error code, which the Gateway records. The TypeScript code runs no command and no wait.
+- The host's SSH target with its recorded host keys, which Node 209 uses for every `incus` call and as the jump to the builder.
+- The builder and smoke names, the project, the network and the size of the VM.
+- The stock image, the candidate alias and the base alias with its `-previous` copy.
+- The `recipe.json` of the release, the Vite+ lock, and the Pi server digest with its place on the Gateway host.
+- The cloud-init config that makes the `orbit` account with the key of the Swamp control Node.
 
-Boot and smoke wait for the guest agent with one `incus wait VM agent --timeout 600`, then for `cloud-init status --wait`. They push the host's pinned `/usr/local/bin/orbit-agent` into the guest with `incus file push --mode 0700 --uid 0 --gid 0`, and the guest's `agent.install` verifies it against the pin.
+Each Node action is one official `@swamp/ssh` step with pinned host keys and the 209 worker key, as one argv bounded by a literal `timeout`. The first four steps run in this order:
 
-The read-only `image.owner` check runs as the image's pinned `orbit` UID and GID 1000. Root commands and mutation supervision start as root. Each command keeps the identity its agent contract declares.
+1. **Remove earlier attempts.** `incus delete --force` for the builder and the smoke VM. A missing instance is fine.
+2. **Launch the builder.** `incus init` reads the cloud-init config from standard input. `incus start` boots the stock Ubuntu VM.
+3. **Wait for the builder.** `incus wait agent`, then `cloud-init status --wait`.
+4. **Run the task image phases.** The child workflow `task-vm-image-ansible` runs the `software`, `tools` and `check` phases of the [task VM role playbook](#converge-a-running-task-vm) through the host.
 
-Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
+The child reads the builder's bridge address and host key from the host before it runs Ansible. The playbook knows it builds an image through `intent.image`. It removes its downloads and the snapshot apt configuration at the end of the `tools` phase.
+
+The last five steps follow:
+
+5. **Clean and stop.** `cloud-init clean`, an empty `/etc/machine-id`, removed SSH host keys, then `incus stop`.
+6. **Publish the candidate.** `incus publish` with the properties `orbit.recipe` and `orbit.profile`. The Gateway reads the fingerprint from its output.
+7. **Smoke the candidate.** The child workflow `task-vm-image-smoke` boots a throwaway VM from the candidate and runs the `check` phase on it.
+8. **Promote the image.** The child workflow `task-vm-image-promote` moves the base alias to the candidate. It keeps the old image as the `-previous` alias.
+9. **Remove builder and smoke.** This step always runs. A failed removal does not fail the run.
+
+A clone makes its own cloud-init state, machine id and host keys at its first boot. The Operation holds the host lock key for the whole run, so no other host Operation runs while the alias moves. A later attempt removes a stray builder first.
+
+The base alias moves only after the candidate passed its smoke check. A failed build leaves the promoted image in service. The old image stays as the `-previous` rollback copy until the next promotion.
+
+Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
 Incus effects run in the native parent, without child Operations. UpCloud retains its child path until its own cutover. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
-The agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
+In an UpCloud build, the agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
 
-Rust toolchain installation reads the verified archive's component manifests and copies their declared files; it executes no installer script from the archive. It assembles the complete toolchain in a temporary directory beside the installed prefix, then replaces that prefix. This removes obsolete files on an upgrade. It records the artifact pins only after publishing the binary links, and repairs those links on repeated execution.
+In an UpCloud build, Rust toolchain installation reads the verified archive's component manifests and copies their declared files; it executes no installer script from the archive. It assembles the complete toolchain in a temporary directory beside the installed prefix, then replaces that prefix. This removes obsolete files on an upgrade. It records the artifact pins only after publishing the binary links, and repairs those links on repeated execution.
 
-The Incus build records image identity with `image.recipe-marker`. Guest services retain bounded local diagnostics. The Gateway stores phase progress and safe error codes; it does not read guest logs or run recipe commands.
+The Incus build records the image identity as the properties `orbit.recipe` and `orbit.profile` of the published image. The UpCloud build records it with `image.recipe-marker`. Guest services retain bounded local diagnostics. The Gateway stores phase progress and safe error codes; it does not read guest logs or run recipe commands.
 
-Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt from stock.
+The UpCloud build uses one ordered list of recipe installer phases:
 
-Each installer phase runs in the guest's existing bounded systemd service. Its key includes recipe identity, profile, phase and build attempt.
-
-In an Incus build, four native steps run each phase: `image.start-phase` starts or observes the service, `systemctl show -p MainPID --value` reads its process, `timeout 1500 tail --pid=PID -f /dev/null` waits for that process to end, and one `image.inspect-phase` must report `complete` for the same boot. The wait accepts every exit code, so a lost session or the bound only leads to that final read; nothing repeats a phase mutation. A phase that has already finished skips the wait. A changed builder boot ID stops the build.
+In an UpCloud build, each installer phase runs in the guest's existing bounded systemd service. Its key includes recipe identity, profile, phase and build attempt.
 
 Swamp resumes failed native steps; completed steps remain checkpoints in the same root. The retained UpCloud path uses its existing child and service identities until its separate cutover.
 
-An Incus build copies the pinned Pi build from the Gateway Node to 209 with official SSH, checks its SHA-256 there, copies it to the build host, and pushes it with `incus file push --mode 0600 --uid 0 --gid 0` to `/var/cache/orbit/pi/<sha256>.bin` in the guest. The `pi` phase verifies that file against its pin before `pi.install-artifact` publishes it. Final cleanup removes both staged copies. A recipe without Pi skips the copies; its `pi` phase changes nothing.
+An Incus build copies the pinned Pi build from the Gateway Node to 209 with official SSH and checks its SHA-256 there. The `software` phase copies it to `~orbit/.local/bin/pi-server` on the builder when the digest differs from the pin, and checks the digest again.
 
 UpCloud Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
 
-The guest phase service keeps its existing 1,440-second execution bound and 30-second stop bound. Guest commands keep their typed command deadlines. Native workflow placement, cancellation and recovery use Swamp defaults; `queueTimeout` is 30 seconds. No Gateway observation loop, progress callback or keyed receipt controls Incus image execution.
+In an UpCloud build, the guest phase service keeps its existing 1,440-second execution bound and 30-second stop bound. Guest commands keep their typed command deadlines. Native workflow placement, cancellation and recovery use Swamp defaults; `queueTimeout` is 60 seconds. No Gateway observation loop, progress callback or keyed receipt controls image execution.
 
-The Gateway projects the result once, from Swamp's terminal run data. Step statuses give the build steps and the failed stage. The published fingerprint and promotion give the image record. The start and completion reads of each recipe phase give its seconds; other stages show no seconds. A refused agent reply keeps its own error code. A failed guest-agent wait reports `task_vm.bootstrap_timeout`, a failed boot command `task_vm.bootstrap_failed`, a failed cleanup step `task_vm.image_cleanup_failed`, and any other failed step `task_vm.image_build_failed`. `task-vms:build-image` prints the steps when the run ends.
+The Gateway projects the result once, from Swamp's terminal run data. Step statuses give the build steps and the failed stage. The published fingerprint, read from the output of `Publish the candidate`, and the successful `Promote the image` step give the image record. A failed guest wait reports `task_vm.bootstrap_timeout`, a failed launch `task_vm.bootstrap_failed`, and any other failed step `task_vm.image_build_failed`. `task-vms:build-image` prints the steps when the run ends.
 
-Image APT installs and full upgrades use the phase's remaining execution budget. Every package command shares that deadline, including exact Debian artifacts and the PHP build. A cold install can keep downloading beyond the generic command limit without gaining a fresh phase budget. Inventory and fetch commands retain their own shorter limits.
+In an UpCloud build, image APT installs and full upgrades use the phase's remaining execution budget. Every package command shares that deadline, including exact Debian artifacts and the PHP build. A cold install can keep downloading beyond the generic command limit without gaining a fresh phase budget. Inventory and fetch commands retain their own shorter limits.
 
 The native service writes bounded diagnostics to its private phase log. Observations return a redacted tail when a phase fails. Direct verification returns typed failure details.
 
-Every image package command, including assessment and the shared PHP installer, inherits the same snapshot configuration through `APT_CONFIG`. Verification checks the PHP build and loaded modules without installing or repairing it. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies. Image origin checks use only the selected snapshot's retained indexes and never fetch indexes from another snapshot.
+In an UpCloud build, every image package command, including assessment and the shared PHP installer, inherits the same snapshot configuration through `APT_CONFIG`. Verification checks the PHP build and loaded modules without installing or repairing it. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies. Image origin checks use only the selected snapshot's retained indexes and never fetch indexes from another snapshot.
 
-Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. A snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
+In an UpCloud build, image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. A snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
 
-The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes. Failure to prepare that temporary configuration reports the `verify` stage and stops before software checks. Git and Composer must report the same nonempty version output as root and as the guest account. This accepts a newer Ubuntu package that passed origin checks while refusing a broken guest executable.
+In an UpCloud build, the configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes. Failure to prepare that temporary configuration reports the `verify` stage and stops before software checks. Git and Composer must report the same nonempty version output as root and as the guest account. This accepts a newer Ubuntu package that passed origin checks while refusing a broken guest executable.
+
+An Incus build installs the same recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and runs `apt-get` with `APT_CONFIG` pointing at it, with `--allow-downgrades` because the pins are exact. The `check` phase asserts every package at its pin.
 
 Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
 
 #### The topology seed
 
-The `smoke` phase keeps its VM `<builder>-smoke`, which booted the published base. The next phase, `topology-seed`, builds the host's topology seed of that base in it. A medium or large task VM [boots with a clone](#incus-provider) of the seed, and its [topology preparation](#prepare-the-topology) adopts the clone.
+The image build does not build the topology seed. A new image has no seed under its fingerprint until a [seed refresh](#refresh-the-topology-seed) makes one, and a claim of a medium or large task VM on that host waits for it. The first seed of a host, a nested fleet built from scratch without ready copies, is not designed yet (chart `docs/cli/tasks/vm-image-build.mmd`).
 
-The workflow calls `incus.build-topology-seed` through the host's pinned agent with sudo, over official SSH. Its typed input names the host project and pool, the smoke VM, the volume size, and the base fingerprint. Rust derives the temporary volume name from the fingerprint and owns the fixed disk device, pool, and template names. The command holds the Incus volume lock and runs these steps:
-
-1. It deletes the volume of an earlier run.
-2. It creates the block volume `orbit-topology-seed-<12 hex of the base fingerprint>-new`, 45 GiB, in the host's project and pool. ZFS volumes are thin, so the size costs nothing until Nodes write.
-3. It attaches the volume to the smoke VM as the disk `topology-seed`.
-4. It exports the base image to `/var/tmp` on the host and pushes the archive into the VM.
-5. In the VM, Incus creates the btrfs pool `topology-seed` on `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`. Incus doubles each `-` of a device name in the disk's serial.
-6. In the VM, Incus imports the archive and creates the stopped VM `node-template` from it. The template has no profiles and its own root disk on `topology-seed`.
-7. In the VM, Incus deletes the image. The template never boots, so it holds no machine identity.
-8. In the VM, it checks that `node-template` is the one stopped VM, and stops Incus, which unmounts the pool.
-
-Every child command reads no standard input. Then the phase deletes the smoke VM and renames the volume to `orbit-topology-seed-<12 hex>`. So a seed with that name is always a finished one. A phase that finds a finished seed builds nothing and only deletes the smoke VM.
-
-The agent creates the `-new` volume before it changes anything in the smoke VM. So when a retry finds a `-new` volume, the smoke VM may hold the Incus state of the failed attempt: the phase deletes that VM and launches a fresh one from the published base. A retry also launches a smoke VM that is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image.
-
-The template's root disk keeps the size of the base image's disk. Each Node copies it, and a copy is a btrfs snapshot that uses only what the Node writes.
-
-Only a built and smoke-tested base with its topology seed can promote the host's base alias. Consumers select the immutable base through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The native result projection records failure or cancellation directly on the image build and Operation; it does not use a Gateway completion contract. The previous recipe does not satisfy the current-recipe claim gate.
-
-Failed recipe phases record the last 40 lines of command output in the build step error, with secrets redacted and a size limit. The error names the phase log under `/var/log/orbit/recipe-images/<profile>-<phase>.log` in the builder while it exists. Final cleanup removes the builder; build records and native workflow history retain the sanitized outcome. Logs are root-only. Installer logs include subprocess stdout, stderr, exit status, and Python exceptions. If the builder cannot be reached, the error reports that the log is unavailable. Publishing runs on the Incus host, so a publish failure reports the host command error and host name.
-
-An Incus image run always finishes with cleanup on its admitted build host, after success, failure, or a cancellation request. The cleanup job removes only that attempt's builder and smoke VM with the host agent's `incus.vm` `remove_instance`, the same action the build's reset uses. The agent owns exact-name matching, the stop before deletion and the observation after a failed mutation, and an absent VM counts as removed. A failed removal reports `task_vm.image_cleanup_failed`.
-
-Published images and shared topology seeds remain subject to normal image pruning. A failed build needs a fresh stock attempt; native resume cannot continue recipe work after its builder has been removed.
+The build leaves the promoted image and, from the first promotion on, the `-previous` alias as the rollback copy. Published images remain subject to normal image pruning. A failed build needs a fresh stock attempt; native resume cannot continue after the builder has been removed.
 
 #### Refresh the topology seed
 

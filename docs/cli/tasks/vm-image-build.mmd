@@ -32,8 +32,6 @@ sequenceDiagram
   %%> - Swamp on 209 runs `ansible-playbook` over SSH to the builder through the host (ProxyJump with the recorded host keys), as node:converge reaches a Node
   %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters, the NFS server), check
   %%> - versions come from recipe.json of the release commit; the same playbooks converge a running task VM in stage 2 and the refresh VM in stage 6
-  %%> Not built:
-  %%> - the task VM role's phases; today the recipe phases run as orbit-agent commands
   SW->>H: Clean and stop<br/>cloud-init · host keys
   %%> What it does:
   %%> - `cloud-init clean`, an empty machine-id, removed SSH host keys, then stop; each one `@swamp/ssh exec` argv
