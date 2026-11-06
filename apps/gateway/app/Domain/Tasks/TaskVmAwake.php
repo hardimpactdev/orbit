@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -25,7 +26,8 @@ final class TaskVmAwake
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true) || self::held($group)) {
             return;
         }
-        if (! app(WakeTaskVmAction::class)->forGroup($group)) {
+        // The resume is its own Operation: it must not take the Idempotency-Key of the turn, check, publish or sync that asked for it.
+        if (! app(OperationIdempotency::class)->suspended(static fn (): bool => app(WakeTaskVmAction::class)->forGroup($group))) {
             throw new ResourceOperationException('tasks.vm_resuming', 'The task VM was parked. Its resume is admitted; repeat the call when the VM runs.', 409);
         }
     }

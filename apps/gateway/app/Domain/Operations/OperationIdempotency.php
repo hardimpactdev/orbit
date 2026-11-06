@@ -39,6 +39,27 @@ final class OperationIdempotency
     }
 
     /**
+     * Runs the callback with no start identity and puts the previous one back, also when it throws. An admission that the request
+     * did not ask for, such as the resume of a parked VM that a turn needs, must not take the key of the request.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    public function suspended(Closure $callback): mixed
+    {
+        $previous = [$this->kind, $this->key, $this->fingerprint];
+        [$this->kind, $this->key, $this->fingerprint] = [null, null, null];
+
+        try {
+            return $callback();
+        } finally {
+            [$this->kind, $this->key, $this->fingerprint] = $previous;
+        }
+    }
+
+    /**
      * Returns the recorded intent without resubmitting its native workflow.
      *
      * @phpstan-impure
