@@ -139,16 +139,13 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         node_id: '${{ self.site.node_id }}'
-    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns).
+    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns). It needs only the signed certificate step, so it runs beside the site.
   - name: 'Publish private DNS'
     labels: {role: swamp}
     dependsOn:
     - {step: 'Make a CSR on the Node', condition: {type: always}}
     - {step: 'Sign the CSR', condition: {type: always}}
     - {step: 'Allow the Router on LAN', condition: {type: always}}
-    - {step: 'Install cert, publish site', condition: {type: always}}
-    - {step: 'Probe the site over TLS', condition: {type: always}}
-    - {step: 'Open the Ingress edge', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
