@@ -177,14 +177,14 @@ jobs:
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'ping', '-c', '1', '-w', '20', '10.45.0.1'], timeoutSec: 40}}
     dependsOn: [{step: 'Bring up the tunnel', condition: {type: succeeded}}]
   # The nested Gateway runs its own Swamp as part of the Orbit under test. The ready copies are key-free; the VM holds the proof Swamp Club key from the workspace step.
-  # The candidate CLI on the outer VM talks to the nested Gateway as the operator: a profile `nested` by address, with the CA of the nested Gateway pinned. The proof runner calls this CLI.
+  # The candidate CLI on the outer VM talks to the nested Gateway as the operator: a profile `nested` by address, with the CA of the nested Gateway pinned. The proof runner calls this CLI. It follows the apply step: the nested Gateway answers only once its `.env` is bound.
   - name: 'Make the CLI home'
     labels: {role: swamp}
     writes: true
     guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['install', '-d', '-m', '0700', '/home/orbit/.orbit'], timeoutSec: 40}}
-    dependsOn: [{step: 'Check the tunnel', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
   - name: 'Pin the nested CA'
     labels: {role: swamp}
     writes: true
@@ -197,7 +197,7 @@ jobs:
     writes: true
     guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-cli-profile").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-cli-profile").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.intent.workspace.checkout_path }}/apps/cli/orbit', 'gateway:add', 'https://10.45.0.1', '--name=nested', '--use', '--accept-ca-change', '--ca=/home/orbit/.orbit/nested-ca.pem', '--json'], timeoutSec: 130}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.intent.workspace.checkout_path }}/apps/cli/orbit', 'gateway:add', '10.45.0.1', '--name=nested', '--use', '--accept-ca-change', '--ca=/home/orbit/.orbit/nested-ca.pem', '--json'], timeoutSec: 130}}
     dependsOn: [{step: 'Pin the nested CA', condition: {type: succeeded}}]
   # `incus file push --create-dirs` makes the folders as root, which breaks the orbit user of the nested Gateway; the folders exist before the push, owned by orbit.
   - name: 'Make the Club key folder'
@@ -248,4 +248,4 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "nested-fleet-result-" + string(inputs.intent.guest_node_id) }}', methodName: execute,
       inputs: {run: 'printf ''{"nested_fleet":"%s"}\n'' "$ORBIT_FLEET"', env: {ORBIT_FLEET: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 ? "none" : "started" }}'}}}
-    dependsOn: [{step: 'Check the tunnel', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Take the base snapshot', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Check the tunnel', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Take the base snapshot', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Add the CLI profile', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
