@@ -118,7 +118,7 @@ sequenceDiagram
       %%> - the admission, keyed by group and head, with the round number recorded on the group; it needs a green merge check and a passed handoff candidate on the head
       %%> - the fall back to manual mode after round 3 with findings, or when a round fails
       %%> Not built:
-      %%> - the one Swamp run per round: today the round is the reviewer turn of the existing turn workflow, and the comment and the fix are separate steps
+      %%> - the one Swamp run per round, as the chart in docs/cli/tasks/review-round.mmd shows it: the reviewer turn, the comment, and the fix with its check and push are steps of one run; today they are separate admissions of the gate check
       SW->>AG: Review the PR head<br/>fresh reviewer turn
       %%> What it does:
       %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds
