@@ -29,6 +29,8 @@ The port is a decimal integer from 1 through 65535. The Gateway rejects a bare I
 
 When `orbit:bootstrap` gets no `--wireguard-endpoint`, the Gateway combines the public host with `--wireguard-port`, which defaults to 51820. It adds square brackets only when the host is an IPv6 address.
 
+`orbit:bootstrap --operator-ip` records the operator Node at an address of the same subnet. The address must differ from the Gateway's.
+
 A peer configuration takes the first endpoint that exists:
 
 1. The Node's endpoint override.

@@ -70,6 +70,9 @@ php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' \
     --wireguard-endpoint='<GATEWAY_PUBLIC_HOST>:51820'
 ```
 
+Add `--operator-ip='<WIREGUARD_ADDRESS>'` to record the machine that operates the
+Gateway as the roleless Node `operator`, with access to the Gateway.
+
 Use a host that peers can reach. Omit `--private-interface` unless you have a
 separate private underlay; inspect `ip -brief address` and use that machine's
 actual interface name. The [Quickstart](https://orbit.nckrtl.com/docs/quickstart)

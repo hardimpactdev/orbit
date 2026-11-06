@@ -18,5 +18,6 @@ final class BootstrapGatewayData extends Data
         public ?string $privateInterface = null,
         public int $wireguardPort = 51_820,
         public string $name = 'gateway',
+        public ?string $operatorIp = null,
     ) {}
 }

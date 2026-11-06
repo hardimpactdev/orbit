@@ -105,6 +105,7 @@ it('renders the whole public intent of the fleet build, with the layout of the n
     expect(array_keys($members))->toBe(['swamp', 'gateway', 'operator', 'agent_delivery'])
         ->and($members['swamp']['sha256'])->toMatch('/^[a-f0-9]{64}$/')
         ->and($members['operator']['checkout'])->toBe('/home/orbit/apps/orbit/workspace')
+        ->and($members['operator']['wireguard_ip'])->toBe('10.45.0.10')
         ->and($members['gateway']['wireguard_ip'])->toBe('10.45.0.1')
         ->and(json_decode($members['agent_delivery'], true, flags: JSON_THROW_ON_ERROR))->toHaveKeys(['commit', 'version', 'artifacts']);
 });

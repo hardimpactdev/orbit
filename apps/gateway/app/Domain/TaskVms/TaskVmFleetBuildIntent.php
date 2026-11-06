@@ -50,6 +50,9 @@ final readonly class TaskVmFleetBuildIntent
     /** The private network of the nested fleet, which its Gateway leads. */
     public const string WireGuardSubnet = '10.45.0.0/24';
 
+    /** The task VM's address in that network, as operator of the fleet (stage 2 joins with it). */
+    public const string OperatorAddress = '10.45.0.10';
+
     public function __construct(private SwampSshExecutionInput $ssh, private AgentDelivery $delivery, private SwampCommandStep $shared) {}
 
     /** @return array<string,mixed> one flat array that `TaskVmProviderWorkflowInput::envelope()` splits into its `intent` and its `execution_secrets` */
@@ -166,7 +169,7 @@ final readonly class TaskVmFleetBuildIntent
             'swamp' => ['url' => $swamp->location, 'sha256' => $swamp->digest],
             'gateway' => ['url' => 'https://'.self::Layout['gateway']['wireguard'], 'wireguard_ip' => self::Layout['gateway']['wireguard'],
                 'wireguard_subnet' => self::WireGuardSubnet],
-            'operator' => ['checkout' => $workspace],
+            'operator' => ['checkout' => $workspace, 'wireguard_ip' => self::OperatorAddress],
             'agent_delivery' => json_encode(['commit' => $this->delivery->commit(), 'version' => $this->delivery->version(), 'artifacts' => $this->delivery->artifacts()],
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
         ];

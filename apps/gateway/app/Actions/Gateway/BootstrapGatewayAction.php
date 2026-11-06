@@ -42,6 +42,9 @@ final readonly class BootstrapGatewayAction
     /** The Redis Database connection of the Gateway queue: the Valkey server on this machine. */
     public const string QueueConnection = 'gateway-queue';
 
+    /** The Node of the machine that bootstraps and then operates this Gateway; stage 2 records its key by this name. */
+    public const string OperatorName = 'operator';
+
     /** Where Swamp serves on its machine, behind the `swamp.orbit` Route. */
     private const string SwampUpstream = 'http://127.0.0.1:9418';
 
@@ -101,6 +104,7 @@ final readonly class BootstrapGatewayAction
                 // The Gateway reaches Swamp through `swamp.orbit`, so its Route exists before the first Caddyfile is published: a
                 // publication that lacked it would drop the front that the bootstrap put there.
                 $this->swampRoute($node);
+                $this->operator($data, $node);
                 DatabaseConnection::query()->updateOrCreate(['slug' => self::QueueConnection],
                     ['driver' => DatabaseDriver::Redis, 'node_id' => $node->id, 'host' => '127.0.0.1', 'port' => 6379]);
 
@@ -117,6 +121,21 @@ final readonly class BootstrapGatewayAction
         $this->servingHost->remember($node);
 
         return $node->load('roles');
+    }
+
+    /**
+     * The machine that runs the Gateway's first commands: a Node without roles at its WireGuard address, with access to the Gateway, so
+     * it holds Gateway authority. Its key comes from that machine when it joins; until then it has none.
+     */
+    private function operator(BootstrapGatewayData $data, Node $gateway): void
+    {
+        if ($data->operatorIp === null) {
+            return;
+        }
+        $operator = Node::query()->firstOrNew(['name' => self::OperatorName]);
+        $operator->forceFill(['status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => $data->operatorIp,
+            'user' => 'orbit', 'wireguard_ip' => $data->operatorIp])->save();
+        $operator->accessibleNodes()->syncWithoutDetaching([$gateway->id]);
     }
 
     private function swampRoute(Node $node): void
@@ -136,11 +155,12 @@ final readonly class BootstrapGatewayAction
 
     private function validate(BootstrapGatewayData $data): void
     {
-        if (! IpUtils::checkIp4($data->wireguardIp, $data->wireguardSubnet) || $data->publicHost === '' || $data->name === '') {
+        if (! IpUtils::checkIp4($data->wireguardIp, $data->wireguardSubnet) || $data->publicHost === '' || $data->name === ''
+            || ($data->operatorIp !== null && (! IpUtils::checkIp4($data->operatorIp, $data->wireguardSubnet) || $data->operatorIp === $data->wireguardIp))) {
             throw new NodeProvisioningException(
                 step: 'gateway-identity',
                 errorCode: 'gateway.bootstrap_invalid',
-                message: 'The WireGuard address must lie in the WireGuard subnet, and the public host and name must not be empty.',
+                message: 'The WireGuard addresses must lie in the WireGuard subnet, the operator\'s apart from the Gateway\'s, and the public host and name must not be empty.',
                 status: 422,
             );
         }
