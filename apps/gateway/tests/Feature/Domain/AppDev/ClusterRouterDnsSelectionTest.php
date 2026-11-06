@@ -67,3 +67,18 @@ it('keeps naming Routes by status in a capture that is not a Route change', func
 
     expect($names)->toContain('kept.create-bench.test', 'gone.create-bench.test');
 });
+
+it('names a Route that a removal has marked retiring while the fleet before the removal still serves it', function (): void {
+    [$router] = routerClusterWithRoutes();
+    // A removal marks its Route retiring and unpublished before it captures, so the status alone cannot tell the fleet before from the fleet after.
+    Route::query()->where('domain', 'gone.create-bench.test')->update(['status' => 'retiring', 'sites_published' => false]);
+    $site = static fn (string $domain): DevelopmentSite => new DevelopmentSite($router->id, '10.44.0.7', $domain, '/apps/'.$domain, '/apps/'.$domain.'/public', null, $domain);
+    $before = collect([$site('kept.create-bench.test'), $site('gone.create-bench.test')]);
+    $after = collect([$site('kept.create-bench.test')]);
+
+    $namesBefore = app(RoutePublicationSites::class)->render($before, routerNames(...), complete: true);
+    $namesAfter = app(RoutePublicationSites::class)->render($after, routerNames(...), complete: true);
+
+    expect($namesBefore)->toContain('kept.create-bench.test', 'gone.create-bench.test')
+        ->and($namesAfter)->toContain('kept.create-bench.test')->not->toContain('gone.create-bench.test');
+});

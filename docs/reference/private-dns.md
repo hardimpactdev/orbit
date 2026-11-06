@@ -170,7 +170,7 @@ The Gateway answers with the Router's LAN address when all of these hold:
 
 Every other requester gets the Router's WireGuard address. That includes a member without a LAN address, a member of another Cluster, and a source that is not an active registered WireGuard Node. The Gateway identifies the requester by the WireGuard source address that delivered the query. A shared LAN subnet or an identity in the DNS message does not count.
 
-A Route change captures the sites that will exist after it, and the Gateway renders these answers from them, as it renders the host records. A Route that the change removes, or whose create is undone, loses its `overrides` entry in the same Operation that withdraws it. No later change is needed to clear it.
+A Route change captures the sites that will exist after it, and the Gateway renders these answers from them, as it renders the host records, whatever the status of a Route. A Route that the change removes, or whose create is undone, loses its `overrides` entry in the same Operation that withdraws it. No later change is needed to clear it.
 
 The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, also a domain outside the Cluster TLD. Other names keep their own answers:
 
