@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-pr-comment,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table}.php"
 ---
@@ -1054,7 +1054,7 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 
 A round is a reviewer turn in a new thread on the handoff candidate of the head. Admission requires a green merge check on the head, and a passed handoff check of the current subtask on that commit.
 
-When the reviewer ends the round with `approved`, the Gateway records a pass for that head. The next tick then admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. When the reviewer ends with `changes_requested`, the Gateway records the findings and the group waits.
+When the reviewer ends the round with `approved`, the Gateway records a pass for that head. The next tick posts the verdict and the findings of the round as a comment of the Orbit App on the pull request, so the reviewer can read them. The comment is its own step, `tasks.pr_comment`, with the Idempotency-Key `pr-gate:comment:<group>:<head>`, and the gate waits until it ended. A tick after that admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. When the reviewer ends with `changes_requested`, the Gateway records the findings and the group waits.
 
 A group switches to manual mode after round 3 with findings. It also switches after a round that failed or ended `blocked`, and when a new head finds the three rounds used. After the switch the ready step runs again and asks the reviewer. The pull request then waits for the approval of the head.
 
@@ -1064,7 +1064,7 @@ Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so 
 
 The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code. The scheduler log keeps these results.
 
-The Gateway keeps one row for each round, with the head, the round number, the reviewer turn and the verdict. A group has at most 3 rounds. The fix after findings, and the PR comment with the verdict, are not built.
+The Gateway keeps one row for each round, with the head, the round number, the reviewer turn and the verdict. A group has at most 3 rounds. The fix after findings is not built.
 
 ### Not built
 

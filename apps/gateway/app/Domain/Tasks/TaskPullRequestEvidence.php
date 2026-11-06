@@ -72,7 +72,13 @@ final readonly class TaskPullRequestEvidence
         return $target;
     }
 
-    private function target(Task $group, string $head): TaskPullRequestTarget
+    /** A comment needs the open pull request on the exact head; the merge check does not matter. */
+    public function comment(Task $group, string $head): TaskPullRequestTarget
+    {
+        return $this->target($group, $head, checks: false);
+    }
+
+    private function target(Task $group, string $head, bool $checks = true): TaskPullRequestTarget
     {
         $group->loadMissing('project');
         $project = $group->project;
@@ -90,6 +96,9 @@ final readonly class TaskPullRequestEvidence
             }
             if ($pull->headSha !== $head) {
                 throw new ResourceOperationException('tasks_pr.head_moved', 'The pull request head is not the admitted head.', 409);
+            }
+            if (! $checks) {
+                return new TaskPullRequestTarget($repository, $number, $pull);
             }
             $name = $project->mergeCheckName();
             $token = $name === null ? null : $this->access->checksToken($repository);
