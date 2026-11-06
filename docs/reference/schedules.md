@@ -26,6 +26,8 @@ While task VMs are enabled, the Gateway checks the deployed recipe each minute a
 
 The Gateway also queues the [refresh of the task images](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) of the Linux task VM hosts every day at 03:20 while task VMs are enabled. A host with a refresh open returns it.
 
+While the [fleet rollout](/reference/gateway-recovery#fleet-rollout) is on, the Gateway queues its admission every day at 03:05 Europe/Amsterdam, when the window of the non-daytime Nodes opens. A verified release queues the same admission. The job waits a minute at a time while the commit has no CLI release yet or a rollout runs.
+
 Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).
 
 Release handoff queues [base image builds](/reference/compute-drivers#build-the-base-image) on each configured host when the deployed recipe changes. The minute check recovers missed dispatches.

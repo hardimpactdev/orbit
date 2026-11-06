@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs\Fleet;
 
 use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -20,26 +21,38 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 1;
+    /** A minute apart: CI publishes the CLI release minutes after the release goes live, and an ancestor's stands in after 30. */
+    public int $tries = 40;
 
     public int $timeout = 120;
 
-    public int $uniqueFor = 120;
+    public int $uniqueFor = 2400;
 
     public function __construct()
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
     }
 
-    public function handle(AdmitFleetRolloutAction $admit): void
+    public function handle(FleetRolloutPlanAction $plan, AdmitFleetRolloutAction $admit): void
     {
+        if ($plan->execute()['status'] === 'waiting') {
+            $this->release(60);
+
+            return;
+        }
         try {
             $admit->execute();
         } catch (ResourceOperationException $refusal) {
-            // No Node needs a visit, the rollout is off, or one runs: the next release or window asks again.
-            if (! in_array($refusal->errorCode, ['fleet.rollout_not_ready', 'fleet.rollout_busy'], true)) {
+            if ($refusal->errorCode === 'fleet.rollout_busy') {
+                // The running pass captured an earlier commit; this one admits once it ends.
+                $this->release(60);
+
+                return;
+            }
+            if ($refusal->errorCode !== 'fleet.rollout_not_ready') {
                 throw $refusal;
             }
+            // No Node needs a visit, or the rollout is off: the next release or window asks again.
             Log::info('No fleet rollout was admitted.', ['error_code' => $refusal->errorCode]);
         }
     }

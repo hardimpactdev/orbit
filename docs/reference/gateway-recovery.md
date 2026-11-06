@@ -532,7 +532,7 @@ The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's env
 
 ### Execution
 
-The Gateway admits one `fleet.rollout` Operation for the [Nodes that need a visit](#which-nodes-a-pass-visits) when it records a release `verified`, and once a day at 03:05 Europe/Amsterdam, when the [window](#rollout-set-and-order) of the other Nodes opens. Both queue the same admission job; the daily schedule only queues it. A plan with no Node to visit, or a rollout that still runs, admits nothing. An operator starts a pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`); without Node IDs, the Gateway picks the Nodes. The Swamp `fleet-maintenance` schedule that admitted a pass each minute was deleted on 2026-11-06.
+The Gateway admits one `fleet.rollout` Operation for the [Nodes that need a visit](#which-nodes-a-pass-visits) when it records a release `verified`, and once a day at 03:05 Europe/Amsterdam, when the [window](#rollout-set-and-order) of the other Nodes opens. Both queue the same admission job; the daily schedule only queues it. The job waits a minute at a time while the commit has no CLI release yet, since CI publishes it minutes after the release goes live, or while a rollout runs. A plan with no Node to visit admits nothing. An operator starts a pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`); without Node IDs, the Gateway picks the Nodes. The Swamp `fleet-maintenance` schedule that admitted a pass each minute was deleted on 2026-11-06.
 
 Admission validates the serving release and captures the desired state: the commit, the CLI release, the agent pin, and each Node's SSH target. One rollout runs at a time; a second admission returns `fleet.rollout_busy` (409). A plan with no Node to visit admits nothing.
 
