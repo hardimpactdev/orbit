@@ -44,11 +44,13 @@ inputs:
         ssh_execution: {type: object}
       required: [group_id, instance_id, project_id, node_id, checkout_path, workspace, git_authorization, ssh_execution]
       additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
   required:
   - operation_id
   - node_id
   - kind
   - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
 - name: sync
@@ -81,8 +83,8 @@ jobs:
         run: |
           umask 077
           mkdir -p -- "$ORBIT_ROOT"
-          git clone --bare --single-branch --branch "$ORBIT_BASE" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
-          git -C "$ORBIT_SOURCE" fetch --no-tags origin "+refs/heads/$ORBIT_BRANCH:refs/heads/$ORBIT_BRANCH"
+          timeout 120 git clone --bare --single-branch --branch "$ORBIT_BASE" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
+          timeout 60 git -C "$ORBIT_SOURCE" fetch --no-tags origin "+refs/heads/$ORBIT_BRANCH:refs/heads/$ORBIT_BRANCH"
         env:
           ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id }}
           ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/source" }}
@@ -112,7 +114,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" "refs/heads/$ORBIT_BASE" "refs/heads/$ORBIT_BRANCH"
+          timeout 60 git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" "refs/heads/$ORBIT_BASE" "refs/heads/$ORBIT_BRANCH"
         env:
           ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/source" }}
           ORBIT_BUNDLE: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/refs.bundle" }}
@@ -144,7 +146,7 @@ jobs:
           user: ${{ inputs.intent.ssh_execution.target.user }}
       inputs:
         hosts: name:target
-        timeoutSec: 300
+        timeoutSec: 60
         argv:
         - /usr/bin/mkdir
         - -p
@@ -178,7 +180,7 @@ jobs:
           user: ${{ inputs.intent.ssh_execution.target.user }}
       inputs:
         hosts: name:target
-        timeoutSec: 300
+        timeoutSec: 120
         src: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/refs.bundle" }}
         dst: ${{ "/tmp/orbit-task-sync-" + run.id + "/refs.bundle" }}
         direction: to
@@ -208,7 +210,7 @@ jobs:
           user: ${{ inputs.intent.ssh_execution.target.user }}
       inputs:
         hosts: name:target
-        timeoutSec: 300
+        timeoutSec: 120
         argv:
         - /usr/bin/git
         - -C
@@ -244,7 +246,7 @@ jobs:
           user: ${{ inputs.intent.ssh_execution.target.user }}
       inputs:
         hosts: name:target
-        timeoutSec: 300
+        timeoutSec: 60
         argv:
         - /usr/bin/git
         - -C
@@ -272,13 +274,12 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          rm -rf -- "$ORBIT_ROOT"
+          timeout 30 rm -rf -- "$ORBIT_ROOT"
         env:
           ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id }}
   - name: Clean up the VM directory
     labels: {role: swamp}
     queueTimeout: 30
-    allowFailure: true
     dependsOn:
     - step: Clean up the scratch
       condition:
@@ -302,7 +303,7 @@ jobs:
           user: ${{ inputs.intent.ssh_execution.target.user }}
       inputs:
         hosts: name:target
-        timeoutSec: 300
+        timeoutSec: 60
         argv:
         - /usr/bin/rm
         - -rf
