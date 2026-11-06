@@ -16,7 +16,7 @@ curl -X POST "$GATEWAY/api/v1/projects/7/pr-merge" \
 
 The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. The reply is `202` with the operation; follow it with `operation:show` until it ends. A refusal at admission starts nothing, so a caller can call the command again every few seconds until the merge check is green. The Gateway has no webhooks.
 
-The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head.
+The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. This includes a pull request from a fork: the caller has reviewed it, and the merge check runs no code of the fork beyond the fast checks. A Task group that has ended no longer holds its PR.
 
 | Input | Meaning |
 | --- | --- |
@@ -35,7 +35,7 @@ A merge conflict with the base branch refuses the merge. The author rebases, whi
 | Code | Status | When |
 | --- | --- | --- |
 | `project.review_and_merge_disabled` | 409 | The Project does not take part in review and merge. |
-| `project.pr_in_task_group` | 409 | A Task group watches the PR. Use `tasks:pr-merge`. |
+| `project.pr_in_task_group` | 409 | An open Task group watches the PR. Use `tasks:pr-merge`. |
 | `operation.target_busy` | 409 | Another merge of the Project is running. |
 | `tasks_pr.no_pull_request` | 409 | The Project has no GitHub repository, or the PR is not open. |
 | `tasks_pr.draft` | 409 | The PR is still a draft. |

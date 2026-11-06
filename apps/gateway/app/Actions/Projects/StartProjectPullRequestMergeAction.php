@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestEvidence;
 use App\Models\Operation;
 use App\Models\Project;
@@ -33,7 +34,8 @@ final readonly class StartProjectPullRequestMergeAction
         if (! $project->reviewsAndMerges()) {
             throw new ResourceOperationException('project.review_and_merge_disabled', 'This Project does not take part in review and merge.', 409);
         }
-        $watched = Task::topLevel()->where('project_id', $project->id)->where('watched_pr_number', $number)->whereNull('watched_pr_completion')->exists();
+        $watched = Task::topLevel()->where('project_id', $project->id)->where('watched_pr_number', $number)->whereNull('watched_pr_completion')
+            ->whereNotIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))->exists();
         if ($watched) {
             throw new ResourceOperationException('project.pr_in_task_group', 'A Task group watches this pull request; merge it with tasks:pr-merge.', 409);
         }

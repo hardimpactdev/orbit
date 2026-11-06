@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Decided by the orchestrator, for Nick's review: a pull request that no Task group watches is merged by the same Swamp step as a task pull request. The Gateway admits and names the vault key, the step mints its token when it runs, and Swamp calls GitHub. No review is read: the authorized caller is the reviewer, and the green merge check on the exact head is the gate.
+  %% Decided by the orchestrator, for Nick's review: a pull request that no Task group watches is merged by the same Swamp step as a task pull request. The Gateway admits and names the vault key, the step mints its token when it runs, and Swamp calls GitHub. No review is read: the authorized caller is the reviewer, and the green merge check on the exact head is the gate. The gate is the same for a pull request from a fork; the caller has reviewed it.
   %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Merge the PR"), for a PR that is not in a Task group. The pattern of tasks:pr-merge.
   %% status: draft
   %% command: none · API / MCP (project-pr-merge)
@@ -28,7 +28,7 @@ sequenceDiagram
   %%> - the Project has review and merge enabled and a GitHub App repository
   %%> - the PR is open, no longer a draft, and its head is exactly `head_sha`
   %%> - the Project's merge check (`Required checks`) passed on that head
-  %%> - no Task group watches the PR (a task PR merges through `tasks:pr-merge`) and no other merge of the Project runs
+  %%> - no open Task group watches the PR (a task PR merges through `tasks:pr-merge`; a group that ended no longer holds its PR) and no other merge of the Project runs
   %%> What it does:
   %%> - names the vault key `pr-merge-write-<uuid>` for the write token; it mints no token
   %%> Why:

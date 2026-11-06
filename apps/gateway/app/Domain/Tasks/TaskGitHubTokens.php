@@ -284,7 +284,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             throw $this->forbidden();
         }
         $credentials = $this->store->credentials()
-            ?? throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before merging a task pull request.', 409);
+            ?? throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before merging a pull request.', 409);
         $copies = [];
         foreach ($grants as $member => $permissions) {
             try {
@@ -296,7 +296,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             $reference = ValidatedData::object($references[$member]);
             $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $token->reveal());
         }
-        $this->record($operation, 'Issued the scoped tokens of a Task step.', $callerNodeId, $runId, $name, array_values($grants));
+        $this->record($operation, 'Issued the scoped tokens of a pull request step.', $callerNodeId, $runId, $name, array_values($grants));
 
         return $copies;
     }
