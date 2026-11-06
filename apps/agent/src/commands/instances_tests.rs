@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::command::{Context, Platform};
+use std::path::Path;
 use std::{sync::OnceLock, time::Instant};
 
 fn me() -> (String, String) {
@@ -34,20 +35,6 @@ impl Drop for Sandbox {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.base);
     }
-}
-
-#[test]
-fn linked_worktree_counting_skips_prunable_entries_and_refuses_another_tree() {
-    let checkout = Path::new("/apps/acme/dev");
-    assert_eq!(
-        linked_worktrees(checkout, b"worktree /apps/acme/dev\0HEAD x\0\0").unwrap(),
-        1
-    );
-    assert_eq!(linked_worktrees(checkout, b"worktree /apps/acme/dev\0\0worktree /gone\0prunable gitdir file points to non-existent location\0\0").unwrap(), 1);
-    assert_eq!(
-        linked_worktrees(checkout, b"worktree /apps/acme/dev\0\0worktree /other\0\0"),
-        Err(SourceError::WorktreesMismatch {})
-    );
 }
 
 #[test]

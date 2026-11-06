@@ -204,20 +204,5 @@ pub fn install(
     runtime(files, pin)?;
     activate(host, files, pin)
 }
-pub fn converge(host: &mut impl Host, files: &Files, input: &Input) -> Result<(), Failure> {
-    let Some(pin) = input.tools.get(NAME) else {
-        return Ok(());
-    };
-    if !valid(pin, input.architecture.name()) {
-        return Err(bad("Invalid browser pin"));
-    }
-    let work = WorkDir::new()?;
-    let archive = work.0.join("chrome.zip");
-    if !runtime(files, pin)? {
-        artifacts::download(host, NAME, pin, input, &archive)?;
-    }
-    install(host, files, input, Some(&archive))
-}
-
 #[cfg(test)]
 mod tests;

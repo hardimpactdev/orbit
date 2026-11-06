@@ -198,25 +198,6 @@ fn first_install_failure_removes_its_files_and_reports_failed_rollback() {
 }
 
 #[test]
-fn disabled_install_and_activation_restore_the_previous_state_on_failure() {
-    let mut fixture = Fixture::new();
-    fixture.input.desired = "disabled".into();
-    fixture.install().unwrap();
-    fixture.fail("enable");
-    assert_eq!(
-        activate_at(&fixture.host, &fixture.target()),
-        Err(failed("activate"))
-    );
-    assert_eq!(
-        unit_state(&fixture.host, "is-active", &fixture.paths().timer_unit),
-        "inactive"
-    );
-    fs::remove_file(fixture.host.root.join("fail-enable")).unwrap();
-    activate_at(&fixture.host, &fixture.target()).unwrap();
-    activate_at(&fixture.host, &fixture.target()).unwrap();
-}
-
-#[test]
 fn removal_waits_for_active_runs_but_cascade_does_not_and_refuses_foreign_artifacts() {
     let fixture = Fixture::new();
     fixture.install().unwrap();

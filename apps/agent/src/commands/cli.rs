@@ -154,17 +154,6 @@ pub fn inspect(link: &Path, user: &str) -> State {
 
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct InspectInput {
-    pub user: String,
-}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Inspected {
-    pub state: State,
-}
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Release {
     pub version: String,
     pub url: String,

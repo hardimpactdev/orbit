@@ -211,7 +211,6 @@ pub fn backup(
 #[derive(Clone, Copy)]
 pub enum Provider {
     Git,
-    Docker,
     Node,
     Incus,
 }
@@ -219,7 +218,6 @@ impl Provider {
     pub fn owner(self) -> &'static str {
         match self {
             Self::Git => "git",
-            Self::Docker => "docker",
             Self::Node => "node",
             Self::Incus => "incus",
         }
@@ -227,7 +225,6 @@ impl Provider {
     fn mentions(self, text: &str) -> bool {
         expression(match self {
             Self::Git => r"(?:ppa\.launchpadcontent\.net|ppa\.launchpad\.net)/git-core/ppa",
-            Self::Docker => r"download\.docker\.com",
             Self::Node => r"deb\.nodesource\.com",
             Self::Incus => r"pkgs\.zabbly\.com/incus",
         })
@@ -249,7 +246,6 @@ impl Provider {
                         .iter()
                         .any(|h| uri == format!("{s}://{h}/git-core/ppa/ubuntu"))
                 }),
-                Self::Docker => uri == "https://download.docker.com/linux/ubuntu",
                 Self::Incus => uri == "https://pkgs.zabbly.com/incus/lts-7.0",
                 Self::Node => (10..27)
                     .any(|major| uri == format!("https://deb.nodesource.com/node_{major}.x")),
@@ -259,10 +255,6 @@ impl Provider {
             && match self {
                 Self::Git | Self::Incus => suites == ["resolute"] && components == ["main"],
                 Self::Node => suites == ["nodistro"] && components == ["main"],
-                Self::Docker => {
-                    expression(r"\A[a-z][a-z0-9-]*\z").is_match(suites[0])
-                        && components == ["stable"]
-                }
             }
     }
 }

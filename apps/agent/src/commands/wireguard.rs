@@ -8,7 +8,6 @@ use super::caddy::chown;
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 use std::{
     fs,
     io::{self, Write},
@@ -21,7 +20,6 @@ use std::{
 /// Where the WireGuard commands find their files and tools. Tests point it at a sandbox and stub tools.
 pub struct Host {
     pub wireguard: PathBuf,
-    pub dns_records: PathBuf,
     /// The lock every peer WireGuard and DNS change on the Node shares, shell programs included.
     pub peer_lock: PathBuf,
     /// The fixture tool directory, or `None` for fixed system executable paths.
@@ -29,7 +27,6 @@ pub struct Host {
     pub root_uid: u32,
     pub root_gid: u32,
     pub lock_wait: Duration,
-    pub inspect_lock_wait: Duration,
     /// How long peer DNS repair waits for networkd and resolved to expose an uplink server again.
     pub provider_wait: Duration,
     /// This rename, from and to, fails, to test a failed publication.
@@ -41,13 +38,11 @@ impl Host {
     pub fn system() -> Self {
         Self {
             wireguard: PathBuf::from("/etc/wireguard"),
-            dns_records: PathBuf::from("/etc/dnsmasq.d/orbit-records.conf"),
             peer_lock: PathBuf::from("/run/lock/orbit-wireguard-peer.lock"),
             bin: None,
             root_uid: 0,
             root_gid: 0,
             lock_wait: Duration::from_secs(30),
-            inspect_lock_wait: Duration::from_secs(5),
             provider_wait: Duration::from_secs(15),
             #[cfg(test)]
             fail_rename: None,
@@ -417,43 +412,6 @@ impl Command for ProjectHub {
     fn run(input: ProjectInput, _: &Context) -> Result<Projected, HubError> {
         project(&input, &Host::system())
     }
-}
-
-// ---- inspect the hub ---------------------------------------------------------------------------------------------
-
-command_errors! {
-    pub enum InspectHubError {
-        Unreadable {} => "wireguard.hub_unreadable", "A hub file could not be read.";
-    }
-}
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InspectHubInput {}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct HubState {
-    pub active: bool,
-    /// The SHA-256 of `/etc/wireguard/orbit.conf`, or `None` when it is not a file.
-    pub config_sha256: Option<String>,
-    /// The SHA-256 of the VPN DNS records, `/etc/dnsmasq.d/orbit-records.conf`, or `None` when it is not a file.
-    pub dns_records_sha256: Option<String>,
-}
-
-fn digest(path: &Path) -> Result<Option<String>, InspectHubError> {
-    if !regular(path) {
-        return Ok(None);
-    }
-    let bytes = fs::read(path).map_err(|_| InspectHubError::Unreadable {})?;
-    Ok(Some(format!("{:x}", sha2::Sha256::digest(bytes))))
-}
-
-pub fn inspect(host: &Host) -> Result<HubState, InspectHubError> {
-    Ok(HubState {
-        active: host.succeeds("systemctl", &["is-active", "--quiet", SERVICE]),
-        config_sha256: digest(&host.path("orbit.conf"))?,
-        dns_records_sha256: digest(&host.dns_records)?,
-    })
 }
 
 #[cfg(test)]

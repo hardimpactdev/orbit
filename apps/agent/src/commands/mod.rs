@@ -20,7 +20,6 @@ pub mod firewall;
 pub mod gateway_start_hooks;
 mod git_read;
 mod guest;
-pub mod health;
 pub mod hibernation;
 mod homebrew;
 mod homebrew_scope;

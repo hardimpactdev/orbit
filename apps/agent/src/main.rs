@@ -67,9 +67,9 @@ fn main() {
                     .iter()
                     .any(|hook| hook.command == name)
             }) {
-                orbit_agent::commands::gateway_start_hooks::service(&arguments[1..])
+                orbit_agent::start_hook_service(&arguments[1..])
             } else {
-                orbit_agent::commands::schedules::service(&arguments[1..])
+                orbit_agent::schedule_service(&arguments[1..])
             };
             std::process::exit(code)
         }
