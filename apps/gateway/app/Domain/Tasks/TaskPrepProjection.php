@@ -53,8 +53,8 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
-            $step = $failed ? $this->failedStep($native, $data) : null;
-            $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Open a draft PR' ? self::publishCode($data) : 'tasks.turn_failed')) : null;
+            $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
+            $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Open a draft PR' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
             $receipt = TaskPrepResults::receipt($native['provision'] ?? null);
             if ($status === 'succeeded' && $receipt === null) {
                 throw new ResourceOperationException('operation.invalid_result', 'The prep run reports no ready VM.', 422);
@@ -134,28 +134,5 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
         $view->input = [...ValidatedData::object($intent['provision']), 'execution_secrets' => $intent['execution_secrets']];
 
         return $view;
-    }
-
-    /**
-     * @param  array<string,mixed>  $native
-     * @param  array<string,mixed>  $data
-     */
-    private function failedStep(array $native, array $data): ?string
-    {
-        $failure = ValidatedData::object($data['failure'] ?? []);
-        $steps = ValidatedData::object($native['summary'] ?? [])['failed_steps'] ?? [];
-        $step = $failure['failed_step'] ?? (is_array($steps) ? ($steps[0] ?? null) : null);
-
-        return is_string($step) ? $step : null;
-    }
-
-    /** @param array<string,mixed> $data */
-    private static function publishCode(array $data): string
-    {
-        $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
-        $detail = $failure['detail'] ?? null;
-
-        return in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-            ? $detail : 'tasks.publish_failed';
     }
 }

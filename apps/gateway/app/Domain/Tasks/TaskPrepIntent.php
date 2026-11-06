@@ -11,7 +11,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
-use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -56,14 +55,7 @@ final readonly class TaskPrepIntent
             Task::query()->whereKey($subtask->id)->update(['implementer_agent_thread_id' => $author->id]);
             $reviewers = array_map(fn (int $round): AgentThread => TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
             $group->update(['reviewer_agent_thread_id' => $reviewers[0]->id]);
-            $turn = fn (AgentThread $thread, string $prompt, bool $new): array => [
-                'new_session' => $new, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
-                'subtask' => $subtask->id, 'thread_id' => $thread->id, 'checkout_path' => $instance->checkout_path,
-                'session_id' => $thread->external_id, 'role' => $thread->role, 'prompt' => $prompt,
-                'model' => $thread->model, 'effort' => $thread->effort, 'pi_host' => $instance->node->wireguard_ip,
-                'pi_port' => app(PiConnection::class)->port(), 'candidate' => null,
-                'deliverables' => $subtask->deliverables ?? [], 'ssh_execution' => $ssh,
-            ];
+            $turn = fn (AgentThread $thread, string $prompt, bool $new): array => TaskPrepThreads::turn($thread, $prompt, $new, $group, $subtask, $instance, $ssh);
             $branch = 'task-'.$group->id;
             // Only the vault key names are admitted. The publish step is minutes to hours away, so it mints the token when it runs ({@see TaskGitHubTokens}).
             $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];

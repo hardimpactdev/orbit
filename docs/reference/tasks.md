@@ -343,12 +343,13 @@ The Gateway projects the terminal event once. A succeeded run records the worksp
 
 `tasks:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `tasks-prep-fix` is the caller.
 
-The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or ready, an open draft PR, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
+The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
 
 - the resume of the VM;
 - the author turn, with the corrections as its prompt;
 - two new review threads and the fix turn;
-- the path of the cases file and the vault key names of the push token.
+- the path of the cases file;
+- the vault key names of the Pi token and the push token.
 
 The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children:
 
@@ -359,7 +360,7 @@ The native `operation-task-prep-fix` workflow is one parent run, with existing w
 
 A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
 
-The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator and records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes. The gate check does not detect the owner's review yet.
+The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes. The gate check does not detect the owner's review yet.
 
 ### Task lifecycle
 

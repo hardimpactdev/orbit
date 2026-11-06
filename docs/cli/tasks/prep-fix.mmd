@@ -21,10 +21,10 @@ sequenceDiagram
   Note over GW: Admit the corrections<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
-  %%> - group 42 is a parked prep group: a succeeded `tasks.prep` run, its task VM parked, an open pull request, and no running operation
+  %%> - group 42 is a prep group: a succeeded `tasks.prep` run, its task VM parked or still running, an open pull request, and no running operation
   %%> What it does:
   %%> - captures, in one transaction, the resume of the VM, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
-  %%> - names the vault keys of the push token; it mints no GitHub token
+  %%> - names the vault keys of the Pi token and the push token; the run writes the Pi token when it starts, and the push step mints its GitHub token when it runs
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the review of the owner is an input of the call; the gate check does not detect it yet, so a person or the orchestrator admits the run
   GW->>SW: Start one run, full intent<br/>operation-task-prep-fix
@@ -53,7 +53,7 @@ sequenceDiagram
       VM-->>SW: Findings or none
       SW->>VM: Fix the findings<br/>operation-task-turn
       %%> When:
-      %%> - only when the review has findings
+      %%> - only when the review has findings, and only between the two rounds: the findings of the last round end the run
       %%> Result:
       %%> - the author thread fixes them in its corrections commit
     end
@@ -67,10 +67,12 @@ sequenceDiagram
       Note over GW: Record the corrections<br/>VM ready · park again
       %%> Result:
       %%> - the task VM is recorded as ready, and the Gateway admits `tasks:park` for the group, which stops the VM again while the spec waits for review
+      %%> - a park that the Gateway refuses is kept in the result as `park_refused`
+      %%> - a failed resume leaves the VM recorded as parked, so the run can be admitted again
     else findings are left
       SW--xGW: Native failed result<br/>tasks.prep_review_unresolved
       %%> Result:
-      %%> - nothing is pushed; the VM keeps running for the orchestrator
+      %%> - nothing is pushed; the VM keeps running for the orchestrator, and the result keeps the findings of the last round
     end
   else HEAD did not move
     SW--xGW: Native failed result<br/>tasks.prep_not_committed
