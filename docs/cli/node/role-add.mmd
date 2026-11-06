@@ -56,6 +56,14 @@ sequenceDiagram
   %%> - a pinned package comes from the mirror first; only a transport failure falls back to upstream, and a checksum failure stops the run and removes the staged file
   opt role needs Tool Managers
     SW->>N: Set up Tool Managers<br/>native child workflow
+    %%> What it does:
+    %%> - one child run for each manager (Composer and Vite+), side by side
+    %%> - a role add always converges, so each child reads the manager version and the account home, plans the pinned resources and applies them in one Ansible phase, `manager`
+    %%> - the phase writes folders and files, downloads with their checksums, installs the pinned packages, extracts archives, links the executables and writes the launchers; it ends with the manager's own version command
+    %%> - `tool:install` and a development deploy run the same child without converging: it stops after the version read when the manager is ready
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the two managers no longer wait for each other, and the 20 one-step jobs of a manager (32 to 57 steps) became one Ansible phase and 8 native steps
+    %%> - the pinned packages of one manager use a private APT index folder, so two managers never write the same index
   end
   SW->>N: Apply the role<br/>Ansible phase: node
   %%> What it does:

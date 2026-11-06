@@ -543,7 +543,7 @@ A play with an `apt_proxy` writes `/etc/apt/apt.conf.d/90orbit-package-cache` be
 
 The [Gateway bootstrap](#gateway-bootstrap-prerequisites) of a nested fleet takes the value from its input, and `php artisan orbit:bootstrap-plan --apt-proxy=URL` puts it in the plan.
 
-Application roles fetch the recipe's PHP packages and Bun archive with checksums, install PHP in one APT transaction, and converge the shared Tool Managers. Role add applies role-owned resources even when an earlier Node footprint has the same digest. It leaves the observer and Orbit CLI to `node:converge`.
+Application roles fetch the recipe's PHP packages and Bun archive with checksums, install PHP in one APT transaction, and converge the shared Tool Managers, which run side by side. Role add applies role-owned resources even when an earlier Node footprint has the same digest. It leaves the observer and Orbit CLI to `node:converge`.
 
 The native Gateway role installs an enabled `orbit-gateway-dns.service` oneshot. It applies the resolver policy when the Orbit interface exists and no peer-owned DNS policy is present. Role removal disables and removes that unit. Native role failures retain completed resources and the failed assignment; there is no rollback chain.
 
@@ -877,7 +877,7 @@ The role's Ansible end check determines completion. The Gateway marks the same a
 
 ### Role Ansible phases
 
-`node:role:add` and its role-converge run use one Swamp step per Ansible phase: prerequisites, Node resources, publications, firewall, exporters, Prometheus and check. Each phase applies the admitted state and is safe to run from the start. Tool Manager setup, certificate signing, Analytics initialization and Swamp bootstrap keep their native steps.
+`node:role:add` and its role-converge run use one Swamp step per Ansible phase: prerequisites, Node resources, publications, firewall, exporters, Prometheus and check. Each phase applies the admitted state and is safe to run from the start. Tool Manager setup is a child workflow with one Ansible phase of its own, `manager`, and the managers of a role run side by side. Certificate signing, Analytics initialization and Swamp bootstrap keep their native steps.
 
 Firewall convergence compares each owned rule's shape and position. It removes a changed isolation pair by descending rule index, including duplicate rows with the same owned comment, then inserts the specific allow before its deny and broad peer trust. Unrelated rules stay in place.
 

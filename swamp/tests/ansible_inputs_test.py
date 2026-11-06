@@ -72,6 +72,19 @@ class AnsibleInputTest(unittest.TestCase):
             self.assertEqual(container['healthcheck']['retries'], 3)
             self.assertEqual(container['log_options'], {'max-size': '10m'})
 
+    def test_a_tool_manager_setup_reaches_its_node_with_the_admitted_host_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            intent = {'ssh': {'identity_file': '/key', 'target': {
+                'host': '192.0.2.12', 'port': 2222, 'user': 'orbit', 'host_keys': ['ssh-ed25519 pinned']}},
+                'plan': {'files': [{'content': '{{ kept }}'}]}}
+            (folder / 'intent.json').write_text(json.dumps(intent))
+            builder.build(folder, 'tool.manager_setup')
+            inventory = json.loads((folder / 'inventory.yml').read_text())['all']['children']['manager_node']['hosts']['tm-node']
+            self.assertEqual((inventory['ansible_host'], inventory['ansible_port'], inventory['ansible_user']), ('192.0.2.12', 2222, 'orbit'))
+            self.assertEqual((folder / 'known_hosts').read_text(), '[192.0.2.12]:2222 ssh-ed25519 pinned\n')
+            self.assertIn('!unsafe "{{ kept }}"', (folder / 'vars.yml').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()

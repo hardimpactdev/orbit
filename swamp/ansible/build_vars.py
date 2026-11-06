@@ -52,6 +52,20 @@ def build_task_vm(folder, kind):
     (folder / 'vars.yml').write_text(unsafe({'intent': intent, 'kind': kind}) + '\n')
 
 
+def build_tool_manager(folder, kind):
+    """The inventory, known hosts and variables of a Tool Manager setup on one Node; its host keys are the ones the caller admitted."""
+    folder = Path(folder)
+    intent = json.loads((folder / 'intent.json').read_text())
+    ssh = intent['ssh']
+    target = ssh['target']
+    host = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
+            'ansible_ssh_private_key_file': ssh['identity_file']}
+    inventory = {'all': {'children': {'manager_node': {'hosts': {'tm-node': host}}}}}
+    (folder / 'inventory.yml').write_text(json.dumps(inventory))
+    (folder / 'known_hosts').write_text(''.join(line + '\n' for line in sorted(known_host_lines(target))))
+    (folder / 'vars.yml').write_text(unsafe({'intent': intent, 'kind': kind}) + '\n')
+
+
 def build_node_add(folder):
     """The inventory, known hosts and variables of a Linux Node enrollment. Every host key is pinned; nothing is scanned."""
     folder = Path(folder)
@@ -104,6 +118,8 @@ def build(folder, kind):
     os.umask(0o077)
     if kind == 'node.add':
         return build_node_add(folder)
+    if kind == 'tool.manager_setup':
+        return build_tool_manager(folder, kind)
     if kind in TASK_VM_KINDS:
         return build_task_vm(folder, kind)
     folder = Path(folder)

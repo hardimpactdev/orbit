@@ -5,7 +5,7 @@ type Row = Record<string, unknown>;
 const Home = z.string().regex(/^\/[^\r\n\0]+$/).refine((value) =>
     value !== "/"
 );
-/** Public resource descriptions only. Native workflow steps own downloads and every Node effect. */
+/** Public resource descriptions only. The Ansible phase of the Tool Manager setup applies them; this plan reads and changes nothing. */
 export async function toolSetupPlan(raw: unknown, home: string) {
     const setup = Setup.parse(raw);
     Home.parse(home);
@@ -17,6 +17,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
         sha512: Row[] = [],
         archives: Row[] = [],
         copies: Row[] = [],
+        owned: string[] = [],
         links: Row[] = [],
         commands: Row[] = [];
     const dir = (path: string, owner = user) =>
@@ -42,11 +43,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                 : null,
         });
         if (pin.algorithm === "sha512") {
-            sha512.push({
-                path,
-                package_index: packageIndex,
-                stdin: pin.digest + "  " + path + "\n",
-            });
+            sha512.push({ path, package_index: packageIndex, digest: pin.digest });
         }
         return path;
     };
@@ -64,7 +61,13 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             ).join("");
         const source = cache + "/sources.list";
         file(source, sources("https"), "root");
-        dir(cache + "/lists/partial", "root");
+        // apt owns this folder after its first update, so the playbook only creates it (keep) and never resets its owner or mode.
+        directories.push({
+            path: cache + "/lists/partial",
+            owner: "root",
+            mode: "0755",
+            keep: true,
+        });
         const lists = (list: string) => [
             "-o",
             "Dir::Etc::sourcelist=" + list,
@@ -171,34 +174,29 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                 format,
                 creates: dest + marker,
             });
+            // `creates` is the file whose presence proves the copy happened, so a rerun copies nothing. A tree gets its marker
+            // (`complete`) after the copy, so a copy that stopped halfway runs again.
             if (name === "node") {
                 dir(node);
                 copies.push({
                     argv: [
-                        "timeout",
-                        "60",
                         "cp",
                         "-a",
                         dest + "/node-v" + pin.version + "-linux-x64/.",
                         node + "/",
                     ],
+                    creates: node + "/.orbit-copied",
+                    complete: true,
                 });
             } else if (name === "pnpm") {
                 dir(pnpm);
                 copies.push({
-                    argv: [
-                        "timeout",
-                        "60",
-                        "cp",
-                        "-a",
-                        dest + "/package/.",
-                        pnpm + "/",
-                    ],
+                    argv: ["cp", "-a", dest + "/package/.", pnpm + "/"],
+                    creates: pnpm + "/.orbit-copied",
+                    complete: true,
                 });
             } else {copies.push({
                     argv: [
-                        "timeout",
-                        "60",
                         "install",
                         "-m",
                         "0755",
@@ -207,12 +205,11 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                         dest + "/vp",
                         scope + "/bin/vp",
                     ],
+                    creates: scope + "/bin/vp",
                 });}
         }
         copies.push({
             argv: [
-                "timeout",
-                "60",
                 "install",
                 "-m",
                 "0755",
@@ -221,10 +218,10 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                 pnpm + "/pnpm",
                 scope + "/bin/pnpm",
             ],
+            creates: scope + "/bin/pnpm",
         });
-        copies.push({
-            argv: ["timeout", "60", "chown", "-R", user, node, pnpm],
-        });
+        // The copied trees belong to the account; the playbook changes their owner only after a copy.
+        owned.push(node, pnpm);
         const digest = Array.from(
             new Uint8Array(
                 await crypto.subtle.digest(
@@ -257,6 +254,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             JSON.stringify({ version: tools.node.version }),
         );
         commands.push({
+            creates: runtime + "/node_modules/vite-plus/package.json",
             argv: [
                 "timeout",
                 "900",
@@ -300,6 +298,13 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             );
         }
         commands.push({
+            // `vp env default` records the version in config.json; a matching record means it ran.
+            unless: [
+                "grep",
+                "-q",
+                '"defaultNodeVersion": "' + tools.node.version + '"',
+                scope + "/config.json",
+            ],
             argv: [
                 "timeout",
                 "60",
@@ -348,6 +353,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
         sha512,
         archives,
         copies,
+        owned,
         links,
         commands,
         apt_update: apt === null ? [] : [
@@ -359,7 +365,6 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             ...aptUpdateOptions,
             "update",
         ],
-        apt_install: apt === null ? [] : [...aptInstallPrefix, ...aptArgs],
         apt_install_prefix: aptInstallPrefix,
         apt_arguments: (apt?.packages ?? []).map((pkg, index) => ({
             index,
@@ -367,7 +372,6 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                 ? pkg.name + "=" + pkg.version
                 : cache + "/" + pkg.name + ".deb",
         })),
-        apt_packages: apt?.packages ?? [],
         apt_artifacts: (apt?.packages ?? []).map((pkg, index) => ({
             package_index: index,
             artifact: pkg.artifact,
