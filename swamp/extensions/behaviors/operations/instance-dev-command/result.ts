@@ -9,14 +9,18 @@ type Phases = {
     setup: string;
     processes: string[];
     route: string;
+    /** The statuses of the Route's CSR and signing steps, which run beside the checkout. */
+    certificates?: string[];
 };
 
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
 const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 
 /**
- * Map the step statuses to the terminal receipt: the checked-out commit, or the first phase that did not finish.
- * The Gateway already holds the rendered environment, the branch and the Project's profile.
+ * Map the step statuses to the terminal receipt: the checked-out commit, or the phase that failed.
+ * A step that a failure skipped is not the failure, so a phase that ended `failed` wins over the first
+ * phase that merely did not run. The Gateway already holds the rendered environment, the branch and the
+ * Project's profile.
  */
 export function createResult(intent: Record<string, unknown>, phases: Phases) {
     if (intent.already_active === true) {
@@ -34,24 +38,38 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const steps = z.array(z.object({ name: z.string() }).passthrough()).parse(
         intent.setup_steps,
     );
-    const outcomes: [string, boolean][] = [
-        ["checkout", commit !== null],
+    const certificates = phases.certificates ?? [];
+    // [phase, finished, failed]
+    const outcomes: [string, boolean, boolean][] = [
+        ["checkout", commit !== null, commit === null],
         // Only a create that copies the default database or owns a server database runs the database phase.
         [
             "database",
             (intent.database == null && intent.server_database == null) ||
             phases.database === "succeeded",
+            phases.database === "failed",
         ],
         // A Project without setup steps runs no setup phase.
-        ["setup", steps.length === 0 || phases.setup === "succeeded"],
+        [
+            "setup",
+            steps.length === 0 || phases.setup === "succeeded",
+            phases.setup === "failed",
+        ],
         [
             "processes",
             phases.processes.every((status) => status === "succeeded"),
+            phases.processes.includes("failed"),
         ],
-        // A Project that serves no web pages has no Route; its route step is skipped.
-        ["route", intent.route == null || phases.route === "succeeded"],
+        // A Project that serves no web pages has no Route; its steps are skipped.
+        [
+            "route",
+            intent.route == null || (phases.route === "succeeded" &&
+                certificates.every((status) => status === "succeeded")),
+            phases.route === "failed" || certificates.includes("failed"),
+        ],
     ];
-    const failed = outcomes.find(([, ready]) => !ready);
+    const failed = outcomes.find(([, , failure]) => failure) ??
+        outcomes.find(([, finished]) => !finished);
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,

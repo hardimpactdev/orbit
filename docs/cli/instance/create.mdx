@@ -38,7 +38,7 @@ In a terminal, the CLI shows the steps below as a progress tree, then the result
 4. With `--database-server`, or when the `default` Instance's database is MySQL on a Database server, create the Instance's owner, database and test database there, as [`database:create --instance`](/reference/database-servers#create-a-database-on-a-server) does. A MySQL `default` database is then copied in.
 5. Run the Project setup steps, such as `composer install` and `php artisan migrate`, in order, as the Node's configured user.
 6. Create and start the Processes from the Project's development Process definitions.
-7. For a web-serving Project, create its Route as [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, the Instance also becomes awake, so the first request reaches the application and not the wake page.
+7. For a web-serving Project, create its Route (its key, CSR and signature are made at the start, beside the checkout) as [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, the Instance also becomes awake, so the first request reaches the application and not the wake page.
 
 The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, 180 seconds for the Route, and 180 seconds for a database copy or a database on a server.
 
