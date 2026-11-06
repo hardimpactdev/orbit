@@ -21,7 +21,7 @@ orbit proof <orbit-command> [--idempotency-key=KEY] [--json]
 orbit proof firewall:allow
 ```
 
-Run it on the task VM that you develop in. The Gateway finds the VM and its task group by the calling Node, so the command takes no group and no commit. In a terminal, an omitted command is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.command_invalid`, and so is a value that is not `family:command`. A refused call sends no request.
+Run it on the task VM that you develop in. The Gateway finds the VM and its task group by the calling Node, so the command takes no commit. The route needs Gateway access, which a task VM does not hold, so a Node with Gateway access, such as an operator machine, names the group with `--group` instead. In a terminal, an omitted command is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.command_invalid`, and so is a value that is not `family:command`. A refused call sends no request.
 
 Built, not yet passed live: the command, the admission and the run. The workflow `proof-fleet-verify` and the restore of `base` that it uses have not passed a live run yet.
 
@@ -64,7 +64,8 @@ Each case ends `passed`, `failed` or `unrun`, as in [`proof:run`](/cli/proof/run
 | Code | Meaning |
 | --- | --- |
 | `proof.command_invalid` | The command is missing or is not `family:command`, and the CLI cannot prompt. |
-| `proof.no_task_vm` | The calling Node is not a task VM. Run the command on the VM you develop in. |
+| `proof.no_task_vm` | The calling Node is not a task VM, and no `--group` names one. Run the command on the VM you develop in, or name its group. |
+| `tasks.group_missing` | The group that `--group` names does not exist. |
 | `proof.wrong_project` | The task group of the VM is not on the Orbit Project; cases exist only for the Orbit repository. |
 | `tasks.no_workspace` | The group has no owned task VM workspace. |
 | `tasks.group_closed` | The task group has ended. |

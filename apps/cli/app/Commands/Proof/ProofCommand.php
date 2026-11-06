@@ -27,6 +27,7 @@ class ProofCommand extends GatewayCommand implements GatedExtensionCommand
     #[\Override]
     protected $signature = 'proof
         {orbit-command? : The Orbit command whose cases to run, for example firewall:allow}
+        {--group= : Prove on the VM of this task group; for a Node with Gateway access}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -72,7 +73,11 @@ class ProofCommand extends GatewayCommand implements GatedExtensionCommand
         $connector = $connectors->make($profile);
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'proof.verify.'.Str::uuid();
-        $operation = $this->send($connector, new VerifyProofRequest($command, $key), OperationResponse::class);
+        $group = $this->option('group');
+        if ($group !== null && (! ctype_digit($group) || (int) $group < 1)) {
+            return $this->renderGatewayFailure('proof.group_invalid', 'Name the task group by its numeric ID.', details: ['field' => 'group']);
+        }
+        $operation = $this->send($connector, new VerifyProofRequest($command, $key, $group === null ? null : (int) $group), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, 'Prove '.$command, 'Proof')

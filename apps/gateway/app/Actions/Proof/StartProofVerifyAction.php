@@ -18,6 +18,6 @@ final readonly class StartProofVerifyAction
     {
         $this->extension->execute();
 
-        return $this->intent->start($caller, $input->command, $triggeredBy, $requestId);
+        return $this->intent->start($caller, $input->command, $input->group, $triggeredBy, $requestId);
     }
 }
