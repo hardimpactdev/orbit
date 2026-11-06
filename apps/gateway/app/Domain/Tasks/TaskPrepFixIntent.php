@@ -94,7 +94,7 @@ final readonly class TaskPrepFixIntent
                 'base' => $group->project->default_branch, 'branch' => $branch, 'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
                 'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => $ssh,
             ],
-            // Only vault key names are admitted. The Pi token is written when the run starts ({@see TaskPrepFixProjection::input()}),
+            // Only vault key names are admitted. The Pi token is written when the run starts ({@see TaskPrepFixProjection::workflowInput()}),
             // and the push step mints its token when it runs ({@see TaskGitHubTokens}).
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]],
             'resume_secrets' => $resume['execution_secrets'],

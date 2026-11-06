@@ -34,7 +34,11 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
         'Review has no findings' => 'tasks.prep_review_unresolved',
     ];
 
-    /** The admitted input with vault key names only; a public read of the Operation calls this, so it has no effect. @return array<string,mixed> */
+    /**
+     * The admitted input with vault key names only. A public read of the Operation calls this, so it has no effect.
+     *
+     * @return array<string,mixed>
+     */
     public function input(Operation $operation): array
     {
         $input = ValidatedData::object($operation->input);
@@ -48,14 +52,21 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
         ];
     }
 
-    /** The run starts now, so the Pi token is written to the vault now, once, and not when the call was admitted or when someone reads the Operation. @return array<string,mixed> */
+    /**
+     * The run starts now, so the Pi token is written to the vault now, once, and not when the call was admitted or when someone reads the Operation.
+     *
+     * @return array<string,mixed>
+     */
     public function workflowInput(Operation $operation): array
     {
         $input = $this->input($operation);
         $pi = ValidatedData::object(ValidatedData::object($input['execution_secrets'])['pi_token']);
-        $vm = TaskVm::query()->findOrFail(ValidatedData::integer(ValidatedData::object(ValidatedData::object($input['intent'])['resume'])['task_vm_id']));
+        $vm = TaskVm::query()->find(ValidatedData::integer(ValidatedData::object(ValidatedData::object($operation->input)['resume'])['task_vm_id']));
+        if (! $vm instanceof TaskVm || ! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
+            throw new ResourceOperationException('tasks.prep_fix_refused', 'The task VM or its Pi credential is gone, so the corrections cannot start.', 409);
+        }
 
-        return [...$input, 'execution_secrets' => ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), ValidatedData::string($vm->pi_token))]];
+        return [...$input, 'execution_secrets' => ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), $vm->pi_token)]];
     }
 
     /** @param array<string,mixed> $data */

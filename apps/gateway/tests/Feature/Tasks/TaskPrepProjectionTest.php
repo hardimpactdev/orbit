@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -152,18 +153,43 @@ it('refuses the corrections of a group that is busy or has no task VM workspace'
     expect($start)->toThrow(ResourceOperationException::class, 'owned task VM workspace');
 });
 
-it('reads the Operation without writing the Pi token, with an empty resume map as an object', function (): void {
-    [$operation, $group, $vm] = prepRun();
+it('reads the Operation without writing the Pi token, writes it once at run start, and sends an empty resume map as an object', function (): void {
+    [$operation, , $vm] = prepRun();
+    $vm->update(['pi_token' => str_repeat('p', 64)]);
     $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id];
     $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
         'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => [], 'author' => [], 'fix' => [], 'reviews' => [], 'plan' => [],
         'execution_secrets' => ['pi_token' => $reference], 'resume_secrets' => [], 'publish_secrets' => [],
     ]]);
+    // A recording stand-in for the vault write.
+    $writes = new class
+    {
+        /** @var list<array{string, string, string}> */
+        public array $calls = [];
 
-    $input = app(TaskPrepFixProjection::class)->input($operation);
+        /** @return array{vault: string, key: string} */
+        public function executionCopy(string $vault, string $key, string $value): array
+        {
+            $this->calls[] = [$vault, $key, $value];
 
-    expect($input['execution_secrets'])->toBe(['pi_token' => $reference])
-        ->and(json_encode($input['resume_secrets']))->toBe('{}');
+            return ['vault' => $vault, 'key' => $key];
+        }
+    };
+    app()->instance(SwampCommandStep::class, $writes);
+    $projection = app(TaskPrepFixProjection::class);
+
+    $read = $projection->input($operation);
+    expect($writes->calls)->toBe([])
+        ->and($read['execution_secrets'])->toBe(['pi_token' => $reference])
+        ->and(json_encode($read['resume_secrets']))->toBe('{}');
+
+    $start = $projection->workflowInput($operation);
+    expect($writes->calls)->toBe([['orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, str_repeat('p', 64)]])
+        ->and($start['execution_secrets'])->toBe(['pi_token' => $reference])
+        ->and(json_encode($start['resume_secrets']))->toBe('{}');
+
+    $vm->update(['pi_token' => null]);
+    expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
 });
 
 it('records the commit, the rounds and the thread metrics of a run that pushed, parks the group once, and keeps a refused park', function (): void {

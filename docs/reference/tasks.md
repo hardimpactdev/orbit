@@ -343,12 +343,13 @@ The Gateway projects the terminal event once. A succeeded run records the worksp
 
 `tasks:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `tasks-prep-fix` is the caller.
 
-The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
+The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
 
 - the resume of the VM;
 - the author turn, with the corrections as its prompt;
 - two new review threads and the fix turn;
-- the path of the cases file and the vault key names of the push token.
+- the path of the cases file;
+- the vault key names of the Pi token and the push token.
 
 The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children:
 
