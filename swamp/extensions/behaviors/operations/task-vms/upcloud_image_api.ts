@@ -4,7 +4,7 @@ import {
     agentReply,
     envelope,
     Expect,
-} from "./image_build_inputs.ts";
+} from "./agent_reply.ts";
 import { recipePhases } from "./images.ts";
 
 /**

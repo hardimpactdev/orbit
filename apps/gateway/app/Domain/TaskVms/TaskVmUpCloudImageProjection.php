@@ -27,6 +27,9 @@ use Illuminate\Support\Str;
 /** The full public template intent at the run start and one terminal projection from Swamp's run data; no UpCloud or guest calls. */
 final readonly class TaskVmUpCloudImageProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
+    /** The recipe phases whose start and completion reads give the phase seconds of an UpCloud template build. */
+    public const array RecipePhases = ['apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi'];
+
     /** The end check: after a successful build, the listed promoted template is the one templatize made. */
     public const string EndCheck = 'Check the template';
 
@@ -66,7 +69,7 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
                 'install' => $envelope(180, ['candidate' => $candidate, 'sha256' => $pin]),
                 'cloud_init' => $envelope(45, []),
                 'owner' => $envelope(120, []),
-                'inspect_boot' => $envelope(30, ['key' => $key(TaskVmImageProjection::RecipePhases[0]), 'boot_id' => null]),
+                'inspect_boot' => $envelope(30, ['key' => $key(self::RecipePhases[0]), 'boot_id' => null]),
                 'marker' => $envelope(120, ['identity' => $identity, 'profile' => 'base']),
                 'verify' => $envelope(120, $recipe),
                 'boot' => $envelope(120, ['lean' => false]),
@@ -74,10 +77,10 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
                 'clean' => $envelope(120, []),
                 'check' => $envelope(120, ['lean_boot' => false, 'firewall' => true]),
             ],
-            'phase_keys' => array_combine(TaskVmImageProjection::RecipePhases, array_map($key, TaskVmImageProjection::RecipePhases)),
+            'phase_keys' => array_combine(self::RecipePhases, array_map($key, self::RecipePhases)),
             // The agent names each phase's retained unit after the first 32 hex of its key's SHA-256.
-            'units' => array_combine(TaskVmImageProjection::RecipePhases, array_map(static fn (string $phase): string => 'orbit-recipe-image-'
-                .substr(hash('sha256', implode(':', $key($phase))), 0, 32).'.service', TaskVmImageProjection::RecipePhases)),
+            'units' => array_combine(self::RecipePhases, array_map(static fn (string $phase): string => 'orbit-recipe-image-'
+                .substr(hash('sha256', implode(':', $key($phase))), 0, 32).'.service', self::RecipePhases)),
             'template_data' => json_encode(['storage' => ['title' => 'orbit-task-base-'.$stamp.'-unverified']], JSON_THROW_ON_ERROR),
             'promote_data' => json_encode(['storage' => ['title' => 'orbit-task-base-'.$stamp, 'labels' => [
                 ['key' => 'orbit.recipe', 'value' => $identity], ['key' => 'orbit-task-image', 'value' => $stamp]]]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),

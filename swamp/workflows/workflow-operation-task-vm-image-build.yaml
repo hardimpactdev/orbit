@@ -1,1653 +1,275 @@
 id: 878a384f-8b8a-4066-bd17-dcad8eac3e86
 name: operation-task-vm-image-build
-description: Build, verify, seed and promote one image on its Incus host with pinned official SSH from 209; TypeScript shapes agent envelopes and replies only.
-version: 1
-queueTimeout: 30
+description: Build the task image of an Incus host from a stock Ubuntu VM with the task VM role phases of Ansible, smoke it, promote it and remove the builders, from 209 over official SSH.
+version: 2
+queueTimeout: 60
 vaults: []
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum: [task_vm.image_build]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [task_vm.image_build]}
     intent: {type: object}
-    execution_secrets:
-      type: object
-      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: admission
+- name: reset
+  labels: {role: swamp}
   steps:
-  - name: plan
+    # A missing instance is fine: exit 1 of `incus delete` for an unknown name.
+  - name: Remove earlier attempts
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: plan
-      inputs:
-        intent: ${{ inputs.intent }}
-- name: build
-  writes: true
-  dependsOn:
-  - {job: admission, condition: {type: succeeded}}
-  steps:
-  # The release pins the agent; builder and smoke VMs get this host's binary, and every agent call checks the pin.
-  - name: install-agent
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/fetch'
-      behaviorName: ${{ "image-agent-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {url: '${{ inputs.intent.agent_url }}', path: /usr/local/bin/orbit-agent, checksum: '${{ "sha256:" + inputs.intent.agent_sha256 }}',
-        owner: root, group: root, mode: '0755', nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}',
-        nodePort: '${{ inputs.intent.ssh_execution.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true}
-      inputs: {}
-  # The host's observer runs the binary it started with; restart it so it reports the pin. A host without the service skips this.
-  - name: restart-agent
-    labels: {role: swamp}
-    dependsOn:
-    - {step: install-agent, condition: {type: succeeded}}
+    writes: true
+    forEach:
+      item: name
+      in: '${{ [inputs.intent.builder, inputs.intent.smoke] }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ "task-vm-image-reset-" + string(inputs.node_id) + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: &id000
-        name: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      globalArgs: &host
+        name: ${{ "task-vm-image-reset-" + string(inputs.node_id) + "-" + string(self._index) }}
         transport:
           kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
         hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
       inputs:
-        hosts: name:target
+        hosts: name:host
         sudo: true
-        argv: [timeout, '60', /usr/bin/systemctl, try-restart, orbit-agent.service]
-        timeoutSec: 90
-  - name: reset-builder
-    labels: {role: swamp}
-    dependsOn:
-    - {step: restart-agent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: &id001
-        name: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.reset_builder }}
-  - name: reset-builder-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: reset-builder, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["reset-builder"].outputs.stdout }}
-        expect: ready
-  - name: reset-smoke
-    labels: {role: swamp}
-    dependsOn:
-    - {step: reset-builder-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.reset_smoke }}
-  - name: reset-smoke-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: reset-smoke, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["reset-smoke"].outputs.stdout }}
-        expect: ready
-  - name: launch
-    labels: {role: swamp}
-    dependsOn:
-    - {step: reset-smoke-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.launch }}
-  - name: launch-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: launch, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["launch"].outputs.stdout }}
-        expect: ready
-  - name: boot-wait-agent
-    labels: {role: swamp}
-    dependsOn:
-    - {step: launch-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '630', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', wait, --timeout, '600', --, '${{ inputs.intent.name
-            }}', agent]
-        timeoutSec: 660
-  - name: boot-cloud-init
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-wait-agent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '630', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/cloud-init, status, --wait]
-        timeoutSec: 660
-  - name: boot-push-agent
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-cloud-init, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '210', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --mode, '0700', --uid, '0', --gid, '0',
-          --, /usr/local/bin/orbit-agent, '${{ inputs.intent.name + steps.plan.outputs.candidate }}']
-        timeoutSec: 240
-  - name: boot-install-agent
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-push-agent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '210', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', '${{ steps.plan.outputs.candidate }}', command, agent.install]
-        timeoutSec: 240
-        stdin: ${{ steps.plan.outputs.install }}
-  - name: boot-install-agent-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-install-agent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["boot-install-agent"].outputs.stdout }}
-        expect: installed
-        pin: ${{ inputs.intent.agent_sha256 }}
-  - name: boot-guest-cloud-init
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-install-agent-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '75', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, guest.cloud-init]
-        timeoutSec: 105
-        stdin: ${{ steps.plan.outputs.cloud_init }}
-  - name: boot-guest-cloud-init-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-guest-cloud-init, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["boot-guest-cloud-init"].outputs.stdout }}
-        expect: ready
-  - name: boot-inspect
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-guest-cloud-init-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.inspect-phase]
-        timeoutSec: 90
-        stdin: ${{ steps.plan.outputs.inspect_boot }}
-  - name: boot-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-inspect, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: boot
-      inputs:
-        intent: ${{ inputs.intent }}
-        stdout: ${{ steps["boot-inspect"].outputs.stdout }}
-  - name: apt-source-start
-    labels: {role: swamp}
-    dependsOn:
-    - {step: boot-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.start-phase]
-        timeoutSec: 180
-        stdin: ${{ steps["boot-reply"].outputs.start["apt-source"] }}
-  - name: apt-source-start-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: apt-source-start, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["apt-source-start"].outputs.stdout }}
-        expect: started
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: apt-source-pid
-    labels: {role: swamp}
-    dependsOn:
-    - {step: apt-source-start-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, show, --property=MainPID, --value, --, '${{ steps.plan.outputs.units["apt-source"]
-            }}']
-        timeoutSec: 90
-  - name: apt-source-wait
-    labels: {role: swamp}
-    guard: ${{ steps["apt-source-pid"].outputs.stdout.trim() == "0" }}
-    dependsOn:
-    - {step: apt-source-pid, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '1530', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/timeout, '1500', /usr/bin/tail, '${{ "--pid=" + steps["apt-source-pid"].outputs.stdout.trim()
-            }}', -f, /dev/null]
-        timeoutSec: 1560
-        okExitCodes: any
-  - name: apt-source-inspect
-    labels: {role: swamp}
-    dependsOn:
-    - {step: apt-source-pid, condition: {type: succeeded}}
-    - step: apt-source-wait
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.inspect-phase]
-        timeoutSec: 90
-        stdin: ${{ steps["boot-reply"].outputs.inspect["apt-source"] }}
-  - name: apt-source-inspect-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: apt-source-inspect, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["apt-source-inspect"].outputs.stdout }}
-        expect: complete
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: packages-start
-    labels: {role: swamp}
-    dependsOn:
-    - {step: apt-source-inspect-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.start-phase]
-        timeoutSec: 180
-        stdin: ${{ steps["boot-reply"].outputs.start["packages"] }}
-  - name: packages-start-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: packages-start, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["packages-start"].outputs.stdout }}
-        expect: started
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: packages-pid
-    labels: {role: swamp}
-    dependsOn:
-    - {step: packages-start-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, show, --property=MainPID, --value, --, '${{ steps.plan.outputs.units["packages"]
-            }}']
-        timeoutSec: 90
-  - name: packages-wait
-    labels: {role: swamp}
-    guard: ${{ steps["packages-pid"].outputs.stdout.trim() == "0" }}
-    dependsOn:
-    - {step: packages-pid, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '1530', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/timeout, '1500', /usr/bin/tail, '${{ "--pid=" + steps["packages-pid"].outputs.stdout.trim()
-            }}', -f, /dev/null]
-        timeoutSec: 1560
-        okExitCodes: any
-  - name: packages-inspect
-    labels: {role: swamp}
-    dependsOn:
-    - {step: packages-pid, condition: {type: succeeded}}
-    - step: packages-wait
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.inspect-phase]
-        timeoutSec: 90
-        stdin: ${{ steps["boot-reply"].outputs.inspect["packages"] }}
-  - name: packages-inspect-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: packages-inspect, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["packages-inspect"].outputs.stdout }}
-        expect: complete
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: javascript-start
-    labels: {role: swamp}
-    dependsOn:
-    - {step: packages-inspect-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.start-phase]
-        timeoutSec: 180
-        stdin: ${{ steps["boot-reply"].outputs.start["javascript"] }}
-  - name: javascript-start-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: javascript-start, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["javascript-start"].outputs.stdout }}
-        expect: started
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: javascript-pid
-    labels: {role: swamp}
-    dependsOn:
-    - {step: javascript-start-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, show, --property=MainPID, --value, --, '${{ steps.plan.outputs.units["javascript"]
-            }}']
-        timeoutSec: 90
-  - name: javascript-wait
-    labels: {role: swamp}
-    guard: ${{ steps["javascript-pid"].outputs.stdout.trim() == "0" }}
-    dependsOn:
-    - {step: javascript-pid, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '1530', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/timeout, '1500', /usr/bin/tail, '${{ "--pid=" + steps["javascript-pid"].outputs.stdout.trim()
-            }}', -f, /dev/null]
-        timeoutSec: 1560
-        okExitCodes: any
-  - name: javascript-inspect
-    labels: {role: swamp}
-    dependsOn:
-    - {step: javascript-pid, condition: {type: succeeded}}
-    - step: javascript-wait
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.inspect-phase]
-        timeoutSec: 90
-        stdin: ${{ steps["boot-reply"].outputs.inspect["javascript"] }}
-  - name: javascript-inspect-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: javascript-inspect, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["javascript-inspect"].outputs.stdout }}
-        expect: complete
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: rust-start
-    labels: {role: swamp}
-    dependsOn:
-    - {step: javascript-inspect-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.start-phase]
-        timeoutSec: 180
-        stdin: ${{ steps["boot-reply"].outputs.start["rust"] }}
-  - name: rust-start-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: rust-start, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["rust-start"].outputs.stdout }}
-        expect: started
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: rust-pid
-    labels: {role: swamp}
-    dependsOn:
-    - {step: rust-start-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, show, --property=MainPID, --value, --, '${{ steps.plan.outputs.units["rust"]
-            }}']
-        timeoutSec: 90
-  - name: rust-wait
-    labels: {role: swamp}
-    guard: ${{ steps["rust-pid"].outputs.stdout.trim() == "0" }}
-    dependsOn:
-    - {step: rust-pid, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '1530', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/timeout, '1500', /usr/bin/tail, '${{ "--pid=" + steps["rust-pid"].outputs.stdout.trim()
-            }}', -f, /dev/null]
-        timeoutSec: 1560
-        okExitCodes: any
-  - name: rust-inspect
-    labels: {role: swamp}
-    dependsOn:
-    - {step: rust-pid, condition: {type: succeeded}}
-    - step: rust-wait
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.inspect-phase]
-        timeoutSec: 90
-        stdin: ${{ steps["boot-reply"].outputs.inspect["rust"] }}
-  - name: rust-inspect-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: rust-inspect, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["rust-inspect"].outputs.stdout }}
-        expect: complete
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: agent-start
-    labels: {role: swamp}
-    dependsOn:
-    - {step: rust-inspect-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.start-phase]
-        timeoutSec: 180
-        stdin: ${{ steps["boot-reply"].outputs.start["agent"] }}
-  - name: agent-start-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: agent-start, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["agent-start"].outputs.stdout }}
-        expect: started
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: agent-pid
-    labels: {role: swamp}
-    dependsOn:
-    - {step: agent-start-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, show, --property=MainPID, --value, --, '${{ steps.plan.outputs.units["agent"]
-            }}']
-        timeoutSec: 90
-  - name: agent-wait
-    labels: {role: swamp}
-    guard: ${{ steps["agent-pid"].outputs.stdout.trim() == "0" }}
-    dependsOn:
-    - {step: agent-pid, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '1530', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/timeout, '1500', /usr/bin/tail, '${{ "--pid=" + steps["agent-pid"].outputs.stdout.trim()
-            }}', -f, /dev/null]
-        timeoutSec: 1560
-        okExitCodes: any
-  - name: agent-inspect
-    labels: {role: swamp}
-    dependsOn:
-    - {step: agent-pid, condition: {type: succeeded}}
-    - step: agent-wait
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.inspect-phase]
-        timeoutSec: 90
-        stdin: ${{ steps["boot-reply"].outputs.inspect["agent"] }}
-  - name: agent-inspect-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: agent-inspect, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["agent-inspect"].outputs.stdout }}
-        expect: complete
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: pi-fetch
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.pi_artifact == null }}
-    dependsOn:
-    - {step: agent-inspect-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-pi-source-" + string(inputs.intent.pi_source.target.host)).split(".").join("-") }}
-      methodName: copy
-      globalArgs:
-        name: ${{ ("image-pi-source-" + string(inputs.intent.pi_source.target.host)).split(".").join("-") }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.pi_source.target.user }}
-          port: ${{ inputs.intent.pi_source.target.port }}
-          identityFile: ${{ inputs.intent.pi_source.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.pi_source.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.pi_source.target.host_keys }}
-      inputs:
-        hosts: name:target
-        src: '${{ inputs.intent.pi_artifact == null ? "/dev/null" : inputs.intent.pi_artifact.path }}'
-        dst: ${{ "/tmp/orbit-image-pi-" + run.id + ".bin" }}
-        direction: from
-        timeoutSec: 300
-  - name: pi-check
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.pi_artifact == null }}
-    dependsOn:
-    - {step: pi-fetch, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "image-build-local" }}
-      methodName: execute
-      inputs:
-        run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_STAGE" | sha256sum -c --quiet
-        env:
-          ORBIT_SHA: '${{ inputs.intent.pi_artifact == null ? "" : inputs.intent.pi_artifact.sha256 }}'
-          ORBIT_STAGE: ${{ "/tmp/orbit-image-pi-" + run.id + ".bin" }}
-  - name: pi-copy
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.pi_artifact == null }}
-    dependsOn:
-    - {step: pi-check, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: copy
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        src: ${{ "/tmp/orbit-image-pi-" + run.id + ".bin" }}
-        dst: ${{ "/tmp/orbit-image-pi-" + run.id + ".bin" }}
-        direction: to
-        timeoutSec: 300
-  - name: pi-directory
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.pi_artifact == null }}
-    dependsOn:
-    - {step: pi-copy, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/install, -d, -m, '0700', -o, root, -g, root, /var/cache/orbit/pi]
-        timeoutSec: 90
-  - name: pi-push
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.pi_artifact == null }}
-    dependsOn:
-    - {step: pi-directory, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '330', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --mode, '0600', --uid, '0', --gid, '0',
-          --, '${{ "/tmp/orbit-image-pi-" + run.id + ".bin" }}', '${{ inputs.intent.name + steps.plan.outputs.pi_target }}']
-        timeoutSec: 360
-  - name: pi-start
-    labels: {role: swamp}
-    dependsOn:
-    - {step: pi-fetch, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: pi-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: pi-copy, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - step: pi-directory
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
-    - {step: pi-push, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.start-phase]
-        timeoutSec: 180
-        stdin: ${{ steps["boot-reply"].outputs.start["pi"] }}
-  - name: pi-start-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: pi-start, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["pi-start"].outputs.stdout }}
-        expect: started
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: pi-pid
-    labels: {role: swamp}
-    dependsOn:
-    - {step: pi-start-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, show, --property=MainPID, --value, --, '${{ steps.plan.outputs.units["pi"]
-            }}']
-        timeoutSec: 90
-  - name: pi-wait
-    labels: {role: swamp}
-    guard: ${{ steps["pi-pid"].outputs.stdout.trim() == "0" }}
-    dependsOn:
-    - {step: pi-pid, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '1530', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/timeout, '1500', /usr/bin/tail, '${{ "--pid=" + steps["pi-pid"].outputs.stdout.trim()
-            }}', -f, /dev/null]
-        timeoutSec: 1560
-        okExitCodes: any
-  - name: pi-inspect
-    labels: {role: swamp}
-    dependsOn:
-    - {step: pi-pid, condition: {type: succeeded}}
-    - {step: pi-wait, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.inspect-phase]
-        timeoutSec: 90
-        stdin: ${{ steps["boot-reply"].outputs.inspect["pi"] }}
-  - name: pi-inspect-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: pi-inspect, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["pi-inspect"].outputs.stdout }}
-        expect: complete
-        boot_id: ${{ steps["boot-reply"].outputs.boot_id }}
-  - name: prepare-owner
-    labels: {role: swamp}
-    dependsOn:
-    - {step: pi-inspect-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '1000', --group,
-          '1000', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.owner]
-        timeoutSec: 180
-        stdin: ${{ steps.plan.outputs.owner }}
-  - name: prepare-owner-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prepare-owner, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["prepare-owner"].outputs.stdout }}
-        expect: ready
-  - name: prepare-metadata
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prepare-owner-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.image]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.prepare_metadata }}
-  - name: prepare-metadata-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prepare-metadata, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["prepare-metadata"].outputs.stdout }}
-        expect: ready
-  - name: prepare-boot
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prepare-metadata-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.boot]
-        timeoutSec: 180
-        stdin: ${{ steps.plan.outputs.lean_boot }}
-  - name: prepare-boot-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prepare-boot, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["prepare-boot"].outputs.stdout }}
-        expect: ready
-  - name: ssh-enable
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prepare-boot-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/bin/systemctl, enable, --now, ssh.service]
-        timeoutSec: 90
-  - name: clean-marker
-    labels: {role: swamp}
-    dependsOn:
-    - {step: ssh-enable, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.recipe-marker]
-        timeoutSec: 180
-        stdin: ${{ steps.plan.outputs.marker }}
-  - name: clean-marker-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: clean-marker, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["clean-marker"].outputs.stdout }}
-        expect: ready
-  - name: clean-trust-ca
-    labels: {role: swamp}
-    dependsOn:
-    - {step: clean-marker-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.trust-ca]
-        timeoutSec: 180
-        stdin: ${{ steps.plan.outputs.trust_ca }}
-  - name: clean-trust-ca-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: clean-trust-ca, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["clean-trust-ca"].outputs.stdout }}
-        expect: ready
-  - name: clean-guest
-    labels: {role: swamp}
-    dependsOn:
-    - {step: clean-trust-ca-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name }}', /usr/local/bin/orbit-agent, command, image.clean]
-        timeoutSec: 180
-        stdin: ${{ steps.plan.outputs.clean }}
-  - name: clean-guest-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: clean-guest, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["clean-guest"].outputs.stdout }}
-        expect: ready
-  - name: publish
-    labels: {role: swamp}
-    dependsOn:
-    - {step: clean-guest-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.image]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.publish }}
-  - name: publish-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: publish, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: publication
-      inputs:
-        intent: ${{ inputs.intent }}
-        stdout: ${{ steps.publish.outputs.stdout }}
-  - name: publish-promote-candidate
-    labels: {role: swamp}
-    dependsOn:
-    - {step: publish-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.image]
-        timeoutSec: 960
-        stdin: ${{ steps["publish-reply"].outputs.promote_candidate }}
-  - name: publish-promote-candidate-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: publish-promote-candidate, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["publish-promote-candidate"].outputs.stdout }}
-        expect: ready
-  - name: smoke-remove-builder
-    labels: {role: swamp}
-    dependsOn:
-    - {step: publish-promote-candidate-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.reset_builder }}
-  - name: smoke-remove-builder-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-remove-builder, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["smoke-remove-builder"].outputs.stdout }}
-        expect: ready
-  - name: smoke-launch
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-remove-builder-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps["publish-reply"].outputs.launch_smoke }}
-  - name: smoke-launch-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-launch, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["smoke-launch"].outputs.stdout }}
-        expect: ready
-  - name: smoke-wait-agent
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-launch-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '630', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', wait, --timeout, '600', --, '${{ inputs.intent.name
-            + "-smoke" }}', agent]
-        timeoutSec: 660
-  - name: smoke-cloud-init
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-wait-agent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '630', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/bin/cloud-init, status, --wait]
-        timeoutSec: 660
-  - name: smoke-push-agent
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-cloud-init, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '210', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', file, push, --mode, '0700', --uid, '0', --gid, '0',
-          --, /usr/local/bin/orbit-agent, '${{ inputs.intent.name + "-smoke" + steps.plan.outputs.candidate }}']
-        timeoutSec: 240
-  - name: smoke-install-agent
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-push-agent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '210', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', '${{ steps.plan.outputs.candidate }}', command, agent.install]
-        timeoutSec: 240
-        stdin: ${{ steps.plan.outputs.install }}
-  - name: smoke-install-agent-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-install-agent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["smoke-install-agent"].outputs.stdout }}
-        expect: installed
-        pin: ${{ inputs.intent.agent_sha256 }}
-  - name: smoke-guest-cloud-init
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-install-agent-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '75', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/local/bin/orbit-agent, command, guest.cloud-init]
-        timeoutSec: 105
-        stdin: ${{ steps.plan.outputs.cloud_init }}
-  - name: smoke-guest-cloud-init-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-guest-cloud-init, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["smoke-guest-cloud-init"].outputs.stdout }}
-        expect: ready
-  - name: smoke-check
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-guest-cloud-init-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/local/bin/orbit-agent, command, image.check]
-        timeoutSec: 180
-        stdin: ${{ steps.plan.outputs.check }}
-  - name: smoke-check-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-check, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["smoke-check"].outputs.stdout }}
-        expect: ready
-  - name: smoke-verify
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-check-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/local/bin/orbit-agent, command, image.verify]
-        timeoutSec: 180
-        stdin: ${{ steps.plan.outputs.verify }}
-  - name: smoke-verify-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-verify, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["smoke-verify"].outputs.stdout }}
-        expect: ready
-  - name: ssh-smoke
-    labels: {role: swamp}
-    dependsOn:
-    - {step: smoke-verify-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '60', /usr/bin/sudo, -n, --, /usr/bin/incus, --project, '${{ inputs.intent.project }}', exec, --mode=non-interactive, --user, '0', --group,
-          '0', --env, SUDO_USER=orbit, --, '${{ inputs.intent.name + "-smoke" }}', /usr/bin/systemctl, is-active, ssh.service]
-        timeoutSec: 90
-  - name: seed
-    labels: {role: swamp}
-    dependsOn:
-    - {step: ssh-smoke, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '630', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.build-topology-seed]
-        timeoutSec: 660
-        stdin: ${{ steps["publish-reply"].outputs.seed }}
-  - name: seed-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: seed, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["seed"].outputs.stdout }}
-        expect: ready
-  - name: delete-smoke
-    labels: {role: swamp}
-    dependsOn:
-    - {step: seed-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.reset_smoke }}
-  - name: delete-smoke-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: delete-smoke, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["delete-smoke"].outputs.stdout }}
-        expect: ready
-  - name: finish-seed
-    labels: {role: swamp}
-    dependsOn:
-    - {step: delete-smoke-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '210', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.volume]
-        timeoutSec: 240
-        stdin: ${{ steps["publish-reply"].outputs.finish_seed }}
-  - name: finish-seed-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: finish-seed, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["finish-seed"].outputs.stdout }}
-        expect: seed-volume
-        fingerprint: ${{ steps["publish-reply"].outputs.fingerprint }}
-  - name: promote
-    labels: {role: swamp}
-    dependsOn:
-    - {step: finish-seed-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.image]
-        timeoutSec: 960
-        stdin: ${{ steps["publish-reply"].outputs.promote }}
-  - name: promote-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: promote, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["promote"].outputs.stdout }}
-        expect: ready
-  - name: prune
-    labels: {role: swamp}
-    dependsOn:
-    - {step: promote-reply, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.image]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.prune }}
-  - name: prune-reply
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prune, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["prune"].outputs.stdout }}
-        expect: ready
-  - name: complete
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prune-reply, condition: {type: succeeded}}
-    task:
-      type: assert
-      expr: steps["publish-reply"].outputs.fingerprint.size() == 64 && steps["prune-reply"].outputs.ok
-      message: The image must be published, verified, seeded, promoted and pruned.
-      severity: high
-- name: cleanup
-  writes: true
+        okExitCodes: [0, 1]
+        argv: [timeout, '300', incus, delete, --force, --project, '${{ inputs.intent.project }}', '--', '${{ self.name }}']
+        timeoutSec: 320
+- name: launch
+  labels: {role: swamp}
   dependsOn:
-  - {job: admission, condition: {type: succeeded}}
-  - {job: build, condition: {type: always}}
+  - {job: reset, condition: {type: succeeded}}
   steps:
-  - name: cleanup-builder
+    # `incus init` reads the instance config (the cloud-init key for the orbit account and its drive) from stdin, then the VM starts.
+  - name: Launch the builder
     labels: {role: swamp}
+    writes: true
+    concurrency: 1
+    forEach:
+      item: change
+      in: '${{ [{"argv": ["incus", "init", "--vm", "--project", inputs.intent.project, "--config", "limits.cpu=" + string(inputs.intent.cpus), "--config", "limits.memory=" + inputs.intent.memory, "--device", "root,size=" + inputs.intent.disk, "--device", "eth0,network=" + inputs.intent.network, "--device", "eth0,security.port_isolation=true", "--", inputs.intent.source, inputs.intent.builder], "stdin": inputs.intent.launch_config}, {"argv": ["incus", "start", "--project", inputs.intent.project, "--", inputs.intent.builder], "stdin": ""}] }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ "task-vm-image-launch-" + string(inputs.node_id) + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: ${{ "task-vm-image-launch-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
+        hosts:
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
       inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.reset_builder }}
-  - name: cleanup-builder-reply
+        hosts: name:host
+        sudo: true
+        argv: '${{ ["timeout", "180"] + self.change.argv }}'
+        stdin: ${{ self.change.stdin }}
+        timeoutSec: 200
+- name: wait
+  labels: {role: swamp}
+  dependsOn:
+  - {job: launch, condition: {type: succeeded}}
+  steps:
+    # The Incus agent answers first; cloud-init has made the orbit account when its status ends.
+  - name: Wait for the builder
     labels: {role: swamp}
-    dependsOn:
-    - {step: cleanup-builder, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
-      inputs:
-        stdout: ${{ steps["cleanup-builder"].outputs.stdout }}
-        expect: ready
-  - name: cleanup-smoke
-    labels: {role: swamp}
-    dependsOn:
-    - {step: cleanup-builder-reply, condition: {type: succeeded}}
+    concurrency: 1
+    forEach:
+      item: wait
+      in: '${{ [["incus", "wait", "--project", inputs.intent.project, "--timeout", "600", "--", inputs.intent.builder, "agent"], ["incus", "exec", "--project", inputs.intent.project, "--", inputs.intent.builder, "cloud-init", "status", "--wait"]] }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ "task-vm-image-wait-" + string(inputs.node_id) + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: ${{ "task-vm-image-wait-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
+        hosts:
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
       inputs:
-        hosts: name:target
-        argv: [timeout, '930', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, incus.vm]
-        timeoutSec: 960
-        stdin: ${{ steps.plan.outputs.reset_smoke }}
-  - name: cleanup-smoke-reply
+        hosts: name:host
+        sudo: true
+        argv: '${{ ["timeout", "660"] + self.wait }}'
+        timeoutSec: 700
+- name: phases
+  labels: {role: swamp}
+  dependsOn:
+  - {job: wait, condition: {type: succeeded}}
+  steps:
+  - name: Run the task image phases
     labels: {role: swamp}
-    dependsOn:
-    - {step: cleanup-smoke, condition: {type: succeeded}}
+    writes: true
     task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + string(inputs.node_id) }}
-      methodName: reply
+      type: workflow
+      workflowIdOrName: task-vm-image-ansible
       inputs:
-        stdout: ${{ steps["cleanup-smoke"].outputs.stdout }}
-        expect: ready
-  - name: cleanup-pi-host
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        guest: ${{ inputs.intent.builder }}
+        tags: software,tools,check
+        with_pi: true
+- name: clean
+  labels: {role: swamp}
+  dependsOn:
+  - {job: phases, condition: {type: succeeded}}
+  steps:
+    # The clone makes its own cloud-init state, machine id and host keys at its first boot.
+  - name: Clean and stop
     labels: {role: swamp}
-    guard: ${{ inputs.intent.pi_artifact == null }}
+    writes: true
+    concurrency: 1
+    forEach:
+      item: clean
+      in: '${{ [["incus", "exec", "--project", inputs.intent.project, "--", inputs.intent.builder, "cloud-init", "clean", "--logs"], ["incus", "exec", "--project", inputs.intent.project, "--", inputs.intent.builder, "truncate", "--size", "0", "/etc/machine-id"], ["incus", "exec", "--project", inputs.intent.project, "--", inputs.intent.builder, "rm", "-f", "/etc/ssh/ssh_host_ed25519_key", "/etc/ssh/ssh_host_ed25519_key.pub", "/etc/ssh/ssh_host_ecdsa_key", "/etc/ssh/ssh_host_ecdsa_key.pub", "/etc/ssh/ssh_host_rsa_key", "/etc/ssh/ssh_host_rsa_key.pub"], ["incus", "stop", "--project", inputs.intent.project, "--timeout", "120", "--", inputs.intent.builder]] }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ "task-vm-image-clean-" + string(inputs.node_id) + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: ${{ "task-vm-image-clean-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
+        hosts:
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
       inputs:
-        hosts: name:target
-        argv: [timeout, '30', /usr/bin/rm, -f, --, '${{ "/tmp/orbit-image-pi-" + run.id + ".bin" }}']
-        timeoutSec: 60
-  - name: cleanup-pi-local
+        hosts: name:host
+        sudo: true
+        argv: '${{ ["timeout", "180"] + self.clean }}'
+        timeoutSec: 200
+- name: publish
+  labels: {role: swamp}
+  dependsOn:
+  - {job: clean, condition: {type: succeeded}}
+  steps:
+    # The output names the fingerprint; the Gateway reads it from this step.
+  - name: Publish the candidate
     labels: {role: swamp}
-    guard: ${{ inputs.intent.pi_artifact == null }}
+    writes: true
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "image-build-local" }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-image-publish-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-image-publish-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
+        hosts:
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
       inputs:
-        run: rm -f -- "$ORBIT_STAGE"
-        env:
-          ORBIT_STAGE: ${{ "/tmp/orbit-image-pi-" + run.id + ".bin" }}
+        hosts: name:host
+        sudo: true
+        argv: [timeout, '900', incus, publish, --project, '${{ inputs.intent.project }}', --compression, none, --alias, '${{ inputs.intent.candidate_alias }}', '--', '${{ inputs.intent.builder }}', '${{ "orbit.recipe=" + inputs.intent.identity }}', orbit.profile=base]
+        timeoutSec: 920
+- name: smoke
+  labels: {role: swamp}
+  dependsOn:
+  - {job: publish, condition: {type: succeeded}}
+  steps:
+  - name: Smoke the candidate
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-image-smoke
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+- name: promote
+  labels: {role: swamp}
+  dependsOn:
+  - {job: smoke, condition: {type: succeeded}}
+  steps:
+    # The Operation holds the host's lock key, so no other host Operation runs while the alias moves.
+  - name: Promote the image
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-image-promote
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: reset, condition: &settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  - {job: launch, condition: *settled}
+  - {job: wait, condition: *settled}
+  - {job: phases, condition: *settled}
+  - {job: clean, condition: *settled}
+  - {job: publish, condition: *settled}
+  - {job: smoke, condition: *settled}
+  - {job: promote, condition: *settled}
+  steps:
+    # A removal that fails leaves a stray VM; the next attempt removes it first and the host sweep reports it.
+  - name: Remove builder and smoke
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    forEach:
+      item: name
+      in: '${{ [inputs.intent.builder, inputs.intent.smoke] }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-image-remove-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-image-remove-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
+        hosts:
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
+      inputs:
+        hosts: name:host
+        sudo: true
+        okExitCodes: [0, 1]
+        argv: [timeout, '300', incus, delete, --force, --project, '${{ inputs.intent.project }}', '--', '${{ self.name }}']
+        timeoutSec: 320

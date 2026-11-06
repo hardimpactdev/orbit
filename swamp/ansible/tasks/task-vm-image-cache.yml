@@ -1,0 +1,9 @@
+---
+# The archives and packages that the phases downloaded are in their installed places; an image does not carry them.
+- name: Remove the downloads
+  when: intent.image | default(false)
+  ansible.builtin.file: { path: "{{ item }}", state: absent }
+  loop: [/var/cache/orbit/debs, /var/cache/orbit/js, /var/cache/orbit/rust, "{{ apt_directory }}"]
+- name: Clean the apt caches
+  when: intent.image | default(false)
+  ansible.builtin.apt: { clean: true }

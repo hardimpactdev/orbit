@@ -29,7 +29,10 @@ def build_task_vm(folder, kind):
     folder = Path(folder)
     intent = json.loads((folder / 'intent.json').read_text())
     ssh = intent['ssh']
-    target = ssh['target']
+    target = dict(ssh['target'])
+    # A guest of an Incus host has no address or host key when the Gateway admits the run; the run reads both from the host.
+    if os.environ.get('ORBIT_TARGET_HOST'):
+        target.update(host=os.environ['ORBIT_TARGET_HOST'].strip(), host_keys=[os.environ['ORBIT_TARGET_KEY'].strip()])
     known = set(known_host_lines(target))
     host = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
             'ansible_ssh_private_key_file': ssh['identity_file']}

@@ -215,8 +215,9 @@ final readonly class RecipeLoader
             $this->require(in_array((string) $version, $usedPhp, true), "php.versions.{$version}: no profile names php:{$version}.");
         }
         $this->require(array_diff(array_keys($tools), $used) === [], 'tools: unused tool entries.');
-        // Locations of internal bytes are deliberately not software identity.
+        // Locations of internal bytes and the Orbit agent are deliberately not software identity: a task image holds no agent.
         $identityData = $root;
+        unset($identityData->agent);
         foreach ($identityData->tools as $pin) {
             if ($pin->source === 'internal') {
                 foreach ($pin->artifacts as $artifact) {

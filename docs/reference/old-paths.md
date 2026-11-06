@@ -17,4 +17,6 @@ Check this page before you build on something. Each row is code that still runs,
 | The Project 62 branch of `TaskProvisionIntent` (`proof-reaper` and `ProofReaper` were deleted on 2026-11-06) | Nothing: only the removed `bin/swamp-proof` made Project 62 groups | When no Project 62 group is open |
 | `bin/e2e-topology` and the per-issue topology of a subtask that declares `topology`, with its virtiofs share of the worktree | The nested fleet ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When no subtask declares a topology |
 
-`apps/agent/**` is frozen. Its image-build commands (`image_build`, `image_recipe`) belong to the recipe path and wait for the agent strip.
+The Incus build already runs the task VM role phases of Ansible from a stock VM and installs no agent. The UpCloud template build keeps the agent path.
+
+`apps/agent/**` is frozen. Its image-build commands (`image_build`, `image_recipe`) belong to the UpCloud template build and wait for the agent strip. The Incus image build does not call them.
