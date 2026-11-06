@@ -66,6 +66,24 @@
       until: nested_doctor.stdout is match('\{"data":\{"healthy":true') or 'Instance is not running' in nested_doctor.stderr
       retries: "{{ checks }}"
       delay: "{{ wait_delay }}"
+    - name: Read why the Operation did not succeed
+      when: wait_kind == 'operation' and nested_operation.stdout | trim in ended and nested_operation.stdout | trim != 'succeeded'
+      ansible.builtin.command:
+        argv:
+          - timeout
+          - "30"
+          - incus
+          - exec
+          - "{{ gateway }}"
+          - "--"
+          - sqlite3
+          - /home/orbit/.orbit/gateway.sqlite
+          - >-
+            select 'at ' || coalesce(failed_step, 'no step') || ', code ' || coalesce(error_code, 'none')
+            from operations where id = {{ wait_operation | int }}
+      register: nested_why
+      changed_when: false
+      failed_when: false
     - name: Read the state of the nested VMs
       ansible.builtin.command:
         argv: [incus, list, --format, csv, --columns, ns]
@@ -79,7 +97,9 @@
       when: wait_kind == 'operation'
       ansible.builtin.assert:
         that: nested_operation.stdout | trim == 'succeeded'
-        fail_msg: "The Operation {{ wait_operation }} of the nested Gateway ended {{ nested_operation.stdout | trim | default('with no status', true) }}"
+        fail_msg: >-
+          The Operation {{ wait_operation }} of the nested Gateway ended
+          {{ nested_operation.stdout | trim | default('with no status', true) }} {{ nested_why.stdout | default('') | trim }}
     - name: Check that Doctor is healthy
       when: wait_kind == 'doctor'
       ansible.builtin.assert:

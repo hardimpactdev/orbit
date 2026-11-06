@@ -87,9 +87,10 @@ class TaskVmFleetWaitTest(unittest.TestCase):
 
     @NEEDS_ANSIBLE
     def test_an_operation_that_ends_failed_fails_the_wait(self):
-        code, output, _ = self.wait(['failed'], wait_kind='operation', wait_operation=7, wait_seconds=10)
+        code, output, checks = self.wait(['failed', 'at Enroll app-dev, code task_vm_enroll_failed'], wait_kind='operation', wait_operation=7, wait_seconds=10)
         self.assertNotEqual(code, 0)
-        self.assertIn('ended failed', output)
+        self.assertEqual(checks, 2)
+        self.assertIn('ended failed at Enroll app-dev, code task_vm_enroll_failed', output)
 
     @NEEDS_ANSIBLE
     def test_an_operation_that_does_not_end_fails_when_the_checks_run_out(self):
@@ -101,9 +102,9 @@ class TaskVmFleetWaitTest(unittest.TestCase):
     @NEEDS_ANSIBLE
     def test_an_operation_that_is_cancelled_or_interrupted_ends_the_wait_and_fails_it(self):
         for status in ('cancelled', 'interrupted'):
-            code, output, checks = self.wait([status], wait_kind='operation', wait_operation=7, wait_seconds=10)
+            code, output, checks = self.wait([status, 'at none, code none'], wait_kind='operation', wait_operation=7, wait_seconds=10)
             self.assertNotEqual(code, 0, status)
-            self.assertEqual(checks, 1, status)
+            self.assertEqual(checks, 2, status)
             self.assertIn(f'ended {status}', output)
 
     @NEEDS_ANSIBLE
