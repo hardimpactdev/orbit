@@ -310,11 +310,14 @@ The group is an external `todo` group, made with `tasks:create`, of a Project th
 - the author thread, and one reviewer thread for each review round, with model, effort, session and Pi address;
 - the prompts of the draft, review and fix turns;
 - the title and body of the draft pull request;
-- the repository, the base and the branch `task-{group}`.
+- the repository, the base and the branch `task-{group}`; and
+- the review mode of the group, `manual` or `automatic`.
 
 It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints no GitHub token. A prep run takes longer than the hour that an installation token lives, so admission only names the vault keys of the push token and its Git authorization header. The publish step asks the Gateway for the token with the run id of the prep run, right before the push. Admission adds no child Operation.
 
 Two steps of the run mint a GitHub credential at the Gateway: the clone step of the provision child and the publish step.
+
+The run is the same in both modes. When it succeeds in `manual` mode, the Gateway admits `tasks:park` for the group, so the VM stops while the spec waits for the owner; a park that the Gateway refuses is kept in the result as `park_refused`. In `automatic` mode nothing parks, and the VM keeps running.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 

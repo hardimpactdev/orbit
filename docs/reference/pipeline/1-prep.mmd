@@ -27,7 +27,9 @@ sequenceDiagram
   %%> - the vault key names of the push token, never a token
   %%> Built or not:
   %%> - built: `tasks:prep` admits the run and Swamp runs it as the workflow `operation-task-prep`
-  %%> - not built: the automatic mode, which a flow input would set
+  %%> - built: the mode of the run, `manual` or `automatic`, is the review mode of the Task group (`tasks:create --review`), captured in the intent at admission
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the mode is part of the admitted intent, not a Swamp input: the run is the same in both modes and only the Gateway projection differs, so the Gateway records the mode once and Swamp learns nothing it does not use
   Note over SW: Child workflows<br/>provision · turn · publish
   %%> What it does:
   %%> - the arrows below from Swamp to the task VM and to GitHub are child workflows of one parent run: `operation-task-provision`, `operation-task-turn` for the draft, review and fix turns, and `operation-task-publish` with a draft
@@ -101,6 +103,12 @@ sequenceDiagram
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code
   alt manual mode
+    Note over GW: Park the VM<br/>the spec waits for the owner
+    %%> What it does:
+    %%> - when the run ends, the Gateway records the draft PR and admits `tasks:park` for the group, which stops the VM; the workspace stays
+    %%> - a refused park is kept in the result as `park_refused`
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the park follows the mode and needs no step in the run, like the park after `tasks:prep-fix`
     opt spec checkpoint
       opt Nick reviews in an Instance
         NK->>GW: Create an Instance<br/>instance:create --branch=BRANCH
@@ -133,6 +141,8 @@ sequenceDiagram
     Note over GH: No checkpoint<br/>the flow continues
     %%> Why:
     %%> - the review agents' clean pass is the spec approval; the final self-review in stage 4 reads the whole PR
+    %%> What it does:
+    %%> - parks nothing: the VM keeps running
   end
   SW-->>GW: Record the outcome<br/>spec in draft PR
   %%> Result:

@@ -23,7 +23,7 @@ sequenceDiagram
   %%> - group 42 is an open external `todo` group with no VM, of a Project that the GitHub App reads
   %%> - the command is `family:command` in lower case
   %%> What it does:
-  %%> - captures, in one transaction, the provision intent, the author and reviewer threads, the prompts, the pull request title and body, and the repository, base and branch `task-42`
+  %%> - captures, in one transaction, the provision intent, the author and reviewer threads, the prompts, the pull request title and body, and the repository, base and branch `task-42`, and the review mode of the group (`manual` or `automatic`)
   %%> - names the vault keys of the push token; it mints no GitHub token, because the run takes longer than the hour that an installation token lives
   %%> Result:
   %%> - Operation recorded with the full intent
@@ -75,10 +75,13 @@ sequenceDiagram
       %%> Result:
       %%> - the group keeps its VM; the pull request fields of the group are set for stage 4
       %%> - the spec subtask of the group is marked completed, so the group has no open subtask
+      %%> - in manual mode (the review mode of the group at admission), the Gateway then admits `tasks:park` for the group, which stops the VM while the spec waits for the owner; a refused park is kept in the result as `park_refused`
+      %%> - in automatic mode it parks nothing, and the VM keeps running
       %%> Why:
       %%> - `tasks:park` refuses a group with an open subtask; with the subtask completed it can stop the VM while the spec waits for review, and the workspace stays
       %%> Decided by the orchestrator, for Nick's review:
       %%> - prep completes its subtask when the App opens the draft PR; park keeps its rule that no subtask is open
+      %%> - the park follows the mode and needs no step in the run, like the park after `tasks:prep-fix`
     else findings are left
       SW--xGW: Native failed result<br/>tasks.prep_review_unresolved
       %%> Result:
