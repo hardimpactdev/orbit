@@ -13,15 +13,15 @@ use App\Domain\Shared\ResourceOperationException;
  */
 final readonly class TaskPrepPrompts
 {
-    private function __construct(public string $command, public string $family, public string $name) {}
+    private function __construct(public string $command, public string $family, public string $name, private ?string $brief = null, private ?string $reference = null) {}
 
-    public static function for(string $command): self
+    public static function for(string $command, ?string $brief = null, ?string $reference = null): self
     {
         if (preg_match('/\A([a-z][a-z0-9]*(?:-[a-z0-9]+)*):([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\z/D', $command, $match) !== 1) {
             throw new ResourceOperationException('tasks.prep_command_invalid', 'The command must be `family:command` in lower case.', 422);
         }
 
-        return new self($command, $match[1], $match[2]);
+        return new self($command, $match[1], $match[2], $brief === null || trim($brief) === '' ? null : trim($brief), $reference === null || trim($reference) === '' ? null : trim($reference));
     }
 
     public function chart(): string
@@ -57,7 +57,7 @@ final readonly class TaskPrepPrompts
         - Run `bin/check-flows`, `composer docs-build` and `composer docs-lint` when the tools are installed, and fix what they report. Say in your summary what you ran.
         - Do not open a pull request and do not fetch or push. A separate review agent checks your work after you.
         - Commit the three files as ONE commit with `git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit` and the message `docs({$this->family}): spec for {$this->command}`. Leave the working tree clean.
-        TEXT;
+        TEXT.$this->briefText(true);
     }
 
     public function review(): string
@@ -77,7 +77,7 @@ final readonly class TaskPrepPrompts
         A finding is a place where the spec breaks a rule of those documents, contradicts itself or the sibling, or promises something that no case covers. A matter of taste or an optional improvement is not a finding; mention it in your summary after the findings and still approve. Report at most five findings, the most important first. A review may end with outcome `approved` and notes.
 
         End with outcome `approved` when you have no finding. Otherwise end with `changes_requested` and put every finding in your summary as a numbered list. Name the file, the problem and the fix for each finding.
-        TEXT;
+        TEXT.$this->briefText(false);
     }
 
     public function fix(): string
@@ -86,7 +86,18 @@ final readonly class TaskPrepPrompts
         An independent review of your spec of `{$this->command}` found the problems listed below. Fix every one that the skill and the Recall decisions settle, in the same three files, and change nothing else. If you disagree with a finding, say why in your receipt summary.
 
         Keep the spec as ONE commit: make the fixes, then run `git add -A && git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit --amend --no-edit`. Run the three checks once, after the last fix. Do not fetch or push.
-        TEXT;
+        TEXT.$this->briefText(false);
+    }
+
+    /** The brief reaches every prompt; the reference text, such as a sibling's approved files, only the draft. */
+    private function briefText(bool $draft): string
+    {
+        $text = $this->brief === null ? '' : "\n\nBrief of this run:\n".$this->brief;
+        if ($draft && $this->reference !== null) {
+            $text .= "\n\nReference text for this run. The workspace does not hold it, because it is not on the default branch; treat it as the approved sibling and as the shape to follow:\n".$this->reference;
+        }
+
+        return $text;
     }
 
     public function title(): string

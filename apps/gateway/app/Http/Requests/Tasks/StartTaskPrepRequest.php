@@ -15,14 +15,14 @@ final class StartTaskPrepRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['command' => ['required', 'string', 'max:128']];
+        return ['command' => ['required', 'string', 'max:128'], 'brief' => ['sometimes', 'nullable', 'string', 'max:8000'], 'reference' => ['sometimes', 'nullable', 'string', 'max:80000']];
     }
 
     /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['command']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['command', 'brief', 'reference']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
