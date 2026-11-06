@@ -80,6 +80,11 @@ sequenceDiagram
   %%> What it does:
   %%> - the nested Gateway's own `node:add` with the roles `app-dev` and `app-prod`; its own Swamp converges them over SSH
   %%> - so a fleet build also proves node:add and the role phases on fresh machines
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), the package cache:
+  %%> - the Composer tool setup of a nested Node refreshes the apt indexes of the Ubuntu snapshot; for a Node inside the nested subnet its plan reads them from the `apt-cacher-ng` of the outer VM (`http://10.232.2.1:3142`, apt proxy) instead of `https://snapshot.ubuntu.com`
+  %%> - the outer VM role installs and starts the cache and opens port 3142 on the nested bridge only; the image build fills it (`vm-image-build.mmd`), so a fleet build finds the indexes warm
+  %%> - the Gateway names the cache for a Node whose address is in the nested subnet `10.232.2.0/24`; the e2e harness never hands out that subnet, so no other Node is inside it. Any other Node reads the snapshot directly
+  %%> - the Node asks for the same index files as the image build (no `apt.conf.d` drop-ins) and tries a failed download again five times at once
   NG->>NN: Enrol and converge<br/>WireGuard · roles · agent
   SW->>NG: Mount the checkout<br/>NFS from the outer VM
   %%> What it does:
