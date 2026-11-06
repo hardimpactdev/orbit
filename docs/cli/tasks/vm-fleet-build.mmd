@@ -1,0 +1,53 @@
+sequenceDiagram
+  %% Target design (proposed 2026-11-06): build the nested fleet of a task VM from stock Ubuntu with Orbit's own steps, when a host has no ready copies (new host, new image, or broken copies). The operator prepares the Gateway once with a local Swamp run (Swamp binary, Ansible venv, swamp/ folder, key); the Gateway then converges itself and runs orbit:bootstrap; app-dev and app-prod join through the nested Gateway's own node:add. Ends where stage 6 "Save the new images" starts.
+  %% status: reviewed
+  %% command: none · nested fleet build from scratch
+  %% kind: task_vm.fleet_build
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=server pill=operator tone=purple
+  %% lane NG icon=gateway pill=nested tone=amber
+  %% lane NN icon=server pill=nodes tone=gray
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Refresh VM<br/>outer · operator
+  participant NG as Nested Gateway<br/>with Swamp
+  participant NN as Nested Nodes<br/>app-dev · app-prod
+  Note over GW: Admit the fleet build<br/>host · release commit
+  %%> When:
+  %%> - a task VM host whose seed has no usable ready copies; part of stage 6 for a new host or a new image
+  %%> Result:
+  %%> - full intent recorded: the refresh VM, the nested subnet, the three Node names and addresses, the release commit
+  GW->>SW: Start run, full intent<br/>operation-task-vm-fleet-build
+  SW->>VM: Create the nested network<br/>subnet · three stock VMs
+  %%> What it does:
+  %%> - in the refresh VM: the nested Incus network from the intent's subnet, then three VMs from the stock Ubuntu image, each with cloud-init for the `orbit` account and the key that reaches it
+  %%> - every action one `@swamp/ssh exec` argv on the refresh VM
+  VM->>NG: Prepare the Gateway<br/>local Swamp · one run
+  %%> What it does:
+  %%> - the operator (here the refresh VM) runs the Gateway bootstrap workflow once with a local `swamp workflow run`; its steps request no worker, so the binary runs them itself
+  %%> - over SSH it installs on the fresh machine the pinned Swamp binary, the swamp role's pinned Ansible venv, the release's `swamp/` folder and the Swamp key
+  %%> - the same bootstrap a fresh Orbit install uses: the user's CLI keeps the Swamp binary in `~/.orbit` and removes it after the handover; no Ansible on the user's machine
+  NG->>NG: Converge itself<br/>gateway · websocket · swamp
+  %%> What it does:
+  %%> - the new Gateway's own Swamp runs the normal role phases with Ansible's local connection, then `orbit:bootstrap`: its CA, SSH key and WireGuard hub, migrations and its Swamp serve and worker
+  %%> - the Gateway records itself and the operator; from here on its own Swamp does everything
+  SW->>NG: Add app-dev and app-prod<br/>node:add · nested Orbit
+  %%> What it does:
+  %%> - the nested Gateway's own `node:add` with the roles `app-dev` and `app-prod`; its own Swamp converges them over SSH
+  %%> - so a fleet build also proves node:add and the role phases on fresh machines
+  NG->>NN: Enrol and converge<br/>WireGuard · roles · agent
+  SW->>NG: Check readiness<br/>agents · Swamp · Doctor
+  %%> What it does:
+  %%> - the same check as stage 2: every agent online, the Swamp worker enrolled, Doctor has no finding
+  alt the fleet is ready
+    SW->>VM: Save the ready copies<br/>stage 6 · task_vm.ready_copies
+    %%> What it does:
+    %%> - the existing step: key-free, self-contained copies with the network stored, operator key removed
+    SW-->>GW: Run succeeded<br/>seed has ready copies
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+    %%> Result:
+    %%> - the refresh VM and its nested VMs are destroyed; the host keeps the seed it had
+  end
