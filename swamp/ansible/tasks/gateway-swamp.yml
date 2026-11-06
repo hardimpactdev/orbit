@@ -80,6 +80,19 @@
     owner: "{{ swamp_user }}"
     group: "{{ swamp_user }}"
     mode: "0600"
+# The vault the Gateway puts the material of a run in: it names it, and its runs read it (docs/reference/operations.md). The key of the
+# vault is made by Swamp and stays on this machine.
+- name: Make the control vault
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      swamp vault list --json | grep -q '"name": "orbit-control-inputs"' || { swamp vault create local_encryption orbit-control-inputs --json >/dev/null; echo created; }
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  register: control_vault
+  changed_when: "'created' in control_vault.stdout"
 # Tokens: mint in the Swamp repository, reveal into a file of the owner, never into output.
 - name: Mint the serve driver token
   ansible.builtin.shell:

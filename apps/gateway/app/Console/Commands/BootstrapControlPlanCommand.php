@@ -13,6 +13,7 @@ use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Config;
 
 /** Prints what the Gateway's own Swamp needs on its machine, issues the certificate of the `swamp.orbit` front or of the Gateway site, or records the hub key. */
 final class BootstrapControlPlanCommand extends Command
@@ -36,6 +37,13 @@ final class BootstrapControlPlanCommand extends Command
                 return self::FAILURE;
             }
             Node::withoutEvents(static fn (): bool => SwampNode::node()->update(['wireguard_public_key' => $hubKey]));
+            // The key every Node peer config names: the Gateway reads it from here when it admits a Node.
+            $directory = rtrim(Config::string('orbit.home'), '/').'/wireguard';
+            if (! is_dir($directory)) {
+                mkdir($directory, 0o700, true);
+            }
+            file_put_contents($directory.'/public.key', $hubKey."\n");
+            chmod($directory.'/public.key', 0o644);
             $this->line('Hub public key recorded.');
 
             return self::SUCCESS;
