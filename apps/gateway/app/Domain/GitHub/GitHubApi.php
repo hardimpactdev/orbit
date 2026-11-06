@@ -27,6 +27,14 @@ interface GitHubApi
         GitHubRepository $repository,
     ): string;
 
+    /**
+     * A token that reads the contents of every repository the installation covers and expires after one hour.
+     * Private dependencies of a workspace live in repositories other than the Project repository.
+     *
+     * @throws GitHubApiException
+     */
+    public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string;
+
     /** A one-hour token that grants only repository metadata access. */
     public function repositoryMetadataToken(
         GitHubAppCredentials $credentials,

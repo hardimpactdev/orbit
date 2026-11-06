@@ -19,7 +19,7 @@ Check this page before you build on something. Each row is code that still runs,
 
 The provision of a task with a topology carries the converge intent, and its `Converge once` step runs before the nested fleet, so a VM from an older image gets the NFS server, Incus and the seed pool without a new image.
 
-The admission of a task run mints no GitHub token. The provision clone and the publish step mint their own when they run ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). Admission holds no token for them.
+The admission of a task run mints no GitHub token. The provision clone, the setup steps and the publish step mint their own when they run ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). Admission holds no token for them.
 
 The Incus build already runs the task VM role phases of Ansible from a stock VM and installs no agent.
 

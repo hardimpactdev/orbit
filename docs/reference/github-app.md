@@ -169,13 +169,14 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 ## How Orbit publishes a task pull request
 
-A task VM never holds a GitHub credential, neither a token nor a deploy key. The App serves every step that needs GitHub. Each step gets its own token when it runs.
+A task VM never holds a GitHub credential, neither a token nor a deploy key, except the setup token files below. The App serves every step that needs GitHub. Each step gets its own token when it runs.
 
 - **Clone.** A step on Node 209 asks the Gateway for a read credential (`purpose: clone`). It clones with full history.
 - **Nothing stays on the VM.** The VM receives a bundle with a plain `origin`. `.git/config`, a credential helper and the environment files hold no credential.
 - **Publish, pull request and approved push.** These steps run on Node 209. Each step asks the Gateway for a fresh token at its start (`operation:direct:github-token`).
 - **No admission token.** Admission mints no token for a later step. An installation token lives one hour. A prep run needs 43 to 90 minutes to reach its publish step.
-- **Private dependencies.** A setup step installs them like a Project setup step. It uses a token minted for that step only.
+- **Private dependencies.** The setup steps install them. A step mints a read token for the setup steps only.
+- **Token removal.** A step deletes the token files after the last setup step.
 - **A new private package during a task.** The agent asks through assistance. A step installs the package.
 
 The publish token has `contents: write`, `pull_requests: write` and `workflows: write` for the Project repository. Swamp pushes the checked commit as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Publish from the VM](/reference/compute-drivers#publish-from-the-vm).
@@ -322,7 +323,7 @@ The Gateway starts every repository read and push itself, so it can create a tok
 
 The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook or `fsmonitor`, would be a child of that process and would see the token. So token-bearing Git turns off hooks, `fsmonitor`, every credential helper, and the alternate-refs command, allows only HTTPS, and fetches from the explicit Project repository URL. It still reads the checkout's `.git/config`, which setup steps, development Processes, and agents running as the managed user can write, so those command-line settings are what keep the token in Git.
 
-Task agents work only in task VMs, and a VM never receives a token: the Gateway [fetches and pushes in its own mirror](/reference/compute-drivers#git-on-a-task-vm).
+Task agents work only in task VMs, and a VM receives no token outside the setup steps: the Gateway [fetches and pushes in its own mirror](/reference/compute-drivers#git-on-a-task-vm).
 
 The node agent reads Git with libgit2, which starts no checkout program. A credential helper on the Node was rejected because it remains callable by any program after the command ends. The token stays in one command's environment.
 

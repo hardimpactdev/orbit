@@ -87,8 +87,9 @@ function replacePatterns(raw: string, credentialHex: boolean): string {
         "Authorization: [REDACTED]",
     );
     text = text.replace(/\bBearer\s+[A-Za-z0-9._+/=-]+/gi, "Bearer [REDACTED]");
+    // The installation token has dots and dashes after `ghs_`, and a console error box wraps it over padded lines; a continuation is a piece alone at the end of its line.
     text = text.replace(
-        /(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})/g,
+        /(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_.-]{16,}(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9_.-]+(?=[\"']?[ \t]*(?:\r?\n|$))){0,6}|github_pat_[A-Za-z0-9_]{20,})/g,
         REDACTED,
     );
     return text.replace(

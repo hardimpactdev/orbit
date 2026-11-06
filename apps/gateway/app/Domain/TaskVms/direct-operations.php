@@ -59,7 +59,7 @@ return ['task_vm.hub_converge' => [
     'terminal_result' => ['job' => 'check', 'step' => TaskVmImageRefreshProjection::EndCheck, 'native' => true, 'captures' => TaskVmImageRefreshProjection::captures()],
     // The refresh VM is provisioned as a task VM is, so the run takes the copies of `tasks.provision`.
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$'],
-        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-git-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-(git|deps-composer|deps-npm|deps-token)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']],
 ], 'task_vm.fleet_build' => [
