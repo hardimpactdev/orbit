@@ -1164,7 +1164,7 @@ The last five steps follow:
 8. **Promote the image.** The child workflow `task-vm-image-promote` points the base alias at the candidate's fingerprint. It keeps the old image as `-previous`.
 9. **Remove builder and smoke.** This step always runs. A failed removal does not fail the run.
 
-The parent passes the fingerprint to the promote child as a plain string, and `incus` refuses a wrong one. A clone makes its own cloud-init state, machine id and host keys at its first boot. The Operation holds the host lock key for the whole run, so no other host Operation runs while the alias moves. A later attempt removes a stray builder first.
+The parent passes the fingerprint to the promote child as a plain string, and `incus` refuses a wrong one. The builder has no nested fleet, so step 5 passes the child an empty `nested` object. A clone makes its own cloud-init state, machine id and host keys at its first boot. The Operation holds the host lock key for the whole run, so no other host Operation runs while the alias moves. A later attempt removes a stray builder first.
 
 The base alias moves only after the candidate passed its smoke check. A failed build leaves the promoted image in service. The old image stays as the `-previous` rollback copy until the next promotion.
 
