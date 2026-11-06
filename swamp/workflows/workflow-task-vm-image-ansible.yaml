@@ -71,11 +71,11 @@ jobs:
       behaviorName: ansible-input
       methodName: write
       inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
-    # Pi is an internal artifact on the Gateway host; the software phase copies it to the guest when the guest's copy differs from the pin.
+    # Pi is an internal artifact on the Gateway host; the software phase copies it to the guest when the guest copy differs from the pin. A guard that is true skips the step.
   - name: Fetch the Pi server
     labels: {role: swamp}
     writes: true
-    guard: ${{ inputs.with_pi }}
+    guard: ${{ !inputs.with_pi }}
     dependsOn:
     - {step: Write the intent, condition: {type: succeeded}}
     task:
@@ -103,7 +103,7 @@ jobs:
   - name: Check the Pi server
     labels: {role: swamp}
     writes: true
-    guard: ${{ inputs.with_pi }}
+    guard: ${{ !inputs.with_pi }}
     dependsOn:
     - {step: Fetch the Pi server, condition: {type: succeeded}}
     task:
