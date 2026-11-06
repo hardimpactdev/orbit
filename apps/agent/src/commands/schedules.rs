@@ -384,35 +384,6 @@ pub struct TargetInput {
     pub working_directory: PathBuf,
 }
 
-pub fn activate(input: &TargetInput) -> Result<Done, ScheduleError> {
-    activate_at(&Host::system(), input)
-}
-
-fn activate_at(host: &Host, input: &TargetInput) -> Result<Done, ScheduleError> {
-    let paths = host.paths(&input.id)?;
-    runnable(&input.user, &input.working_directory)?;
-    let enabled = unit_state(host, "is-enabled", &paths.timer_unit) == "enabled";
-    let active = unit_state(host, "is-active", &paths.timer_unit) == "active";
-    if settle(host, &paths.timer_unit, true) {
-        return Ok(Done {});
-    }
-    let restored = systemctl(
-        host,
-        &[
-            if enabled { "enable" } else { "disable" },
-            &paths.timer_unit,
-        ],
-    ) && systemctl(
-        host,
-        &[if active { "start" } else { "stop" }, &paths.timer_unit],
-    );
-    Err(if restored {
-        failed("activate")
-    } else {
-        ScheduleError::RollbackFailed {}
-    })
-}
-
 pub fn run(input: &TargetInput) -> Result<Done, ScheduleError> {
     run_at(&Host::system(), input)
 }

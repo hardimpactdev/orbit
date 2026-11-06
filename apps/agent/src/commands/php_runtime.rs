@@ -1350,52 +1350,6 @@ impl Command for RemoveRuntime {
 
 // ---- inspect the pool --------------------------------------------------------------------------------------------
 
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InspectPoolInput {
-    pub user: String,
-    pub version: String,
-    pub marker: String,
-}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Pool {
-    pub pool: String,
-    /// The hash of the main configuration, the pool, and `local.conf`: it changes with any of them.
-    pub fingerprint: String,
-}
-
-/// Reads the generated pool of a runtime whose marker is the expected one. Every path up to `/` is root-owned and
-/// not writable by others.
-pub fn inspect_pool(input: &InspectPoolInput, host: &Host) -> Result<Pool, RuntimeError> {
-    let runtime = Runtime::new(host, &input.user, &input.version, &input.marker)?;
-    let read = |path: &Path| {
-        for parent in path.ancestors() {
-            let trusted = fs::symlink_metadata(parent).is_ok_and(|metadata| {
-                !metadata.file_type().is_symlink()
-                    && metadata.uid() == host.root_uid
-                    && metadata.mode() & 0o022 == 0
-            });
-            if !trusted {
-                return Err(invalid("the runtime path is root-owned"));
-            }
-            if parent == host.etc.parent().unwrap_or(Path::new("/")) {
-                break;
-            }
-        }
-        fs::read_to_string(path).map_err(|_| invalid("a runtime file is readable"))
-    };
-    check(
-        read(&runtime.marker)?.as_bytes() == runtime.expected_marker,
-        "the runtime marker is this Instance's",
-    )?;
-    let main = read(&runtime.generated.join("php-fpm.conf"))?;
-    let pool = read(&runtime.generated.join("pool.conf"))?;
-    let local = read(&runtime.local)?;
-    let fingerprint = sha256(format!("{main}{pool}{local}").as_bytes());
-    Ok(Pool { pool, fingerprint })
-}
-
 // ---- refresh the cache -------------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]

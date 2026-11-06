@@ -145,12 +145,6 @@ fn single_source_files_are_removed_and_comments_are_preserved() {
 fn each_provider_has_one_closed_source_shape() {
     for (provider, uri, suite, component) in [
         (
-            Provider::Docker,
-            "https://download.docker.com/linux/ubuntu",
-            "noble",
-            "stable",
-        ),
-        (
             Provider::Node,
             "https://deb.nodesource.com/node_24.x",
             "nodistro",

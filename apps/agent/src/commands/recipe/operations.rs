@@ -366,10 +366,6 @@ impl Command for Inspect {
         plan(&mut host, &files, &input, Some(&account)).map_err(|e| e.at("inventory"))
     }
 }
-#[derive(schemars::JsonSchema, Serialize)]
-pub struct Ready {
-    ready: bool,
-}
 pub struct Apply;
 impl Command for Apply {
     const NAME: &'static str = "recipe.apply";
