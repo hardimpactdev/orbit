@@ -189,7 +189,7 @@ A passing handoff creates its candidate commit in the VM with `git add --all` an
 
 For Projects with a handoff check name, separate export, copy, import and push steps publish that exact candidate without force to `task-{group}-handoff`, as [publish](#publish-an-external-group) does. After the candidate is ready, a placed mint step posts to the existing scoped Gateway token primitive with `curl`.
 
-The Gateway captures no token at check admission. It mints the existing repository credentials and writes them through the shared execution-copy helper, with the push token also written in Git extra-header form; the response contains vault descriptors only. The push reads that header whole from the vault, as publish does, so the token never appears in a command. Only trusted Git/GitHub actions on 209 resolve those vault copies.
+The Gateway captures no token at check admission. It mints the existing repository credentials and writes them through the shared execution-copy helper, with the push token also written in Git extra-header form; the response contains vault descriptors only. The push reads that header whole from the vault, as publish does, so the token never appears in a command. Only trusted Git/GitHub actions on 209 resolve those vault copies. The same Gateway class, `TaskGitHubTokens`, mints these credentials as it mints the clone, publish, pull request and dependency merge tokens: a `tasks.check` handoff asks with no purpose.
 
 The VM and repository commands receive none. The push token is revoked after use. The Checks token is revoked when CI settles or admission fails, with `gh api --method DELETE installation/token`. No pull request opens on the handoff branch.
 

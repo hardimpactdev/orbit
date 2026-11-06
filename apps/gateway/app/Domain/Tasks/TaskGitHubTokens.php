@@ -33,6 +33,7 @@ use Illuminate\Support\Str;
  * - `publish` writes the write token for the pull request and its Git authorization header. An approved push of a cancel takes the token only.
  * - `pull_request` writes the write token of one pull request step: ready, comment or merge.
  * - `dependency_merge` writes the write and read tokens of a dependency batch squash.
+ * - no purpose, for a `tasks.check` handoff, writes the write token, the Checks read token and the Git authorization header of its CI wait.
  */
 final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
 {
@@ -49,6 +50,9 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     {
         $operation->refresh();
         $this->direct->assertRun($operation, $runId);
+        if ($purpose === null && $operation->kind === 'tasks.check') {
+            return $this->check($operation, $callerNodeId, $runId);
+        }
         if ($callerNodeId !== SwampNode::id() || $operation->target_type !== 'task_group' || $operation->status->terminal() || $operation->cancel_requested_at !== null) {
             throw $this->forbidden();
         }
@@ -63,6 +67,42 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             'pull_request', 'dependency_merge' => $this->scoped($operation, $group, $callerNodeId, $runId, $purpose),
             default => throw $this->forbidden(),
         };
+    }
+
+    /**
+     * The handoff check of a Project with hosted CI refreshes its execution copies after the local checks. The operation's own Node
+     * may ask as well as Node 209.
+     *
+     * @return array<string,array{vault:string,key:string}>
+     */
+    private function check(Operation $operation, int $callerNodeId, string $runId): array
+    {
+        if ($operation->target_type !== 'task_group' || ! in_array($callerNodeId, [$operation->node_id, SwampNode::id()], true)
+            || $operation->status->terminal() || $operation->cancel_requested_at !== null
+            || ($operation->input['phase'] ?? null) !== 'handoff' || ! is_string($operation->input['check_name'] ?? null)
+            || ! is_string($operation->input['repository'] ?? null)) {
+            throw $this->forbidden();
+        }
+        $repository = GitHubRepository::fromOrigin('https://github.com/'.$operation->input['repository']);
+        if ($repository === null) {
+            throw new ResourceOperationException('tasks.handoff_ci_unavailable', 'The admitted repository is unavailable.', 503);
+        }
+        $checks = $this->access->checksToken($repository);
+        if ($checks === null) {
+            throw new ResourceOperationException('tasks.handoff_ci_unavailable', 'The repository requires Checks read access.', 503);
+        }
+        $token = $this->access->token($repository);
+        $values = ['github_token' => $token, 'checks_token' => $checks, 'git_authorization' => 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token)];
+        $references = ValidatedData::object($operation->input['execution_secrets']);
+        $copies = [];
+        foreach ($values as $name => $value) {
+            $reference = ValidatedData::object($references[$name]);
+            $copies[$name] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $value);
+        }
+        $this->record($operation, 'Issued scoped Task check repository credentials.', $callerNodeId, $runId, $operation->input['repository'],
+            [['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write'], ['checks' => 'read']]);
+
+        return $copies;
     }
 
     /** @return array<string,array{vault:string,key:string}> */
