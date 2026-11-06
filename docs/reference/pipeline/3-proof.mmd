@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - restores the task's Incus stateful snapshot `base` (stage 2), all three VMs in parallel
   %%> - sets each guest clock from the outer VM as soon as that VM's agent answers; a restore puts the clocks back to snapshot time
   %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat (every 5 s) and Doctor is healthy
-  %%> - every restore in this chart has a 45 s limit: a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
+  %%> - every restore of the snapshots has a 45 s limit, and readiness then waits at most 120 s for a healthy Doctor (one Ansible task, decided by the orchestrator, for Nick's review); a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
   %%> Built, not yet passed live:
   %%> - the Swamp workflow `proof-fleet-verify` runs this restore first, in its job `prepare`, when the intent sets `restore_first` (`orbit proof`); the proof in CI starts from the `base` that the provision has just taken and leaves it unset
   %%> Time, measured on tvm-554:

@@ -35,7 +35,7 @@ The command is `family:command` with letters, digits and underscores in the fami
 The Gateway records the intent as the operation `proof.verify`, on the task group of the VM, and starts the Swamp workflow `proof-fleet-verify` with this VM as input. No step calls the Gateway. The workflow:
 
 1. Reads the cases file and plans the batches. A missing or invalid file fails the run here, before the fleet changes.
-2. Restores the snapshot `base` of the nested fleet, because the fleet may have moved since your last proof (about 16 seconds, 45 seconds at most, no retry).
+2. Restores the snapshot `base` of the nested fleet, because the fleet may have moved since your last proof (about 16 seconds; each snapshot restore has 45 seconds, then readiness waits at most 120 seconds for a healthy Doctor; no retry).
 3. When the Swamp tokens in `base` are older than 20 days, renews them with the step of the provision, checks readiness and takes `base` again, so that the batches keep the new tokens.
 4. Runs the batches in the order of `swamp/proof/batches.yaml`: one restore of `base` per batch but the first, the start state of the batch, then each case on its own resources with no undo. A case that did not pass triggers a restore before the next.
 5. Restores `base` once more, so that you keep working on a clean fleet that runs your latest code. This runs also after a failed case.

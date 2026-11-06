@@ -1,7 +1,7 @@
 id: 5f38f2dd-af28-46ec-9ff0-8094ffd13208
 name: task-nested-ready
 description: >-
-  Check that the nested fleet of a task VM is ready, from the VM over the operator's WireGuard address and the API of the nested Gateway: every Node agent online, the operator known to the Gateway with its key, Doctor healthy. Used by the fleet start before it takes `base`, and by every restore of `base`.
+  Check that the nested fleet of a task VM is ready, from the VM over the operator's WireGuard address and the API of the nested Gateway: after a bounded wait (120 s) for a healthy Doctor, every Node agent online, the operator known to the Gateway with its key, Doctor healthy. Used by the fleet start before it takes `base`, and by every restore of `base`.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -23,7 +23,7 @@ jobs:
       behaviorType: '@nckrtl/ansible-input'
       behaviorName: ansible-input
       methodName: write
-      inputs: {intent: '${{ {"ssh_execution": inputs.ssh_execution, "fleet": {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}}} }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
+      inputs: {intent: '${{ {"ssh_execution": inputs.ssh_execution, "fleet": {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"} } } }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
   - name: Write the playbook input
     labels: {role: swamp}
     writes: true
@@ -56,7 +56,7 @@ jobs:
       behaviorName: '${{ "nested-ready-" + string(inputs.guest_node_id) + "-wait-for-doctor" }}'
       methodName: execute
       inputs:
-        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "wait_kind=doctor wait_seconds=120 wait_delay=5" "$ORBIT_ANSIBLE/task-vm-fleet-wait.yml"
+        run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "wait_kind=doctor wait_seconds=120 wait_delay=5" "$ORBIT_ANSIBLE/task-vm-fleet-wait.yml"
         env: *ansible
   # Over the operator's WireGuard address. The Swamp worker is checked by the apply step.
   - name: 'Read the nodes'
