@@ -1,0 +1,66 @@
+name: Proof for outside pull requests
+
+# Stage 4 of the command pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "the PR is from outside"). A pull request from a fork never
+# starts the `proof-run` job of ci.yml. A maintainer approves its head, then adds the label `run-proofs`; the label starts this workflow.
+# Keep the label in step with the Gateway setting `proof.label` (apps/gateway/config/proof.php), which the Gateway checks.
+#
+# `pull_request_target` runs this file and the script from the base branch of the pull request, never from the fork, so the fork
+# cannot change what runs on the runner. The code of the fork runs only in the task VM, after the Gateway checked the label and a
+# maintainer's approval of exactly the commit that this workflow passes (`proof.commit_untrusted` otherwise). A label added before the
+# approval fails that check; remove and add the label again after approving.
+on:
+  pull_request_target:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  proof-run:
+    name: Proof run (outside pull request)
+    if: >-
+      github.event.action == 'labeled'
+      && github.event.label.name == 'run-proofs'
+      && github.event.pull_request.head.repo.full_name != github.repository
+    # The same runner as the proof job of ci.yml: an enrolled Node that may reach the Gateway.
+    runs-on: ${{ fromJSON(vars.ORBIT_PROOF_RUNNER || '["self-hosted","hardimpact","orbit-shard"]') }}
+    timeout-minutes: 45
+    # One group for the pull request, shared with the job `unlabel`: a new push cancels the proof run of the previous head.
+    # A new label cancels a running `unlabel`; that is harmless, because the Gateway checks the approval per commit. ci.yml uses the same
+    # group name for a pull request from a branch of this repository; one pull request is never both.
+    concurrency:
+      group: proof-run-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # In `pull_request_target`, `github.sha` is the tip of the base branch, never a commit of the fork.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: bin/ci-proof-run
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Run orbit proof:run on the pull request head
+        env:
+          PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -I bin/ci-proof-run
+
+  # A push moves the head, and the approval belongs to the old head. The label goes with it, so the new head needs an approval and the label again.
+  # Removing a label that is not there changes nothing. The job takes the group of the proof run, so it also cancels the proof run of the old head.
+  unlabel:
+    name: Remove the label from a new head
+    if: >-
+      github.event.action == 'synchronize'
+      && github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-26.04
+    permissions:
+      pull-requests: write
+    concurrency:
+      group: proof-run-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Remove run-proofs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PULL_REQUEST" --remove-label run-proofs

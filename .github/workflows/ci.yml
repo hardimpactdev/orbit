@@ -359,8 +359,8 @@ jobs:
     name: Proof run (report-only)
     needs: changes
     # Only a pull request from a branch of this repository. A fork or outside PR needs a maintainer's review and
-    # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job. There is no queue run, and no
-    # run after the merge: the proof tests the PR head once per push.
+    # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job: the workflow proof-outside.yml
+    # runs its proof. There is no queue run, and no run after the merge: the proof tests the PR head once per push.
     if: >-
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
