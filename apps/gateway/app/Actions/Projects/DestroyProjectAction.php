@@ -14,7 +14,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Models\Project;
 use App\Models\TaskVm;
 use Illuminate\Container\Attributes\Tag;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 final readonly class DestroyProjectAction
