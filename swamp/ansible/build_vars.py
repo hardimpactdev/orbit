@@ -5,7 +5,7 @@ import shlex
 import sys
 from pathlib import Path
 
-TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build', 'task_vm.upcloud_image_build')
+TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build', 'task_vm.upcloud_image_build', 'task_vm.runtime')
 
 
 def unsafe(value):
@@ -28,7 +28,8 @@ def build_task_vm(folder, kind):
     """The inventory, known hosts and variables of the task VM role. A builder behind its host is reached through a jump."""
     folder = Path(folder)
     intent = json.loads((folder / 'intent.json').read_text())
-    ssh = intent['ssh']
+    # The runtime intent names its connection ssh_execution; the other task VM intents name it ssh.
+    ssh = intent['ssh_execution' if kind == 'task_vm.runtime' else 'ssh']
     target = dict(ssh['target'])
     # A guest of an Incus host has no address or host key when the Gateway admits the run; the run reads both from the host.
     if os.environ.get('ORBIT_TARGET_HOST'):

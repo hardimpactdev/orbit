@@ -154,7 +154,7 @@ Deno.test("destroy forgets only the guest's address", async () => {
     );
 });
 
-Deno.test("runtime and resume probe the captured Pi bind address with a header-file bearer", async () => {
+Deno.test("resume probes the captured Pi bind address with a header-file bearer", async () => {
     const seen: [string, string | null][] = [];
     const server = Deno.serve({
         hostname: "127.0.0.2",
@@ -174,26 +174,6 @@ Deno.test("runtime and resume probe the captured Pi bind address with a header-f
         await Deno.writeTextFile(token, secret);
         const url = `http://127.0.0.2:${server.addr.port}`;
         const env = { ...Deno.env.toObject(), no_proxy: "*", NO_PROXY: "*" };
-        const probe = trackedStep("task-vm-runtime", "Probe the Pi server").task
-            .inputs.argv as string[];
-        for (
-            const [suffix, expected] of [["", 0], ["/unavailable", 22]] as const
-        ) {
-            const command = [
-                ...probe.slice(0, -1).map((arg) =>
-                    arg.replaceAll("/home/orbit/.pi/agent/orbit-token", token)
-                ),
-                url + suffix,
-            ];
-            const result = await run(command, { env });
-            assertEquals(result.code, expected, result.stderr);
-            // The bearer reaches curl as a header file, never as an argument.
-            assert(
-                !(command.join(" ") + result.stdout + result.stderr).includes(
-                    secret,
-                ),
-            );
-        }
         const read = trackedStep(
             "operation-task-vm-resume",
             "Read the guest state",
@@ -215,7 +195,7 @@ Deno.test("runtime and resume probe the captured Pi bind address with a header-f
             assertEquals(result.code, expected, result.stderr);
             assert(!(result.stdout + result.stderr).includes(secret));
         }
-        assertEquals(seen.length, 4);
+        assertEquals(seen.length, 2);
         assert(seen.every(([, auth]) => auth === `Bearer ${secret}`));
     } finally {
         await server.shutdown();

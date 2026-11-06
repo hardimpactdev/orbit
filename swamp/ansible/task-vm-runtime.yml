@@ -1,0 +1,122 @@
+---
+# The Pi runtime of one task VM: the pinned build, the Orbit root, the Pi credentials and the Pi service.
+# One tagged part per Swamp phase: `install`, then `check`. The VM is reached with the pinned host key of its intent.
+# `pi_path` is the build that the run staged on the Swamp Node. The two credentials come from the environment, never from argv.
+- name: Task VM runtime
+  hosts: task_vm
+  become: true
+  gather_facts: false
+  # A task that fails after a file changed still runs the handlers it queued; the next run sees no change and would not.
+  force_handlers: true
+  vars:
+    orbit_user: orbit
+    pi_home: /home/orbit/.pi
+    pi_server: /home/orbit/.local/bin/pi-server
+    service: "{{ intent.runtime.process }}"
+    pi_models: "{{ lookup('ansible.builtin.env', 'ORBIT_PI_MODELS') }}"
+    pi_token: "{{ lookup('ansible.builtin.env', 'ORBIT_PI_TOKEN') }}"
+  handlers:
+    - name: Update the CA store
+      ansible.builtin.command: timeout 45 update-ca-certificates
+      changed_when: true
+    - name: Restart the Pi server
+      ansible.builtin.systemd:
+        name: "{{ service.unit_name }}"
+        state: restarted
+        daemon_reload: true
+  tasks:
+    - name: Install
+      tags: [install]
+      block:
+        - name: Create the Pi folders
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: "{{ orbit_user }}"
+            group: "{{ orbit_user }}"
+            mode: "{{ item_mode }}"
+          loop: "{{ ['/home/orbit/.local', '/home/orbit/.local/bin', pi_home, pi_home + '/agent'] }}"
+          vars:
+            item_mode: "{{ '0700' if item.startswith(pi_home) else '0755' }}"
+        - name: Copy the Pi build
+          ansible.builtin.copy:
+            src: "{{ pi_path }}"
+            dest: "{{ pi_server }}"
+            owner: "{{ orbit_user }}"
+            group: "{{ orbit_user }}"
+            mode: "0755"
+            # The pin is checked on the staged file; a build that differs never replaces the installed one.
+            validate: "/bin/sh -c 'echo \"{{ intent.pi_artifact.sha256 }}  $0\" | sha256sum -c --quiet' %s"
+          notify: Restart the Pi server
+        - name: Trust the Orbit root
+          ansible.builtin.copy:
+            content: "{{ intent.certificate }}"
+            dest: /usr/local/share/ca-certificates/orbit-root.crt
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Update the CA store
+        - name: Add the Orbit root to the CA store when it is missing there
+          ansible.builtin.command:
+            cmd: timeout 45 update-ca-certificates
+            creates: /etc/ssl/certs/orbit-root.pem
+        - name: Write the Pi models
+          no_log: true
+          ansible.builtin.copy:
+            content: "{{ pi_models }}"
+            dest: "{{ pi_home }}/agent/models.json"
+            owner: "{{ orbit_user }}"
+            group: "{{ orbit_user }}"
+            mode: "0600"
+          notify: Restart the Pi server
+        - name: Write the Pi token
+          no_log: true
+          ansible.builtin.copy:
+            content: "{{ pi_token }}"
+            dest: "{{ pi_home }}/agent/orbit-token"
+            owner: "{{ orbit_user }}"
+            group: "{{ orbit_user }}"
+            mode: "0600"
+          notify: Restart the Pi server
+        - name: Install the Pi service
+          ansible.builtin.copy:
+            content: "{{ intent.process_unit }}"
+            dest: "{{ service.unit_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Restart the Pi server
+        - name: Run the handlers that the files asked for
+          ansible.builtin.meta: flush_handlers
+        - name: Enable and start the Pi service
+          ansible.builtin.systemd:
+            name: "{{ service.unit_name }}"
+            enabled: true
+            state: started
+
+    - name: Check
+      tags: [check]
+      block:
+        - name: Read the Pi service
+          ansible.builtin.systemd:
+            name: "{{ service.unit_name }}"
+          register: pi_service
+        - name: Check that the Pi service is active
+          ansible.builtin.assert:
+            that: pi_service.status.ActiveState == 'active'
+            fail_msg: The Pi service is not active.
+            quiet: true
+        - name: Probe the Pi server
+          no_log: true
+          ansible.builtin.uri:
+            url: "{{ intent.pi_url }}/capabilities"
+            headers:
+              Authorization: "Bearer {{ pi_token }}"
+            timeout: 10
+          failed_when: false
+          register: pi_probe
+        - name: Check that the Pi server answers
+          ansible.builtin.assert:
+            that: pi_probe.status == 200
+            fail_msg: "The Pi server answered {{ pi_probe.status | default('nothing') }} to /capabilities."
+            quiet: true
