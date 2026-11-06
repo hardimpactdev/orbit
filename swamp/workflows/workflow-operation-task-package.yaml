@@ -15,7 +15,10 @@ inputs:
     kind: {type: string, const: tasks.package}
     intent:
       type: object
-  required: [operation_id, node_id, kind, intent]
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: package

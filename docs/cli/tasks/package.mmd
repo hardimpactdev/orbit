@@ -42,9 +42,12 @@ sequenceDiagram
   %%> What it does:
   %%> - one official `@swamp/ssh exec` argument list in the checkout: `composer require --no-scripts` or `npm install --ignore-scripts`, with the package after `--`
   %%> - the package manager updates `composer.json` and its lock file, or `package.json` and its lock file, in the workspace; nothing is committed
-  SW->>VM: Remove the dependency auth
+  SW->>VM: Remove the dependency auth<br/>then revoke the token
   %%> When:
   %%> - always, after the install, on success and on failure; a failed removal fails the run
+  %%> What it does:
+  %%> - the shared child workflow deletes both files, then revokes the token (`DELETE installation/token`) so a command that echoed it holds a dead token
+  %%> - a failed revoke does not fail the run; the token expires within the hour
   Note over SW: Confirm the package<br/>install and removal succeeded
   alt the install and the removal passed
     SW-->>GW: Run succeeded<br/>terminal event

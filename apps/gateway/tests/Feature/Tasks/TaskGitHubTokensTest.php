@@ -184,11 +184,11 @@ it('writes the Composer and npm configuration of the setup steps from one read t
 it('writes the same configuration for a package install, whose intent holds the key names itself', function (): void {
     $socket = tokenWorld();
     [$operation] = cloneOperation('tasks.package');
-    $references = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9']];
+    $references = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-9']];
     $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => $references]])->save();
 
     expect(app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies'))->toEqual($references)
-        ->and(array_column(tokenPuts($socket), 1))->toBe(['task-provision-deps-composer-9', 'task-provision-deps-npm-9']);
+        ->and(array_column(tokenPuts($socket), 1))->toBe(['task-provision-deps-composer-9', 'task-provision-deps-npm-9', 'task-provision-deps-token-9']);
 });
 
 it('refuses a package install every purpose but dependencies', function (string $purpose): void {
