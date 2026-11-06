@@ -6,7 +6,7 @@ description: "Apply the review of the owner to a parked prep group and push the 
 
 Apply the review of the owner to the spec of a parked prep group. The group resumes, its author applies the corrections as a new commit, the runner plan and two review rounds check them, and Swamp pushes them to the same draft pull request. Then the group parks again. This is the "Apply the corrections" step of [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep). See [Apply the corrections](/reference/tasks#apply-the-corrections).
 
-There is no `orbit` command yet. Use the API or the MCP tool `tasks-prep-fix`.
+There is no `orbit` command yet. Use the API or the MCP tool `tasks-prep-fix`. You do not need to: the gate check calls it every minute when the owner's latest review requests changes on the current head of the draft pull request, with the review text and the inline comments as `corrections`.
 
 ```bash
 curl -X POST "$GATEWAY/api/v1/task-groups/42/prep-fix" \

@@ -125,6 +125,16 @@ sequenceDiagram
       %%> - Nick approves the spec; the chart is then marked `%% status: reviewed`
       %%> Why:
       %%> - a wrong spec is cheapest to fix before code follows it
+      GW->>GH: Read the reviews<br/>gate check · every minute
+      %%> What it does:
+      %%> - the gate check of stage 4 reads the reviews of a draft PR whose group has a succeeded prep run, a parked VM and a build that has not started, when the owner has not approved the head, with a read-only App token; a group that is coding, or whose automatic mode parked nothing, is not read
+      %%> - Nick's latest decision on exactly this head, a request for changes, is the request for corrections; his review text and his inline comments are the corrections
+      %%> - a comment, an approval, a dismissed review, a review of an older head or no review is a quiet skip until the next tick
+      %%> Why:
+      %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the review
+      GW->>SW: Admit the corrections<br/>tasks:prep-fix
+      %%> What it does:
+      %%> - admits `tasks:prep-fix` for the group with the review as the corrections, keyed by group and review, so a repeat tick starts nothing and each new review starts one run
       SW->>VM: Apply the corrections<br/>author agent
       %%> When:
       %%> - only when Nick asks for corrections
@@ -133,8 +143,12 @@ sequenceDiagram
       %%> - the group then parks again
       %%> Built or not:
       %%> - built: `tasks:prep-fix`, with the review of the owner as its input (`docs/cli/tasks/prep-fix.mmd`)
-      %%> - not built: the gate check does not detect a review that asks for corrections; it detects the approval, which starts the build (below)
+      %%> - built: the gate check admits this run when the owner requests changes on the current head of a spec whose build has not started; it detects the approval too, which starts the build (below)
       %%> Decided by the orchestrator, for Nick's review:
+      %%> - only a request for changes on the current head starts corrections; a comment review does not, because it may be a note and not a request
+      %%> - the corrections are the review text and the inline comments of the owner, cut at the 40,000 characters that `tasks:prep-fix` takes, with a note when they were cut; a review with no text points to the review
+      %%> - a run that failed is not started again by the next tick: the same review replays the failed run and the gate reports `tasks_pr.prep_fix_failed`; a new review of the owner starts a new run
+      %%> - the gate reads reviews only while the VM is parked, and a failed run leaves the VM running, so `tasks_pr.prep_fix_failed` shows only when the VM was parked again; otherwise the orchestrator reads the failed Operation and parks the VM
       %%> - the run is admitted with the review as text, so a decision made after the review can go with it; two review rounds follow the corrections
     end
   else automatic mode
