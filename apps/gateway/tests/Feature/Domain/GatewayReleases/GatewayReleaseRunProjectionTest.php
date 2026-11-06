@@ -3,7 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmSlotSetting;
 use App\Jobs\Fleet\AdmitFleetRollout;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -63,4 +68,17 @@ it('queues the fleet rollout admission after a verified release only', function 
     GatewayRelease::query()->delete();
     endReleaseRun('succeeded');
     Queue::assertPushed(AdmitFleetRollout::class, 1);
+});
+
+it('runs the refill rule of every host with a slot pool after a verified release, which may change the agent pin', function (): void {
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 1, '10.44.0.128/25', [
+        new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB', slots: new TaskVmSlotSetting(2, 66, TaskVmSize::Normal)),
+        new TaskVmHost(13, 'orbit-tasks', 'orbittask0', '10.252.8.0/24', 6, 4, '8GiB', '20GiB'),
+    ], 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+    Queue::fake();
+
+    endReleaseRun('succeeded');
+
+    Queue::assertPushed(RefillTaskVmSlots::class, 1);
+    Queue::assertPushed(RefillTaskVmSlots::class, fn (RefillTaskVmSlots $job): bool => $job->hostNodeId === 9);
 });

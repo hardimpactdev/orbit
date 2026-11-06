@@ -10,6 +10,7 @@ use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
@@ -54,6 +55,7 @@ final readonly class TaskVmSlotPool
         private RecipeImageBuilds $recipes,
         private SwampSshExecutionInput $ssh,
         private TaskVmFleetSeed $seeds,
+        private AgentDelivery $agents,
     ) {}
 
     /** Runs the refill rule of the host; returns the Operation it started, or null when the pool needs nothing now. */
@@ -181,6 +183,14 @@ final readonly class TaskVmSlotPool
     }
 
     /** The succeeded enrol of a slot, whose intent and receipt its claim reuses. */
+    /** Whether the slot's enrol installed another agent than the current pin: a release changed the pin since. */
+    private function otherAgent(TaskVm $vm): bool
+    {
+        $installed = $this->enrolOf($vm)?->input['agent_sha256'] ?? null;
+
+        return is_string($installed) && $vm->node instanceof Node && $installed !== $this->agents->pin($vm->node);
+    }
+
     private function enrolOf(TaskVm $vm): ?Operation
     {
         return Operation::query()->where('kind', self::EnrolKind)->where('target_type', 'task_vm')->where('target_id', $vm->id)
@@ -198,7 +208,7 @@ final readonly class TaskVmSlotPool
     {
         return $setting === null || $vm->slot_project_id !== $setting->projectId || $vm->size !== $setting->size
             || ($current !== null && $vm->image_build_id !== $current['build_id'])
-            || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours));
+            || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours)) || $this->otherAgent($vm);
     }
 
     /**

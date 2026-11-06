@@ -13,12 +13,14 @@ use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\Fleet\AdmitFleetRollout;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
@@ -152,6 +154,12 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
                 } catch (Throwable $failure) {
                     // The daily window trigger asks again; a release is never held by it.
                     Log::warning('The fleet rollout after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
+                }
+                // A release may change the agent pin: the pool of each host replaces slots that hold another agent.
+                foreach (app(TaskVmSettings::class)->hosts as $host) {
+                    if ($host->slots !== null) {
+                        RefillTaskVmSlots::dispatchFor($host->nodeId);
+                    }
                 }
             });
         }
