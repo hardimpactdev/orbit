@@ -66,6 +66,12 @@ sequenceDiagram
     %%> - `incus snapshot create --stateful --reuse base` on the three nested VMs at once; `--reuse` replaces the old `base`
     %%> - the VMs keep running; their clocks lose about 1 s while memory is saved, which the normal time sync corrects
     %%> - `base` holds the proof Swamp Club key, on the nested Gateway's disk and in its Swamp serve's memory; accepted because `base` belongs to one task, never leaves its task VM and is destroyed with it; ready copies stay key-free
+    %%> Built:
+    %%> - the Swamp workflow `proof-fleet-verify` takes it, after the re-mint and before the first batch: one step with `forEach` over the three roles, guarded by the same token age as the re-mint, so it is skipped when nothing was re-minted
+    %%> - the converge of the nested Nodes is not built (stage 2); it joins the condition of this step when it lands
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - a readiness check runs first, with the child `task-nested-ready` that the provision runs before its first `base` (agents online, Doctor healthy), under the same condition; the apply of the re-mint has just restarted the services, and every batch restores what this step keeps; the check adds about 7 s (measured 6 s median) to the 19 s below
+    %%> - the first batch then starts from the new `base` without a restore, because the fleet is still at it
     %%> Time, measured on tvm-554:
     %%> - about 19 s; the Gateway's 660 MB memory state sets it (app-dev 12 s, app-prod 7 s)
     %%> Why:
