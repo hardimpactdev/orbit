@@ -90,6 +90,7 @@ sequenceDiagram
     %%> - on the throwaway VM of the boot check, after its check phase, the run enrolls the guest with the same bootstrap steps as an enrollment (account, key, sudoers file, observer install and verify), then converges it to the pins with the phases `software`, `tools` and `check`
     %%> - the bootstrap steps are one child workflow, `task-vm-bootstrap`, which `task-vm-enrollment` calls too, so the check and a real enrollment cannot drift apart
     %%> - the promotion waits for both steps; a candidate that cannot be enrolled or converged promotes nothing
+    %%> Built: the steps `Enroll the check VM` (the child `task-vm-bootstrap`, which `task-vm-enrollment` calls too) and `Converge the check VM` (the child `task-vm-image-ansible`, phases `software`, `tools` and `check`), after the identity check and before the seed copy
     %%> Not covered:
     %%> - the WireGuard peer, the observer start and the nested fleet: they need a Gateway-admitted Node, so the next provision is their check
     SW->>H: Boot-check, promote<br/>under the host lock
