@@ -25,6 +25,7 @@ use App\Models\Project;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 
 uses(LazilyRefreshDatabase::class);
@@ -230,4 +231,8 @@ it('reads the slots setting from a node update body', function (): void {
     $settings = app(NodeSettingsParser::class)->parseComplete((object) ['task_vms' => $body]);
 
     expect($settings?->task_vms?->slots)->toBe(['count' => 5, 'project_id' => 46, 'size' => 'large']);
+});
+
+it('registers the operator command that runs the refill rule', function (): void {
+    expect(array_keys(Artisan::all()))->toContain('task-vms:fill-slots');
 });
