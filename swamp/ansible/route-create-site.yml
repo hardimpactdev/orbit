@@ -48,9 +48,11 @@
     - name: Grant Caddy access to the served roots
       ansible.builtin.command:
         argv: "{{ ['timeout', '120'] + item.argv }}"
+      register: acl
       loop: "{{ intent.acl | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.argv | join(' ') | truncate(100) }}"
+        break_when: acl is failed
       changed_when: true
     - name: Link the shared environment files
       ansible.builtin.file:
@@ -59,6 +61,7 @@
         owner: "{{ item.owner }}"
         state: link
         force: true
+        follow: false
       loop: "{{ intent.links | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.path }}"
@@ -81,12 +84,12 @@
       changed_when: false
     # A reload keeps open requests.
     - name: Reload PHP-FPM
-      ansible.builtin.systemd_service:
-        name: "{{ item.unit }}"
-        state: reloaded
+      ansible.builtin.command:
+        argv: [timeout, "30", systemctl, reload, "{{ item.unit }}"]
       loop: "{{ intent.php_reloads | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.unit }}"
+      changed_when: true
     # The signed leaf beside its key, root:caddy 0644; current points at the new version, which the Caddy site names.
     - name: Write the signed certificate
       ansible.builtin.copy:
@@ -106,6 +109,7 @@
         owner: root
         state: link
         force: true
+        follow: false
       loop: "{{ intent.leaf_indexes | default([]) }}"
       loop_control:
         label: "{{ intent.leaves[item | int].scope }}"
@@ -129,6 +133,7 @@
         owner: "{{ intent.leaves[item | int].user }}"
         state: link
         force: true
+        follow: false
       loop: "{{ intent.leaf_indexes | default([]) }}"
       loop_control:
         label: "{{ intent.leaves[item | int].scope }}"
@@ -167,9 +172,9 @@
             argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
           changed_when: false
         - name: Reload Caddy
-          ansible.builtin.systemd_service:
-            name: caddy
-            state: reloaded
+          ansible.builtin.command:
+            argv: [timeout, "60", systemctl, reload, caddy]
+          changed_when: true
     # One APP_URL line per served directory; the .env keeps its owner and mode, and a missing one fails the step.
     - name: Set APP_URL
       ansible.builtin.lineinfile:
@@ -200,7 +205,10 @@
         label: "{{ item.path }}"
     - name: Keep the awake state
       ansible.builtin.assert:
-        that: awake_markers.results | map(attribute='stat.exists') | list is all
+        that:
+          - awake_markers.results | map(attribute='stat.exists') | list is all
+          - awake_markers.results | map(attribute='stat.pw_name') | unique | list in [['root'], []]
+          - awake_markers.results | map(attribute='stat.mode') | unique | list in [['0644'], []]
         quiet: true
         fail_msg: instance.awake_marker_failed
       when: awake_markers.results is defined
