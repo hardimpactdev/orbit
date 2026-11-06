@@ -619,31 +619,44 @@ pub async fn watch_workspaces(
     list_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     check_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_error: Option<String> = None;
+    let mut retry = crate::facts::RetryTimer::default();
     loop {
-        tokio::select! {
+        // A watch list the Gateway did not answer is asked for again within seconds, not at the next list tick.
+        let listing = tokio::select! {
             biased;
-            _ = list_tick.tick() => match fetch_watch_list(&client, &gateway).await {
-                Ok((entries, listed)) => {
-                    last_error = None;
-                    facts.send_if_modified(|current| {
-                        let changed = *current != listed;
-                        *current = listed;
-                        changed
-                    });
-                    if apply_watch_list(&mut watched, &shared, entries) {
-                        check_pass(&mut watched, &shared, &tx, false).await;
-                        let _ = tx.send(WorkspaceUpdate::List);
-                    }
-                }
-                Err(error) => {
-                    let error = error.to_string();
-                    if last_error.as_ref() != Some(&error) {
-                        eprintln!("orbit-agent: task workspace list failed: {error}");
-                        last_error = Some(error);
-                    }
-                }
+            _ = list_tick.tick() => true,
+            () = retry.due() => {
+                retry.fired();
+                true
             },
-            _ = check_tick.tick() => check_pass(&mut watched, &shared, &tx, true).await,
+            _ = check_tick.tick() => false,
+        };
+        if !listing {
+            check_pass(&mut watched, &shared, &tx, true).await;
+            continue;
+        }
+        match fetch_watch_list(&client, &gateway).await {
+            Ok((entries, listed)) => {
+                last_error = None;
+                retry.update(false);
+                facts.send_if_modified(|current| {
+                    let changed = *current != listed;
+                    *current = listed;
+                    changed
+                });
+                if apply_watch_list(&mut watched, &shared, entries) {
+                    check_pass(&mut watched, &shared, &tx, false).await;
+                    let _ = tx.send(WorkspaceUpdate::List);
+                }
+            }
+            Err(error) => {
+                retry.update(true);
+                let error = error.to_string();
+                if last_error.as_ref() != Some(&error) {
+                    eprintln!("orbit-agent: task workspace list failed: {error}");
+                    last_error = Some(error);
+                }
+            }
         }
     }
 }
