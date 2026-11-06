@@ -125,7 +125,7 @@ A new Linux machine needs only root SSH access with the Gateway bootstrap key. E
 
 The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key for the bootstrap and managed accounts. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
 
-The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. The Gateway release that produces this key must be live before the workflow consumer is released. Swamp loads before the Gateway switches, so a consumer in the producer release would reject enrollment admitted during that window.
+The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. The Gateway release that produces this key must be live before the workflow consumer is released. Swamp loads before the Gateway switches, so a consumer in the producer release would reject enrollment admitted during that window. A release whose load or hand-over fails loads the previous commit back, so the window ends with the failed release ([Gateway recovery](/reference/gateway-recovery#release-as-a-swamp-run)).
 
 The Gateway picks the bootstrap user from the Node record, unless the request names one.
 
@@ -866,6 +866,8 @@ The role's Ansible end check determines completion. The Gateway marks the same a
 ### Role Ansible phases
 
 `node:role:add` and its role-converge run use one Swamp step per Ansible phase: prerequisites, Node resources, publications, firewall, exporters, Prometheus and check. Each phase applies the admitted state and is safe to run from the start. Tool Manager setup, certificate signing, Analytics initialization and Swamp bootstrap keep their native steps.
+
+The Gateway release uses the same shape in its own playbook, `operation-gateway-release.yml`: fetch, build, web, snapshot, drain, switch, verify and prune, one Swamp step each ([Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run)).
 
 Firewall convergence compares each owned rule's shape and position. It removes a changed isolation pair by descending rule index, including duplicate rows with the same owned comment, then inserts the specific allow before its deny and broad peer trust. Unrelated rules stay in place.
 

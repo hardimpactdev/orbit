@@ -100,9 +100,9 @@ The Gateway reads the current link and the release inventory itself, as the Gate
 
 | Path | Content |
 | --- | --- |
-| `/home/orbit/releases/<id>/` | One release: a linked Git worktree of one commit, with its own `vendor/` for `apps/cli` and `apps/gateway`, and a `REVISION` file. `<id>` is the first 12 hex digits of the commit. |
+| `/home/orbit/releases/<id>/` | One release: a clone of one commit, with its own `vendor/` for `apps/cli` and `apps/gateway`, and a `REVISION` file. `<id>` is the first 12 hex digits of the commit. |
 | `/home/orbit/orbit` | A link to the current release. `PATH`, systemd units, the PHP-FPM `chdir`, and the Caddy root keep using this path. |
-| `/home/orbit/shared/orbit.git` | The bare repository every release is a worktree of. Its `origin` is the Orbit repository. |
+| `/home/orbit/shared/orbit.git` | The bare repository every release is cloned from. Its `origin` is the Orbit repository. |
 | `/home/orbit/shared/gateway.env` | The one Gateway env file. `apps/gateway/.env` in every release links to it. |
 | `/home/orbit/shared/gateway-storage/` | The Gateway storage directory. `apps/gateway/storage` in every release links to it, so the file cache, its locks, and the logs stay the same across releases. |
 | `ORBIT_HOME` | Gateway state, outside every release, as before. |
@@ -117,27 +117,35 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 The Gateway admits the run. It needs the full commit and no other queued or running release. It verifies the commit's [agent pin](#build-and-seal-a-release) and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
 
-The long steps run script files from `swamp/scripts/`, which `bin/swamp-shape-gate` lints with shellcheck. Every script comes from the commit being released, so a release never runs the scripts of another. The build step pipes its script out of the fetched commit in `shared/orbit.git`. The web and snapshot steps run theirs from the sealed release, `/home/orbit/releases/<id>/swamp/scripts/`, and so does the activate child. A Swamp-run release or rollback of a commit from before these scripts fails at the build with `gateway.release_script_missing`: switch to such a release with `bin/gateway-rollback`.
+Each phase of the release is one Swamp step that runs one tagged part of the `operation-gateway-release.yml` playbook against the Gateway Node, the way [node:role:add](/cli/node/role-add) runs its phases. The playbook ships with the Swamp definitions on Node 209, so no script file is copied to the Gateway Node or read from a release.
+
+The run first writes its intent, the read token and the pinned host key of the Gateway Node into a private run folder on Node 209, and removes the folder after every end of the run. A phase that refuses prints its `gateway.release_*` code on stderr, where the Gateway reads it.
 
 The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
 
 | Step | What it does |
 | --- | --- |
-| Fetch the commit | Fetches the commit into `shared/orbit.git` when it is missing. The read token reaches git only in its environment. |
-| Build the release | Refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
+| Build the release | Fetches the commit when it is missing, refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
 | Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
 | Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
 | Migrate | Runs `artisan migrate --force --isolated` from the new release. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
 | Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
+| Render the previous grants, Restore Swamp on Node 209 | Run only after a failed load or hand-over, in this order: the previous release renders its own grants, and the load workflow checks out its commit again. |
 
-The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
+The build clones the fetched commit from `shared/orbit.git` with `ansible.builtin.git`, links the shared env and storage, installs the Composer dependencies with `community.general.composer`, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
+
+Swamp and the Gateway switch together. A failed load or hand-over would leave Swamp on the new commit while the Gateway runs the old release, and a workflow could expect an intent field the old Gateway does not send. The two restore steps load the previous commit back, and a restore that fails never replaces the release failure. Nothing else moves the checkout on Node 209: there is no timer, watch or hook on merge. The restore works from the release after the one that ships it, because the run uses the definitions of the release it replaces.
 
 The activate child drains Horizon before the switch. The Horizon unit carries the stop policy ([Horizon](/reference/gateway-queue#horizon)), so `systemctl stop` waits until the unit's whole control group is empty, as long as the drain allows. The step refuses a unit without the policy: update the Horizon Process first. A process that a job leaves behind holds the stop; for this reason a command that runs inside Horizon opens its own [SSH connection](/reference/node-provisioning#ssh-connections), and no shared connection master stays in the group.
 
-The child starts Horizon again as a step that runs after every end of the run, so a failed drain, a failed switch or a switch back leaves Horizon running. It then switches with the new release's own [rollback script](#roll-back-without-swamp), which switches both links, reloads PHP-FPM and restarts the running services under the application.
+The child starts Horizon again as a step that runs after every end of the run, after the check and not at the switch, so a failed drain, a failed switch or a switch back leaves Horizon running. It then switches both links with `ansible.builtin.file` (a temporary link and a rename, so the switch is atomic), reloads PHP-FPM and restarts the running services under the application.
 
-It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/caddy/orbit-cert-current/root-ca.pem`. The status must be `ok` and name the full commit or its 12-digit ID. It then resumes the release cleanups and prunes old releases. When the check fails, the same script from the new release switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
+It checks `/up` and the status version at `https://gateway.orbit`, using `/etc/caddy/orbit-cert-current/root-ca.pem`. The status must be `ok` and name the full commit or its 12-digit ID. It then resumes the release cleanups and prunes old releases, which also forgets the commit pins and worktree records of the releases it removes.
+
+A last best-effort step removes a Swamp start cache that is older than the Swamp binary on Node 209 and seeds it again as root.
+
+When the check fails, the same phase switches back to the previous release, and the cleanups resume on it. The switch-back then fails the run with `gateway.release_switched_back`, so the Gateway reads it. Migrations are expand and contract, so the previous release runs on the new schema.
 
 The scheduler restart pauses each release cleanup, such as Documents cleanup, under a new generation. The switch step reads the generations first with `gateway:release:cleanup`. After verify, `gateway:release:cleanup --before=<generations>` waits up to 30 seconds for the new ones, reconciles and resumes. A cleanup that cannot resume stays paused and fails only its own step; the release stays verified. Resume it with `project-documents:cleanup:reconcile` and `project-documents:cleanup:resume`.
 
@@ -173,7 +181,7 @@ Required checks invoke the Gateway renderer without deployment credentials and v
 
 Grant rendering stays in the Gateway; no Node script renders or publishes grants.
 
-The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
+The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load or hand-over loads the previous commit back; if that restore fails too, the checkout stays on the new commit, so fix forward and resume.
 
 Serve's reload re-reads each extension manifest's `additionalFiles` ([Lab #4282](https://swamp-club.com/lab/4282), fixed in Swamp `20261103.000636.0-sha.db3f6373`), so a newly shipped file reaches workers without a restart. The load never restarts serve or a worker.
 
@@ -186,7 +194,7 @@ Admission reads the target commit's pin from `apps/gateway/resources/agent/froze
 The Swamp build step fetches the full commit through the run's GitHub token. It checks ancestry and refuses a downgrade with `gateway.release_downgrade`, unless the run has `force=true`. It then:
 
 1. checks for free space equal to the database size plus 1 GiB;
-2. creates `releases/<id>` as a Git worktree of that commit;
+2. creates `releases/<id>` as a clone of that commit;
 3. links the shared env file and storage directory;
 4. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` in `apps/cli` and `apps/gateway`;
 5. writes the admitted agent manifest into `apps/agent/delivery/`;
@@ -310,7 +318,9 @@ sudo /home/orbit/orbit/bin/gateway-rollback <id>
 
 It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise.
 
-It reloads PHP-FPM, so every request runs the release and OPcache starts empty. Then it restarts each running service whose working directory is under the application, such as Horizon, the scheduler and agent-view. A stopped Process stays stopped, Horizon included: after a release run that ended before its Horizon start, run `orbit process:start` for it, or `systemctl start orbit-process-<id>-horizon.service` on the Gateway when Orbit does not answer. The release run switches forward with the same script. A restart of Horizon by the script waits for its running jobs, up to the drain.
+It reloads PHP-FPM, so every request runs the release and OPcache starts empty. Then it restarts each running service whose working directory is under the application, such as Horizon, the scheduler and agent-view. A stopped Process stays stopped, Horizon included: after a release run that ended before its Horizon start, run `orbit process:start` for it, or `systemctl start orbit-process-<id>-horizon.service` on the Gateway when Orbit does not answer. The release run does the same in its `switch` phase, as Ansible tasks. The script stays a script because the release survives a Swamp outage.
+
+A restart of Horizon by the script waits for its running jobs, up to the drain.
 
 It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, admit a release of the serving commit to load its workflows and record a verified release.
 
