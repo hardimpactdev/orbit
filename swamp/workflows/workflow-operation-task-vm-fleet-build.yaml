@@ -141,6 +141,29 @@ jobs:
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-push-the-swamp-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'file', 'push', '-', '${{ inputs.intent.fleet.guests.gateway + "/home/orbit/.config/swamp/api-key" }}', '--create-dirs', '--mode', '0600', '--uid', '1000', '--gid', '1000'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 50}}
     dependsOn: [{step: 'Read the Gateway host key', condition: {type: succeeded}}]
+  # The local run below needs the Swamp key on the operator VM. Only a proof VM gets one at provision, so the build places it from the same vault copy, on stdin, and removes it after the run.
+  # `install` makes the folder when it is missing, and cannot replace a file from stdin: a key an earlier run left goes first.
+  - name: 'Make the operator Swamp key folder'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-operator-swamp-key-folder").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-operator-swamp-key-folder").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'install', '-d', '-m', '0700', '/home/orbit/.config/swamp'], timeoutSec: 40}}
+    dependsOn: [{step: 'Push the Swamp key', condition: {type: succeeded}}]
+  - name: 'Drop an earlier operator Swamp key'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-drop-an-earlier-operator-swamp-key").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-drop-an-earlier-operator-swamp-key").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'rm', '-f', '--', '/home/orbit/.config/swamp/club-api-key'], timeoutSec: 40}}
+    dependsOn: [{step: 'Make the operator Swamp key folder', condition: {type: succeeded}}]
+  - name: 'Place the operator Swamp key'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-place-the-operator-swamp-key").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-place-the-operator-swamp-key").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'install', '-m', '0600', '/dev/stdin', '/home/orbit/.config/swamp/club-api-key'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 40}}
+    dependsOn: [{step: 'Drop an earlier operator Swamp key', condition: {type: succeeded}}]
   # One local run: its steps request no worker, so the Swamp binary of this VM runs them itself, over SSH on the machine. The Gateway sends everything it knows as the fragment of the input; the run adds the machine, its host key and the release.
   - name: 'Prepare the Gateway'
     labels: {role: swamp}
@@ -148,7 +171,15 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-prepare-the-gateway").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-prepare-the-gateway").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '1500', 'env', 'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/club-api-key', 'swamp', 'workflow', 'run', 'gateway-bootstrap', '--repo-dir', '${{ inputs.intent.operator_checkout + "/swamp" }}', '--input', '${{ "{\"intent\":{" + inputs.intent.bootstrap.fragment + ",\"ssh\":{\"host\":\"" + inputs.intent.fleet.layout["gateway"].address + "\",\"port\":22,\"user\":\"orbit\",\"identity_file\":\"/home/orbit/.ssh/id_ed25519\",\"host_keys\":[\"" + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[1] + " " + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[2] + "\"]},\"release\":{\"repository\":\"" + steps["Read the release address"].outputs.stdout.split("\n")[0] + "\",\"commit\":\"" + steps["Read the release commit"].outputs.stdout.split("\n")[0] + "\"}}}" }}'], timeoutSec: 1510}}
-    dependsOn: [{step: 'Push the Swamp key', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Place the operator Swamp key', condition: {type: succeeded}}]
+  # After the run, also after a failure: no Swamp key stays on the operator VM, where a task's agent may run. A cancelled run can leave it; the next build drops it.
+  - name: 'Remove the operator Swamp key'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-remove-the-operator-swamp-key").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-remove-the-operator-swamp-key").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'rm', '-f', '--', '/home/orbit/.config/swamp/club-api-key'], timeoutSec: 40}}
+    dependsOn: [{step: 'Prepare the Gateway', condition: {type: always}}]
 - name: fleet
   labels: {role: swamp}
   dependsOn: [{job: bootstrap, condition: {type: succeeded}}]

@@ -40,6 +40,7 @@ sequenceDiagram
   %%> - the release is a git checkout at the release commit: its `swamp/` folder is the Gateway's Swamp repository and holds the Ansible pins, and `apps/gateway` is its code
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - the Swamp key is not in this run: the shape gate allows a vault read for a file only in a step placed on 209, and a local run has no placement; the key reaches the machine with `incus file push`, read from a vault copy of the kind (the build is a placed run, so the vault read is allowed), so the local run holds no secret
+  %%> - the local run itself needs the key on the operator VM, and only a proof VM gets one at provision; so the build places it there from the same vault copy, on stdin, and removes it after the run, also after a failure, because a task's agent may run on that VM (decided by the orchestrator, for Nick's review, 2026-11-06)
   %%> - the Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database; the `gateway` role installs no PHP, so "converge itself, then `orbit:bootstrap`" cannot be the order
   %%> - so the same local run also applies the Ansible `prerequisites` phase of the role playbook with Ansible's local connection; the operator renders its intent from the recipe alone with `php artisan` (no database), so the machine gets its pinned PHP, Caddy and WireGuard packages
   NG->>NG: Converge itself<br/>gateway · websocket · swamp
