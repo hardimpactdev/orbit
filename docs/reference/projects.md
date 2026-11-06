@@ -240,9 +240,9 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 
 ## Maintenance
 
-The Gateway admits every maintenance step under its own key, such as `maintenance:<group>:<operation>:<kind>`, with `OperationIdempotency::under`. A repeated pass replays the recorded step and starts nothing.
-
 Three Swamp workflows on Node 209 keep a Project's dependencies current. [`project:maintenance:inspect`](/cli/project/maintenance-inspect) (kind `project.detect`) reads the manifests and lockfiles of the default branch through the GitHub App without a clone and compares them with the registries, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch.
+
+The Gateway admits each maintenance step under its own key, such as `maintenance:<group>:<operation>:<kind>`, `maintenance-finish:<group>:<publish operation>` or `native-maintenance:<key>`, with `OperationIdempotency::under`. A repeated pass replays the recorded step and starts nothing.
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 
