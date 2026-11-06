@@ -1296,7 +1296,9 @@ The recovery needs every instance in the pool to have its network and devices, a
 
 The fleet child creates the network only when the converge has not, and then checks that the network has the subnet that the copies store.
 
-The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. It makes an empty `.env` in the shared checkout as the mount point, from each guest. It starts the three bind mount units of the Gateway and of app-dev, which put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout. It runs the migrations of the checked-out code on the nested Gateway, restarts its queue worker, agent-view subscriber and Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
+The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. The containers start with the checkout already attached. At boot, the bind mount units of the copies put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout. systemd makes the mount point `.env` that the checkout lacks.
+
+The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail. The child then runs the migrations of the checked-out code on the nested Gateway. It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
 The behavior name of `Check the services` carries the index of the unit, not its name. Swamp opens an SSH control socket under `/tmp/swamp-ssh/<behavior name>`, and a path over 108 bytes cannot be a Unix socket.
 

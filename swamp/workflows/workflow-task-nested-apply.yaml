@@ -21,21 +21,12 @@ jobs:
 - name: apply
   labels: {role: swamp}
   steps:
-  # The state of the Gateway is bound over the shared checkout. Its `.env` is an ignored file, so the checkout needs an empty one as the mount point, made from each guest so that each sees it; the disk device shifts the orbit user of the guest to the orbit user of the task VM.
-  - name: 'Make the mount point'
+  # `.env`, `storage` and `bootstrap/cache` stay on each guest's own disk. The containers start with the checkout attached, so the units of the ready copies bind them at boot (systemd makes the missing mount point `.env`). This step checks each unit and starts none: in a container no udev confirms the device behind the checkout's mount, so a start job waits 90 s for it and fails.
+  - name: 'Check the state'
     labels: {role: swamp}
-    writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-make-the-mount-point" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-make-the-mount-point" + "-" + self.role).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh_execution.target.user }}', port: '${{ inputs.ssh_execution.target.port }}', identityFile: '${{ inputs.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.fleet.guests[self.role] }}', '--user', '1000', '--', 'touch', '/home/orbit/orbit/apps/gateway/.env'], timeoutSec: 130}}
-  # `.env`, `storage` and `bootstrap/cache` stay on each guest's own disk (mount units of the ready copies). Starting them by name works whether the boot has mounted them or not: the mount point `.env` may be made after the boot.
-  - name: 'Mount the state'
-    labels: {role: swamp}
-    writes: true
-    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.fleet.guests[self.role] }}', '--', 'systemctl', 'start', 'home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'], timeoutSec: 130}}
-    dependsOn: [{step: 'Make the mount point', condition: {type: succeeded}}]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-check-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-check-the-state" + "-" + self.role).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh_execution.target.user }}', port: '${{ inputs.ssh_execution.target.port }}', identityFile: '${{ inputs.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.ssh_execution.target.host_keys }}'}}]},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.fleet.guests[self.role] }}', '--', 'sh', '-c', 'for u; do systemctl is-active --quiet "$u" || { echo "$u is not active" >&2; exit 1; }; done', 'sh', 'home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'], timeoutSec: 40}}
   # A failed task writes its message to stderr, which the run records with the failed step.
   # The Swamp tokens of the nested Gateway are renewed from the mounted checkout, so the tokens of the ready copies never decide how long a fleet lives (play `remint` of `gateway-bootstrap.yml`, with the control plan the build left on the machine). Only a fleet that starts from ready copies needs it: a restore of `base` brings back tokens that were renewed before it.
   - name: 'Re-mint the Swamp tokens'
@@ -44,7 +35,7 @@ jobs:
     guard: '${{ !(has(inputs.remint) && inputs.remint) }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--', 'env', 'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true', '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'remint', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'], timeoutSec: 910}}
-    dependsOn: [{step: 'Mount the state', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Check the state', condition: {type: succeeded}}]
   # The ready copies hold an older database; the checked-out code owns the schema.
   - name: 'Migrate'
     labels: {role: swamp}
