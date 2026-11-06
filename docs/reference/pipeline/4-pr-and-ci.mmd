@@ -73,7 +73,7 @@ sequenceDiagram
     %%> What it does:
     %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
     %%> - a draft PR whose CI result is green on its head, and whose head has a passed handoff check (`tasks:check` handoff) of the group on exactly that commit: the Gateway admits the ready step below
-    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`tasks:prep-fix`), keyed by group and review
+    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`tasks:prep-fix`), keyed by group and review, while the VM is parked (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
     %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
     %%> - a PR out of draft in automatic mode, with no review round recorded for that head: the Gateway admits the review round below
     %%> - a PR out of draft in automatic mode, whose round on that exact head passed: the Gateway admits the merge step below

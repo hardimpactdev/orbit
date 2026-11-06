@@ -49,7 +49,7 @@ beforeEach(fn () => SwampNodeFixture::ensure());
 const GATE_HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 
 /** The Tasks extension on, the GitHub App stored, and a GitHub that serves one pull request and no check runs or reviews. */
-function gateWorld(GitHubPullRequest $pull, bool $reviewAndMerge = true, bool $green = false, TaskReviewMode $review = TaskReviewMode::Manual, array|Throwable $reviews = [], array $comments = []): Task
+function gateWorld(GitHubPullRequest $pull, bool $reviewAndMerge = true, bool $green = false, TaskReviewMode $review = TaskReviewMode::Manual, array|Throwable $reviews = [], array|Throwable $comments = []): Task
 {
     app(TaskExtensionState::class)->enable();
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'hardimpactdev', 'organization', 'https://github.com/apps/gate', 'unused'));
@@ -60,7 +60,7 @@ function gateWorld(GitHubPullRequest $pull, bool $reviewAndMerge = true, bool $g
         $github->shouldReceive('pullRequest')->andReturn($pull);
         $github->shouldReceive('checkRuns')->andReturn($green ? [new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: GATE_HEAD, appSlug: 'github-actions')] : []);
         $reviews instanceof Throwable ? $github->shouldReceive('reviews')->andThrow($reviews) : $github->shouldReceive('reviews')->andReturn($reviews);
-        $github->shouldReceive('reviewComments')->andReturn($comments);
+        $comments instanceof Throwable ? $github->shouldReceive('reviewComments')->andThrow($comments) : $github->shouldReceive('reviewComments')->andReturn($comments);
     }));
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.',
         'source_access' => 'github_app', 'merge_check' => 'Required checks', 'review_and_merge' => $reviewAndMerge]);
@@ -533,5 +533,14 @@ it('starts no corrections for a group whose build started: its later change requ
     Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null, 'status' => OperationStatus::Succeeded, 'input' => []]);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head'])
+        ->and(Operation::query()->where('kind', OperationKinds::TasksPrepFix)->count())->toBe(0);
+});
+
+it('skips quietly when the inline comments of the request cannot be read', function (): void {
+    config(['task_pull_requests.reviewer' => 'nick']);
+    $group = gateWorld(gatePull(true), reviews: [gateOwnerReview(31, GitHubReviewState::ChangesRequested)], comments: GitHubApiException::unavailable());
+    gatePrepped($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'prep-fix', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable'])
         ->and(Operation::query()->where('kind', OperationKinds::TasksPrepFix)->count())->toBe(0);
 });

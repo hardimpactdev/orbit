@@ -125,7 +125,7 @@ final readonly class RunTaskPullRequestGateAction
     /**
      * The spec of a prep group waits for its owner in a draft without a passed handoff check. His latest decision, a request for
      * changes on exactly this head, is the request for corrections, and his review text and inline comments are the corrections.
-     * Null when the group is no parked prep group or the owner asked for nothing, so the draft stays as it is and GitHub is not read.
+     * Null when the group is no parked prep group or the owner asked for nothing, so the draft stays as it is and no corrections are admitted.
      * The key holds the review, so a run that failed is not started again by the next tick: the replay reports it, and a new review starts a new run.
      *
      * @return Result|null
@@ -145,8 +145,6 @@ final readonly class RunTaskPullRequestGateAction
             report($exception);
 
             return $this->result($group, $number, 'prep-fix', 'skipped', 'tasks_pr.github_unreadable');
-        } catch (ResourceOperationException $exception) {
-            return $this->result($group, $number, 'prep-fix', 'skipped', $exception->errorCode);
         }
         if ($review === null) {
             return null;

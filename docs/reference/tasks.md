@@ -365,7 +365,7 @@ The Gateway projects the terminal event once. A succeeded run records the worksp
 
 Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, a parked task VM and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `tasks:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
 
-The admission is keyed by group and review, so a repeat tick starts nothing and each new review starts one run. A run that failed is not started again by the next tick: the gate reports `tasks_pr.prep_fix_failed` until the owner reviews again. A comment, an approval, a dismissed review or a review of an older head starts nothing.
+The admission is keyed by group and review, so a repeat tick starts nothing and each new review starts one run. A run that failed is not started again by the next tick: the gate reports `tasks_pr.prep_fix_failed` for that review once the VM is parked again. A failed run leaves the VM running, so until then the gate reads nothing for the group. A new review of the owner starts a new run. A comment, an approval, a dismissed review or a review of an older head starts nothing.
 
 The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
 
