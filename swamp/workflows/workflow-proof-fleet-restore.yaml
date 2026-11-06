@@ -1,7 +1,7 @@
 id: b86db038-a619-468c-9c35-d3d30673b762
 name: proof-fleet-restore
 description: >-
-  Put the nested fleet of a proof task VM back to its `base` snapshot and make it ready and current (stage 3 of the command development pipeline): a stateful restore of the three nested VMs, 45 seconds at most and no retry, the guest clocks, the readiness check, then the apply step. Each step is one command over official SSH to the task VM.
+  Put the nested fleet of a proof task VM back to its `base` snapshot and make it ready and current (stage 3 of the command development pipeline): a stateful restore of the three nested VMs, 45 seconds at most and no retry, the guest clocks, a restart of the task VM's NFS server, the readiness check, then the apply step. Each step is one command over official SSH to the task VM.
 vaults: []
 queueTimeout: 60
 inputs:

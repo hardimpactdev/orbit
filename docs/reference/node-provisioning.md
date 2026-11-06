@@ -426,7 +426,7 @@ A task VM is a Node with the `app-dev` role, and its software has its own Ansibl
 
 The wait for a nested fleet is not a phase of the role: it is the playbook `swamp/ansible/task-vm-fleet-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
 
-The role exports the checkout to the nested guests over NFS. A stateful restore of `base` brings back old connections of the guests, so the restore restarts the NFS server of the task VM before it checks readiness.
+The role exports the checkout to the nested guests over NFS; see [the restore of `base`](/reference/compute-drivers) for why a restore restarts that NFS server.
 
 On an image build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that an image build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
