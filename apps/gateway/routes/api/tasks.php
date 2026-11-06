@@ -66,6 +66,8 @@ Route::middleware([
         Route::post('proof/run', [ProofRunsController::class, 'store'])->name('proof:run');
         Route::post('task-groups/{group}/park', [TaskGroupsController::class, 'park'])
             ->whereNumber('group')->name('tasks:park');
+        Route::post('task-groups/{group}/sync', [TaskGroupsController::class, 'sync'])
+            ->whereNumber('group')->name('tasks:sync');
         Route::post('task-groups/{group}/prep', [TaskGroupsController::class, 'prep'])
             ->whereNumber('group')->name('tasks:prep');
         Route::post('task-groups/{group}/prep-fix', [TaskGroupsController::class, 'prepFix'])

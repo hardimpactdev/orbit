@@ -114,6 +114,10 @@ final class OperationRunBudgets
         // is minted when the push step starts, so the hour of an installation token does not limit this run.
         // Replace with the 14-day p95 after the first success.
         'tasks.prep_fix' => 2700,
+        // No run yet. Basis: a bare clone of one branch and a fetch of another (about 60 s for this repository), one bundle, one copy
+        // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
+        // 14-day p95 after the first success.
+        'tasks.sync' => 360,
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the

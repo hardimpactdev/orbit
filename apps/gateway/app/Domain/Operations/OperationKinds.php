@@ -46,6 +46,8 @@ final readonly class OperationKinds
 
     public const string TasksPrepFix = 'tasks.prep_fix';
 
+    public const string TasksSync = 'tasks.sync';
+
     public const string TasksPrReady = 'tasks.pr_ready';
 
     public const string TasksPrMerge = 'tasks.pr_merge';

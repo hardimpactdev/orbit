@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskPullRequestCommentProjection;
 use App\Domain\Tasks\TaskPullRequestMergeProjection;
 use App\Domain\Tasks\TaskPullRequestReadyProjection;
 use App\Domain\Tasks\TaskScriptProjection;
+use App\Domain\Tasks\TaskSyncProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
 $taskVmKinds = require __DIR__.'/../TaskVms/direct-operations.php';
@@ -84,6 +85,11 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             ]],
             'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
+        ], 'tasks.sync' => [
+            'workflow' => 'operation-task-sync', 'projection' => TaskSyncProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the sync', 'native' => true, 'captures' => ['refs' => ['job' => 'sync', 'step' => 'Read the refs', 'field' => 'stdout']]],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
         ], 'tasks.park' => [
             'workflow' => 'operation-task-park',
             'projection' => TaskParkProjection::class,

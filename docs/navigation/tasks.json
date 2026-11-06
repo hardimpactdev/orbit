@@ -44,7 +44,8 @@
             "cli/tasks/pr-merge",
             "cli/tasks/park",
             "cli/tasks/prep",
-            "cli/tasks/prep-fix"
+            "cli/tasks/prep-fix",
+            "cli/tasks/sync"
           ]
         }
       ]

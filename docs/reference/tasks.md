@@ -929,6 +929,14 @@ An assistance request records the question on the group and subtask. A resolutio
 
 Use the comment API, CLI or MCP to post a resolution. This changes assistance only. Swamp reads the answer before deciding how to continue.
 
+### Bring the workspace up to date
+
+`tasks:sync` starts `tasks.sync` through `POST /api/v1/task-groups/{group}/sync` with a required `Idempotency-Key` and no body. A task VM holds no GitHub credential, so the workspace cannot fetch. When origin moved, because the default branch was merged into the pull request branch or the owner pushed a correction, the push of the author would fail with `tasks.not_fast_forward`. The sync brings the commits in; the author merges or rebases them.
+
+The admission checks an open external group with its own task VM workspace and wakes a parked VM, as the other work admissions do. It captures the repository, the default branch, the branch `task-<group>`, the workspace path and the SSH target, and names the vault key of a read token. The run mints that token with `contents: read` when its first step runs.
+
+On Node 209 the run makes a bare clone of the default branch, fetches the task branch and writes one bundle of both. It copies the bundle to a private directory on the VM with official SSH, runs `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-<group>`, and reads the two commits. HEAD, the working tree and the local branches stay as they are. A clean up step removes both scratch directories on success and on failure. The result holds the two commits.
+
 ## Project check
 
 A `tasks.check` operation runs the Project's configured check. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.

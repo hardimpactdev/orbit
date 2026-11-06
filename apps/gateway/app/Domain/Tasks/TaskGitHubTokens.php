@@ -33,7 +33,7 @@ use Illuminate\Support\Str;
  * A task VM receives no token. The clone, the push and the pull request calls run on Node 209, and the VM gets the clone as a bundle.
  * The one exception is the `dependencies` purpose: its token files live on the VM while the setup steps run.
  *
- * - `clone` writes the Git authorization header of a read of the Project repository, or an empty value for a repository that needs none.
+ * - `clone` writes the Git authorization header of a read of the Project repository, or an empty value for a repository that needs none. A sync run asks for it as well.
  * - `dependencies` writes the Composer `auth.json` and the `.npmrc` of the setup steps: a read token of the installation, or an empty configuration,
  *   and the token alone for the step that revokes it.
  * - `publish` writes the write token for the pull request and its Git authorization header. An approved push of a cancel takes the token only.
@@ -134,6 +134,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         return match ($operation->kind) {
             'tasks.provision', 'tasks.package' => $operation->input,
             'tasks.prep', 'proof.command', 'task_vm.image_refresh' => ValidatedData::object($operation->input['provision'] ?? []),
+            'tasks.sync' => $operation->input,
             default => throw $this->forbidden(),
         };
     }
