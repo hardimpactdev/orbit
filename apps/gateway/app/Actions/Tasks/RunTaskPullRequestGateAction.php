@@ -11,6 +11,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
@@ -41,7 +42,7 @@ final readonly class RunTaskPullRequestGateAction
 {
     public const string Caller = 'gateway:pr-gate';
 
-    public function __construct(private StartTaskPullRequestStepAction $steps, private StartTaskReviewRoundAction $rounds, private RepositoryPullRequestAccess $access,
+    public function __construct(private StartTaskPullRequestStepAction $steps, private StartTaskReviewRoundAction $rounds, private StartTaskReviewFixAction $fixes, private RepositoryPullRequestAccess $access,
         private GitHubApi $github, private OperationIdempotency $idempotency) {}
 
     /** @return list<Result> */
@@ -117,7 +118,7 @@ final readonly class RunTaskPullRequestGateAction
             TaskReviewRoundVerdict::Pass => $this->merge($group, $number, $head, $request),
             TaskReviewRoundVerdict::Findings => $used >= TaskReviewRound::Limit
                 ? $this->fallBack($group, $number, $head, $request)
-                : $this->result($group, $number, 'review', 'skipped', 'tasks_pr.round_findings'),
+                : $this->fix($group, $number, $head, $round, $request),
             TaskReviewRoundVerdict::Failed => $this->fallBack($group, $number, $head, $request),
         };
     }
@@ -137,6 +138,36 @@ final readonly class RunTaskPullRequestGateAction
         $operation = Operation::query()->find($result['operation']);
 
         return $operation instanceof Operation && ! $operation->status->terminal() ? $this->result($group, $number, 'comment', 'skipped', 'tasks_pr.round_commenting', $operation->id) : null;
+    }
+
+    /**
+     * The fix after the findings of a round, one admission for each tick: the author turn, the handoff check, then the push.
+     * A step that failed, or a turn or check that did not end well, sends the group back to manual mode. After the push the
+     * head of the pull request moves, and the next tick admits the next round on the new head.
+     *
+     * @return Result
+     */
+    private function fix(Task $group, int $number, string $head, TaskReviewRound $round, string $request): array
+    {
+        $steps = [
+            ['fix-turn', OperationKinds::TasksTurn, 'fix_turn_operation_id', fn () => $this->fixes->turn($group, $round, self::Caller, $request), static fn (Operation $operation): bool => data_get($operation->result, 'receipt.outcome') === 'ready_for_review'],
+            ['fix-check', OperationKinds::TasksCheck, 'fix_check_operation_id', fn () => $this->fixes->check($group, $round, self::Caller, $request), static fn (Operation $operation): bool => data_get($operation->result, 'outcome') === 'passed'],
+            ['fix-publish', OperationKinds::TasksPublish, 'fix_publish_operation_id', fn () => $this->fixes->publish($group, $round, self::Caller, $request), static fn (): bool => true],
+        ];
+        foreach ($steps as [$step, $kind, $column, $start, $ended]) {
+            if ($round->{$column} === null) {
+                return $this->admit($group, $number, $step, $kind, $head, $start);
+            }
+            $operation = Operation::query()->find($round->{$column});
+            if (! $operation instanceof Operation || ! $operation->status->terminal()) {
+                return $this->result($group, $number, $step, 'skipped', 'tasks_pr.fix_running', $operation?->id);
+            }
+            if ($operation->status !== OperationStatus::Succeeded || ! $ended($operation)) {
+                return $this->fallBack($group, $number, $head, $request);
+            }
+        }
+
+        return $this->result($group, $number, 'fix-publish', 'skipped', 'tasks_pr.fix_pushed');
     }
 
     /**

@@ -139,7 +139,7 @@ it('admits no review round while the merge check has not passed on the head', fu
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['group' => $group->id, 'step' => 'review', 'code' => 'tasks_pr.checks_not_passed']);
 });
 
-it('waits for a round that runs and for findings that are not the third', function (): void {
+it('waits for a round that runs and starts the fix for findings that are not the third', function (): void {
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     $round = gateRound($group, 1, null);
 
@@ -151,7 +151,7 @@ it('waits for a round that runs and for findings that are not the third', functi
 
     gateCommented($group);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'review', 'result' => 'skipped', 'code' => 'tasks_pr.round_findings'])
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-turn', 'result' => 'skipped', 'code' => 'tasks_pr.no_current_subtask'])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic);
 });
 
@@ -205,3 +205,75 @@ it('falls back to manual mode when a new head finds the three rounds used', func
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual'])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
 });
+
+/** A task operation that ended with the given status and result, recorded on the fix of a round. */
+function gateFixOperation(Task $group, string $kind, OperationStatus $status, array $result = []): Operation
+{
+    return Operation::query()->create(['kind' => $kind, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+        'input' => [], 'status' => $status, 'result' => $result, 'sequence' => 1, 'attempts' => 1]);
+}
+
+/** A group in automatic mode whose first round found something and whose comment ended. */
+function gateFixWorld(array $fix = []): array
+{
+    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
+    $round = gateRound($group, 1, TaskReviewRoundVerdict::Findings);
+    gateCommented($group);
+    $round->update($fix);
+
+    return [$group, $round];
+}
+
+it('waits while a step of the fix runs', function (): void {
+    [$group, $round] = gateFixWorld();
+    $running = gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Running);
+    $round->update(['fix_turn_operation_id' => $running->id]);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-turn', 'result' => 'skipped', 'code' => 'tasks_pr.fix_running', 'operation' => $running->id]);
+});
+
+it('goes on to the handoff check when the author turn is ready for review', function (): void {
+    [$group, $round] = gateFixWorld();
+    $turn = gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review', 'summary' => 'Fixed.']]);
+    $round->update(['fix_turn_operation_id' => $turn->id]);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-check', 'result' => 'skipped', 'code' => 'tasks_pr.no_current_subtask']);
+});
+
+it('pushes the checked fix when the handoff check passed', function (): void {
+    [$group, $round] = gateFixWorld();
+    $turn = gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review', 'summary' => 'Fixed.']]);
+    $check = gateFixOperation($group, OperationKinds::TasksCheck, OperationStatus::Succeeded, ['outcome' => 'passed', 'check_id' => 41]);
+    $round->update(['fix_turn_operation_id' => $turn->id, 'fix_check_operation_id' => $check->id]);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-publish', 'result' => 'skipped', 'code' => 'tasks.no_workspace']);
+});
+
+it('waits for the new head after the push', function (): void {
+    [$group, $round] = gateFixWorld();
+    $round->update([
+        'fix_turn_operation_id' => gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review']])->id,
+        'fix_check_operation_id' => gateFixOperation($group, OperationKinds::TasksCheck, OperationStatus::Succeeded, ['outcome' => 'passed', 'check_id' => 41])->id,
+        'fix_publish_operation_id' => gateFixOperation($group, OperationKinds::TasksPublish, OperationStatus::Succeeded)->id,
+    ]);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'fix-publish', 'result' => 'skipped', 'code' => 'tasks_pr.fix_pushed'])
+        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic);
+});
+
+it('falls back to manual mode when a step of the fix does not end well', function (OperationStatus $status, string $kind, array $result, string $column): void {
+    [$group, $round] = gateFixWorld();
+    $before = $column === 'fix_turn_operation_id' ? [] : ['fix_turn_operation_id' => gateFixOperation($group, OperationKinds::TasksTurn, OperationStatus::Succeeded, ['receipt' => ['outcome' => 'ready_for_review']])->id];
+    if ($column === 'fix_publish_operation_id') {
+        $before['fix_check_operation_id'] = gateFixOperation($group, OperationKinds::TasksCheck, OperationStatus::Succeeded, ['outcome' => 'passed', 'check_id' => 41])->id;
+    }
+    $round->update([...$before, $column => gateFixOperation($group, $kind, $status, $result)->id]);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual'])
+        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
+})->with([
+    'turn failed' => [OperationStatus::Failed, OperationKinds::TasksTurn, [], 'fix_turn_operation_id'],
+    'turn blocked' => [OperationStatus::Succeeded, OperationKinds::TasksTurn, ['receipt' => ['outcome' => 'blocked', 'summary' => 'x', 'question' => 'y']], 'fix_turn_operation_id'],
+    'check failed' => [OperationStatus::Succeeded, OperationKinds::TasksCheck, ['outcome' => 'failed'], 'fix_check_operation_id'],
+    'publish failed' => [OperationStatus::Failed, OperationKinds::TasksPublish, [], 'fix_publish_operation_id'],
+]);

@@ -1054,7 +1054,11 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 
 A round is a reviewer turn in a new thread on the handoff candidate of the head. Admission requires a green merge check on the head, and a passed handoff check of the current subtask on that commit.
 
-When the reviewer ends the round with `approved`, the Gateway records a pass for that head. The next tick posts the verdict and the findings of the round as a comment of the Orbit App on the pull request, so the reviewer can read them. The comment is its own step, `tasks.pr_comment`, with the Idempotency-Key `pr-gate:comment:<group>:<head>`, and the gate waits until it ended. A tick after that admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. When the reviewer ends with `changes_requested`, the Gateway records the findings and the group waits.
+When the reviewer ends the round with `approved`, the Gateway records a pass for that head. The next tick posts the verdict and the findings of the round as a comment of the Orbit App on the pull request, so the reviewer can read them. The comment is its own step, `tasks.pr_comment`, with the Idempotency-Key `pr-gate:comment:<group>:<head>`, and the gate waits until it ended. A tick after that admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review.
+
+When the reviewer ends with `changes_requested`, the Gateway records the findings and starts the fix, one step for each tick. First an author turn runs in the thread of the author, with the findings as its prompt. When it ends `ready_for_review`, the handoff check runs on the subtask. When that passes, the checked candidate is pushed to the branch of the pull request.
+
+The new head gets a new CI run, and the next tick admits the next round on it once the merge check is green. A step that fails, or ends with a turn that is not ready or a check that did not pass, sends the group back to manual mode.
 
 A group switches to manual mode after round 3 with findings. It also switches after a round that failed or ended `blocked`, and when a new head finds the three rounds used. After the switch the ready step runs again and asks the reviewer. The pull request then waits for the approval of the head.
 
@@ -1064,7 +1068,7 @@ Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so 
 
 The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code. The scheduler log keeps these results.
 
-The Gateway keeps one row for each round, with the head, the round number, the reviewer turn and the verdict. A group has at most 3 rounds. The fix after findings is not built.
+The Gateway keeps one row for each round, with the head, the round number, the reviewer turn and the verdict. The row also keeps the operation of each step of the fix. A group has at most 3 rounds.
 
 ### Not built
 
