@@ -195,7 +195,7 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-node").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-node").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'sh', '-c', 'until s=$(incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0" 2>/dev/null); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the Gateway Node"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 910}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'sh', '-c', 'until s=$(timeout 30 incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0"); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the Gateway Node"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 910}}
     dependsOn: [{step: 'Admit the Gateway Node', condition: {type: succeeded}}]
   - name: 'Check the Gateway Node'
     labels: {role: swamp}
@@ -213,7 +213,7 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-role").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-role").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'sh', '-c', 'until s=$(incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0" 2>/dev/null); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the Gateway role"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 610}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'sh', '-c', 'until s=$(timeout 30 incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0"); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the Gateway role"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 610}}
     dependsOn: [{step: 'Admit the Gateway role', condition: {type: succeeded}}]
   - name: 'Check the Gateway role'
     labels: {role: swamp}
@@ -231,7 +231,7 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-websocket-role").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-websocket-role").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'sh', '-c', 'until s=$(incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0" 2>/dev/null); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the websocket role"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 910}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'sh', '-c', 'until s=$(timeout 30 incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0"); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the websocket role"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 910}}
     dependsOn: [{step: 'Admit the websocket role', condition: {type: succeeded}}]
   - name: 'Check the websocket role'
     labels: {role: swamp}
@@ -271,7 +271,7 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-app-dev").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-app-dev").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'sh', '-c', 'until s=$(incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0" 2>/dev/null); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit app-dev"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 1210}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'sh', '-c', 'until s=$(timeout 30 incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0"); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit app-dev"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 1210}}
     dependsOn: [{step: 'Admit app-dev', condition: {type: succeeded}}]
   - name: 'Check app-dev'
     labels: {role: swamp}
@@ -289,7 +289,7 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-app-prod").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-app-prod").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'sh', '-c', 'until s=$(incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0" 2>/dev/null); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit app-prod"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 1210}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'sh', '-c', 'until s=$(timeout 30 incus exec "$1" -- sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0"); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit app-prod"].outputs.stdout.split("#")[1].split(" ")[0] }}', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 1210}}
     dependsOn: [{step: 'Admit app-prod', condition: {type: succeeded}}]
   - name: 'Check app-prod'
     labels: {role: swamp}
@@ -386,7 +386,7 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-doctor").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-doctor").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'sh', '-c', 'until curl -sk -m 100 -X POST https://10.45.0.1/api/v1/doctor -H "Host: gateway.orbit" -H "Accept: application/json" -H "Content-Type: application/json" -d "{}" > /tmp/doctor.json; grep -q "\"healthy\":true" /tmp/doctor.json; do sleep 15; done; cat /tmp/doctor.json'], timeoutSec: 910}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'sh', '-c', 'until out=$(timeout 120 incus exec "$0" -- curl -sk -m 100 -X POST https://10.45.0.1/api/v1/doctor -H "Host: gateway.orbit" -H "Accept: application/json" -H "Content-Type: application/json" -d "{}"); printf "%s" "$out" | grep -q "\"healthy\":true"; do sleep 15; done; printf "%s\n" "$out"', '${{ inputs.intent.fleet.guests.gateway }}'], timeoutSec: 910}}
   - name: 'Check the nested fleet'
     labels: {role: swamp}
     task: {type: assert, expr: 'steps["Wait for Doctor"].outputs.stdout.startsWith("{\"data\":{\"healthy\":true")', severity: high, message: Doctor of the nested fleet has a finding}
