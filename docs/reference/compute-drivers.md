@@ -1587,17 +1587,17 @@ At admission the Gateway generates one ed25519 host key pair for the build serve
 
 | Step | What it does |
 | --- | --- |
-| Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`, with the `orbit` account at UID and GID 1000. Over SSH it waits for cloud-init and accepts a finish with recoverable errors (exit 2) |
+| Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`, with the `orbit` account at UID and GID 1000 |
 | Run the task image phases | The child `task-vm-upcloud-image-ansible` copies the pinned Pi build from the Gateway Node to 209 and checks its SHA-256. It then runs the `software`, `tools` and `check` phases against the public address of the builder |
 | Prepare and clean | The same child with the `clean` phase: masks, ufw with only the public SSH rule `orbit:public-ssh-recovery`, identity files, `cloud-init clean` |
 | Make the template, Read the template | Stops the builder, turns its disk into the template `orbit-task-base-<stamp>-unverified` and reads its UUID |
-| Smoke the template | The child `task-vm-upcloud-image-smoke` creates a server from the template with the same host key, boots it as above, and runs the `check` and `template` phases |
+| Smoke the template | The child `task-vm-upcloud-image-smoke` creates a server from the template with the same host key, waits as the role does (`wait_for_connection`, then cloud-init), and runs the `check` and `template` phases |
 | Promote the template | Records the `orbit.recipe` and `orbit-task-image` labels and renames the template to `orbit-task-base-<stamp>` |
 | List servers, templates, Plan the cleanup | After the build, whatever its outcome, lists the labelled servers and the templates once, and confirms the promotion |
 | Check the template | The end check: the promoted template is the one templatize made |
 | Delete servers, templates | Stops and deletes this attempt's servers with their disks. After promotion it deletes verified templates beyond the two newest that no live VM pins; otherwise it deletes the unverified template |
 
-The user data authorizes only the key of 209's worker. Every SSH connection pins the admitted host key, so no connection trusts a key on first use. The boot wait is OpenSSH's own `ConnectionAttempts` under one literal timeout. UpCloud refuses a templatize, a create from a template that is still being prepared, and a delete of a server that is still stopping, and changes nothing. curl's own retry, with a fixed 10-second delay under one literal `timeout`, waits for these states. No script polls.
+The user data authorizes only the key of 209's worker. Every SSH connection pins the admitted host key, so no connection trusts a key on first use. The wait for the boot is the role's: Ansible's `wait_for_connection`, then `cloud-init status --wait`. A finish of cloud-init with recoverable errors (exit 2) passes. UpCloud refuses a templatize, a create from a template that is still being prepared, and a delete of a server that is still stopping, and changes nothing. curl's own retry, with a fixed 10-second delay under one literal `timeout`, waits for these states. No script polls.
 
 A failed UpCloud request in the template, promote or listing step fails with `task_vm.upcloud_failed`. Other failures fail with `task_vm.image_build_failed`; the output of the failed step names the Ansible task.
 

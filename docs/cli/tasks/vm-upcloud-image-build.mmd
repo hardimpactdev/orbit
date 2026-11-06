@@ -30,19 +30,19 @@ sequenceDiagram
   %%> - `operation_id`, `node_id`, `kind`, the full public `intent`, and vault key names only: `task-vm-upcloud-token`, `task-vm-image-bootstrap-9`
   %%> Runs as:
   %%> - every step on 209 (`labels: {role: swamp}`), not on the Gateway Node's worker (R4)
-  SW->>UC: Launch the builder<br/>POST /server · boot over ssh
+  SW->>UC: Launch the builder<br/>POST /server
   %%> How:
   %%> - child `task-vm-upcloud-image-server`: one inline `curl` on 209 reads the plans, TypeScript shapes the body, one `curl` posts it; the token and the private host key reach curl through `--variable`, never argv
   %%> - stock UpCloud Ubuntu 26.04 template, builder user-data with the admitted host key and the `orbit` account at UID and GID 1000, label `orbit-task-image=<stamp>`
   %%> - the create answer holds the UUID and the public IPv4 address
-  %%> - pinned `@swamp/ssh exec` waits for the boot: OpenSSH `ConnectionAttempts` while sshd starts, then `cloud-init status --wait --long`, all under one literal timeout
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - exit 2 of `cloud-init status` (done with recoverable errors) is accepted and its detail kept in the output; the check phase is the check of the server
   %%> Returns:
   %%> - the server UUID, its storage and its address
   SW->>G: Run the task image phases<br/>Ansible · same as Nodes
   %%> What it does:
   %%> - child `task-vm-upcloud-image-ansible`: Swamp on 209 runs `ansible-playbook` straight to the public address of the server with the admitted host key pinned in a known-hosts file; there is no jump host
+  %%> - it starts with the wait for the new server: Ansible's `wait_for_connection` until SSH answers, then `cloud-init status --wait --long` under a literal timeout
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - exit 2 of `cloud-init status` (done with recoverable errors) passes, and the check phase is the check of the server; the wait moved here from the launch because OpenSSH retries only a failed connect, and a banner exchange that fails with "No route to host" ended the third build
   %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters, the NFS server), check
   %%> - versions come from the recipe document in the intent; the same playbook builds the Incus image and converges a running task VM
   %%> - the check phase also asserts that `orbit` has UID and GID 1000
