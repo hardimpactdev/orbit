@@ -10,6 +10,10 @@ inputs:
     parent_run_id: {type: string}
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: route.create}
+    # The signed certificates, when the caller already made and signed the CSRs; none from a plain route:create.
+    signed: {type: array, items: {type: string}}
+    # The Node whose web-root access and APP_URL the caller has already set (an Instance create does it in its checkout phase).
+    prepared: {type: string}
     intent: {type: object}
     execution_secrets:
       type: object
@@ -31,7 +35,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: []
     writes: true
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
+    forEach: {item: leaf, in: '${{ has(inputs.signed) ? [] : inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
       workflowIdOrName: route-create-csr
@@ -44,7 +48,7 @@ jobs:
     dependsOn:
     - {step: 'Make a CSR on the Node', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
+    forEach: {item: leaf, in: '${{ has(inputs.signed) ? [] : inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
       workflowIdOrName: route-create-sign
@@ -88,7 +92,8 @@ jobs:
         intent: '${{ inputs.intent }}'
         node_id: '${{ self.node }}'
         execution_secrets: '${{ inputs.execution_secrets }}'
-        signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
+        signed: '${{ has(inputs.signed) ? inputs.signed : inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
+        prepared: '${{ has(inputs.prepared) ? inputs.prepared : "" }}'
     # From 209 to each serving Node and the Router on 443 with the Route domain as SNI; a failed chain fails the step.
   - name: 'Probe the site over TLS'
     labels: {role: swamp}
@@ -137,16 +142,13 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         node_id: '${{ self.site.node_id }}'
-    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns).
+    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns). It needs only the signed certificate step, so it runs beside the site.
   - name: 'Publish private DNS'
     labels: {role: swamp}
     dependsOn:
     - {step: 'Make a CSR on the Node', condition: {type: always}}
     - {step: 'Sign the CSR', condition: {type: always}}
     - {step: 'Allow the Router on LAN', condition: {type: always}}
-    - {step: 'Install cert, publish site', condition: {type: always}}
-    - {step: 'Probe the site over TLS', condition: {type: always}}
-    - {step: 'Open the Ingress edge', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}

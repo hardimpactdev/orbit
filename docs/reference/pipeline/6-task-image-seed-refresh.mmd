@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). After a release that changed playbooks, pins or lock files, and at least daily, every task VM host brings its current task image and topology seed up to the release, in parallel, and saves them as the new ones: no build from the recipe; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
+  %% Target design: stage 6 of the command development pipeline (feature-flow section 7). When an operator starts it (the release and daily triggers are removed), every task VM host brings its current task image and topology seed up to the release, in parallel, and saves them as the new ones: no build from the recipe; ready slots built from the old image are replaced one at a time. Nothing is copied between hosts.
   %% status: draft
   %% command: development pipeline stage 6 · per-host task image and seed refresh
   %% kind: pipeline.6-task-image-seed-refresh
@@ -14,14 +14,14 @@ sequenceDiagram
   participant H as Task VM host<br/>Incus over ssh
   participant VM as Refresh VM<br/>a task VM
   participant SL as Ready slots<br/>stopped task VMs
-  Note over GW: Start the refresh<br/>inputs changed · daily
+  Note over GW: Start the refresh<br/>release · daily · operator
   %%> Triggers:
-  %%> - a release that went live and passed its check (stage 5), only when it changed what the images carry: playbooks, pins or lock files; a code-only release needs no refresh, because a task mounts its own checkout
-  %%> - a daily schedule, so a seed never gets older than a day: the Swamp tokens in the ready copies last 24 hours and a ready copy expires after 20
-  %%> Not built:
-  %%> - both triggers (B8); today an operator runs `php artisan task-vms:refresh-image HOST`
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology: a release whose commit changed playbooks, pins or lock files starts the refresh of every host, and a daily Schedule starts it too; both only dispatch the admission below and replace the triggers #3037 removed with the nested-VM path
+  %%> - a code-only release needs no refresh: a fleet runs the checkout it is given
+  %%> - an operator runs `php artisan task-vms:refresh-image HOST` or `task-vms:refresh-images`
+  %%> - a host with a refresh open returns it; a host that refuses (an image build runs, no capacity) is skipped
   %%> Built (task_vm.image_refresh, workflow `operation-task-vm-image-refresh`):
-  %%> - the run of one host, admitted like `tasks:prep`: a group of its own in the proof Project, placed on that host only, with the whole intent captured in the admission of provision; no step calls the Gateway
+  %%> - the run of one host, admitted like `tasks:prep`: a group of its own in the proof Project, placed on that host only, with the whole intent captured in the admission of provision; only the clone step calls the Gateway, to mint its read credential
   %%> - a repeat admission for a host returns the open run
   %%> Hosts:
   %%> - Linux only: the task VM hosts beast and shark, with Incus
@@ -30,24 +30,33 @@ sequenceDiagram
   %%> - the Gateway has the release commit, GitHub App read access to the repository, and the proof Swamp Club key
   GW->>SW: Start one run per host<br/>all in parallel
   %%> Why:
-  %%> - hosts differ in CPU, and a copy between hosts loses the storage sharing inside the seed; so each host refreshes its own
+  %%> - each host refreshes its own image and seed, and builds its own fleet when it has none: copying them between hosts is not a supported flow, because every supported flow has to be proven again and again (Nick, 2026-11-06)
   %%> - a second admission for a host returns the open task
   loop each task VM host, in parallel
     SW->>H: Start a refresh VM<br/>current image · seed
     %%> What it does:
     %%> - starts a task VM from the host's current task image, with a clone of its current topology seed, as for any task
     %%> Built: the child `operation-task-provision`, which does this step and the next; the VM starts from the image the host promoted last, whatever its recipe or age
-    SW->>VM: Start and mount<br/>the release commit
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the refresh VM keeps the root disk of the host's base VM (20 GiB), not the larger disk of a topology VM, because a published image is as large as its VM's root disk and no VM can be smaller than its image; the first smoke of a 40 GiB image failed on it
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the refresh VM is always a large task VM (12 GiB, 6 CPUs, 3 slots), because it holds the nested fleet (containers limited to 10 GiB) and builds it when the seed has no ready copies; the Gateway sets the size at the admission of the refresh, so no Project size list decides it (a group cannot declare a topology, so the size is passed to the placement, not declared); a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer in two runs on beast
+    %%> - a refresh therefore needs 3 free slots of its host and is refused with `tasks.capacity_unavailable` otherwise; the operator tries again
+    SW->>VM: Start the fleet<br/>container copies · release
     %%> What it does:
     %%> - checks out the release commit in the refresh VM, with `composer install` and `bun install` where a lock file changed
-    %%> - starts the nested fleet from the current ready copies, mounts that checkout over NFS and runs the apply step, as in stage 2
+    %%> - starts the nested fleet from the current ready copies with that checkout as their disk device, and runs the apply step (state binds, token re-mint, migrations, restarts), as in stage 2
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+    %%> - a release is boot, converge, save; nothing is built. Measured on shark (`ebe3e67` to `3046d25`): 3 min 6 s in all; start 4 s, apply about 30 s, `node:converge` 30-41 s per Node, save 17 s
+    %%> Built: all of it is the child `task-nested-fleet` of `operation-task-provision` (the start with the checkout disk device, the apply, the readiness check with Doctor, and the `base` snapshot), so the refresh saves ready copies only from a fleet that passed its readiness check
     opt no usable ready copies
       SW->>VM: Build the fleet<br/>task_vm.fleet_build
-      %%> Decided by the orchestrator, for Nick's review:
-      %%> - the first refresh of a host whose seed holds no ready copies calls the nested fleet build as a child (chart `docs/cli/tasks/vm-fleet-build.mmd`), which ends by saving ready copies; the refresh then goes on
-      %%> Not built: the child is wired when `task_vm.fleet_build` lands
-      %%> Decided by the orchestrator, for Nick's review:
-      %%> - until then a seed without usable ready copies is refreshed without them: the provision child records `nested_fleet: none`, the run skips the save of ready copies, and the result says `ready_copies: false`; the image still converges to the release and is promoted, and the seed is the copy of the old one
+      %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
+      %%> - a refresh of a host whose seed holds no usable ready copies (a new host, a new image or copies of an older format) runs the nested fleet build as a child in the refresh VM (chart `docs/cli/tasks/vm-fleet-build.mmd`), automatically and with no flag; the save of the ready copies follows
+      %%> - the step is skipped when the provision started the fleet from ready copies; the run needs no check of its own, because a failed build fails the run before the save
+      %%> - the refresh admits the fleet-build intent with the rest of its intent, before its VM exists: the host keys of the guest are pinned by the VM step, as for the ready copies, and the build takes the proof Club key as the save does
+      %%> - the waits of the build stop at once when the nested Gateway guest is not running (an Ansible task with `until` and `retries`, chart `docs/cli/tasks/vm-fleet-build.mmd`), and then name every nested container that is not running; a dead app VM ends the Operation it enrolls
+      %%> Built: the step `Build the fleet`, the child `operation-task-vm-fleet-build`
     end
     opt playbooks or pins changed since the current image
       SW->>VM: Converge once<br/>outer VM · nested Nodes
@@ -56,27 +65,38 @@ sequenceDiagram
       %%> - the same step as in the proof CI (stage 4)
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
-    %%> Built: the outer VM through `operation-task-vm-converge`; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) are the last piece, with the NFS child of stage 2
+    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` on the checkout disk device) are the last piece
     end
-    SW->>VM: Re-mint Swamp tokens<br/>in the nested Gateway
-    %%> Decided by the orchestrator, for Nick's review:
-    %%> - an SSH step into the nested Gateway that runs the product command the fleet build uses to mint its Swamp serve and worker tokens; it is the last piece to wire, because that command does not exist yet
-    %%> Why:
-    %%> - the tokens of the ready copies last 24 hours, so every refresh starts them fresh
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+    %%> - the refresh has no token step: every provision that starts a fleet renews the Swamp tokens of the nested Gateway (stage 2), so the age of the copies does not matter
+    %%> - the copies carry format 4 (containers): the control plan the renewal reads is on the nested Gateway; copies of an older format are not used
     %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
-    SW->>VM: Clean the refresh VM<br/>identity out · stop
-    %%> Decided by the orchestrator, for Nick's review:
-    %%> - one explicit clean step before the publication, the workflow `task-vm-image-clean`; the image build's `Clean and stop` calls the same workflow for its builder (`enrolled: false`), so there is one clean step and not two
-    %%> - it removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout, resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
-    SW->>H: Publish the image<br/>image · seed
+    SW->>VM: Stop the refresh VM<br/>its seed disk is complete
+    %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
+    %%> - the refresh VM yields only its seed disk and is never published; it is stopped so that the copy of the disk is consistent
+    %%> - the seed disk holds only the `node-template` and the `fleet-ready-*` copies; the running nested guests are on the VM's own disk and go with the VM
+    %%> - this removes what existed because an enrolled VM was published: the withdraw step, the identity check and the `enrolled` branch of `task-vm-image-clean`
+    SW->>H: Build the image<br/>clean builder · phases
+    %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
+    %%> - the image is published from a builder: a clone of the image the refresh VM started from (its fingerprint, `candidate.source`), named `candidate.builder`, never enrolled, with no seed attached
+    %%> - the builder is brought to the pins of the release by the phases `software`, `tools` and `check`, then cleaned by `task-vm-image-clean` (cloud-init, machine-id, SSH host keys, trim, stop), which has no enrolled branch
+    %%> - the sequence from the launch to the publication is one child workflow, `task-vm-image-builder`, which the refresh runs now; the image build (`task_vm.image_build`) keeps its own jobs until a follow-up moves it onto the child, because its result reader names those steps
+    %%> - the assert that the builder has no `topology-seed` pool comes with the removal of the surgery below: the builder is cloned from an image that may still hold the stale records, so the assert cannot pass before the lineage is clean
     %%> What it does:
-    %%> - stops the nested VMs and copies them into a clone of the seed as the new ready copies, key-free: the proof Club key is deleted, every file is scanned for it, and freed blocks are trimmed
-    %%> Proposed 2026-11-05:
-    %%> - each ready copy is self-contained: its `.env`, storage, `bootstrap/cache` and database stay on its own disk; it holds no checkout, because every task VM mounts its own
-    %%> - stores the nested network with the copies: the subnet, and each Node's NIC MAC and address
-    %%> - removes the refresh VM's WireGuard key from the operator Node record, so a new task VM joins with its own key (stage 2)
-    %%> - publishes the outer VM as the new task image
+    %%> - clones the builder, waits for its guest agent and cloud-init, runs the phases, cleans and stops it, publishes it under a candidate alias and reads its fingerprint
+    %%> Risks the run accepts:
+    %%> - the ready copies are made on the refresh VM from the old image, and the image comes from the builder; the next provision is the check of the pair, and `-previous` (image and old seed) is the rollback
+    %%> - the `incus admin sql` surgery in the seed attach stays until every host serves an image whose lineage never held the seed pool, for example one rebuilt from stock with `task_vm.image_build`; a later PR deletes it
+    SW->>H: Enroll, converge check VM<br/>on the boot-check VM
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - a release can trigger a refresh with nobody watching, and a refresh starts from the image the host serves, so one bad image would reach every later provision; the candidate is therefore enrolled and converged before it is promoted
+    %%> - on the throwaway VM of the boot check, after its check phase, the run enrolls the guest with the same bootstrap steps as an enrollment (account, key, sudoers file, observer install and verify), then converges it to the pins with the phases `software`, `tools` and `check`
+    %%> - the bootstrap steps are one child workflow, `task-vm-bootstrap`, which `task-vm-enrollment` calls too, so the check and a real enrollment cannot drift apart
+    %%> - the promotion waits for both steps; a candidate that cannot be enrolled or converged promotes nothing
+    %%> Built: the steps `Enroll the check VM` (the child `task-vm-bootstrap`, which `task-vm-enrollment` calls too) and `Converge the check VM` (the child `task-vm-image-ansible`, phases `software`, `tools` and `check`), before the seed copy; the enrollment of the check VM is the guard against enrollment files left in an image
+    %%> Not covered:
+    %%> - the WireGuard peer, the observer start and the nested fleet: they need a Gateway-admitted Node, so the next provision is their check
     SW->>H: Boot-check, promote<br/>under the host lock
     %%> Built: the smoke is the child `task-vm-image-smoke` and the alias move is the child `task-vm-image-promote`, the same children as the image build
     %%> Decided by the orchestrator, for Nick's review:
@@ -85,9 +105,7 @@ sequenceDiagram
     %%> What it does:
     %%> - boots a throwaway copy of each ready copy and of the image to check them, then promotes both and destroys the refresh VM
     %%> - keeps the old image and seed as `-previous`, the rollback copy; cleanup always runs
-    %%> - a failed step keeps the old image and seed
-    %%> Not built:
-    %%> - the whole refresh from a running task VM; today the seed refresh boots a builder from the image and has no topology build or ready copies (the old reset was removed), and the image is built from the recipe
+    %%> - a failed step keeps the old image and seed: the builder, and with it the publication and the promotion, run only after the VM step and the save of the ready copies passed, so a VM whose fleet failed its readiness check promotes nothing
     SW->>SL: Replace old ready slots<br/>one at a time
     %%> Target, not built:
     %%> - destroys a ready slot made from the old image, enrols a new one from the new image, then takes the next

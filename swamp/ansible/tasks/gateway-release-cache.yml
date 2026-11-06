@@ -1,0 +1,27 @@
+---
+# Caches the configuration of the release. A candidate file is written first and published with one rename, so a failed
+# cache leaves the old file. A release built by this run is unsealed again when its configuration cannot be cached.
+- name: Cache the configuration
+  block:
+    - name: Name the candidate
+      ansible.builtin.set_fact:
+        candidate: "{{ app }}/bootstrap/cache/config.next-{{ 999999999 | random }}.php"
+    - name: Cache the configuration of the release
+      ansible.builtin.command:
+        argv: [timeout, "120", php8.5, "{{ app }}/artisan", "config:cache", "--no-interaction", "--quiet"]
+      environment:
+        APP_CONFIG_CACHE: "{{ candidate }}"
+        ORBIT_AGENT_DELIVERY: "{{ release }}/apps/agent/delivery/manifest.json"
+      changed_when: false
+    - name: Publish the cached configuration
+      ansible.builtin.copy: {src: "{{ candidate }}", dest: "{{ app }}/bootstrap/cache/config.php", remote_src: true, mode: "0600"}
+  rescue:
+    - name: Take the seal from a release that has no configuration
+      ansible.builtin.file: {path: "{{ release }}/REVISION", state: absent}
+      when: not sealed | bool
+    - name: Report the failed configuration
+      ansible.builtin.fail:
+        msg: "gateway.release_configuration_failed: config:cache failed"
+  always:
+    - name: Remove the candidate
+      ansible.builtin.file: {path: "{{ candidate | default(app ~ '/bootstrap/cache/config.next-none.php') }}", state: absent}

@@ -1,0 +1,81 @@
+---
+# The prerequisites of a role: Caddy, the role packages, folders, Bun and the pinned PHP packages. Everything comes from intent.
+# Two playbooks import it: the role add (operation-node-role-add.yml) and the Gateway bootstrap (gateway-bootstrap.yml).
+- name: Install Caddy
+  when: intent.caddy_package is not none
+  block:
+    - name: Create the Caddy cache
+      ansible.builtin.file:
+        path: "{{ intent.caddy_package.path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+    - name: Download Caddy
+      ansible.builtin.include_tasks: artifact-fetch.yml
+      vars:
+        artifact: "{{ intent.caddy_package }}"
+    - name: Read the Caddy version
+      ansible.builtin.command: dpkg-query -W -f=${Version} caddy
+      register: caddy
+      changed_when: false
+      failed_when: false
+    - name: Install Caddy below the floor
+      when: caddy.rc != 0 or caddy.stdout is version(intent.caddy_package.minimum_version, '<')
+      ansible.builtin.apt: { deb: "{{ intent.caddy_package.path }}" }
+- { name: Read installed packages, ansible.builtin.package_facts: !!null "" }
+- name: Install prerequisites
+  vars: { docker_ce: "{{ 'docker-ce' in ansible_facts.packages }}" }
+  ansible.builtin.apt:
+    name: "{{ intent.packages | reject('equalto', 'docker.io' if docker_ce else '') | list }}"
+    update_cache: true
+    cache_valid_time: 3600
+  environment: { NEEDRESTART_MODE: l }
+- name: Create role folders
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ intent.directories }}"
+  loop_control: { label: "{{ item.path }}" }
+- name: Install Bun
+  when: intent.bun is not none
+  block:
+    - name: Download Bun
+      ansible.builtin.get_url: { url: "{{ intent.bun.url }}", dest: "{{ intent.bun.path }}", checksum: "{{ intent.bun.checksum }}", mode: "0644" }
+    - name: Make the release folder
+      ansible.builtin.file: { path: "{{ intent.bun.dest }}", state: directory, mode: "0755" }
+    - name: Extract Bun
+      ansible.builtin.unarchive:
+        src: "{{ intent.bun.path }}"
+        dest: "{{ intent.bun.dest }}"
+        remote_src: true
+        creates: "{{ intent.bun.binary }}"
+    - name: Publish Bun
+      ansible.builtin.file: { src: "{{ item.src }}", dest: "{{ item.dest }}", state: link, force: true }
+      loop:
+        - { src: "{{ intent.bun.binary }}", dest: /opt/orbit/bun/bin/bun }
+        - { src: /opt/orbit/bun/bin/bun, dest: /usr/local/bin/bun }
+- name: Download PHP packages
+  ansible.builtin.include_tasks: artifact-fetch.yml
+  loop: "{{ intent.php_packages }}"
+  loop_control: { loop_var: artifact, label: "{{ artifact.name }}" }
+- { name: Read installed packages again, ansible.builtin.package_facts: !!null "" }
+- name: Find missing PHP packages
+  ansible.builtin.set_fact:
+    php_missing: >-
+      {{ (php_missing if index > 0 else []) + ([item.path] if item.version not in ansible_facts.packages[item.name]
+      | default([]) | map(attribute='version') else []) }}
+  loop: "{{ intent.php_packages }}"
+  loop_control: { index_var: index, label: "{{ item.name }}" }
+# Only the pinned files named here are replaced; a package the archive installed first at an older version is upgraded to its pin.
+- name: Install missing PHP packages
+  when: php_missing | default([]) | length > 0
+  ansible.builtin.command:
+    argv: >-
+      {{ ['apt-get', '--no-remove', 'install', '--yes', '--no-install-recommends', '-o', 'Dpkg::Options::=--force-confold']
+      + php_missing }}
+  environment: { DEBIAN_FRONTEND: noninteractive, NEEDRESTART_MODE: l }
+  changed_when: true

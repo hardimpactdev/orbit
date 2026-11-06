@@ -1,8 +1,8 @@
 use super::*;
 use crate::commands::recipe::WorkDir;
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::symlink;
 
-const GIT: &str = "Types: deb\nURIs: https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/\nSuites: resolute\nComponents: main\nSigned-By:\n -----BEGIN PGP PUBLIC KEY BLOCK-----\n .\n fixture-key\n -----END PGP PUBLIC KEY BLOCK-----\n";
+const NODE: &str = "Types: deb\nURIs: https://deb.nodesource.com/node_24.x/\nSuites: nodistro\nComponents: main\nSigned-By:\n -----BEGIN PGP PUBLIC KEY BLOCK-----\n .\n fixture-key\n -----END PGP PUBLIC KEY BLOCK-----\n";
 fn fixture() -> (WorkDir, Files) {
     let work = WorkDir::new().unwrap();
     let files = Files {
@@ -17,8 +17,8 @@ fn fixture() -> (WorkDir, Files) {
 
 #[test]
 fn deb822_handles_inline_keys_and_names_each_malformed_field() {
-    let source = Path::new("/etc/apt/sources.list.d/git.sources");
-    let fields = deb822(GIT, source).unwrap();
+    let source = Path::new("/etc/apt/sources.list.d/node.sources");
+    let fields = deb822(NODE, source).unwrap();
     assert!(fields["signed-by"].contains("fixture-key"));
     for (value, reason) in [
         ("  stray\n", "continuation"),
@@ -36,34 +36,34 @@ fn deb822_handles_inline_keys_and_names_each_malformed_field() {
 #[test]
 fn provider_retirement_keeps_unrelated_content_and_durable_backups_then_repeats() {
     let (_work, files) = fixture();
-    let source = files.apt().join("sources.list.d/git.sources");
-    let unrelated = "Types: deb\nURIs: https://packages.example.test/ubuntu\nSuites: resolute\nComponents: main\n";
-    let content = format!("{GIT}\n{unrelated}");
+    let source = files.apt().join("sources.list.d/node.sources");
+    let unrelated = "Types: deb\nURIs: https://packages.example.test/ubuntu\nSuites: nodistro\nComponents: main\n";
+    let content = format!("{NODE}\n{unrelated}");
     fs::write(&source, &content).unwrap();
     let list = files.apt().join("sources.list");
-    let list_content = "# Git notes\ndeb-src [signed-by=/key] http://ppa.launchpad.net/git-core/ppa/ubuntu resolute main\n";
+    let list_content = "# Node notes\ndeb-src [signed-by=/key] https://deb.nodesource.com/node_24.x nodistro main\n";
     fs::write(&list, list_content).unwrap();
-    let changes = provider_changes(&files, Provider::Git).unwrap();
+    let changes = provider_changes(&files).unwrap();
     assert_eq!(changes.len(), 2);
     assert_eq!(fs::read_to_string(&source).unwrap(), content);
-    assert!(!files.apt().join("git.sources.orbit-git-backup").exists());
-    retire(&files, &changes, "git").unwrap();
+    assert!(!files.apt().join("node.sources.orbit-node-backup").exists());
+    retire(&files, &changes).unwrap();
     assert_eq!(
         fs::read_to_string(&source).unwrap(),
         format!("\n\n{unrelated}")
     );
-    assert_eq!(fs::read_to_string(&list).unwrap(), "# Git notes\n");
+    assert_eq!(fs::read_to_string(&list).unwrap(), "# Node notes\n");
     assert_eq!(
-        fs::read_to_string(files.apt().join("git.sources.orbit-git-backup")).unwrap(),
+        fs::read_to_string(files.apt().join("node.sources.orbit-node-backup")).unwrap(),
         content
     );
     assert_eq!(
-        fs::read_to_string(files.apt().join("sources.list.orbit-git-backup")).unwrap(),
+        fs::read_to_string(files.apt().join("sources.list.orbit-node-backup")).unwrap(),
         list_content
     );
-    assert!(provider_changes(&files, Provider::Git).unwrap().is_empty());
-    fs::write(&source, GIT.replace("fixture-key", "replacement-key")).unwrap();
-    let error = provider_changes(&files, Provider::Git).unwrap_err();
+    assert!(provider_changes(&files).unwrap().is_empty());
+    fs::write(&source, NODE.replace("fixture-key", "replacement-key")).unwrap();
+    let error = provider_changes(&files).unwrap_err();
     assert!(error.reason.contains("differs from the source"));
     assert!(fs::read_to_string(&source)
         .unwrap()
@@ -75,184 +75,81 @@ fn sources_refuse_mixed_fields_wrong_suites_and_conflicting_backups_before_any_r
     let (_work, files) = fixture();
     let first = files.apt().join("sources.list.d/a.sources");
     let second = files.apt().join("sources.list.d/b.sources");
-    fs::write(&first, GIT).unwrap();
+    fs::write(&first, NODE).unwrap();
     for invalid in [
-        GIT.replace("Suites: resolute", "Suites: noble"),
-        GIT.replace("Components: main", "Components: main universe"),
-        GIT.replace("Types: deb", "Types: deb rpm"),
-        GIT.replace("/ubuntu/\n", "/ubuntu/ https://foreign.test/\n"),
-        GIT.replace("Suites: resolute", "Suites: resolute\nSuites: resolute"),
+        NODE.replace("Suites: nodistro", "Suites: noble"),
+        NODE.replace("Components: main", "Components: main universe"),
+        NODE.replace("Types: deb", "Types: deb rpm"),
+        NODE.replace("node_24.x/\n", "node_24.x/ https://foreign.test/\n"),
+        NODE.replace("Suites: nodistro", "Suites: nodistro\nSuites: nodistro"),
     ] {
         fs::write(&second, &invalid).unwrap();
-        assert!(provider_changes(&files, Provider::Git).is_err());
-        assert_eq!(fs::read_to_string(&first).unwrap(), GIT);
+        assert!(provider_changes(&files).is_err());
+        assert_eq!(fs::read_to_string(&first).unwrap(), NODE);
         assert_eq!(fs::read_to_string(&second).unwrap(), invalid);
-        assert!(!files.apt().join("a.sources.orbit-git-backup").exists());
+        assert!(!files.apt().join("a.sources.orbit-node-backup").exists());
     }
-    fs::write(&second, GIT).unwrap();
-    let changes = provider_changes(&files, Provider::Git).unwrap();
-    fs::write(files.apt().join("b.sources.orbit-git-backup"), "other").unwrap();
-    assert!(retire(&files, &changes, "git").is_err());
-    assert_eq!(fs::read_to_string(&first).unwrap(), GIT);
-    assert!(!files.apt().join("a.sources.orbit-git-backup").exists());
+    fs::write(&second, NODE).unwrap();
+    let changes = provider_changes(&files).unwrap();
+    fs::write(files.apt().join("b.sources.orbit-node-backup"), "other").unwrap();
+    assert!(retire(&files, &changes).is_err());
+    assert_eq!(fs::read_to_string(&first).unwrap(), NODE);
+    assert!(!files.apt().join("a.sources.orbit-node-backup").exists());
 }
 
 #[test]
 fn symlinked_sources_and_backups_are_never_changed() {
     let (_work, files) = fixture();
     let target = files.apt().join("original");
-    fs::write(&target, GIT).unwrap();
-    let source = files.apt().join("sources.list.d/git.sources");
+    fs::write(&target, NODE).unwrap();
+    let source = files.apt().join("sources.list.d/node.sources");
     symlink(&target, &source).unwrap();
-    let error = provider_changes(&files, Provider::Git).unwrap_err();
+    let error = provider_changes(&files).unwrap_err();
     assert!(error.reason.contains("symlink"));
     fs::remove_file(&source).unwrap();
-    fs::write(&source, GIT).unwrap();
-    symlink(&target, files.apt().join("git.sources.orbit-git-backup")).unwrap();
-    assert!(provider_changes(&files, Provider::Git)
+    fs::write(&source, NODE).unwrap();
+    symlink(&target, files.apt().join("node.sources.orbit-node-backup")).unwrap();
+    assert!(provider_changes(&files)
         .unwrap_err()
         .reason
         .contains("symlink"));
-    assert_eq!(fs::read_to_string(&target).unwrap(), GIT);
+    assert_eq!(fs::read_to_string(&target).unwrap(), NODE);
 }
 
 #[test]
 fn single_source_files_are_removed_and_comments_are_preserved() {
     let (_work, files) = fixture();
-    let source = files.apt().join("sources.list.d/git.sources");
-    fs::write(&source, GIT).unwrap();
-    retire(
-        &files,
-        &provider_changes(&files, Provider::Git).unwrap(),
-        "git",
-    )
-    .unwrap();
+    let source = files.apt().join("sources.list.d/node.sources");
+    fs::write(&source, NODE).unwrap();
+    retire(&files, &provider_changes(&files).unwrap()).unwrap();
     assert!(!source.exists());
-    fs::write(&source, format!("# {}", GIT.lines().nth(1).unwrap())).unwrap();
-    assert!(provider_changes(&files, Provider::Git).unwrap().is_empty());
+    fs::write(&source, format!("# {}", NODE.lines().nth(1).unwrap())).unwrap();
+    assert!(provider_changes(&files).unwrap().is_empty());
     fs::write(
         files.apt().join("sources.list"),
-        "deb https://ppa.launchpadcontent.net/git-core/ppa/ubuntu",
+        "deb https://deb.nodesource.com/node_24.x",
     )
     .unwrap();
-    assert!(provider_changes(&files, Provider::Git)
+    assert!(provider_changes(&files)
         .unwrap_err()
         .reason
         .contains("list entry"));
 }
 
 #[test]
-fn each_provider_has_one_closed_source_shape() {
-    for (provider, uri, suite, component) in [
-        (
-            Provider::Docker,
-            "https://download.docker.com/linux/ubuntu",
-            "noble",
-            "stable",
-        ),
-        (
-            Provider::Node,
-            "https://deb.nodesource.com/node_24.x",
-            "nodistro",
-            "main",
-        ),
-        (
-            Provider::Incus,
-            "https://pkgs.zabbly.com/incus/lts-7.0",
-            "resolute",
-            "main",
-        ),
-    ] {
-        let (_work, files) = fixture();
-        let source = files.apt().join("sources.list");
-        fs::write(&source, format!("deb {uri} {suite} {component}\n")).unwrap();
-        retire(
-            &files,
-            &provider_changes(&files, provider).unwrap(),
-            provider.owner(),
-        )
-        .unwrap();
-        assert!(!source.exists());
-        fs::write(
-            &source,
-            format!("deb {uri}/unexpected {suite} {component}\n"),
-        )
-        .unwrap();
-        assert!(provider_changes(&files, provider).is_err());
-    }
-}
-
-#[test]
-fn only_exact_snapshot_sources_are_repairable() {
+fn the_node_provider_has_one_closed_source_shape() {
+    let (uri, suite, component) = ("https://deb.nodesource.com/node_24.x", "nodistro", "main");
     let (_work, files) = fixture();
-    let source = files.apt().join("sources.list.d/ubuntu.sources");
-    let original = snapshot_source("20261013T000000Z");
-    fs::write(&source, &original).unwrap();
-    assert_eq!(
-        ubuntu_repair(&files).unwrap(),
-        Some(original.as_bytes().to_vec())
-    );
-    for content in [
-        format!("{original}# user edit\n"),
-        original.replace("Check-Valid-Until: no\n", ""),
-        rolling_source(),
-    ] {
-        fs::write(&source, &content).unwrap();
-        assert_eq!(ubuntu_repair(&files).unwrap(), None);
-        assert_eq!(fs::read_to_string(&source).unwrap(), content);
-    }
-    fs::remove_file(&source).unwrap();
-    let target = files.apt().join("original");
-    fs::write(&target, &original).unwrap();
-    symlink(&target, &source).unwrap();
-    assert_eq!(ubuntu_repair(&files).unwrap(), None);
-    assert!(rolling_source().contains("URIs: http://archive.ubuntu.com/ubuntu\n"));
-    assert!(rolling_source().contains("URIs: http://security.ubuntu.com/ubuntu\n"));
-    assert!(!rolling_source().contains("ports.ubuntu.com"));
-}
-
-#[test]
-fn signed_source_evidence_is_scoped_to_uri_suite_component_and_keyring() {
-    let (_work, files) = fixture();
-    let source = files.apt().join("sources.list.d/mirror.sources");
-    let content = format!("Types: deb\nURIs: https://mirror.test/ubuntu/\nSuites: resolute resolute-security\nComponents: main universe\nSigned-By: {UBUNTU_KEYRING}\n");
-    fs::write(&source, &content).unwrap();
-    let trusted = signed_sources(&files, None).unwrap();
-    assert_eq!(trusted.len(), 4);
-    assert!(trusted.contains(&("https://mirror.test/ubuntu".into(), "resolute/main".into())));
-    for content in [
-        content.replace(UBUNTU_KEYRING, "/keyring/other.gpg"),
-        format!("{content}Enabled: no\n"),
-        content.replace("Types: deb", "Types: deb-src"),
-    ] {
-        fs::write(&source, content).unwrap();
-        assert!(signed_sources(&files, None).unwrap().is_empty());
-    }
-    fs::write(files.apt().join("sources.list"), format!("deb [arch=amd64 signed-by={UBUNTU_KEYRING}] https://mirror.test/ubuntu resolute main # preserved\n")).unwrap();
-    assert_eq!(signed_sources(&files, None).unwrap().len(), 1);
-}
-
-#[test]
-fn receipt_requires_the_exact_owned_coherent_package_set() {
-    let (_work, files) = fixture();
-    let receipt = files.apt().join("orbit-git.json");
-    let names = ["git".into(), "git-man".into()].into();
-    files
-        .publish_root(&receipt, br#"{"git":"1:2.55.0-1","git-man":"1:2.55.0-1"}"#)
-        .unwrap();
-    assert!(artifact_owned(&files, "git", "1:2.55.0-1", &names, "git"));
-    assert!(!artifact_owned(&files, "git", "1:2.56.0-1", &names, "git"));
-    for invalid in [
-        r#"{"git":"1:2.55.0-1"}"#,
-        r#"{"git":"1:2.55.0-1","git-man":"2"}"#,
-        r#"{"git":"bad","git-man":"bad"}"#,
-    ] {
-        fs::write(&receipt, invalid).unwrap();
-        assert!(!artifact_owned(&files, "git", "1:2.55.0-1", &names, "git"));
-    }
-    fs::write(&receipt, br#"{"git":"1:2.55.0-1","git-man":"1:2.55.0-1"}"#).unwrap();
-    fs::set_permissions(&receipt, fs::Permissions::from_mode(0o666)).unwrap();
-    assert!(!artifact_owned(&files, "git", "1:2.55.0-1", &names, "git"));
+    let source = files.apt().join("sources.list");
+    fs::write(&source, format!("deb {uri} {suite} {component}\n")).unwrap();
+    retire(&files, &provider_changes(&files).unwrap()).unwrap();
+    assert!(!source.exists());
+    fs::write(
+        &source,
+        format!("deb {uri}/unexpected {suite} {component}\n"),
+    )
+    .unwrap();
+    assert!(provider_changes(&files).is_err());
 }
 
 #[test]

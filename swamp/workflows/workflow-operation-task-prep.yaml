@@ -25,7 +25,8 @@ inputs:
         fix: {type: object}
         reviews: {type: array, minItems: 3, maxItems: 3, items: {type: object}}
         publish: {type: object}
-      required: [provision, draft, fix, reviews, publish]
+        plan: {type: object}
+      required: [provision, draft, fix, reviews, publish, plan]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -83,6 +84,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: tasks.provision
+        run_id: ${{ run.id }}
         intent: ${{ inputs.intent.provision }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: Pin the VM
@@ -94,7 +96,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: task-prep-pin
+      behaviorName: '${{ ("task-prep-pin-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: pin
       inputs:
         receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
@@ -129,7 +131,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-read-the-draft
+      behaviorName: '${{ ("task-prep-read-the-draft-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: outcome
       inputs:
         result_json: ${{ steps["Draft the spec"].outputs.shape_result.result_json }}
@@ -140,10 +142,39 @@ jobs:
       condition:
         type: succeeded
     task: {type: assert, expr: 'steps["Read the draft"].outputs.moved', severity: high, message: tasks.prep_not_committed}
-  - name: Review the spec 1
+  - name: Plan the cases 0
     labels: {role: swamp}
     dependsOn:
     - step: Check the draft
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
+          port: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.port }}
+          identityFile: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
+        argv: '${{ ["timeout", "60", "env", "-C", inputs.intent.draft.checkout_path, "python3", "swamp/proof/runner/runner.py", "plan", "--file", inputs.intent.plan.cases_file] }}'
+        okExitCodes: [0, 3]
+        timeoutSec: 70
+  - name: Review the spec 1
+    labels: {role: swamp}
+    dependsOn:
+    - step: Plan the cases 0
       condition:
         type: succeeded
     task:
@@ -164,10 +195,14 @@ jobs:
       condition:
         type: or
         conditions: [{type: succeeded}, {type: skipped}]
+    - step: Plan the cases 0
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-settle-review-1
+      behaviorName: '${{ ("task-prep-settle-review-1-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Read the draft"].outputs.approved }}'
@@ -175,6 +210,8 @@ jobs:
         tree: '${{ steps["Read the draft"].outputs.tree }}'
         review: '${{ ("Review the spec 1" in steps && "outputs" in steps["Review the spec 1"] && "shape_result" in steps["Review the spec 1"].outputs) ? steps["Review the spec 1"].outputs.shape_result.result_json : "" }}'
         fix: ''
+        plan_exit: '${{ ("Plan the cases 0" in steps && "outputs" in steps["Plan the cases 0"] && "exitCode" in steps["Plan the cases 0"].outputs) ? steps["Plan the cases 0"].outputs.exitCode : 0 }}'
+        plan_output: '${{ ("Plan the cases 0" in steps && "outputs" in steps["Plan the cases 0"] && "stderr" in steps["Plan the cases 0"].outputs) ? steps["Plan the cases 0"].outputs.stdout + steps["Plan the cases 0"].outputs.stderr : "" }}'
   - name: Fix the findings 1
     labels: {role: swamp}
     guard: '${{ steps["Settle review 1"].outputs.approved }}'
@@ -203,7 +240,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-settle-fix-1
+      behaviorName: '${{ ("task-prep-settle-fix-1-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Settle review 1"].outputs.approved }}'
@@ -211,6 +248,36 @@ jobs:
         tree: '${{ steps["Settle review 1"].outputs.tree }}'
         review: ''
         fix: '${{ ("Fix the findings 1" in steps && "outputs" in steps["Fix the findings 1"] && "shape_result" in steps["Fix the findings 1"].outputs) ? steps["Fix the findings 1"].outputs.shape_result.result_json : "" }}'
+  - name: Plan the cases 1
+    labels: {role: swamp}
+    guard: '${{ steps["Settle fix 1"].outputs.approved }}'
+    dependsOn:
+    - step: Settle fix 1
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
+          port: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.port }}
+          identityFile: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
+        argv: '${{ ["timeout", "60", "env", "-C", inputs.intent.draft.checkout_path, "python3", "swamp/proof/runner/runner.py", "plan", "--file", inputs.intent.plan.cases_file] }}'
+        okExitCodes: [0, 3]
+        timeoutSec: 70
   - name: Review the spec 2
     labels: {role: swamp}
     guard: '${{ steps["Settle fix 1"].outputs.approved }}'
@@ -218,6 +285,10 @@ jobs:
     - step: Settle fix 1
       condition:
         type: succeeded
+    - step: Plan the cases 1
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: workflow
       workflowIdOrName: operation-task-turn
@@ -237,10 +308,14 @@ jobs:
       condition:
         type: or
         conditions: [{type: succeeded}, {type: skipped}]
+    - step: Plan the cases 1
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-settle-review-2
+      behaviorName: '${{ ("task-prep-settle-review-2-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Settle fix 1"].outputs.approved }}'
@@ -248,6 +323,8 @@ jobs:
         tree: '${{ steps["Settle fix 1"].outputs.tree }}'
         review: '${{ ("Review the spec 2" in steps && "outputs" in steps["Review the spec 2"] && "shape_result" in steps["Review the spec 2"].outputs) ? steps["Review the spec 2"].outputs.shape_result.result_json : "" }}'
         fix: ''
+        plan_exit: '${{ ("Plan the cases 1" in steps && "outputs" in steps["Plan the cases 1"] && "exitCode" in steps["Plan the cases 1"].outputs) ? steps["Plan the cases 1"].outputs.exitCode : 0 }}'
+        plan_output: '${{ ("Plan the cases 1" in steps && "outputs" in steps["Plan the cases 1"] && "stderr" in steps["Plan the cases 1"].outputs) ? steps["Plan the cases 1"].outputs.stdout + steps["Plan the cases 1"].outputs.stderr : "" }}'
   - name: Fix the findings 2
     labels: {role: swamp}
     guard: '${{ steps["Settle review 2"].outputs.approved }}'
@@ -276,7 +353,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-settle-fix-2
+      behaviorName: '${{ ("task-prep-settle-fix-2-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Settle review 2"].outputs.approved }}'
@@ -284,6 +361,36 @@ jobs:
         tree: '${{ steps["Settle review 2"].outputs.tree }}'
         review: ''
         fix: '${{ ("Fix the findings 2" in steps && "outputs" in steps["Fix the findings 2"] && "shape_result" in steps["Fix the findings 2"].outputs) ? steps["Fix the findings 2"].outputs.shape_result.result_json : "" }}'
+  - name: Plan the cases 2
+    labels: {role: swamp}
+    guard: '${{ steps["Settle fix 2"].outputs.approved }}'
+    dependsOn:
+    - step: Settle fix 2
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
+          port: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.port }}
+          identityFile: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
+        argv: '${{ ["timeout", "60", "env", "-C", inputs.intent.draft.checkout_path, "python3", "swamp/proof/runner/runner.py", "plan", "--file", inputs.intent.plan.cases_file] }}'
+        okExitCodes: [0, 3]
+        timeoutSec: 70
   - name: Review the spec 3
     labels: {role: swamp}
     guard: '${{ steps["Settle fix 2"].outputs.approved }}'
@@ -291,6 +398,10 @@ jobs:
     - step: Settle fix 2
       condition:
         type: succeeded
+    - step: Plan the cases 2
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: workflow
       workflowIdOrName: operation-task-turn
@@ -310,10 +421,14 @@ jobs:
       condition:
         type: or
         conditions: [{type: succeeded}, {type: skipped}]
+    - step: Plan the cases 2
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-prep-settle-review-3
+      behaviorName: '${{ ("task-prep-settle-review-3-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: settle
       inputs:
         approved: '${{ steps["Settle fix 2"].outputs.approved }}'
@@ -321,6 +436,8 @@ jobs:
         tree: '${{ steps["Settle fix 2"].outputs.tree }}'
         review: '${{ ("Review the spec 3" in steps && "outputs" in steps["Review the spec 3"] && "shape_result" in steps["Review the spec 3"].outputs) ? steps["Review the spec 3"].outputs.shape_result.result_json : "" }}'
         fix: ''
+        plan_exit: '${{ ("Plan the cases 2" in steps && "outputs" in steps["Plan the cases 2"] && "exitCode" in steps["Plan the cases 2"].outputs) ? steps["Plan the cases 2"].outputs.exitCode : 0 }}'
+        plan_output: '${{ ("Plan the cases 2" in steps && "outputs" in steps["Plan the cases 2"] && "stderr" in steps["Plan the cases 2"].outputs) ? steps["Plan the cases 2"].outputs.stdout + steps["Plan the cases 2"].outputs.stderr : "" }}'
   - name: Review has no findings
     labels: {role: swamp}
     dependsOn:
@@ -358,4 +475,5 @@ jobs:
           pull_head: ${{ inputs.intent.publish.pull_head }}
           pull_request: ${{ inputs.intent.publish.pull_request }}
           ssh_execution: ${{ steps["Pin the VM"].outputs.publish.ssh_execution }}
+        run_id: ${{ run.id }}
         execution_secrets: '${{ {"github_token": inputs.publish_secrets.github_token, "git_authorization": inputs.publish_secrets.git_authorization} }}'

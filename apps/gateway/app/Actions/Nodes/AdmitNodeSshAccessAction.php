@@ -6,6 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\NodeSshAccessProjection;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -31,7 +32,7 @@ final readonly class AdmitNodeSshAccessAction
 
             return $this->existing($node, $intent) ?? $this->operations->execute('node.ssh_access_converge', 'node', $node->id, $node->id,
                 ['intent' => $intent, 'execution_secrets' => [],
-                    'participant_node_ids' => array_values(array_unique([209, $node->id]))], 'operator', $requestId);
+                    'participant_node_ids' => array_values(array_unique([SwampNode::id(), $node->id]))], 'operator', $requestId);
         });
     }
 

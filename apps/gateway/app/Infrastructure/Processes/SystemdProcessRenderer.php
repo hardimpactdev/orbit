@@ -11,6 +11,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Processes\VpDevPreset;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Process;
 use InvalidArgumentException;
 use SensitiveParameter;
@@ -100,6 +101,7 @@ final readonly class SystemdProcessRenderer
                 ),
             'Restart='.$this->restartPolicy($process),
             'RestartSec=2',
+            ...($target->instance === null && GatewayHorizon::runs($process) ? GatewayHorizon::stopDirectives() : []),
             '',
             '[Install]',
             'WantedBy=multi-user.target',

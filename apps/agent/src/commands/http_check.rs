@@ -27,7 +27,7 @@ pub struct Input {
 pub struct Verified {}
 
 fn request(input: &Input) -> Result<Process, Error> {
-    if input.port == 0 || !super::doctor_route::valid_domain(&input.domain) {
+    if input.port == 0 || !super::source::valid_domain(&input.domain) {
         return Err(Error::Invalid {});
     }
     let mut process = Process::new("/usr/bin/curl");

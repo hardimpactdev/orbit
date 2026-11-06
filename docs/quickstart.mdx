@@ -127,7 +127,7 @@ Check each checkpoint before you continue to the next step.
     php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' --no-interaction
     ```
 
-    Gateway bootstrap currently refuses with `gateway.bootstrap_unavailable` before changing keys, Nodes, roles, or host state. Native Swamp bootstrap must be installed before this command can initialize a Gateway. Existing installations remain usable. This command cannot repair or rekey an observer.
+    Gateway bootstrap records the Gateway Node and its Gateway and VPN roles, sets the VPN settings, makes the Orbit root CA and the Gateway SSH key, and records the host key of the machine. It starts no service and writes nothing outside the Orbit home: Swamp applies the WireGuard hub and the roles afterwards. A second run keeps the CA and the SSH key. Pass `--wireguard-ip` and `--wireguard-subnet` for a private network other than the default. This command cannot repair or rekey an observer.
 
     **Checkpoint:** every service reports `active`, and `caddy version` reports 2.9.0 or newer:
 

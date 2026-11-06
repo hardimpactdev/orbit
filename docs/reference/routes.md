@@ -20,9 +20,18 @@ The Gateway validates Route changes and records intent as an Operation. Each ava
 
 Route creation and updates use official cfgmgmt resources and pinned SSH argv commands. Their TLS probes run on 209 over the captured SSH connection, verify the hostname and Orbit CA, and ignore the application HTTP status. A failed Caddy validation stops the reload and leaves the candidate for convergence; there is no rollback.
 
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
+
 Domain, publication and web-root updates use the Route admission action. The Gateway renders every file the run writes: each Node's whole Caddyfile, PHP pools, `APP_URL` lines and certificate leaves.
 
 The run follows the chart [`route/update.mmd`](/cli/route). It publishes the new site beside the old one, writes the new `APP_URL`, and probes TLS. Then it opens or closes the public edge, moves private DNS outside the TLD, waits the DNS grace, and withdraws the old site. There is no rollback.
+
+An Instance removal withdraws its Route with the `route-withdraw` workflow, not the Route mutation. Each Node it touches runs `route-withdraw-node`, in parallel: one Ansible `read`, one composition and one Ansible `apply`.
+
+- The composition is the same pool, Caddyfile and private DNS merge as the Route mutation, with the same revision checks.
+- The captured states apply in order against what the Node holds, so each file is written once.
+- A live file that matches none of the states stops the phase before it writes.
+- The private DNS records leave in the same step as the Caddy site of another Node, not after it.
 
 A pending domain replacement and an unchanged request change no Node, so their Operation has already succeeded and no run starts. Instance rename records its own Operation and composes the Route update.
 
@@ -41,7 +50,7 @@ A failure before the cutover leaves the old Route serving: a domain replacement 
 | `route.withdraw_failed` | `Withdraw the old site` |
 | `route.update_failed` | A failure outside these steps |
 
-Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
+Caddy convergence starts `operation-route-caddy` after intent commits. It reads the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
 Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. The run removes private DNS outside the TLD and waits the DNS grace. Then each Node gets that Caddyfile and loses the Route's certificate scopes, and development pools converge. LAN tuples and public ports that no published Route needs close last.
 
@@ -135,13 +144,17 @@ Create an explicit app Route for an Instance with `route:create <instance> <doma
 
 Creation reserves a `pending`, unpublished Route and starts one native Swamp workflow. Swamp prepares and publishes it before the Gateway records it active. An unchanged pending reservation can be retried. Failed or retiring Routes refuse a creation retry; their retained intent is available for explicit convergence. An unchanged active retry changes no Node: its Operation has already succeeded when the request returns, and no run starts. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`. Public Process Routes use `--process=PROCESS [--ingress=NODE] --publication=public`.
 
-The workflow, `operation-route-create`, has the seven steps of the [route:create chart](/cli/route/create). Each Node makes its key and CSR, and 209 has each CSR signed. A Cluster Route then allows the Router on LAN. One `route-create-site` child per Node installs the certificate and publishes the site. Then 209 probes the site over TLS, and a public Route opens the Ingress edge. A domain outside the TLD gets its private DNS last.
+The workflow, `operation-route-create`, has the seven steps of the [route:create chart](/cli/route/create). Each Node makes its key and CSR, and 209 has each CSR signed. A Cluster Route then allows the Router on LAN. One `route-create-site` child per Node installs the certificate and publishes the site. Then 209 probes the site over TLS, and a public Route opens the Ingress edge. A domain outside the TLD gets its private DNS beside the site install, because it needs nothing from the site.
 
-Every Node change is an official `@swamp/cfgmgmt` behavior or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
+Each Node's `route-create-site` child is one Ansible phase, `site`, of `swamp/ansible/route-create-site.yml`: the account, the Caddy access ACLs, PHP-FPM pools (each unit is reloaded and enabled; a stopped one starts), certificate, trust store, Caddyfile, APP_URL lines and awake markers. A production `.env` is written by its own steps after it. The other Node changes are official `@swamp/cfgmgmt` behaviors or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
+
+The phase updates the system trust store only when it wrote a new Orbit root.
+
+The Gateway builds the Caddy access ACLs as five commands for one site: two that deny the checkout, one that opens passage above the served roots, and two that grant read on the roots. Each command names every path it covers, because each command is one Ansible task on the Node.
 
 A Laravel Instance registered in place can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
 
-[`instance:create`](/cli/instance/create) of a web-serving Project runs `operation-route-create` last in its native run. Its Instance is still `reserved` when the Gateway captures the Route plan, so the capture renders that prepared Instance as its site: the Caddy site, the PHP pool, and the TLS probe.
+[`instance:create`](/cli/instance/create) of a web-serving Project runs `operation-route-create` beside its setup steps in its native run. Its Instance is still `reserved` when the Gateway captures the Route plan, so the capture renders that prepared Instance as its site: the Caddy site, the PHP pool, and the TLS probe.
 
 [Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Instance child workflows bind certificate signing to the parent Operation and its run. Create and registration may sign only their admitted forward Route leaves, never restoration leaves. [`tasks.provision`](/reference/tasks#provision-an-external-group) runs the same child for a routed task workspace and signs under the same rule. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
 
@@ -384,7 +397,7 @@ When the preparation fails, the walk restores the saved ACLs, and the deny on th
 
 ### Cluster scope
 
-Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets.
+Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets. A Route change names a Route in those answers only while the fleet it captures has a site for it. So a withdrawn Route, or a failed create that is undone, loses its answer in the same Operation.
 
 A Router unset whose Router left no site, certificate or LAN rule on any Node ends at admission with no run. [Native Cluster Router](/reference/native-cluster-router#unset-a-router) has the steps.
 
@@ -609,6 +622,8 @@ Private DNS answers carry a 30-second TTL. After a transition moves a name, it w
 
 The wait counts from the last DNS move of that Route, which the Route stores. When another change moves the same Route during the wait, that change waits its own full period.
 
+An Instance removal (`instance:destroy`) waits no grace: it removes the name for good, and a client that still holds a cached answer reaches the Node for up to 30 seconds after the site is gone, the same as after the wait. `route:destroy` keeps the wait until its own flow is measured.
+
 The grace period covers clients whose resolver honors the TTL, such as systemd-resolved and dnsmasq on Orbit Nodes. Caddy finishes every request in progress on the old target and closes idle keep-alive connections, so the next request resolves the name again. A client with a longer DNS cache of its own, such as a browser or a Java runtime, can still reach the old target and get a TLS error until its cache expires. Retry the request or reload the page.
 
 ## Publish each service on its own hostname
@@ -673,6 +688,12 @@ Instance removal deletes a Route whose last target it removes, before it finaliz
 ## Coordinate publication
 
 Only one operation publishes private Caddy, DNS, or Metrics configuration at a time. The Gateway takes an exclusive lock on one file, `$ORBIT_HOME/.dnsmasq-projections.lock`, before it reads Route, target, Cluster, and Router state. It holds the lock through Caddy builds, DNS publication, and activation. Nested calls in one request share it. A competitor waits up to 30 seconds, or the rest of its command time when that is shorter. Then it returns HTTP 409 `app-dev.projection_busy` before it changes anything.
+
+Route writes also hold their Nodes (decided by the orchestrator, for Nick's review, 2026-11-06). When the Gateway admits a Route write (`route:create`, `route:update`, `route:destroy`, `route:target:set`, `instance:create`, `instance:destroy`, `instance:clone` or `instance:transfer`), it records one hold for each Node that serves the Route's site, through Caddy or PHP. The task keeps the hold until it reaches a terminal state.
+
+A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
+
+A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed, and the apply phase refuses a file that changed since the read. Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, and they are not held.
 
 Each Cluster also has a Router lock. Setting or clearing a Router holds it through validation, setup, activation, and cleanup. Cluster state and TLD changes use it too. A competitor for the same Cluster waits up to 30 seconds and then returns HTTP 409 `cluster.router_busy`. Different Clusters use separate locks.
 
@@ -750,9 +771,9 @@ LAN address selection uses the recorded /24, not Cluster membership; the source 
 
 Route and certificate dispatch takes a kind and worker identity. The placed family invocation claims and executes on the same Node that runs the worker. Before its first effect, it saves the claimed Operation ID. A retry keeps that ID and verifies a saved terminal result through the Gateway. An empty claim ends the invocation. A lost lease ends the attempt; a later dispatch may reclaim expired work.
 
-Retained Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and publishes the current whole-Node render through its native workflow. The bound public GET returns `input.caddy_publication` from `CaddyPublicationPlan::forNode()`. It includes the Node identity and agent pin, then either the Caddy content, version, listener addresses and serving flag, or a bounded render refusal. Native model `@nckrtl/route-publication`, named `route-publication-node-ID`, holds its lock through the read and local validation/reload. Only proven render or target validation failures include `stage: render|validate`; other failures cannot permit first-Node degradation.
+Retained Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and publishes the current whole-Node render through its native workflow. The bound public GET returns `input.caddy_publication` from `CaddyPublicationPlan::forNode()`. It includes the Node identity and agent pin, then either the Caddy content, version, listener addresses and serving flag, or a bounded render refusal. Only proven render or target validation failures include `stage: render|validate`; other failures cannot permit first-Node degradation.
 
-Other same-Node native parents can call the canonical model's `publishCaddy` method with their existing Operation ID, kind, Node ID and root run ID. Their owning public projection supplies the same fresh `caddy_publication` shape. This method performs no parent-result POST and starts no child. Rendered configuration must not enter pre-lock workflow inputs. Foreign Node reads remain outside this contract. Retained Gateway builders still require migration before the native lock can coordinate every Caddy writer.
+No Swamp model holds a publication lock. The Gateway's [Node hold](#coordinate-publication) orders the Route writes on a Node, and each apply phase refuses a file that changed since its read.
 
 Instance removal performs Route cleanup as steps in its native parent DAG. It converges shared PHP-FPM pools even when the Instance has no Route, withdraws Caddy before certificate and runtime removal, and retains every certificate still named by a stored site. Transfer retires captured source leaves and LAN rules in the same parent run, after publishing the surviving Caddy and PHP state. No `route.withdraw_instance`, `route.cleanup_instance` or `route.retire_source` child Operation is created.
 

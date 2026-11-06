@@ -55,7 +55,7 @@ final readonly class StartTaskVmImageOperationAction
 
         return $this->start->execute('task_vm.image_build', 'task_vm_image', $build->id, $node->id, [
             'build_id' => $build->id, 'attempt' => $build->attempt, 'host_node_id' => $node->id, 'identity' => $recipe->identity, 'generation' => $build->recipe_generation,
-            'project' => $host->project, 'builder' => $builder, 'smoke' => $builder.'-smoke', 'network' => $host->network,
+            'project' => $host->project, 'pool' => $host->pool, 'builder' => $builder, 'smoke' => $builder.'-smoke', 'network' => $host->network,
             'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk,
             'source' => $build->source_fingerprint ?? TaskVmHost::SourceImage,
             'candidate_alias' => ($build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, 'base', $build->id)).'-attempt-'.$build->attempt,

@@ -1,0 +1,151 @@
+id: a3b12de3-0faa-4465-8843-1b9af60794a2
+name: operation-proof-run
+description: >-
+  Prove one command of a commit on its own proof task VM, from full inputs on 209: the task provision, the cases of the
+  command through proof-fleet-verify, and the destruction of the VM, always. No step calls the Gateway.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: proof.command}
+    intent:
+      type: object
+      properties:
+        provision: {type: object}
+        verify: {type: object}
+        cancel:
+          type: object
+          properties:
+            node_id: {type: integer, minimum: 1}
+            intent: {type: object}
+            execution_secrets:
+              type: object
+              additionalProperties: &reference
+                type: object
+                properties:
+                  vault:
+                    type: string
+                    enum:
+                    - orbit-control-inputs
+                  key:
+                    type: string
+                    pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$
+                required:
+                - vault
+                - key
+                additionalProperties: false
+          required: [node_id, intent, execution_secrets]
+          additionalProperties: false
+      required: [provision, verify, cancel]
+      additionalProperties: false
+    # The converge intent of the provision (stage 2, "Converge once"), which the provision takes as an input of its own.
+    converge:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: *reference
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - converge
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: prove
+  labels: {role: swamp}
+  steps:
+  # Stage 2: the same task provision every task uses. Its input is the one the Gateway captured at admission.
+  - name: Create the VM
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-provision
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: tasks.provision
+        run_id: ${{ run.id }}
+        intent: ${{ inputs.intent.provision }}
+        converge: ${{ inputs.converge }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  # The Gateway left the guest's SSH target unpinned; the VM step just pinned its key.
+  - name: Pin the VM
+    labels: {role: swamp}
+    dependsOn:
+    - step: Create the VM
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: '${{ "proof-run-pin-" + string(inputs.intent.verify.node_id) }}'
+      methodName: pin
+      inputs:
+        receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
+        guest_node_id: '${{ inputs.intent.verify.node_id }}'
+        intents:
+          verify: '${{ inputs.intent.verify }}'
+  # Stage 3: the cases of this one command, in batches. The child succeeds whatever the verdicts are; the report holds them.
+  - name: Prove the command
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: Pin the VM
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-verify
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: '${{ inputs.intent.verify.node_id }}'
+        kind: proof.verify
+        intent: '${{ steps["Pin the VM"].outputs.verify }}'
+        execution_secrets: {}
+  # Always, also after a failure: no proof VM is left behind. The Gateway captured this input with the VM.
+  - name: Destroy the VM
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: Create the VM
+      condition: &always
+        type: always
+    - step: Pin the VM
+      condition: *always
+    - step: Prove the command
+      condition: *always
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-cancel
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.cancel.node_id }}
+        kind: tasks.cancel
+        intent: ${{ inputs.intent.cancel.intent }}
+        execution_secrets: ${{ inputs.intent.cancel.execution_secrets }}
+  # The verdict lines of the command, one JSON object a line. The Gateway reads this step once, when the run ends.
+  - name: Report
+    labels: {role: swamp}
+    dependsOn:
+    - step: Destroy the VM
+      condition: *always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "proof-run-report-" + string(inputs.intent.verify.node_id) }}'
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$LINES"
+        env:
+          LINES: '${{ ("Prove the command" in steps && "outputs" in steps["Prove the command"] && "report" in steps["Prove the command"].outputs) ? steps["Prove the command"].outputs.report.stdout.trim() : "" }}'

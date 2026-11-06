@@ -18,11 +18,15 @@ A Schedule runs one command on a calendar for one Node or one Instance. The Gate
 
 Per-minute schedulers on production Instances, such as `laravel-scheduler` and `powersync-health`, keep a systemd timer on their Node until the serve load and outage test passes. The calendar's form picks the path: a cron expression makes a native Schedule, and a systemd calendar keeps the [Node timer](#node-timers). Production preparation copies each Project definition this way; a native copy starts active and disabled, and its workflow is written when it is first enabled. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
 
-An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization and cleaning, Horizon metrics snapshots, and batch and failed-job pruning. Hourly `problems:file` stays in the Gateway scheduler with its lock.
+An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization and cleaning, Horizon metrics snapshots, batch and failed-job pruning, and the minute [reconciler](/reference/swamp-command-steps#reconciler) that settles Operations with their Swamp runs. Hourly `problems:file` stays in the Gateway scheduler with its lock.
 
 The Gateway also runs `orbit:auto-deploy` every minute without overlap for [automatic deployments](/reference/deployments#automatic-deployments). That internal tick is not a user-created Schedule and does not install a timer on an app-dev Node. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
 
 While task VMs are enabled, the Gateway checks the deployed recipe each minute and queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 10 minutes. The sweep also runs while only the [UpCloud](/reference/compute-drivers#sweep-upcloud) token file is set. The same recipe reconcile queues the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) when UpCloud is configured and no verified template matches the deployed recipe. UpCloud has no separate nightly schedule.
+
+While the [fleet rollout](/reference/gateway-recovery#fleet-rollout) is on, the Gateway queues its admission every day at 03:05 Europe/Amsterdam, when the window of the non-daytime Nodes opens. A verified release queues the same admission. The job waits a minute at a time while the commit has no CLI release yet or a rollout runs.
+
+Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).
 
 Release handoff queues [base image builds](/reference/compute-drivers#build-the-base-image) on each configured host when the deployed recipe changes. The minute check recovers missed dispatches.
 
@@ -139,7 +143,7 @@ Enable uses `operation-schedule-control` to enable and start the timer, check sy
 
 ## Logs
 
-Logs read only the Schedule's service, with fixed `journalctl --output cat` arguments. `lines` is 1 through 1,000, and the default is 100. The read has a 10-second deadline and returns at most 1 MiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when the byte limit removed older lines. Logs need an `active` Schedule; otherwise the Gateway returns `schedule.state_invalid`. Orbit does not store journal output, and it does not redact it: Process and Instance logs are redacted, Schedule logs are not. Keep secrets out of command output. The host Node's journal settings decide how long lines stay, and Orbit keeps no copy elsewhere.
+Logs read only the Schedule's service, through the Node agent's [log stream](/reference/live-logs#one-shot-reads-use-the-stream-path), with a fixed `journalctl --output short-iso --utc` read. `lines` is 1 through 1,000, and the default is 100. The read waits at most 5 seconds and returns at most 256 KiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when a limit removed older lines. Logs need an `active` Schedule; otherwise the Gateway returns `schedule.state_invalid`. Orbit stores no journal output. The agent and the Gateway redact credential-shaped text and stored environment values, but keep secrets out of command output. The host Node's journal settings decide how long lines stay.
 
 ## Latest run
 
@@ -166,7 +170,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 | `schedule.state_invalid` | The Schedule status does not allow the operation, or another operation on the Instance is running. |
 | `schedule.target_in_use` | The change would move or remove the target of an existing Schedule. |
 | `schedule.artifact_conflict` | A file at a Node timer's owned path is not the Schedule's own file. |
-| `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.logs_failed`, `schedule.remove_failed` | The operation did not finish. |
+| `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.remove_failed` | The operation did not finish. |
 | `schedule.node_unreachable` | SSH to the host Node failed. |
 
 ## Inspect Schedule drift

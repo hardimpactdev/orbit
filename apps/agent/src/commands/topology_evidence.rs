@@ -32,7 +32,7 @@ pub struct Output {
 }
 
 fn read(input: &Input) -> Result<Output, Error> {
-    if !super::doctor_route::absolute(&input.checkout) {
+    if !super::source::absolute(&input.checkout) {
         return Err(Error::Invalid {});
     }
     let path = input.checkout.join(".e2e/evidence.jsonl");

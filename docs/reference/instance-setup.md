@@ -7,7 +7,6 @@ covers:
   - apps/gateway/app/Infrastructure/{Instances/{RemoteDevelopmentInstanceConfigurator,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/agent/src/commands/{ci_caches.sh,dev_source.rs,dev_source_tests.rs}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
   - swamp/workflows/workflow-operation-instance-{setup-direct,create}.yaml
 ---
@@ -22,7 +21,7 @@ With `--domain`, registration publishes the prepared checkout's Route after setu
 
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
-Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each command runs as one `@swamp/ssh exec` step, `bash -eu -c <command>` in the checkout as the account, and keeps its exit code and stderr for failure diagnosis. Command stdout is discarded on the Node.
+Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. The commands run in order as one Ansible phase, `setup`, each as `bash -eu -c <command>` in the checkout as the account; the first failure stops the phase, the failure names the step, and the phase keeps its log and stderr for failure diagnosis. A Project without setup steps runs no setup phase. Command stdout is discarded on the Node.
 
 Stderr stays in Swamp's native run history on Node 209. When the Gateway reads a failure, it redacts the Instance's stored environment values and credential-shaped values before it keeps a tail of at most 4 KiB. A nonzero exit still fails create.
 
@@ -80,7 +79,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Checkout access
 
-The development create workflow runs from Node209 through official SSH as the Node's managed user. It captures the stored WireGuard endpoint and full host pins at admission. Native steps prepare the owned checkout, validate its configured origin, resolve the admitted branch and inspect the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.
+The development create workflow runs from Node209 over SSH as the Node's managed user, with two Ansible phases for the Node work. It captures the stored WireGuard endpoint and full host pins at admission. The checkout phase prepares the owned checkout, validates its configured origin, resolves the admitted branch and inspects the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.
 
 A seeded create returns `instance.branch_in_use` before preparing a target when the requested branch is already checked out in another worktree. Choose a new branch; Orbit does not force shared refs to move.
 
@@ -102,17 +101,17 @@ Swamp executes explicit Project setup as an `instance.run_steps` Operation ([flo
 
 Client migration: older MCP, SDK and CLI clients expect a synchronous setup result. Update them to follow the returned Operation. Development creation and removal compose the configured commands directly in their native parents. They do not start a child Operation.
 
-A native create failure retains its reserved Instance and owned checkout with a bounded failure code. After its root is terminal, submit a fresh normal create Operation with a new idempotency key, or use [Instance removal](/reference/instance-removal). Create does not start a rollback or cleanup child. A fresh run may repeat earlier setup commands; configure them to converge. Failed-run `workflow resume` is not required because pinned e459 loses inline official SSH global arguments on resume.
+A native create failure retains its reserved Instance and owned checkout with a bounded failure code. After its root is terminal, submit a fresh normal create Operation with a new idempotency key, or use [Instance removal](/reference/instance-removal). A failure after the Route's key was made also withdraws the Route in the same run, through the restore side of the publication that the Gateway captured at admission; create starts no other cleanup. A fresh run may repeat earlier setup commands; configure them to converge. Failed-run `workflow resume` is not required because pinned e459 loses inline official SSH global arguments on resume.
 
-The development `instance:create` root runs from control Node209 through official SSH with its complete admitted input and stored host pins. Each Node action is one `@swamp/ssh exec` command or an official `@swamp/cfgmgmt/file` step; nothing is copied to the Node.
+The development `instance:create` root runs from control Node209 over SSH with its complete admitted input and stored host pins. The Node work is two Ansible phases of `swamp/ansible/operation-instance-create.yml`, `checkout` and `setup`, behind one `@nckrtl/ansible-input` step that writes the admitted intent; the database, Process and Route work are child workflows. Nothing is copied to the Node. A placed Swamp step costs about 1.1 s of dispatch on Node209 whatever it does, so the checkout and its `.env` are one phase, not eight steps.
 
-Prepare refuses a branch that another worktree of the seed repository holds, then makes the checkout and its origin. When a fetch is needed, the GitHub read token is written as a 0600 credential file, Git fetches with it, and the next step removes the file. Source checks out the admitted branch and prints only its commit.
+The `checkout` phase refuses a branch that another worktree of the seed repository holds, then makes the checkout and its origin. When a fetch is needed, the GitHub read token is written as a 0600 credential file, Git fetches with it, and the file is removed after the fetch, also after a failure. The phase then checks out the admitted branch and prints only its commit as one `orbit-commit=` line.
 
-Environment writes the `.env` the Gateway rendered at admission from the Project environment template, with mode 0640 and group `orbit-env`, so the Node agent can report its key names; the Gateway pushes it to the vault after the admission commits. Setup runs one step per command, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts.
+The same phase writes the `.env` the Gateway rendered at admission from the Project environment template, with mode 0640 and group `orbit-env`, so the Node agent can report its key names; the Gateway pushes it to the vault after the admission commits. The `setup` phase runs the commands, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts.
 
 Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
 
-The root runs its setup list after source and environment preparation, before recording the Instance as active. For a web-serving Project it creates the Route last, after the Processes, with the same child as `route:create`. It refuses `--database-server` before reservation. 
+The root runs its setup list after the checkout phase, before recording the Instance as active. For a web-serving Project it creates the Route beside the setup steps, with the same child as `route:create`. The Route's key, CSR and signature are made at the start, beside the checkout, and that child takes the signed certificate. The checkout phase has already granted Caddy its access and set `APP_URL`, so the Route's own phase skips both on that Node. A failed setup leaves the published Route; `instance:destroy` withdraws it. It refuses `--database-server` before reservation. 
 
 Setup steps receive two variables:
 

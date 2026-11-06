@@ -181,10 +181,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'server_database' => $server['input'] ?? null];
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
             // 30 s for the Process phase, 180 s for the Route child (CSR, signing, install, publication and its TLS probe; 117 s measured cold),
+            // 60 s more for the withdrawal of a Route when the create fails (20 s measured),
             // and 180 s for the database copy or the owned server database (its create, owner check and fill).
             $input['run_budget_seconds'] = 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, array_sum(array_map(
                 static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30
-                + (isset($input['route_create']) ? 180 : 0) + ($database === null && $server === null ? 0 : 180);
+                + (isset($input['route_create']) ? 240 : 0) + ($database === null && $server === null ? 0 : 180);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
         });

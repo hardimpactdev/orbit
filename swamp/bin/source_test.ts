@@ -16,20 +16,14 @@ type Definition = {
 };
 
 const yaml = (path: string) => parse(Deno.readTextFileSync(path)) as Definition;
-Deno.test("model IDs are unique and project definitions contain public metadata", async () => {
-    const ids = new Set(), projects = [];
+Deno.test("model IDs are unique", async () => {
+    const ids = new Set();
     for await (const path of expandGlob(`${ROOT}/models/**/*.yaml`)) {
         const model = yaml(path.path), id = model.id.toLowerCase();
         assertMatch(id, /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/);
         assertFalse(ids.has(id), path.path);
         ids.add(id);
-        if (path.path.includes("/@nckrtl/project-")) {
-            projects.push(model.name);
-            assertEquals(model.globalArguments, {});
-            assertEquals(model.methods, {});
-        }
     }
-    assertEquals(projects.length, 19);
 });
 Deno.test("workflow queue bounds have measured per-kind budgets", async () => {
     for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {

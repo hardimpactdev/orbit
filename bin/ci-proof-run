@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 SHA = re.compile(r'[0-9a-f]{40}([0-9a-f]{24})?')
-# The proof budget is 30 minutes after the fleet is ready; the job timeout in ci.yml is 45.
+# The proof budget is 30 minutes after the fleet is ready; the job timeout in ci.yml and proof-outside.yml is 45.
 WAIT = 45 * 60
 
 
@@ -28,7 +28,8 @@ def find_result(document):
 
 
 def evaluate(code, output):
-    """Return (passed, summary lines). Only a clean exit with a result whose cases all passed is a pass."""
+    """Return (passed, summary lines). Only a clean exit with a result is a pass, and only when the proof passed with at least
+    one case that ran, and every case passed. Nothing to prove passes. A missing result, an unrun case or any other outcome fails."""
     try:
         result = find_result(json.loads(output))
     except ValueError:
@@ -37,7 +38,7 @@ def evaluate(code, output):
         return False, [f'The proof printed no result (exit status {code}).']
     cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
     lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
-    lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file', '')))} | {case.get('verdict', '')} |"
+    lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('verdict', '')} |"
               for case in cases]
     if not cases:
         lines.append('No case ran.')
@@ -46,8 +47,10 @@ def evaluate(code, output):
             lines.append(f"Uncovered: {path.get('path', '')} ({path.get('reason', '')})")
     if isinstance(result.get('receipt_url'), str) and result['receipt_url']:
         lines.append(f"Receipt: {result['receipt_url']}")
-    passed = code == 0 and all(case.get('verdict') == 'passed' for case in cases)
-    return passed, lines
+    outcome = result.get('outcome')
+    ran = outcome == 'passed' and cases and all(case.get('verdict') == 'passed' for case in cases)
+    passed = code == 0 and (ran or (outcome == 'nothing_to_prove' and not cases))
+    return bool(passed), lines
 
 
 def run(sha, key, orbit):

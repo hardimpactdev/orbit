@@ -359,8 +359,8 @@ jobs:
     name: Proof run (report-only)
     needs: changes
     # Only a pull request from a branch of this repository. A fork or outside PR needs a maintainer's review and
-    # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job. There is no queue run, and no
-    # run after the merge: the proof tests the PR head once per push.
+    # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job: the workflow proof-outside.yml
+    # runs its proof. There is no queue run, and no run after the merge: the proof tests the PR head once per push.
     if: >-
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
@@ -397,10 +397,10 @@ jobs:
     uses: ./.github/workflows/swamp-shape.yml
     with:
       working-directory: swamp
-      changed-only: false
+      changed-only: true
     secrets:
-      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
-      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
     name: Gateway release inputs
     needs: changes

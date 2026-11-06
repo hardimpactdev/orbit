@@ -1,4 +1,4 @@
-//! `cli.inspect` and `cli.install`: the Orbit CLI in the layout `orbit self-update` keeps, the release as
+//! `cli.install`: the Orbit CLI in the layout `orbit self-update` keeps, the release as
 //! `/usr/local/bin/orbit-<version>` and `/usr/local/bin/orbit` as a link to it, plus root's CLI profile.
 //!
 //! The link path decides what happens. Nothing there: install. An Orbit CLI with `self-update` at the release or
@@ -150,17 +150,6 @@ pub fn inspect(link: &Path, user: &str) -> State {
     } else {
         State::Stale
     }
-}
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InspectInput {
-    pub user: String,
-}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Inspected {
-    pub state: State,
 }
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -367,30 +356,6 @@ pub fn install(input: &InstallInput, deadline: Instant) -> Result<Installed, Cli
         installed,
         configured,
     })
-}
-
-pub struct InspectCli;
-
-impl Command for InspectCli {
-    const NAME: &'static str = "cli.inspect";
-    const SUMMARY: &'static str =
-        "Say whether the Orbit CLI on the Node is missing, current, older, or foreign.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(150);
-    type Input = InspectInput;
-    type Output = Inspected;
-    type Error = CliError;
-
-    /// A read as the managed user, the only account that runs the found binary.
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn run(input: InspectInput, _: &Context) -> Result<Inspected, CliError> {
-        Ok(Inspected {
-            state: inspect(Path::new(LINK), &input.user),
-        })
-    }
 }
 
 pub struct InstallCli;

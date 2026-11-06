@@ -288,7 +288,7 @@ Recording never changes the command's output or exit code. A failed append print
 
 `acquire` attaches the worktree to the checkout Nodes as the Incus disk device `orbit-source`. It is a read-write virtiofs share at `/home/orbit/orbit`. A host edit is live in every checkout Node at once. Run `sync` only after a migration or a change to a guest helper script.
 
-Guests never run Composer. Host `bin/bootstrap` owns `vendor/` and the Gateway `.env`. `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders or without `apps/gateway/.env`. The harness sets only that file's `ORBIT_GATEWAY_CHECKOUT` to `/home/orbit/orbit/apps/gateway`. The Gateway's database, CA, and keys live in the guest under `/home/orbit/.orbit`, not in the worktree.
+Guests never run Composer. Host `bin/bootstrap` owns `vendor/` and the Gateway `.env`. `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders or without `apps/gateway/.env`. The harness sets only that file's `ORBIT_GATEWAY_CHECKOUT` to `/home/orbit/orbit/apps/gateway`. The Gateway's database, CA, and keys live in the guest under `/home/orbit/.orbit`, not in the worktree. `orbit:bootstrap` is the only Gateway command that checks the mounted checkout; no `orbit:gateway-web` command exists.
 
 ### Gateway schema
 

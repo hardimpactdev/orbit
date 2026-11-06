@@ -16,8 +16,11 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 /** A ready task VM with its host and active guest Node, and a vault that records its puts. */
 function readyCopiesWorld(TaskVmState $state = TaskVmState::Ready): array
@@ -95,7 +98,7 @@ it('renders the full public intent of the save and sends only the vault name of 
     $input = app(TaskVmReadyCopiesIntent::class)->capture($vm);
 
     expect($input)->toMatchArray(['task_vm_id' => $vm->id, 'node_id' => $host->id, 'guest_node_id' => $guest->id]);
-    expect($input['fleet'])->toBe(['guests' => ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'], 'network' => 'oe-nested']);
+    expect($input['fleet'])->toBe(['guests' => ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'], 'network' => 'oe-nested', 'format' => '3']);
     expect($input['ssh_execution']['target'])->toMatchArray(['host' => '10.44.0.131', 'user' => 'orbit', 'port' => 22]);
     expect($input['execution_secrets'])->toBe(['proof_club' => ['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key']]);
     expect(json_encode($input, JSON_THROW_ON_ERROR))->not->toContain('proof-club-key');

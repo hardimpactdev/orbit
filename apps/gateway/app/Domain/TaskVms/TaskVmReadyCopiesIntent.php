@@ -26,14 +26,24 @@ final readonly class TaskVmReadyCopiesIntent
     /** The nested network of a task VM. The stage 2 steps create it from the subnet the ready copies store. */
     public const string Network = 'oe-nested';
 
+    /** The subnet of the nested network. The ready copies store the MAC and address of each Node inside it, so a converge and the fleet steps use this one. */
+    public const string Subnet = '10.232.2.0/24';
+
+    /**
+     * The format of the ready copies, written to each copy as `user.ready.format`. A copy of another format, or none, is not usable: the
+     * provision skips the nested fleet. Raise it when the steps that start or apply a fleet need something new in the copies. Format 3: the nested
+     * Gateway holds the control plan of its Swamp (`/opt/orbit/bootstrap/control.yml`) that the re-mint of the Swamp tokens reads.
+     */
+    public const string Format = '3';
+
     /**
      * The nested fleet of a task VM: the names of its VMs and of its network, for the steps that start it and the steps that save it.
      *
-     * @return array{guests:array<string,string>,network:string}
+     * @return array{guests:array<string,string>,network:string,format:string}
      */
     public static function fleet(): array
     {
-        return ['guests' => self::Guests, 'network' => self::Network];
+        return ['guests' => self::Guests, 'network' => self::Network, 'format' => self::Format];
     }
 
     public function __construct(private SwampSshExecutionInput $ssh, private SwampCommandStep $shared) {}

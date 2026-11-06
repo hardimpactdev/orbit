@@ -207,25 +207,5 @@ impl Command for OrderCaddy {
         converge(&Files::system(), &mut Native(context), true)
     }
 }
-pub struct RemoveDnsOrdering;
-impl Command for RemoveDnsOrdering {
-    const NAME: &'static str = "wireguard.remove-dns-ordering";
-    const SUMMARY: &'static str =
-        "Remove the dnsmasq dependency that creates a WireGuard boot cycle.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = Input;
-    type Output = Output;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn target(_: &Input) -> Option<String> {
-        Some("wireguard-hub".into())
-    }
-    fn run(_: Input, context: &Context) -> Result<Output, Error> {
-        converge(&Files::system(), &mut Native(context), false)
-    }
-}
 #[cfg(test)]
 mod tests;

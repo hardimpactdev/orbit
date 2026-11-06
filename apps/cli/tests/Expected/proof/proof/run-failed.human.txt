@@ -1,0 +1,19 @@
+Proof running...
+
+┌  Prove firewall:allow
+│
+├  ● Proof running
+│    proof.run_failed
+│
+└  Proof failed.
+
+ ┌────────────────┬──────────────────┬─────────┬──────────┐
+ │ COMMAND        │ CASE             │ VERDICT │ DURATION │
+ ├────────────────┼──────────────────┼─────────┼──────────┤
+ │ firewall:allow │ allow.cases.yaml │ unrun   │ 0.0 s    │
+ └────────────────┴──────────────────┴─────────┴──────────┘
+Not passed: allow.cases.yaml
+Failed step: Check readiness
+Error code: proof.run_failed
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

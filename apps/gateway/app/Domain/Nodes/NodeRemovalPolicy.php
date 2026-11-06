@@ -24,7 +24,7 @@ final readonly class NodeRemovalPolicy
 
     public function protected(Node $node, Node $caller, ?Instance $removingWorkspace = null): void
     {
-        if ($node->id === 209) {
+        if ($node->id === SwampNode::idOrNull()) {
             throw $this->conflict('node.control_removal_forbidden', 'The Swamp control Node cannot remove its own runtime.');
         }
         $this->schedules->assertNodeRemovable($node);

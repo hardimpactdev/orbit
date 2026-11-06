@@ -5,14 +5,24 @@ declare(strict_types=1);
 namespace App\Infrastructure\Swamp;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
 
-/** One request to Swamp's native cancellation endpoint; terminal projection stays native. */
+/**
+ * One `workflow.cancel` request to Swamp on the run token; terminal projection stays native. Serve authorizes this request with
+ * the `run` action on the run's workflow, which the Gateway already holds to start the run. Its HTTP cancel endpoint needs
+ * `admin` on `access:*`, which is the superuser right, so the Gateway does not use it.
+ */
 final readonly class CancelSwampRun
 {
+    /** Serve waits for an aborted run to settle before it answers. */
+    private const int ReplySeconds = 30;
+
+    public function __construct(private WebSocketClient $socket) {}
+
     public function execute(Operation $operation): void
     {
         $run = $operation->state['swamp_run_id'] ?? null;
@@ -23,16 +33,33 @@ final readonly class CancelSwampRun
             || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
+        $id = bin2hex(random_bytes(16));
         try {
-            $response = Http::withToken($token)->withOptions(['verify' => $ca,
-                'curl' => [CURLOPT_CONNECT_TO => ['swamp.orbit:443:'.$address.':443']]])
-                ->post('https://swamp.orbit/api/v1/cancel/workflow-run/'.$run, ['reason' => 'Orbit Operation cancellation requested']);
-            if (! $response->successful()) {
-                throw $this->unavailable();
+            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->send(['type' => 'workflow.cancel', 'id' => $id, 'payload' => ['runId' => $run, 'reason' => 'Orbit Operation cancellation requested']]);
+            $deadline = microtime(true) + self::ReplySeconds;
+            while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+                foreach ($this->socket->receive(min(0.5, $remaining)) as $message) {
+                    if (($message['id'] ?? null) !== $id) {
+                        continue;
+                    }
+                    $data = is_array($message['payload'] ?? null) ? ($message['payload']['data'] ?? null) : null;
+                    if (($message['type'] ?? null) === 'workflow.cancel' && is_array($data) && ($data['runId'] ?? null) === $run
+                        && in_array($data['status'] ?? null, ['cancellation_requested', 'cancelled'], true)) {
+                        return;
+                    }
+                    // An error frame: serve refused, or the run is not cancellable. The terminal run stays authoritative.
+                    throw $this->unavailable();
+                }
             }
+        } catch (ResourceOperationException $exception) {
+            throw $exception;
         } catch (Throwable) {
             throw $this->unavailable();
+        } finally {
+            $this->socket->close();
         }
+        throw $this->unavailable();
     }
 
     private function unavailable(): ResourceOperationException

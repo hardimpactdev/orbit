@@ -13,6 +13,8 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, enum: [tasks.publish]}
+    # The root run of the Operation, which the Gateway checks when it mints. A parent run passes its own; a run started by the Gateway is the root.
+    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
       type: object
       properties:
@@ -524,6 +526,21 @@ jobs:
     - step: Read bundle contents
       condition:
         type: succeeded
+  - name: Mint the push token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
+        purpose: publish
+    dependsOn:
+    - step: Check imported commit
+      condition:
+        type: succeeded
   - name: Push the branch
     labels:
       role: swamp
@@ -555,7 +572,7 @@ jobs:
           ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
         ignoreExitCode: true
     dependsOn:
-    - step: Check imported commit
+    - step: Mint the push token
       condition:
         type: succeeded
     writes: true
@@ -688,6 +705,7 @@ jobs:
           GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
+    guard: ${{ !("Mint the push token" in steps && steps["Mint the push token"].status == "succeeded") }}
     allowFailure: true
     writes: true
   - name: Remove remote scratch

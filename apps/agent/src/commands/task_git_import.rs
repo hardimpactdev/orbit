@@ -70,7 +70,7 @@ fn valid_ref(value: &str) -> bool {
 }
 fn import(input: &Input, context: &Context) -> Result<Output, Error> {
     let mut seen = HashSet::new();
-    if !super::doctor_route::absolute(&input.checkout)
+    if !super::source::absolute(&input.checkout)
         || input.updates.len() > 1000
         || input.updates.iter().any(|update| {
             !valid_ref(&update.reference)

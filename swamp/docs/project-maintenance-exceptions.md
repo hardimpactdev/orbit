@@ -1,12 +1,11 @@
 # Release-age exception data
 
-Each private project extension owns its release-age exception records. Preserve
+Each Project entry in `projects.json` owns its release-age exception records. Preserve
 package, ecosystem, path, date and duration. The first record for a path,
 ecosystem and package keeps its original date and duration.
 
 Shared Composer and JavaScript policy accepts those records as non-secret
-inputs. Exception data belongs in the project's native Swamp configuration
-resource. A policy exception does not authorize credentials or a live
+inputs. Exception data belongs in the Project's `projects.json` entry. A policy exception does not authorize credentials or a live
 maintenance run.
 
 Workflows follow the binding [Swamp shape guide](swamp-shape.md). Persist

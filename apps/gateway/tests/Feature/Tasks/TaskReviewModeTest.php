@@ -44,3 +44,14 @@ it('stores the review mode of a group and defaults it to manual', function (): v
     expect($manual->fresh()->review_mode)->toBe(TaskReviewMode::Manual)
         ->and($automatic->fresh()->review_mode)->toBe(TaskReviewMode::Automatic);
 });
+
+it('keeps the review mode off subtasks, so a saved subtask can still be updated', function (): void {
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'A', 'brief' => 'B', 'status' => TaskGroupStatus::Backlog]);
+    $subtask = $group->tasks()->create(['title' => 'S', 'brief' => 'B']);
+
+    $saved = Task::query()->findOrFail($subtask->id);
+    $saved->update(['title' => 'S2']);
+
+    expect($saved->getRawOriginal('review_mode'))->toBeNull()->and($saved->fresh()->title)->toBe('S2');
+});

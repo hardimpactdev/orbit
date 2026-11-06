@@ -14,9 +14,9 @@ use App\Models\TaskVm;
 use Illuminate\Support\Str;
 
 /**
- * Records a new `provisioning` row on its placement: a group's VM, or a pool VM when the group is null. The row is
+ * Records a new `provisioning` row on its placement: a group's VM, or a ready slot for `$slotProjectId` when the group is null. The row is
  * named `tvm-<row id>`, so a retry after a destroyed VM never reuses a name, and it holds the next free WireGuard
- * address of the reserved range from the start. A pool row gets no Pi token; a claim gives it one. Call it under the
+ * address of the reserved range from the start. A group VM and a slot get their Pi token at once. Call it under the
  * placement transaction, which serializes writers.
  */
 final readonly class RecordTaskVmAction
@@ -26,10 +26,11 @@ final readonly class RecordTaskVmAction
         private WireGuardAddressAllocator $addresses,
     ) {}
 
-    public function execute(?Task $group, TaskVmPlacementTarget $target, TaskVmSize $size = TaskVmSize::Normal): TaskVm
+    public function execute(?Task $group, TaskVmPlacementTarget $target, TaskVmSize $size = TaskVmSize::Normal, ?int $slotProjectId = null): TaskVm
     {
         $vm = TaskVm::query()->create([
             'group_id' => $group?->id,
+            'slot_project_id' => $group === null ? $slotProjectId : null,
             'host_node_id' => $target->hostNodeId,
             'provider' => $target->provider,
             'size' => $size,
@@ -39,7 +40,7 @@ final readonly class RecordTaskVmAction
                 $this->settings->wireguardRange,
                 array_values(TaskVm::query()->live()->get()->map(static fn (TaskVm $vm): string => $vm->wireguard_ip)->all()),
             ),
-            'pi_token' => $group instanceof Task ? self::piToken() : null,
+            'pi_token' => $group instanceof Task || $slotProjectId !== null ? self::piToken() : null,
             'claimed_at' => $group instanceof Task ? now() : null,
         ]);
         $vm->update(['name' => 'tvm-'.$vm->id]);

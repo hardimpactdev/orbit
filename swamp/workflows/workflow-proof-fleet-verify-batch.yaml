@@ -19,6 +19,8 @@ inputs:
       type: string
     setup:
       type: boolean
+    restore:
+      type: boolean
     cases:
       type: array
       items:
@@ -37,10 +39,24 @@ jobs:
 - name: start
   labels: {role: swamp}
   steps:
+  # Each batch but the first starts from the `base` snapshot of the fleet: restore, then apply the checkout, then the batch setup. A restore that fails stops the batch.
+  - name: restore
+    labels: {role: swamp}
+    guard: '${{ !(has(inputs.restore) && inputs.restore) }}'
+    allowFailure: true
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-restore
+      inputs:
+        ssh_execution: ${{ inputs.ssh_execution }}
   - name: setup
     labels: {role: swamp}
     guard: '${{ !inputs.setup }}'
     allowFailure: true
+    dependsOn:
+    - step: restore
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     writes: true
     task:
       type: behavior
@@ -85,7 +101,7 @@ jobs:
     forEach:
       item: case
       in: ${{ inputs.cases }}
-    guard: '${{ steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") || steps.exists(k, k.startsWith("case-") && steps[k].?outputs.?setup.?stdout.orValue("").contains("\"setup\": \"failed\"")) }}'
+    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps.exists(k, k.startsWith("case-") && steps[k].?outputs.?restored.?stdout.orValue("").contains("\"restore\": \"failed\"")) || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") || steps.exists(k, k.startsWith("case-") && steps[k].?outputs.?setup.?stdout.orValue("").contains("\"setup\": \"failed\"")) }}'
     allowFailure: true
     task:
       type: workflow

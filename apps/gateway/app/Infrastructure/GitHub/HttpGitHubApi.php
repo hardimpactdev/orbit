@@ -10,19 +10,15 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubBranchPullRequest;
 use App\Domain\GitHub\GitHubCheckRun;
-use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
-use App\Domain\GitHub\GitHubListedPullRequest;
-use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubOpenedPullRequest;
 use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
-use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBranchUpdate;
@@ -43,8 +39,6 @@ final readonly class HttpGitHubApi implements GitHubApi
     private const int PAGE_SIZE = 100;
 
     private const int CHECK_RUN_PAGES = 10;
-
-    private const int OPEN_PULL_REQUEST_PAGES = 3;
 
     public function __construct(private HttpGitHubReviewReader $reviewReader) {}
 
@@ -186,6 +180,11 @@ final readonly class HttpGitHubApi implements GitHubApi
         GitHubRepository $repository,
     ): string {
         return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'read']);
+    }
+
+    public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string
+    {
+        return $this->repositoryToken($credentials, $installationId, null, ['contents' => 'read']);
     }
 
     public function repositoryMetadataToken(
@@ -483,6 +482,7 @@ final readonly class HttpGitHubApi implements GitHubApi
             mergedAt: $this->text($response->json('merged_at')),
             draft: $response->json('draft') === true,
             authorLogin: $this->text($response->json('user.login')),
+            fromFork: ! is_string($response->json('head.repo.full_name')) || $response->json('head.repo.full_name') !== $response->json('base.repo.full_name'),
         );
     }
 
@@ -518,45 +518,6 @@ final readonly class HttpGitHubApi implements GitHubApi
             }
             if ($read === $total) {
                 return $runs;
-            }
-            if ($rows === []) {
-                throw GitHubApiException::unavailable();
-            }
-        }
-
-        throw GitHubApiException::unavailable();
-    }
-
-    /** Pages follow `total_count` as for {@see checkRuns()}. */
-    public function checkSuites(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
-    {
-        $path = $this->repositoryPath($repository).'/commits/'.rawurlencode($sha).'/check-suites';
-        $suites = [];
-        $read = 0;
-        $total = null;
-        for ($page = 1; $page <= self::CHECK_RUN_PAGES; $page++) {
-            $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($path, ['per_page' => self::PAGE_SIZE, 'page' => $page]));
-            $rows = $response->json('check_suites');
-            $count = $response->json('total_count');
-            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || ! is_int($count) || $count < 0
-                || ($total !== null && $count !== $total)) {
-                throw GitHubApiException::unavailable();
-            }
-            $total = $count;
-            $read += count($rows);
-            foreach ($rows as $row) {
-                $id = is_array($row) ? ($row['id'] ?? null) : null;
-                if (! is_array($row) || ! is_int($id)) {
-                    throw GitHubApiException::unavailable();
-                }
-                $suites[] = new GitHubCheckSuite($id, $this->text($row['status'] ?? null), $this->text($row['conclusion'] ?? null),
-                    is_array($row['app'] ?? null) ? $this->text($row['app']['slug'] ?? null) : null);
-            }
-            if ($read > $total) {
-                throw GitHubApiException::unavailable();
-            }
-            if ($read === $total) {
-                return $suites;
             }
             if ($rows === []) {
                 throw GitHubApiException::unavailable();
@@ -656,106 +617,6 @@ final readonly class HttpGitHubApi implements GitHubApi
         return new GitHubCommitComparison($status, $base, $mergeBase);
     }
 
-    public function openPullRequests(#[SensitiveParameter] string $token, GitHubRepository $repository): array
-    {
-        $pullRequests = [];
-        for ($page = 1; $page <= self::OPEN_PULL_REQUEST_PAGES; $page++) {
-            $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($this->repositoryPath($repository).'/pulls', [
-                'state' => 'open', 'sort' => 'created', 'direction' => 'asc', 'per_page' => self::PAGE_SIZE, 'page' => $page,
-            ]));
-            $rows = $response->json();
-            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || count($rows) > self::PAGE_SIZE) {
-                throw GitHubApiException::unavailable();
-            }
-            foreach ($rows as $row) {
-                $pullRequests[] = is_array($row) ? $this->listedPullRequest($repository, $row) : throw GitHubApiException::unavailable();
-            }
-            if (count($rows) < self::PAGE_SIZE) {
-                break;
-            }
-        }
-
-        return $pullRequests;
-    }
-
-    public function submitReview(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $commitId, GitHubReviewEvent $event, string $body): int
-    {
-        $response = $this->send(fn (): Response => $this->request()->withToken($token)->post(
-            $this->repositoryPath($repository).'/pulls/'.$number.'/reviews',
-            ['commit_id' => $commitId, 'event' => $event->value, 'body' => $body],
-        ));
-        $id = $response->json('id');
-        if (! $response->successful() || ! is_int($id) || $id < 1) {
-            $message = $response->json('message');
-
-            throw GitHubApiException::reviewRefused($response->status(), is_string($message) ? rtrim($message, '.') : '');
-        }
-
-        return $id;
-    }
-
-    public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
-    {
-        return $this->merge($token, $repository, $number, $sha, 'merge');
-    }
-
-    private function merge(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha, string $method): GitHubMergeResult
-    {
-        $response = $this->send(fn (): Response => $this->request()->withToken($token)->put(
-            $this->repositoryPath($repository).'/pulls/'.$number.'/merge',
-            ['sha' => $sha, 'merge_method' => $method],
-        ));
-        $message = $response->json('message');
-        $message = is_string($message) ? rtrim($message, '.') : '';
-        if ($response->successful() && $response->json('merged') === true) {
-            return new GitHubMergeResult(true, $this->sha($response->json('sha')), $response->status(), $message);
-        }
-        if ($response->serverError()) {
-            throw GitHubApiException::unavailable();
-        }
-
-        return new GitHubMergeResult(false, null, $response->status(), $message);
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $row
-     *
-     * @throws GitHubApiException
-     */
-    private function listedPullRequest(GitHubRepository $repository, array $row): GitHubListedPullRequest
-    {
-        $number = $row['number'] ?? null;
-        $url = $this->text($row['html_url'] ?? null);
-        $user = is_array($row['user'] ?? null) ? $row['user'] : [];
-        $head = is_array($row['head'] ?? null) ? $row['head'] : [];
-        $base = is_array($row['base'] ?? null) ? $row['base'] : [];
-        $headRepository = is_array($head['repo'] ?? null) ? $this->text($head['repo']['full_name'] ?? null) : null;
-        $authorId = $user['id'] ?? null;
-        $authorLogin = $this->text($user['login'] ?? null);
-        $headRef = $this->text($head['ref'] ?? null);
-        $headSha = $this->sha($head['sha'] ?? null);
-        $baseRef = $this->text($base['ref'] ?? null);
-        $title = is_string($row['title'] ?? null) ? $row['title'] : null;
-        if (! is_int($number) || $url === null || $repository->pullRequestNumber($url) !== $number || ! is_int($authorId) || $authorId < 1
-            || $authorLogin === null || $headRef === null || $headSha === null || $baseRef === null || $title === null) {
-            throw GitHubApiException::unavailable();
-        }
-
-        return new GitHubListedPullRequest(
-            number: $number,
-            url: $url,
-            title: $title,
-            body: is_string($row['body'] ?? null) ? $row['body'] : null,
-            authorId: $authorId,
-            authorLogin: $authorLogin,
-            headRef: $headRef,
-            headSha: $headSha,
-            headRepository: $headRepository,
-            baseRef: $baseRef,
-            draft: ($row['draft'] ?? false) === true,
-        );
-    }
-
     /** @param array<array-key, mixed> $row */
     private function checkRun(array $row): ?GitHubCheckRun
     {
@@ -789,12 +650,12 @@ final readonly class HttpGitHubApi implements GitHubApi
     private function repositoryToken(
         GitHubAppCredentials $credentials,
         int $installationId,
-        GitHubRepository $repository,
+        ?GitHubRepository $repository,
         array $permissions,
     ): string {
         $response = $this->send(
             fn (): Response => $this->asApp($credentials)->withoutRedirecting()->post("/app/installations/{$installationId}/access_tokens", [
-                'repositories' => [$repository->name],
+                ...($repository === null ? [] : ['repositories' => [$repository->name]]),
                 'permissions' => $permissions,
             ]),
         );

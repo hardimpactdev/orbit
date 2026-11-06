@@ -6,12 +6,9 @@ namespace App\Actions\Tasks;
 
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
-use App\Domain\RemotePrograms\RemoteProgramFailed;
-use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
@@ -19,12 +16,10 @@ use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
-use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\Instance;
 use App\Models\Task;
@@ -32,7 +27,6 @@ use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 /**
@@ -77,19 +71,6 @@ final readonly class RemoveTaskWorkspaceAction
         return now()->subSeconds(Config::integer('orbit.tasks.reserved_timeout_seconds'));
     }
 
-    /** Waits before lease admission can snapshot an unavailable VM with reviewed work still to preserve. */
-    public static function awaitVmPreservation(Task $group, Instance $instance): void
-    {
-        app(TaskVmWorker::class)->stopGroup($group);
-        $vm = TaskVm::forNode($instance->node_id);
-        $reason = $vm?->state === TaskVmState::Destroying
-            ? "The task VM of Instance [{$instance->name}] is already being destroyed."
-            : $vm?->hostSweepWaitReason();
-        if ($reason !== null && TaskFinalReview::reconcileRemovalPush($group) !== null) {
-            throw new TaskWorkspaceWaiting($reason);
-        }
-    }
-
     /**
      * Returns null when the group owns no workspace. An owned workspace stays until its native removal can complete.
      *
@@ -105,45 +86,16 @@ final readonly class RemoveTaskWorkspaceAction
             return null;
         }
         $group->setRelation('taskable', $instance);
-        $leases = app(TaskWorkspaceLease::class);
-        $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance, $leases): void {
-            if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
-                throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
-            }
-            $commit = TaskFinalReview::reconcileRemovalPush($group);
-            if ($commit !== null) {
-                throw TaskPullRequestException::pending('Approved work must finish native publication before workspace removal.');
-            }
-            $lease = $leases->remoteStarted($instance);
-            try {
-                $this->removeWithLease($instance);
-            } catch (Throwable $exception) {
-                if (! $this->uncertainRemoteRemoval($exception)) {
-                    $leases->remoteFinished($lease);
-                }
-                throw $exception;
-            }
-        });
-
-    }
-
-    private function uncertainRemoteRemoval(Throwable $exception): bool
-    {
-        for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {
-            if ($cause instanceof ProcessTimedOutException
-                || ($cause instanceof ResourceOperationException && ($cause->details['outcome'] ?? null) === 'unconfirmed')
-                || ($cause instanceof RuntimeConvergenceException && $cause->result !== null && in_array($cause->result->exitCode, [124, 137, 143, 255], true))
-                || ($cause instanceof RemoteProgramFailed && $cause->reason !== RemoteProgramFailure::Unreachable
-                    && ($cause->exitCode === null || in_array($cause->exitCode, [124, 137, 143, 255], true)))
-                || ($cause instanceof AgentRunnerFailure && in_array($cause->kind, [AgentRunnerFailure::Transport, AgentRunnerFailure::Timeout, AgentRunnerFailure::MissingResult], true))) {
-                return true;
-            }
+        if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
+            throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
         }
-
-        return false;
+        if (TaskFinalReview::reconcileRemovalPush($group) !== null) {
+            throw TaskPullRequestException::pending('Approved work must finish native publication before workspace removal.');
+        }
+        $this->removeWorkspace($instance);
     }
 
-    private function removeWithLease(Instance $instance): never
+    private function removeWorkspace(Instance $instance): never
     {
         $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
         if ($vm instanceof TaskVm) {

@@ -96,7 +96,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-prepare_local" }}
+      behaviorName: '${{ ("task-check-prepare_local-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'mkdir -p -- "$ORBIT_PUBLICATION_ROOT"
@@ -144,7 +144,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-import" }}
+      behaviorName: '${{ ("task-check-import-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'set -eu
@@ -174,7 +174,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-import_result" }}
+      behaviorName: '${{ ("task-check-import_result-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: imported
       inputs:
         local: ${{ inputs.candidate.result }}
@@ -189,7 +189,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-mint" }}
+      behaviorName: '${{ ("task-check-mint-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\
@@ -211,7 +211,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-mint-result" }}
+      behaviorName: '${{ ("task-check-mint-result-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: minted
       inputs:
         expected: ${{ inputs.intent.execution_references_json }}
@@ -226,7 +226,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-push" }}
+      behaviorName: '${{ ("task-check-push-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC"
@@ -264,7 +264,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-finish" }}
+      behaviorName: '${{ ("task-check-finish-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: finish
       inputs:
         intent: ${{ inputs.intent }}
@@ -306,7 +306,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-write" }}
+      behaviorName: '${{ ("task-check-revoke-write-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'timeout 30 gh api --method DELETE installation/token
@@ -331,7 +331,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-unused-read" }}
+      behaviorName: '${{ ("task-check-revoke-unused-read-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'timeout 30 gh api --method DELETE installation/token
@@ -392,7 +392,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-cleanup_local" }}
+      behaviorName: '${{ ("task-check-cleanup_local-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT" "$ORBIT_OUTPUT"

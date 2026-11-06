@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -52,3 +54,13 @@ it('pauses a hand-over whose switch-back failed, and fails a build without chang
     'switch-back failed' => ['Hand over the release', "gateway-rollback: release cdcdcdcdcdcd is not sealed\n", 'paused'],
     'build' => ['Build the release', '', 'failed'],
 ]);
+
+it('queues the fleet rollout admission after a verified release only', function (): void {
+    Queue::fake();
+    endReleaseRun('failed', [], 'Migrate');
+    Queue::assertNotPushed(AdmitFleetRollout::class);
+
+    GatewayRelease::query()->delete();
+    endReleaseRun('succeeded');
+    Queue::assertPushed(AdmitFleetRollout::class, 1);
+});

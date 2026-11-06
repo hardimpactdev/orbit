@@ -18,8 +18,11 @@ use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 const ImageFingerprint = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
@@ -124,6 +127,37 @@ it('records a succeeded build only with its fingerprint and a promoted image', f
     expect($build->promoted_at)->not->toBeNull();
     expect($build->state)->toBe(TaskVmImageBuildState::Succeeded);
     expect(array_column($build->steps, 'step'))->toBe(['publish', 'promote']);
+})->group('task-vm-image-build');
+
+it('records a candidate without a promotion when the seed check skipped the promote', function (): void {
+    $build = imageWorld();
+    $operation = imageOperation($build);
+    $steps = ['Publish the candidate' => ['status' => 'succeeded', 'stdout' => 'Instance published with fingerprint: '.ImageFingerprint],
+        'Check the seed' => ['status' => 'succeeded'], 'Promote the image' => ['status' => 'skipped']];
+
+    $done = app(TaskVmImageProjection::class)->apply($operation, imageRun('succeeded', $steps));
+
+    expect($done->status->value)->toBe('succeeded');
+    expect($done->result)->toMatchArray(['ready' => false, 'promoted' => false, 'fingerprint' => ImageFingerprint]);
+    $build->refresh();
+    expect($build->image_fingerprint)->toBe(ImageFingerprint);
+    expect($build->promoted_at)->toBeNull();
+    expect($build->state)->toBe(TaskVmImageBuildState::Succeeded);
+})->group('task-vm-image-build');
+
+it('refuses a succeeded run that neither promoted nor kept its candidate', function (): void {
+    $build = imageWorld();
+    $operation = imageOperation($build);
+    $steps = ['Publish the candidate' => ['status' => 'succeeded', 'stdout' => 'Instance published with fingerprint: '.ImageFingerprint], 'Promote the image' => ['status' => 'skipped']];
+
+    $refusal = null;
+    try {
+        app(TaskVmImageProjection::class)->apply($operation, imageRun('succeeded', $steps));
+    } catch (ResourceOperationException $error) {
+        $refusal = $error->errorCode;
+    }
+
+    expect($refusal)->toBe('operation.result_invalid');
 })->group('task-vm-image-build');
 
 it('names the code of the step that failed', function (): void {

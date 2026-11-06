@@ -21,11 +21,13 @@ use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\ProblemFingerprint;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 
 uses(LazilyRefreshDatabase::class);
@@ -190,4 +192,34 @@ it('reports a lagging Node to Doctor from the same visits', function (): void {
     expect($lag->observe(Node::query()->findOrFail($this->nodes['dev'])))->toBeNull()
         ->and($lag->observe(Node::query()->findOrFail($this->nodes['db'])))->toBe(['expected' => substr(RolloutCommit, 0, 12), 'observed' => 'failed'])
         ->and($lag->observe(Node::query()->findOrFail($this->nodes['prod'])))->toBe(['expected' => substr(RolloutCommit, 0, 12), 'observed' => 'no visit yet']);
+});
+
+it('waits a minute when the commit has no CLI release yet, and when a rollout runs', function (): void {
+    unlink($this->base.'/cli.json');
+    Cache::flush();
+    $job = new AdmitFleetRollout()->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+    $job->assertReleased(60);
+
+    file_put_contents($this->base.'/cli.json', json_encode(['number' => 9001, 'checksums_url' => 'https://example.test/SHA256SUMS',
+        'assets' => [['platform' => 'linux-x86_64', 'url' => 'https://example.test/orbit', 'sha256' => str_repeat('a', 64)]]], JSON_THROW_ON_ERROR));
+    Cache::flush();
+    $gateway = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
+        'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app(GatewayServingHost::class)->remember($gateway);
+    Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'fleet', 'target_id' => $gateway->id, 'node_id' => null,
+        'status' => 'running', 'input' => ['commit' => RolloutCommit, 'nodes' => []]]);
+    $job = new AdmitFleetRollout()->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+    $job->assertReleased(60);
+});
+
+it('admits nothing and ends quietly when the rollout is off', function (): void {
+    config(['fleet.rollout' => false]);
+    $job = new AdmitFleetRollout()->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+
+    $job->assertNotReleased();
+    expect(Operation::query()->where('kind', 'fleet.rollout')->exists())->toBeFalse();
 });

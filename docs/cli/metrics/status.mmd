@@ -1,0 +1,47 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-06, agent strip (c): the status reads Prometheus on the Metrics role for which scrape targets are up. No agent. Decided by the orchestrator, for Nick's review: one `up` query shows Prometheus and Grafana healthy and each exporter active or inactive; the old `drift` actual is gone, because the Node configuration check ran in the agent.
+  %% status: draft
+  %% command: metrics:status
+  %% kind: metrics.status
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane M icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant M as Metrics Node<br/>Prometheus
+  CLI->>GW: metrics:status
+  %%> Command:
+  %%> - `orbit metrics:status`
+  %%> - syntax: `metrics:status [--json]`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Read the records<br/>role · exporters
+  %%> What it does:
+  %%> - reads the Metrics assignment, which Nodes have an exporter, and the stored degradation of each
+  %%> - without a Metrics role, the answer is `enabled: false` and nothing else is read
+  GW->>M: Ask which targets are up<br/>one query through Grafana
+  %%> How:
+  %%> - one instant query, `up` for the jobs `orbit-node-exporter` and `orbit-cadvisor`
+  %%> - Grafana's datasource proxy re-serves Prometheus's API, with the stored Grafana credential, on the Metrics Node's WireGuard address; the Gateway already has a firewall path to it
+  %%> - it starts no run and contacts no Node but the Metrics Node
+  alt the query answers
+    M-->>GW: up per target
+    %%> Returns:
+    %%> - one series per scrape target: the address and port, and 1 or 0
+    %%> Both:
+    %%> - Prometheus and Grafana are `healthy`: Grafana answered and relayed Prometheus's answer
+    %%> - an exporter is `active` when its Node's node-exporter and cAdvisor targets are both 1, and `inactive` when a target is 0 or missing
+    %%> - an exporter with a stored degradation, for example a Node the last convergence skipped, is `unknown`, whatever the query says
+  else it fails or times out
+    M--xGW: no answer
+    %%> When:
+    %%> - up to 5 s per call, a wrong credential, or either service down
+    %%> Both:
+    %%> - Prometheus and Grafana are `unhealthy`, and every exporter is `unknown`
+  end
+  GW-->>CLI: 200 status
+  %%> Result:
+  %%> - whether Metrics is enabled, the Grafana URL, the assignment, the health of both services, and one row per exporter with its desired and actual state
+  %%> - a selected exporter that is not `active` makes `reconcile_status` degraded
+  %%> - a failed read is part of the answer, not an error

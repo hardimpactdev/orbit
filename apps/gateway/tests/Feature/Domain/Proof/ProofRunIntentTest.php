@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewState;
+use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofChangedFile;
@@ -14,9 +16,14 @@ use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -233,5 +240,45 @@ describe('proof:run admission', function (): void {
         $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, true, 'tester', null));
 
         expect($refusal->errorCode)->toBe('proof.execution_disabled')->and($refusal->details['cases'])->toHaveCount(1);
+    });
+
+    it('keeps nothing when a command cannot start: no group, no run, and the proof fails with the reason', function (): void {
+        config(['proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null));
+
+        $proof = Operation::query()->where('kind', 'proof.run')->sole();
+        expect($refusal->errorCode)->toBe('tasks.capacity_unavailable')
+            ->and($proof->status)->toBe(OperationStatus::Failed)
+            ->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and(Task::query()->count())->toBe(0)
+            ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
+    });
+});
+
+describe('the intent of a run', function (): void {
+    it('carries the head and the merge base, which the proof of a new case switches the checkout to', function (): void {
+        SwampNodeFixture::ensure();
+        $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-710', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+            'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => '10.44.0.160', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Proof', 'brief' => 'Brief', 'status' => 'reserved']);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
+            'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id,
+            'status' => InstanceState::Reserved, 'first_setup_pending' => true]);
+        $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $guest->id, 'node_id' => $guest->id, 'status' => OperationStatus::Running, 'input' => []]);
+        $method = new ReflectionMethod(ProofRunIntent::class, 'runInput');
+
+        $input = $method->invoke(app(ProofRunIntent::class), $proof, PROOF_SHA, str_repeat('c', 40), ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml'],
+            ['node_id' => $guest->id, 'execution_secrets' => []], $group, $instance);
+
+        expect($input['verify'])->toMatchArray(['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'head' => PROOF_SHA, 'merge_base' => str_repeat('c', 40),
+            'checkout_path' => '/home/orbit/apps/orbit/workspace']);
     });
 });

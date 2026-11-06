@@ -16,6 +16,10 @@ inputs:
     operation_id:
       minimum: 1
       type: integer
+    # The root run of the Operation, which the Gateway checks when it mints the clone credential.
+    run_id:
+      pattern: ^[a-f0-9-]{36}$
+      type: string
     vm:
       type: object
   required:
@@ -23,6 +27,7 @@ inputs:
   - node_id
   - kind
   - intent
+  - run_id
   - vm
   type: object
 jobs:
@@ -90,12 +95,28 @@ jobs:
       condition:
         type: succeeded
     allowFailure: true
-  - name: clone_private
+  # The credential is minted here, minutes before the clone, because the VM step before it can wait for capacity for longer than an installation token lives.
+  # It exists only in the vault and in the environment of the clone: the VM gets a bundle, never a credential.
+  - name: mint_clone
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ inputs.run_id }}
+        purpose: clone
+    dependsOn:
+    - step: control
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: clone
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-clone-private" }}'
+      behaviorName: '${{ "tp-clone" }}'
       methodName: execute
       inputs:
         run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
@@ -116,33 +137,9 @@ jobs:
           GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
           GIT_CONFIG_VALUE_2: ssh://git@github.com/
     dependsOn:
-    - step: control
+    - step: mint_clone
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.git_authorization == null }}
-    allowFailure: true
-  - name: clone_public
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "tp-clone-public" }}'
-      methodName: execute
-      inputs:
-        run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
-
-          '
-        env:
-          ORBIT_BRANCH: ${{ inputs.intent.workspace.default_branch }}
-          ORBIT_REPOSITORY: ${{ inputs.intent.workspace.repository }}
-          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
-            }}
-          GIT_TERMINAL_PROMPT: '0'
-    dependsOn:
-    - step: control
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.git_authorization != null }}
     allowFailure: true
   - name: bundle
     labels: {role: swamp}
@@ -161,18 +158,9 @@ jobs:
           ORBIT_BUNDLE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
             }}
     dependsOn:
-    - step: clone_private
+    - step: clone
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: clone_public
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: succeeded
     allowFailure: true
   - name: prepare_remote
     labels: {role: swamp}
@@ -482,6 +470,25 @@ jobs:
         - type: succeeded
         - type: skipped
     allowFailure: true
+  # Private dependencies. The token is minted here, minutes before the setup steps, and lives in two 0600 files of the task account
+  # for as long as they run: `deps_remove` deletes both whatever the setup steps did.
+  - name: deps_write
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-dependency-auth-write
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ inputs.run_id }}
+        user: ${{ inputs.intent.workspace.user }}
+        ssh_execution: ${{ steps.guest.outputs.workspace.ssh_execution }}
+        dependency_auth: ${{ inputs.intent.dependency_auth }}
+    dependsOn:
+    - step: profile
+      condition:
+        type: succeeded
+    guard: ${{ has(steps.profile.outputs.error_code) || size(inputs.intent.workspace.setup) == 0 }}
+    allowFailure: true
   - name: setup-${{ self._index }}
     labels: {role: swamp}
     task:
@@ -509,12 +516,34 @@ jobs:
     - step: profile
       condition:
         type: succeeded
+    - step: deps_write
+      condition:
+        type: succeeded
     forEach:
       item: setup
       in: ${{ inputs.intent.workspace.setup }}
     concurrency: 1
     guard: ${{ has(steps.profile.outputs.error_code) || (self._index > 0 && (!("setup-"+string(self._index-1)
       in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
+    allowFailure: true
+  - name: deps_remove
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-dependency-auth-remove
+      inputs:
+        user: ${{ inputs.intent.workspace.user }}
+        ssh_execution: ${{ steps.guest.outputs.workspace.ssh_execution }}
+        dependency_auth: ${{ inputs.intent.dependency_auth }}
+    dependsOn:
+    - step: deps_write
+      condition:
+        type: always
+    - step: setup-${{ self._index }}
+      condition:
+        type: always
+    # A skipped write step wrote nothing: there is no file to remove and no token to revoke.
+    guard: ${{ !("deps_write" in steps) }}
     allowFailure: true
   - name: setup_copy
     labels: {role: swamp}
@@ -721,10 +750,16 @@ jobs:
     - step: control
       condition:
         type: always
-    - step: clone_private
+    - step: mint_clone
       condition:
         type: always
-    - step: clone_public
+    - step: clone
+      condition:
+        type: always
+    - step: deps_write
+      condition:
+        type: always
+    - step: deps_remove
       condition:
         type: always
     - step: bundle

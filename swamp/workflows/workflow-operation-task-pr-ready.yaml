@@ -85,6 +85,17 @@ jobs:
   labels:
     role: swamp
   steps:
+  - name: Mint the token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ run.id }}
+        purpose: pull_request
   - name: Read the PR
     labels:
       role: swamp
@@ -103,6 +114,10 @@ jobs:
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
           ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) }}
+    dependsOn:
+    - step: Mint the token
+      condition:
+        type: succeeded
   - name: Check the PR head
     labels:
       role: swamp
@@ -215,51 +230,28 @@ jobs:
       - type: completed
       - type: skipped
   steps:
-  - name: Revoke the token
+  - name: Clean up the token
     labels:
       role: swamp
     queueTimeout: 30
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "pr-ready-revoke" }}
-      methodName: execute
+      type: workflow
+      workflowIdOrName: task-github-cleanup
       inputs:
-        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
-        env:
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-    writes: true
-    allowFailure: true
-  - name: Remove CLI config
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "pr-ready-cleanup" }}
-      methodName: execute
-      inputs:
-        run: timeout 10 rm -rf -- "$ORBIT_GH_DIRECTORY"
-        env:
-          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-pr-ready-" + run.id + "-gh" }}
-    writes: true
+        name: pr-ready
+        run_id: ${{ run.id }}
+        write_token: ${{ inputs.execution_secrets.write_token }}
+        mint_status: '${{ "Mint the token" in steps ? steps["Mint the token"].status : "skipped" }}'
   - name: Confirm the ready step
     labels:
       role: swamp
     queueTimeout: 30
     task:
       type: assert
-      expr: '"Read the PR result" in steps && steps["Read the PR result"].status == "succeeded" && steps["Remove CLI config"].status == "succeeded"'
+      expr: '"Read the PR result" in steps && steps["Read the PR result"].status == "succeeded" && steps["Clean up the token"].status == "succeeded"'
       message: tasks_pr.ready_refused
       severity: high
     dependsOn:
-    - step: Revoke the token
-      condition:
-        type: completed
-    - step: Remove CLI config
+    - step: Clean up the token
       condition:
         type: completed

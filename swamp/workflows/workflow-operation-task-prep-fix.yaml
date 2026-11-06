@@ -1,0 +1,354 @@
+id: 95872d2a-e42e-4355-a3d6-747269134586
+name: operation-task-prep-fix
+description: >-
+  Apply the review of the owner to a parked prep group in one run from full inputs on 209: resume the task VM, let the author
+  apply the corrections as a new commit, check them with the runner plan and a bounded review loop, and push them to the same
+  draft pull request. The existing resume, turn and publish workflows run as children. One step calls the Gateway, the push
+  token mint of the publish child.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: tasks.prep_fix}
+    intent:
+      type: object
+      properties:
+        resume: {type: object}
+        author: {type: object}
+        fix: {type: object}
+        reviews: {type: array, minItems: 2, maxItems: 2, items: {type: object}}
+        publish: {type: object}
+        plan: {type: object}
+      required: [resume, author, fix, reviews, publish, plan]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        pi_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-pi-token-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [pi_token]
+      additionalProperties: false
+    resume_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^task-vm-upcloud-token$'}
+        required: [vault, key]
+        additionalProperties: false
+    publish_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+        git_authorization:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [github_token, git_authorization]
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - resume_secrets
+  - publish_secrets
+  additionalProperties: false
+jobs:
+- name: corrections
+  labels: {role: swamp}
+  steps:
+  - name: Resume the VM
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-resume
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.resume.node_id }}'
+        kind: task_vm.resume
+        intent: '${{ inputs.intent.resume }}'
+        execution_secrets: '${{ inputs.resume_secrets }}'
+  - name: Apply the corrections
+    labels: {role: swamp}
+    dependsOn:
+    - step: Resume the VM
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.author.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-fix-" + string(inputs.operation_id) + "-author" }}'
+        intent: '${{ inputs.intent.author }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+  - name: Read the corrections
+    labels: {role: swamp}
+    dependsOn:
+    - step: Apply the corrections
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-prep-fix-read-the-corrections-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: outcome
+      inputs:
+        result_json: ${{ steps["Apply the corrections"].outputs.shape_result.result_json }}
+  - name: Check the corrections
+    labels: {role: swamp}
+    dependsOn:
+    - step: Read the corrections
+      condition:
+        type: succeeded
+    task: {type: assert, expr: 'steps["Read the corrections"].outputs.moved', severity: high, message: tasks.prep_not_committed}
+  - name: Plan the cases 0
+    labels: {role: swamp}
+    dependsOn:
+    - step: Check the corrections
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "task-prep-fix-plan-" + string(inputs.intent.author.node_id) }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ "task-prep-fix-plan-" + string(inputs.intent.author.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.author.ssh_execution.target.user }}
+          port: ${{ inputs.intent.author.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.author.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.author.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.author.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
+        argv: '${{ ["timeout", "60", "env", "-C", inputs.intent.author.checkout_path, "python3", "swamp/proof/runner/runner.py", "plan", "--file", inputs.intent.plan.cases_file] }}'
+        okExitCodes: [0, 3]
+        timeoutSec: 70
+  - name: Review the spec 1
+    labels: {role: swamp}
+    dependsOn:
+    - step: Plan the cases 0
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.reviews[0].node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-fix-" + string(inputs.operation_id) + "-review-1" }}'
+        intent: '${{ inputs.intent.reviews[0] }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        candidate: '${{ steps["Read the corrections"].outputs.head }}'
+  - name: Settle review 1
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review the spec 1
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    - step: Plan the cases 0
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-prep-fix-settle-review-1-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Read the corrections"].outputs.approved }}'
+        head: '${{ steps["Read the corrections"].outputs.head }}'
+        tree: '${{ steps["Read the corrections"].outputs.tree }}'
+        review: '${{ ("Review the spec 1" in steps && "outputs" in steps["Review the spec 1"] && "shape_result" in steps["Review the spec 1"].outputs) ? steps["Review the spec 1"].outputs.shape_result.result_json : "" }}'
+        fix: ''
+        plan_exit: '${{ ("Plan the cases 0" in steps && "outputs" in steps["Plan the cases 0"] && "exitCode" in steps["Plan the cases 0"].outputs) ? steps["Plan the cases 0"].outputs.exitCode : 0 }}'
+        plan_output: '${{ ("Plan the cases 0" in steps && "outputs" in steps["Plan the cases 0"] && "stderr" in steps["Plan the cases 0"].outputs) ? steps["Plan the cases 0"].outputs.stdout + steps["Plan the cases 0"].outputs.stderr : "" }}'
+  - name: Fix the findings 1
+    labels: {role: swamp}
+    guard: '${{ steps["Settle review 1"].outputs.approved }}'
+    dependsOn:
+    - step: Settle review 1
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.fix.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-fix-" + string(inputs.operation_id) + "-fix-1" }}'
+        intent: '${{ inputs.intent.fix }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        prompt_append: '${{ steps["Settle review 1"].outputs.findings }}'
+  - name: Settle fix 1
+    labels: {role: swamp}
+    dependsOn:
+    - step: Fix the findings 1
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-prep-fix-settle-fix-1-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Settle review 1"].outputs.approved }}'
+        head: '${{ steps["Settle review 1"].outputs.head }}'
+        tree: '${{ steps["Settle review 1"].outputs.tree }}'
+        review: ''
+        fix: '${{ ("Fix the findings 1" in steps && "outputs" in steps["Fix the findings 1"] && "shape_result" in steps["Fix the findings 1"].outputs) ? steps["Fix the findings 1"].outputs.shape_result.result_json : "" }}'
+  - name: Plan the cases 1
+    labels: {role: swamp}
+    guard: '${{ steps["Settle fix 1"].outputs.approved }}'
+    dependsOn:
+    - step: Settle fix 1
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "task-prep-fix-plan-" + string(inputs.intent.author.node_id) }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ "task-prep-fix-plan-" + string(inputs.intent.author.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.author.ssh_execution.target.user }}
+          port: ${{ inputs.intent.author.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.author.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.author.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.author.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
+        argv: '${{ ["timeout", "60", "env", "-C", inputs.intent.author.checkout_path, "python3", "swamp/proof/runner/runner.py", "plan", "--file", inputs.intent.plan.cases_file] }}'
+        okExitCodes: [0, 3]
+        timeoutSec: 70
+  - name: Review the spec 2
+    labels: {role: swamp}
+    guard: '${{ steps["Settle fix 1"].outputs.approved }}'
+    dependsOn:
+    - step: Settle fix 1
+      condition:
+        type: succeeded
+    - step: Plan the cases 1
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.reviews[1].node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "prep-fix-" + string(inputs.operation_id) + "-review-2" }}'
+        intent: '${{ inputs.intent.reviews[1] }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
+        candidate: '${{ steps["Settle fix 1"].outputs.head }}'
+        prompt_append: '${{ "Findings of the previous review, which the author has since tried to fix. Check each one and report only what is still wrong or new:\n" + steps["Settle review 1"].outputs.findings }}'
+  - name: Settle review 2
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review the spec 2
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    - step: Plan the cases 1
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-prep-fix-settle-review-2-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: settle
+      inputs:
+        approved: '${{ steps["Settle fix 1"].outputs.approved }}'
+        head: '${{ steps["Settle fix 1"].outputs.head }}'
+        tree: '${{ steps["Settle fix 1"].outputs.tree }}'
+        review: '${{ ("Review the spec 2" in steps && "outputs" in steps["Review the spec 2"] && "shape_result" in steps["Review the spec 2"].outputs) ? steps["Review the spec 2"].outputs.shape_result.result_json : "" }}'
+        fix: ''
+        plan_exit: '${{ ("Plan the cases 1" in steps && "outputs" in steps["Plan the cases 1"] && "exitCode" in steps["Plan the cases 1"].outputs) ? steps["Plan the cases 1"].outputs.exitCode : 0 }}'
+        plan_output: '${{ ("Plan the cases 1" in steps && "outputs" in steps["Plan the cases 1"] && "stderr" in steps["Plan the cases 1"].outputs) ? steps["Plan the cases 1"].outputs.stdout + steps["Plan the cases 1"].outputs.stderr : "" }}'
+  - name: Review has no findings
+    labels: {role: swamp}
+    dependsOn:
+    - step: Settle review 2
+      condition:
+        type: succeeded
+    task: {type: assert, expr: 'steps["Settle review 2"].outputs.approved', severity: high, message: tasks.prep_review_unresolved}
+  - name: Push the corrections
+    labels: {role: swamp}
+    dependsOn:
+    - step: Review has no findings
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.publish.node_id }}
+        kind: tasks.publish
+        intent:
+          group_id: ${{ inputs.intent.publish.group_id }}
+          instance_id: ${{ inputs.intent.publish.instance_id }}
+          node_id: ${{ inputs.intent.publish.node_id }}
+          check: null
+          checkout_path: ${{ inputs.intent.publish.checkout_path }}
+          commit: ${{ steps["Settle review 2"].outputs.head }}
+          tree: ${{ steps["Settle review 2"].outputs.tree }}
+          repository: ${{ inputs.intent.publish.repository }}
+          base: ${{ inputs.intent.publish.base }}
+          branch: ${{ inputs.intent.publish.branch }}
+          remote: ${{ inputs.intent.publish.remote }}
+          refspec: '${{ steps["Settle review 2"].outputs.head + ":refs/heads/" + inputs.intent.publish.branch }}'
+          object_format: '${{ size(steps["Settle review 2"].outputs.head) == 64 ? "sha256" : "sha1" }}'
+          pull_head: ${{ inputs.intent.publish.pull_head }}
+          pull_request: null
+          ssh_execution: ${{ inputs.intent.publish.ssh_execution }}
+        run_id: ${{ run.id }}
+        execution_secrets: '${{ {"github_token": inputs.publish_secrets.github_token, "git_authorization": inputs.publish_secrets.git_authorization} }}'

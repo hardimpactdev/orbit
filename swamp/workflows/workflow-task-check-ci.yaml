@@ -15,7 +15,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "task-check-ci-read-" + string(self._index) }}'
+      behaviorName: '${{ ("task-check-ci-read-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |
@@ -38,7 +38,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-ci-data-" + string(self._index) }}'
+      behaviorName: '${{ ("task-check-ci-data-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: ci
       inputs:
         pending: ${{ self.check.attributes }}
@@ -186,7 +186,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-ci-data-" + string(self._index) }}'
+      behaviorName: '${{ ("task-check-ci-data-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: observed
       inputs:
         value: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs }}
@@ -240,7 +240,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "task-check-revoke-read-" + string(self._index) }}'
+      behaviorName: '${{ ("task-check-revoke-read-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |

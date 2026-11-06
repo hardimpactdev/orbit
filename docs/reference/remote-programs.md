@@ -4,7 +4,7 @@ description: "The remaining Tasks workspace program runner and the programs stil
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
-  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,gateway/task-workspace-owner.py}
+  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py}
 ---
 
 # Remote programs
@@ -13,7 +13,7 @@ Node management runs through [named Rust agent commands](/reference/node-agent#c
 
 ## Program files
 
-The sole catalogued program is `gateway.task-workspace-owner`, at `apps/gateway/resources/remote/gateway/task-workspace-owner.py`. It checks a recorded hostname, boot ID, process ID, and process start ticks. Its `inspected` result reports whether that exact workspace owner is dead. A matching host with a changed boot proves death; on the original boot, the process identity must match.
+No Gateway code calls a catalogued program now: the workspace owner check left with the workspace lease. The runner and its header format remain for the Services-only Operation primitive.
 
 `RemoteProgramCatalog` reads the program header and prepends `lib/program.py`. The header declares the program name, libraries, outcomes, and 30-second timeout. The assembled source and its JSON input travel through `SshProgramRunner` over the Node's pinned SSH connection.
 
@@ -27,7 +27,7 @@ The retained runtime needs Python 3.10 or newer. `resources/remote/bootstrap.py`
 
 ## The runner
 
-`TaskWorkspaceLeaseRecovery` calls `RemoteProgramRunner` for `gateway.task-workspace-owner`. It maps the returned facts to workspace lease recovery. No Instance, tool, recipe, or other Node-management action calls this runner. The Services-only [Operation primitive](/reference/operations#swamp-execution) can invoke a named program from the same catalog. Each kind must explicitly allow the program and bind its schema-checked input to admitted intent. The primitive takes the target from the Operation, never from the caller. Firewall allows no RemoteProgram.
+The Services-only [Operation primitive](/reference/operations#swamp-execution) can invoke a named program from the same catalog. Each kind must explicitly allow the program and bind its schema-checked input to admitted intent. The primitive takes the target from the Operation, never from the caller. Firewall allows no RemoteProgram.
 
 `SshProgramRunner` checks the result shape and declared outcome. It distinguishes unreachable Nodes, missing results, malformed results, undeclared outcomes, timeouts, and cancellation. Failures retain a redacted stderr tail of at most 4096 bytes and the exit status when available. Redaction runs before truncation.
 
@@ -37,8 +37,8 @@ The Gateway has an [architecture test](/reference/node-agent#commands) that perm
 
 The Gateway still sends these programs from `apps/gateway/resources` to Nodes, outside Swamp. Each moves to a Swamp flow:
 
-- The Tasks workspace scripts `tasks/check`, `tasks/composer`, `tasks/metadata`, `tasks/workspace-operation.py`, and `tasks/unit-state.py`.
-- The workspace owner check `remote/gateway/task-workspace-owner.py`, with `remote/bootstrap.py` and `remote/lib/program.py`.
+- The Tasks workspace scripts `tasks/check`, `tasks/composer`, `tasks/metadata`, and `tasks/unit-state.py`.
+- The remote runner files `remote/bootstrap.py` and `remote/lib/program.py`.
 - The CI cache import `tasks/ci-caches.sh`.
 
 `remote/route/publish-dns.py` and `remote/database/valkey.py` have no catalog entry and no caller. Delete them.

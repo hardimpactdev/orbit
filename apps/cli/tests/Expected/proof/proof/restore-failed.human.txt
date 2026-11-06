@@ -1,0 +1,19 @@
+Proof running...
+
+┌  Prove firewall:allow
+│
+├  ● Proof running
+│    proof.restore_failed
+│
+└  Proof failed.
+
+ ┌────────────────┬──────────────────────┬─────────┬──────────┐
+ │ COMMAND        │ CASE                 │ VERDICT │ DURATION │
+ ├────────────────┼──────────────────────┼─────────┼──────────┤
+ │ firewall:allow │ new-restricted-allow │ passed  │ 12.4 s   │
+ │ firewall:allow │ already-applied      │ passed  │ 8.7 s    │
+ └────────────────┴──────────────────────┴─────────┴──────────┘
+Failed step: Restore the clean fleet
+Error code: proof.restore_failed
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

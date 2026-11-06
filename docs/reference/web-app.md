@@ -5,8 +5,6 @@ covers:
   - apps/web/**
   - bin/web-deploy
   - apps/gateway/app/Infrastructure/Gateway/GatewayCaddyConfigRenderer.php
-  - apps/gateway/app/Actions/Gateway/ConvergeGatewayWebAction.php
-  - apps/gateway/app/Console/Commands/ConvergeGatewayWebCommand.php
 ---
 
 # Web app
@@ -160,7 +158,7 @@ The app waits 100 milliseconds after a task event and refetches each named query
 
 The [insights strip](/reference/tasks#task-insights) above the task board reads `GET /api/v1/task-insights` when the board opens and every 5 minutes after. Task events do not refetch it, because one task changes the numbers only a little. The strip opens on **more**. Its open or closed state is stored in the browser under `orbit.tasks.insights.expanded`.
 
-Checkout ownership is separate from the task board status. A task that waits for another [workspace lease](/reference/tasks#workspace-lease) stays in its current task state and does not gain a check failure. The `tasks:status` API and Doctor expose the holder and waiters for diagnosis.
+Checkout ownership is separate from the task board status. A task that waits for another operation on its group stays in its current task state and does not gain a check failure.
 
 ## Live Activity
 
@@ -205,7 +203,7 @@ The fleet firewall list reads every Node's rules with one request, `GET /api/v1/
 
 The Instance and Process log panes follow their log through a [live log stream](/reference/live-logs) while realtime is live. A pane opens a stream with the lines it shows, 500 for an Instance and 100 for a Process. It renews the stream every 20 seconds and closes it when the pane closes. It shows `[orbit] N lines dropped` and `[orbit] N MiB skipped` where the stream reports them.
 
-A pane polls the one-shot read every 10 seconds instead when the Gateway refuses the stream, when the stream ends, or when realtime is down. A production Instance pane always polls. For a reason that passes on its own, such as `agent_not_joined`, the pane tries a new stream every 30 seconds while it polls. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists the reasons.
+A pane shows the reason when the Gateway refuses the stream, when the stream ends, or when realtime is down. For a reason that passes on its own, such as `agent_not_joined`, the pane tries a new stream every 30 seconds. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists the reasons.
 
 ## Installed app on iPhone and iPad
 
@@ -260,8 +258,6 @@ The Swamp release run uses `/home/orbit/web` and installs each build under its `
 | --- | --- |
 | `releases/<commit>` | One built release, named after the first 12 characters of its commit. |
 | `current` | A link to the release that the Gateway serves. |
-
-Manual `orbit:bootstrap` and `orbit:gateway-web` refuse before any host change while their native Swamp parent workflows are unavailable. `orbit:gateway-web` returns `gateway.web_unavailable`; it does not publish a site or certificate, prepare directories, reload PHP-FPM, or start services.
 
 Normal [Gateway releases](/reference/gateway-recovery#web-build) install their own web build in `releases/` and switch `current` with the code before verification. Releases do not converge the Caddy sites or the PHP-FPM pool: node converge publishes the sites, and the [gateway role convergence](/cli/node/role-add) owns the pool.
 
@@ -413,7 +409,7 @@ The view shows locked versions with their repository commit and observation time
 
 The Instance overview shows the latest 25 deployments, in the order returned by the Gateway.
 
-Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status and the running step's output: live from the Node agent's [`client-output`](/reference/events#deploy-step-output) lines while the step runs, and the record's output tail otherwise. It keeps the newest 1,000 live lines per step.
+Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status. It receives no live output lines now: the agent command that published them was removed.
 
 The pane subscribes to `private-operation.{id}`, reads the operation, and reads it again with `after_sequence` for each newer event, as [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes. Without realtime it reads every `poll_after_seconds`. While a deploy or a rollback of the Instance runs, the overview shows it, also when another client started it. The pane's title names the kind: Deploy or Rollback.
 

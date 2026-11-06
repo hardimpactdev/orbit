@@ -7,7 +7,6 @@
 //! first, before the command name is looked up or the input is parsed.
 
 pub mod binary_input;
-pub mod binary_output;
 pub mod effects;
 pub mod identity;
 pub mod lock;
@@ -124,9 +123,6 @@ pub fn main(arguments: &[String]) -> i32 {
         run::execute_stream(name, &envelope, &run::Host::current(), Box::new(stdin))
     };
     let line = serde_json::to_string(&outcome.to_json()).expect("a result serializes");
-    if registry::find(name).is_some_and(|entry| entry.output_max_bytes > 0) {
-        return binary_output::finish(&line);
-    }
     let mut stdout = std::io::stdout().lock();
     if writeln!(stdout, "{line}")
         .and_then(|()| stdout.flush())

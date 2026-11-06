@@ -1,0 +1,31 @@
+---
+# The package cache of the task VM (docs/cli/tasks/vm-image-build.mmd): stock apt-cacher-ng, not in the recipe: it is not a pinned tool.
+# It installs from the VM's own sources, as the first task of the software phase, so that the index reads of the later phases fill it.
+# The nested Nodes of the fleet read the Ubuntu snapshot indexes from it (docs/cli/tasks/vm-fleet-build.mmd). It serves the indexes
+# only, so it holds no .deb: an image carries the indexes, not the packages.
+- name: Read installed packages
+  ansible.builtin.package_facts: { manager: apt }
+- name: Install the package cache
+  when: "'apt-cacher-ng' not in ansible_facts.packages"
+  ansible.builtin.apt: { name: apt-cacher-ng, state: present, update_cache: true, cache_valid_time: 3600, install_recommends: false }
+  environment: { DEBIAN_FRONTEND: noninteractive, NEEDRESTART_MODE: l }
+  register: apt_cache_install
+  until: apt_cache_install is succeeded
+  retries: "{{ apt_retries }}"
+  delay: "{{ apt_delay }}"
+# The snapshot service answers a check of a stored index with a 5xx now and then; the cache asks it again before it answers the client.
+# Measured: a restarted cache with warm indexes failed 2 of 6 updates with the default of 2 tries, and none of 8 with 10.
+- name: Let the package cache ask the snapshot service again
+  ansible.builtin.copy:
+    dest: /etc/apt-cacher-ng/zz_orbit.conf
+    content: |
+      DlMaxRetries: 10
+    owner: root
+    group: root
+    mode: "0644"
+  register: apt_cache_config
+- name: Run the package cache
+  ansible.builtin.systemd:
+    name: apt-cacher-ng.service
+    enabled: true
+    state: "{{ 'restarted' if apt_cache_config is changed else 'started' }}"

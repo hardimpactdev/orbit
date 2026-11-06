@@ -6,6 +6,7 @@ namespace App\Domain\TaskVms;
 
 use App\Actions\Processes\RecordProcessIntentAction;
 use App\Data\Processes\AddProcessData;
+use App\Domain\Nodes\AppDevRuntimeFootprint;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationAdmission;
@@ -51,8 +52,8 @@ final readonly class TaskVmEnrollmentIntent
     {
         return DB::transaction(function () use ($vm): array {
             $vm->refresh();
-            if ($vm->state !== TaskVmState::Provisioning || $vm->group === null || $vm->group->parent_id !== null) {
-                throw new TaskVmException('task_vm.enrollment_invalid', 'Enrollment requires the provisioning VM owned by a task group.');
+            if ($vm->state !== TaskVmState::Provisioning || ($vm->group === null ? $vm->slot_project_id === null : $vm->group->parent_id !== null)) {
+                throw new TaskVmException('task_vm.enrollment_invalid', 'Enrollment requires the provisioning VM owned by a task group, or a slot.');
             }
             $origin = $this->keys->origin();
             if (($vm->ai_router_origin !== null && $vm->ai_router_origin !== $origin)
@@ -84,6 +85,8 @@ final readonly class TaskVmEnrollmentIntent
                     'cluster_id' => $node->cluster_id, 'ssh_jump_node_id' => $node->ssh_jump_node_id],
                 'runtime' => ['guest_node_id' => $node->id, 'user' => $node->user, 'agent_sha256' => $pin,
                     'pi_sha256' => $this->settings->piArtifactSha256, 'origin' => $origin, 'models' => $this->settings->piModels,
+                    // The VM records the app-dev role, so it gets the role's runtime folders: a served workspace site writes its hibernation log there.
+                    'app_dev' => ['directories' => AppDevRuntimeFootprint::directories(), 'files' => AppDevRuntimeFootprint::files()],
                     'process' => [...$installation, 'agent_sha256' => $pin, 'retired' => null]],
             ];
         });

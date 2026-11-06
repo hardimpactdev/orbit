@@ -2,14 +2,14 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
+  - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeNetworkReservation,NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
-  - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
+  - apps/gateway/app/{Console/Commands/{ProvisionNodeCommand,BootstrapPlanCommand,BootstrapControlPlanCommand,RoleAddCommand,NodeAddCommand,NodeConvergeCommand},Domain/Gateway/{GatewayBootstrapPlan,GatewayControlPlan}}.php
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,app/{Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
   - apps/gateway/app/Infrastructure/{Swamp/SwampSshExecutionInput,Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/CliConverge*.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php,Actions/Nodes/StartNodePhpPackagesAction.php,Domain/Nodes/NodePhpPackages*.php,Domain/Nodes/operation-kinds.php}
-  - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**,gateway_identity.rs,gateway_identity/**}
+  - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**}
 ---
 
 # Node provisioning
@@ -18,13 +18,15 @@ covers:
 
 Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.update` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge, SSH access and rekey use official `@swamp/cfgmgmt` behaviors and ship no script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
-The public SSH intent of a Node carries its target `name`, `node_id`, `host`, `user`, `port` and pinned `host_keys`. Steps that reach a task VM name their SSH behaviors by `node_id`: the VM's address returns to the pool and the next VM reuses it, but its Node id is never reused.
+The public SSH intent of a Node carries its target `name`, `node_id`, `host`, `user`, `port` and pinned `host_keys`. Steps that reach a task VM name their SSH behaviors by `node_id`: the VM's address returns to the pool and the next VM reuses it, but its Node id is never reused. The local and data steps of the same workflows hold no host key, so they name themselves by the address: one lock per VM and a bounded set of names.
 
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
 Native role prerequisites retain a complete Docker CE installation instead of installing `docker.io` over it. One bounded APT command installs missing prerequisites with removal and upgrades disabled. The end check verifies the retained provider packages or the normal Ubuntu packages. Exporter children use bounded fan-out so a single control worker does not exhaust their native queue timeout.
 
 Node and standalone role removal also execute from 209. They remove services, files, containers and authorized keys with official cfgmgmt behaviors. Direct commands use SSH argv. No removal script ships to a worker or a Node. Publication withdrawal finishes before runtime removal. Node removal publishes Metrics membership before stopping exporters, updates the full hub configuration, and removes management keys last. Offline consent skips only an unreachable departing Node; other participants still converge.
+
+Removal takes the Node off the hub by deleting its own peer file and loading the files that remain, also when the Gateway never recorded its key. See [Converge the hub](/reference/wireguard-endpoints#converge-the-hub).
 
 Removal retains packages, accounts, runtime data and unrelated SSH keys. Explicit role purge removes the admitted WebSocket releases, Metrics volumes, or drained CI resources. A regular CI role removal retains its project, image cache and network. Native resource checks and one assert determine completion; the Gateway records the public result from that run.
 
@@ -67,21 +69,30 @@ A new Node needs a public SSH host and an approved SSH host key fingerprint, `--
 
 Admission records a provisioning Node and freezes its public resource plan. Bootstrap identity and the new observer secret enter the execution vault; the workflow receives only their key names. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
 
-| Stage | Native work |
+| Stage | Work |
 | --- | --- |
-| Trust | Collect the public SSH key, assert its approved fingerprint, read the platform and bootstrap account, then bind that identity into the frozen resources. |
-| Baseline | Authorize the control key, replace stale known-host pins, install packages, create the managed account, validate its sudo rule and authorize management SSH. |
-| Network | Preserve or generate a Node-held WireGuard key, write the rendered tunnel and hub files, set the interface address, apply peers with `wg syncconf` and preserve public recovery SSH. |
-| Observer | Fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
-| Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort and private DNS after role checks. Exporters require explicit enablement. |
-| End check | Verify managed SSH and sudo, check the observer resources and prove the tunnel. The native `Check the Node` assertion determines completion. |
+| Trust | Native steps collect the public SSH key, assert its approved fingerprint, read the platform and bootstrap account, then bind that identity into the frozen resources. |
+| Input | The intent, the private files and the inventory with pinned host keys are written to a run folder on 209. |
+| Baseline | Ansible phase `baseline`: pin the Node, authorize the control key, install packages, create the managed account and its sudo rule, open recovery SSH, enable the firewall. |
+| Network | Phase `tunnel` creates and checks the WireGuard key, writes the tunnel files and applies peers. A native step reads the public key. Phase `hub` adds the peer. |
+| Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
+| Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
+| Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort. Exporters require explicit enablement. |
+| DNS | Ansible phase `dns` writes the dnsmasq backend of a new VPN hub; native child workflows install its listener and publish private DNS. |
+| End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
+
+Each role in the intent names its execution copies as a record: `{}` for a role without any.
+
+The execution copies of task runs are not role records. Their vault key patterns are declared in `swamp/config/gateway-workflow-grants.json`; the [implementation loop](/reference/implementation-loop) says how.
+
+The `baseline` phase replaces the Node pin on 209, and it validates the sudo rule before the rule replaces the old one. The `tunnel` phase requires the WireGuard public key to be unique, and an existing hub to keep its peer-facing key, before it changes any tunnel file, interface or peer.
 
 Role PHP packages, Composer prerequisites and native Caddy use the [recipe artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) for each pinned Debian file. Role prerequisites use one Ansible artifact module; native Caddy and Tool Managers use the shared native fetch workflow. Both consume the admitted candidate list, try upstream only after a mirror transport failure, and verify the checksum before publication. They share the curl transport-code policy. A checksum mismatch stops the run. Local I/O and size-limit failures stop without fallback.
 
 
-Native Node roots freeze certificate scopes and publication plans at admission. Their explicit resource steps publish the target and withdraw the source after target readiness. Official cfgmgmt resources own file, package, account and service changes. A single command uses SSH argv. No script is copied to a Node. A completed run removes the staged sudo candidate as best effort. A failure retains completed work; reruns use native resource checks and guards.
+Native Node roots freeze certificate scopes and publication plans at admission. Their explicit resource steps publish the target and withdraw the source after target readiness. Node enrollment itself uses Ansible phases for file, package, account and service changes; a single command uses SSH argv. No script is copied to a Node, and the sudo rule is validated in place, so no candidate file is staged. A failure retains completed work; every phase is an end state, so a rerun skips what is done.
 
-The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. Before hub peer synchronization, SSH commands compose the existing key and the public peer plan into a protected configuration on that hub. The workflow verifies that the hub public key is unchanged afterward. Certificate signing stays at the existing Gateway signer boundary.
+The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. The `hub` phase composes the existing key and the public peer plan into a protected configuration on that hub, applies it, and checks that the hub public key is unchanged afterward. Certificate signing stays at the existing Gateway signer boundary.
 
 The enrollment workflow records the verified bootstrap host key for the WireGuard address before checking private SSH. This replaces a stale pin when an address is reused. Fingerprint mismatches refuse before either pin changes. The scanner derives the fingerprint from the returned public key bytes.
 
@@ -93,18 +104,14 @@ The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile.
 
 Existing operator masks remain in place. Convergence skips enabling `logrotate.timer` when `systemctl is-enabled` reports `masked` or `masked-runtime` for either `logrotate.service` or `logrotate.timer`, so an operator mask does not block releases. Otherwise it enables the configured timer afterward; it does not restart journald or force a rotation.
 
-Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations and keeps uncertain workspace ownership fenced. See [Workspace lease](/reference/tasks#workspace-lease) for completion receipts and recovery.
+Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations.
 
 
 The native Node workflow composes the [Orbit CLI publication](#orbit-cli) step on eligible Nodes. Gateway provisioning and role code perform no CLI installation.
 
 The internal Gateway console command `orbit:node-provision` retains the synchronous bootstrap for the first Gateway and task-VM setup. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
 
-Gateway bootstrap installs the pinned agent before preparing its host identity. `gateway.prepare-identity` creates the managed SSH and WireGuard keys under the Gateway's Orbit home, preserving existing private keys on repeat. `gateway.converge-self-access` authorizes the managed public key for the executing account and returns the host public key and fingerprint. Both commands run as the Gateway account. Invalid paths, foreign ownership, and inconsistent existing keys refuse before publication. The Gateway retains its CA authority and known-host records as control-plane data.
-
-Observer configuration follows once the Gateway is active. `firewall.gateway-vpn` checks all desired and recovery rule ownership before mutation. On an inactive firewall, it proves the stored public SSH recovery rule in both address families before enabling UFW. It applies and verifies the VPN rules before removing recovery SSH. The command holds the firewall lock across these steps. Private DNS publication keeps its separate convergence step.
-
-`wireguard.bootstrap-hub` validates the rendered hub configuration, installs IPv4 forwarding, and restarts `wg-quick@orbit`. It shares configuration publication and recovery with `wireguard.project-hub`, which applies peer changes without restarting an active interface. Both commands hold the same hub target lock. The agent rejects WireGuard shell hooks before writing files. The Gateway retains peer selection, configuration rendering, and the projection lock that protects that selection.
+`wireguard.project-hub` applies peer changes without restarting an active interface. The agent rejects WireGuard shell hooks before writing files. The Gateway retains peer selection, configuration rendering, and the projection lock that protects that selection.
 
 Router LAN reconciliation expands and prunes HTTPS and both DNS transport families together, using the same proposed member eligibility. A failure before membership or Cluster state commits leaves the previous state authoritative. If pruning fails after the commit, the committed state remains authoritative and the command reports cleanup failure; stale rules may remain. Restoring a preceding firewall snapshot does not roll back database state.
 
@@ -114,11 +121,11 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 
 ### Bootstrap identity
 
-A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. A true Swamp guard skips an action: enrollment appends the control key when `grep` exits 1 and skips it when `grep` exits 0.
+A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. The `baseline` phase appends the control key to the bootstrap account when it is absent.
 
 The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key for the bootstrap and managed accounts. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
 
-The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. The Gateway release that produces this key must be live before the workflow consumer is released. Swamp loads before the Gateway switches, so a consumer in the producer release would reject enrollment admitted during that window.
+The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. The Gateway release that produces this key must be live before the workflow consumer is released. Swamp loads before the Gateway switches, so a consumer in the producer release would reject enrollment admitted during that window. A release whose load or hand-over fails loads the previous commit back, so the window ends with the failed release ([Gateway recovery](/reference/gateway-recovery#release-as-a-swamp-run)).
 
 The Gateway picks the bootstrap user from the Node record, unless the request names one.
 
@@ -415,11 +422,73 @@ Missing or damaged protected files require their approved recovery procedure and
 
 ## Task VM role phases
 
-A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols.
+A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only. The [UpCloud template build](/reference/compute-drivers#build-the-upcloud-template) runs it to make the server ready for a template.
 
-The playbook reads the pins of `recipe.json` from the intent and names none. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
+The wait for a nested fleet is not a phase of the role: it is the playbook `swamp/ansible/task-vm-fleet-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
+
+The role exports the checkout to the nested guests over NFS; see [the restore of `base`](/reference/compute-drivers) for why a restore restarts that NFS server.
+
+On an image build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that an image build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
+
+The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.
+
+The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` and `jq` from the same Ubuntu snapshot: the shape gate linters need the first, and its Swamp load test needs the second. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 
 The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested VMs. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
+
+### The topology seed pool
+
+A task image made by a refresh VM carries the Incus database of that VM, with stale records of the ready copies. Before any nested guest exists, the phase deletes the database rows of the seed pool (the data on the disk stays), so the recovery reads the disk and the VM sees the copies as they are saved.
+
+A task VM that has the topology seed disk also recovers the pool on it (`topology-seed`, btrfs) with `incus admin recover`, so the ready copies it holds show in the VM. The phase first deletes the other instances of the seed disk, which is a clone of the VM, and bounds every command with `timeout`. The provision of a task with a topology runs this converge before the nested fleet starts; a VM at the pins reports no change.
+
+A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested VMs get an address and reach the internet. Nothing else is opened; the checkout export has its own rule.
+
+## Gateway bootstrap prerequisites
+
+A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-fleet-build.mmd)), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
+
+The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
+
+### The Gateway app
+
+The `app` job sets up the Gateway app on the machine: it writes the `.env` (`orbit:bootstrap-plan --environment`, production values from `.env.example`, with `DB_DATABASE` set to `ORBIT_HOME/gateway.sqlite`), installs the Composer dependencies, creates the database, makes the application key there and runs the migrations. The key never leaves the machine. The end check fails on a pending migration.
+
+Last, `orbit:bootstrap` runs on the machine from the Gateway's own code. It records the Gateway Node with its Gateway and VPN roles and sets the VPN settings. It also makes the root CA and the Gateway SSH key, and records the host key of the machine. It also records the `swamp` role on that Node, as provisioning. The Gateway finds the Swamp Node by that role, never by an id. The role and route workflows read the control Node from each intent (`control_node_id`) and accept any Node id. The VPN role stays provisioning until Swamp applies the hub.
+
+With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no roles, that WireGuard address, and access to the Gateway Node, so it holds Gateway authority. Its key comes later, from the machine that operates the Gateway. The fleet build of a task VM passes 10.45.0.10, the address stage 2 joins with.
+
+### The Swamp control plane
+
+The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
+
+The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
+
+The `remint` play prints no token either, so a failed renewal shows its command and its error. It rotates the serve driver token in a task of its own, with one short command, so the recorded error shows the CLI message.
+
+No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
+
+The phase creates the control vault `orbit-control-inputs` before serve starts, and the hub step also writes the hub public key to `wireguard/public.key` in the Orbit home, which every Node peer configuration names.
+
+The phase issues the Gateway's own certificate from the same CA and installs it with the root certificate in `/etc/caddy/orbit-cert-current`, the paths the Gateway Caddyfile names. `orbit:bootstrap` records the `swamp.orbit` Route, so the first Caddyfile the Gateway publishes keeps that front. It also records the Redis Database connection `gateway-queue` for the Valkey server on the machine.
+
+The same phase brings up the WireGuard hub of the Gateway's own network, because Swamp reaches every Node, this one too, by its WireGuard address. It makes the hub key on the machine, writes the hub file the Gateway renders, starts `wg-quick@orbit` and records only the public key.
+
+The `app` job also writes the agent delivery manifest from the `agent_delivery` run input: the public pins the admitting Gateway sends, because a new Gateway has no release to carry them.
+
+`orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way. The role brings the PHP-FPM pool and the Caddy site, and keeps the units of the scheduler and Horizon that the bootstrap started. It adds the `caddy` user to the group of the Gateway account, because Ubuntu keeps a home at 0750 and Caddy must read the checkout in it.
+
+The control plane phase also makes the Gateway's own agent key and records only its SHA-256 verifier, so the first `orbit:node-converge` of the Gateway Node has a verifier to render. It writes the dnsmasq backend file that private DNS needs and restarts dnsmasq on it, and it starts the Gateway with empty private DNS records and an empty catalog, so the first publication of a private name finds both. It puts the Orbit root certificate in the system trust of the machine.
+
+The phase starts the firewall with the recovery SSH rule, the trust of the network members and an operator rule for the hub port; the first role converge of the Gateway retires the recovery rule.
+
+The hub step marks the `vpn` role active. After serve and both workers run, the phase marks the `swamp` role active.
+
+`orbit:node-add NODE HOST [--role=ROLE] [--wireguard-ip=IP] [--host-key-fingerprint=SHA256:...]` admits `node.add` from the Gateway itself, as `node:add` does through the API; Swamp then enrolls the Node.
+
+`orbit:node-converge NODE` admits `node.converge` from the Gateway itself. The Gateway converges its own Node this way, which installs the agent and the CLI on its machine.
+
+The Swamp role's own steps are workflow steps bound to worker labels, so a Gateway without a worker cannot run them; once its own Swamp serves, `node:role:add` converges the roles through it.
 
 ## Role compatibility
 
@@ -512,11 +581,9 @@ Another installer can put a plain file back at `/usr/local/bin/swamp`, such as t
 
 The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with 8 dispatch slots each and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (root, `0600`) before adding the role. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
 
-The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orbit/swamp-role-worker/ssh-identity` (`0440`, the serve account's group). An operator bootstraps the first swamp Node, because no worker holds the key before that. The role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orbit/swamp-role-worker/ssh-identity` (`0440`, the serve account's group). An operator bootstraps the first swamp Node, because no worker holds the key before that. The role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 
 `caddy.install-package` owns package installation for every caller. The Gateway sends the release pins and keeps the operation error mapping. The agent owns the download URL, kernel setting, and obsolete source paths. It checks the pins and host paths before mutation, verifies the downloaded package before apt sees it, and publishes the kernel setting atomically. Package and system commands share the command deadline. Rust tests cover installation, repetition, drift, and refusal; Gateway tests cover intent. `caddy.order-after-vpn` then orders Caddy after WireGuard. Its failure maps to `gateway.caddy_start_failed`.
-
-Gateway VPN convergence calls `wireguard.remove-dns-ordering` to remove the managed dnsmasq ordering drop-in. dnsmasq provides `nss-lookup.target`, which WireGuard starts after; ordering dnsmasq after WireGuard creates a boot cycle. An absent drop-in needs no service call. Removal preserves other drop-ins, reloads systemd, and restarts dnsmasq. Failed activation restores the prior file and service state.
 
 ### Caddy reloads
 
@@ -532,7 +599,7 @@ HTTP/1.1 clients can still get an empty reply on a new connection during a reloa
 
 ### Caddy on the Gateway machine
 
-Converging the `gateway` role runs the Caddy step over SSH before its firewall step. A failure returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. Run `orbit node:role:add <node> gateway --converge` to repair it. `php artisan orbit:gateway-web` currently refuses with `gateway.web_unavailable` for every role state and makes no host change.
+Converging the `gateway` role runs the Caddy step over SSH before its firewall step. A failure returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. Run `orbit node:role:add <node> gateway --converge` to repair it.
 
 Caddy also serves the Gateway API. A convergence that installs a newer Caddy restarts it, so the CLI can report `Could not reach the gateway.` while the Gateway finishes. `orbit activity:list` shows the real result. Run the command again after a minute.
 
@@ -584,6 +651,7 @@ The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Eve
 - A dead Node ends its connection within about 10 seconds, through `ServerAliveInterval=5` and `ServerAliveCountMax=2`.
 - A key or host-key change on the Node applies when the connection closes.
 - When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
+- A command that runs inside the Horizon unit opens its own connection. A release waits for that unit's control group to empty, and a shared master would stay in it.
 - When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes two warning lines to its stderr.
 
 A reachability check always opens a new connection. The `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. Doctor uses official Swamp SSH. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
@@ -634,7 +702,7 @@ Task VM guest Nodes skip Node removal's Swamp token list and revoke phases. Admi
 
 ### Native role child
 
-The reusable `node-role-remove` child receives the parent’s `operation_id`, `node_id` and `kind`, a schema-version1 public `intent`, empty `execution_secrets`, and the parent’s observed `offline` boolean. Its intent contains `node_id`, `assignment_id`, `role`, the pinned `ssh` connection, before/after publications, and the admitted action lists. The child returns typed `schema_version`, `node_id`, `assignment_id`, `role`, `role_removed: true` and `offline` fields. It creates no child Operation, performs no Gateway read, and leaves forward role convergence separate. Metrics removal disables its canonical fleet exporters and service publications. Role removal retains CI resources, release data and container volumes; it does not purge them.
+The `node-role-remove` workflow, started directly by `node:role:remove` and as a child by Node removal and role relocation, receives the parent’s `operation_id`, `node_id` and `kind`, a schema-version1 public `intent`, empty `execution_secrets`, and the parent’s observed `offline` boolean. Its intent contains `node_id`, `assignment_id`, `role`, the pinned `ssh` connection, before/after publications, and the admitted action lists. The child returns typed `schema_version`, `node_id`, `assignment_id`, `role`, `role_removed: true` and `offline` fields. It creates no child Operation, performs no Gateway read, and leaves forward role convergence separate. Metrics removal disables its canonical fleet exporters and service publications. Role removal retains CI resources, release data and container volumes; it does not purge them.
 
 The workflow returns one public terminal result. Only successful native completion with `removed: true` deletes the Gateway Node record and its owned records; work that failed, was cancelled, was interrupted or timed out keeps them as `failed` records, with `failed_step` `remove:operation` and the Operation's `error_code`. Task VM guest cleanup follows the same rule: its `task-vm-destroy` child prints no result, so the Gateway builds the removal receipt from the captured removal intent once the run succeeded. Steps do not fetch intent, post progress or project state through Gateway callbacks. Node deletion broadcasts after the database transaction commits.
 
@@ -766,7 +834,7 @@ Every target step is one official `@swamp/ssh exec` argument list with the targe
 - Reverb's `.env` comes from the vault copy on stdin. `ln -sfnT` then points the install path at the release.
 - `gateway` writes the private DNS route drop-in and applies the route to the live link. A failed `Route the private domain` step reports `follow_up`: `orbit node:role:add <target> gateway --converge`.
 
-Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` move waits the private DNS grace. Then `operation-node-role-remove-direct` removes the role from the source, and its own end check proves the removal.
+Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` move waits the private DNS grace. Then `node-role-remove` removes the role from the source, and its own end check proves the removal.
 
 One native assert, `Confirm the move`, ends the run. The Gateway records the result from it:
 
@@ -797,8 +865,18 @@ The role's Ansible end check determines completion. The Gateway marks the same a
 
 `node:role:add` and its role-converge run use one Swamp step per Ansible phase: prerequisites, Node resources, publications, firewall, exporters, Prometheus and check. Each phase applies the admitted state and is safe to run from the start. Tool Manager setup, certificate signing, Analytics initialization and Swamp bootstrap keep their native steps.
 
+The Gateway release uses the same shape in its own playbook, `operation-gateway-release.yml`: fetch, build, web, snapshot, drain, switch, verify and prune, one Swamp step each ([Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run)).
+
 Firewall convergence compares each owned rule's shape and position. It removes a changed isolation pair by descending rule index, including duplicate rows with the same owned comment, then inserts the specific allow before its deny and broad peer trust. Unrelated rules stay in place.
 
 A readiness phase waits up to 60 seconds for a newly started Analytics Process before publication. The Gateway DNS oneshot runs only when its unit or live resolver policy changed, under the unit’s existing conditions. PHP and DNS delta publications retain their shared native three-way composition, which preserves unrelated changes admitted by other commands; Ansible has no built-in equivalent. Ansible runs only on the Swamp Node; targets need SSH and Python.
 
-The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.
+The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. The readiness of a nested fleet uses the same input, as the kind `task_vm.nested_ready`.
+
+The development create playbook has no builder: it reads the intent file by lookup, pins the admitted host keys in the run folder and addresses the Node itself, and it takes its secrets from the environment of the phase. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.
+
+For a web-serving Project, its `checkout` phase also gives Caddy its access to the checkout and sets `APP_URL` in the `.env`, before the setup commands write into the tree. The Route playbook `route-create-site.yml` then skips both on that Node, and removes its own run folder as its last task, so a success needs no cleanup step. It updates the trust store only when it wrote a new Orbit root.
+
+The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because each costs about 0.4 s: one command checks every file it will replace, and one removes every certificate folder.
+
+The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.

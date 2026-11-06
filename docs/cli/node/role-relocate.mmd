@@ -80,7 +80,7 @@ sequenceDiagram
     %%> Why:
     %%> - clients that still hold the old answer keep working until it expires
   end
-  SW->>S: Remove from the source<br/>child operation-node-role-remove
+  SW->>S: Remove from the source<br/>child node-role-remove
   %%> What it does:
   %%> - removes the role's runtime and publications from the source and forgets its settings there; for `gateway` it does not stop Caddy or PHP-FPM, so clients on the old address keep working
   %%> - for `metrics` it keeps the fleet exporters and the `metrics.orbit` name and certificate, which the moved role uses

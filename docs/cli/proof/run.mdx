@@ -40,15 +40,19 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 ## The run
 
-Orbit creates a task group on the Orbit Project and provisions it with the same `tasks.provision` operation as any task. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the provision waits as it does for a task.
+Orbit starts one run for each selected command, all at once, and each run has a task VM of its own. A command that fails does not stop the others. For each run Orbit creates a task group on the Orbit Project and admits the whole run as the operation `proof.command`. Orbit's own Swamp then runs the workflow `operation-proof-run` for it, with three children in turn:
 
-Orbit then builds a fresh test fleet in the VM (a Gateway, an `app-dev` Node and an `app-prod` Node) and takes the memory snapshot `base`. Not built: this reset. The old one was removed, and Orbit's own Swamp will run its replacement directly over SSH.
+1. The task provision, `operation-task-provision`, the same one every task uses. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token and the model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the admission is refused with `tasks.capacity_unavailable` and no run starts.
+2. The cases of the command, `proof-fleet-verify`, on Node 209, which reaches the VM over SSH like every other step. The runner reads the cases file of the command, `swamp/proof/<family>/<command>.cases.yaml`, at the tested commit and runs its cases with the CLI built from the commit.
+3. The destruction of the VM, `operation-task-cancel`, whatever the cases did.
 
-Orbit then starts the operation `proof.verify` for each selected command, one after another. It runs the Swamp workflow `proof-fleet-verify` on Node 209, which reaches the VM over SSH like every other step. The runner reads the cases file of the command, `swamp/proof/<family>/<command>.cases.yaml`, at the tested commit and runs its cases with the CLI built from the commit. When the run ends, Orbit cancels the group whatever the cases did.
+Not built: the nested test fleet of the VM and its memory snapshot `base`. The old reset was removed, and Orbit's own Swamp will build the fleet inside the provision.
 
 The cases run in batches. Each batch applies its declared start state first. Inside a batch the cases run one at a time. Each case asserts the promised effect, the recorded state and the Node state, on its own resources, and undoes nothing. Not built: the restore of `base` before each batch and after a case that did not pass; the old restore was removed. A batch setup that fails stops the run: the cases that did not run end `unrun` with cause `infrastructure`, and the verdicts already reached stay. Orbit retries nothing. [Verification cases](/reference/verification-cases#the-run) describes the workflow.
 
-Each case has its own timeout, 180 seconds unless the case sets another. The operation `proof.verify` has a budget of 45 minutes.
+Each case has its own timeout, 180 seconds unless the case sets another. The operation `proof.command` has a budget of 60 minutes, and the `proof.run` that you follow has 65 minutes.
+
+No step of a run calls the Gateway. Each run is recorded once, from its terminal event: its verdicts, its VM and the end of its group. The `proof.run` that you follow closes when the last run has ended, and it passes only when every run passed.
 
 ## The execution switch
 
@@ -58,7 +62,7 @@ Each case has its own timeout, 180 seconds unless the case sets another. The ope
 
 Each selected case ends `passed`, `failed` or `unrun`. A case that exceeds the budget is `failed`. A case is `unrun` when its setup could not start or the run stopped before it. Neither `failed` nor `unrun` counts as a pass. If the fleet never becomes ready, every selected case is `unrun`.
 
-The result names the commit, each case with its verdict and duration, the uncovered paths and the evidence directory in the VM. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
+The result names the commit, each case with its command, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |
@@ -68,11 +72,11 @@ The result names the commit, each case with its verdict and duration, the uncove
 | You pressed Ctrl-C. | `130`. |
 | The process received SIGTERM. | `143`. |
 
-Ctrl-C, or `operation:cancel` on the run, ends the run at once and cancels its group, which destroys the VM. A case that was running stops with the VM. The group is always cancelled when the run ends.
+Ctrl-C, or `operation:cancel` on the proof, ends every run at once and cancels their groups, which destroys the VMs. A case that was running stops with its VM. Each group ends when its run ends.
 
 ## After the run
 
-Orbit cancels the group after success and after failure, which destroys the VM. The verdicts stay as they are. If the cancel fails, the group stays for another `tasks:cancel`.
+The run destroys its VM after success and after failure, and Orbit records the end of the group from that step. If the destroy step did not run or failed, because the run was cancelled, timed out or failed early, Orbit cancels the group the normal way, which destroys the VM. The verdicts stay as they are. If that cancel fails, the group stays for another `tasks:cancel`.
 
 A repeat starts a new run, because a proof checks the commit as it is now. The same `--idempotency-key` returns the original run instead of starting another.
 
@@ -89,7 +93,8 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |
 | `proof.path_unmapped` | A changed path matches no line of the selection list. The details name the path. |
 | `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
-| `proof.run_failed` | The VM or the test fleet did not become ready, or the cases printed no verdict. Every selected case is `unrun`. |
+| `proof.run_failed` | The VM or the test fleet of a run did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
+| `tasks.capacity_unavailable` | No host with a usable nested fleet seed has room for a VM for each selected command. No run starts. A host whose seed holds no ready copies of the current format is skipped, even with free slots. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The details hold the commit, the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The details name the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |

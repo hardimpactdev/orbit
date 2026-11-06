@@ -1,0 +1,40 @@
+---
+# The Gateway's own prerequisites, applied on the new Gateway itself with Ansible's local connection, before its app can run.
+# The operator renders the intent from the recipe alone (`php artisan orbit:bootstrap-plan`); the tasks are the role prerequisites.
+- name: Gateway prerequisites
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - prerequisites
+  tasks:
+    - name: Install the role prerequisites
+      ansible.builtin.import_tasks: tasks/role-prerequisites.yml
+- name: Gateway Swamp control plane
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - swamp
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd: { daemon_reload: true }
+    - name: Restart the hub
+      ansible.builtin.systemd: { name: wg-quick@orbit.service, state: restarted }
+    - name: Reload Caddy
+      ansible.builtin.systemd: { name: caddy.service, state: restarted, enabled: true }
+  tasks:
+    - name: Apply the Swamp control plane
+      ansible.builtin.import_tasks: tasks/gateway-swamp.yml
+- name: Gateway Swamp tokens, renewed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - remint
+  tasks:
+    - name: Renew the Swamp tokens
+      ansible.builtin.import_tasks: tasks/gateway-swamp-remint.yml

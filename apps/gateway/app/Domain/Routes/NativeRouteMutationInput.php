@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Domain\Analytics\AnalyticsRoutePlan;
 use App\Domain\Nodes\NodeEnrollmentCandidate;
+use App\Domain\Nodes\SwampNode;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -62,14 +63,14 @@ final readonly class NativeRouteMutationInput
         $participants = $nodeIds;
         foreach ($nodeIds as $index => $nodeId) {
             $node = Node::query()->findOrFail($nodeId);
-            $before = app(NativeRoutePublicationInput::class)->snapshot($node, $beforeSites);
+            $before = app(NativeRoutePublicationInput::class)->snapshot($node, $beforeSites, true);
             $forward = $render(fn (): array => [
                 ...($enrollment?->nodeId === $nodeId
                     ? app(NativeCaddyPublicationInput::class)->connectionForCandidate($node, $enrollment)
                     : app(NativeCaddyPublicationInput::class)->connectionForNode($node)),
-                'prepared' => app(NativeRoutePublicationInput::class)->snapshot($node, $preparedSites),
-                'withdrawn' => app(NativeRoutePublicationInput::class)->snapshot($node, $withdrawnSites),
-                'after' => app(NativeRoutePublicationInput::class)->snapshot($node, $afterSites),
+                'prepared' => app(NativeRoutePublicationInput::class)->snapshot($node, $preparedSites, true),
+                'withdrawn' => app(NativeRoutePublicationInput::class)->snapshot($node, $withdrawnSites, true),
+                'after' => app(NativeRoutePublicationInput::class)->snapshot($node, $afterSites, true),
             ]);
             $participants[] = ValidatedData::integer($forward['control_node_id']);
             // The whole after-state of the Node, which official cfgmgmt file steps write as is (rule 22).
@@ -143,7 +144,7 @@ final readonly class NativeRouteMutationInput
         }
         $certificates = $allLeaves;
         if ($certificates !== []) {
-            $participants[] = 209;
+            $participants[] = SwampNode::id();
         }
         $participants = array_values(array_unique($participants));
         sort($participants);

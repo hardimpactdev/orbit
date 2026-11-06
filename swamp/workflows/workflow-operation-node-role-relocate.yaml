@@ -234,7 +234,7 @@ jobs:
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy }}'}}, execution_secrets: {}}
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: '${{ self.publication.control_node_id }}', host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy }}'}}, execution_secrets: {}}
 - name: dns
   dependsOn: [{job: caddy, condition: {type: succeeded}}]
   steps:
@@ -279,7 +279,7 @@ jobs:
     labels: {role: swamp}
     task:
       type: workflow
-      workflowIdOrName: operation-node-role-remove-direct
+      workflowIdOrName: node-role-remove
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.source_node_id }}', kind: node.role_remove, intent: '${{ inputs.intent.source }}', execution_secrets: {}, offline: false}
 - name: confirm
   dependsOn: [{job: source, condition: {type: succeeded}}]

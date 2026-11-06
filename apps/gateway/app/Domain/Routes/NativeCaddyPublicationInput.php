@@ -35,7 +35,7 @@ final readonly class NativeCaddyPublicationInput
     }
 
     /** A null pin list is a required parent binding, never an executable SSH fallback.
-     * @return array{control_node_id:209,host_keys:?list<string>,connection:array{nodeHost:string,nodeUser:string,nodePort:int,nodeIdentityFile:string,become:true}}
+     * @return array{control_node_id:int,host_keys:?list<string>,connection:array{nodeHost:string,nodeUser:string,nodePort:int,nodeIdentityFile:string,become:true}}
      */
     public function connectionForCandidate(Node $node, NodeEnrollmentCandidate $candidate): array
     {
@@ -59,7 +59,7 @@ final readonly class NativeCaddyPublicationInput
     }
 
     /** A Node in PendingSshHostKey gets `host_keys: null`, which its run binds before use.
-     * @return array{control_node_id:209,host_keys:?list<string>,connection:array{nodeHost:string,nodeUser:string,nodePort:int,nodeIdentityFile:string,become:true}}
+     * @return array{control_node_id:int,host_keys:?list<string>,connection:array{nodeHost:string,nodeUser:string,nodePort:int,nodeIdentityFile:string,become:true}}
      */
     public function connectionForNode(Node $node): array
     {

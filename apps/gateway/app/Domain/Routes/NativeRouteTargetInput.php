@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -36,7 +37,7 @@ final readonly class NativeRouteTargetInput
         // A development target moves a published site; an unpublished Route only records it (R1).
         $metadata += ['effectful' => $inventory['binding_only'] ? $route->sites_published : ! $inventory['noop'], 'result_route_id' => $route->id];
         if (! $metadata['effectful']) {
-            return ['intent' => $metadata, 'participant_node_ids' => [209], 'certificates' => [], 'execution_secrets' => []];
+            return ['intent' => $metadata, 'participant_node_ids' => [SwampNode::id()], 'certificates' => [], 'execution_secrets' => []];
         }
         if ($inventory['binding_only']) {
             return $this->development($route, $input, $metadata);

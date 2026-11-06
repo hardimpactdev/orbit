@@ -58,6 +58,8 @@ final readonly class NativeDevelopmentInstanceInput
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
             'environment_testing' => $testing !== null,
             // The Route child's own vault references; null when the Project serves no web pages.
+            // The reverse of the Route publication the run captured at admission; the failed create takes the Route back with it.
+            'route_mutations' => self::routeWithdrawal($input),
             'route_secrets' => ($input['route_create'] ?? null) === null ? null : ValidatedData::object($input['execution_secrets'] ?? [])],
             'execution_secrets' => [...$copies,
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
@@ -65,6 +67,23 @@ final readonly class NativeDevelopmentInstanceInput
                 ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),
                 ...($server === null ? [] : ['server_database_create' => ValidatedData::object(ValidatedData::object($server['secrets'])['create']), 'server_database_check' => ValidatedData::object(ValidatedData::object($server['secrets'])['check'])]),
             ]];
+    }
+
+    /**
+     * The artifacts and the restore side of the captured Route publication; null when the Project serves no web pages.
+     *
+     * @param  array<string,mixed>  $input
+     * @return array{artifacts:array<string,mixed>,restore:array<string,mixed>}|null
+     */
+    public static function routeWithdrawal(array $input): ?array
+    {
+        $lifecycle = $input['route_lifecycle'] ?? null;
+        $mutations = is_array($lifecycle) ? ($lifecycle['route_mutations'] ?? null) : null;
+        if (! is_array($mutations)) {
+            return null;
+        }
+
+        return ['artifacts' => ValidatedData::object($mutations['artifacts']), 'restore' => ValidatedData::object($mutations['restore'])];
     }
 
     /**

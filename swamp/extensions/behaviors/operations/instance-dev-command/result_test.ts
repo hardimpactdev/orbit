@@ -5,13 +5,14 @@ const intent = {
     instance_id: 7,
     setup_steps: [{ index: 0, name: "install" }, { index: 1, name: "migrate" }],
 };
-const phases = {
-    prepare: "succeeded",
-    fetch: "succeeded",
-    source: { status: "succeeded", outputs: { stdout: "a".repeat(40) + "\n" } },
-    environment: "succeeded",
+const commit = "a".repeat(40);
+const phases: Parameters<typeof createResult>[1] = {
+    checkout: {
+        status: "succeeded",
+        outputs: { stdout: `ok: [node] => {\n    "msg": "orbit-commit=${commit}"\n}\n` },
+    },
     database: "skipped",
-    setup: ["succeeded", "succeeded"],
+    setup: "succeeded",
     processes: ["succeeded"],
     route: "skipped",
 };
@@ -20,27 +21,43 @@ Deno.test("create returns only the commit when every step finished", () => {
         instance_id: 7,
         ready: true,
         name_converted_from: null,
-        commit: "a".repeat(40),
+        commit,
     });
 });
-Deno.test("create names the first unfinished phase and the failed setup command", () => {
+Deno.test("create names the first unfinished phase", () => {
     const failed = (changes: Partial<typeof phases>) =>
         JSON.parse(createResult(intent, { ...phases, ...changes }).stdout);
-    assertEquals(failed({ prepare: "failed" }).failed_step, "prepare");
-    assertEquals(failed({ fetch: "failed" }).failed_step, "source");
     assertEquals(
-        failed({ source: { status: "failed", outputs: { stdout: "" } } })
+        failed({ checkout: { status: "failed", outputs: { stdout: "" } } })
             .failed_step,
-        "source",
+        "checkout",
     );
-    assertEquals(failed({ environment: "skipped" }).failed_step, "environment");
-    const setup = failed({ setup: ["succeeded", "failed"] });
-    assertEquals([setup.failed_step, setup.error_code, setup.failed_command], [
+    // A checkout that ends without printing its commit did not finish.
+    const silent = failed({ checkout: { status: "succeeded", outputs: { stdout: "" } } });
+    assertEquals([silent.failed_step, silent.error_code], [
+        "checkout",
+        "instance.create_checkout_failed",
+    ]);
+    assertEquals(failed({ checkout: null }).failed_step, "checkout");
+    const setup = failed({ setup: "failed" });
+    assertEquals([setup.failed_step, setup.error_code], [
         "setup",
         "instance.setup_step_failed",
-        "migrate",
     ]);
     assertEquals(failed({ processes: ["failed"] }).failed_step, "processes");
+});
+Deno.test("a Project without setup steps runs no setup phase", () => {
+    const none = { ...intent, setup_steps: [] };
+    assertEquals(
+        JSON.parse(createResult(none, { ...phases, setup: "skipped" }).stdout)
+            .ready,
+        true,
+    );
+    assertEquals(
+        JSON.parse(createResult(intent, { ...phases, setup: "skipped" }).stdout)
+            .failed_step,
+        "setup",
+    );
 });
 Deno.test("a web-serving create needs its Route; a Project without one skips it", () => {
     const routed = { ...intent, route: { route_id: 9 } };
@@ -63,7 +80,7 @@ Deno.test("a web-serving create needs its Route; a Project without one skips it"
 Deno.test("an already active create reports ready without step evidence", () => {
     const result = createResult({ instance_id: 7, already_active: true }, {
         ...phases,
-        prepare: "skipped",
+        setup: "skipped",
     });
     assertEquals(JSON.parse(result.stdout), {
         ready: true,
@@ -111,4 +128,57 @@ Deno.test("a create that copies the default database needs that copy; others ski
         true,
     );
     assertEquals(JSON.parse(createResult(intent, phases).stdout).ready, true);
+});
+Deno.test("a Route certificate that failed is the Route's failure, not the setup it skipped", () => {
+    const routed = { ...intent, route: { route_id: 9 } };
+    const failed = JSON.parse(
+        createResult(routed, {
+            ...phases,
+            setup: "skipped",
+            processes: ["skipped"],
+            route: "skipped",
+            certificates: ["failed", "skipped"],
+        }).stdout,
+    );
+    assertEquals([failed.ready, failed.failed_step, failed.error_code], [
+        false,
+        "route",
+        "instance.create_route_failed",
+    ]);
+});
+Deno.test("a failed setup wins over the Route it skipped", () => {
+    const routed = { ...intent, route: { route_id: 9 } };
+    const failed = JSON.parse(
+        createResult(routed, {
+            ...phases,
+            setup: "failed",
+            processes: ["skipped"],
+            route: "skipped",
+            certificates: ["succeeded", "succeeded"],
+        }).stdout,
+    );
+    assertEquals([failed.failed_step, failed.error_code], [
+        "setup",
+        "instance.setup_step_failed",
+    ]);
+    assertEquals(
+        JSON.parse(
+            createResult(routed, {
+                ...phases,
+                route: "succeeded",
+                certificates: ["succeeded", "succeeded"],
+            }).stdout,
+        ).ready,
+        true,
+    );
+});
+Deno.test("the Route is not finished until every certificate step succeeded", () => {
+    const routed = { ...intent, route: { route_id: 9 } };
+    for (const certificates of [["succeeded", "skipped"], ["failed"], []]) {
+        const result = JSON.parse(
+            createResult(routed, { ...phases, route: "succeeded", certificates })
+                .stdout,
+        );
+        assertEquals(result.ready, certificates.length === 0);
+    }
 });

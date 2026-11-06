@@ -154,3 +154,47 @@ Deno.test("the capture wrapper keeps the command literal and its exit code", asy
         ["out"],
     );
 });
+
+Deno.test("a GitHub installation token in the new format, with dots and dashes, is redacted whole", () => {
+    // The shape of the token that Composer echoed in `Your github oauth token for github.com contains invalid characters`.
+    const token = "ghs_" + "A".repeat(20) + "_" + ["eyJhbGciOiJSUzI1NiJ9", "eyJpYXQiOjE3NjIzMzQ2NjV9", "sig-nature_ok"].join(".");
+    const text = `In BaseIO.php line 143:\n  Your github oauth token for github.com contains invalid characters: "${token}"\n`;
+
+    assertEquals(
+        redactText(text),
+        'In BaseIO.php line 143:\n  Your github oauth token for github.com contains invalid characters: "[REDACTED]"\n',
+    );
+    assertEquals(publicTail(text, 4096).output.includes("eyJ"), false);
+});
+
+Deno.test("a token that a console error box wrapped over padded lines is redacted whole", () => {
+    // Composer's error block, as the setup output kept it: the token breaks at the box width, each line padded on both sides.
+    const text = [
+        "In BaseIO.php line 143:",
+        "                                                                               ",
+        '  Your github oauth token for github.com contains invalid characters: "ghs_ABCDEFGHIJKLMNOPQRSTUVWX_eyJhbGciOiJSUzI1NiJ9.eyJpYXQiOjE3NjIzMzQ2NjV9.sig-na  ',
+        '  ture_ok"                                                                     ',
+        "",
+    ].join("\n");
+    const output = redactText(text);
+
+    assertEquals(output.includes("eyJ"), false);
+    assertEquals(output.includes("ture_ok"), false);
+    assertEquals(output.includes("In BaseIO.php line 143:"), true);
+});
+
+Deno.test("plain output after a token stays, and every GitHub token kind is redacted", () => {
+    const text = [
+        "token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
+        "Done",
+        "vendor",
+        "ghu_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz_0123456789",
+        "next line here",
+    ].join("\n");
+    const output = redactText(text);
+
+    assertEquals(output.includes("ABCDEFGH"), false);
+    assertEquals(output.includes("github_pat_"), false);
+    assertEquals(output.split("\n").slice(1, 3), ["Done", "vendor"]);
+    assertEquals(output.endsWith("next line here"), true);
+});

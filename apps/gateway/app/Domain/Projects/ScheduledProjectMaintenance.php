@@ -144,16 +144,9 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
                         ->whereIn('kind', ['project.detect', 'project.routine', 'project.observe'])->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                         continue;
                     }
-                    $identity = app(OperationIdempotency::class);
-                    $prior = [$identity->kind, $identity->key, $identity->fingerprint];
-                    $identity->kind = 'project.'.$mode;
-                    $identity->key = 'native-maintenance:'.$key;
-                    $identity->fingerprint = hash('sha256', json_encode([$projectId, $mode, $key, $snapshot], JSON_THROW_ON_ERROR));
-                    try {
-                        $operation = app(ProjectMaintenanceIntent::class)->start($project, $mode, open: true);
-                    } finally {
-                        [$identity->kind, $identity->key, $identity->fingerprint] = $prior;
-                    }
+                    $operation = app(OperationIdempotency::class)->under('project.'.$mode, 'native-maintenance:'.$key,
+                        hash('sha256', json_encode([$projectId, $mode, $key, $snapshot], JSON_THROW_ON_ERROR)),
+                        fn () => app(ProjectMaintenanceIntent::class)->start($project, $mode, open: true));
                     $admissions[$projectId.':'.$mode] = ['key' => $key, 'operation_id' => $operation->id];
                 }
             }

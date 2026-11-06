@@ -1,0 +1,40 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-06, agent strip (b): a release list answers from the deployment history the Gateway records. No Node contact, no agent command (R1).
+  %% status: draft
+  %% command: instance:release:list
+  %% kind: instance.release_list
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  CLI->>GW: instance:release:list 14
+  %%> Command:
+  %%> - `orbit instance:release:list <instance>`
+  %%> - syntax: `instance:release:list <instance> [--json]`
+  %%> Input:
+  %%> - the numeric Instance ID from `instance:list`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  %%> Requirements:
+  %%> - your Node has an access grant to the Node that serves the Instance
+  Note over GW: Read the history<br/>retained · selected
+  %%> What it does:
+  %%> - every deploy and rollback is a run whose terminal result the Gateway records, including the releases the deploy's cleanup removed
+  %%> - the retained releases are the ones the history keeps: the first release, `initial`, and after each successful deploy the new selection, the selection before it and the newest other release, three in all
+  %%> - the selected release is the one the last deploy or rollback activated
+  %%> - it starts no run and contacts no Node
+  alt production Instance
+    GW-->>CLI: 200 releases<br/>selected release
+    %%> Result:
+    %%> - the retained release names sorted by name, and the selected one
+    %%> - the list is what the history retains, not a scan of the Node: a release removed by hand is still listed, and one kept only because a running process uses it is not
+  else development default
+    GW-->>CLI: 200 empty list
+    %%> Result:
+    %%> - a development default deploys in its checkout and has no releases
+  else any other Instance
+    GW--xCLI: 409<br/>deployment.identity_invalid
+    %%> When:
+    %%> - the Instance is not an active production Instance with a release layout and a recorded user and home
+  end

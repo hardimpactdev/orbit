@@ -40,4 +40,4 @@ outputs retain the exact merged head and merge identity; an uncertain write
 needs observation before another mutation. This policy does not deploy or enable
 a Project.
 
-Admission freezes policy and lineage and mints two scoped tokens. Native cleanup revokes both and removes private replies on every outcome. A fresh request observes an already-merged exact head before another PUT; cleaned runs are not resumed.
+Admission freezes policy and lineage and names two vault keys. The first step of the run mints the two scoped tokens. Native cleanup revokes both and removes private replies on every outcome. A fresh request observes an already-merged exact head before another PUT; cleaned runs are not resumed.

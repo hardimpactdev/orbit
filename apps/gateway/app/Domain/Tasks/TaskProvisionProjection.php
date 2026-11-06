@@ -35,6 +35,10 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
     {
         $input = $this->vms->input($operation);
         $intent = ValidatedData::object($input['intent']);
+        // The converge intent carries the recipe and lock files. The VM provider puts the whole intent into one argument, so the
+        // intent leaves it and the workflow takes it as an input of its own.
+        $converge = $intent['converge'] ?? null;
+        unset($intent['converge']);
         $group = Task::topLevel()->findOrFail($operation->target_id);
         $guest = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']))->node_id;
         // The guest's targets carry `host_keys: null`; the workflow binds the key its VM step pins.
@@ -51,7 +55,7 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         });
         $route = is_array($operation->input['route'] ?? null) ? $operation->input['route'] : null;
 
-        return [...$input, 'execution_secrets' => $copies, 'intent' => [...$intent,
+        return [...$input, 'execution_secrets' => $copies, ...(is_array($converge) ? ['converge' => $converge] : []), 'intent' => [...$intent,
             'eligible' => ($intent['eligible'] ?? false) && $group->status === TaskGroupStatus::Reserved,
             'processes' => $members, 'route' => $route['route_create'] ?? null, 'route_secrets' => $route['execution_secrets'] ?? (object) []]];
     }
@@ -112,14 +116,20 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             if (($result['ready'] ?? null) !== true) {
                 throw new ResourceOperationException('operation.invalid_result', 'Tasks provision requires confirmed VM readiness.', 422);
             }
+            if ($vm->state === TaskVmState::Parked) {
+                // A claimed slot (docs/cli/tasks/vm-slots.mmd) runs again; its enrolment was recorded at its enrol.
+                $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'stop_confirmed_at' => null, 'error_code' => null, 'error_message' => null]);
+            }
             $source = ValidatedData::object($result['source']);
-            $instance->update(['branch' => $source['branch'], 'starting_commit' => $source['commit'],
-                'selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel'],
+            // A routed workspace keeps the Project facts its Route was published with, as instance:create does, so the Gateway's
+            // later render matches the published site.
+            $facts = $instance->task_workspace_routed ? [] : ['selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel']];
+            $instance->update(['branch' => $source['branch'], 'starting_commit' => $source['commit'], ...$facts,
                 'status' => InstanceState::SourceResolved, 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
             $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(),
                 'reserved_at' => null, 'capacity_wait_reason' => null]);
         } elseif (in_array($data['status'], ['failed', 'interrupted'], true)) {
-            if ($vm->state === TaskVmState::Provisioning) {
+            if (in_array($vm->state, [TaskVmState::Provisioning, TaskVmState::Parked], true)) {
                 $vm->update(['state' => TaskVmState::Failed, 'error_code' => $data['error_code'], 'error_message' => 'Native task provisioning failed.']);
             }
             $instance->update(['failed_step' => $result['failed_step'] ?? 'provision', 'error_code' => $data['error_code']]);

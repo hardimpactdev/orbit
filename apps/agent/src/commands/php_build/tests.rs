@@ -3,7 +3,6 @@ use sha2::{Digest, Sha256};
 use std::{os::unix::fs::symlink, time::Duration};
 
 mod downloads;
-mod image;
 mod installation;
 mod inventory;
 mod profile;

@@ -7,13 +7,11 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskPublishData;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -34,6 +32,7 @@ final readonly class TaskPublishIntent
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
         }
+        TaskVmAwake::require($group);
 
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request));
     }
@@ -63,11 +62,11 @@ final readonly class TaskPublishIntent
             throw new ResourceOperationException('tasks.publish_failed', 'The Project requires a GitHub repository and valid default branch.', 422);
         }
 
-        $token = app(RepositoryPullRequestAccess::class)->token($repository);
+        // Only the vault key names are admitted. The publish step mints the token when it runs ({@see TaskGitHubTokens}).
         $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
         $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
-        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $token, $copy, $authorization, $input, $caller, $request): Operation {
+        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $copy, $authorization, $input, $caller, $request): Operation {
             Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
             if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
                 return $existing;
@@ -86,13 +85,28 @@ final readonly class TaskPublishIntent
                 'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
                 'execution_secrets' => ['github_token' => $copy, 'git_authorization' => $authorization],
             ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
-            if ($operation->wasRecentlyCreated) {
-                app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'], $token);
-                app(SwampCommandStep::class)->executionCopy($authorization['vault'], $authorization['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token));
-            }
 
             return $operation;
         });
+    }
+
+    /**
+     * Where a run pushes: the checkout, the repository and the branch of the pull request, with the SSH target. A prep fix and a review
+     * round hold it in their intent and publish with it; the commit and the tree come from their own steps.
+     *
+     * @param  array<string,mixed>  $ssh
+     * @return array<string,mixed>
+     */
+    public static function destination(Task $group, Instance $instance, GitHubRepository $repository, array $ssh): array
+    {
+        $branch = 'task-'.$group->id;
+
+        return [
+            'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+            'checkout_path' => $instance->checkout_path, 'repository' => $repository->owner.'/'.$repository->name,
+            'base' => $group->project->default_branch, 'branch' => $branch, 'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
+            'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => $ssh,
+        ];
     }
 
     private function assertIdle(Task $group): void

@@ -1,11 +1,14 @@
 ---
 # The task VM role, in the phases of a Node converge: software, tools, check.
-# One playbook, two callers: the image build runs it on the builder VM, a converge runs it on a running task VM.
+# An image build adds two: clean, and template, which checks the template that the build made.
+# One playbook, two callers: the image builds (Incus and UpCloud) run it on the builder, a converge runs it on a running task VM.
 # Versions come from intent.recipe, the recipe.json of the release; this file names none.
 - name: Task VM role
   hosts: task_vm
   become: true
   gather_facts: false
+  module_defaults:
+    ansible.builtin.apt: { lock_timeout: 300 }
   vars:
     recipe: "{{ intent.recipe }}"
     profile: "{{ intent.profile | default('base') }}"
@@ -13,8 +16,16 @@
     orbit_home: "/home/orbit"
     vp_home: "/home/orbit/.local/share/vite-plus"
     apt_directory: /var/tmp/orbit-image-apt
+    # Package downloads retry on a transient error of the snapshot service: four retries, 30 seconds apart (swamp-shape rule 6).
+    apt_retries: 4
+    apt_delay: 30
     apt_environment:
       APT_CONFIG: /var/tmp/orbit-image-apt/apt.conf
+      DEBIAN_FRONTEND: noninteractive
+      NEEDRESTART_MODE: l
+    # The index read goes through the package cache of the VM; the packages stay a direct download (task-vm-apt-config.yml).
+    apt_index_environment:
+      APT_CONFIG: /var/tmp/orbit-image-apt/apt-cache.conf
       DEBIAN_FRONTEND: noninteractive
       NEEDRESTART_MODE: l
   handlers:
@@ -22,7 +33,10 @@
       ansible.builtin.command: exportfs -ra
       changed_when: true
   tasks:
+    - { name: Wait for a new server, ansible.builtin.import_tasks: tasks/task-vm-ready.yml, tags: [always] }
     - { name: Resolve the recipe, ansible.builtin.import_tasks: tasks/task-vm-recipe.yml, tags: [always] }
     - { name: Software, ansible.builtin.import_tasks: tasks/task-vm-software.yml, tags: [software] }
     - { name: Tools, ansible.builtin.import_tasks: tasks/task-vm-tools.yml, tags: [tools] }
     - { name: Check, ansible.builtin.import_tasks: tasks/task-vm-check.yml, tags: [check] }
+    - { name: Clean, ansible.builtin.import_tasks: tasks/task-vm-clean.yml, tags: [clean] }
+    - { name: Template, ansible.builtin.import_tasks: tasks/task-vm-template-check.yml, tags: [template] }

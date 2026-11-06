@@ -1,4 +1,4 @@
-"""One case from the real allow file against the fake fleet: the verdicts, the line, and the commands."""
+"""One case from the fixture copy of the allow file against the fake fleet: the verdicts, the line, and the commands."""
 import contextlib
 import io
 import json
@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -17,7 +17,7 @@ import steps
 from fakes import BRIDGE, FakeFleet
 
 PROOF = Path(__file__).resolve().parents[2]
-CASES = PROOF / 'firewall' / 'allow.cases.yaml'
+CASES = Path(__file__).resolve().parent / 'fixtures' / 'allow.cases.yaml'
 BATCHES = PROOF / 'batches.yaml'
 CASE = 'new-restricted-allow'
 
@@ -190,30 +190,37 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(json.loads(out)['cause'], 'infrastructure')
 
 
+class FleetCliTest(unittest.TestCase):
+    def test_the_cli_as_a_node_runs_the_orbit_of_that_node_as_its_managed_user_and_the_default_runs_the_candidate(self):
+        found = fleet_module.Fleet({'app-prod': {'instance': 'nested-app-prod', 'node_id': 3, 'bridge': '10.0.0.3'}})
+        done = Mock(returncode=0, stdout='{}', stderr='')
+        with patch.object(fleet_module.subprocess, 'run', return_value=done) as run:
+            found.cli(['firewall:list'], node='app-prod')
+            found.cli(['firewall:list'])
+        as_node, default = (call.args[0] for call in run.call_args_list)
+        self.assertEqual(as_node, ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--', 'orbit', 'firewall:list', '--json'])
+        self.assertEqual(default[:2], ['php', str(Path(fleet_module.__file__).resolve().parents[3] / 'apps/cli/orbit')])
+
+
 class FleetDiscoveryTest(unittest.TestCase):
     def guest(self, name, address='10.0.0.5', status='Running'):
         return {'name': name, 'status': status, 'state': {'network': {'lo': {'addresses': [{'family': 'inet', 'scope': 'local', 'address': '127.0.0.1'}]},
                 'orbit': {'addresses': [{'family': 'inet', 'scope': 'global', 'address': '10.45.0.2'}]},
                 'enp5s0': {'addresses': [{'family': 'inet', 'scope': 'global', 'address': address}]}}}}
 
-    def test_discover_picks_the_one_complete_set_and_its_bridge_addresses(self):
-        guests = [self.guest(f'orbit-e2e-task-3187-aa-{role}', f'10.0.0.{n}') for n, role in enumerate(('gateway', 'app-dev', 'app-prod'), 1)]
-        guests.append(self.guest('orbit-e2e-task-3187-aa-operator'))
+    def test_discover_finds_the_guests_by_the_names_of_the_fleet_child(self):
+        guests = [self.guest(f'nested-{role}', f'10.0.0.{n}') for n, role in enumerate(('gateway', 'app-dev', 'app-prod'), 1)]
         guests.append(self.guest('fleet-ready-gateway', status='Stopped'))
+        guests.append(self.guest('orbit-e2e-task-3187-aa-gateway'))
         found = fleet_module.discover(guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
-        self.assertEqual(found.nodes['app-dev'], {'instance': 'orbit-e2e-task-3187-aa-app-dev', 'node_id': 2, 'bridge': '10.0.0.2'})
+        self.assertEqual(found.nodes['app-dev'], {'instance': 'nested-app-dev', 'node_id': 2, 'bridge': '10.0.0.2'})
 
-    def test_two_complete_sets_need_a_prefix(self):
-        guests = [self.guest(f'orbit-e2e-task-3187-{tag}-{role}') for tag in ('aa', 'bb') for role in ('gateway', 'app-dev', 'app-prod')]
+    def test_a_stopped_or_missing_guest_is_refused(self):
+        guests = [self.guest('nested-gateway'), self.guest('nested-app-dev', status='Stopped'), self.guest('nested-app-prod')]
         with self.assertRaises(fleet_module.FleetError):
-            fleet_module.discover(guests=guests, node_ids={})
-        found = fleet_module.discover('orbit-e2e-task-3187-bb', guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
-        self.assertTrue(found.nodes['gateway']['instance'].startswith('orbit-e2e-task-3187-bb'))
-
-    def test_an_incomplete_set_is_refused(self):
-        guests = [self.guest('orbit-e2e-task-3187-aa-gateway')]
+            fleet_module.discover(guests=guests, node_ids={'gateway': 1, 'app-dev': 2, 'app-prod': 3})
         with self.assertRaises(fleet_module.FleetError):
-            fleet_module.discover(guests=guests, node_ids={})
+            fleet_module.discover(guests=[self.guest('nested-gateway')], node_ids={})
 
 
 if __name__ == '__main__':

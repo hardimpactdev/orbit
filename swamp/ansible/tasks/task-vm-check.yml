@@ -12,6 +12,7 @@
     - { name: rustc, argv: [/opt/orbit/rust/bin/rustc, --version] }
     - { name: cargo, argv: [/opt/orbit/rust/bin/cargo, --version] }
     - { name: nfs, argv: [systemctl, is-active, nfs-server.service] }
+    - { name: cache, argv: [systemctl, is-active, apt-cacher-ng.service] }
   loop_control: { label: "{{ item.name }}" }
   register: check_versions
   changed_when: false
@@ -25,6 +26,8 @@
     - { name: shape gate, path: "{{ shape_venv | default('/opt/orbit-shape-gate/none') }}/.complete" }
   loop_control: { label: "{{ item.name }}" }
   register: check_binaries
+- name: Read the orbit account
+  ansible.builtin.getent: { database: passwd, key: orbit }
 - name: Read the exports
   when: intent.nfs is not none
   ansible.builtin.command: { argv: [exportfs, -s] }
@@ -54,9 +57,11 @@
       - ('rustc ' ~ recipe.tools.rust.version) in seen.rustc
       - ('cargo ' ~ recipe.tools.cargo.version) in seen.cargo
       - seen.nfs == 'active'
+      - seen.cache == 'active'
       - stats.swamp.checksum == recipe.tools.swamp.artifacts.amd64.sha256
       - stats.pi.checksum == recipe.tools.pi.artifacts.amd64.sha256
       - stats['shape gate'].exists
+      - ansible_facts.getent_passwd.orbit[1] == '1000' and ansible_facts.getent_passwd.orbit[2] == '1000'
       - intent.nfs is none or intent.nfs.subnet in check_exports.stdout
     fail_msg: The task VM role is not at the pins of the recipe.
     quiet: true

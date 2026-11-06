@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4.
-  %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; the group-run driver composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
+  %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; Swamp composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
   %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route and Processes through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
   %% status: reviewed
   %% command: tasks:provision
@@ -34,20 +34,56 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-provision
   GW-->>CLI: 202 Accepted<br/>task #5140
   SW->>H: Create and prepare the VM<br/>launch · WireGuard · Pi server
+  %%> Skipped for a claimed ready slot (`intent.slot`, chart `task_vm.slots`): the three slot steps below run instead.
+  SW->>H: Start the slot<br/>ssh exec · incus start
+  %%> Only for a claimed ready slot: the slot was enrolled and stopped ahead of time; a VM that already runs counts as started
+  SW->>H: Wait for the slot agent<br/>ssh exec · incus wait agent
+  SW->>H: Wait for the slot boot<br/>incus exec · systemctl --wait
+  %%> The agent answers before sshd, WireGuard and Pi; this waits for the boot to finish, and a degraded boot still counts
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
+  %%> Private dependencies:
+  %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` (`http-basic` for `github.com`, user `x-access-token`) and the `.npmrc` of the task account from it, mode 0600
+  %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
+  %%> - then it revokes the token (`DELETE installation/token`), so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - the revoke reports what became of the token in the receipt, as `dependency_token`: `revoked` (GitHub answered 204), `none` (GitHub answered 401: no token was minted, or it had expired or been revoked) or `unrevoked` with the reason (any other answer, or no answer)
+  %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the provision. The files are already gone from the VM, the token reads for at most an hour, and a failed provision would not shorten that hour; the receipt and the operation result name the reason instead
+  %%> - when no setup step runs, nothing is written, removed or revoked
+  %%> - a cancelled or timed-out run keeps them until the token expires, within the hour, or until `tasks:cancel` removes the VM
+  %%> - the token is minted for these steps only, reads the repositories that the GitHub App installation covers, and expires within the hour
+  %%> - when the App cannot supply a token, both files hold an empty configuration and setup runs without private access
+  %%> The clone credential:
+  %%> - the first step asks the Gateway for it (`operation:direct:github-token`, `purpose: clone`), not admission: the VM step before it can wait for capacity for longer than the hour an installation token lives
+  %%> - the Gateway writes a read-only Git authorization header, or an empty value for a repository the App does not cover, to the vault key that admission named
+  %%> - the clone credential never reaches the VM, and the VM holds no other, outside the setup token files above: the clone runs on Node 209 with full history, the VM receives it as a bundle, and no credential stays in `.git/config`, a credential helper or an environment file
   %%> Why redacted:
   %%> - setup output stays on the VM; only a redacted 4 KiB tail reaches history
   opt the task declares a topology
+    Note over SW: Pin the converge<br/>guest host key
+    %%> Why:
+    %%> - the guest's host key exists only after the VM step pins it; the converge intent leaves it unset until then
+    SW->>VM: Converge once<br/>operation-task-vm-converge child
+    %%> What it does:
+    %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the NFS server with the export of the checkout to the nested network, the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
+    %%> Why:
+    %%> - the image may predate these phases; a VM at the pins reports no change
+    SW->>VM: Find the fleet guest<br/>its address and host key
+    %%> What it does:
+    %%> - the behavior `tp-data-guest-fleet` reads the guest's SSH target from the VM step, as the fleet child does
+    SW->>VM: Look for ready copies<br/>current format only
+    %%> What it does:
+    %%> - lists the instances `fleet-ready-*` that carry `user.ready.format` of the current value; the next step starts only when there are three
     SW->>VM: Start the nested fleet<br/>task-nested-fleet child
     %%> What it does:
-    %%> - creates the nested network from the subnet that the ready copies of the seed store, copies the three ready copies, gives each its stored MAC and address, and starts them
+    %%> - creates the nested network from the subnet that the ready copies of the seed store (the converge may have made it; the fleet checks that its subnet is the stored one), copies the three ready copies, gives each its stored MAC and address, and starts them
     %%> - joins as operator: the VM makes its own WireGuard key, writes the public key into the nested Gateway's operator record with `incus exec`, puts it on the hub and brings up `wg-nested` as 10.45.0.10
-    %%> - pushes the proof Swamp Club key from the VM into the nested Gateway and restarts its Swamp
+    %%> - adds the CLI profile `nested` on the VM: the root CA of the nested Gateway is pinned and the candidate CLI of the checkout is pointed at it by address
+    %%> - pushes the proof Swamp Club key from the VM into the nested Gateway, where the re-mint below restarts its Swamp
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
-    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet until the fleet build (`task_vm.fleet_build`) lands; the result records `nested_fleet: none`
-    %%> Not built yet in this step:
-    %%> - the NFS mount of the checkout, the apply step, the readiness check and the `base` snapshot
+    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM; placement already keeps a VM that needs the fleet off a host whose seed has no usable copies (stage 2 chart), so the guard is the exception
+    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
+    %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
+    %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it
   end
   opt the workspace has a Route or Processes
     Note over SW: Bind the workspace keys<br/>pin the guest host key

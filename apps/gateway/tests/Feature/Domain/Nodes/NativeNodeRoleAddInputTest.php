@@ -11,8 +11,11 @@ use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 it('retains dedicated status pools when the same Node also publishes shared PHP configuration', function (): void {
     Http::preventStrayRequests();

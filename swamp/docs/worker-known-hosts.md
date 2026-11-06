@@ -1,6 +1,6 @@
 # Worker known-hosts publication
 
-The Gateway records Node SSH host pins. When a persisted pin or WireGuard address changes, it admits `node.worker_known_hosts`, targeting Node209. The public intent contains the complete recorded WireGuard host-key lines and their content digest. Missing pins are omitted; this workflow never scans a host or accepts a first-contact key. The existing `SwampSshExecutionInput` remains the target and identity supplier.
+The Gateway records Node SSH host pins. When a persisted pin or WireGuard address changes, it admits `node.worker_known_hosts`, targeting the Swamp Node. The public intent contains the complete recorded WireGuard host-key lines and their content digest. Missing pins are omitted; this workflow never scans a host or accepts a first-contact key. The existing `SwampSshExecutionInput` remains the target and identity supplier.
 
 Official `@swamp/cfgmgmt` version `2026.10.27.1` exposes no host-key or known-hosts connection input. Its documented `accept-new` SSH policy requires the runner's `~/.ssh/known_hosts` to be seeded before the first connection. Its file model is SSH-only, including for localhost. The shared publication therefore uses Swamp core `command/shell`, placed on209, with one local command. Families consume that preseed and add no trust adapter or writer.
 

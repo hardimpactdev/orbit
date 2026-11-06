@@ -1,0 +1,79 @@
+---
+title: "orbit proof"
+sidebarTitle: "proof"
+description: "Prove one command on the task VM you work in. Orbit runs its cases in the nested fleet that the VM already has, with no new VM, and leaves a clean fleet on your code."
+---
+
+```bash
+orbit proof <orbit-command> [--group=ID] [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `orbit-command` | yes | The Orbit command whose cases to run, such as `firewall:allow`. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--group=ID` | the caller's own | Prove on the VM of this task group. For a Node with Gateway access, such as an operator machine. |
+| `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | Print the final result as JSON, with the verdict of each case. |
+
+```bash
+orbit proof firewall:allow
+```
+
+Run it on the task VM that you develop in. The Gateway finds the VM and its task group by the calling Node, so the command takes no commit. The route needs Gateway access, which a task VM does not hold, so a Node with Gateway access, such as an operator machine, names the group with `--group` instead. In a terminal, an omitted command is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.command_invalid`, and so is a value that is not `family:command`. A refused call sends no request.
+
+Built, not yet passed live: the command, the admission and the run. The workflow `proof-fleet-verify` and the restore of `base` that it uses have not passed a live run yet.
+
+The cases file is `swamp/proof/<family>/<command>.cases.yaml` in the checkout of the VM, so the cases run against the code that you have now, committed or not. The CLI under test is the one built from that checkout. This is the stage 3 proof of the [command development pipeline](/reference/command-development-pipeline#3-proof), run in the development environment you already have. [`proof:run`](/cli/proof/run) is the CI path: it proves a commit on a VM of its own. The execution switch of `proof:run`, `ORBIT_PROOF_RUN_EXECUTION`, does not apply here: this command creates no group and no VM.
+
+The command is `family:command` with letters, digits and underscores in the family, and letters, digits, underscores and hyphens in the command. That is the form of the cases file name, so only a command that has a cases file can be proved.
+
+## The run
+
+The Gateway records the intent as the operation `proof.verify`, on the task group of the VM, and starts the Swamp workflow `proof-fleet-verify` with this VM as input. No step calls the Gateway. The workflow:
+
+1. Reads the cases file and plans the batches. A missing or invalid file fails the run here, before the fleet changes.
+2. Restores the snapshot `base` of the nested fleet, because the fleet may have moved since your last proof (about 16 seconds; each snapshot restore has 45 seconds, then readiness waits at most 120 seconds for a healthy Doctor; no retry).
+3. When the Swamp tokens in `base` are older than 20 days, renews them with the step of the provision, checks readiness and takes `base` again, so that the batches keep the new tokens.
+4. Runs the batches in the order of `swamp/proof/batches.yaml`: one restore of `base` per batch but the first, the start state of the batch, then each case on its own resources with no undo. A case that did not pass triggers a restore before the next.
+5. Restores `base` once more, so that you keep working on a clean fleet that runs your latest code. This runs also after a failed case.
+
+A run that you cancel with Ctrl-C leaves the fleet as it is. The next proof restores `base` first.
+
+While the run holds the task group, another operation on the group is refused with `operation.target_busy`. The turn of the agent that calls does not count: an agent can run `orbit proof` from inside its own turn. The operation has a budget of 50 minutes.
+
+## Verdicts
+
+Each case ends `passed`, `failed` or `unrun`, as in [`proof:run`](/cli/proof/run#verdicts). The result names the command, the cases file and each case with its verdict, duration, cause and failed checks. Human output prints the table, then one line for each case that did not pass, with its cause and failed checks. The receipt of each case stays in the evidence directory of the VM, `.orbit-artifacts/<group>/verify`, so you can read the full output of a failed case there.
+
+| Outcome | Exit status |
+| --- | --- |
+| Every case passed and the last restore succeeded. | `0` |
+| A case failed or did not run, or the last restore failed. | Nonzero. The command names each case that did not pass. |
+| Orbit refused the request. | Nonzero, with the one-line error envelope. |
+| You pressed Ctrl-C. | `130`. |
+| The process received SIGTERM. | `143`. |
+
+## How it works
+
+<div className="flow-at" data-chart="proof/proof"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `proof.command_invalid` | The command is missing or is not `family:command`, and the CLI cannot prompt. |
+| `proof.group_invalid` | `--group` is not a positive number. The CLI sends no request. |
+| `proof.no_task_vm` | The calling Node is not a task VM, and no `--group` names one. Run the command on the VM you develop in, or name its group. |
+| `tasks.group_missing` | The group that `--group` names does not exist. |
+| `proof.wrong_project` | The task group of the VM is not on the Orbit Project; cases exist only for the Orbit repository. |
+| `tasks.no_workspace` | The group has no owned task VM workspace. |
+| `tasks.group_closed` | The task group has ended. |
+| `operation.target_busy` | Another operation holds the task group. The details name it. |
+| `proof.cases_failed` | A case failed or did not run. The result holds each verdict. |
+| `proof.run_failed` | The plan, the first restore or a step before the cases failed, or the cases printed no verdict. Every case is `unrun`. |
+| `proof.restore_failed` | Every case passed, but the last restore failed, so the fleet is not clean. Run `orbit proof` again to restore it. |
+| `node_access.required` | The calling Node has no access grant to the Gateway Node. |
+| `extension.disabled` | The tasks extension is off. |

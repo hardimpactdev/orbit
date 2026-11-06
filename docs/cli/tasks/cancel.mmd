@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, flow-design-decisions 1 (token minted at admission).
+  %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, Nick 2026-11-06: the push step mints its token when it runs, and a task VM never holds a GitHub credential.
   %% Tightened: flow-tighten 2026-11-02, rules 16, 20 (no power read first: each guest step carries a guard on the VM's power, and the delete is safe to repeat).
   %% status: draft
   %% command: tasks:cancel
@@ -40,13 +40,6 @@ sequenceDiagram
   %%> - cancels the group's root task; Swamp cancels its running Pi turn or check and tears down their SSH sessions
   %%> Busy:
   %%> - the Gateway waits briefly for the terminal event within the budget; a run that does not end returns `operation.target_busy`, and nothing changes
-  opt approved work not on origin
-    GW->>SW: Push token<br/>vault: task-publish-token-…
-    %%> When:
-    %%> - a subtask was approved but its commit was never pushed
-    %%> Why:
-    %%> - this run is short, so the Gateway mints the token at admission and writes it to the vault
-  end
   GW->>SW: Start run, full intent<br/>operation-task-cancel
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
@@ -61,6 +54,7 @@ sequenceDiagram
     SW->>VM: Push approved work<br/>git bundle · task-42 · no force
     %%> What it does:
     %%> - exports the approved commit as a Git bundle and pushes it from 209, so you can open a pull request from `task-42`
+    %%> - admission names the vault key of the push token; the push step asks the Gateway for the token (`operation:direct:github-token`) right before the push, and the VM never holds it
     %%> - uncommitted changes are never pushed
     %%> If it fails:
     %%> - the run stops before any removal, so the work stays in the VM

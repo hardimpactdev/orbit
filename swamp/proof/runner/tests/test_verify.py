@@ -17,7 +17,7 @@ import steps
 from fakes import FakeFleet
 
 PROOF = Path(__file__).resolve().parents[2]
-CASES = PROOF / 'firewall' / 'allow.cases.yaml'
+CASES = Path(__file__).resolve().parent / 'fixtures' / 'allow.cases.yaml'
 BATCHES = PROOF / 'batches.yaml'
 
 

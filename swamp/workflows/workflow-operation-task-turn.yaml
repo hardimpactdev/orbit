@@ -68,7 +68,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         turn_key: '${{ has(inputs.turn_key) ? inputs.turn_key : "" }}'
         prompt_append: '${{ has(inputs.prompt_append) ? inputs.prompt_append : "" }}'
-      behaviorName: ${{ "task-turn-prepare" }}
+      behaviorName: ${{ "task-turn-prepare-" + string(inputs.node_id) }}
   - name: prepare_local
     labels: {role: swamp}
     dependsOn:
@@ -87,7 +87,7 @@ jobs:
           '
         env:
           ORBIT_DIRECTORY: ${{ "/tmp/orbit-task-turn-local-" + run.id }}
-      behaviorName: task-turn-prepare-local
+      behaviorName: ${{ "task-turn-prepare-local-" + string(inputs.node_id) }}
   - name: prepare_remote
     labels: {role: swamp}
     dependsOn:
@@ -243,7 +243,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-turn-snapshot-before
+      behaviorName: ${{ "task-turn-snapshot-before-" + string(inputs.node_id) }}
       methodName: snapshot
       inputs:
         head: ${{ steps.snapshot_before_head.outputs.stdout }}
@@ -324,7 +324,7 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_PATH: /sessions
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.create_json }}
-      behaviorName: ${{ "task-turn-session_create" }}
+      behaviorName: ${{ "task-turn-session_create-" + string(inputs.node_id) }}
     guard: ${{ !inputs.intent.new_session }}
     writes: true
   - name: message_send
@@ -350,7 +350,7 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_PATH: ${{ "/sessions/" + inputs.intent.session_id + "/messages" }}
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.send_json }}
-      behaviorName: ${{ "task-turn-message_send" }}
+      behaviorName: ${{ "task-turn-message_send-" + string(inputs.node_id) }}
     writes: true
   - name: observe
     labels: {role: swamp}
@@ -373,7 +373,7 @@ jobs:
           set -u
           umask 077
           status=0
-          curl --fail --silent --location --max-redirs 0 --max-time 1800 --no-buffer \
+          curl --fail --silent --location --max-redirs 0 --max-time 3300 --no-buffer \
             --variable %ORBIT_PI_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_PI_TOKEN}}' \
             "$ORBIT_PI_URL/sessions/$ORBIT_PI_SESSION/stream?max_bytes=1048576" |
             awk -v turn="$ORBIT_PI_TURN" -v out="$ORBIT_TERMINAL" '
@@ -397,8 +397,8 @@ jobs:
           ORBIT_PI_SESSION: ${{ inputs.intent.session_id }}
           ORBIT_PI_TURN: ${{ steps.prepare.outputs.turn_key }}
           ORBIT_TERMINAL: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
-        timeout: 1800000
-      behaviorName: ${{ "task-turn-observe" }}
+        timeout: 3300000
+      behaviorName: ${{ "task-turn-observe-" + string(inputs.node_id) }}
   - name: terminal
     labels: {role: swamp}
     dependsOn:
@@ -408,7 +408,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-turn-terminal
+      behaviorName: ${{ "task-turn-terminal-" + string(inputs.node_id) }}
       methodName: terminal
       inputs:
         path: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
@@ -532,7 +532,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-turn-snapshot-after
+      behaviorName: ${{ "task-turn-snapshot-after-" + string(inputs.node_id) }}
       methodName: snapshot
       inputs:
         head: ${{ steps.snapshot_after_head.outputs.stdout }}
@@ -719,7 +719,7 @@ jobs:
       methodName: receipt
       inputs:
         path: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/receipt.json" }}
-      behaviorName: task-turn-receipt-read
+      behaviorName: ${{ "task-turn-receipt-read-" + string(inputs.node_id) }}
   - name: difference
     labels: {role: swamp}
     dependsOn:
@@ -736,7 +736,7 @@ jobs:
       inputs:
         counts: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.numstat" }}
         patch: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.patch" }}
-      behaviorName: task-turn-difference
+      behaviorName: ${{ "task-turn-difference-" + string(inputs.node_id) }}
     guard: ${{ inputs.intent.role == "implementer" }}
   - name: interrupt
     labels: {role: swamp}
@@ -755,7 +755,7 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_PATH: ${{ "/sessions/" + inputs.intent.session_id + "/interrupt" }}
           ORBIT_PI_BODY: '{}'
-      behaviorName: ${{ "task-turn-interrupt" }}
+      behaviorName: ${{ "task-turn-interrupt-" + string(inputs.node_id) }}
     guard: ${{ (has(steps.observe) && steps.observe.status == "succeeded") || !has(steps.message_send) || steps.message_send.status != "succeeded" }}
     writes: true
   - name: restore_reset
@@ -887,7 +887,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-turn-restore
+      behaviorName: ${{ "task-turn-restore-" + string(inputs.node_id) }}
       methodName: snapshot
       inputs:
         head: ${{ steps.restore_head.outputs.stdout }}
@@ -948,7 +948,7 @@ jobs:
           || (inputs.intent.role == "reviewer" && (!has(steps.restore) || steps.restore.status != "succeeded")) || (inputs.intent.role != "implementer"
           && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
         failure_code: '${{ has(steps.prepare.outputs) ? steps.prepare.outputs.error_code : null }}'
-      behaviorName: ${{ "task-turn-shape_result" }}
+      behaviorName: ${{ "task-turn-shape_result-" + string(inputs.node_id) }}
   - name: delete_local_artifacts
     labels: {role: swamp}
     guard: ${{ !has(steps.receipt_read) || steps.receipt_read.status != "succeeded" || (inputs.intent.role != "implementer" && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
@@ -969,7 +969,7 @@ jobs:
           '
         env:
           ORBIT_DIRECTORY: ${{ "/tmp/orbit-task-turn-local-" + run.id }}
-      behaviorName: task-turn-delete-local-artifacts
+      behaviorName: ${{ "task-turn-delete-local-artifacts-" + string(inputs.node_id) }}
   - name: outcome
     labels: {role: swamp}
     dependsOn:

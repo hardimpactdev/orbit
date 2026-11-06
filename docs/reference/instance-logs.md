@@ -15,13 +15,13 @@ The Gateway returns the end of an Instance's application log. The application wr
 
 ## Read the log
 
-`GET /api/v1/instances/{instance}/logs` returns the end of the log as one newline-separated string in `data.logs`. `lines` sets the number of lines from 1 through 1,000, and the default is 100. The response also names the Instance in `data.id` and `data.name` and repeats `data.lines`. The read does not stream, so the Gateway refuses `follow`. It returns at most 4 MiB of the newest lines. When the lines asked for are larger, it returns fewer, and never a line cut at its start.
+`GET /api/v1/instances/{instance}/logs` returns the end of the log as one newline-separated string in `data.logs`. `lines` sets the number of lines from 1 through 1,000, and the default is 100. The response also names the Instance in `data.id` and `data.name` and repeats `data.lines`. The read does not stream, so the Gateway refuses `follow`. It returns at most 256 KiB of the newest lines and sets `data.truncated` when it left out older lines. When the lines asked for are larger, it returns fewer, and never a line cut at its start.
 
 The web app shows this log on the Instance page. [`orbit instance:logs`](/cli/instance/logs) returns it in the terminal, and the PHP SDK sends the same request.
 
 ## Follow the log live
 
-A viewer can follow the log as the application writes it with a [live log stream](/reference/live-logs). The Node agent reads the same file with the same rules, and the Gateway relays new lines to that viewer only. The web app's log pane and `orbit instance:logs --follow` use a stream. When the Gateway cannot open one, they fall back to this one-shot read.
+A viewer can follow the log as the application writes it with a [live log stream](/reference/live-logs). The Node agent reads the same file with the same rules, and the Gateway relays new lines to that viewer only. The web app's log pane and `orbit instance:logs --follow` use a stream. The one-shot read uses the same path and is refused with `logs.live_unavailable` when the Gateway cannot open a stream.
 
 ## Know which file the Gateway reads
 
@@ -32,7 +32,7 @@ The Gateway reads one file under `storage/logs` in the Instance's [application d
 | 1 | `laravel.log` | The file exists. This is the `single` log channel. |
 | 2 | The newest `laravel-*.log` | `laravel.log` is absent. This is the `daily` log channel. |
 
-An Instance without either file has an empty log, and the request still succeeds. The caller never names a path. The [Node agent](/reference/node-agent#commands)'s `instance.read-application-log` reads only a regular file that sits directly in a real `storage/logs`, and it skips a symbolic link, so a link in the checkout cannot point the read at another file. It returns at most the last 4 MiB of the file.
+An Instance without either file has an empty log, and the request still succeeds. The caller never names a path. The [Node agent](/reference/node-agent#log-tails) reads only a regular file that sits directly in a real `storage/logs`, and it skips a symbolic link, so a link in the checkout cannot point the read at another file. It returns at most the last 256 KiB of the file.
 
 ## Know what the Gateway redacts
 
@@ -50,4 +50,5 @@ A failed read returns an Orbit error with one of these codes. The log itself is 
 | --- | --- | --- |
 | 422 | `validation.failed` | `lines` is outside 1 through 1,000, or the request names `follow`. |
 | 422 | `instance.checkout_path_invalid` | The recorded checkout path is not a valid storage path. |
-| 502 | `instance.logs_failed` | The Node did not answer, or the read command failed. |
+| 409 | `logs.live_unavailable` | The agent cannot answer. `error.details.reason` says why. |
+| 429 | `logs.stream_limit` | The Node already has 16 open tails. |

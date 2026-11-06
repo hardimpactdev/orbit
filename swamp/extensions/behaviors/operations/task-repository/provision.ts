@@ -110,11 +110,15 @@ export function bindHostKeys<T>(
  * receipt is the provision receipt as the run printed it.
  */
 export function pinIntents<T>(
-    receipt: string,
+    receipt: string | Record<string, unknown>,
     guestNodeId: number,
     intents: T,
 ): T {
-    return bindHostKeys(intents, JSON.parse(receipt), guestNodeId);
+    return bindHostKeys(
+        intents,
+        typeof receipt === "string" ? JSON.parse(receipt) : receipt,
+        guestNodeId,
+    );
 }
 export function connection(raw: unknown, receipt: unknown) {
     const intent = Intent.parse(raw), vm = Vm.parse(receipt);
@@ -168,6 +172,8 @@ export function setupArgv(raw: unknown, root: string): string[][] {
                 workspace.checkout_path,
                 workspace.user,
                 item.command,
+                // Composer reads the private-dependency configuration of the setup steps from here, whatever XDG says.
+                [`COMPOSER_HOME=/home/${workspace.user}/.config/composer`],
             ),
         )
     );
@@ -264,6 +270,60 @@ function nativeOutputs(steps: Record<string, unknown>, name: string) {
         z.record(z.string(), z.unknown()).safeParse(step.outputs).data ?? {};
     return { step, outputs };
 }
+const COULD_NOT_RUN = "The revoke step could not run.";
+const DependencyToken = z.object({
+    state: z.enum(["revoked", "none", "unrevoked"]),
+    reason: z.string().max(200).optional(),
+});
+/**
+ * What became of the setup token, from the `Revoke` step of the remove child: curl prints the HTTP status of the
+ * revoke. 204 is a revoked token; 401 means GitHub holds no such token (none was minted, or it had expired or been
+ * revoked), so there is nothing to revoke; anything else, or no answer, leaves a token that may still be valid.
+ */
+export function revokeOutcome(steps: Record<string, unknown>) {
+    const { step, outputs } = nativeOutputs(steps, "Revoke");
+    if (step.status === undefined || step.status === "skipped") {
+        return { state: "unrevoked" as const, reason: COULD_NOT_RUN };
+    }
+    if (step.status !== "succeeded") {
+        // Vault key unreadable: the step failed before its command ran.
+        const error = typeof step.error === "string" ? step.error : "";
+        return {
+            state: "unrevoked" as const,
+            reason: /vault expression|not found in vault/i.test(error)
+                ? COULD_NOT_RUN
+                : "The revoke request did not complete.",
+        };
+    }
+    const code = String(outputs.stdout ?? "").trim();
+    if (code === "204") return { state: "revoked" as const };
+    if (code === "401") {
+        return {
+            state: "none" as const,
+            reason:
+                "GitHub holds no valid setup token: none was minted, or it had expired or been revoked.",
+        };
+    }
+    return {
+        state: "unrevoked" as const,
+        reason: `GitHub answered HTTP ${
+            /^[0-9]{3}$/.test(code) ? code : "an unknown status"
+        } to the revoke.`,
+    };
+}
+/** The token outcome for the receipt, from the remove child's `result` output. */
+export function dependencyToken(steps: Record<string, unknown>) {
+    if (!("deps_write" in steps)) {
+        return { state: "none" as const, reason: "No setup step ran." };
+    }
+    const reported = DependencyToken.safeParse(
+        nativeOutputs(steps, "deps_remove").outputs.result,
+    );
+    return reported.success ? reported.data : {
+        state: "unrevoked" as const,
+        reason: "The revoke result was not recorded.",
+    };
+}
 export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     const intent = Intent.parse(raw);
     const profile = nativeOutputs(steps, "profile").outputs;
@@ -272,12 +332,14 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     }
     // A guard skips `composer` when inspect found no regular composer.json; a
     // skipped step has no entry in `steps`.
-    const optional = new Set(["composer"]);
+    // The dependency steps are skipped with the setup steps when the profile failed or the Project has none.
+    const optional = new Set(["composer", "deps_write", "deps_remove"]);
     for (
         const name of [
             "prepare",
             "directory",
             "control",
+            "mint_clone",
             "clone",
             "bundle",
             "prepare_remote",
@@ -289,16 +351,15 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
             "inspect",
             "composer",
             "profile",
+            // The private-dependency configuration is written before the setup steps and removed after them.
+            "deps_write",
+            "deps_remove",
             ...intent.workspace.setup.map((_, i) => `setup-${i}`),
         ]
     ) {
         if (
-            (name === "clone"
-                ? !["clone_private", "clone_public"].some((key) =>
-                    nativeOutputs(steps, key).step.status === "succeeded"
-                )
-                : nativeOutputs(steps, name).step.status !== "succeeded" &&
-                    !(optional.has(name) && !(name in steps)))
+            nativeOutputs(steps, name).step.status !== "succeeded" &&
+            !(optional.has(name) && !(name in steps))
         ) {
             return { error_code: "tasks.provision_failed", failed_step: name };
         }
@@ -342,6 +403,7 @@ export function result(
     return {
         ...ready,
         source: observed,
+        dependency_token: dependencyToken(steps),
         instance_id: intent.instance_id,
         node_id: intent.guest_node_id,
         starting_commit: observed.commit,
@@ -349,7 +411,7 @@ export function result(
 }
 export const behavior = {
     type: "@nckrtl/task-provision-data",
-    version: "2026.11.05.1",
+    version: "2026.11.06.1",
     resources: {
         public: {
             schema: z.record(z.string(), z.unknown()),
@@ -366,6 +428,15 @@ export const behavior = {
                 args: { intent: z.infer<typeof Intent>; root: string },
                 ctx: Context,
             ) => data(ctx, { setup: setupArgv(args.intent, args.root) }),
+        },
+        revoke: {
+            description:
+                "Name what became of the setup token after the revoke step: revoked, none to revoke, or unrevoked with the reason",
+            arguments: z.object({ steps: z.record(z.string(), z.unknown()) }),
+            execute: (
+                args: { steps: Record<string, unknown> },
+                ctx: Context,
+            ) => data(ctx, revokeOutcome(args.steps)),
         },
         setup_output: {
             description:
@@ -391,13 +462,13 @@ export const behavior = {
             description:
                 "Pin the guest targets of the named intents of a run (prep, image refresh) to the host key the VM step observed",
             arguments: z.object({
-                receipt: z.string(),
+                receipt: z.union([z.string(), z.record(z.string(), z.unknown())]),
                 guest_node_id: z.number().int().positive(),
                 intents: z.record(z.string(), z.unknown()),
             }),
             execute: (
                 args: {
-                    receipt: string;
+                    receipt: string | Record<string, unknown>;
                     guest_node_id: number;
                     intents: Record<string, unknown>;
                 },

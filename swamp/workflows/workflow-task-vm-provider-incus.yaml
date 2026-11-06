@@ -117,8 +117,14 @@ jobs:
 
           pool=$(printf ''%s'' "$ORBIT_VM_INTENT" | jq -er ''.create.pool'')
 
+          name=$(printf ''%s'' "$ORBIT_VM_INTENT" | jq -er ''.vm.name'')
+
+          fingerprint=$(printf ''%s'' "$ORBIT_VM_INTENT" | jq -er ''.create.expected_fingerprint'')
+
           /usr/bin/sudo -n -- /usr/bin/incus --project "$project" storage volume list
-          --format json -- "$pool"
+          --format json -- "$pool" | jq -c --arg own "$name-topology-seed" --arg seed
+          "orbit-topology-seed-$(printf ''%.12s'' "$fingerprint")" ''[.[] | select(.type
+          == "custom" and (.name == $own or .name == $seed)) | {name, type}]''
 
           '
         timeoutSec: 900

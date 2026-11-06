@@ -1,7 +1,6 @@
-import { readProjectConfiguration } from "../extensions/behaviors/_lib/project_configuration.ts";
+import { projectById } from "./_support/projects.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_projects.ts";
+import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 
 import {
     batchReceipt,
@@ -10,25 +9,20 @@ import {
 } from "../extensions/behaviors/_lib/project_schedule.ts";
 import { taskInputs, todoError } from "./_support/task_contract.ts";
 
-const fleet: { slug: string }[] = JSON.parse(
+const fleet: { slug: string; project: { id: number } }[] = JSON.parse(
     await Deno.readTextFile(
         new URL("./fixtures/project-extensions/fleet.json", import.meta.url),
     ),
 );
 
-for (const slug of ["nckrtl-com", ...fleet.map((p) => p.slug)]) {
+for (
+    const { slug, id } of [
+        { slug: "nckrtl-com", id: 20 },
+        ...fleet.map((p) => ({ slug: p.slug, id: p.project.id })),
+    ]
+) {
     Deno.test(`${slug}: routine, detect, major and advisory groups pass Orbit's todo deliverable contract`, async () => {
-        const { behavior } = await import(
-            new URL(
-                `../extensions/behaviors/projects/${slug}/mod.ts`,
-                import.meta.url,
-            ).href
-        );
-        const { context, getWrittenResources } = createModelTestContext();
-        await behavior.methods.configuration.execute({}, context);
-        const project: DependencyProject = readProjectConfiguration(
-            getWrittenResources()[0].data,
-        );
+        const project: DependencyProject = projectById(id);
         const reports = (["composer", "js"] as const).flatMap((manager) => {
             const paths = manager === "composer"
                 ? project.worker!.composerPaths

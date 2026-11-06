@@ -64,10 +64,15 @@ Route::middleware([
         Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
         Route::post('proof/run', [ProofRunsController::class, 'store'])->name('proof:run');
+        Route::post('proof/verify', [ProofRunsController::class, 'verify'])->name('proof');
         Route::post('task-groups/{group}/park', [TaskGroupsController::class, 'park'])
             ->whereNumber('group')->name('tasks:park');
+        Route::post('task-groups/{group}/sync', [TaskGroupsController::class, 'sync'])
+            ->whereNumber('group')->name('tasks:sync');
         Route::post('task-groups/{group}/prep', [TaskGroupsController::class, 'prep'])
             ->whereNumber('group')->name('tasks:prep');
+        Route::post('task-groups/{group}/prep-fix', [TaskGroupsController::class, 'prepFix'])
+            ->whereNumber('group')->name('tasks:prep-fix');
         Route::post('task-groups/{group}/dependency-merge', [DependencyBatchMergeController::class, 'store'])
             ->whereNumber('group')->name('tasks:dependency-merge');
         Route::post('task-groups/{group}/pr-ready', [TaskPullRequestController::class, 'ready'])
@@ -76,6 +81,8 @@ Route::middleware([
             ->whereNumber('group')->name('tasks:pr-merge');
         Route::post('task-groups/{group}/publish', [TaskGroupsController::class, 'publish'])
             ->whereNumber('group')->name('tasks:publish');
+        Route::post('task-groups/{group}/package', [TaskGroupsController::class, 'package'])
+            ->whereNumber('group')->name('tasks:package');
         Route::post('task-groups/{group}/script', [TaskGroupsController::class, 'script'])
             ->whereNumber('group')->name('tasks:script');
         Route::post('task-groups/{group}/check', [TaskGroupsController::class, 'check'])

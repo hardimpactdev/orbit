@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskProvisionProjection;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
@@ -45,7 +46,9 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
         $provision = $this->provision->input(self::provisionView($operation));
         $intent = ValidatedData::object($operation->input);
 
-        return ['intent' => ['provision' => $provision['intent'], 'refresh' => $intent['refresh']], 'execution_secrets' => $provision['execution_secrets']];
+        // The converge intent of the provision is an input of its own, as `tasks.provision` passes it.
+        return ['intent' => ['provision' => $provision['intent'], 'refresh' => $intent['refresh']], ...(is_array($provision['converge'] ?? null) ? ['converge' => $provision['converge']] : []),
+            'execution_secrets' => $provision['execution_secrets']];
     }
 
     /** @param array<string,mixed> $data */
@@ -71,8 +74,9 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
 
             $result = ['error_code' => $code];
             if ($fingerprint !== null) {
-                // A seed without usable ready copies is refreshed without them until the fleet build exists; the result says which.
-                $result = [...$this->record($operation, $fingerprint), 'ready_copies' => NativeRunResult::stepStatus($native, 'Save the ready copies') === 'succeeded'];
+                $result = $this->record($operation, $fingerprint);
+                // Ready slots of the older image are replaced one at a time (docs/cli/tasks/vm-slots.mmd).
+                RefillTaskVmSlots::dispatchFor(ValidatedData::integer($result['host_node_id']));
             }
             $data['result'] = $result;
             $data['error_code'] = $code;

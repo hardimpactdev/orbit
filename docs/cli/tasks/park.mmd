@@ -18,9 +18,13 @@ sequenceDiagram
   %%> - syntax: `<group> [--idempotency-key=KEY] [--json]`
   Note over GW: Admit review parking<br/>group 42 · owned VM
   %%> Requirements:
-  %%> - the external group has an open published PR and completed children
-  %%> - the group has no active execution, assistance, preview or held workspace
+  %%> - the external group has an open published PR, and every subtask is ended or still `todo`
+  %%> - a `todo` subtask is parked only when no turn, check or prep run of the group is running; a prep run leaves its spec subtask `todo` because the code follows
+  %%> - a subtask that runs or waits for review still refuses the park
+  %%> - the group has no active execution, assistance or preview
   %%> - your Node has an access grant to the serving Node
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the workspace lease is gone, so the park no longer checks for a held lease; the group's Operation lock already refuses a busy group
   GW->>SW: Start one run<br/>operation-task-park
   %%> Inputs:
   %%> - the admitted group, Project, Instance, VM and provider identity

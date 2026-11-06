@@ -107,7 +107,7 @@ export const behavior = {
                 },
                 ctx: Context,
             ) {
-                const project = await configuredProject(args.project, ctx);
+                const project = configuredProject(args.project);
                 const tree = z.object({
                     sha: z.string(),
                     truncated: z.boolean(),
@@ -178,7 +178,7 @@ export const behavior = {
                 },
                 ctx: Context,
             ) {
-                const project = await configuredProject(args.project, ctx);
+                const project = configuredProject(args.project);
                 const result: SourcePackages[] = [];
                 try {
                     const files = join(args.root, "source");
@@ -272,7 +272,7 @@ export const behavior = {
                 },
                 ctx: Context,
             ) {
-                const project = await configuredProject(args.project, ctx);
+                const project = configuredProject(args.project);
                 const { targets, blocked } = updates(
                     project,
                     args.sources,

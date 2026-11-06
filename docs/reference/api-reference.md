@@ -27,6 +27,8 @@ bin/docs-openapi
 
 Group assistance comments have separate collection and create schemas: `GET /api/v1/task-groups/{group}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
 
+The description of `POST /api/v1/proof/verify` is fixed text in the script too. It names the optional `group` field, which a Node with Gateway access sends to prove on the VM of that task group.
+
 The clone response schema extends the Instance schema with required `data.warnings`, an array of key-only review hints. Both a newly created clone (201) and an identical retry (200) include it; an empty array means no hints apply. The generator keeps this operation-specific field out of other Instance responses. See [Instance cloning](/reference/instance-cloning#what-the-clone-gets) for the warning rules.
 
 The create response schema (`POST /api/v1/instances`) extends the Instance schema with required, nullable `data.name_converted_from`. The generator keeps this operation-specific field out of other Instance responses as well. The registration schema has the same required, nullable field with the same description. See [Create a development Instance](/domains/applications#create-a-development-instance) for the conversion rule.
@@ -80,6 +82,8 @@ The `tasks:provision` body schema is empty: task VMs run no Swamp worker, so the
 
 The `tasks:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
 
+The `tasks:turn`, `tasks:check` and `tasks:publish` descriptions name the refusal `409 tasks.vm_resuming`: a parked task VM is woken by the admission, and the call is repeated once the VM runs ([Tasks](/reference/tasks)).
+
 The `tasks:pr-ready` and `tasks:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `tasks:dependency-merge`; the MCP tools `tasks-pr-ready` and `tasks-pr-merge` are the callers.
 
 The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
@@ -124,7 +128,6 @@ Task group and subtask updates expose `status` in the API, MCP, PHP SDK, and gen
 
 [GitHub feedback fixups](/reference/tasks#execution-ownership) add the `review:{reviewer_id}` identity to the existing `fixup_problem` string and put provenance and findings in the existing `brief`. They add no public field, input, endpoint, or merge operation. Regenerate OpenAPI, then check the recorded review-fixup response with `bin/api-fixtures --check`, regenerate MCP/task-action manifests, and regenerate web API types. Unchanged schema output is a checked result, not a reason to skip the generators.
 
-`TasksStatusData` and the SDK status response define `workspace_leases`, including the current holder, FIFO waiters, actor identities, and `remote_uncertain`. Regenerate OpenAPI after changing these nested data classes so API and MCP consumers see the same [workspace lease contract](/reference/tasks#workspace-lease).
 
 ## Pinned environment
 

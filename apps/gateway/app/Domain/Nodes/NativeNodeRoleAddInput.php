@@ -15,8 +15,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
-use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
@@ -88,9 +86,8 @@ final readonly class NativeNodeRoleAddInput
             $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(
                 NodeSettingsData::from($node->settings ?? []), $node, new ManagedUserAccount($node->user, $node->user, $home));
             $directories[] = ['path' => $storage->value, 'owner' => $node->user, 'group' => $node->user, 'mode' => '0755'];
-            $directories[] = ['path' => '/dev/shm/orbit/hibernation', 'owner' => 'root', 'group' => 'caddy', 'mode' => '0755'];
-            $directories[] = ['path' => '/data/caddy/orbit/hibernation', 'owner' => 'root', 'group' => 'caddy', 'mode' => '2775'];
-            $files[] = ['path' => '/etc/tmpfiles.d/orbit.conf', 'content' => TmpfilesFootprintArtifact::Rule, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
+            array_push($directories, ...AppDevRuntimeFootprint::directories());
+            array_push($files, ...AppDevRuntimeFootprint::files());
         }
         foreach ($php as $configuration) {
             $services[] = 'php'.ValidatedData::string($configuration['version']).'-fpm.service';
@@ -167,7 +164,7 @@ final readonly class NativeNodeRoleAddInput
             'services' => array_map(static fn (string $name, int $index): array => ['name' => $name, 'index' => $index], $services, array_keys($services)),
             'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $role)];
 
-        return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [209, $node->id]];
+        return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [SwampNode::id(), $node->id]];
     }
 
     /** @param array<string,mixed> $build
@@ -175,16 +172,6 @@ final readonly class NativeNodeRoleAddInput
      */
     private function phpPackages(array $build): array
     {
-        $packages = [];
-        foreach (ValidatedData::object($build['versions']) as $version) {
-            foreach (RouteExecutionProof::objects(ValidatedData::object($version)['packages']) as $package) {
-                $artifact = new ArtifactPin(ValidatedData::string($package['url']), 'sha256', ValidatedData::string($package['sha256']));
-                $urls = $artifact->candidateUrls(ValidatedData::string($package['name']), ValidatedData::string($build['mirror']));
-                unset($package['url']);
-                $packages[] = [...$package, 'urls' => $urls, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
-            }
-        }
-
-        return $packages;
+        return PhpBuildInstaller::packageFiles($build);
     }
 }

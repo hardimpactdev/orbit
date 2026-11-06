@@ -20,6 +20,10 @@ The route needs a Node with an access grant to the Gateway and a required `Idemp
 | --- | --- |
 | `group` | The numeric ID of a `todo` task group with no VM, made with `tasks:create`. It has one subtask with a deliverable. |
 | `command` | The command as `family:command` in lower case. |
+| `brief` | Optional, up to 8,000 characters. What to change, for every agent of the run. |
+| `reference` | Optional, up to 80,000 characters. Text for the author only, such as the files of a sibling spec that is not on the default branch yet. |
+
+The run takes its mode from the review mode of the group, `manual` or `automatic`, at admission. In manual mode a succeeded run parks the task VM while the spec waits for the owner; in automatic mode nothing parks.
 
 ## How it works
 
@@ -32,7 +36,8 @@ The route needs a Node with an access grant to the Gateway and a required `Idemp
 | `tasks.prep_command_invalid` | `command` is not `family:command` in lower case |
 | `tasks.not_todo`, `tasks.group_closed`, `tasks.already_claimed` | the group is not an open `todo` group with no VM |
 | `tasks.subtask_deliverables_missing` | the group has no subtask, or its first subtask has no deliverable |
-| `tasks.capacity_unavailable` | no task VM host has room; the group is unchanged |
+| `tasks.capacity_unavailable` | no task VM host has room, or no host with room holds usable nested fleet copies for a VM that needs them; the group is unchanged |
 | `tasks.prep_not_committed` | the draft or a fix left HEAD where it was |
+| `tasks.prep_plan_failed` | the runner plan of the cases file failed to run, with an exit other than 0 or 3 |
 | `tasks.prep_review_unresolved` | a finding is left after the last review round; nothing is published |
 | `tasks.head_moved`, `tasks.not_fast_forward`, `tasks.push_failed`, `tasks.publish_failed` | publication failed; see [publish](/reference/tasks#publish-an-external-group) |

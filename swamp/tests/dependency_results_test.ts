@@ -5,7 +5,7 @@ import {
     type Pr,
     ReportSchema,
 } from "../extensions/behaviors/_lib/dependency_results_schema.ts";
-import { DependencyProjectSchema } from "../extensions/behaviors/_lib/dependency_projects.ts";
+import { DependencyProjectSchema } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 import {
     batchEvidence,
     BatchEvidenceSchema,

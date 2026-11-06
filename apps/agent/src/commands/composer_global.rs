@@ -1,7 +1,7 @@
 //! Composer global package execution and parsing, confined to Orbit's fixed shared scope.
 use super::{
     incus,
-    tool_output::{json_depth, lines, safe_text},
+    tool_output::{json_depth, safe_text},
 };
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use serde::{Deserialize, Serialize};
@@ -16,43 +16,10 @@ crate::command_errors! {
 }
 type Result<T> = std::result::Result<T, Error>;
 const PACKAGE: &str = r"[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?";
-const FLAGS: [&str; 5] = [
-    "--no-interaction",
-    "--no-ansi",
-    "--no-progress",
-    "--no-audit",
-    "--with-all-dependencies",
-];
 const MAX_STREAM: usize = 65_536;
-const MAX_CANDIDATE: usize = 32_768;
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Input {
-    package: String,
-}
-#[derive(schemars::JsonSchema, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CandidateOperation {
-    Install,
-    Update,
-}
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CandidateInput {
-    package: String,
-    operation: CandidateOperation,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct VersionOutput {
-    version: String,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct CandidateOutput {
-    version: Option<String>,
-}
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Package {
     name: String,
@@ -61,10 +28,6 @@ pub struct Package {
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InventoryOutput {
     packages: Vec<Package>,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct PlanOutput {
-    packages: Vec<String>,
 }
 trait Host {
     fn run(&mut self, args: &[&str]) -> Result<incus::Output>;
@@ -101,13 +64,6 @@ fn valid_package(name: &str) -> bool {
             .unwrap()
             .is_match(name)
 }
-fn validate(name: &str) -> Result<()> {
-    if valid_package(name) {
-        Ok(())
-    } else {
-        Err(Error::Invalid {})
-    }
-}
 fn safe_version(value: &str) -> bool {
     safe_text(value) && !value.chars().any(char::is_whitespace)
 }
@@ -117,16 +73,6 @@ fn success(output: incus::Output) -> Result<incus::Output> {
     } else {
         Err(Error::Failed {})
     }
-}
-fn version(host: &mut impl Host) -> Result<VersionOutput> {
-    let output = success(run(host, &["--version", "--no-ansi"])?)?;
-    let version = lines(&output.stdout).next().unwrap_or_default();
-    if !safe_text(version) {
-        return Err(Error::Output {});
-    }
-    Ok(VersionOutput {
-        version: version.into(),
-    })
 }
 fn inventory(host: &mut impl Host) -> Result<InventoryOutput> {
     let output = success(run(
@@ -178,133 +124,6 @@ fn inventory(host: &mut impl Host) -> Result<InventoryOutput> {
     }
     Ok(InventoryOutput { packages })
 }
-fn operation(
-    host: &mut impl Host,
-    package: &str,
-    operation: &str,
-    dry_run: bool,
-) -> Result<incus::Output> {
-    validate(package)?;
-    let target = if operation == "require" {
-        format!("{package}:*")
-    } else {
-        package.into()
-    };
-    let mut args = vec!["global", operation, &target];
-    if dry_run {
-        args.push("--dry-run");
-    }
-    args.extend(FLAGS);
-    run(host, &args)
-}
-fn combined(output: &incus::Output) -> String {
-    [&output.stdout, &output.stderr]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-fn missing(output: &str, package: &str) -> bool {
-    if output.is_empty() || output.len() > MAX_CANDIDATE {
-        return false;
-    }
-    let text = output.split_whitespace().collect::<Vec<_>>().join(" ");
-    text.contains(&format!("Could not find a matching version of package {package}. Check the package spelling, your version constraint and that the package is available in a stability which matches your minimum-stability"))
-}
-fn dry_run_version(text: &str, package: &str) -> Result<Option<String>> {
-    if text.is_empty() || text.len() > MAX_CANDIDATE {
-        return Err(Error::Output {});
-    }
-    let simple = regex::Regex::new(&format!(
-        r"\A\s*-\s+(Locking|Installing)\s+({PACKAGE})\s+\(([^\s()]+)\)\s*\z"
-    ))
-    .unwrap();
-    let transition = regex::Regex::new(&format!(
-        r"\A\s*-\s+(Upgrading|Downgrading)\s+({PACKAGE})\s+\([^\s()]+\s+=>\s+([^\s()]+)\)\s*\z"
-    ))
-    .unwrap();
-    let malformed = regex::Regex::new(
-        r"\A\s*-\s+(?:Locking|Installing|Upgrading|Downgrading|Removing)(?:\s|\z)",
-    )
-    .unwrap();
-    let (mut operations, mut no_op) = (0, 0);
-    let mut targets = vec![];
-    for line in lines(text) {
-        if line == "Nothing to install, update or remove" {
-            no_op += 1;
-            continue;
-        }
-        if let Some(record) = simple.captures(line).or_else(|| transition.captures(line)) {
-            operations += 1;
-            if &record[2] == package {
-                targets.push((record[1].to_owned(), record[3].to_owned()));
-            }
-        } else if malformed.is_match(line) {
-            return Err(Error::Output {});
-        }
-    }
-    if no_op == 0 && !targets.is_empty() {
-        let result = match targets.as_slice() {
-            [(_, version)] => Some(version),
-            [(lock, a), (install, b)] if lock == "Locking" && install == "Installing" && a == b => {
-                Some(b)
-            }
-            _ => None,
-        }
-        .filter(|v| safe_version(v))
-        .ok_or(Error::Output {})?;
-        return Ok(Some(result.clone()));
-    }
-    if no_op == 1 && operations == 0 {
-        Ok(None)
-    } else {
-        Err(Error::Output {})
-    }
-}
-fn candidate(host: &mut impl Host, input: CandidateInput) -> Result<CandidateOutput> {
-    let op = match input.operation {
-        CandidateOperation::Install => "require",
-        CandidateOperation::Update => "update",
-    };
-    let output = operation(host, &input.package, op, true)?;
-    let text = combined(&output);
-    if output.code != 0 {
-        return if missing(&text, &input.package) {
-            Ok(CandidateOutput { version: None })
-        } else {
-            Err(Error::Failed {})
-        };
-    }
-    if let Some(version) = dry_run_version(&text, &input.package)? {
-        return Ok(CandidateOutput {
-            version: Some(version),
-        });
-    }
-    let packages = inventory(host)?.packages;
-    let targets: Vec<_> = packages
-        .iter()
-        .filter(|p| p.name == input.package)
-        .collect();
-    let [package] = targets.as_slice() else {
-        return Err(Error::Output {});
-    };
-    Ok(CandidateOutput {
-        version: Some(
-            package
-                .version
-                .clone()
-                .filter(|v| safe_version(v))
-                .ok_or(Error::Output {})?,
-        ),
-    })
-}
-fn plan(host: &mut impl Host, package: &str) -> Result<PlanOutput> {
-    success(operation(host, package, "remove", true)?)?;
-    Ok(PlanOutput {
-        packages: vec![package.into()],
-    })
-}
 macro_rules! read_command {
     ($name:ident,$wire:literal,$summary:literal,$input:ty,$output:ty,$run:expr) => {
         pub struct $name;
@@ -326,36 +145,12 @@ macro_rules! read_command {
     };
 }
 read_command!(
-    Version,
-    "tool.composer-version",
-    "Read the Composer manager version.",
-    Empty,
-    VersionOutput,
-    |_: Empty, host: &mut Native<'_>| version(host)
-);
-read_command!(
-    Candidate,
-    "tool.composer-candidate",
-    "Read one package's Composer dry-run candidate.",
-    CandidateInput,
-    CandidateOutput,
-    |input: CandidateInput, host: &mut Native<'_>| candidate(host, input)
-);
-read_command!(
     Inventory,
     "tool.composer-inventory",
     "Read installed Composer global package observations.",
     Empty,
     InventoryOutput,
     |_: Empty, host: &mut Native<'_>| inventory(host)
-);
-read_command!(
-    Plan,
-    "tool.composer-removal-plan",
-    "Check removal of one Composer root requirement.",
-    Input,
-    PlanOutput,
-    |input: Input, host: &mut Native<'_>| plan(host, &input.package)
 );
 #[cfg(test)]
 mod tests;

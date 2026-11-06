@@ -1039,7 +1039,7 @@
     },
     {
       "source": "/decisions/0220-serialize-task-workspaces-with-one-lease",
-      "destination": "/reference/tasks#workspace-lease"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
@@ -1051,7 +1051,7 @@
     },
     {
       "source": "/decisions/0224-give-each-task-group-one-holder-and-one-sender",
-      "destination": "/reference/tasks#workspace-lease"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0228-serve-several-reverb-apps-on-the-websocket-role",

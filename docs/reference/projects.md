@@ -242,6 +242,12 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 
 Three Swamp workflows on Node 209 keep a Project's dependencies current. [`project:maintenance:inspect`](/cli/project/maintenance-inspect) (kind `project.detect`) reads the manifests and lockfiles of the default branch through the GitHub App without a clone and compares them with the registries, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch.
 
+The Gateway admits each maintenance step under its own key, such as `maintenance:<group>:<operation>:<kind>`, `maintenance-finish:<group>:<publish operation>` or `native-maintenance:<key>`, with `OperationIdempotency::under`. A repeated pass replays the recorded step and starts nothing.
+
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
+
+The Swamp workflows take the Swamp Node from the intent the Gateway sends (`control_node_id`), and their schemas accept any Node id, because the Gateway finds the Swamp Node by its `swamp` role and not by a fixed id.
+
 The hourly `maintenance-projects` Schedule selects which of them a Project needs. The Gateway captures the complete selection from its native producer in the shared terminal history read; no result-reporting step forwards it. A due weekly routine comes first, then an observation while a maintenance group waits. Otherwise the Schedule inspects the Project, so an opted-in Project is inspected every hour.
 
 The CLI, or the MCP tools `project-maintenance-inspect` and `project-maintenance-routine`, start one directly.
@@ -252,7 +258,7 @@ The Gateway keeps each Project's last inspection, so the next one reads again on
 
 Maintenance is opt-in per Project and off by default. [`project:maintenance:enable`](/cli/project/maintenance-enable) turns it on for a Project that reads through the GitHub App and has a default branch and a task check; [`project:maintenance:disable`](/cli/project/maintenance-disable) turns it off. Only the default branch is inspected. The Schedule skips a Project with maintenance off, and a direct request for it fails with `project.maintenance_disabled` (409). Project responses carry the setting as `maintenance`. Disabling also prevents an earlier observation from changing task groups.
 
-A Project with maintenance on also needs a policy module under `swamp/extensions/behaviors/projects/<slug>/mod.ts`: its Composer and JavaScript paths, release-age policy and exceptions. A run for a Project without one fails with `project.maintenance_not_configured`. Orbit's own policy covers `apps/gateway`.
+A Project with maintenance on also needs an entry in `swamp/extensions/behaviors/operations/project-maintenance/projects.json`: its Composer and JavaScript paths, release-age policy and exceptions. A run for a Project without one fails with `project.maintenance_not_configured`. Orbit's own policy covers `apps/gateway`.
 
 ### Inspection
 
@@ -264,13 +270,12 @@ An inspection reads GitHub with `curl` on Node 209, with a GitHub App token that
 
 A Project has no per-Node exclusions. The development Node exclusion feature was removed on 2026-11-03, and its table was dropped. `instance:create` names its Node, and task VM placement uses only hosts with a `task_vms` setting, so nothing places a Project on an `app-dev` Node by itself.
 
-A Project can be removed when all its task groups are `cancelled` or `completed`, every associated task VM row is `destroyed`, and every associated workspace lease is `released` or `cancelled`. The Gateway deletes those groups, their subtasks, comments, questions, agent thread rows, check records, review records, workspace leases and operations, Jev decisions, linked problem records, and task VM records in the same transaction as the Project.
+A Project can be removed when all its task groups are `cancelled` or `completed`, and every associated task VM row is `destroyed`. The Gateway deletes those groups, their subtasks, comments, questions, agent thread rows, check records, review records, old workspace lease rows and their operations, Jev decisions, linked problem records, and task VM records in the same transaction as the Project.
 
 If any group has another status (`backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, or `failed`), removal is blocked. The Gateway refuses the request with HTTP 409 and `project.has_task_groups` and leaves the Project and its task records unchanged.
 
 If a task VM is in `provisioning`, `ready`, `parked`, `destroying`, or `failed`, the Gateway refuses removal with HTTP 409 and `project.task_vm_not_destroyed`. The message names the VM and its state. The Gateway deletes nothing. Wait until VM destruction finishes, including model-key revocation, before retrying. Only `destroyed` VM rows are deleted with the Project.
 
-If an associated workspace lease has any status other than `released` or `cancelled`, including `held`, `queued`, or an unknown status, the Gateway refuses removal with HTTP 409 and `project.task_workspace_lease_active`. The message names the Project, lease id, kind, and status. The Project, task history, leases, and lease operations stay unchanged. A missing Instance does not prove release. Project deletion does not release leases; it deletes only released and cancelled leases and their operations. A `cancelled` lease is a withdrawn waiter that never held the workspace.
 
 Extensions take part in the removal through the `ProjectRemovalHook` [plug-in point](/reference/extensions#plug-in-points), in the same transaction. The documents extension removes the Project's documents and records their stored bytes for cleanup, whether or not its switch is on.
 
@@ -301,7 +306,6 @@ The Gateway returns these codes for Project requests.
 | `project.has_routes` | Removal found Routes. |
 | `project.has_task_groups` | Removal found a task group that is neither `cancelled` nor `completed`. |
 | `project.task_vm_not_destroyed` | Removal found a task VM that is not `destroyed`, including `failed`. The message names the VM and its state. |
-| `project.task_workspace_lease_active` | Removal found a workspace lease whose status is not `released` or `cancelled`. The message names the Project, lease id, kind, and status. |
 
 ## Why it works this way
 

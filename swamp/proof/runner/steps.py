@@ -29,8 +29,13 @@ CLEANUP_SECONDS = 60
 # The agent reports the firewall at a host tick every 60 s, in a phase the runner cannot know after a restore of the base snapshot.
 # A report that follows the change needs at most one tick plus the time to deliver it: wait until this long after `act`.
 REPORT_SECONDS = 65
+# The Gateway counts an agent as offline after 15 s without an event.
+OFFLINE_SECONDS = 20
 CLI_EXPECT = {'exit', 'status', 'code', 'skipped', 'request', 'human'}
 LIST_ROWS = {'firewall:list': 'rules'}
+# The parts of a list answer that `record` reads, per Node: `rules` and `managed` are lists, `unmatched` is the list under `live`,
+# and `live` is the one object that holds the state of the report.
+RECORD_SECTIONS = ('rules', 'managed', 'unmatched', 'live')
 BASELINE_PROVIDERS = ('ufw', 'firewall_records', 'operations', 'listeners')
 
 
@@ -134,7 +139,9 @@ def ufw_rule(run, args):
     family_of(args, 'ufw_rule', (4,))
     node, port, proto = args['on'], args['port'], protocols(args)[0]
     name = args.get('as') or 'rule'
-    comment = 'proof:' + name
+    comment = args.get('comment') or 'proof:' + name
+    if "'" in comment:
+        raise Infra('ufw_rule comment holds no quote')
     source = args.get('from', 'any')
     anchor = args.get('above') or args.get('below')
     mark = (run.rules[anchor]['comment'] if anchor in run.rules else anchor) if anchor else None
@@ -237,12 +244,19 @@ def cli(run, args):
     if 'skipped' in expect and 'json' not in forms:
         raise Infra('cli expect skipped is read from the JSON form: add json to forms')
     argv = [str(item) for item in args['run']]
+    # The default is the candidate CLI of the outer VM, which acts for the fleet as its operator; `gateway` is that same caller.
+    caller = args.get('as')
+    caller = None if caller in (None, 'gateway') else caller
+    if caller and caller not in run.fleet.nodes:
+        raise Infra(f'cli as {caller}: not a Node of the fleet')
+    if caller and script is not None:
+        raise NotBuilt('cli as with tty is not built')
     before = operation_ids(run) if 'request' in expect else None
     failures = []
     for form in forms:
         label = f'cli {argv[0]}' + ('' if len(forms) == 1 and script is None else f' ({"tty" if script is not None else form})')
         try:
-            result = run.cli_tty(argv, script) if script is not None else run.cli(argv, form)
+            result = run.cli_tty(argv, script) if script is not None else run.cli(argv, form, caller)
         except terminal.TerminalError as error:  # the command did not prompt as the case expects: a finding, not a broken runner
             failures.append(f'{label}: {error}')
             continue
@@ -284,8 +298,10 @@ def check_result(run, label, form, forms, result, expect):
 
 
 def matches(row, wanted):
-    """Every key of `wanted` equals the row's value; a list as the wanted value matches any of its items."""
-    return all(str(row.get(key)) in (map(str, value) if isinstance(value, list) else [str(value)]) for key, value in wanted.items())
+    """Every key of `wanted` equals the row's value; a list as the wanted value matches any of its items. The word `present` matches
+    any value that is not null."""
+    return all(row.get(key) is not None if value == 'present' else str(row.get(key)) in (map(str, value) if isinstance(value, list) else [str(value)])
+               for key, value in wanted.items())
 
 
 def ufw(run, args):
@@ -321,23 +337,52 @@ def ufw(run, args):
     return failures
 
 
-def record_rows(run, command, node):
+def record_rows(run, command, node=None, options=(), section='rules'):
+    """The rows of one part of the answer of a list command, each with the name of its Node. Without `node` the list covers every Node."""
     key = LIST_ROWS.get(command)
     if key is None:
         raise NotBuilt(f'record of {command} is not built')
-    result = run.cli([command, '--node=' + str(run.fleet.nodes[node]['node_id'])])
+    if section not in RECORD_SECTIONS:
+        raise Infra(f'record section is one of {RECORD_SECTIONS}, not {section}')
+    words = [command, *map(str, options)] + (['--node=' + str(run.fleet.nodes[node]['node_id'])] if node else [])
+    result = run.cli(words)
     if result['rc'] or not isinstance(result['json'], dict):
         raise Infra(f"{command} failed: exit {result['rc']}")
-    # `firewall:list --node` answers per Node: {"nodes": [{"node_id": 1, "rules": [...]}]}.
-    return [row for item in result['json'].get('nodes') or [] for row in item.get(key) or []]
+    # `firewall:list` answers per Node: {"nodes": [{"node_id": 1, "node": "app-dev", "rules": [...], "live": {..., "unmatched": [...]}}]}.
+    rows = []
+    for item in result['json'].get('nodes') or []:
+        live = item.get('live') or {}
+        part = {'rules': item.get(key), 'managed': item.get('managed'), 'unmatched': live.get('unmatched'), 'live': [live] if live else []}[section]
+        rows.extend({'node': item.get('node'), **row} for row in part or [])
+    return rows
+
+
+def in_order(label, rows, wanted):
+    """Each wanted row has a match, and the first match of each comes after the match of the one before it."""
+    failures, last = [], -1
+    for item in wanted:
+        places = [index for index, row in enumerate(rows) if matches(row, item)]
+        if not places:
+            failures.append(f'{label}: no row matches {json.dumps(item, sort_keys=True)}')
+        elif later := [index for index in places if index > last]:
+            last = later[0]
+        else:
+            failures.append(f'{label}: {json.dumps(item, sort_keys=True)} comes before a row that must come first')
+    return failures
 
 
 def record(run, args):
-    rows = record_rows(run, args['list'], args['node'])
-    found = [row for row in rows if matches(row, args['where'])]
-    if len(found) == args['count']:
-        return []
-    return [f"record {args['list']} {args['node']}: {len(found)} rows match {json.dumps(args['where'], sort_keys=True)}, expected {args['count']}"]
+    if not {'count', 'min', 'order'} & set(args):
+        raise Infra('record needs count, min or order')
+    node, section, where = args.get('node'), args.get('section', 'rules'), args.get('where') or {}
+    found = [row for row in record_rows(run, args['list'], node, args.get('args') or [], section) if matches(row, where)]
+    label = f"record {args['list']} {node or 'all Nodes'} {section}"
+    failures = []
+    if 'count' in args and len(found) != args['count']:
+        failures.append(f"{label}: {len(found)} rows match {json.dumps(where, sort_keys=True)}, expected {args['count']}")
+    if 'min' in args and len(found) < args['min']:
+        failures.append(f"{label}: {len(found)} rows match {json.dumps(where, sort_keys=True)}, expected at least {args['min']}")
+    return failures + (in_order(label, found, args['order']) if 'order' in args else [])
 
 
 def doctor(run, args):
@@ -348,6 +393,45 @@ def doctor(run, args):
     if result['rc'] == 0 and summary.get('drift') == args['drift']:
         return []
     return [f"doctor {node}: exit {result['rc']}, drift {summary.get('drift')}, expected {args['drift']}"]
+
+
+def nodes_of(run, step, value):
+    """The Nodes a step names, one name or a list, checked against the fleet."""
+    names = value if isinstance(value, list) else [value]
+    unknown = [name for name in names if name not in run.fleet.nodes]
+    if unknown:
+        raise Infra(f'{step}: not Nodes of the fleet: {unknown}')
+    return names
+
+
+def agent_report(run, args):
+    """Wait for one report of every agent after the change the case made. The agents report at a tick of 60 s whose phase is not
+    known, so the wait is the same as the one of `doctor`; it is one call, whatever the number of Nodes."""
+    nodes_of(run, 'agent_report', args['node'])
+    run.sleep(REPORT_SECONDS)
+    return []
+
+
+def node_down(run, args):
+    """Stop the agent and SSH of a Node, then wait until the Gateway counts the agent as offline. The restore of `base` brings the Node back."""
+    node = nodes_of(run, 'node_down', args['node'])
+    if len(node) != 1:
+        raise Infra('node_down stops one Node')
+    stopped = run.fleet.sh(node[0], 'systemctl stop orbit-agent ssh.socket ssh.service')
+    if stopped.returncode:
+        raise Infra(f'node_down {node[0]}: {stopped.stderr.strip()[-200:]}')
+    run.sleep(OFFLINE_SECONDS)
+    return []
+
+
+def node_access_remove(run, args):
+    """Remove the access of the consumer Node to the serving Node, with the CLI of the operator."""
+    consumer = nodes_of(run, 'node_access_remove', args['consumer'])[0]
+    serving = nodes_of(run, 'node_access_remove', args['serving'])[0]
+    result = run.cli(['node:access:remove', str(run.fleet.nodes[consumer]['node_id']), str(run.fleet.nodes[serving]['node_id']), '--force'])
+    if result['rc']:
+        return [f"node_access_remove {args['consumer']} {args['serving']}: exit {result['rc']}"]
+    return []
 
 
 def unchanged_providers(step_args, file_baseline):
@@ -529,4 +613,5 @@ def unbuilt(name):
 
 FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
 FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
-                  'unchanged': unchanged, 'ufw_delete': ufw_delete})
+                  'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
+                  'node_access_remove': node_access_remove})

@@ -7,9 +7,9 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -19,7 +19,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -71,50 +70,72 @@ final readonly class TaskCancelIntent
                 throw new ResourceOperationException('operation.target_busy', 'The current Task root must settle before maintenance cleanup.', 409);
             }
 
-            // The push token is minted before the transaction: no network I/O runs inside it.
+            // The push token is named here and minted by the push step.
             $token = $kind === 'tasks.cancel' && self::pushable($group->refresh()) ? $this->pushToken($group) : null;
 
             return DB::transaction(function () use ($group, $caller, $request, $kind, $token): Operation {
-                $group = Task::topLevel()->with(['project', 'taskable'])->lockForUpdate()->findOrFail($group->id);
-                self::eligible($group, $kind);
-                $workspace = $group->taskable;
-                $vm = TaskVm::forGroup($group);
-                if ($workspace !== null && (! $workspace instanceof Instance || ! $vm instanceof TaskVm
-                    || $workspace->task_workspace_owner_id !== $group->id || $workspace->project_id !== $group->project_id
-                    || $workspace->node_id !== $vm->node_id)) {
-                    throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned TaskVM workspace.', 409);
-                }
-                $commit = $kind === 'tasks.cancel' ? TaskFinalReview::unpublishedRemovalCommit($group) : null;
-                if ($commit !== null && ! is_array($token)) {
-                    throw new ResourceOperationException('tasks.push_failed', 'Publish the approved work before removing this workspace.', 409);
-                }
-                $capture = $workspace instanceof Instance ? $this->destroy->captureForWorkspace($vm, $workspace, $commit)
-                    : ($vm instanceof TaskVm && $vm->state !== TaskVmState::Destroyed ? $this->destroy->capture($vm) : []);
-                $steps = $workspace instanceof Instance && $vm->state === TaskVmState::Ready
-                    && ! in_array($workspace->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true) ? app(ProjectLifecycleStepStore::class)->ordered($group->project, LifecyclePhase::Teardown) : [];
-                $values = $workspace instanceof Instance ? app(LogRedactor::class)->valuesFor($workspace) : [];
-                $teardown = array_map(static function ($step) use ($values): array {
-                    if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
-                        throw new ResourceOperationException('tasks.cancel_refused', 'Teardown commands must contain no credential values.', 422);
-                    }
+                $input = $this->capture($group, $kind, $token);
 
-                    return ['input_json' => json_encode($step->toArray(), JSON_THROW_ON_ERROR), 'timeout_seconds' => $step->timeoutSeconds];
-                }, $steps);
-
-                $push = $commit === null || ! $workspace instanceof Instance ? null : [
-                    'commit' => $commit, 'checkout_path' => $workspace->checkout_path, 'remote' => $token['remote'],
-                    'refspec' => $commit.':refs/heads/'.TaskRemoteBranch::for($group), 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
-                    'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($workspace->node), 'github_token' => $token['copy'],
-                ];
-
-                return $this->start->execute($kind, 'task_group', $group->id, isset($capture['node_id']) ? ValidatedData::integer($capture['node_id']) : 209, [
-                    'workspace_routes' => [], 'task_vm_id' => null, ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
-                    'instance_id' => $workspace?->id, 'checkout_path' => $workspace?->checkout_path,
-                    'ssh_execution' => $teardown !== [] && $workspace instanceof Instance ? app(SwampSshExecutionInput::class)->forNode($workspace->node) : null,
-                    'teardown' => $teardown, 'push' => $push,
-                ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
+                return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : SwampNode::id(), $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
         }, wait: false);
+    }
+
+    /**
+     * The full input of the cancel of a proof's group, captured with its VM before the VM exists in the provider, for the one Swamp
+     * run that carries both. Starts no Operation. The Gateway projects the end of the group from this input when that run ends.
+     *
+     * @return array<string,mixed>
+     */
+    public function captureForProof(Task $group): array
+    {
+        return DB::transaction(fn (): array => $this->capture($group, 'tasks.cancel', null));
+    }
+
+    /**
+     * @param  array{remote:string,copy:array{vault:string,key:string}}|null  $token
+     * @return array<string,mixed>
+     */
+    private function capture(Task $group, string $kind, ?array $token): array
+    {
+        $group = Task::topLevel()->with(['project', 'taskable'])->lockForUpdate()->findOrFail($group->id);
+        self::eligible($group, $kind);
+        $workspace = $group->taskable;
+        $vm = TaskVm::forGroup($group);
+        if ($workspace !== null && (! $workspace instanceof Instance || ! $vm instanceof TaskVm
+            || $workspace->task_workspace_owner_id !== $group->id || $workspace->project_id !== $group->project_id
+            || $workspace->node_id !== $vm->node_id)) {
+            throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned TaskVM workspace.', 409);
+        }
+        $commit = $kind === 'tasks.cancel' ? TaskFinalReview::unpublishedRemovalCommit($group) : null;
+        if ($commit !== null && ! is_array($token)) {
+            throw new ResourceOperationException('tasks.push_failed', 'Publish the approved work before removing this workspace.', 409);
+        }
+        $capture = $workspace instanceof Instance ? $this->destroy->captureForWorkspace($vm, $workspace, $commit)
+            : ($vm instanceof TaskVm && $vm->state !== TaskVmState::Destroyed ? $this->destroy->capture($vm) : []);
+        $steps = $workspace instanceof Instance && $vm->state === TaskVmState::Ready
+            && ! in_array($workspace->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true) ? app(ProjectLifecycleStepStore::class)->ordered($group->project, LifecyclePhase::Teardown) : [];
+        $values = $workspace instanceof Instance ? app(LogRedactor::class)->valuesFor($workspace) : [];
+        $teardown = array_map(static function ($step) use ($values): array {
+            if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
+                throw new ResourceOperationException('tasks.cancel_refused', 'Teardown commands must contain no credential values.', 422);
+            }
+
+            return ['input_json' => json_encode($step->toArray(), JSON_THROW_ON_ERROR), 'timeout_seconds' => $step->timeoutSeconds];
+        }, $steps);
+
+        $push = $commit === null || ! $workspace instanceof Instance ? null : [
+            'commit' => $commit, 'checkout_path' => $workspace->checkout_path, 'remote' => $token['remote'],
+            'refspec' => $commit.':refs/heads/'.TaskRemoteBranch::for($group), 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($workspace->node), 'github_token' => $token['copy'],
+        ];
+
+        return [
+            'workspace_routes' => [], 'task_vm_id' => null, ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
+            'instance_id' => $workspace?->id, 'checkout_path' => $workspace?->checkout_path,
+            'ssh_execution' => $teardown !== [] && $workspace instanceof Instance ? app(SwampSshExecutionInput::class)->forNode($workspace->node) : null,
+            'teardown' => $teardown, 'push' => $push,
+        ];
     }
 
     public static function eligible(Task $group, string $kind = 'tasks.cancel'): void
@@ -153,8 +174,8 @@ final readonly class TaskCancelIntent
     {
         $repository = GitHubRepository::fromOrigin($group->project->repository_url)
             ?? throw new ResourceOperationException('tasks.push_failed', 'The Project requires a GitHub repository to push approved work.', 422);
-        $copy = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-publish-token-'.Str::uuid(),
-            app(RepositoryPullRequestAccess::class)->token($repository));
+        // Only the vault key name is admitted. The approved push mints the token when it runs ({@see TaskGitHubTokens}).
+        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
         return ['remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'copy' => $copy];
     }

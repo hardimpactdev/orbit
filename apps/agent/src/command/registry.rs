@@ -14,7 +14,6 @@ pub struct Entry {
     pub summary: &'static str,
     pub mutates: bool,
     pub timeout: Duration,
-    pub output_max_bytes: u64,
     pub input_max_bytes: u64,
     pub privilege: fn(Platform) -> Option<Privilege>,
     pub errors: &'static [&'static str],
@@ -63,10 +62,6 @@ pub fn entry<C: Command>() -> Entry {
         "keyed effects require a mutation"
     );
     assert!(
-        !C::MUTATES || C::OUTPUT_MAX_BYTES == 0,
-        "binary output is read-only"
-    );
-    assert!(
         C::MUTATES || C::RESOURCES.is_empty(),
         "{}: only a mutation locks shared resources",
         C::NAME
@@ -76,7 +71,6 @@ pub fn entry<C: Command>() -> Entry {
         summary: C::SUMMARY,
         mutates: C::MUTATES,
         timeout: C::TIMEOUT,
-        output_max_bytes: C::OUTPUT_MAX_BYTES,
         input_max_bytes: C::INPUT_MAX_BYTES,
         privilege: C::privilege,
         errors: <C::Error as CommandError>::CODES,
@@ -305,16 +299,13 @@ pub fn contract() -> Value {
                 },
                 "errors": entry.errors,
             });
-            if entry.output_max_bytes > 0 {
-                definition["output_max_bytes"] = entry.output_max_bytes.into();
-            }
             if entry.input_max_bytes > 0 {
                 definition["input_max_bytes"] = entry.input_max_bytes.into();
             }
             definition
         })
         .collect();
-    json!({"common_errors": COMMON_ERRORS, "not_started_errors": super::NOT_STARTED_ERRORS, "preflight_errors": super::PREFLIGHT_ERRORS, "commands": commands, "output_chunk_bytes": super::binary_output::CHUNK_BYTES})
+    json!({"common_errors": COMMON_ERRORS, "not_started_errors": super::NOT_STARTED_ERRORS, "preflight_errors": super::PREFLIGHT_ERRORS, "commands": commands})
 }
 
 /// The input and output JSON Schema of every command. Gateway test fakes validate against them.
@@ -575,30 +566,18 @@ mod tests {
     fn shared_host_mutations_hold_one_lock_per_resource() {
         let packages = [
             "caddy.install-package",
-            "gateway.converge-release-units",
-            "image.clean",
-            "metrics.cadvisor",
-            "metrics.node-exporter",
             "node.bootstrap",
             "php.configure-runtime",
             "php.install-build",
-            "recipe.apply",
             "recipe.install-javascript",
             "role.install-prerequisites",
         ];
         let firewall = [
-            "firewall.gateway-vpn",
             "firewall.route-lan",
             "firewall.router-lan",
-            "firewall.rule",
             "firewall.rules",
-            "firewall.task-vm-hub",
-            "image.firewall",
             "incus.prepare-host",
-            "metrics.cadvisor",
-            "metrics.node-exporter",
             "metrics.publication-firewall",
-            "metrics.service-runtime",
         ];
         for (resource, names) in [("packages", &packages[..]), ("firewall", &firewall[..])] {
             for name in names {
@@ -641,22 +620,6 @@ mod tests {
             WriteEnvironment::target(&environment)
         );
         assert!(WriteUrl::target(&url).is_some());
-    }
-
-    /// Each Valkey volume has its own ACL lock.
-    #[test]
-    fn each_valkey_volume_has_its_own_acl_lock() {
-        use crate::commands::valkey_acl::WriteValkeyAcl;
-        let acl = |volume: &str| {
-            WriteValkeyAcl::target(
-                &serde_json::from_value(
-                    json!({"volume": volume, "image": "valkey/valkey:8", "acl": ""}),
-                )
-                .unwrap(),
-            )
-        };
-        assert_eq!(acl("one").as_deref(), Some("valkey-acl:one"));
-        assert_ne!(acl("one"), acl("two"));
     }
 
     /// Every input object refuses unknown fields, so a misspelled field fails instead of being ignored.
@@ -879,7 +842,7 @@ mod tests {
             Vec::<&str>::new(),
             "commands that no generated input reaches"
         );
-        assert!(probes > 400, "only {probes} probes ran");
+        assert!(probes > 100, "only {probes} probes ran");
     }
 
     /// Gateway tests read `contract/schemas.json`. The same variable rewrites it.

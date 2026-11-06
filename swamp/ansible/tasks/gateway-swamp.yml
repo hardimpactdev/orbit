@@ -1,0 +1,360 @@
+---
+# The Swamp control plane of a new Gateway, on its own machine (docs/cli/tasks/vm-fleet-build.mmd, "Converge itself").
+# `control` is the plan of `php artisan orbit:bootstrap-control-plan`: the units for this machine's checkout, the release grants, and the scheduler and Horizon units.
+# The tokens are minted here with the Swamp CLI and stay here: no run input or output holds one. Every file is written only when
+# it is missing, so a repeat changes nothing. The Swamp key (`api-key`) is already on the machine: the refresh VM pushes it.
+- name: Name the paths of the control plane
+  ansible.builtin.set_fact:
+    swamp_user: "{{ control.user }}"
+    swamp_home: "/home/{{ control.user }}"
+    swamp_repository: "{{ control.repository }}"
+    swamp_app: "{{ control.repository | dirname }}/apps/gateway"
+    swamp_credentials: /etc/orbit/swamp-role-worker
+    swamp_driver_token: "/home/{{ control.user }}/.config/swamp/serve-driver-token"
+    swamp_address: "ws://127.0.0.1:9418"
+- name: Name how the Swamp CLI runs here
+  ansible.builtin.set_fact:
+    swamp_cli:
+      HOME: "{{ swamp_home }}"
+      SWAMP_HOME: "{{ swamp_home }}/.swamp"
+      SWAMP_CONFIG_DIR: "{{ swamp_home }}/.config/swamp"
+      SWAMP_API_KEY_FILE: "{{ swamp_home }}/.config/swamp/api-key"
+      SWAMP_NO_UPDATE_CHECK: "1"
+      SWAMP_NO_TELEMETRY: "1"
+- name: Require the Swamp key
+  ansible.builtin.stat: { path: "{{ swamp_cli.SWAMP_API_KEY_FILE }}" }
+  register: swamp_key
+  failed_when: not swamp_key.stat.exists
+- name: Make the credential folders
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ swamp_credentials }}", mode: "0755" }
+    - { path: "{{ swamp_credentials }}/a", mode: "0700" }
+    - { path: "{{ swamp_credentials }}/b", mode: "0700" }
+  loop_control: { label: "{{ item.path }}" }
+- name: Write the units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { name: orbit-swamp-serve.service, content: "{{ control.units.serve }}" }
+    - { name: "orbit-swamp-worker@.service", content: "{{ control.units.worker }}" }
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload units
+# The scheduler and Horizon record finished runs; the Gateway's first run, the converge of its own Node, comes before its role.
+- name: Write the recorder units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ control.recorder }}"
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload units
+- name: Make the grants folder
+  ansible.builtin.file: { path: "{{ swamp_repository }}/grants", state: directory, owner: "{{ swamp_user }}", group: "{{ swamp_user }}", mode: "0755" }
+- name: Write the grants
+  ansible.builtin.copy:
+    dest: "{{ swamp_repository }}/{{ item.key }}"
+    content: "{{ item.value }}"
+    owner: "{{ swamp_user }}"
+    group: "{{ swamp_user }}"
+    mode: "0640"
+  loop: "{{ control.grants | dict2items }}"
+  loop_control: { label: "{{ item.key }}" }
+# The identity Swamp reaches Nodes with, here the Gateway's own SSH key; this machine accepts it, so Swamp can reach itself too.
+- name: Read the Gateway SSH key
+  ansible.builtin.slurp: { src: "{{ swamp_home }}/.orbit/ssh/id_ed25519.pub" }
+  register: gateway_public_key
+- name: Install the Swamp identity
+  ansible.builtin.copy:
+    src: "{{ swamp_home }}/.orbit/ssh/id_ed25519"
+    remote_src: true
+    dest: "{{ swamp_credentials }}/ssh-identity"
+    owner: root
+    group: "{{ swamp_user }}"
+    mode: "0440"
+- name: Let this machine accept the identity
+  ansible.builtin.lineinfile:
+    path: "{{ swamp_home }}/.ssh/authorized_keys"
+    line: "{{ gateway_public_key.content | b64decode | trim }}"
+    create: true
+    owner: "{{ swamp_user }}"
+    group: "{{ swamp_user }}"
+    mode: "0600"
+# The vault the Gateway puts the material of a run in: it names it, and its runs read it (docs/reference/operations.md). The key of the
+# vault is made by Swamp and stays on this machine.
+- name: Make the control vault
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      swamp vault list --json | grep -q '"name": "orbit-control-inputs"' || { swamp vault create local_encryption orbit-control-inputs --json >/dev/null; echo created; }
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  register: control_vault
+  changed_when: "'created' in control_vault.stdout"
+# Tokens: mint in the Swamp repository, reveal into a file of the owner, never into output.
+- name: Mint the serve driver token
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      umask 077
+      swamp access token mint serve-driver --principal user:nckrtl --duration 30d --json >/dev/null
+      swamp access token reveal serve-driver --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > {{ swamp_driver_token }}
+    chdir: "{{ swamp_repository }}"
+    creates: "{{ swamp_driver_token }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  no_log: true
+- name: Look for the worker tokens
+  ansible.builtin.stat: { path: "{{ swamp_credentials }}/{{ item }}/server.token" }
+  loop: [a, b]
+  register: worker_tokens
+- name: Mint the worker tokens
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      umask 077
+      stage={{ swamp_home }}/.config/swamp/worker-{{ item }}
+      swamp worker token create orbit-worker-{{ item }} --duration 30d --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > "$stage.enrollment"
+      swamp access token mint orbit-worker-{{ item }}-access --principal worker:{{ item }} --duration 30d --json >/dev/null
+      swamp access token reveal orbit-worker-{{ item }}-access --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > "$stage.server"
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  loop: [a, b]
+  when: not (worker_tokens.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first)
+  no_log: true
+- name: Place the worker tokens
+  ansible.builtin.copy:
+    src: "{{ swamp_home }}/.config/swamp/worker-{{ item.worker }}.{{ item.kind }}"
+    remote_src: true
+    dest: "{{ swamp_credentials }}/{{ item.worker }}/{{ item.token }}.token"
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+  loop:
+    - { worker: a, kind: enrollment, token: enrollment }
+    - { worker: a, kind: server, token: server }
+    - { worker: b, kind: enrollment, token: enrollment }
+    - { worker: b, kind: server, token: server }
+  loop_control: { label: "{{ item.worker }} {{ item.kind }}" }
+  no_log: true
+- name: Remove the staged worker tokens
+  ansible.builtin.file: { path: "{{ swamp_home }}/.config/swamp/worker-{{ item.0 }}.{{ item.1 }}", state: absent }
+  loop: "{{ ['a', 'b'] | product(['enrollment', 'server']) | list }}"
+  loop_control: { label: "{{ item.0 }} {{ item.1 }}" }
+# What the Gateway needs to start runs: its run and read tokens, the front's address and the identity it gives Nodes.
+- name: Give the Gateway its Swamp settings
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      umask 077
+      env_file={{ swamp_app }}/.env
+      if grep -q '^ORBIT_SWAMP_RUN_TOKEN=.' "$env_file"; then exit 0; fi
+      swamp access token mint orbit-gateway-run --principal user:orbit-gateway --duration 30d --json >/dev/null
+      swamp access token mint orbit-gateway-read --principal user:orbit-gateway-read --duration 30d --json >/dev/null
+      sed -i '/^ORBIT_SWAMP_\(RUN_TOKEN\|READ_TOKEN\|ADDRESS\|SSH_PUBLIC_KEY\)=/d' "$env_file"
+      {
+        printf 'ORBIT_SWAMP_RUN_TOKEN=%s\n' "$(swamp access token reveal orbit-gateway-run --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+        printf 'ORBIT_SWAMP_READ_TOKEN=%s\n' "$(swamp access token reveal orbit-gateway-read --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+        printf 'ORBIT_SWAMP_ADDRESS=%s\n' "{{ control.address }}"
+        printf 'ORBIT_SWAMP_SSH_PUBLIC_KEY="%s"\n' "{{ gateway_public_key.content | b64decode | trim }}"
+      } >> "$env_file"
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  no_log: true
+  register: gateway_settings
+  changed_when: gateway_settings.rc == 0
+# The Gateway serves the private DNS of its network as the hub. The first converge of its Node installs the listener and the records and
+# restarts dnsmasq, which must already listen on loopback and not on port 53 of every address, where systemd-resolved listens too.
+- name: Write the private DNS backend
+  ansible.builtin.copy:
+    dest: /etc/dnsmasq.d/orbit-vpn.conf
+    content: "{{ control.dns_backend }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: dns_backend
+# The first publish of a private name reads the records and the catalog, so a new Gateway starts with the empty ones.
+- name: Make the private DNS folder
+  ansible.builtin.file: { path: /var/lib/orbit/private-dns, state: directory, owner: root, group: root, mode: "0755" }
+- name: Write the empty private DNS records
+  ansible.builtin.copy: { dest: /etc/dnsmasq.d/orbit-records.conf, content: "# Managed by Orbit.\n", force: false, owner: root, group: root, mode: "0644" }
+- name: Write the empty private DNS catalog
+  ansible.builtin.copy: { dest: /var/lib/orbit/private-dns/catalog.json, content: "{}\n", force: false, owner: root, group: root, mode: "0644" }
+- name: Restart dnsmasq on the loopback listener
+  ansible.builtin.systemd: { name: dnsmasq, state: restarted }
+  when: dns_backend.changed
+# The hub of the Gateway's own private network. Swamp reaches every Node, this one too, by its WireGuard address, so the hub is up
+# before any role runs. The private key is made here and never leaves; only the public key is recorded.
+- name: Make the hub folders
+  ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0700" }
+  loop: ["{{ control.hub.key_file | dirname }}", "{{ control.hub.peer_directory }}"]
+- name: Make the hub key
+  ansible.builtin.shell:
+    cmd: umask 077 && wg genkey > {{ control.hub.key_file }}
+    creates: "{{ control.hub.key_file }}"
+  no_log: true
+- name: Write the hub file
+  ansible.builtin.copy:
+    dest: /etc/wireguard/orbit.conf
+    content: "{{ control.hub.config }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart the hub
+- name: Start the hub
+  ansible.builtin.systemd: { name: wg-quick@orbit.service, enabled: true, state: started }
+- name: Read the hub public key
+  ansible.builtin.command: { argv: [wg, show, orbit, public-key] }
+  register: hub_public_key
+  changed_when: false
+- name: Record the hub public key
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--hub-public-key={{ hub_public_key.stdout }}"] }
+  become_user: "{{ swamp_user }}"
+  changed_when: true
+# The front the Gateway starts runs through: TLS on 443 for swamp.orbit, signed by this Gateway's CA, to serve on loopback.
+- name: Issue the swamp.orbit certificate
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--certificate=swamp"] }
+  become_user: "{{ swamp_user }}"
+  register: front_certificate
+  changed_when: false
+# The certificate sits where the site of the `swamp.orbit` Route names it, so the front now and the Caddyfile the Gateway publishes
+# later load the same files.
+- name: Make the swamp.orbit certificate folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: caddy
+    mode: "0750"
+  loop: "{{ [(front_certificate.stdout | from_json).directory | dirname | dirname, (front_certificate.stdout | from_json).directory | dirname, (front_certificate.stdout | from_json).directory] }}"
+- name: Place the swamp.orbit certificate
+  ansible.builtin.copy:
+    src: "{{ (front_certificate.stdout | from_json)[item.source] }}"
+    remote_src: true
+    dest: "{{ (front_certificate.stdout | from_json).directory }}/{{ item.name }}"
+    owner: root
+    group: caddy
+    mode: "0640"
+  loop:
+    - { source: certificate, name: cert.pem }
+    - { source: key, name: key.pem }
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload Caddy
+- name: Write the front
+  ansible.builtin.copy:
+    dest: /etc/caddy/Caddyfile
+    content: |
+      # Managed by Orbit: the front of the Swamp control plane until the Gateway publishes it as a Route.
+      swamp.orbit:443 {
+        tls {{ (front_certificate.stdout | from_json).directory }}/cert.pem {{ (front_certificate.stdout | from_json).directory }}/key.pem
+        reverse_proxy 127.0.0.1:9418
+      }
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Caddy
+- name: Apply the handlers before the start
+  ansible.builtin.meta: flush_handlers
+- name: Start serve
+  ansible.builtin.systemd: { name: orbit-swamp-serve.service, enabled: true, state: started }
+- name: Wait for serve
+  ansible.builtin.wait_for: { host: 127.0.0.1, port: 9418, timeout: 90 }
+- name: Start the workers
+  ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", enabled: true, state: started }
+  loop: [a, b]
+- name: Start the recorder
+  ansible.builtin.systemd: { name: "{{ item.name }}", enabled: true, state: started }
+  loop: "{{ control.recorder }}"
+  loop_control: { label: "{{ item.name }}" }
+# The Gateway's own certificate, signed by the same CA, at the paths its rendered Caddyfile names. The first role run publishes that
+# Caddyfile and needs them, so they exist before it.
+- name: Issue the Gateway certificate
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--certificate=gateway"] }
+  become_user: "{{ swamp_user }}"
+  register: gateway_certificate
+  changed_when: false
+- name: Make the Gateway certificate folder
+  ansible.builtin.file: { path: /etc/caddy/orbit-cert-current, state: directory, owner: root, group: caddy, mode: "0750" }
+- name: Place the Gateway certificate
+  ansible.builtin.copy:
+    src: "{{ (gateway_certificate.stdout | from_json)[item.source] }}"
+    remote_src: true
+    dest: "/etc/caddy/orbit-cert-current/{{ item.name }}"
+    owner: root
+    group: caddy
+    mode: "{{ item.mode }}"
+  loop:
+    - { source: certificate, name: gateway.pem, mode: "0640" }
+    - { source: key, name: gateway.key, mode: "0640" }
+    - { source: root, name: root-ca.pem, mode: "0644" }
+  loop_control: { label: "{{ item.name }}" }
+# The Gateway machine trusts the Orbit CA that signs its certificates: the services on it call the Gateway by name over TLS, as the
+# Reverb server of the websocket role does for its registry.
+- name: Place the Orbit root certificate in the system trust
+  ansible.builtin.copy:
+    src: "{{ (gateway_certificate.stdout | from_json).root }}"
+    remote_src: true
+    dest: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+    owner: root
+    group: root
+    mode: "0644"
+  register: orbit_trust
+- name: Update the system trust store # noqa no-handler
+  when: orbit_trust is changed
+  ansible.builtin.command: { argv: [update-ca-certificates] }
+# The key of the Gateway's own agent, made here as a rekey makes it: the Node keeps the key and the Gateway records its verifier, so
+# the converge that installs the agent has a verifier to render.
+- name: Make the agent folder
+  ansible.builtin.file: { path: /etc/orbit/agent, state: directory, owner: root, group: root, mode: "0755" }
+- name: Make the agent key
+  ansible.builtin.shell:
+    cmd: umask 077 && printf %s "$(openssl rand -hex 32)" > /etc/orbit/agent/secret
+    creates: /etc/orbit/agent/secret
+  no_log: true
+- name: Read the agent key verifier
+  ansible.builtin.shell:
+    cmd: sha256sum < /etc/orbit/agent/secret | cut -d' ' -f1
+  register: agent_verifier
+  changed_when: false
+  no_log: true
+- name: Record the agent key verifier
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--agent-secret-hash={{ agent_verifier.stdout }}"] }
+  become_user: "{{ swamp_user }}"
+  changed_when: true
+# Serve and both workers run: the machine serves Swamp, so the swamp role of its Node stands.
+- name: Record that this machine serves Swamp
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--serving"] }
+  become_user: "{{ swamp_user }}"
+  changed_when: true
+# The firewall of the Gateway machine starts here with the recovery SSH, the trust of the network members and the port of the hub.
+# The recovery rule is kept until the first role converge of the Gateway retires it.
+- name: Open the port of the hub
+  ansible.builtin.command: { argv: [ufw, allow, in, proto, udp, to, any, port, "{{ control.firewall.hub_port }}", comment, orbit-hub-endpoint] }
+  changed_when: true
+- name: Add the firewall rules of the Gateway Node
+  ansible.builtin.command: { argv: "{{ item }}" }
+  loop: "{{ control.firewall.rules }}"
+  loop_control: { label: "{{ item[-1] }}" }
+  changed_when: true
+- name: Enable the firewall
+  ansible.builtin.command: { argv: [ufw, --force, enable] }
+  changed_when: true

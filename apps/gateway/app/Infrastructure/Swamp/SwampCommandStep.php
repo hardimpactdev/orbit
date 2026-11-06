@@ -18,6 +18,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use SensitiveParameter;
 use Throwable;
@@ -132,7 +133,8 @@ final readonly class SwampCommandStep
         if (! in_array($run['status'], $terminalStatuses, true)) {
             $deadline = OperationRunBudgets::deadline($operation);
             if (! $atDeadline || $deadline === null || $deadline->isFuture()) {
-                throw $this->unavailable();
+                // The notice that the run ended can come before serve writes its history; the job reads again.
+                throw new SwampTerminalReadUnavailable;
             }
 
             return app(ExpireOperationAction::class)->execute($operation);
@@ -173,11 +175,111 @@ final readonly class SwampCommandStep
         }
 
         // Family projections read/clean native secrets outside their own short result transaction.
-        return $direct->projection($current)->apply($current, [
+        $projected = $direct->projection($current)->apply($current, [
             'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
             'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
             'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
         ]);
+        $this->fillStepTimes($projected, $runId, $run);
+
+        return $projected;
+    }
+
+    /**
+     * The step events carry no times; the terminal history has them for each step of the run and of its nested runs. Best effort:
+     * a failed read leaves the times empty and never fails the projection.
+     *
+     * @param  array<string,mixed>  $run
+     */
+    private function fillStepTimes(Operation $operation, string $runId, array $run): void
+    {
+        try {
+            $recorded = $this->recordedSteps($run);
+            foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $nested) {
+                $recorded = [...$recorded, ...$this->recordedSteps($this->history($nested))];
+            }
+            usort($recorded, static fn (array $left, array $right): int => strcmp($left['started_at'], $right['started_at']));
+            DB::transaction(function () use ($operation, $runId, $recorded): void {
+                $current = Operation::query()->lockForUpdate()->find($operation->id);
+                $progress = $current?->state['native_progress'] ?? null;
+                if ($current === null || ! is_array($progress) || ($progress['run'] ?? null) !== $runId || ! is_array($progress['steps'] ?? null)) {
+                    return;
+                }
+                $steps = app(NativeRunStepTimes::class)->merge($progress['steps'], $recorded);
+                if ($steps === $progress['steps']) {
+                    return;
+                }
+                $state = [...($current->state ?? []), 'native_progress' => [...$progress, 'steps' => $steps]];
+                app(OperationStore::class)->change($current, ['state' => $state]);
+            });
+        } catch (Throwable $exception) {
+            Log::warning('The step times of a finished run were not recorded.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $run
+     * @return list<array{job:string,name:string,started_at:string,finished_at:string|null}>
+     */
+    private function recordedSteps(array $run): array
+    {
+        $recorded = [];
+        $jobs = is_array($run['jobs'] ?? null) ? $run['jobs'] : [];
+        foreach ($jobs as $job) {
+            $jobName = is_array($job) ? ($job['name'] ?? null) : null;
+            $steps = is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [];
+            foreach ($steps as $step) {
+                $name = is_array($step) ? ($step['name'] ?? null) : null;
+                $started = is_array($step) ? ($step['startedAt'] ?? null) : null;
+                $finished = is_array($step) ? ($step['completedAt'] ?? null) : null;
+                if (is_string($jobName) && is_string($name) && is_string($started) && NativeRunTimestamp::parse($started) !== null) {
+                    $recorded[] = ['job' => $jobName, 'name' => $name, 'started_at' => $started,
+                        'finished_at' => is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null];
+                }
+            }
+        }
+
+        return $recorded;
+    }
+
+    /**
+     * The runs a root run started, at any depth: serve lists each nested run with its parent. They started after the root did.
+     *
+     * @return list<string>
+     */
+    private function nestedRuns(string $rootId, string $since): array
+    {
+        $parents = [];
+        for ($offset = 0; $offset < 1000; $offset += 200) {
+            $reply = $this->read('workflow.run.search', ['since' => $since, 'limit' => 200, 'offset' => $offset]);
+            $data = $reply['data'] ?? null;
+            $page = is_array($data) && is_array($data['results'] ?? null) ? $data['results'] : [];
+            foreach ($page as $row) {
+                $id = is_array($row) ? ($row['runId'] ?? null) : null;
+                $nested = is_array($row) && is_array($row['parentRun'] ?? null) ? $row['parentRun'] : [];
+                $parent = $nested['runId'] ?? null;
+                if (is_string($id) && is_string($parent)) {
+                    $parents[$id] = $parent;
+                }
+            }
+            if (count($page) < 200) {
+                break;
+            }
+        }
+        $found = [];
+        $frontier = [$rootId];
+        for ($depth = 0; $depth < 4 && $frontier !== []; $depth++) {
+            $next = [];
+            foreach ($parents as $child => $parent) {
+                if (in_array($parent, $frontier, true) && ! in_array($child, $found, true)) {
+                    $found[] = $child;
+                    $next[] = $child;
+                }
+            }
+            $frontier = $next;
+        }
+
+        return array_slice($found, 0, 60);
     }
 
     /** Records a terminal root run of one Schedule's own workflow as its fire; a running fire waits for its end. */
@@ -471,10 +573,31 @@ final readonly class SwampCommandStep
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
-        $id = bin2hex(random_bytes(16));
+        $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
         $connection = app(SwampConnection::class);
+        // A connection kept from an earlier job may have been closed by serve while idle. Then the first use fails on a dead
+        // socket, so one new connection answers the same read. Every read here is idempotent. A new connection that fails is a real failure.
+        $reused = $connection->holds($endpoint);
         try {
-            $socket = $connection->socket(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15, $this->socket);
+            return $this->exchange($connection, $endpoint, $type, $arguments);
+        } catch (SwampTerminalReadUnavailable $exception) {
+            if (! $reused) {
+                throw $exception;
+            }
+            Log::info('The kept Swamp read connection was closed; reading on a new one.', ['request_type' => $type, 'exception_type' => ($exception->getPrevious() ?? $exception)::class]);
+        }
+
+        return $this->exchange($connection, $endpoint, $type, $arguments);
+    }
+
+    /** @param array<string,mixed> $arguments
+     * @return array<string,mixed>
+     */
+    private function exchange(SwampConnection $connection, WebSocketEndpoint $endpoint, string $type, array $arguments): array
+    {
+        $id = bin2hex(random_bytes(16));
+        try {
+            $socket = $connection->socket($endpoint, 15, $this->socket);
             $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
             $deadline = microtime(true) + 30;
             while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
@@ -492,9 +615,9 @@ final readonly class SwampCommandStep
         } catch (ResourceOperationException $exception) {
             $connection->release();
             throw $exception;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $connection->release();
-            throw new SwampTerminalReadUnavailable;
+            throw new SwampTerminalReadUnavailable($exception);
         }
         $connection->release();
         throw new SwampTerminalReadUnavailable;

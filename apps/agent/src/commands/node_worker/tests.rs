@@ -197,13 +197,7 @@ fn refuses_unprivileged_or_mismatched_accounts_before_publishing() {
     input.user = "orbit".into();
     assert!(publish(&files, &mut host, &input, &account, false, None).is_err());
     assert!(host.calls.is_empty());
-    for user in [
-        "root",
-        "orbit-swamp-package",
-        "x\nUser=root",
-        "../orbit",
-        "-orbit",
-    ] {
+    for user in ["root", "x\nUser=root", "../orbit", "-orbit"] {
         input.user = user.into();
         assert!(!valid(&input));
     }

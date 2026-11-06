@@ -54,10 +54,7 @@ final class TaskCheck extends Model
 
     public function process(): TaskCheckProcess
     {
-        $runId = TaskWorkspaceLeaseRecord::query()->where('check_id', $this->id)->where('pid', $this->pid)
-            ->where('process_started', $this->process_started)->value('check_run_id');
-
-        return new TaskCheckProcess($this->pid, $this->process_started, $this->head_before, $this->tree_before, is_string($runId) ? $runId : null);
+        return new TaskCheckProcess($this->pid, $this->process_started, $this->head_before, $this->tree_before);
     }
 
     /** @return array<string, string> */

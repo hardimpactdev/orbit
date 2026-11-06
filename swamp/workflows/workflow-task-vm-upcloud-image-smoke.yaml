@@ -1,0 +1,55 @@
+id: f56e9888-5216-447d-bcc2-4a0fddf1a765
+name: task-vm-upcloud-image-smoke
+description: Boot one UpCloud server from the template that was just made, with the host key of the build, and check it with the check and template phases of the task VM role.
+vaults:
+- orbit-control-inputs
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [task_vm.upcloud_image_build]}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^(task-vm-upcloud-token|task-vm-image-bootstrap-[1-9][0-9]*)$'}
+        required: [vault, key]
+        additionalProperties: false
+      propertyNames: {enum: [upcloud, bootstrap]}
+    template: {type: string, minLength: 1}
+  required: [operation_id, node_id, kind, intent, execution_secrets, template]
+  additionalProperties: false
+jobs:
+- name: smoke
+  writes: true
+  steps:
+  - name: Launch the smoke server
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-upcloud-image-server
+      inputs:
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        slot: smoke
+        source: ${{ inputs.template }}
+  - name: Check the smoke server
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Launch the smoke server, condition: {type: succeeded}}
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-upcloud-image-ansible
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        address: ${{ steps["Launch the smoke server"].outputs.server.address }}
+        tags: check,template
+        with_pi: false

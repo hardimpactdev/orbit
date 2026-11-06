@@ -9,6 +9,7 @@ use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
@@ -32,8 +33,6 @@ use Throwable;
 final readonly class AdmitSwampGatewayReleaseAction
 {
     /** The single Swamp Node, which runs the release and serves the load. */
-    public const int SwampNode = 209;
-
     public function __construct(
         private GatewayReleaseLayout $layout,
         private GatewayReleaseAgent $agent,
@@ -127,7 +126,7 @@ final readonly class AdmitSwampGatewayReleaseAction
      */
     private function start(GatewayRelease $record, string $commit, bool $force, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): Operation
     {
-        return $this->operations->execute('gateway.release', 'gateway_release', $record->id, self::SwampNode, [
+        return $this->operations->execute('gateway.release', 'gateway_release', $record->id, SwampNode::id(), [
             'sha' => $commit,
             'id' => GatewayReleaseCommit::id($commit),
             'force' => $force,
@@ -136,10 +135,10 @@ final readonly class AdmitSwampGatewayReleaseAction
             'manifest' => $manifest,
             'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
             'horizon_unit' => $horizon === null ? '' : new SystemdProcessRenderer()->unitName($horizon),
-            'horizon_drain_seconds' => GatewayHorizon::longestJobSeconds() + 30,
+            'horizon_drain_seconds' => GatewayHorizon::drainSeconds(),
             'keep' => max(2, Config::integer('orbit.gateway_releases.keep')),
             'ssh' => $this->ssh->forNode($gateway),
-            'swamp_ssh' => $this->ssh->forNode(Node::query()->findOrFail(self::SwampNode)),
+            'swamp_ssh' => $this->ssh->forNode(Node::query()->findOrFail(SwampNode::id())),
         ], 'gateway-release', null, lockKey: 'gateway-release');
     }
 }

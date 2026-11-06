@@ -257,7 +257,7 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
             {
                 node_id: ex("self.publication.node_id"),
                 user: ex("self.publication.connection.nodeUser"),
-                control_node_id: 209,
+                control_node_id: ex("self.publication.control_node_id"),
                 host_keys: ex("self.publication.host_keys"),
                 connection: ex("self.publication.connection"),
                 before: ex("self.publication.before.php"),
@@ -273,7 +273,7 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
                 caddy_publication: {
                     node_id: ex("self.publication.node_id"),
                     user: ex("self.publication.connection.nodeUser"),
-                    control_node_id: 209,
+                    control_node_id: ex("self.publication.control_node_id"),
                     host_keys: ex("self.publication.host_keys"),
                     connection: ex("self.publication.connection"),
                     caddy: ex("self.publication.after.caddy"),
@@ -522,21 +522,10 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
         inputs,
     );
 }
-export function standaloneRoleRemovalWorkflow(): ReturnType<typeof workflow> {
-    const inputs = structuredClone(roleRemovalWorkflow().inputs) as Fields;
-    inputs.properties.kind.enum = ["node.role_remove"];
-    return {
-        ...roleRemovalWorkflow(),
-        id: "837c361c-493f-416a-b660-9bd77426d9e3",
-        name: "operation-node-role-remove-direct",
-        inputs,
-    };
-}
 export function generatedRemovalWorkflows() {
     return [
         roleRemovalWorkflow(),
         nodeRemovalWorkflow(),
-        standaloneRoleRemovalWorkflow(),
     ].map((value) => ({
         path: new URL(
             "../../../../workflows/workflow-" + value.name + ".yaml",

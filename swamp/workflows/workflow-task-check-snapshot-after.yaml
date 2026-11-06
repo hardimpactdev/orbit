@@ -201,7 +201,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-after" }}
+      behaviorName: '${{ ("task-check-after-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: snapshot
       inputs:
         phase: after
@@ -285,7 +285,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-local" }}
+      behaviorName: '${{ ("task-check-local-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: local
       inputs:
         intent: ${{ inputs.intent }}

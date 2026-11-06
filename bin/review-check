@@ -88,6 +88,12 @@ def shard(value):
     return int(match[1]), int(match[2])
 
 
+def format_drift(started_committed, formatted):
+    """A candidate that starts committed and clean must already be formatter-clean. A change by the formatters is then drift
+    in the commit itself, not an edit of work in progress."""
+    return started_committed and formatted
+
+
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 
@@ -206,6 +212,7 @@ def main(argv=None):
     processes = check_processes(root)
     head = git(root, 'rev-parse', 'HEAD')
     committed = not git(root, 'status', '--porcelain')
+    started_committed = committed
     tree = working_tree(root)
     common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
     prune_reports(common / 'orbit-checks')
@@ -297,10 +304,11 @@ def main(argv=None):
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD')
     checked_tree = working_tree(root)
     report['formatted'] = checked_tree != tree
+    report['drift'] = format_drift(started_committed, report['formatted'])
     tree = report['tree'] = checked_tree
     committed = report['committed'] = not git(root, 'status', '--porcelain')
     report['shard'] = f'{shard_index}/{shard_count}'
-    report['passed'] = report['unchanged'] and (bool(report['checks']) or shard_index != 1) and all(
+    report['passed'] = report['unchanged'] and not report['drift'] and (bool(report['checks']) or shard_index != 1) and all(
         check['exit_code'] == 0 for check in report['checks'])
     report['finished_at'] = time.time()
     path = directory / 'result.json'
@@ -309,7 +317,9 @@ def main(argv=None):
     print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {candidate}; receipt: {path}', flush=True)
     if not report['unchanged']:
         print('HEAD moved during checks; approval is not valid.', file=sys.stderr)
-    if report['formatted']:
+    if report['drift']:
+        print('Formatters changed files of a clean commit: the commit is not formatter-clean. Run composer check and commit the result.', file=sys.stderr)
+    elif report['formatted']:
         print('Formatters changed files; commit them with your change.', flush=True)
     return 0 if report['passed'] else 1
 

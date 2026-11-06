@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Nodes\SwampNode;
 use App\Models\Node;
 
 /** Public Gateway pin snapshot for the sole control worker; performs no host lookup or write. */
@@ -11,7 +12,7 @@ final readonly class SwampWorkerKnownHostsInput
 {
     public function __construct(private SwampSshExecutionInput $ssh) {}
 
-    /** @return array{control_node_id:209,known_hosts_content:string,digest:string} */
+    /** @return array{control_node_id:int,known_hosts_content:string,digest:string} */
     public function capture(): array
     {
         $nodes = Node::query();
@@ -28,6 +29,6 @@ final readonly class SwampWorkerKnownHostsInput
         }
         $content = $lines === [] ? '' : implode("\n", $lines)."\n";
 
-        return ['control_node_id' => 209, 'known_hosts_content' => $content, 'digest' => hash('sha256', $content)];
+        return ['control_node_id' => SwampNode::id(), 'known_hosts_content' => $content, 'digest' => hash('sha256', $content)];
     }
 }

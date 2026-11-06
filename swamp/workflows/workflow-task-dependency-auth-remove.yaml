@@ -1,0 +1,87 @@
+id: dc32f69a-523e-5c03-b850-1c03af924afa
+name: task-dependency-auth-remove
+description: Delete the Composer and npm configuration of the task account that the write workflow created, revoke the token it held, and report what became of the token.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    user:
+      type: string
+      minLength: 1
+    ssh_execution:
+      type: object
+    dependency_auth:
+      type: object
+  required: [user, ssh_execution, dependency_auth]
+  additionalProperties: false
+jobs:
+- name: remove
+  labels: {role: swamp}
+  steps:
+  - name: Remove
+    labels: {role: swamp}
+    queueTimeout: 10
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-deps-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-deps-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.ssh_execution.target.port }}
+          user: ${{ inputs.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - timeout
+        - "30"
+        - rm
+        - -f
+        - --
+        - ${{ "/home/" + inputs.user + "/.config/composer/auth.json" }}
+        - ${{ "/home/" + inputs.user + "/.npmrc" }}
+  # The token is revoked as soon as the files are gone. It expires within the hour either way, but a failed command can echo it into its output.
+  # curl prints the HTTP status instead of failing on it, so `result` can tell a revoked token (204) from one that GitHub does not know (401, none minted
+  # or already expired) and from a revoke that failed. The step itself fails only when GitHub could not be reached.
+  - name: Revoke
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-deps-revoke" }}
+      methodName: execute
+      inputs:
+        run: "curl --silent --show-error --proto =https --max-time 30 --request DELETE \\\n  --variable %ORBIT_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_TOKEN}}' \\\n  --header 'Accept: application/vnd.github+json' \\\n  --output /dev/null --write-out '%{http_code}' https://api.github.com/installation/token\n"
+        env:
+          ORBIT_TOKEN: ${{ vault.get(inputs.dependency_auth.token.vault, inputs.dependency_auth.token.key) }}
+    dependsOn:
+    - step: Remove
+      condition:
+        type: always
+    writes: true
+    allowFailure: true
+  - name: result
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-revoke" }}
+      methodName: revoke
+      inputs:
+        steps: ${{ steps }}
+    dependsOn:
+    - step: Revoke
+      condition:
+        type: always

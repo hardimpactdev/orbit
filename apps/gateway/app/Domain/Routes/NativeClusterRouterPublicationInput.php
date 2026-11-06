@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Firewall\RouterLanIngressPolicy;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -64,7 +65,7 @@ final readonly class NativeClusterRouterPublicationInput
             ...$before->whereIn('domain', $domains)->pluck('nodeId')->all(), ...$after->whereIn('domain', $domains)->pluck('nodeId')->all(),
             ...array_column(RouteExecutionProof::objects($inventory['old_nodes']), 'node_id'),
             ...($candidate === null ? [] : [$candidate->node_id]), ...ValidatedData::integerList($inventory['dns_node_ids'])])));
-        $participantIds = array_values(array_unique([209, ...$targetNodeIds]));
+        $participantIds = array_values(array_unique([SwampNode::id(), ...$targetNodeIds]));
         sort($participantIds);
         $rows = [];
         foreach (Node::query()->whereIn('id', $targetNodeIds)->orderBy('id')->get() as $node) {

@@ -10,6 +10,8 @@ Command verification assets live in [swamp/proof](https://github.com/hardimpactd
 
 Edit charts here, never in a copy. A command's chart arrives in the one PR of that command change, with its page, cases, code and runnable proof cases; the chart, page and cases are the first commit of the draft PR. A pull request that touches only charts, their placements, and `flows-pending.txt` is for a chart that belongs to no command change, such as a stage chart. A chart whose spec Nick approved carries `%% status: reviewed`.
 
+Only that approval sets it. A spec PR that changes a reviewed chart sets it to `draft` and keeps the other header lines; the approval in the draft sets `reviewed` again.
+
 ## Where a chart lives
 
 A chart sits beside its command page, with the same name: `route/create.mmd` beside `route/create.mdx`. Its `%% kind: <kind>` line names the kind; the checks find a kind's chart by that line. The page places it under `## How it works` with `<div className="flow-at" data-chart="route/create"></div>`. A second kind of one command, or a kind that no command starts, gets a chart named after the kind's action, such as `database/write.mmd` or `instance/auto-deploy.mmd`. To add a chart, write it, place it, and remove its kind from `flows-pending.txt`.
@@ -41,7 +43,7 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **Node work follows one shape (R4).** The Gateway starts one Swamp run and replies 202. A Swamp worker reaches Nodes over `@swamp/ssh`, with official `@swamp/cfgmgmt/*` behaviors where they fit, or runs an Ansible phase for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A check step confirms the end state. There are no per-Node workers.
 
-**Steps never call the Gateway**, except for certificate signing. GitHub tokens are minted at admission. Secrets go Gateway → vault → step as vault key names, never values (R3).
+**Steps call the Gateway only to sign a certificate or to mint a GitHub token** for the step that is about to use it. Admission mints no token for a later step. Secrets go Gateway → vault → step as vault key names, never values (R3).
 
 **Record-only changes start no run (R1).** A change that touches no Node is written by the Gateway and answered at once.
 
@@ -55,7 +57,11 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **The main path uses only the required parameters.** Draw the command first as it runs with its required arguments alone; that is the happy path. Each optional parameter gets its own `opt --flag` block, labelled with the flag, holding only the steps that flag adds. The main call line shows no optional flags. Never use an `alt no --flag … else --flag` branch: it makes an opt-in path look like the default. Example: `instance:register --project=7` checks and records; `opt --setup` runs the setup steps, `opt --domain` creates the Route. The Swamp workflow follows the same shape: a step that exists only for an optional input is conditional on it.
 
-**A chart is minimal.** It shows the real flow steps and the true exceptions, nothing else. A step explanation says only what the label and detail line do not: why it must happen, when it runs, what happens on failure. Do not restate the label, and do not list what the command covers, which options mean or what a flag changes: those belong in the description and the option table of the command's docs page. A flag that adds no steps and only changes a check, such as `--force`, gets no `opt` block and no note in the chart.
+**A chart is minimal.** It shows the real flow steps and the true exceptions, nothing else. A step explanation says only what the label and detail line do not: why it must happen, when it runs, what happens on failure.
+
+Do not restate the label, and do not list what the command covers, which options mean or what a flag changes: those belong in the description and the option table of the command's docs page. A flag that adds no steps and only changes a check, such as `--force`, gets no `opt` block and no note in the chart. The same holds for a flag that only shapes the output (`--json`).
+
+Behavior that is the same for every command (the `--json` output, prompts for missing input, keyed replay of `--idempotency-key`) is documented once, in the CLI standard and the operations reference. A chart gets no `opt` block, `Prompts:` block or replay branch for it, unless a current decision asks otherwise.
 
 **A chart is caller-agnostic.** The caller is the CLI, MCP or API. A specific client that calls the command, such as Conn, is not drawn in its chart; that client's own steps belong in its own flow.
 
@@ -97,7 +103,7 @@ Read these sources; don't guess.
 
 ## Reference charts
 
-Copy the style of these reviewed charts exactly:
+Copy the style of these reviewed charts exactly. Read them on `main`: a chart that an open spec PR has set back to draft stays the model until that PR merges. A draft sibling or a reference text has no approval; it is input, not a model, and a defect in it is not a precedent.
 
 - `firewall.allow`: a plain Node change. It is the best model.
 - `tool.install`: optional steps (`opt`) and per Tool Manager blocks.
@@ -173,7 +179,7 @@ Name a step's behavior after its target, never its run. Swamp reuses a definitio
 | --- | --- |
 | Target | `<step-family>-<node_id>` or the step's SSH address, for example `route-ssh-publish-<node_id>` |
 | One target | A fixed name, for example `gateway-swamp-load` |
-| Task VM | `<step-family>-<node_id>` from `ssh_execution.target.node_id`, never the VM's WireGuard address, which the next VM reuses |
+| Task VM | SSH steps: `<step-family>-<node_id>`, because the next VM reuses the WireGuard address. Local and data steps: `<step-family>-<address>` |
 | Family | Never one name such as `ssh-<node_id>` across step families |
 | Type | One behavior type per name; a fixed name that types would share carries its type, as in `result-network-command` |
 | Characters | `^[a-z0-9][a-z0-9_-]*$` |

@@ -89,7 +89,6 @@ pub(super) fn valid(input: &NodeWorkerConfig) -> bool {
             .bytes()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"_-".contains(&c))
         && input.user != "root"
-        && input.user != "orbit-swamp-package"
 }
 fn unit(input: &NodeWorkerConfig) -> String {
     format!("[Unit]\nDescription=Orbit Swamp worker for Node {}\nAfter=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=300\nStartLimitBurst=3\n\n[Service]\nType=exec\nUser={}\nWorkingDirectory={ROOT}\nEnvironment=HOME={ROOT} SWAMP_HOME={ROOT}/home SWAMP_CONFIG_DIR={ROOT}/config\nLoadCredential=enrollment:{CREDENTIALS}/enrollment.token\nLoadCredential=server:{CREDENTIALS}/server.token\nExecStartPre=+/usr/local/bin/orbit-agent service node-worker-check\nExecStart={BINARY} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert={CA} --cache-dir={ROOT}/cache --label node={}\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n", input.node_id, input.user, input.node_id)

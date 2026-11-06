@@ -18,17 +18,20 @@ NODE_VALUE = re.compile(r'(%s)\.(id|src|src6)$' % '|'.join(NODES))
 # step -> (sections it may stand in, required keys, optional keys)
 STEPS = {
     'listener': (('setup',), {'on'}, {'proto', 'family', 'ports', 'block'}),
-    'ufw_rule': (('setup',), {'on', 'action', 'proto', 'port'}, {'as', 'from', 'above', 'below', 'family'}),
+    'ufw_rule': (('setup',), {'on', 'action', 'proto', 'port'}, {'as', 'from', 'above', 'below', 'family', 'comment'}),
     'fault': (('setup', 'act'), set(), {'on', 'command', 'fail_after', 'clear'}),
     'busy_node': (('setup',), {'on'}, {'command', 'seconds'}),
     'ipv6_addresses': (('setup',), {'nodes'}, set()),
-    'cli': (('setup', 'act'), {'run'}, {'forms', 'tty', 'expect'}),
+    'cli': (('setup', 'act'), {'run'}, {'forms', 'tty', 'expect', 'as'}),
     'probe': (SECTIONS, {'from', 'to', 'port', 'expect'}, {'id', 'proto', 'family'}),
     'ufw': (('expect',), {'on', 'rows'}, {'family', 'absent'}),
-    'record': (('expect',), {'list', 'node', 'where', 'count'}, set()),
+    'record': (('expect',), {'list'}, {'node', 'where', 'count', 'min', 'order', 'args', 'section'}),
     'doctor': (('expect',), {'node', 'drift'}, set()),
     'unchanged': (('expect',), {'since'}, {'except', 'what', 'request'}),
-    'ufw_delete': (('negative',), {'on', 'to'}, {'from'}),
+    'ufw_delete': (('setup', 'negative'), {'on', 'to'}, {'from'}),
+    'agent_report': (('setup',), {'node'}, set()),
+    'node_down': (('setup',), {'node'}, set()),
+    'node_access_remove': (('setup',), {'consumer', 'serving'}, set()),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases'}
 CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'negative', 'timeout'}
@@ -169,6 +172,8 @@ def parse_step(raw, section, where):
     extra = set(args) - required - optional
     if extra:
         raise SpecError(f'{where}: step {name} has unknown keys {sorted(extra)}')
+    if name == 'record' and not {'count', 'min', 'order'} & set(args):
+        raise SpecError(f'{where}: step record needs count, min or order')
     return name, args
 
 

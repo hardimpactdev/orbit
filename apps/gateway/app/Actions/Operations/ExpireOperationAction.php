@@ -59,6 +59,38 @@ final readonly class ExpireOperationAction
         });
     }
 
+    /** How long a timed-out Operation may hold its target while Swamp has not proven that its run ended. */
+    public const int HoldMinutes = 60;
+
+    /**
+     * Frees the target of a timed-out Operation after `HoldMinutes` without proof that its run ended: a run that was asked to cancel an
+     * hour ago and still has no terminal is lost, and a lost run must not hold its target for ever. Returns how many it freed.
+     */
+    public function releaseStaleHolds(): int
+    {
+        $freed = 0;
+        $stale = Operation::query()->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')
+            ->where('finished_at', '<', now()->subMinutes(self::HoldMinutes))->pluck('id');
+        foreach ($stale as $id) {
+            DB::transaction(function () use ($id, &$freed): void {
+                $current = Operation::query()->lockForUpdate()->whereKey($id)->firstOrFail();
+                if (! self::awaitsSettlement($current)) {
+                    return;
+                }
+                $timeout = $current->state['native_timeout'] ?? [];
+                app(OperationStore::class)->change($current, ['lock_key' => null,
+                    'state' => [...($current->state ?? []), 'native_timeout' => [
+                        ...(is_array($timeout) ? $timeout : []), 'native_terminal_status' => 'unproven',
+                        'native_terminal_observed_at' => now()->toISOString(),
+                    ]],
+                ]);
+                $freed++;
+            });
+        }
+
+        return $freed;
+    }
+
     /** Expired by the Gateway with no native terminal recorded yet; a lock-holding one also awaits settlement. */
     public static function expiredUnsettled(Operation $operation): bool
     {

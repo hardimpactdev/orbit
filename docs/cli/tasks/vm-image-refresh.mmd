@@ -14,43 +14,60 @@ sequenceDiagram
   participant VM as Refresh VM<br/>a task VM
   Note over GW: Admit the refresh<br/>one run per host
   %%> Started by:
-  %%> - the operator command `php artisan task-vms:refresh-image HOST`; the release projection and the daily schedule are not built
+  %%> - the operator commands `php artisan task-vms:refresh-image HOST` and `task-vms:refresh-images`, which use `seed=build` by default; the release and daily triggers are removed (they rebuilt on the nested-VM path, which the container inner topology replaces)
+  %%> - only `php artisan task-vms:refresh-image HOST --seed=keep` uses `keep`
+  %%> Input `seed`:
+  %%> - `build` (the default): the refresh VM builds or starts the nested fleet, and its disk becomes the new seed
+  %%> - Decided by the orchestrator, for Nick's review: `keep` is the image part alone, milestone M1: an image refresh passes on one host, alone. `Build the fleet` and `Save the ready copies` are skipped, so no nested VM is built or saved
+  %%> - Decided by the orchestrator, for Nick's review: `keep` still starts the refresh VM. The check VM enrolls with the intent of a task VM, and the seed copy needs a seed disk, which is the refresh VM's clone of the host's current seed. An earlier draft of this chart promised no VM and no slots; the build showed it cannot
   %%> Requirements:
   %%> - an active, configured task VM host with a promoted image and no image build running, and a Gateway release with a commit
+  %%> - `keep` also needs the seed of the host's current image, which the refresh VM clones; a host without it fails at the clone
   %%> Result:
-  %%> - a group of its own in the proof Project, placed on this host only, and the full intent recorded; a second admission for the host returns the open run
+  %%> - a group of its own in the proof Project, placed on this host only, and the full intent recorded with its `seed`; a second admission for the host returns the open run
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
   SW->>VM: Create the VM<br/>image · seed · checkout
   %%> What it does:
-  %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit and the nested fleet from the ready copies
+  %%> - the VM is large (12 GiB, 6 CPUs, 3 slots): the admission sets the size, so the refresh needs 3 free slots of its host
+  %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit, the converge of the outer VM and the nested fleet from the ready copies
   SW->>VM: Pin the VM<br/>guest host key
   %%> What it does:
-  %%> - fills the host key the VM step observed into the converge and ready copies intents
-  SW->>VM: Converge once<br/>task_vm.converge
+  %%> - fills the host key the VM step observed into the ready copies intent and the fleet build intent
+  SW->>VM: Build the fleet<br/>task_vm.fleet_build
   %%> What it does:
-  %%> - the child `operation-task-vm-converge`: the task VM role phases of Ansible on the outer VM; a VM at the pins reports no change
+  %%> - the child `operation-task-vm-fleet-build` in the refresh VM, only with `seed=build` and when the VM step found no usable ready copies and so started no fleet: the nested network and three VMs from stock Ubuntu, a Gateway with its own Swamp, the Nodes and the readiness check; skipped when the fleet started from ready copies
   SW->>VM: Save the ready copies<br/>task_vm.ready_copies
   %%> What it does:
   %%> - the child `operation-task-vm-ready-copies`: key-free, self-contained copies in the seed disk, boot-checked
-  SW->>H: Clean the refresh VM<br/>task-vm-image-clean · stop
+  SW->>H: Stop the refresh VM<br/>its seed disk is complete
   %%> What it does:
-  %%> - the child `task-vm-image-clean` through `incus exec`, which the image build calls too for its builder: removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout
-  %%> - resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
-  SW->>H: Publish the image<br/>incus publish
+  %%> - `incus stop` of the refresh VM: it yields only its seed disk and is never published
+  SW->>H: Build the image<br/>task-vm-image-builder
   %%> What it does:
-  %%> - publishes the stopped VM under a candidate alias and reads its fingerprint
+  %%> - the child `task-vm-image-builder`: `incus init` of the builder from the image the refresh VM started from (its fingerprint), with the cloud-init key of Node 209; waits for the guest agent and cloud-init
+  %%> - runs the phases `software`, `tools` and `check` (the child `task-vm-image-ansible`), cleans and stops it (the child `task-vm-image-clean`)
+  %%> - publishes the stopped builder under a candidate alias and reads its fingerprint
+  %%> - the builder is never enrolled and has no seed
   SW->>H: Boot-check the image<br/>throwaway VM
   %%> What it does:
   %%> - the child `task-vm-image-smoke`, as in the image build: a throwaway VM from the candidate and the check phase of the task VM role on it
+  SW->>H: Enroll the check VM<br/>task-vm-bootstrap
+  %%> What it does:
+  %%> - the child `task-vm-bootstrap` on the throwaway VM of the boot check: the account, the key, the sudoers file and the observer install with their checks, the same steps as an enrollment
+  SW->>H: Converge the check VM<br/>software · tools · check
+  %%> What it does:
+  %%> - the child `task-vm-image-ansible` with the phases of a provision converge on the same VM; the promotion waits for this step and the one before
   SW->>H: Copy the seed<br/>under the host lock
   %%> What it does:
+  %%> - with `seed=keep` the seed disk is the refresh VM's unchanged clone of the host's current seed. This leaves the seed content stale on purpose: the nested disks keep what they had, and the first use of a task VM converges them (stage 2). It is not a seed refresh
+  %%> - Gap, for Nick's review: with `keep` nothing boots the kept ready copies under the candidate image before the promotion. Only `build` does that (`Save the ready copies` boot-checks them). The Gateway counts a seed as usable only after a `build` run, so a `keep` run never makes the copies look usable, and the first task VM with a topology builds the fleet
   %%> - copies the seed disk of the refresh VM to the seed name of the new fingerprint, then `zfs promote` so refreshes form no clone chain
   SW->>H: Promote the image<br/>under the host lock
   %%> What it does:
   %%> - the child `task-vm-image-promote`, as in the image build: the alias moves to the new image and the old image keeps the alias `-previous`; the old seed stays under its own name
   SW->>H: Remove the leftovers<br/>always
   %%> What it does:
-  %%> - removes the check VM; when the alias does not point at the new image, also the candidate image and the new seed
+  %%> - the cleanup job removes the check VM and the builder, then, when the alias does not point at the new image, the candidate image and the new seed
   alt the run passes its check
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the new image<br/>cancel the group

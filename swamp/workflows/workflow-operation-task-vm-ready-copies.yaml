@@ -52,7 +52,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-delete-the-club-key").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-delete-the-club-key").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'rm', '-f', '/home/orbit/.config/swamp/club-api-key'], timeoutSec: 40}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'rm', '-f', '/home/orbit/.config/swamp/api-key'], timeoutSec: 40}}
   # The key is searched by value in every file of each guest, with the key on standard input. grep exits 0 on a match and 1 on none, and `incus` exits 1
   # on its own errors too, so the shell prints grep's status and the end check requires `scan-exit=1`.
   - name: 'Scan for the Club key'
@@ -69,6 +69,14 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-trim" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-trim" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '300', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'fstrim', '-av'], okExitCodes: [0, 64], timeoutSec: 310}}
     dependsOn: [{step: 'Delete the Club key', condition: {type: succeeded}}]
+  # The ready copies hold units that bind the state of the guest over the NFS checkout. As local mounts they close an ordering cycle with the network mount
+  # at boot (local-fs.target, the NFS mount, network.target, ufw.service, local-fs.target), and systemd drops them. `_netdev` makes them network mounts, ordered after the NFS mount.
+  - name: 'Order the state mounts'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-order-the-state-mounts" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-order-the-state-mounts" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'sh', '-c', 'cd /etc/systemd/system && sed -i -e "s/^Options=bind.*$/Options=bind,_netdev/" home-orbit-orbit-apps-gateway-*.mount && sed -i -e "/^Options=.*_netdev/! s/^Options=\\(vers=.*\\)$/Options=\\1,_netdev/" home-orbit-orbit.mount && systemctl daemon-reload'], timeoutSec: 70}}
 - name: copy
   labels: {role: swamp}
   dependsOn: [{job: keys, condition: {type: succeeded}}]
@@ -136,7 +144,7 @@ jobs:
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-complete-the-set" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-complete-the-set" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'set', '${{ "fleet-ready-" + self.role }}', '${{ "user.ready.complete=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'], timeoutSec: 40}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'set', '${{ "fleet-ready-" + self.role }}', '${{ "user.ready.complete=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.format=" + inputs.intent.fleet.format }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Record the network', condition: {type: succeeded}}]
 - name: check
   labels: {role: swamp}
@@ -190,6 +198,13 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-the-state" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'stat', '-c', '%n', '/var/lib/orbit-checkout-state/apps/gateway/.env', '/var/lib/orbit-checkout-state/apps/gateway/storage', '/var/lib/orbit-checkout-state/apps/gateway/bootstrap/cache'], timeoutSec: 40}}
     dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
+  # The units of a stored copy order after the NFS mount: no unit of the state lacks `_netdev`. A copy of a role without the units lists nothing.
+  - name: 'Look for unordered mounts'
+    labels: {role: swamp}
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-unordered-mounts" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-look-for-unordered-mounts" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ "ready-check-" + self.role }}', '--', 'sh', '-c', 'grep -L _netdev /etc/systemd/system/home-orbit-orbit.mount /etc/systemd/system/home-orbit-orbit-apps-gateway-*.mount || true'], timeoutSec: 40}}
+    dependsOn: [{step: 'Wait for the agent', condition: {type: succeeded}}]
   # The Gateway database is the one its own `.env` names, the one the key step updated.
   - name: 'Read the stored database path'
     labels: {role: swamp}
@@ -236,6 +251,6 @@ jobs:
     labels: {role: swamp}
     task:
       type: assert
-      expr: 'steps["Read the operator keys"].outputs.stdout.split("\n")[0] == "0" && steps["Look for the operator peer"].outputs.stdout.startsWith("peer-exit=1") && [0, 1, 2].all(i, steps["Scan for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && steps["Search for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && steps["Read the stateful setting-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.split("\n")[0] == "true" && !steps["Read the devices-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.contains("eth0")) && [0, 1].all(i, steps["Look for a checkout-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout == "")'
+      expr: 'steps["Read the operator keys"].outputs.stdout.split("\n")[0] == "0" && steps["Look for the operator peer"].outputs.stdout.startsWith("peer-exit=1") && [0, 1, 2].all(i, steps["Scan for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && steps["Search for the Club key-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.startsWith("scan-exit=1") && steps["Read the stateful setting-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.split("\n")[0] == "true" && !steps["Read the devices-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout.contains("eth0")) && [0, 1].all(i, steps["Look for a checkout-" + ["gateway", "app-dev", "app-prod"][i]].outputs.stdout == "") && [0, 1].all(i, steps["Look for unordered mounts-" + ["gateway", "app-dev"][i]].outputs.stdout.trim() == "")'
       severity: high
       message: The ready copies are not self-contained.

@@ -1,0 +1,123 @@
+---
+# The Swamp tokens of a Gateway's own control plane, renewed on the machine that holds them (docs/reference/pipeline/2-development-environment.mmd,
+# "Re-mint the Swamp tokens"). A task VM runs this on the nested Gateway of its fleet after it mounts the checkout, so the tokens of the ready
+# copies never decide how long a fleet lives. It needs the Swamp Club key on the machine, which a proof run pushes. The tokens are the ones `gateway-swamp.yml` mints, by the same names and into the same files;
+# the Swamp CLI renews them: `access token rotate` revokes a token and mints a replacement with its name and principal, and a worker
+# enrollment token is minted again under a new name. Nothing is written to output, and no run input or output holds a token.
+# The shell tasks print no token: every token goes to a file or a variable, so a failure shows its command and its error. The copy
+# of the worker tokens keeps `no_log`.
+- name: Name the paths of the control plane
+  ansible.builtin.set_fact:
+    swamp_user: "{{ control.user }}"
+    swamp_home: "/home/{{ control.user }}"
+    swamp_repository: "{{ control.repository }}"
+    swamp_app: "{{ control.repository | dirname }}/apps/gateway"
+    swamp_credentials: /etc/orbit/swamp-role-worker
+    swamp_driver_token: "/home/{{ control.user }}/.config/swamp/serve-driver-token"
+- name: Name how the Swamp CLI runs here
+  ansible.builtin.set_fact:
+    swamp_cli:
+      HOME: "{{ swamp_home }}"
+      SWAMP_HOME: "{{ swamp_home }}/.swamp"
+      SWAMP_CONFIG_DIR: "{{ swamp_home }}/.config/swamp"
+      SWAMP_API_KEY_FILE: "{{ swamp_home }}/.config/swamp/api-key"
+      SWAMP_NO_UPDATE_CHECK: "1"
+      SWAMP_NO_TELEMETRY: "1"
+- name: Require the Swamp key
+  ansible.builtin.stat: { path: "{{ swamp_cli.SWAMP_API_KEY_FILE }}" }
+  register: swamp_key
+  failed_when: not swamp_key.stat.exists
+# Serve and the workers hold the token store open, so they stop while the tokens change.
+- name: Stop the workers
+  ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", state: stopped }
+  loop: [a, b]
+- name: Stop serve
+  ansible.builtin.systemd: { name: orbit-swamp-serve.service, state: stopped }
+# The rotation is its own task with a short command, so a failure shows the CLI's error in the few hundred characters that the run keeps.
+- name: Rotate the serve driver token
+  ansible.builtin.shell:
+    cmd: umask 077 && swamp access token rotate serve-driver --duration 30d --json >/dev/null
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  changed_when: true
+- name: Write the serve driver token
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      umask 077
+      swamp access token reveal serve-driver --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > {{ swamp_driver_token }}
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  changed_when: true
+- name: Renew the worker tokens
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      umask 077
+      stage={{ swamp_home }}/.config/swamp/worker-{{ item }}
+      swamp worker token create orbit-worker-{{ item }}-$(date +%s) --duration 30d --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > "$stage.enrollment"
+      swamp access token rotate orbit-worker-{{ item }}-access --duration 30d --json >/dev/null
+      swamp access token reveal orbit-worker-{{ item }}-access --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > "$stage.server"
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  loop: [a, b]
+  changed_when: true
+- name: Place the worker tokens
+  ansible.builtin.copy:
+    src: "{{ swamp_home }}/.config/swamp/worker-{{ item.worker }}.{{ item.kind }}"
+    remote_src: true
+    dest: "{{ swamp_credentials }}/{{ item.worker }}/{{ item.token }}.token"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - { worker: a, kind: enrollment, token: enrollment }
+    - { worker: a, kind: server, token: server }
+    - { worker: b, kind: enrollment, token: enrollment }
+    - { worker: b, kind: server, token: server }
+  loop_control: { label: "{{ item.worker }} {{ item.kind }}" }
+  no_log: true
+- name: Remove the staged worker tokens
+  ansible.builtin.file: { path: "{{ swamp_home }}/.config/swamp/worker-{{ item.0 }}.{{ item.1 }}", state: absent }
+  loop: "{{ ['a', 'b'] | product(['enrollment', 'server']) | list }}"
+  loop_control: { label: "{{ item.0 }} {{ item.1 }}" }
+# The Gateway starts runs with its run and read tokens.
+- name: Renew the Gateway tokens
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      umask 077
+      env_file={{ swamp_app }}/.env
+      swamp access token rotate orbit-gateway-run --duration 30d --json >/dev/null
+      swamp access token rotate orbit-gateway-read --duration 30d --json >/dev/null
+      run_token=$(swamp access token reveal orbit-gateway-run --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+      read_token=$(swamp access token reveal orbit-gateway-read --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+      # `.env` is a bind mount of the guest's own file: it is rewritten in place, not replaced.
+      kept=$(mktemp)
+      grep -v '^ORBIT_SWAMP_\(RUN_TOKEN\|READ_TOKEN\)=' "$env_file" > "$kept" || true
+      printf 'ORBIT_SWAMP_RUN_TOKEN=%s\nORBIT_SWAMP_READ_TOKEN=%s\n' "$run_token" "$read_token" >> "$kept"
+      cat "$kept" > "$env_file"
+      rm -f "$kept"
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  changed_when: true
+- name: Clear the configuration of the Gateway
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", config:clear] }
+  become_user: "{{ swamp_user }}"
+  changed_when: true
+# Serve and the workers read their tokens when they start.
+- name: Start serve
+  ansible.builtin.systemd: { name: orbit-swamp-serve.service, state: started }
+- name: Wait for serve
+  ansible.builtin.wait_for: { host: 127.0.0.1, port: 9418, timeout: 90 }
+- name: Start the workers
+  ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", state: started }
+  loop: [a, b]

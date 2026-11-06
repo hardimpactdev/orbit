@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/{Providers/ApplicationServiceProvider.php,{Actions,Domain}/Tools/**,Data/Tools/**,Actions/Doctor/Intent/RuntimeDoctorIntent.php}
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table}.php}
-  - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
+  - apps/agent/src/commands/{vp_store,vp_scope,vp_materialize,vp_global,tools_apt,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
 ---
 
@@ -100,15 +100,15 @@ A task VM's base image runs the Linux `vp` and `composer` materialization progra
 
 Linux Homebrew first use runs a separate native installer after its OS prerequisites. It stages the pinned official revision and verifies its version before publishing the account-owned prefix. Failure removes the staging directory. Existing conflicting prefixes are refused. Scan keeps its read-only scope inspection.
 
-On macOS, `tool.inspect-homebrew-scope` reads the enrolled account from the native account database and returns its home and one verified prefix. It checks `/opt/homebrew`, `/usr/local`, `$HOME/homebrew`, and `$HOME/.homebrew`. A conflicting candidate or more than one valid candidate refuses the whole inspection. The command runs as the enrolled account and changes no files or Homebrew revision. Formula and cask operations use this same scope result.
+On macOS, the agent reads the enrolled account from the native account database and returns its home and one verified prefix. It checks `/opt/homebrew`, `/usr/local`, `$HOME/homebrew`, and `$HOME/.homebrew`. A conflicting candidate or more than one valid candidate refuses the whole inspection. The command runs as the enrolled account and changes no files or Homebrew revision. Formula and cask operations use this same scope result.
 
-`tool.homebrew-version` and `tool.homebrew-formula-inventory` return typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
+`tool.homebrew-formula-inventory` returns typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
 
 Native cask writes use official SSH queries and separate typed policy checks and mutations. They resolve the Node's variation and check artifact destinations against the enrolled account's home and verified Homebrew prefix. Homebrew retains its package locks. Removal checks uninstall safety without applying install-time version, checksum, or disabled gates. A delisted official cask can be removed by its plain token only after its installed metadata passes those checks.
 
 Native Composer package operations use fixed shared-scope arguments through official SSH. The candidate query parses the normal dry-run and resolves an explicit no-op from installed inventory. A typed check applies the admitted version constraint and root ownership before mutation.
 
-The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
+Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
 The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It fetches each pinned artifact, checks its digest, extracts it and writes the managed launchers with official resources. It runs no downloaded installer. A failed step has no rollback; run the install again after you fix the cause. A development deploy runs the same shared setup for the Instance's account.
 
@@ -151,11 +151,13 @@ Tool installs and updates wait for a busy apt or dpkg lock, for example while un
 | --- | --- | --- |
 | First-use prerequisites (`brew`) | `apt-get update` | None. It takes the lists lock, `/var/lib/apt/lists/lock`, which `DPkg::Lock::Timeout` does not cover, and fails at once. |
 | First-use prerequisites (`brew`) | `apt-get install --no-remove` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | 300 s |
-| First-use prerequisites (`composer`) | Snapshot-pinned package transaction | 300 s for the install; its `apt-get update` fails at once on a busy lists lock |
+| First-use prerequisites (`composer`) | Snapshot-pinned package transaction | 300 s for the install; its `apt-get update` fails at once on a busy lists lock. |
 | `apt` install and update | `apt-get install --no-remove` | 300 s |
 | `apt` remove | `dpkg --remove` | None. dpkg refuses at once. |
 
 Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not wait.
+
+A Node inside the nested subnet of a task VM reads the snapshot indexes for the `composer` transaction through the package cache of that VM (`http://10.232.2.1:3142`, one request at a time) and downloads the packages directly. Any other Node reads everything directly over https.
 
 A first-use setup failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Only a failed package install marks the Tool `failed`. Retry the install; a manager or apt source set up before the failure stays, and the retry reuses it.
 
@@ -173,7 +175,7 @@ An npm or pnpm lockfile selects the package-manager family. An exact `packageMan
 
 The machine recipe owns vp itself. Deploys never upgrade it. A recipe version older than the locked vite-plus version fails the prerequisite and needs a normal recipe update. When all exact runtimes exist, the prerequisite takes a read-only path without a lock. Installation waits for the store-owner lock with a timeout and rechecks content after acquiring it.
 
-The enrolled account is the only store writer and owns every runtime in it. Recipe and deploy installation use one Node layout: a real, immutable directory at `js_runtime/node/<version>`, with no symlink components. The Rust agent shares path validation, locking, adoption and publication between recipe convergence and the `tool.inspect-vp-store`, `tool.install-vp-environment`, and `tool.prune-vp-store` commands. Deploy commands run as the enrolled account and receive exact runtime requirements through `AgentCommandRunner`. Existing real content that matches the archive stays in place, including content installed by a deploy. A differing directory stops recipe installation without deleting it.
+The enrolled account is the only store writer and owns every runtime in it. Recipe and deploy installation use one Node layout: a real, immutable directory at `js_runtime/node/<version>`, with no symlink components. The Rust agent shares path validation, locking, adoption and publication between recipe convergence and the `tool.inspect-vp-store` command. Existing real content that matches the archive stays in place, including content installed by a deploy. A differing directory stops recipe installation without deleting it.
 
 Convergence migrates every account-owned link into the exact former content-addressed recipe layout, preserving its old target for running processes. Migrated older versions receive no checksum receipt or recipe reference, so collection retains them as adopted content. Other links are refused. The publisher removes group and other write bits from account-owned real store directories before validation; foreign ownership and symlinks remain refusals. This rule also applies to development stores in the enrolled account's home.
 
@@ -181,23 +183,13 @@ Vite+ manager convergence also removes group and other write bits from existing 
 
 The recipe records its current Node version in `.orbit-recipe-node.json` under the installation lock. Collection retains that version even when no Instance references it, including when a deploy originally installed it. The existing checksum ledger stays unchanged on adoption. A real runtime without this recipe reference needs one verified adoption on convergence. The recipe, deploy installer and collector use an account-owned, regular mode-0644 lock; they normalize older account-owned lock permissions without replacing its inode and refuse symlinks.
 
-Orbit adopts existing exact runtimes without downloading them again. Missing Node archives are verified against official `SHASUMS256.txt`; npm and pnpm archives are checked against registry integrity before extraction. Registry credentials stay within their configured host and path, including redirects. New versions are staged beside existing versions and published atomically; installed content is never rewritten in place.
-
-Package-manager launchers link to the archive's JavaScript entry points or verified native executable. For native pnpm, Orbit also verifies the exact platform package named by its manifest and records both archive checksums. It never runs the package's install hook or leaves a launcher that downloads its executable during a build. Project scripts and hooks never run as the store owner.
-
-The `tool.read-vp-project` agent command reads manifests and version files as data. Its fixed reader process runs as the Instance account in production and as the enrolled account in development. It reads bounded regular files without following file symlinks or running hooks, confines linked workspace manifests to the Project, and combines the account and Project registry settings.
-
 The Gateway sends each Project deploy script unchanged, with an optional typed Vite+ environment. Instance preparation and the Tool Manager use the same version check: the observed manager must meet the Project's pinned Vite+ version, including the CLI's `vp v1.4.0` output format. The agent validates the store and exact runtime requirements before writing the private script file. It selects the store's `vp env exec` with fixed arguments, sets `VP_HOME`, and runs the whole script with `bash -eu` as the Instance owner. Flags, quoting, pipelines, and multiple build commands keep their meaning. The enrolled account owns the shared store; production builds run as the separate Instance account.
 
 When that store sits below a private enrolled-account directory, production preparation grants only the Instance account traversal through those ancestors. It grants no directory listing or write access and leaves private files protected by their own permissions. Publicly traversable ancestors and the store contents stay unchanged.
 
 Each Instance records its resolved store path, vp version, Node version, package manager, package-manager version, checkout path, and prerequisite status in `vp_environment`. The preparation plan carries its public version pins under `requirements`; `environment` is reserved for protected environment-variable maps. Preparation retains earlier checkout references, including after installation or a failed build. The selected release and every retained release keep their runtimes, so rollback can select retained code without fetching or rebuilding its prerequisites.
 
-Release cleanup drops a checkout's references only after taking that release out of the retained set; releases kept for running processes keep their references. Mutable checkouts keep earlier runtime references until the Instance is removed because release cleanup cannot prove that their old processes have stopped. Garbage collection counts these references and the current recipe Node reference under the installation lock. It removes only deploy-installed versions with no remaining references; content without a deploy checksum receipt stays.
-
 Native environment operations validate their selected store and refuse unreadable or invalid state.
-
-The installer saves each component's verified checksum receipt as soon as it publishes that component. If a later package-manager download or integrity check fails, retry keeps the Node receipt rather than treating that Node version as adopted content. Collection can remove it once no checkout references it.
 
 See [Deploy prerequisites](/reference/deployments#vite-store-prerequisite) for build execution and early failures.
 
@@ -267,7 +259,7 @@ Some installed packages keep SSH, the WireGuard tunnel, DNS, Docker, the firewal
 
 | Manager | Protected package names |
 | --- | --- |
-| `apt` | `acl`, `attr`, `ca-certificates`, `caddy`, `composer`, `curl`, `dnsmasq`, `docker.io`, `git`, `gnupg`, `libnss-resolve`, `openssh-client`, `openssh-server`, `openssl`, `php-curl`, `php-xml`, `sudo`, `ufw`, `unzip`, `wireguard`, `wireguard-tools` |
+| `apt` | `acl`, `attr`, `bind9-dnsutils`, `ca-certificates`, `caddy`, `composer`, `curl`, `dnsmasq`, `docker.io`, `git`, `gnupg`, `libnss-resolve`, `openssh-client`, `openssh-server`, `openssl`, `php-curl`, `php-xml`, `sudo`, `ufw`, `unzip`, `wireguard`, `wireguard-tools` |
 | `brew` | `wireguard-tools`, `wireguard-go` |
 | `vp` | `pnpm` |
 
@@ -583,3 +575,11 @@ Removal keeps the repository while another Tool references it. The final removal
 One Node repository record holds shared intent so package removal cannot retire another Tool's source. Keys authorize only their named repository. Global apt-key trust and vendor installer execution are rejected because they bypass this ownership boundary. Candidate lookup and package download are scoped to the declared source, so a higher version from a distribution cannot select unrelated software with the same package name. Apt still resolves dependencies from the Node's normal sources.
 
 The preference gives the repository's Tool packages priority 990 for each repository host, so unattended upgrades keep the vendor package. Every other package from that host gets priority 1: the vendor cannot replace or upgrade an installed or distribution package. A shared repository keeps a removed Tool's package in the preference until the next write for that repository. Gateway admission and terminal projection store intent and outcomes; Swamp owns downloads, key checks, source writes, refresh, and cleanup.
+
+A fresh Gateway gets its PHP packages from its [bootstrap plan](/reference/node-provisioning#gateway-bootstrap-prerequisites), not from a Tool Manager: the plan reads the machine software recipe and the role prerequisites install the pinned files.
+
+The pinned Swamp binary of a fresh Gateway comes from its [bootstrap](/reference/node-provisioning#gateway-bootstrap-prerequisites), which also starts its serve and workers; after that the swamp role keeps the pin.
+
+The bootstrap plan also installs `valkey-server` on a fresh Gateway, for the [Gateway queue](/reference/gateway-queue#connection) that records finished runs. A Node that the nested Gateway adds with `orbit:node-add` gets its Tools through the normal Node workflow. The Gateway's own Node gets the same through `orbit:node-converge`.
+
+That bootstrap also makes the WireGuard hub key on the new Gateway's machine and brings up `wg-quick@orbit` there, so Swamp can reach the Gateway by its WireGuard address before any role runs.

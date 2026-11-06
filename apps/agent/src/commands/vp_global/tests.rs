@@ -22,44 +22,6 @@ impl Host for Fake {
     }
 }
 #[test]
-fn manager_version_reads_one_safe_line_and_candidate_requires_a_json_string() {
-    for newline in [
-        "\n", "\r\n", "\u{000b}", "\u{000c}", "\u{0085}", "\u{2028}", "\u{2029}",
-    ] {
-        let mut host = Fake::new(format!("vp v0.2.6{newline}extra"));
-        assert_eq!(version(&mut host).unwrap().version, "vp v0.2.6");
-        assert_eq!(host.calls, [vec!["--version"]]);
-    }
-    for invalid in ["".as_bytes(), b"\xff", b"version\tsecret", &vec![b'a'; 256]] {
-        assert_eq!(version(&mut Fake::new(invalid)), Err(Error::Output {}));
-    }
-    let mut host = Fake::new("\"0.150.0\"\n");
-    assert_eq!(
-        candidate(&mut host, "@openai/codex").unwrap().version,
-        "0.150.0"
-    );
-    assert_eq!(
-        host.calls,
-        [vec!["info", "@openai/codex", "version", "--json"]]
-    );
-    for invalid in [
-        "",
-        "[]",
-        "{}",
-        "12",
-        "null",
-        "\"\"",
-        "\"1.0\"\"2.0\"",
-        "\"1.0\\nsecret\"",
-        &format!("\"{}\"", "a".repeat(256)),
-    ] {
-        assert_eq!(
-            candidate(&mut Fake::new(invalid), "typescript"),
-            Err(Error::Output {})
-        );
-    }
-}
-#[test]
 fn inventory_preserves_root_names_and_versions_without_dependencies() {
     let fixture = include_bytes!("../../../tests/fixtures/tools/vp-list-g.json");
     let mut host = Fake::new(fixture);
@@ -299,4 +261,18 @@ fn stderr_child() {
     std::io::stderr()
         .write_all(&vec![b'x'; MAX_OUTPUT as usize + 1])
         .unwrap();
+}
+
+#[test]
+fn manager_version_reads_one_safe_line() {
+    for newline in [
+        "\n", "\r\n", "\u{000b}", "\u{000c}", "\u{0085}", "\u{2028}", "\u{2029}",
+    ] {
+        let mut host = Fake::new(format!("vp v0.2.6{newline}extra"));
+        assert_eq!(version(&mut host).unwrap().version, "vp v0.2.6");
+        assert_eq!(host.calls, [vec!["--version"]]);
+    }
+    for invalid in ["".as_bytes(), b"\xff", b"version\tsecret", &vec![b'a'; 256]] {
+        assert_eq!(version(&mut Fake::new(invalid)), Err(Error::Output {}));
+    }
 }

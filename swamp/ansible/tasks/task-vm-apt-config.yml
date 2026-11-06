@@ -29,7 +29,41 @@
     owner: root
     group: root
     mode: "0644"
+# The package cache of the VM (task-vm-apt-cache.yml) serves the indexes only: apt talks plain http to it and it follows the redirect
+# of the snapshot service to https. The signatures are still checked. The packages stay a direct download: through the cache most of
+# them failed (a 503 without a length, or a closed connection). apt does not pipeline its requests to the cache: the cache answers
+# some of several requests in flight with the body of another file (a hash mismatch).
+- name: Point the index read at the package cache
+  ansible.builtin.copy:
+    dest: "{{ apt_directory }}/ubuntu-cache.sources"
+    content: |
+      Types: deb
+      URIs: http://snapshot.ubuntu.com/ubuntu/{{ recipe.ubuntu.snapshot }}/
+      Suites: {{ ansible_facts.distribution_release }} {{ ansible_facts.distribution_release }}-updates {{ ansible_facts.distribution_release }}-security
+      Components: main universe restricted multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+      Check-Valid-Until: no
+    owner: root
+    group: root
+    mode: "0644"
+- name: Write the apt configuration of the index read
+  ansible.builtin.copy:
+    dest: "{{ apt_directory }}/apt-cache.conf"
+    content: |
+      Dir::Etc::parts "";
+      Dir::Etc::main "";
+      Dir::Etc::sourcelist "{{ apt_directory }}/ubuntu-cache.sources";
+      Dir::Etc::sourceparts "";
+      Acquire::http::Proxy "http://localhost:3142";
+      Acquire::http::Pipeline-Depth "0";
+      APT::Get::List-Cleanup "false";
+      APT::Update::Error-Mode "any";
+      DPkg::Lock::Timeout "300";
+    owner: root
+    group: root
+    mode: "0644"
+# The snapshot service answers 503 now and then, and the error mode makes one failed index fatal: the module tries again.
 - name: Read the package indexes
-  ansible.builtin.command: { argv: [apt-get, update] }
-  environment: "{{ apt_environment }}"
+  ansible.builtin.apt: { update_cache: true, update_cache_retries: 12, update_cache_retry_max_delay: 30 }
+  environment: "{{ apt_index_environment }}"
   changed_when: false

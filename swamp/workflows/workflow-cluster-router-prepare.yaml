@@ -167,7 +167,7 @@ jobs:
             execution_secrets: {}
             intent:
               rule: '${{ inputs.intent.firewall }}'
-              control_node_id: 209
+              control_node_id: '${{ inputs.intent.control_node_id }}'
               connection: '${{ inputs.intent.connection }}'
               host_keys: '${{ inputs.intent.host_keys }}'
 

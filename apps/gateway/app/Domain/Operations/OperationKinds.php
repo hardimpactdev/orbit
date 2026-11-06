@@ -9,7 +9,7 @@ namespace App\Domain\Operations;
  */
 final readonly class OperationKinds
 {
-    /** Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks and the proof run, which the task operations of its group carry. */
+    /** Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks and the proof run, which closes when its runs (`proof.command`) have ended. */
     private const array GatewayJobs = [
         'websocket.sync' => ['executor' => 'gateway'],
         'websocket.app_create' => ['executor' => 'gateway'],
@@ -32,6 +32,8 @@ final readonly class OperationKinds
 
     public const string TasksScript = 'tasks.script';
 
+    public const string TasksPackage = 'tasks.package';
+
     public const string TasksCheck = 'tasks.check';
 
     public const string TasksProvision = 'tasks.provision';
@@ -42,13 +44,24 @@ final readonly class OperationKinds
 
     public const string TasksPrep = 'tasks.prep';
 
+    public const string TasksPrepFix = 'tasks.prep_fix';
+
+    public const string TasksSync = 'tasks.sync';
+
+    public const string TasksBuild = 'tasks.build';
+
     public const string TasksPrReady = 'tasks.pr_ready';
 
     public const string TasksPrMerge = 'tasks.pr_merge';
 
-    public const string TasksPrComment = 'tasks.pr_comment';
+    /** The merge of a pull request that no Task group watches; it targets its Project. */
+    public const string ProjectPrMerge = 'project.pr_merge';
+
+    public const string TasksReviewRound = 'tasks.review_round';
 
     public const string ProofRun = 'proof.run';
+
+    public const string ProofVerify = 'proof.verify';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';

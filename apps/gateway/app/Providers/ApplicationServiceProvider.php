@@ -6,16 +6,20 @@ namespace App\Providers;
 
 use App\Console\Commands\AgentViewCommand;
 use App\Console\Commands\AgentViewPublishCommand;
+use App\Console\Commands\BootstrapControlPlanCommand;
 use App\Console\Commands\BootstrapGatewayCommand;
+use App\Console\Commands\BootstrapPlanCommand;
 use App\Console\Commands\CaddyBuildCommand;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
-use App\Console\Commands\ConvergeGatewayWebCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
+use App\Console\Commands\NodeAddCommand;
+use App\Console\Commands\NodeConvergeCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
+use App\Console\Commands\RoleAddCommand;
 use App\Console\Commands\RuntimeHibernatorCommand;
 use App\Console\Commands\ServePrivateDnsCommand;
 use App\Domain\Gateway\GatewayCacheStore;
@@ -36,12 +40,16 @@ final class ApplicationServiceProvider extends ServiceProvider
             AgentViewCommand::class,
             AgentViewPublishCommand::class,
             BootstrapGatewayCommand::class,
+            BootstrapControlPlanCommand::class,
+            BootstrapPlanCommand::class,
             CaddyBuildCommand::class,
-            ConvergeGatewayWebCommand::class,
             FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
+            NodeAddCommand::class,
+            NodeConvergeCommand::class,
             ProvisionNodeCommand::class,
             ReconcilePeerDnsCommand::class,
+            RoleAddCommand::class,
             RenderNodeRecipeCommand::class,
             RuntimeHibernatorCommand::class,
             ServePrivateDnsCommand::class,

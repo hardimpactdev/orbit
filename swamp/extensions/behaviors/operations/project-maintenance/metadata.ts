@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import projects from "./projects.json" with { type: "json" };
 import { DependencyProjectSchema } from "../../_lib/dependency_project_schema.ts";
 import {
     indexName,
@@ -10,48 +11,6 @@ import {
     batchEvidence,
     BatchEvidenceSchema,
 } from "../../_lib/service_detection.ts";
-import { behavior as p0 } from "../../projects/nckrtl-com/mod.ts";
-import { behavior as p1 } from "../../projects/launch-starter-kit/mod.ts";
-import { behavior as p2 } from "../../projects/launch/mod.ts";
-import { behavior as p3 } from "../../projects/treadmill-website/mod.ts";
-import { behavior as p4 } from "../../projects/orbit-website/mod.ts";
-import { behavior as p5 } from "../../projects/recall/mod.ts";
-import { behavior as p6 } from "../../projects/ai-cli-proxy/mod.ts";
-import { behavior as p7 } from "../../projects/laravel-toolbar-site/mod.ts";
-import { behavior as p8 } from "../../projects/operator-website/mod.ts";
-import { behavior as p9 } from "../../projects/operator/mod.ts";
-import { behavior as p10 } from "../../projects/fitta/mod.ts";
-import { behavior as p11 } from "../../projects/house-italy/mod.ts";
-import { behavior as p12 } from "../../projects/lindaretel/mod.ts";
-import { behavior as p13 } from "../../projects/srpm/mod.ts";
-import { behavior as p14 } from "../../projects/tankwerk/mod.ts";
-import { behavior as p15 } from "../../projects/ditis-hr/mod.ts";
-import { behavior as p16 } from "../../projects/platform11/mod.ts";
-import { behavior as p17 } from "../../projects/hauzer/mod.ts";
-import { behavior as p18 } from "../../projects/mealou/mod.ts";
-import { behavior as p19 } from "../../projects/orbit/mod.ts";
-const projects = [
-    p0,
-    p1,
-    p2,
-    p3,
-    p4,
-    p5,
-    p6,
-    p7,
-    p8,
-    p9,
-    p10,
-    p11,
-    p12,
-    p13,
-    p14,
-    p15,
-    p16,
-    p17,
-    p18,
-    p19,
-];
 import { scheduleKey, scheduleReceipt } from "../../_lib/project_schedule.ts";
 
 export const Snapshot = z.object({
@@ -67,7 +26,7 @@ export const ProjectIntent = z.object({
 }).strict();
 const Envelope = z.object({
     operation_id: z.number().int().positive(),
-    node_id: z.literal(209),
+    node_id: z.number().int().positive(),
     kind: z.enum(["project.detect", "project.routine", "project.observe"]),
     intent: ProjectIntent,
 }).strict();
@@ -80,67 +39,13 @@ const output = async (ctx: Context, value: Record<string, unknown>) => ({
     dataHandles: [await ctx.writeResource("public", "output", value)],
 });
 
-/** One project's configuration export, with its recorded exceptions supplied by `exceptions`. */
-async function exported(
-    project: (typeof projects)[number],
-    exceptions: () => Promise<Record<string, unknown> | null>,
-) {
-    let value: unknown;
-    // Configuration exports only transform metadata. No native method, CLI or HTTP is invoked.
-    await project.methods.configuration.execute({}, {
-        // The stored configuration only decides whether to write; reading null always captures the export.
-        readResource: (name: string) =>
-            name === "exceptions" ? exceptions() : Promise.resolve(null),
-        writeResource: (
-            _spec: string,
-            _name: string,
-            data: Record<string, unknown>,
-        ) => {
-            value = data;
-            return Promise.resolve({ name: "configuration" });
-        },
-    });
-    return value as { projectId?: number } | undefined;
-}
-
-export async function configuredProject(
-    snapshot: z.infer<typeof Snapshot>,
-    ctx: Context,
-) {
-    // The project id is static configuration, so the match needs no data read; only its exceptions are queried.
-    const matched = [];
-    for (const project of projects) {
-        if (
-            (await exported(project, () => Promise.resolve(null)))
-                ?.projectId === snapshot.id
-        ) {
-            matched.push(project);
-        }
-    }
-    const owner = matched.at(-1);
-    // Maintenance is opt-in: a Project without a source-owned policy module is refused by name.
+/** The source-owned policy of one Project, from `projects.json`. Maintenance is opt-in: any other Project is refused by name. */
+export function configuredProject(snapshot: z.infer<typeof Snapshot>) {
+    const owner = projects.find((project) => project.projectId === snapshot.id);
     if (owner === undefined) {
         throw new Error("project.maintenance_not_configured");
     }
-    const selected = owner
-        ? await exported(owner, async () => {
-            const rows = await ctx.queryData(
-                `modelType == ${
-                    JSON.stringify(owner.type)
-                } && name == "exceptions"`,
-            );
-            return rows.length === 0 ? null : (rows[0] as {
-                attributes: Record<string, unknown>;
-            }).attributes;
-        })
-        : undefined;
-    const project = DependencyProjectSchema.parse(
-        selected && typeof selected === "object"
-            ? Object.fromEntries(
-                Object.entries(selected).filter(([key]) => key !== "schema"),
-            )
-            : selected,
-    );
+    const project = DependencyProjectSchema.parse(owner);
     if (
         repositoryIdentity(project.repository) !==
             repositoryIdentity(snapshot.repository) ||
@@ -167,7 +72,7 @@ export const behavior = {
             arguments: ProjectIntent,
             async execute(raw: z.infer<typeof ProjectIntent>, ctx: Context) {
                 const args = ProjectIntent.parse(raw);
-                const project = await configuredProject(args.project, ctx);
+                const project = configuredProject(args.project);
                 const desired = scheduleReceipt(
                     project,
                     "routine",
@@ -234,7 +139,7 @@ export const behavior = {
                 for (const snapshot of args.projects) {
                     let project: z.infer<typeof DependencyProjectSchema>;
                     try {
-                        project = await configuredProject(snapshot, ctx);
+                        project = configuredProject(snapshot);
                     } catch {
                         skipped.push({
                             project_id: snapshot.id,
@@ -298,10 +203,7 @@ export const behavior = {
             arguments: Envelope,
             async execute(raw: z.infer<typeof Envelope>, ctx: Context) {
                 const args = Envelope.parse(raw);
-                const project = await configuredProject(
-                    args.intent.project,
-                    ctx,
-                );
+                const project = configuredProject(args.intent.project);
                 const urls: string[] = [];
                 for (
                     // Only open groups have pull requests to watch; ended groups keep URLs from older repository names.
@@ -383,7 +285,7 @@ export const behavior = {
                 },
                 ctx: Context,
             ) {
-                const project = await configuredProject(args.project, ctx);
+                const project = configuredProject(args.project);
                 const indexes = await ctx.queryData(
                     `modelName == "orbit-gateway" && name == ${
                         JSON.stringify(

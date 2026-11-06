@@ -100,12 +100,6 @@ The official SSH control socket adds a random suffix below `/tmp/swamp-ssh/<name
 Production commands also need an explicit working directory when sudo changes from the SSH account to a private app account. `sudo -H` changes HOME but leaves the old cwd; GNU find can fail restoring that inaccessible directory. Public argv now uses `env -C <app-home>` before source and runtime preparation.
 Role convergence uses official apply results to avoid restarting matching Reverb inputs. Docker check exposes public compliance while its observed state remains in the execution vault. Prometheus config needs an in-place copy before SIGHUP because replacing a bind-mounted file leaves the running container on the old inode. Could the file resource offer an in-place mode for such mounts?
 
-WireGuard enrollment keeps private keys in Node files. The official exec and debug_exec resources redirect `wg genkey` output and `wg pubkey` input there, since those commands lack file options and SSH exec accepts only literal stdin. Could a WireGuard key resource, or remote stdin/stdout file options on SSH exec, remove these two shell leaves without bringing private keys into run data?
-
-## Node enrollment hub key composition
-
-The pinned file resource accepts content from the worker; it cannot compose a remote private-key file into that content. Node enrollment writes the public tunnel configuration and a mode-0600 sync file through `file`, then uses one `sed` argv to write its private header from the existing key file and one `dd` argv to append the public peers on stdin. `wg syncconf` receives the complete configuration in one call. No private key enters Swamp data or logs. A public-key observation and native assertion verify that applying peers preserved the hub identity. The same composition preserves the joining Node key; its end check requires a real tunnel handshake. Could file support protected remote-file content composition?
-
 ## Caddy publication
 
 The pinned file behavior separates apply and check; check records drift without failing, so a native assertion enforces compliance after reload. A separate pinned SSH connection check rejects the request's wrong host key before cfgmgmt uses the enrolled Node's known_hosts entry. Could file accept the admitted host-key list directly? Could check optionally fail on drift while retaining its state? Validation and reload remain separate bounded SSH argvs. No wrapper joins these operations.
@@ -114,3 +108,11 @@ The pinned file behavior separates apply and check; check records drift without 
 ## Network drift observations
 
 The network parent reads public WireGuard state and DNS state, then uses a pure typed comparison before calling the existing official-resource child. The pinned runtime evaluates behavior definitions and static task inputs before guards. Its CEL checker also rejects a map/null conditional, so the optional DNS policy is an empty-or-one list. Could guarded tasks defer their unused definition expressions, or support nullable typed values? The no-drift proof confirms no WireGuard file or unit changes; no wrapper merges Node actions.
+
+## Nice-to-have: a warm runner for dispatched steps
+
+Pinned Swamp `20261103.000636.0-sha.db3f6373`. `swamp worker connect` starts a new `swamp worker exec-dispatch` process for each dispatched step. The child is the compiled binary and pays a full start: a bare `swamp --version` takes 0.72–0.85 s on the 4-core Swamp Node. A dispatched `command/shell` `true` takes about 1.2 s end to end (1.2–1.6 s wall, about 1.07 s of child CPU on a loaded test host); the same step in process takes 0.08 s. Production run records (at least 6,365 dispatched steps over five hours) show a minimum of 0.83–1.0 s and a median of 1.3–1.8 s for a dispatched step. A data-only step such as `decode` or `result` costs the same, because it is dispatched too.
+
+Measured and ruled out as causes: repo size and repo loading (child CPU 1.063 s with a minimal repo, 1.066 s with a copy of the production code), extension loading (1.067 s against 1.068 s for `command/shell`), the serve-to-worker hand-off (median gap 6–12 ms), serve work per step (0.07–0.09 s CPU), worker CPU (0.003 s per step), datastore size, and per-step report writing (its timing did not change when skipped). A child process per dispatch gives isolation, per-dispatch credentials and process-group kill, so this is the design, not a defect.
+
+Flows with 20 to 70 steps spend most of their run time on this start. `instance.create` has about 48 dispatches on its critical path, which is an estimated 58–65 s of its 85 s. Could the worker keep a warm runner between dispatches, or start the child from a snapshot, while keeping that isolation? Estimated floor: about 0.35 s instead of about 1.3 s. Meanwhile Orbit can put the work of one phase on one Node into fewer, larger steps. Not filed upstream: this is a request, not a bug.

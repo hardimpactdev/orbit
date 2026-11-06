@@ -18,11 +18,22 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        $intent = array_diff_key($operation->input, ['execution_secrets' => true]);
-        $intent['command_deliverables'] = array_values(array_filter(array_map(ValidatedData::object(...), is_array($intent['deliverables']) ? $intent['deliverables'] : []), static fn (array $item): bool => $item['type'] === 'command'));
-        $intent['execution_references_json'] = json_encode($operation->input['execution_secrets'] === [] ? (object) [] : $operation->input['execution_secrets'], JSON_THROW_ON_ERROR);
+        return self::workflowInput($operation->input);
+    }
 
-        return ['intent' => $intent, 'execution_secrets' => $operation->input['execution_secrets']];
+    /**
+     * The input of the check workflows from an admitted check intent. A review round passes the intent of its fix check through here.
+     *
+     * @param  array<string,mixed>  $input
+     * @return array{intent: array<string,mixed>, execution_secrets: mixed}
+     */
+    public static function workflowInput(array $input): array
+    {
+        $intent = array_diff_key($input, ['execution_secrets' => true]);
+        $intent['command_deliverables'] = array_values(array_filter(array_map(ValidatedData::object(...), is_array($intent['deliverables']) ? $intent['deliverables'] : []), static fn (array $item): bool => $item['type'] === 'command'));
+        $intent['execution_references_json'] = json_encode($input['execution_secrets'] === [] ? (object) [] : $input['execution_secrets'], JSON_THROW_ON_ERROR);
+
+        return ['intent' => $intent, 'execution_secrets' => $input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -67,17 +78,8 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
             }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($projected->status->terminal() || $pending) {
-                $check = TaskCheck::query()->findOrFail(ValidatedData::integer($operation->input['check_id']));
-                $ci = is_array($result['ci'] ?? null) ? $result['ci'] : [];
-                $check->update([
-                    'status' => $pending ? 'running' : ($projected->status->value === 'cancelled' ? 'cancelled' : ($projected->status->value === 'failed' ? 'failed' : ($result['outcome'] ?? 'failed'))),
-                    'head_before' => $result['head_before'] ?? '', 'tree_before' => $result['tree_before'] ?? '',
-                    'head_after' => $result['head'] ?? null, 'tree_after' => $result['tree'] ?? null,
-                    'exit_code' => $result['exit_code'] ?? null, 'changed_paths' => $result['changed_paths'] ?? [],
-                    'output' => $result['output'] ?? '', 'failed_step' => $result['failed_step'] ?? null,
-                    'deliverable_evidence' => $result['evidence'] ?? null, 'commit_sha' => $result['commit'] ?? null,
-                    'pushed_at' => $ci['pushed_at'] ?? null, 'finished_at' => $pending ? null : now(),
-                ]);
+                self::record(TaskCheck::query()->findOrFail(ValidatedData::integer($operation->input['check_id'])),
+                    $pending ? 'running' : ($projected->status->value === 'cancelled' ? 'cancelled' : ($projected->status->value === 'failed' ? 'failed' : ($result['outcome'] ?? 'failed'))), $result, $pending);
                 if (is_string($result['subtask_start_commit'] ?? null)) {
                     Task::query()->whereKey($operation->input['subtask'])->whereNull('subtask_start_commit')->update(['subtask_start_commit' => $result['subtask_start_commit']]);
                 }
@@ -87,6 +89,25 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /**
+     * Writes what a check found onto its row. A review round calls this for the check of its fix, as the check operation does for its own.
+     *
+     * @param  array<string,mixed>  $result
+     */
+    public static function record(TaskCheck $check, mixed $status, array $result, bool $pending = false): void
+    {
+        $ci = is_array($result['ci'] ?? null) ? $result['ci'] : [];
+        $check->update([
+            'status' => $status,
+            'head_before' => $result['head_before'] ?? '', 'tree_before' => $result['tree_before'] ?? '',
+            'head_after' => $result['head'] ?? null, 'tree_after' => $result['tree'] ?? null,
+            'exit_code' => $result['exit_code'] ?? null, 'changed_paths' => $result['changed_paths'] ?? [],
+            'output' => $result['output'] ?? '', 'failed_step' => $result['failed_step'] ?? null,
+            'deliverable_evidence' => $result['evidence'] ?? null, 'commit_sha' => $result['commit'] ?? null,
+            'pushed_at' => $ci['pushed_at'] ?? null, 'finished_at' => $pending ? null : now(),
+        ]);
     }
 
     /**

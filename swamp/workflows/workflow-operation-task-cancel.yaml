@@ -53,6 +53,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
         intent: '${{ inputs.intent.push == null ? {} : inputs.intent.push }}'
         execution_secrets: '${{ inputs.intent.push == null ? {} : {"github_token": inputs.intent.push.github_token} }}'
   - name: Withdraw the Route

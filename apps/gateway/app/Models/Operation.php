@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Operations\OperationStatus;
+use App\Infrastructure\Swamp\NativeRunStepTimes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -90,6 +91,17 @@ final class Operation extends Model
     public function resolveRouteBinding($value, $field = null): ?self
     {
         return self::query()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value)->first();
+    }
+
+    #[\Override]
+    protected static function booted(): void
+    {
+        // Every path that ends an Operation saves its status here, so none leaves a step `running`.
+        self::saving(static function (self $operation): void {
+            if ($operation->isDirty('status') && $operation->status->terminal()) {
+                $operation->state = NativeRunStepTimes::settle($operation->state, $operation->status);
+            }
+        });
     }
 
     /** @return array<string, string> */

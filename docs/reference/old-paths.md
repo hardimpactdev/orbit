@@ -14,9 +14,13 @@ Check this page before you build on something. Each row is code that still runs,
 | Item | Replaced by | Removed at |
 | --- | --- | --- |
 | Recipe image build: `RecipeImageBuilds`, `RecipeImageBuildSteps`, `BuildTaskVmRecipeCommand`, `task-vms:build-*` | The per-host refresh by converge ([stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh)); a recipe build stays only for a new host or a new base OS | Stage 6 |
-| The Project 62 branch of `TaskProvisionIntent` (`proof-reaper` and `ProofReaper` were deleted on 2026-11-06) | Nothing: only the removed `bin/swamp-proof` made Project 62 groups | When no Project 62 group is open |
+| The Project 62 branch of `TaskProvisionIntent` (`proof-reaper` and `ProofReaper` were deleted on 2026-11-06) | Nothing: only the removed `bin/swamp-proof` made Project 62 groups. The `$size` the refresh passes to the same intent stays | When no Project 62 group is open |
 | `bin/e2e-topology` and the per-issue topology of a subtask that declares `topology`, with its virtiofs share of the worktree | The nested fleet ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When no subtask declares a topology |
 
-The Incus build already runs the task VM role phases of Ansible from a stock VM and installs no agent. The UpCloud template build keeps the agent path.
+The provision of a task with a topology carries the converge intent, and its `Converge once` step runs before the nested fleet, so a VM from an older image gets the NFS server, Incus and the seed pool without a new image.
 
-`apps/agent/**` is frozen. Its image-build commands (`image_build`, `image_recipe`) belong to the UpCloud template build and wait for the agent strip. The Incus image build does not call them.
+The admission of a task run mints no GitHub token. The provision clone, the setup steps, a package install and the publish step mint their own when they run ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). Admission holds no token for them.
+
+The Incus build already runs the task VM role phases of Ansible from a stock VM and installs no agent.
+
+`apps/agent/**` is being stripped to an observer: commands that nothing calls leave in small pull requests, and the rest leave with their Swamp ports.

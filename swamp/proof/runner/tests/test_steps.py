@@ -39,6 +39,16 @@ class StepTest(unittest.TestCase):
         port = int(self.run.names['port'])
         self.assertEqual(self.fleet.listeners['app-dev'], {('tcp', 4, port), ('udp', 4, port)})
 
+    def test_ufw_rule_comment_is_the_text_of_the_row_and_the_default_is_the_name(self):
+        self.assertEqual(steps.listener(self.run, {'on': 'app-dev', 'ports': ['port']}), [])
+        port = self.run.names['port']
+        self.assertEqual(steps.ufw_rule(self.run, {'as': 'drifted', 'on': 'app-dev', 'action': 'allow', 'proto': 'tcp', 'port': port, 'from': '10.98.0.9',
+                                                   'comment': 'orbit drift probe', 'above': 'proof-network'}), [])
+        self.assertEqual(self.run.rules['drifted']['comment'], 'orbit drift probe')
+        self.assertIn((f'{port}/tcp', 'ALLOW', '10.98.0.9', 'orbit drift probe'), self.fleet.ufw['app-dev'])
+        with self.assertRaises(steps.Infra):
+            steps.ufw_rule(self.run, {'on': 'app-dev', 'action': 'allow', 'proto': 'tcp', 'port': port, 'comment': "it's"})
+
     def test_listener_block_binds_consecutive_ports_and_the_names(self):
         self.assertEqual(steps.listener(self.run, {'on': 'app-dev', 'proto': 'tcp', 'block': {'as': 'range', 'size': 5}}), [])
         low = int(self.run.names['range.lo'])
@@ -227,6 +237,80 @@ class StepTest(unittest.TestCase):
         self.fleet.records.extend([{'port': '80', 'status': 'active'}, {'port': '81', 'status': 'active'}, {'port': '82', 'status': 'active'}])
         args = {'list': 'firewall:list', 'node': 'app-dev', 'where': {'port': ['80', '81'], 'status': 'active'}, 'count': 2}
         self.assertEqual(steps.record(self.run, args), [])
+
+    def list_nodes(self):
+        """The answer of `firewall:list --managed --live` for two Nodes."""
+        self.fleet.list_nodes = [
+            {'node_id': 211, 'node': 'app-dev', 'rules': [{'port': '80', 'source': '10.0.0.1', 'match': 'exact'}, {'port': '81', 'source': 'any', 'match': 'drift'}],
+             'managed': [{'name': 'orbit:wireguard-members', 'role': None}, {'name': 'orbit:app-dev', 'role': 'app-dev'}],
+             'live': {'backend_status': 'active', 'possibly_outdated': False, 'observed_at': '2026-11-06T10:00:00Z', 'unmatched': [{'port': '9', 'match': 'unmanaged'}]}},
+            {'node_id': 212, 'node': 'app-prod', 'rules': [{'port': '80', 'source': 'any', 'match': 'exact'}],
+             'live': {'backend_status': 'active', 'possibly_outdated': True, 'observed_at': None, 'unmatched': []}}]
+
+    def test_record_without_a_node_reads_every_node_and_the_name_of_each_is_a_key(self):
+        self.list_nodes()
+        base = {'list': 'firewall:list'}
+        self.assertEqual(steps.record(self.run, {**base, 'where': {'port': '80'}, 'count': 2}), [])
+        self.assertEqual(steps.record(self.run, {**base, 'where': {'node': 'app-dev', 'port': '80', 'match': 'exact'}, 'count': 1}), [])
+        self.assertEqual(steps.record(self.run, {**base, 'where': {}, 'count': 0}), ['record firewall:list all Nodes rules: 3 rows match {}, expected 0'])
+        self.assertEqual(steps.record(self.run, {**base, 'node': 'app-prod', 'where': {}, 'count': 1}), [])
+        self.assertEqual(self.fleet.cli_calls[-1], ['firewall:list', '--node=212'])
+
+    def test_record_reads_the_section_it_names_and_passes_args_to_the_call(self):
+        self.list_nodes()
+        base = {'list': 'firewall:list', 'args': ['--managed', '--live']}
+        self.assertEqual(steps.record(self.run, {**base, 'node': 'app-dev', 'section': 'managed', 'where': {'name': 'orbit:wireguard-members', 'role': None}, 'count': 1}), [])
+        self.assertEqual(steps.record(self.run, {**base, 'node': 'app-dev', 'section': 'unmatched', 'where': {'port': '9', 'match': 'unmanaged'}, 'count': 1}), [])
+        self.assertEqual(steps.record(self.run, {**base, 'node': 'app-dev', 'section': 'live', 'where': {'backend_status': 'active', 'possibly_outdated': False, 'observed_at': 'present'}, 'count': 1}), [])
+        self.assertEqual(steps.record(self.run, {**base, 'node': 'app-prod', 'section': 'live', 'where': {'possibly_outdated': True, 'observed_at': 'present'}, 'count': 1}),
+                         ['record firewall:list app-prod live: 0 rows match {"observed_at": "present", "possibly_outdated": true}, expected 1'])
+        self.assertEqual(self.fleet.cli_calls[0], ['firewall:list', '--managed', '--live', '--node=211'])
+
+    def test_record_min_is_a_lower_bound_and_order_is_a_sequence_with_gaps(self):
+        self.list_nodes()
+        base = {'list': 'firewall:list', 'node': 'app-dev', 'where': {}}
+        self.assertEqual(steps.record(self.run, {**base, 'min': 2}), [])
+        self.assertIn('expected at least 3', steps.record(self.run, {**base, 'min': 3})[0])
+        self.assertEqual(steps.record(self.run, {**base, 'order': [{'port': '80'}, {'port': '81'}]}), [])
+        self.assertIn('comes before', steps.record(self.run, {**base, 'order': [{'port': '81'}, {'port': '80'}]})[0])
+        self.assertIn('no row matches', steps.record(self.run, {**base, 'order': [{'port': '80'}, {'port': '99'}]})[0])
+
+    def test_record_refuses_a_call_without_an_expectation_and_an_unknown_section(self):
+        for args in ({'where': {}}, {'where': {}, 'count': 1, 'section': 'all'}):
+            with self.assertRaises(steps.Infra):
+                steps.record(self.run, {'list': 'firewall:list', 'node': 'app-dev', **args})
+
+    def test_agent_report_waits_once_for_the_agents_of_the_listed_nodes(self):
+        waits = []
+        self.run.sleep = waits.append
+        self.assertEqual(steps.agent_report(self.run, {'node': ['app-dev', 'app-prod']}), [])
+        self.assertEqual(waits, [steps.REPORT_SECONDS])
+        with self.assertRaises(steps.Infra):
+            steps.agent_report(self.run, {'node': ['app-dev', 'nowhere']})
+
+    def test_node_down_stops_the_agent_and_ssh_of_one_node(self):
+        waits = []
+        self.run.sleep = waits.append
+        self.assertEqual(steps.node_down(self.run, {'node': 'app-dev'}), [])
+        self.assertEqual((self.fleet.down, waits), ({'app-dev'}, [steps.OFFLINE_SECONDS]))
+        with self.assertRaises(steps.Infra):
+            steps.node_down(self.run, {'node': ['app-dev', 'app-prod']})
+
+    def test_node_access_remove_names_both_nodes_by_id(self):
+        self.assertEqual(steps.node_access_remove(self.run, {'consumer': 'app-prod', 'serving': 'app-dev'}), [])
+        self.assertEqual(self.fleet.access_removed, [['node:access:remove', '212', '211', '--force']])
+        with self.assertRaises(steps.Infra):
+            steps.node_access_remove(self.run, {'consumer': 'app-prod', 'serving': 'nowhere'})
+
+    def test_cli_as_runs_the_call_as_that_node_and_gateway_is_the_default_caller(self):
+        steps.cli(self.run, {'run': ['node:list'], 'as': 'app-prod'})
+        steps.cli(self.run, {'run': ['node:list'], 'as': 'gateway'})
+        steps.cli(self.run, {'run': ['node:list']})
+        self.assertEqual(self.fleet.callers, ['app-prod', None, None])
+        with self.assertRaises(steps.Infra):
+            steps.cli(self.run, {'run': ['node:list'], 'as': 'nowhere'})
+        with self.assertRaises(steps.NotBuilt):
+            steps.cli(self.run, {'run': ['node:list'], 'as': 'app-prod', 'tty': [{'see': 'x', 'send': '1'}]})
 
     def test_ufw_rows_in_order_once_each_and_absent(self):
         port = self.blocked_port()

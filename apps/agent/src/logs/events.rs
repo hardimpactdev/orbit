@@ -40,13 +40,14 @@ fn frame_overhead(channel: &str, stream: &str) -> Result<usize, serde_json::Erro
     let probe = frame(
         channel,
         LOG_EVENT,
-        json!({"stream": stream, "sequence": u64::MAX, "lines": [], "dropped": u64::MAX, "skipped": u64::MAX}),
+        json!({"stream": stream, "sequence": u64::MAX, "lines": [], "dropped": u64::MAX, "skipped": u64::MAX, "first_done": true}),
     );
     Ok(serde_json::to_vec(&probe)?.len())
 }
 
 /// Splits one batch into `client-log` events whose frames stay within the Pusher limit. `dropped` and
-/// `skipped` go in the first event. A line that cannot fit even alone is cut further.
+/// `skipped` go in the first event. A line that cannot fit even alone is cut further. With `first_done`, the
+/// last event of the batch says that the stream's first lines are complete, also when the batch is empty.
 pub fn log_frames(
     channel: &str,
     stream: &str,
@@ -54,6 +55,7 @@ pub fn log_frames(
     lines: Vec<String>,
     dropped: u64,
     skipped: u64,
+    first_done: bool,
 ) -> Result<Vec<ClientFrame>, serde_json::Error> {
     let overhead = frame_overhead(channel, stream)?;
     let budget = PUSHER_FRAME_LIMIT.saturating_sub(overhead);
@@ -79,6 +81,7 @@ pub fn log_frames(
         parts.push(current);
     }
     let mut frames = Vec::with_capacity(parts.len());
+    let last = parts.len() - 1;
     for (index, lines) in parts.into_iter().enumerate() {
         *sequence += 1;
         let (dropped, skipped) = if index == 0 {
@@ -86,11 +89,11 @@ pub fn log_frames(
         } else {
             (0, 0)
         };
-        let event = frame(
-            channel,
-            LOG_EVENT,
-            json!({"stream": stream, "sequence": *sequence, "lines": lines, "dropped": dropped, "skipped": skipped}),
-        );
+        let mut data = json!({"stream": stream, "sequence": *sequence, "lines": lines, "dropped": dropped, "skipped": skipped});
+        if first_done && index == last {
+            data["first_done"] = json!(true);
+        }
+        let event = frame(channel, LOG_EVENT, data);
         debug_assert!(serde_json::to_vec(&event)?.len() <= PUSHER_FRAME_LIMIT);
         frames.push(event);
     }
@@ -136,6 +139,7 @@ mod tests {
             vec!["a".into(), "b".into()],
             3,
             4,
+            false,
         )
         .unwrap();
         assert_eq!(frames.len(), 1);
@@ -156,7 +160,16 @@ mod tests {
             .chain(std::iter::once("x".repeat(8192)))
             .chain(std::iter::once("\u{1}".repeat(8000)))
             .collect();
-        let frames = log_frames(CHANNEL, &stream(), &mut sequence, lines.clone(), 9, 10).unwrap();
+        let frames = log_frames(
+            CHANNEL,
+            &stream(),
+            &mut sequence,
+            lines.clone(),
+            9,
+            10,
+            false,
+        )
+        .unwrap();
         assert!(frames.len() > 5);
         let mut seen = Vec::new();
         for (index, frame) in frames.iter().enumerate() {
@@ -183,8 +196,16 @@ mod tests {
             assert!(line.len() > 8180);
             assert_eq!(cut_line(&line, MAX_LINE_BYTES), line);
             let mut sequence = 0;
-            let frames =
-                log_frames(CHANNEL, &stream(), &mut sequence, vec![line.clone()], 0, 0).unwrap();
+            let frames = log_frames(
+                CHANNEL,
+                &stream(),
+                &mut sequence,
+                vec![line.clone()],
+                0,
+                0,
+                false,
+            )
+            .unwrap();
             assert_eq!(frames.len(), 1);
             assert_eq!(frames[0].data["lines"], json!([line]));
             assert!(serde_json::to_vec(&frames[0]).unwrap().len() <= PUSHER_FRAME_LIMIT);
@@ -199,5 +220,37 @@ mod tests {
             end.data,
             json!({"stream": stream(), "reason": "source_unavailable"})
         );
+    }
+
+    #[test]
+    fn only_the_last_event_of_the_first_batch_says_it_is_done() {
+        let mut sequence = 0;
+        let big = "x".repeat(40 * 1024);
+        let frames = log_frames(
+            CHANNEL,
+            &stream(),
+            &mut sequence,
+            vec![big.clone(), big.clone(), big],
+            0,
+            0,
+            true,
+        )
+        .unwrap();
+        assert!(frames.len() > 1);
+        let done: Vec<bool> = frames
+            .iter()
+            .map(|f| f.data["first_done"] == true)
+            .collect();
+        assert_eq!(done.iter().filter(|d| **d).count(), 1);
+        assert!(done.last().copied().unwrap());
+    }
+
+    #[test]
+    fn an_empty_first_batch_is_one_event_that_says_it_is_done() {
+        let mut sequence = 0;
+        let frames = log_frames(CHANNEL, &stream(), &mut sequence, vec![], 0, 0, true).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].data["lines"], serde_json::json!([]));
+        assert_eq!(frames[0].data["first_done"], true);
     }
 }

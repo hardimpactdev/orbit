@@ -10,8 +10,11 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => SwampNodeFixture::ensure());
 
 it('captures canonical exporter and service firewall commands without changing current tuples', function (bool $enabled, bool $fpm): void {
     Http::preventStrayRequests();

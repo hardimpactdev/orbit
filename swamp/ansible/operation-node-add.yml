@@ -1,0 +1,303 @@
+---
+# Node enrollment on the Node. One tagged part per Swamp phase; `intent` is the Gateway's admitted intent.
+- name: Pin the new Node for later operations
+  hosts: controller
+  tags: [baseline]
+  tasks:
+    - name: Pin the host key of the new Node
+      ansible.builtin.known_hosts:
+        path: "{{ intent.known_hosts_path }}"
+        name: "{{ item }}"
+        key: "{{ item }} {{ observed.host_key }}"
+        state: present
+      loop:
+        - "{{ intent.bootstrap.host if intent.bootstrap.port == 22 else '[' ~ intent.bootstrap.host ~ ']:' ~ intent.bootstrap.port }}"
+        - "{{ intent.address }}"
+- name: Set up the machine
+  hosts: bootstrap
+  tags: [baseline]
+  become: "{{ intent.bootstrap.user != 'root' }}"
+  tasks:
+    - name: Authorize the Swamp control key
+      ansible.builtin.lineinfile:
+        path: "{{ observed.bootstrap_authorized_keys }}"
+        line: "{{ intent.identity.public_key }}"
+        create: false
+    - name: Install the base packages
+      ansible.builtin.apt:
+        name: "{{ intent.packages }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        lock_timeout: 300
+    - name: Create the managed account
+      ansible.builtin.user:
+        name: "{{ intent.managed_user }}"
+        shell: /bin/bash
+        create_home: true
+        state: present
+      register: account
+    - name: Publish the sudo rule
+      ansible.builtin.copy:
+        dest: "{{ intent.sudo.path }}"
+        content: "{{ intent.sudo.content }}"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+    - name: Create the Orbit key folder
+      ansible.builtin.file:
+        path: "{{ account.home }}/.ssh"
+        state: directory
+        owner: "{{ intent.managed_user }}"
+        group: "{{ account.group }}"
+        mode: "0700"
+    - name: Write the Orbit keys
+      ansible.builtin.lineinfile:
+        path: "{{ account.home }}/.ssh/authorized_keys"
+        line: "{{ item }}"
+        create: true
+        owner: "{{ intent.managed_user }}"
+        group: "{{ account.group }}"
+        mode: "0600"
+      loop: "{{ intent.authorized_keys }}"
+      loop_control: { label: "{{ item.split(' ')[0] }}" }
+    - name: Open public recovery SSH
+      ansible.builtin.command: { argv: "{{ intent.public_ssh_argv }}" }
+      register: recovery
+      changed_when: recovery.stdout is not search('Skipping')
+    - name: Read the firewall state
+      ansible.builtin.command: ufw status
+      register: firewall
+      changed_when: false
+    - name: Enable the firewall
+      when: firewall.stdout is not search('Status. active')
+      ansible.builtin.command: ufw --force enable
+      changed_when: true
+- name: Set up the tunnel
+  hosts: node
+  tags: [tunnel]
+  become: "{{ intent.bootstrap.user != 'root' }}"
+  vars: { net: "{{ intent.network }}" }
+  tasks:
+    - name: Create the WireGuard folder
+      ansible.builtin.file: { path: /etc/wireguard, state: directory, owner: root, group: root, mode: "0700" }
+    - name: Read the WireGuard key file
+      ansible.builtin.stat: { path: "{{ net.private_key_file }}" }
+      register: tunnel_key
+    - name: Create the WireGuard key
+      when: not tunnel_key.stat.exists or tunnel_key.stat.size == 0
+      ansible.builtin.shell: umask 077 && wg genkey > {{ net.private_key_file | quote }}
+      changed_when: true
+    - name: Read the WireGuard public key
+      ansible.builtin.shell: wg pubkey < {{ net.private_key_file | quote }}
+      register: tunnel_public_key
+      changed_when: false
+    - name: Require a unique tunnel key
+      ansible.builtin.assert:
+        that:
+          - tunnel_public_key.stdout | trim is match('^[A-Za-z0-9+/]{43}=$')
+          - tunnel_public_key.stdout | trim not in net.other_public_keys
+          - net.required_public_key is none or tunnel_public_key.stdout | trim == net.required_public_key
+        fail_msg: The tunnel key must belong to this Node, and an existing hub must retain its peer-facing key.
+        quiet: true
+    - name: Write the tunnel files
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: "0600"
+        # The peer file is rewritten by the peer sync below; a rerun keeps what it holds.
+        force: "{{ item.content | length > 0 }}"
+      loop: "{{ net.files }}"
+      loop_control: { label: "{{ item.path }}" }
+    - name: Enable hub forwarding
+      when: net.is_hub
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-orbit-forwarding.conf
+        content: "net.ipv4.ip_forward = 1\n"
+        owner: root
+        group: root
+        mode: "0644"
+      register: forwarding
+    - name: Apply hub forwarding
+      when: net.is_hub and forwarding is changed
+      ansible.builtin.command: sysctl -w net.ipv4.ip_forward=1
+      changed_when: true
+    - name: Start the tunnel
+      ansible.builtin.systemd: { name: wg-quick@orbit.service, state: started, enabled: true }
+    - name: Read the tunnel addresses
+      ansible.builtin.command: ip -4 -o address show dev orbit
+      register: tunnel_addresses
+      changed_when: false
+    - name: Set the tunnel address
+      when: (' ' ~ net.address ~ ' ') not in tunnel_addresses.stdout
+      ansible.builtin.command: ip address replace {{ net.address | quote }} dev orbit
+      changed_when: true
+    - name: Remove the retired address
+      when: net.retired_address is not none and (' ' ~ net.retired_address ~ ' ') in tunnel_addresses.stdout
+      ansible.builtin.command: ip address del {{ net.retired_address | quote }} dev orbit
+      changed_when: true
+    - name: Apply the tunnel peers
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          umask 077
+          before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
+          { printf '[Interface]\nPrivateKey = '; cat {{ net.private_key_file | quote }}; cat; } > {{ net.sync_path | quote }}
+          wg syncconf orbit {{ net.sync_path | quote }}
+          [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
+        stdin: "{{ net.sync_body }}"
+        stdin_add_newline: false
+      register: tunnel_peers
+      changed_when: tunnel_peers.stdout is search('changed')
+    - name: Trust WireGuard members
+      ansible.builtin.command: { argv: "{{ net.trust_argv }}" }
+      register: trust
+      changed_when: trust.stdout is not search('Skipping')
+- name: Add the peer on the hub
+  hosts: hubs
+  tags: [hub]
+  become: true
+  vars:
+    hub: "{{ intent.network.hubs[hub_index] }}"
+    files: "{{ hub_files[hub_index] }}"
+  tasks:
+    - name: Create the hub folders
+      ansible.builtin.file: { path: /etc/wireguard/orbit-peers.d, state: directory, owner: root, group: root, mode: "0700" }
+    - name: Write the hub configuration
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content | replace('@KEY@', node_public_key) }}"
+        owner: root
+        group: root
+        mode: "0600"
+        force: "{{ item.content | length > 0 }}"
+      loop: "{{ files }}"
+      loop_control: { label: "{{ item.path }}" }
+    - name: Apply the hub peers
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          umask 077
+          before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
+          { printf '[Interface]\nPrivateKey = '; cat {{ hub.private_key_file | quote }}; cat; } > {{ hub.sync_path | quote }}
+          wg syncconf orbit {{ hub.sync_path | quote }}
+          [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
+        stdin: "{{ hub.sync_body | replace('@KEY@', node_public_key) }}"
+        stdin_add_newline: false
+      register: hub_peers
+      changed_when: hub_peers.stdout is search('changed')
+    - name: Read the hub public key
+      ansible.builtin.command: wg show orbit public-key
+      register: hub_key
+      changed_when: false
+    - name: Check the hub key
+      ansible.builtin.assert:
+        that: hub_key.stdout | trim == hub.public_key
+        fail_msg: Applying peers must preserve the hub public key.
+        quiet: true
+- name: Install the Node agent
+  hosts: node
+  tags: [agent]
+  become: "{{ intent.bootstrap.user != 'root' }}"
+  vars: { agent: "{{ intent.agent }}" }
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd: { daemon_reload: true }
+  tasks:
+    - name: Install the agent binary
+      ansible.builtin.get_url:
+        url: "{{ agent.url }}"
+        dest: /usr/local/bin/orbit-agent
+        checksum: "sha256:{{ agent.sha256 }}"
+        owner: root
+        group: root
+        mode: "0755"
+      register: agent_binary
+    - name: Create the observer folders
+      ansible.builtin.file: { path: /etc/orbit/agent, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Write the observer configuration
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ agent.files }}"
+      loop_control: { label: "{{ item.path }}" }
+      register: agent_files
+    - name: Write the observer secret
+      ansible.builtin.copy:
+        dest: /etc/orbit/agent/secret
+        content: "{{ secrets.agent_secret }}"
+        owner: root
+        group: root
+        mode: "0600"
+      register: agent_secret
+      no_log: true
+    - name: Create the observer group
+      ansible.builtin.group: { name: "{{ agent.environment_group }}", system: true, state: present }
+    - name: Write the observer unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-agent.service
+        content: "{{ agent.unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: agent_unit
+      notify: Reload units
+    - { name: Reload units before the agent starts, ansible.builtin.meta: flush_handlers }
+    - name: Start the Node agent
+      ansible.builtin.systemd:
+        name: orbit-agent.service
+        enabled: true
+        state: >-
+          {{ 'restarted' if agent_binary is changed or agent_files is changed
+          or agent_secret is changed or agent_unit is changed else 'started' }}
+- name: Configure the private DNS backends
+  hosts: dns
+  tags: [dns]
+  become: true
+  tasks:
+    - name: Configure the DNS backend
+      ansible.builtin.copy:
+        dest: /etc/dnsmasq.d/orbit-vpn.conf
+        content: "{{ intent.private_dns[dns_index].backend }}"
+        owner: root
+        group: root
+        mode: "0644"
+- name: Check the Node state
+  hosts: managed_linux
+  tags: [check]
+  become: true
+  vars: { agent: "{{ intent.agent }}" }
+  tasks:
+    - name: Read the services
+      ansible.builtin.service_facts:
+    - name: Read the agent binary
+      ansible.builtin.stat: { path: /usr/local/bin/orbit-agent, checksum_algorithm: sha256 }
+      register: agent_binary
+    - name: Read the observer secret
+      ansible.builtin.stat: { path: /etc/orbit/agent/secret, checksum_algorithm: sha256 }
+      register: agent_secret
+    - name: Check the agent files
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['orbit-agent.service'].state == 'running'
+          - agent_binary.stat.checksum == agent.sha256
+          - agent_secret.stat.checksum == secrets.agent_secret | hash('sha256')
+          - agent_secret.stat.mode == '0600'
+        quiet: true
+    - name: Read the tunnel handshakes
+      when: not intent.network.is_hub
+      ansible.builtin.command: wg show orbit latest-handshakes
+      register: handshakes
+      changed_when: false
+      # The first packet over the tunnel starts the handshake; wait for it for 20 s at most.
+      until: handshakes.stdout_lines | select('search', '\t[1-9][0-9]*$') | list | length > 0
+      retries: 10
+      delay: 2

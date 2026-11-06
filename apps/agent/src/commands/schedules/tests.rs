@@ -81,9 +81,6 @@ esac
     fn install(&self) -> Result<Done, ScheduleError> {
         install_at(&self.host, &self.input)
     }
-    fn inspect(&self) -> serde_json::Value {
-        serde_json::to_value(doctor::inspect_at(&self.host, &self.input).unwrap()).unwrap()
-    }
     fn files(&self) -> Vec<Vec<u8>> {
         let p = self.paths();
         [&p.script, &p.service, &p.timer]
@@ -160,54 +157,12 @@ fn rejects_invalid_intent_and_foreign_artifacts_before_mutation() {
 }
 
 #[test]
-fn installs_repeatedly_and_doctor_observes_each_distinct_drift_without_changes() {
+fn installs_repeatedly_without_changing_files() {
     let fixture = Fixture::new();
     fixture.install().unwrap();
     let before = fixture.files();
     fixture.install().unwrap();
     assert_eq!(fixture.files(), before);
-    assert!(fixture
-        .inspect()
-        .as_object()
-        .unwrap()
-        .values()
-        .all(|v| v == true));
-    let paths = fixture.paths();
-    for (path, old, new, field) in [
-        (
-            &paths.service,
-            "User=",
-            "OtherUser=",
-            "execution_context_match",
-        ),
-        (
-            &paths.service,
-            "ExecStopPost=",
-            "OtherStop=",
-            "completion_callback_match",
-        ),
-        (
-            &paths.timer,
-            "OnCalendar=daily",
-            "OnCalendar=hourly",
-            "calendar_match",
-        ),
-    ] {
-        let original = fs::read_to_string(path).unwrap();
-        fs::write(path, original.replace(old, new)).unwrap();
-        let drifted = fixture.files();
-        let result = fixture.inspect();
-        assert_eq!(result[field], false, "{field}");
-        assert_eq!(result["specification_match"], false);
-        assert_eq!(fixture.files(), drifted);
-        fs::write(path, original).unwrap();
-    }
-    fs::write(fixture.host.root.join("active"), "inactive").unwrap();
-    assert_eq!(fixture.inspect()["timer_state_match"], false);
-    fs::set_permissions(&paths.script, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(fixture.inspect()["permissions_match"], false);
-    fs::remove_file(&paths.script).unwrap();
-    assert_eq!(fixture.inspect()["artifacts_present"], false);
 }
 
 #[test]
@@ -240,38 +195,6 @@ fn first_install_failure_removes_its_files_and_reports_failed_rollback() {
         .all(|p| !p.exists()));
     fixture.fail("reload");
     assert_eq!(fixture.install(), Err(ScheduleError::RollbackFailed {}));
-}
-
-#[test]
-fn disabled_install_and_activation_restore_the_previous_state_on_failure() {
-    let mut fixture = Fixture::new();
-    fixture.input.desired = "disabled".into();
-    fixture.install().unwrap();
-    assert!(fixture
-        .inspect()
-        .as_object()
-        .unwrap()
-        .values()
-        .all(|v| v == true));
-    fixture.fail("enable");
-    assert_eq!(
-        activate_at(&fixture.host, &fixture.target()),
-        Err(failed("activate"))
-    );
-    assert_eq!(
-        unit_state(&fixture.host, "is-active", &fixture.paths().timer_unit),
-        "inactive"
-    );
-    fs::remove_file(fixture.host.root.join("fail-enable")).unwrap();
-    activate_at(&fixture.host, &fixture.target()).unwrap();
-    activate_at(&fixture.host, &fixture.target()).unwrap();
-    fixture.input.desired = "enabled".into();
-    assert!(fixture
-        .inspect()
-        .as_object()
-        .unwrap()
-        .values()
-        .all(|v| v == true));
 }
 
 #[test]
@@ -484,32 +407,7 @@ fn ownership_read_errors_are_not_treated_as_absence_and_symlinks_are_refused() {
 }
 
 #[test]
-fn orphan_scan_is_sorted_deduplicated_and_ignores_other_files_and_links() {
-    let fixture = Fixture::new();
-    fixture.install().unwrap();
-    let second = "123e4567-e89b-42d3-a456-426614174001";
-    let third = "123e4567-e89b-42d3-a456-426614174002";
-    fs::write(fixture.host.paths(second).unwrap().service, "orphan").unwrap();
-    symlink("missing", fixture.host.paths(third).unwrap().script).unwrap();
-    fs::write(
-        fixture.host.path("/etc/orbit/schedules/invalid.sh"),
-        "foreign",
-    )
-    .unwrap();
-    let input = serde_json::from_value(serde_json::json!({"known_ids": []})).unwrap();
-    assert_eq!(
-        doctor::orphans_at(&fixture.host, &input).unwrap().ids,
-        [ID, second]
-    );
-    let input = serde_json::from_value(serde_json::json!({"known_ids": [ID]})).unwrap();
-    assert_eq!(
-        doctor::orphans_at(&fixture.host, &input).unwrap().ids,
-        [second]
-    );
-}
-
-#[test]
-#[ignore = "invoked by the traversal test with root privileges"]
+#[ignore = "invoked by the root test with root privileges"]
 fn traversal_as_root_helper() {
     let root = PathBuf::from(std::env::var("ORBIT_SCHEDULE_FIXTURE").unwrap());
     let input: InstallInput =
@@ -523,23 +421,7 @@ fn traversal_as_root_helper() {
     };
     install_at(&host, &input).unwrap();
     let paths = host.paths(ID).unwrap();
-    let before = [&paths.script, &paths.service, &paths.timer].map(|p| fs::read(p).unwrap());
     let parent = host.path("/etc/orbit");
-    fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
-    let inspect =
-        |host: &Host| serde_json::to_value(doctor::inspect_at(host, &input).unwrap()).unwrap();
-    assert_eq!(inspect(&host)["permissions_match"], false);
-    assert_eq!(fs::metadata(&parent).unwrap().mode() & 0o777, 0o700);
-    fs::set_permissions(&parent, fs::Permissions::from_mode(0o711)).unwrap();
-    assert!(inspect(&host)
-        .as_object()
-        .unwrap()
-        .values()
-        .all(|v| v == true));
-    assert_eq!(
-        [&paths.script, &paths.service, &paths.timer].map(|p| fs::read(p).unwrap()),
-        before
-    );
     assert!(
         runtime::project_command(&host, ID).is_err(),
         "root never executes project code"
@@ -560,7 +442,7 @@ fn traversal_as_root_helper() {
 }
 
 #[test]
-fn doctor_checks_real_runtime_user_traversal_without_repairing_it() {
+fn root_never_executes_project_code() {
     let fixture = Fixture::new();
     let input = &fixture.input;
     fs::write(fixture.host.root.join("input.json"), serde_json::to_vec(&serde_json::json!({

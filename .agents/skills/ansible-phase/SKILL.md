@@ -34,7 +34,7 @@ The `node.role_add` flow provides these shared parts:
 - Write every task as an end state, so a rerun is safe. A rerun of a finished phase must report zero changes.
 - Use built-in modules first: `apt`, `copy`, `file`, `systemd`, `get_url`, `unarchive`, `user`, `group`, `lineinfile`. Use pinned collections next: `community.docker`, `community.general`. Use `command` only for a tool without a module, and set `changed_when`.
 - Restart or reload only on change: register the result or use a handler. Validate a config before it replaces the old one (`copy` with `validate:`).
-- Use `until` with `retries` only to wait for a service you just started to become ready, with a fixed `delay`. The phase command starts with a literal `timeout`, and the PR states the retries and delay. Never retry a failed action. A failed task fails the phase step, and the next attempt is a new run of the whole command.
+- Use `until` with `retries` to wait for a service you just started to become ready, or to retry a task that fails on a transient external error (a 503 from `snapshot.ubuntu.com` for a package or an index), with a fixed `delay`. Prefer the module's own option, such as `update_cache_retries` of `apt`, which backs off up to its maximum delay. The phase command starts with a literal `timeout`, and the PR states the retries and the delay, or the module's retries and maximum delay. Never retry any other failed action, and never with a shell loop. A failed task fails the phase step, and the next attempt is a new run of the whole command.
 - Keep work on several Nodes in one play, so Ansible runs the Nodes in parallel.
 - The last phase, `check`, proves the end state: it reads the state (`service_facts`, `package_facts`, a version command) and asserts it. Its Swamp step is the end check the Gateway reads.
 
@@ -59,6 +59,12 @@ The `node.role_add` flow provides these shared parts:
 - Ansible templates preserve regex backslashes. Use folded YAML scalars with one backslash per regex escape; doubling them can silently match nothing. Exercise damaged state through Ansible itself, including the indices used for removal.
 
 - A dedicated FPM pool is a fragment: its process-manager settings can live in the master’s local include. Validate a candidate full master with the candidate pool and the live local settings before replacing the pool. Stage candidates only on drift and remove them in an `always` block, so an unchanged phase reports zero changes.
+
+- Name a host differently from every group. Ansible warns when both share a name (`node` as host and as group), and a play then reads ambiguous.
+- `wg syncconf` leaves a random `ListenPort` on a peer that sets none. To report a change only when the peers differ, hash `wg showconf` without its `ListenPort` line before and after.
+- The Gateway holds a placeholder for the host key of a Node it is enrolling. Pin the key the run observed for that Node, never the placeholder in the intent.
+- Check a key or an identity before the first change that depends on it. A uniqueness assertion that runs after the interface is up comes too late.
+- Prove a flow in the production dispatch mode: `swamp serve` with one worker that carries the placement label. A local run without a server ignores placement and hides the per-step dispatch cost that Ansible phases remove.
 
 ## Prove it
 

@@ -24,10 +24,13 @@ final class SwampRoleUnits
 
     private const string Checkout = '/apps/orbit-monorepo-staging/checkout/swamp';
 
-    /** @return array{serve:string,worker:string} */
-    public static function for(string $user, int $nodeId): array
+    /**
+     * @param  string|null  $repository  The `swamp/` folder serve reads; by default the production checkout of the swamp Node.
+     * @return array{serve:string,worker:string}
+     */
+    public static function for(string $user, int $nodeId, ?string $repository = null): array
     {
-        return ['serve' => self::serve($user), 'worker' => self::worker($user, $nodeId)];
+        return ['serve' => self::serve($user, $repository), 'worker' => self::worker($user, $nodeId)];
     }
 
     /** The worker template `orbit-swamp-worker@.service`; each instance reaches serve on loopback. */
@@ -52,10 +55,10 @@ final class SwampRoleUnits
     }
 
     /** `orbit-swamp-serve.service`: serve on loopback from the release checkout, draining up to 5 minutes on stop. */
-    private static function serve(string $user): string
+    private static function serve(string $user, ?string $repository): string
     {
         $home = '/home/'.$user;
-        $repo = $home.self::Checkout;
+        $repo = $repository ?? $home.self::Checkout;
         $config = $home.'/.config/swamp';
 
         return "[Unit]\nDescription=Orbit swamp role serve\nAfter=network-online.target\nWants=network-online.target\n"

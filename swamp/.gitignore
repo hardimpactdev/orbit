@@ -16,8 +16,6 @@
 # Native runtime identities and private local vault configuration.
 /models/swamp/enrollment-token/
 /vaults/local_encryption/
-# Retained native scratch worktree model, not a source definition.
-/models/@swamp/git/git-wt-bump-apps-e2e.yaml
 __pycache__/
 # The release Swamp load renders serve's grants here from config/gateway-workflow-grants.json and config/serve-grants.json.
 /grants/

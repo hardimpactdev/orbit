@@ -8,5 +8,5 @@ use Spatie\LaravelData\Data;
 
 final class StartTaskPrepData extends Data
 {
-    public function __construct(public string $command) {}
+    public function __construct(public string $command, public ?string $brief = null, public ?string $reference = null) {}
 }

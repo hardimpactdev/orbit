@@ -19,7 +19,7 @@ sequenceDiagram
   %%> - the nested fleet runs in it: `nested-gateway`, `nested-app-dev` and `nested-app-prod`, on the network `oe-nested`
   %%> - no other task holds `task_vm:<id>`; a repeated admission returns the open task
   %%> Result:
-  %%> - the task records the VM, its guest Node, its host key pin and the names of the nested VMs
+  %%> - the task records the VM, its guest Node, its host key pin and the names of the nested containers
   %%> - the proof Swamp Club key goes to the vault as a copy; the intent holds only its name
   GW->>SW: Start run, full intent<br/>operation-task-vm-ready-copies
   %%> What it does:
@@ -29,25 +29,33 @@ sequenceDiagram
   %%> - sets the WireGuard key of the nested Gateway's `operator` Node record to null in the database its `.env` names, and takes the operator peer (10.45.0.10) out of the WireGuard files of the Gateway hub
   %%> Why:
   %%> - the key belongs to the VM that made the copies; a task VM that starts them makes its own (stage 2), so the old key works nowhere else
-  SW->>VM: Delete and scan, trim<br/>incus exec · grep, fstrim
+  SW->>VM: Delete and scan<br/>incus exec · grep
   %%> What it does:
-  %%> - deletes the proof Swamp Club key from the nested Gateway, then searches every file of all three guests for it by value, with the key on standard input
-  %%> - runs `fstrim` so the freed blocks of the deleted key are discarded from the disk image that every task VM clones
+  %%> - deletes the proof Swamp Club key (`/home/orbit/.config/swamp/api-key`) from the nested Gateway, then searches every file of all three guests for it by value, with the key on standard input
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - no `fstrim`: a container copy is a btrfs subvolume, not a disk image, so there are no freed blocks of a deleted file to discard
   %%> Why:
   %%> - the seed is cloned into every task VM of the host; a key in it would reach all of them
-  SW->>VM: Stop the nested VMs<br/>incus stop
+  SW->>VM: Stop the nested containers<br/>incus stop
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - the copies are system containers (chart `vm-fleet-build.mmd`); the `_netdev` ordering step is gone with the NFS mount it ordered
   %%> What it does:
   %%> - one clean stop of the three guests, so a copy holds finished file systems
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the Gateway's Horizon unit is ordered after `valkey-server.service`: Horizon drains through its queue and never gets SIGKILL, so when both stopped together the Gateway guest hung at shutdown (op 11691)
   SW->>VM: Copy the guests<br/>incus copy --instance-only
   %%> What it does:
   %%> - deletes the earlier `fleet-ready-*` copies, then copies each guest to `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`, without the `base` snapshot of the earlier fleet
-  %%> - removes the NIC from each copy
+  %%> - removes the NIC and the checkout disk device from each copy, so a copy holds no device of the VM that saved it
   %%> Self-contained:
-  %%> - a copy keeps its `.env`, `storage`, `bootstrap/cache` and database on its own disk and holds no checkout; every task VM mounts its own over NFS (stage 2)
+  %%> - a copy keeps its `.env`, `storage`, `bootstrap/cache` and database on its own disk and holds no checkout; every task VM attaches its own as a disk device (stage 2)
   SW->>VM: Record the network<br/>incus config set
   %%> What it does:
   %%> - stores on each copy `user.ready.subnet`, `user.ready.hwaddr` and `user.ready.ipv4`, its role and the time; a task VM creates the network from the subnet
   %%> - writes `user.ready.complete` last, on all three: a set without it is half made
+  %%> - writes `user.ready.format` with it, the format of the copies; a provision starts a fleet only from copies of the current format
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - container copies carry format 4, so code for containers never starts the VM copies of format 3
   SW->>VM: Boot-check the copies<br/>incus copy, start, exec
   %%> What it does:
   %%> - starts a throwaway copy of each ready copy, waits for its agent, and checks it: no Club key, no file of a checkout but a log, the state on its own disk, no operator key in the record or on the hub
@@ -57,7 +65,7 @@ sequenceDiagram
   %%> - runs after success, failure and cancellation
   SW->>SW: Check the ready copies<br/>assert
   %%> End check:
-  %%> - a native `assert`: no operator key in the record, all three copies stateful and without a NIC
+  %%> - a native `assert`: no operator key in the record, all three copies containers of the current format and without a NIC
   alt every step passes
     SW-->>GW: Run succeeded<br/>ready copies saved
     %%> Result:
@@ -65,7 +73,7 @@ sequenceDiagram
   else a step fails
     SW--xGW: Run failed<br/>failed step
     %%> On the VM:
-    %%> - a failure before the copy step leaves the earlier copies; the nested VMs may stay stopped, so start them before the next run
+    %%> - a failure before the copy step leaves the earlier copies; the nested containers may stay stopped, so start them before the next run
     %%> Result:
     %%> - the task fails with the failed step named; the next run starts again
   end

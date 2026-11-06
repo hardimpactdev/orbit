@@ -22,7 +22,8 @@ final class BootstrapGatewayCommand extends Command
         {--wireguard-endpoint= : Public WireGuard endpoint}
         {--dns-server= : Default DNS server for peers}
         {--domain=orbit : Private DNS domain}
-        {--private-interface= : Optional private underlay interface}';
+        {--private-interface= : Optional private underlay interface}
+        {--operator-ip= : WireGuard address of the machine that operates this Gateway, recorded as the Node "operator"}';
 
     #[\Override]
     protected $description = 'Initialize gateway keys, authority, roles, and VPN settings.';
@@ -60,6 +61,7 @@ final class BootstrapGatewayCommand extends Command
                 privateInterface: $this->stringOption('private-interface'),
                 wireguardPort: $port,
                 name: $this->stringOption('name') ?? 'gateway',
+                operatorIp: $this->stringOption('operator-ip'),
             ));
         } catch (NodeProvisioningException $exception) {
             $this->error(

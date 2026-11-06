@@ -125,7 +125,7 @@ Deno.test("native PR reads reject a different repository before exposing the vau
     }
 });
 
-Deno.test("native schedule reads only the owning project's recorded exceptions, once per project", async () => {
+Deno.test("native schedule takes the Project policy from the data file and reads no model data for it", async () => {
     const f = fixture();
     try {
         const queries: string[] = [];
@@ -150,10 +150,7 @@ Deno.test("native schedule reads only the owning project's recorded exceptions, 
             operations: [],
             admissions: {},
         }, ctx);
-        assertEquals(
-            queries.filter((q) => q.startsWith("modelType")),
-            ['modelType == "@nckrtl/project-launch" && name == "exceptions"'],
-        );
+        assertEquals(queries.filter((q) => q.startsWith("modelType")), []);
     } finally {
         await f.close();
     }

@@ -1,4 +1,4 @@
-"""The loader: the real allow cases file loads, and each kind of mistake is refused with a message that names it."""
+"""The loader: the fixture copy of the allow cases file loads, and each kind of mistake is refused with a message that names it."""
 import sys
 import tempfile
 import unittest
@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import spec
 
 PROOF = Path(__file__).resolve().parents[2]
-CASES = PROOF / 'firewall' / 'allow.cases.yaml'
+CASES = Path(__file__).resolve().parent / 'fixtures' / 'allow.cases.yaml'
+LIST_CASES = Path(__file__).resolve().parent / 'fixtures' / 'list.cases.yaml'
 BATCHES = PROOF / 'batches.yaml'
 
 HEADER = 'command: firewall:allow\nchart: firewall/allow\ntarget: app-dev\nsources: [gateway, app-prod]\n'
@@ -32,7 +33,7 @@ def load_text(text, header=HEADER):
         return spec.load(path, BATCHES)
 
 
-class RealFileTest(unittest.TestCase):
+class FixtureFileTest(unittest.TestCase):
     def setUp(self):
         self.spec = spec.load(CASES, BATCHES)
 
@@ -41,6 +42,13 @@ class RealFileTest(unittest.TestCase):
         self.assertEqual(len(ids), 16)
         self.assertIn('new-restricted-allow', ids)
         self.assertEqual(ids[6:9], ['protocols[tcp]', 'protocols[udp]', 'protocols[both]'])
+
+    def test_the_list_cases_load_and_every_batch_they_name_exists(self):
+        loaded = spec.load(LIST_CASES, BATCHES)
+        names = {step.name for case in loaded.cases for step in case.setup + [item for stage in case.stages for item in stage.act + stage.expect]}
+        self.assertTrue({'record', 'agent_report', 'node_down'} <= names)
+        self.assertIn('node-access-required', [case.id for case in loaded.cases])
+        self.assertIn('no-grant', [item['batch'] for item in spec.plan(loaded)])
 
     def test_batches_run_in_the_order_of_the_batch_file(self):
         plan = spec.plan(self.spec)
@@ -108,6 +116,29 @@ class RefusalTest(unittest.TestCase):
     def test_a_step_with_a_missing_or_unknown_argument(self):
         self.refused(GOOD.replace(', expect: connect', ''), 'lacks')
         self.refused(GOOD.replace('expect: connect', 'expect: connect, speed: 3'), 'unknown keys')
+
+    def test_ufw_delete_stands_in_setup_and_negative_but_not_in_expect(self):
+        delete = '- ufw_delete: {on: app-dev, to: 80/tcp}'
+        self.assertEqual(load_text(GOOD.replace('act:', 'setup:\n      ' + delete + '\n    act:')).cases[0].setup[0].name, 'ufw_delete')
+        self.refused(GOOD.replace('- probe: {from: gateway', delete + '\n      - probe: {from: gateway'), 'not allowed in expect')
+
+    def test_the_setup_steps_of_the_vocabulary_and_the_keys_of_record_and_cli(self):
+        steps = '''
+    setup:
+      - agent_report: {node: [app-dev, app-prod]}
+      - node_down: {node: app-dev}
+    act:
+      - cli: {as: app-prod, run: [firewall:list], expect: {exit: 0}}
+    expect:
+      - record: {list: firewall:list, args: [--live], node: app-dev, section: live, where: {observed_at: present}, min: 1}
+      - record: {list: firewall:list, order: [{port: "1"}, {port: "2"}]}
+'''
+        text = GOOD[:GOOD.index('    act:')] + steps
+        self.assertEqual([step.name for step in load_text(text).cases[0].setup], ['agent_report', 'node_down'])
+        self.refused(text.replace('node_down: {node: app-dev}', 'node_access_remove: {consumer: app-prod}'), 'lacks')
+
+    def test_a_record_without_count_min_or_order_is_refused_at_plan_time(self):
+        self.refused(GOOD.replace('- probe: {from: gateway, to: app-dev, port: "80", expect: connect}', '- record: {list: firewall:list, node: app-dev, where: {}}'), 'needs count, min or order')
 
     def test_a_step_outside_its_section(self):
         self.refused(GOOD.replace('- cli: {run: [firewall:allow, "80"], expect: {exit: 0}}', '- doctor: {node: app-dev, drift: 0}'), 'not allowed in act')

@@ -1,0 +1,27 @@
+---
+# What the nested fleet needs from the task VM's own firewall, which denies incoming and routed traffic by default: the bridge's
+# DHCP and DNS server, the package cache, and the nested VMs' way out. Nothing else is opened; the NFS export has its own rule (task-vm-nfs.yml).
+# intent.nfs is null on an image, which has no nested bridge.
+- name: Allow DHCP, DNS and the package cache from the nested bridge
+  when: intent.nfs is not none
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: "{{ intent.nfs.interface }}"
+    proto: "{{ item.proto }}"
+    to_port: "{{ item.port }}"
+    comment: orbit:task-vm-nested
+  loop:
+    - { proto: udp, port: "67" }
+    - { proto: udp, port: "53" }
+    - { proto: tcp, port: "53" }
+    # The package cache (task-vm-apt-cache.yml): the nested Nodes read the Ubuntu snapshot indexes from it.
+    - { proto: tcp, port: "3142" }
+  loop_control: { label: "{{ item.proto }}/{{ item.port }}" }
+- name: Route the nested bridge out
+  when: intent.nfs is not none
+  community.general.ufw:
+    rule: allow
+    route: true
+    interface_in: "{{ intent.nfs.interface }}"
+    comment: orbit:task-vm-nested

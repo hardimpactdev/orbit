@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.05.2
+version: 2026.11.06.16
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
@@ -11,6 +11,20 @@ additionalFiles:
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
+  - ansible/operation-instance-create.yml
+  - ansible/route-create-site.yml
+  - ansible/route-withdraw.yml
+  - ansible/tasks/address-node.yml
+  - ansible/tasks/route-access.yml
+  - ansible/tasks/instance-create-setup-step.yml
+  - ansible/operation-node-add.yml
+  - ansible/operation-gateway-release.yml
+  - ansible/library/orbit_web_build.py
+  - ansible/tasks/gateway-release-cache.yml
+  - ansible/gateway-bootstrap.yml
+  - ansible/tasks/role-prerequisites.yml
+  - ansible/tasks/gateway-swamp.yml
+  - ansible/tasks/gateway-swamp-remint.yml
   - ansible/tasks/php.yml
   - ansible/tasks/exporter.yml
   - ansible/tasks/exporter-pool.yml
@@ -25,11 +39,18 @@ additionalFiles:
   - ansible/tasks/firewall.yml
   - ansible/tasks/ci.yml
   - ansible/task-vm-role.yml
+  - ansible/task-vm-model-key.yml
+  - ansible/task-vm-runtime.yml
+  - ansible/task-vm-fleet-wait.yml
+  - ansible/tasks/model-key-list.yml
+  - ansible/tasks/model-key-access.yml
   - ansible/shape-gate-requirements.txt
+  - ansible/tasks/task-vm-ready.yml
   - ansible/tasks/task-vm-recipe.yml
   - ansible/tasks/task-vm-software.yml
   - ansible/tasks/task-vm-apt.yml
   - ansible/tasks/task-vm-apt-config.yml
+  - ansible/tasks/task-vm-apt-cache.yml
   - ansible/tasks/task-vm-javascript.yml
   - ansible/tasks/task-vm-rust.yml
   - ansible/tasks/task-vm-swamp.yml
@@ -38,8 +59,11 @@ additionalFiles:
   - ansible/tasks/task-vm-tools.yml
   - ansible/tasks/task-vm-nfs.yml
   - ansible/tasks/task-vm-incus.yml
+  - ansible/tasks/task-vm-nested-firewall.yml
   - ansible/tasks/task-vm-shape-gate.yml
   - ansible/tasks/task-vm-check.yml
+  - ansible/tasks/task-vm-clean.yml
+  - ansible/tasks/task-vm-template-check.yml
   - ansible/requirements.txt
   - ansible/requirements.yml
   - ansible/build_vars.py

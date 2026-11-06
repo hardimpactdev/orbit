@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\GatewayReleases;
 
+use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Operations\DirectOperation;
@@ -17,9 +18,11 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -32,6 +35,8 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
 {
     /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. */
     public const array Steps = [
+        'Write the intent' => ['prepare', 'gateway.release_prepare_failed', false],
+        'Write the playbook input' => ['prepare', 'gateway.release_prepare_failed', false],
         'Build the release' => ['prepare', 'gateway.release_prepare_failed', false],
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Snapshot the database' => ['snapshot', 'gateway.release_snapshot_failed', false],
@@ -132,6 +137,18 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             errorCode: $code,
             message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}."),
         ), $record);
+        if ($code === null) {
+            $id = GatewayReleaseCommit::id($sha);
+            DB::afterCommit(static function () use ($id): void {
+                try {
+                    // Stage 8: the verified release is the fleet's desired state, so its footprint rollout follows.
+                    GatewaySchedule::dispatch(new AdmitFleetRollout);
+                } catch (Throwable $failure) {
+                    // The daily window trigger asks again; a release is never held by it.
+                    Log::warning('The fleet rollout after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
+                }
+            });
+        }
         if ($code === null && $record->trigger === 'deploy') {
             // As the legacy runner: whether this manual deploy pins an older commit decides if automation pauses.
             $recorder->progress($record->refresh(), [...$record->phases, 'newest_green' => app(GatewayReleaseSupersession::class)->check($sha)]);

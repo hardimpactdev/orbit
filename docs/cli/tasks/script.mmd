@@ -21,6 +21,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - group 42 is external and open; child 7 is current and open
   %%> - your Node has an access grant to the workspace Node
+  %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - the script path and arguments are valid literal inputs
   GW->>SW: Start one run<br/>operation-task-script
   %%> Inputs:

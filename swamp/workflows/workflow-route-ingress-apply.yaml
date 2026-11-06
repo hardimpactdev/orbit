@@ -40,7 +40,7 @@ jobs:
             kind: '${{ inputs.kind }}'
             execution_secrets: {}
             intent:
-              control_node_id: 209
+              control_node_id: '${{ inputs.intent.control_node_id }}'
               connection: '${{ inputs.intent.connection }}'
               host_keys: '${{ inputs.intent.host_keys }}'
               rule:

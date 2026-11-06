@@ -62,7 +62,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          {"leaves":"${{ inputs.intent.route_mutations.forward.prepare_certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":209,"connection":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
+          {"leaves":"${{ inputs.intent.route_mutations.forward.prepare_certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}","connection":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: false
@@ -109,7 +109,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -134,7 +134,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -192,7 +192,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           write: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -232,7 +232,7 @@ jobs:
   - name: forward_dns_grace
     forEach:
       item: part
-      in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest
+      in: '${{ inputs.kind != "instance.destroy" && inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest
         != inputs.intent.route_mutations.artifacts.dns[p.after.dns].digest) ? [{}] : [] }}'
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn:
@@ -256,7 +256,7 @@ jobs:
   - name: forward_withdraw_caddy
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes && (inputs.kind != "instance.destroy" || p.withdrawn.caddy != p.prepared.caddy)) }}
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}
@@ -311,7 +311,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          {"leaves":"${{ inputs.intent.route_mutations.forward.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":209,"connection":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
+          {"leaves":"${{ inputs.intent.route_mutations.forward.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}","connection":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: false
@@ -319,7 +319,7 @@ jobs:
   - name: forward_live_caddy
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes && (inputs.kind != "instance.destroy" || p.after.caddy != p.withdrawn.caddy)) }}
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}
@@ -356,7 +356,7 @@ jobs:
   - name: forward_dns
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null) }}
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null && (inputs.kind != "instance.destroy" || p.after.dns != p.prepared.dns)) }}
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}
@@ -415,7 +415,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           leaf: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -452,7 +452,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -488,7 +488,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -533,14 +533,14 @@ jobs:
           forward_urls: ${{ size(inputs.intent.route_mutations.forward.url_writes) }}
           forward_prepare_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns
             != null)) }}
-          forward_dns_grace: '${{ size(inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns
+          forward_dns_grace: '${{ size(inputs.kind != "instance.destroy" && inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns
             != null && inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest != inputs.intent.route_mutations.artifacts.dns[p.after.dns].digest) ? [{}] : []) }}'
-          forward_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
+          forward_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes && (inputs.kind != "instance.destroy" || p.withdrawn.caddy != p.prepared.caddy)))
             }}
           forward_live_certificates: "${{ size(inputs.intent.route_mutations.forward.certificates.filter(item,inputs.intent.route_mutations.forward.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)) }}"
-          forward_live_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
+          forward_live_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes && (inputs.kind != "instance.destroy" || p.after.caddy != p.withdrawn.caddy)))
             }}
-          forward_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null))
+          forward_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null && (inputs.kind != "instance.destroy" || p.after.dns != p.prepared.dns)))
             }}
           forward_cleanup: ${{ size(inputs.intent.route_mutations.forward.cleanup) }}
           forward_retire_lan: ${{ size(inputs.intent.route_mutations.forward.retire_lan) }}

@@ -27,6 +27,14 @@ interface GitHubApi
         GitHubRepository $repository,
     ): string;
 
+    /**
+     * A token that reads the contents of every repository the installation covers and expires after one hour.
+     * Private dependencies of a workspace live in repositories other than the Project repository.
+     *
+     * @throws GitHubApiException
+     */
+    public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string;
+
     /** A one-hour token that grants only repository metadata access. */
     public function repositoryMetadataToken(
         GitHubAppCredentials $credentials,
@@ -171,16 +179,6 @@ interface GitHubApi
     public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha, ?string $checkName = null): array;
 
     /**
-     * Every check suite on the commit, every page up to 1,000 suites. A longer list, or one that changes or ends
-     * before its `total_count`, fails.
-     *
-     * @return list<GitHubCheckSuite>
-     *
-     * @throws GitHubApiException
-     */
-    public function checkSuites(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array;
-
-    /**
      * The first 100 commits reachable from the branch head, newest first, in GitHub's history order.
      * Needs a token with `contents: read`.
      *
@@ -211,27 +209,4 @@ interface GitHubApi
      * @throws GitHubApiException
      */
     public function blobContents(#[SensitiveParameter] string $token, GitHubRepository $repository, string $blob): string;
-
-    /**
-     * Open pull requests of the repository, oldest first, at most three pages of 100. A malformed row fails the list.
-     *
-     * @return list<GitHubListedPullRequest>
-     *
-     * @throws GitHubApiException
-     */
-    public function openPullRequests(#[SensitiveParameter] string $token, GitHubRepository $repository): array;
-
-    /**
-     * Submits a review decision for exactly `$commitId` and returns the review id. Needs `pull_requests: write`.
-     *
-     * @throws GitHubApiException
-     */
-    public function submitReview(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $commitId, GitHubReviewEvent $event, string $body): int;
-
-    /**
-     * Merges the pull request with a merge commit, only while its head is `$sha`. A refusal is a result, not an exception.
-     *
-     * @throws GitHubApiException when GitHub cannot be reached
-     */
-    public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult;
 }

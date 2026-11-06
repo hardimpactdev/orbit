@@ -55,8 +55,8 @@ final readonly class NativeNodeEnrollmentInput
             'managed_user' => $spec['managed_user'], 'address' => $candidate['wireguard_ip'],
             'bootstrap' => ['host' => $candidate['public_ssh_host'], 'port' => $candidate['public_ssh_port'],
                 'user' => $bootstrapUser, 'fingerprint' => $spec['fingerprint']],
-            'identity' => $identity, 'control_ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209)),
-            'packages' => [], 'sudo' => ['path' => '', 'candidate' => '', 'content' => ''],
+            'identity' => $identity,
+            'packages' => [], 'sudo' => ['path' => '', 'content' => ''],
             'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'environment_group' => NodeAgentSshExecutor::EnvGroup, 'files' => []],
             'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
@@ -64,7 +64,7 @@ final readonly class NativeNodeEnrollmentInput
             'authorized_keys' => [$identity['public_key']], 'known_hosts_path' => '/home/orbit/.ssh/known_hosts'];
         if ($candidate['platform'] === 'macos') {
             return ['intent' => $intent, 'execution_secrets' => $copies, 'role_snapshots' => [],
-                'agent_secret_hash' => null, 'participant_node_ids' => [209, $node->id]];
+                'agent_secret_hash' => null, 'participant_node_ids' => [SwampNode::id(), $node->id]];
         }
 
         // The transaction supplies a prospective rendering view. It never commits an observed identity or status.
@@ -78,7 +78,7 @@ final readonly class NativeNodeEnrollmentInput
         if (in_array('vpn', $requested, true)) {
             $requested = ['vpn', ...array_values(array_diff($requested, ['vpn']))];
         }
-        $participants = [209, $node->id];
+        $participants = [SwampNode::id(), $node->id];
         $beforeDns = app(NodeConvergeInput::class)->dns();
         $agentSecret = bin2hex(random_bytes(32));
         $copies['agent_secret'] = app(SwampCommandStep::class)->executionCopy(
@@ -92,7 +92,6 @@ final readonly class NativeNodeEnrollmentInput
             $base = app(NodeBootstrapCommandFactory::class)->input($node, $node->user, $spec['roleless_operator'] === true);
             $intent['packages'] = $base['packages'];
             $intent['sudo'] = ['path' => '/etc/sudoers.d/orbit-'.$node->user,
-                'candidate' => '/etc/sudoers.d/.orbit-'.$node->user.'-'.$operation->id.'.candidate',
                 'content' => $node->user." ALL=(ALL) NOPASSWD: ALL\n"];
             $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;
             $root = app(ConfiguredStoragePathValidator::class)->validateEffective(

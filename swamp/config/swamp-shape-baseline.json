@@ -28,34 +28,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/_lib/dependency_projects.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/gateway_stage.ts",
-      "rule": "gateway-http",
-      "count": 12,
-      "evidence": [
-        "GET /api/v1/operations/{operation_id}",
-        "GET <unknown>",
-        "PATCH <unknown>",
-        "POST <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/group_assistance.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>",
-        "POST <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/maintenance/batch.ts",
       "rule": "custom-control",
       "count": 1,
@@ -125,15 +97,6 @@
       "rule": "private-material",
       "count": 13,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>",
-        "POST <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/dependency-merge/contents.ts",
@@ -254,18 +217,6 @@
     {
       "file": "extensions/behaviors/projects/horizon-new-dawn/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-run.yaml",
-      "rule": "unknown-behavior",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-run.yaml",
-      "rule": "unknown-workflow",
       "count": 1,
       "evidence": []
     }

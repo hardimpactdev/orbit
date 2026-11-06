@@ -6,6 +6,7 @@ covers:
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
+  - apps/gateway/database/migrations/2027_01_22_000000_create_route_publication_holds_table.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
@@ -34,6 +35,8 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 ## Swamp datastore watch
 
 The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `step_leases`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
+
+"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 
 The Gateway reads the terminal `measure` output through the shared scheduled-result reader and raises a [problem](/reference/tasks#fingerprints) with source `swamp` for each crossed bound:
 
@@ -86,9 +89,13 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the `task_vm.destroy` budget of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
+`tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. The longest run of author turns replaces the row once the history holds them.
+
 `task_vm.ready_copies` has a provisional 3,600 seconds, the sum of its serial steps with margin: the Club key scan (900 seconds), the stop (300), a copy (600), the agent wait (130) and the scan of the stored copy (900). A 14-day p95 replaces it after the first successes.
 
-`task_vm.image_refresh` has a provisional 7,200 seconds, the serial children of the run with margin. The provision of a task VM with its nested fleet takes 3,900 seconds. The converge takes 3,300 seconds, and a VM at its pins takes about a minute. The ready copies take 3,600 seconds, about ten minutes in practice. The clean, the publication, the boot check and the promotion take a few minutes each. A 14-day p95 replaces it after the first successes.
+`task_vm.fleet_build` has a provisional 3,600 seconds, the serial bounded steps of the nested fleet. They are the VMs and their first boot, the Gateway bootstrap (about three minutes), and the converges of the Gateway and its Node. The enrollment of app-dev and app-prod takes about six minutes each. The waits of the build are Ansible tasks with their own `until` and `retries`, so their literal timeouts only guard against a hung connection and this budget is the bound. A 14-day p95 replaces it after the first successes.
+
+`task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The fleet build, when the seed has no ready copies, takes 3,600 seconds at its bound and about 25 minutes in practice. The ready copies take 3,600 seconds at their bound, about ten minutes in practice. The builder converges at 3,300 seconds at its bound, and a VM at its pins takes about a minute. The publication, the boot check and the check VM take a few minutes each. A 14-day p95 replaces it after the first successes.
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. The budget is replaced by the 14-day p95 once repository installs have native history.
 
@@ -104,7 +111,11 @@ The other task VM workflows (`task-workspace-source`, `task-vm-workspace`, `task
 
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, `composer install` where lock files differ from the seed (31 to 35 seconds for five) and the memory snapshot `base` (about 19 seconds); 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
-`proof.verify` has a provisional 2,700 seconds. It has no run yet. A run executes the cases of one command in the task VM through the workflow `proof-fleet-verify`. Basis: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; with 1.5 times margin and rounded up to five minutes it is 2,700. Replace it with the 14-day p95 after the first success.
+`proof.command` has a provisional 3,600 seconds, and `proof.run` 3,900. They have no run yet. A run proves one command in its own task VM through the workflow `operation-proof-run`: the task provision, then the cases through `proof-fleet-verify`, then the destruction of the VM.
+
+Basis of `proof.command`: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; the provision takes about 300 and the destruction about 120; with 1.5 times margin and rounded up to five minutes it is 3,600. The `proof.run` that the CLI follows adds five minutes, because it closes when its last run has ended. Replace both with the 14-day p95 after the first success.
+
+`proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command on the task VM that calls, through the workflow `proof-fleet-verify`, with no provision and no destruction. Basis: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. Replace it with the 14-day p95 after the first success.
 
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
 
@@ -112,11 +123,11 @@ The measured parts on a fresh VM are the restore from the ready copies, the rsyn
 
 `task_vm.fill_package_cache` has a provisional 2,100 seconds: the legacy fill's single 1,700-second budget plus margin for the run start and the end check. Each batch is bounded on the host by `timeout 1530`. A first success replaces it with a p95.
 
-Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes. The observer caches each kind’s history budget for one pass; it makes no additional Swamp request or polling loop.
+Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes. The reconciler caches each kind’s history budget for one pass.
 
-An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. Startup recovery includes these rows, even when cancellation was already requested.
+An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. The reconciler includes these rows, even when cancellation was already requested.
 
-The existing shared observer projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads apply the same deadline if the observer is unavailable. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. An Operation admitted with a generic target hold keeps it until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation.
+The [reconciler](/reference/swamp-command-steps#reconciler) projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads apply the same deadline between passes. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. An Operation admitted with a generic target hold keeps it until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation.
 
 A run can beat its expiry. For example, Swamp's start reply arrives after the 600-second admission budget, so the Operation expires unbound, and the run then ends within its kind's budget. When the exact native terminal finished before the bound deadline, the shared reader reopens the Operation and projects that terminal normally. The `timed_out` mark and its cancel request go, and the records reach their real end state. A terminal at or after the deadline keeps the timeout.
 
@@ -126,11 +137,15 @@ A projection that implements `DirectOperationTimeout` records its documented fai
 
 `task_vm.destroy`, `tasks.cancel` and `tasks.maintenance_finish` hold the generic Operation target key (`task_vm:<id>` or `task_group:<id>`). Expiry keeps that key: a new admission returns `operation.target_busy` until the shared reader verifies the exact bound native terminal and releases it. Settlement leaves the timed-out Operation closed. Native `interrupted` destroy and Task cleanup results project as `failed`; recovery starts a new Operation. The task VM sweep logs each admission refusal with its details and continues with other rows.
 
+The hold has a limit. When nothing proves the end of the run within 60 minutes of the expiry, a Gateway job (every five minutes) frees the target and records `native_terminal_status: unproven`. A run that was asked to cancel an hour ago and never reported is lost, and a lost run must not hold a group or a VM for ever.
+
 For an unbound timed-out admission, the existing exact lookup by Operation identity releases the hold only when Serve proves there is no matching run. A matching run binds without reopening the timeout; ambiguity or an unavailable lookup keeps the hold. A valid native terminal with `completedAt` at or before the deadline wins in the shared history read, even when its projection arrives late, so it causes no timeout or timeout alert.
 
-This is the Gateway's budget result, not proof that the native run or its descendants stopped. At expiry the Gateway records `state.native_cancel_requested_at` once and queues `CancelNativeRun`, which asks Swamp's native cancellation endpoint to cancel the bound run, as an operator cancel does. Swamp stops the run; the Gateway only forwards the request, and the job tries again when Swamp does not confirm. An Operation with no bound run has nothing to cancel.
+This is the Gateway's budget result, not proof that the native run or its descendants stopped. At expiry the Gateway records `state.native_cancel_requested_at` once. The reconciler asks Swamp to cancel the bound run, as an operator cancel does, and records `state.native_cancel_confirmed_at` when Swamp confirms. Swamp stops the run; the Gateway only forwards the request, and each pass asks again until Swamp confirms. An Operation with no bound run has nothing to cancel.
 
-The SSH step limits above end the steps of a run whose cancel did not arrive. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
+The request is a `workflow.cancel` message on the Gateway's run token. Serve authorizes it with the `run` action on the run's workflow, which the Gateway already holds to start the run. Serve's HTTP cancel endpoint needs `admin` on `access:*`, the superuser right, so the Gateway does not use it.
+
+The SSH step limits above end the steps of a run whose cancel did not arrive. Native Serve ceilings, step queue limits and phase command limits remain separate controls. The reconciler checks deadlines on every pass, on the operations queue. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
 
 ## Native failure detail and live steps
 
@@ -238,13 +253,18 @@ Use the kind and target type to start or find the work of a command.
 | `tasks:park` | `tasks.park` | `task_group` | Gateway |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `POST task-groups/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
+| `POST task-groups/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
+| `POST task-groups/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
+| `POST task-groups/{group}/package` | `tasks.package` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
-| the gate check `tasks:pr-gate` (no route) | `tasks.pr_comment` | `task_group` | Gateway |
+| `POST projects/{project}/pr-merge` | `project.pr_merge` | `project` | Gateway |
+| the gate check `tasks:pr-gate` (no route) | `tasks.review_round` | `task_group` | Gateway |
+| the gate check `tasks:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
 
@@ -278,6 +298,8 @@ Every route that starts an operation accepts an `Idempotency-Key` header. Most r
 Automatic deploy starts bind caller and command as well as target and input. The [automatic deploy start](/reference/deployments#pinned-commits-and-automatic-callers) requires a key and Gateway Node access. Manual deploys and other kinds retain their key scope across callers.
 
 After checking the caller's access, the Gateway checks the key before further input or domain validation and before creating a target. The same key, target, and input return `202` with the existing operation, even when it has finished or failed to dispatch. A different target or input returns `409 operation.idempotency_conflict` and starts nothing. JSON object member order and whitespace do not change the input; array order and value types do. A malformed key returns `422 validation.failed` in the normal validation envelope, with `Idempotency-Key` in `error.details`.
+
+A caller that starts operations without a request keys each admission itself. `OperationIdempotency::under(kind, key, fingerprint, callback)` runs the callback under that key and puts the request's key back afterwards, also when the callback throws. The pull-request gate, a proof, project maintenance and task maintenance use it, and so does the HTTP boundary for the header. `OperationIdempotency::suspended(callback)` runs a callback with no key and puts the request's key back: an operation that the request did not ask for, such as the resume of a parked task VM, takes none.
 
 Concurrent starts with one new key create one operation and start one workflow. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
 
@@ -337,7 +359,7 @@ When the [`websocket` role](/reference/events) is active, the Gateway sends `ope
 3. Applies each event whose `sequence` is greater than the one it has: it reads the operation again with `after_sequence`.
 4. Unsubscribes when `status` is terminal.
 
-An `operation.updated` event never carries output. While a production deploy step runs, the Node agent publishes each output line on the same channel as [`client-output`](/reference/events#deploy-step-output). The web app and the CLI show those lines live. Once the step ends, the step's output comes from the record; the CLI compares that tail with the live text it printed and shows the remaining output. If the retained text and record do not overlap, it shows the final tail with an earlier-output-skipped marker.
+An `operation.updated` event never carries output. No component publishes deploy step output on this channel now: the agent command that did was removed.
 
 Reverb can lose an event, for example while the socket reconnects, so a client that has no event for a while reads the operation anyway. The web app and the CLI read every 15 seconds while subscribed. [Realtime events: Operation](/reference/events#operation) lists the fields.
 
@@ -361,11 +383,17 @@ Admission records the intent, the idempotency key and the target hold in one tra
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
 
-the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) and `proof.run` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when the task operations of its proof group (`tasks.provision`, `tasks.script`, `proof.verify` and `tasks.cancel`) have ended.
+the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) and `proof.run` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when its runs have ended. Each run is an Operation `proof.command` with a Swamp run of its own; its provision, cases and destruction are children of that run.
 
 ### One operation per target
 
 An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost run and a resume. A rollback is the one exception: it supersedes a deploy of the Instance that no workflow has started, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time).
+
+### One Route write per Node
+
+A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.destroy`, `instance.clone`, `instance.transfer`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
+
+The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts. A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes.
 
 ## Errors
 
@@ -470,7 +498,7 @@ If confirmation is lost after submission, the request returns `swamp.start_uncer
 
 Resolution requires native evidence for the exact workflow, `inputs.operation_id`, `inputs.node_id`, `inputs.kind` and recorded start key. A matching run can supply the missing binding for the existing terminal subscriber. Only authoritative proof that no run started permits a not-started failure and another admission. An unreadable or empty partial response is not that proof. A connection failure before submission or an explicit native refusal still fails the Operation.
 
-At observer startup, record-channel recovery or an Operation notice, an unbound running Operation marked `swamp.start_uncertain` receives one native run lookup per observer lifetime. The lookup uses its recorded workflow, admitted identity and `orbit_start_key`. Exactly one matching root supplies the binding, then the normal subscriber attaches and projects its terminal result. Missing, ambiguous, mismatched or unavailable evidence leaves the Operation and target hold unchanged. Repeated notices and receive passes never repeat the lookup or submit work.
+On every reconciler pass, an unbound running Operation marked `swamp.start_uncertain` receives one native run lookup. The lookup uses its recorded workflow, admitted identity and `orbit_start_key`. Exactly one matching root supplies the binding, then the same pass projects its terminal result. Missing, ambiguous, mismatched or unavailable evidence leaves the Operation and target hold unchanged. The lookup never submits work.
 
 ### Execution-copy failures
 
@@ -502,8 +530,6 @@ A declaration may constrain its writer with literal `writer_scope` admitted fiel
 
 All Tool kinds use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and package execution policy, manager child admission and receipt adapters are removed. Swamp materializes the admitted manager and applies package policy locally. The Gateway retains typed manager and Tool result projection.
 
-Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
-
 Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
 
 The optional typed primitive hook is reserved for shared generic Gateway primitives, such as Route/Caddy publication or scoped token minting. New family execution relays are refused; family actions run on their Node worker.
@@ -523,14 +549,14 @@ Read input comes only from the projection hook, never automatically from raw int
 | `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
 | `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
 | `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
-| `POST /api/v1/direct-operations/{operation}/github-token` | Bound run ID; only a declared `github_token_issuer` or `tasks.check` issues execution copies |
+| `POST /api/v1/direct-operations/{operation}/github-token` | Bound run ID and, for a kind with more than one kind of token, the `purpose` (`clone`, `dependencies`, `publish`, `pull_request` or `dependency_merge`); only a declared `github_token_issuer` issues execution copies |
 | `POST /api/v1/direct-operations/{operation}/certificates/sign` | Bound run ID and CSR selectors; returns admitted public leaf bundles |
 
-GitHub App tokens are a Gateway primitive: the Gateway keeps the App signing key and mints every token. A kind that needs a token gets one before its run starts. The Gateway mints a token for exactly the repository and permission map the kind names, puts it in the `orbit-control-inputs` vault, and passes only the vault key name in `execution_secrets`. The workflow declares that vault, reads the token with `vault.get`, and revokes it in a cleanup job.
+GitHub App tokens are a Gateway primitive: the Gateway keeps the App signing key and mints every token. A kind that declares a `github_token_issuer` gets its token when its step asks. Other kinds get theirs before their run starts. The Gateway mints a token for exactly the repository and permission map the kind names (the `dependencies` token covers the installation, with `contents: read`), puts it in the `orbit-control-inputs` vault, and passes only the vault key name in `execution_secrets`. The workflow declares that vault, reads the token with `vault.get`, and revokes it in a cleanup job.
 
 The Gateway validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. A failed scope check, or a failed vault copy, revokes the issued token. Failures log only a fixed phase and HTTP status. They never log tokens or upstream response bodies. The token never enters an Operation, step output, receipt, Activity or shared token cache.
 
-`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), and `tasks.check`. Any other kind gets `operation.github_token_forbidden` (403).
+`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), a task provision and its setup steps, a package install (`tasks.package`), a task publish, a pull request step, a dependency merge, a cancel and a prep run, and `tasks.check`. A task kind mints when the step that needs the token runs, never at admission: an installation token lives one hour, and a prep run can take longer to reach its publish step. Any other kind gets `operation.github_token_forbidden` (403). A step that minted a setup token revokes it and reports the outcome in the result as `dependency_token` (`revoked`, `none` or `unrevoked` with a reason), for `tasks.provision` and `tasks.package`.
 
 ### Intent-bound certificate signing
 

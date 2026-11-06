@@ -35,7 +35,7 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 | `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
 | `builds` | 2 | Admission for [base image Operations and refreshes](/reference/compute-drivers#build-the-base-image) and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
 | `builds-optional` | Shares the 2 build workers | The [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) |
-| `operations` | 1 | Jobs that record a Swamp run in its [Operation](/reference/operations): terminal history reads, schedule fires, uncertain-start lookups and WebSocket registry closes. One job at a time |
+| `operations` | 1 | Jobs that record a Swamp run in its [Operation](/reference/operations): the minute reconciler pass, schedule fires and WebSocket registry closes. One job at a time |
 
 Image, cache and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
@@ -87,11 +87,13 @@ Doctor collects Activity and assistance signals from admitted redacted metadata,
 
 While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
-Operations need the queue too: the jobs that read a run's terminal result and record it run on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)).
+Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs.
 
 ## Horizon
 
-Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
+Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. A Gateway Node without those Processes gets the units `orbit-gateway-schedule.service` and, where a queue is configured, `orbit-gateway-horizon.service` from the `gateway` role convergence. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`. Its unit carries the stop policy `KillMode=mixed`, `KillSignal=SIGTERM`, `SendSIGKILL=no` and `TimeoutStopSec` set to the drain, so a stop waits for running jobs and never kills one. The drain is the longest supervisor job timeout plus 30 seconds.
+
+A bootstrapped Gateway starts both before its first run. The Horizon unit is ordered after `valkey-server.service`, so a shutdown stops Horizon before a local queue server.
 
 The [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains the existing Horizon Process before it switches code, then starts it on the selected release. It does not create or converge the Process or its unit. Manage that state through [Processes](/reference/processes-and-schedules).
 
@@ -115,15 +117,15 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 
 ## Releases
 
-The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. It applies a temporary systemd stop policy: SIGTERM reaches the master, the stop has no systemd timeout, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step waits for the unit's control group to empty. A missing Horizon Process needs no drain.
+The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. The Horizon unit carries the stop policy, so `systemctl stop` blocks until the unit's control group is empty: SIGTERM reaches the master, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step refuses a unit that lacks `KillMode=mixed` or `SendSIGKILL=no`, then checks that the unit is inactive. A missing Horizon Process needs no drain.
 
-The drain deadline is the longest supervisor job timeout plus 30 seconds. A failed drain prevents the switch. The step removes its temporary policy when it ends. Inspect the Process journal and let running jobs finish before retrying. If the run ends after draining, Horizon can stay stopped; inspect the run before starting it again.
+The drain is the longest supervisor job timeout plus 30 seconds, and it is fixed in the unit: after you change a supervisor timeout, update the Horizon Process to rewrite the unit. A failed drain prevents the switch. Inspect the Process journal and let running jobs finish before retrying. If the run ends after draining, Horizon can stay stopped; inspect the run before starting it again.
 
 After switching both release links, the child starts Horizon on the selected release and verifies the Gateway. A failed health check runs the local rollback script to switch back. Other requests can queue jobs during the drain; their jobs wait in Redis. Job IDs, attempts, delays and chains do not change.
 
 The switch also restarts other running services whose working directory is under the Gateway application, including the scheduler and agent-view.
 
-Do not restart Horizon with `orbit process:restart`, and do not stop it with `orbit process:stop` while a job runs. Both stop its unit, and systemd kills a job that still runs 90 seconds after the stop, such as a build. To restart Horizon, run `php artisan horizon:terminate`.
+`orbit process:restart`, `orbit process:stop` and `bin/gateway-rollback` wait for running jobs up to the drain, because the unit carries the stop policy. To restart Horizon on the current release without a wait, run `php artisan horizon:terminate`.
 
 ### Switch back to an older release
 

@@ -28,9 +28,10 @@ final readonly class NativeRoutePublicationInput
 
     /** Admission-only snapshot reused by Route and composing parent workflows.
      * @param  Collection<int,DevelopmentSite>  $sites
+     * @param  bool  $complete  The sites are the whole fleet that a Route change leaves behind, so private DNS follows them.
      * @return array<string,mixed>
      */
-    public function snapshot(Node $node, Collection $sites): array
+    public function snapshot(Node $node, Collection $sites, bool $complete = false): array
     {
         return app(RoutePublicationSites::class)->render($sites, function () use ($node, $sites): array {
             $caddy = app(NodeCaddyfileRenderer::class)->render($node);
@@ -44,7 +45,7 @@ final readonly class NativeRoutePublicationInput
                 'php' => app(SharedPhpPoolInput::class)->forNode($node),
                 'dns' => PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists() ? $this->dns($node) : null,
                 'certificate_scopes' => $scopes];
-        });
+        }, $complete);
     }
 
     /** Node/role removal intent is stored before this render; Route associations stay attached.

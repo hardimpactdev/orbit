@@ -2,9 +2,7 @@ use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
     checkouts::watch_checkouts,
-    docker_container_name, docker_status,
-    facts::{self, FactSender},
-    gateway_client, iso_now, lock_single_instance,
+    docker_container_name, docker_status, facts, gateway_client, iso_now, lock_single_instance,
     logs::{
         controller::{run_controller, spawn_stream, GatewayList, LogHub},
         limits::BATCH_INTERVAL,
@@ -62,18 +60,14 @@ fn main() {
                 orbit_agent::command::identity::Platform::current(),
             ) {
                 code
-            } else if arguments.get(1).is_some_and(|name| name == "image-phase") {
-                orbit_agent::commands::image_recipe::worker::service(&arguments[2..])
-            } else if arguments.get(1).is_some_and(|name| name == "vp-project") {
-                orbit_agent::commands::vp_project::service(&arguments[2..])
             } else if arguments.get(1).is_some_and(|name| {
                 orbit_agent::command::registry::hooks()
                     .iter()
                     .any(|hook| hook.command == name)
             }) {
-                orbit_agent::commands::gateway_start_hooks::service(&arguments[1..])
+                orbit_agent::start_hook_service(&arguments[1..])
             } else {
-                orbit_agent::commands::schedules::service(&arguments[1..])
+                orbit_agent::schedule_service(&arguments[1..])
             };
             std::process::exit(code)
         }
@@ -665,11 +659,12 @@ async fn docker_process_units(docker: &Docker) -> Result<Vec<Unit>, bollard::err
 }
 
 /// Reads and reports the `host` and `units` facts over HTTP, independent of realtime (Node agent observer pass).
+/// A report the Gateway does not accept is sent again within seconds, so a Node that boots first is not late.
 async fn report_facts(
     client: reqwest::Client,
     gateway: String,
     connection: Connection,
-    listed: watch::Receiver<WatchFacts>,
+    mut listed: watch::Receiver<WatchFacts>,
 ) {
     let manager = match Proxy::new(
         &connection,
@@ -685,91 +680,111 @@ async fn report_facts(
             std::process::exit(1);
         }
     };
-    let url = format!("{}/api/v1/agent/facts", gateway.trim_end_matches('/'));
-    let mut sender = FactSender::default();
+    enum Due {
+        Units,
+        Host,
+        Retry,
+    }
+    let mut reporter = facts::Reporter::new(client, &gateway);
+    let mut retry = facts::RetryTimer::default();
     let mut units_tick = tokio::time::interval(facts::UNITS_INTERVAL);
     let mut host_tick = tokio::time::interval(facts::HOST_INTERVAL);
     units_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     host_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut last_error: Option<String> = None;
     loop {
-        let (kind, data) = tokio::select! {
-            _ = units_tick.tick() => {
+        let due = tokio::select! {
+            _ = units_tick.tick() => Due::Units,
+            // A new watch list changes which units are read, so the units fact follows it at once.
+            Ok(()) = listed.changed() => Due::Units,
+            _ = host_tick.tick() => Due::Host,
+            () = retry.due() => Due::Retry,
+        };
+        match due {
+            Due::Retry => reporter.retry().await,
+            Due::Units => {
                 let (names, markers) = {
                     let listed = listed.borrow();
                     (listed.services.clone(), listed.awake_markers.clone())
                 };
                 // A marker that cannot be stat'ed reads as absent; Doctor then reports the Process as stopped.
-                let awake: Vec<String> = markers.into_iter().filter(|path| std::path::Path::new(path).exists()).collect();
+                let awake: Vec<String> = markers
+                    .into_iter()
+                    .filter(|path| std::path::Path::new(path).exists())
+                    .collect();
                 match observed_units(&manager, &names).await {
-                    Ok((units, docker)) => ("units", facts::units_data(&units, docker, &awake)),
+                    Ok((units, docker)) => {
+                        reporter
+                            .report("units", None, &facts::units_data(&units, docker, &awake))
+                            .await
+                    }
                     Err(error) => {
                         eprintln!("orbit-agent: systemd D-Bus read for facts failed: {error}");
                         std::process::exit(1);
                     }
                 }
-            },
-            _ = host_tick.tick() => {
+            }
+            Due::Host => {
                 // Package facts ride the host tick; each is sent only when it changed or at the resync.
                 let tools = listed.borrow().tools.clone();
                 let read = tokio::task::spawn_blocking(move || {
-                    tools.iter().filter_map(|(manager, paths)| Some((manager.clone(), orbit_agent::packages::observe(manager, paths)?))).collect::<Vec<_>>()
-                }).await.unwrap_or_default();
+                    tools
+                        .iter()
+                        .filter_map(|(manager, paths)| {
+                            Some((
+                                manager.clone(),
+                                orbit_agent::packages::observe(manager, paths)?,
+                            ))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await
+                .unwrap_or_default();
                 for (manager, data) in read {
-                    let now = std::time::Instant::now();
-                    if let Some(body) = sender.body("packages", Some(&manager), &data, &facts::observed_at(), now) {
-                        match facts::post(&client, &url, &body).await {
-                            Ok(()) => sender.sent("packages", Some(&manager), &data, now),
-                            Err(error) => eprintln!("orbit-agent: {manager} packages fact report failed: {error}"),
-                        }
-                    }
+                    reporter.report("packages", Some(&manager), &data).await;
                 }
                 // Instance .env key names ride the host tick too; each is sent only when it changed or at the resync.
                 let environments = listed.borrow().environments.clone();
                 let read = tokio::task::spawn_blocking(move || {
-                    environments.into_iter().map(|path| { let data = orbit_agent::environment::observe(std::path::Path::new(&path)); (path, data) }).collect::<Vec<_>>()
-                }).await.unwrap_or_default();
+                    environments
+                        .into_iter()
+                        .map(|path| {
+                            let data =
+                                orbit_agent::environment::observe(std::path::Path::new(&path));
+                            (path, data)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await
+                .unwrap_or_default();
                 for (path, data) in read {
-                    let now = std::time::Instant::now();
-                    if let Some(body) = sender.body("env_keys", Some(&path), &data, &facts::observed_at(), now) {
-                        match facts::post(&client, &url, &body).await {
-                            Ok(()) => sender.sent("env_keys", Some(&path), &data, now),
-                            Err(error) => eprintln!("orbit-agent: {path} env_keys fact report failed: {error}"),
-                        }
-                    }
+                    reporter.report("env_keys", Some(&path), &data).await;
                 }
                 // UFW rides the host tick too: the agent reads its files and starts no program.
                 let ufw = tokio::task::spawn_blocking(|| {
                     let read = |path: &str| std::fs::read_to_string(path).ok();
-                    let rules: Vec<(Option<String>, &str)> = facts::UFW_RULES.iter().map(|(path, family)| (read(path), *family)).collect();
+                    let rules: Vec<(Option<String>, &str)> = facts::UFW_RULES
+                        .iter()
+                        .map(|(path, family)| (read(path), *family))
+                        .collect();
                     facts::ufw_data(read(facts::UFW_CONF).as_deref(), &rules)
-                }).await.unwrap_or_else(|_| facts::ufw_data(None, &[]));
-                let now = std::time::Instant::now();
-                if let Some(body) = sender.body("ufw", None, &ufw, &facts::observed_at(), now) {
-                    match facts::post(&client, &url, &body).await {
-                        Ok(()) => sender.sent("ufw", None, &ufw, now),
-                        Err(error) => eprintln!("orbit-agent: ufw fact report failed: {error}"),
-                    }
-                }
-                ("host", facts::host_data(std::env::consts::OS, std::env::consts::ARCH, &observed_filesystems()))
-            },
-        };
-        let now = std::time::Instant::now();
-        let Some(body) = sender.body(kind, None, &data, &facts::observed_at(), now) else {
-            continue;
-        };
-        match facts::post(&client, &url, &body).await {
-            Ok(()) => {
-                sender.sent(kind, None, &data, now);
-                last_error = None;
-            }
-            Err(error) => {
-                if last_error.as_ref() != Some(&error) {
-                    eprintln!("orbit-agent: {kind} fact report failed: {error}");
-                    last_error = Some(error);
-                }
+                })
+                .await
+                .unwrap_or_else(|_| facts::ufw_data(None, &[]));
+                reporter.report("ufw", None, &ufw).await;
+                reporter
+                    .report(
+                        "host",
+                        None,
+                        &facts::host_data(
+                            std::env::consts::OS,
+                            std::env::consts::ARCH,
+                            &observed_filesystems(),
+                        ),
+                    )
+                    .await;
             }
         }
+        retry.update(reporter.has_failed());
     }
 }
 

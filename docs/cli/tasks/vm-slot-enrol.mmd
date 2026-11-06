@@ -1,0 +1,45 @@
+sequenceDiagram
+  %% Target design: swamp/workflows/workflow-operation-task-vm-slot-enrol.yaml. One ready slot of chart `task_vm.slots` (vm-slots.mmd): the VM child of tasks:provision, the converge, a stop. Decided by the orchestrator, for Nick's review (2026-11-06).
+  %% status: draft
+  %% command: none · the slot refill rule starts it
+  %% kind: task_vm.slot_enrol
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane VM icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Task VM host<br/>Incus over ssh
+  participant VM as Slot VM<br/>tvm-801
+  Note over GW: Refill rule, record<br/>host 9 · slot VM 801
+  %%> Started by:
+  %%> - the refill rule of the host, after an enrol, a claim, a destroy, an image promotion or a change of `task_vms.slots`
+  %%> - the operator command `task-vms:fill-slots HOST` on the Gateway
+  %%> Requirements:
+  %%> - the host has `task_vms.slots`, a promoted image and capacity for a VM of the slot size
+  %%> - no slot of the host enrols or is destroyed, and no enrol of the host failed in the last 15 minutes
+  %%> Result:
+  %%> - a task VM row with no group, `slot_project_id` and the host's last promoted image; its guest Node and Pi Process
+  %%> - the converge intent with the NFS export of the Project's checkout path
+  GW->>SW: Start run, full intent<br/>operation-task-vm-slot-enrol
+  %%> Inputs:
+  %%> - the provision intent, the converge intent and `execution_secrets` as vault key names
+  SW->>H: Create and prepare the VM<br/>child task-vm-provision
+  %%> What it does:
+  %%> - today's VM child of tasks:provision: clone the image, attach a clone of the host's topology seed, boot, enrol, model key, Pi
+  SW->>H: Create the checkout folder<br/>ssh exec · incus exec mkdir
+  %%> What it does:
+  %%> - creates the Project's empty checkout folder as `orbit`; the converge exports it, and the claim's workspace step fills it
+  SW->>VM: Converge once<br/>child operation-task-vm-converge
+  %%> What it does:
+  %%> - the task VM role phases: nested Incus with the seed pool, the nested network, the NFS export of the checkout path
+  SW->>H: Stop the VM<br/>ssh exec · incus stop
+  %%> How:
+  %%> - `sudo timeout 130 incus stop --project orbit-tasks --timeout 120 -- tvm-801`; a VM that is already stopped counts as stopped
+  SW->>H: Check the VM stopped<br/>ssh exec · incus list
+  SW-->>GW: Terminal event<br/>receipt of the VM child
+  %%> Result:
+  %%> - success: the Gateway records the enrolment as for any task VM, then the row is `parked` with no group: a ready slot
+  %%> - failure: the row is `failed`; the refill rule destroys it with today's destroy
+  %%> - either way, the Gateway runs the refill rule of the host again

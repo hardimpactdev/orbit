@@ -5,17 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\GitHub\GitHubApi;
-use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\DependencyBatchMergeGuard;
-use App\Domain\Tasks\DependencyMergeProjection;
 use App\Domain\Tasks\TaskExecutionLock;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -41,31 +37,19 @@ final readonly class StartDependencyBatchMergeAction
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Another Task Operation owns this group.', 409);
             }
-            $intent = [...$this->guard->lineage($group, $publish, $head), 'node_id' => DependencyMergeProjection::WorkerNodeId];
-            $credentials = app(GitHubAppStore::class)->credentials();
-            if ($credentials === null) {
-                throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before merging a dependency batch.', 409);
-            }
+            $intent = [...$this->guard->lineage($group, $publish, $head), 'node_id' => SwampNode::id()];
+            // Only the vault key names are admitted. The first step of the run mints the tokens ({@see TaskGitHubTokens}).
             $secrets = [];
-            $tokens = [];
-            foreach (['write_token' => ['contents' => 'write', 'pull_requests' => 'write'],
-                'read_token' => ['contents' => 'read', 'pull_requests' => 'read', 'checks' => 'read', 'actions' => 'read']] as $name => $permissions) {
-                $tokens[$name] = app(GitHubApi::class)->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $intent['repository'], 'permissions' => $permissions]));
+            foreach (['write_token', 'read_token'] as $name) {
                 $secrets[$name] = ['vault' => 'orbit-control-inputs', 'key' => 'dependency-merge-'.str_replace('_token', '', $name).'-'.Str::uuid()];
             }
 
-            return DB::transaction(function () use ($group, $intent, $secrets, $tokens, $caller, $request): Operation {
+            return DB::transaction(function () use ($group, $intent, $secrets, $caller, $request): Operation {
                 Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
-                $operation = $this->operations->execute('tasks.dependency_merge', 'task_group', $group->id,
-                    DependencyMergeProjection::WorkerNodeId, [...$intent, 'execution_secrets' => $secrets], $caller, $request,
-                    lockKey: OperationStore::lockKey('task_group', $group->id));
-                if ($operation->wasRecentlyCreated) {
-                    foreach ($secrets as $name => $descriptor) {
-                        app(SwampCommandStep::class)->executionCopy($descriptor['vault'], $descriptor['key'], $tokens[$name]->reveal());
-                    }
-                }
 
-                return $operation;
+                return $this->operations->execute('tasks.dependency_merge', 'task_group', $group->id,
+                    SwampNode::id(), [...$intent, 'execution_secrets' => $secrets], $caller, $request,
+                    lockKey: OperationStore::lockKey('task_group', $group->id));
             });
         });
     }

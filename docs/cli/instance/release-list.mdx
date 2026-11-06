@@ -22,7 +22,7 @@ orbit instance:release:list 14
 
 In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
 
-The command reads the Instance's production home on its Node, so it fails while the Node is unreachable. It lists the releases in the home that pass their checks, sorted by name, not by age: the first release, `initial`, sorts after the timestamp-named ones. A clean home keeps 3 releases, and a release that a running process uses stays beyond that, as [Retained releases](/reference/deployments#retained-releases) describes. The list can differ from the recorded history that a rollback checks.
+The command answers from the Gateway's deployment history and contacts no Node. Every deploy and rollback is a run whose terminal result the Gateway records, so the history knows which releases a deploy's cleanup removed. The list holds the retained releases, sorted by name, not by age: the first release, `initial`, sorts after the timestamp-named ones. A clean home keeps 3 releases, as [Retained releases](/reference/deployments#retained-releases) describes. The list is what the history retains, not a scan of the Node: a release that someone removed by hand is still listed, and a release that the Node keeps because a running process uses it is not. The history holds the newest 50 runs of the Instance, so a run that is older than that is not counted, and a deploy that timed out records no selection. This is the same history that a rollback checks.
 
 The output has these parts:
 
@@ -30,7 +30,7 @@ The output has these parts:
 - `Selected release:` with the selected release, or `—` when none is selected.
 - The request ID.
 
-An Instance with no release says `No retained releases found.`. A development `default` Instance deploys in its checkout, so its list is empty and no Node is read. A development Instance with another name is refused with `deployment.identity_invalid`.
+An Instance with no release says `No retained releases found.`. A development `default` Instance deploys in its checkout, so its list is empty. A development Instance with another name is refused with `deployment.identity_invalid`.
 
 With `--json`, stdout holds `{ releases, selected_release, request_id }`, and `selected_release` is null when none is selected. See [`instance:deployment:list`](/cli/instance/deployment-list) for the recorded run history behind the releases.
 
@@ -41,11 +41,9 @@ With `--json`, stdout holds `{ releases, selected_release, request_id }`, and `s
 | `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
 | `input.cancelled` | You cancelled the Instance list. |
 | `deployment.identity_invalid` | The Instance is not an active production Instance with a release layout and a recorded user and home. |
-| `deployment.release_inspection_failed` | The inspection of the home failed. |
-| `agent.runner_failed` | The Node did not answer within the 120-second limit. |
-| `rollback.release_invalid` | A listed release has an invalid name. |
-| `deployment.repository_mismatch` | The production home serves another repository than the Project. |
-| `deployment.repository_rebind_required` | The production home records another URL for the repository. Update the Project's repository URL. |
-| `deployment.receipt_invalid` | The Node returned a release list that is not valid. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |
+
+## How it works
+
+<div className="flow-at" data-chart="instance/release-list"></div>

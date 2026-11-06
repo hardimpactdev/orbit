@@ -14,6 +14,7 @@
       {%- endif -%}
       {%- endfor -%}
       {{ out }}
+    snapshot_missing: "{{ snapshot_packages | reject('in', installed) | list }}"
     deb_missing: >-
       {%- set out = [] -%}
       {%- for tool in deb_tools -%}
@@ -23,15 +24,22 @@
       {%- endfor -%}
       {{ out }}
 - name: Install what misses its pin
-  when: ubuntu_missing | length > 0 or deb_missing | length > 0
+  when: ubuntu_missing | length > 0 or snapshot_missing | length > 0 or deb_missing | length > 0
   block:
     - { name: Configure apt, ansible.builtin.import_tasks: task-vm-apt-config.yml }
     - name: Install the Ubuntu packages
-      when: ubuntu_missing | length > 0
-      ansible.builtin.command:
-        argv: "{{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades', '--'] + ubuntu_missing }}"
+      when: ubuntu_missing | length > 0 or snapshot_missing | length > 0
+      ansible.builtin.apt:
+        name: "{{ ubuntu_missing + snapshot_missing }}"
+        state: present
+        install_recommends: false
+        fail_on_autoremove: true
+        allow_downgrade: true
       environment: "{{ apt_environment }}"
-      changed_when: true
+      register: apt_install
+      until: apt_install is succeeded
+      retries: "{{ apt_retries }}"
+      delay: "{{ apt_delay }}"
     - name: Create the package cache
       ansible.builtin.file: { path: /var/cache/orbit/debs, state: directory, owner: root, group: root, mode: "0755" }
     - name: Fetch the packages that a mirror holds
@@ -60,6 +68,10 @@
           {{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades', '-o', 'Dpkg::Options::=--force-confold', '--']
           + deb_missing | map(attribute='path') | list }}
       environment: "{{ apt_environment }}"
+      register: apt_debs
+      until: apt_debs is succeeded
+      retries: "{{ apt_retries }}"
+      delay: "{{ apt_delay }}"
       changed_when: true
 - name: Keep the file packages where they are
   ansible.builtin.dpkg_selections: { name: "{{ item.name }}", selection: hold }

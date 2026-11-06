@@ -31,6 +31,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         $directory = rtrim(string: $this->orbitHome, characters: '/').'/ca';
         $scope = match ($hostname) {
             'metrics.orbit' => 'metrics',
+            'swamp.orbit' => 'swamp',
             WebSocketHostname::Value => 'websocket',
             AnalyticsHostname::Value => 'analytics',
             default => 'gateway',

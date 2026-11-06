@@ -10,7 +10,9 @@ use std::{
 };
 pub mod checkouts;
 pub mod command;
-pub mod commands;
+pub(crate) mod commands;
+pub use commands::gateway_start_hooks::service as start_hook_service;
+pub use commands::schedules::service as schedule_service;
 pub mod environment;
 pub mod facts;
 pub mod logs;

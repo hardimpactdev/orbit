@@ -17,10 +17,6 @@ inputs. Separate Git steps fetch the branch and resolve its full commit. Scan
 receives that commit explicitly and records its checkout sources. The registry
 planner receives the same run's inventory output directly.
 
-Package target inputs share a schema between worker dispatch and admission.
-The schema lives in `_lib/package_target_schema.ts`, so workers can validate
-those inputs without loading the Gateway admission client.
-
 Package tools run only in a disposable planning tree containing tracked
 manifests, lockfiles and required workspace inputs. Repository `.npmrc`, Bun
 configuration, scripts, executables, Git metadata and credentials never enter

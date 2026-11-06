@@ -1,0 +1,36 @@
+id: f425dc3d-2d51-56b7-9e0a-656c7db6fcc0
+name: task-github-mint
+description: Ask the Gateway for the GitHub token of the step that follows; the Gateway writes it to the vault key that admission named. Only the setup files of the dependencies purpose reach a VM.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    # The root run of the Operation, which the Gateway checks.
+    run_id:
+      type: string
+      pattern: ^[a-f0-9-]{36}$
+    # What the following step does with the token; the Gateway checks it against the kind of the Operation.
+    purpose:
+      type: string
+      enum: [clone, dependencies, publish, pull_request, dependency_merge]
+  required: [operation_id, run_id, purpose]
+  additionalProperties: false
+jobs:
+- name: mint
+  labels: {role: swamp}
+  steps:
+  - name: Mint
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("task-github-mint-" + inputs.purpose).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_MINT_REQUEST\" \"$ORBIT_MINT_URL\"\n"
+        env:
+          ORBIT_MINT_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}
+          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + inputs.run_id + "\",\"purpose\":\"" + inputs.purpose + "\"}" }}'

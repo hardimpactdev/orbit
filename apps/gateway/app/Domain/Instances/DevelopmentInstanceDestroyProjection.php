@@ -136,7 +136,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
 
         return match ($step) {
             'Remove the source', 'Check it is gone' => InstanceRemovalStep::SourceFinalization,
-            'Withdraw the Route', 'Remove DNS records' => InstanceRemovalStep::RouteTargetClear,
+            'Withdraw the Route' => InstanceRemovalStep::RouteTargetClear,
             'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files', 'Drop owned databases' => InstanceRemovalStep::RuntimeCleanup,
             default => InstanceRemovalStep::SourcePreparation,
         };

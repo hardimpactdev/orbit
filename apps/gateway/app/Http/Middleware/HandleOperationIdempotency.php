@@ -51,16 +51,13 @@ final readonly class HandleOperationIdempotency
             throw ValidationException::withMessages(['Idempotency-Key' => ['The Idempotency-Key header must have 1 to 128 characters from A-Z a-z 0-9 . _ : -.']]);
         }
 
-        $previous = [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint];
-        $this->idempotency->kind = $kind;
-        $this->idempotency->key = $key;
         $caller = $request->user();
-        $this->idempotency->fingerprint = app(OperationRequestFingerprint::class)->make(
+        $fingerprint = app(OperationRequestFingerprint::class)->make(
             $caller instanceof Node ? $caller : null, $route->getName(), $route->parameters(), $request->getContent(), $start,
         );
 
-        try {
-            $operation = $this->idempotency->replay($this->idempotency->kind);
+        return $this->idempotency->under($kind, $key, $fingerprint, function () use ($kind, $next, $request): Response {
+            $operation = $this->idempotency->replay($kind);
 
             return $operation === null ? $next($request) : response()->json([
                 'data' => (in_array($operation->kind, ['tasks.cancel', 'node.add'], true)
@@ -68,8 +65,6 @@ final readonly class HandleOperationIdempotency
                     : OperationData::fromModel($operation, $operation->callerNodeId() === null ? null : Node::query()->find($operation->callerNodeId())?->name))->toArray(),
                 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
             ], 202);
-        } finally {
-            [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint] = $previous;
-        }
+        });
     }
 }

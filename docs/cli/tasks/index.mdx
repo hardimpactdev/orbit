@@ -16,7 +16,7 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 
 | Command | Result |
 | --- | --- |
-| [`tasks:status`](/cli/tasks/status) | Show whether the tasks extension is on, list tasks asking for assistance, and list open review-and-merge tasks and workspace leases. |
+| [`tasks:status`](/cli/tasks/status) | Show whether the tasks extension is on, list tasks asking for assistance, and list open review-and-merge tasks. |
 | [`tasks:list`](/cli/tasks/list) | List tasks, optionally for one Project or status. |
 | [`tasks:show`](/cli/tasks/show) | Show one task with its brief and subtasks. |
 | [`tasks:create`](/cli/tasks/create) | Create a task in Backlog or Todo; `--current-recipe` makes its VM wait for the current recipe image; `--review=automatic` passes its pull request by review rounds instead of Nick's approval. |
@@ -41,6 +41,8 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:publish`](/cli/tasks/publish) | Push a checked commit and optionally open or update its pull request. |
 | [`tasks:park`](/cli/tasks/park) | Park an external task group VM while its PR waits for review. |
 | [`tasks:prep`](/cli/tasks/prep) | Prepare one command for the pipeline: draft its spec and open the draft PR. API and MCP only. |
+| [`tasks:prep-fix`](/cli/tasks/prep-fix) | Apply the owner's review to a parked prep group and push the corrections. API and MCP only. |
+| [`tasks:sync`](/cli/tasks/sync) | Fetch the default branch and the task branch from origin into the VM workspace. API and MCP only. |
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, or `agents`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
 

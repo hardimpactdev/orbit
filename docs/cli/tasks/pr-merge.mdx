@@ -36,7 +36,7 @@ A merge conflict with the base branch refuses the merge. The author rebases, whi
 | `operation.target_busy` | 409 | Another task holds the group. |
 | `tasks_pr.no_pull_request` | 409 | The group has no published PR, or its PR is not open. |
 | `tasks_pr.draft` | 409 | The PR is still a draft. Run `tasks-pr-ready` first. |
-| `tasks_pr.head_moved` | 409 | The PR head is not `head_sha`. The same code ends a run whose head moved after admission. |
+| `tasks_pr.head_moved` | 409 | The PR head is not `head_sha` at admission. A head that moves after admission ends the run with `tasks_pr.merge_refused`. |
 | `tasks_pr.checks_not_passed` | 409 | The Project's merge check is not configured, or it did not pass on the head. |
 | `tasks_pr.approval_missing` | 409 | The reviewer has not approved this head. `error.details.state` is `waiting`, `changes_requested` or `head_moved`. |
 | `tasks_pr.github_unreadable` | 502 | The Gateway could not read the PR, its checks or its reviews. |

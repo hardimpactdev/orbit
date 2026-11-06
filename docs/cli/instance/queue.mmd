@@ -1,0 +1,59 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-06, agent strip (b): the queue is live application data. The Gateway reads it through the Instance's registered connection, with its own PHP and Laravel's Redis and database clients. No agent, no Swamp step, no application code. Decided by the orchestrator, for Nick's review: the report drops what needs Horizon's internals (jobs_per_minute, process counts, the completed list, the Horizon status and dashboard link) and keeps what the queue store itself holds.
+  %% status: draft
+  %% command: instance:queue
+  %% kind: instance.queue
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane S icon=database pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant S as Queue store<br/>Redis or database
+  CLI->>GW: instance:queue 12
+  %%> Command:
+  %%> - the MCP tool `instance-queue`, or `GET /api/v1/instances/12/queue`; the web app calls the same endpoint
+  %%> - syntax: `<instance> [--state=pending|failed] [--limit=N]`
+  %%> Input:
+  %%> - the Instance ID
+  %%> Not included:
+  %%> - `--state` (default pending) and `--limit` (1 to 50, default 50) only change which jobs the report lists
+  Note over GW: Find the connection<br/>Instance 12
+  %%> Requirements:
+  %%> - your Node has an access grant to the Instance's Node
+  %%> - the stored environment has `QUEUE_CONNECTION=redis` and a registered Redis connection with prefix REDIS, or `QUEUE_CONNECTION=database` and a registered mysql or pgsql connection with prefix DB; otherwise the report is `available: false`
+  %%> - failed jobs need a registered mysql or pgsql connection with prefix DB; without one the failed total is null
+  %%> - the Gateway takes the queue names and the key prefix from the stored environment, as Laravel does
+  %%> Where the credential lives:
+  %%> - the Gateway stores the connection's password encrypted and uses it in its own process; nothing is copied to a vault
+  GW->>S: Read the queue<br/>Laravel Redis or database client
+  %%> How:
+  %%> - the same way the Gateway reaches its own queue Redis: Laravel's client, over WireGuard, with a 5 s timeout
+  %%> - Redis: SCAN for the queue names beside the one the environment names, LLEN of each queue list plus ZCARD of its delayed set for its length, and LRANGE for the newest pending jobs
+  %%> - database: the `jobs` table counted by queue, without the reserved jobs, and its newest rows
+  %%> - failed jobs: the Instance's `failed_jobs` table through the registered database connection, newest first
+  %%> - every statement is a read, with a 5 s limit; a job payload is read only to take its class, id and push time and is never returned
+  %%> - Redis lists jobs from the 5 longest queues, reads at most 50 queue names, and lists no delayed job; a plain Laravel Redis payload may carry no push time, so `pushed_at` can be null
+  %%> - a read of the pending jobs does not fail when `failed_jobs` is unreadable; the failed total is then null
+  alt the store answers
+    S-->>GW: counts and rows
+    %%> Returns:
+    %%> - queue lengths, the failed count, and up to `limit` rows of the chosen state
+    Note over GW: Shape the report<br/>bounded and cast
+    %%> What it does:
+    %%> - casts and bounds every value, and keeps only the fields of the report
+    %%> - the first line of an exception, never its trace
+    GW-->>CLI: 200 report
+    %%> Result:
+    %%> - `available`, the totals of pending and failed jobs, one row per queue with its `name` and `length`, and the jobs of `state` with `id`, `name`, `queue`, `pushed_at`, `failed_at` and `exception`
+    %%> - no password and no job payload
+  else the store refuses or times out
+    S--xGW: Error or timeout
+    %%> When:
+    %%> - a wrong password, no route to the host, or no answer within 5 s
+    GW--xCLI: 502 instance.queue_failed
+    %%> Result:
+    %%> - a bounded error code and message, without store output; nothing changed
+    %%> Retry:
+    %%> - run the command again; a read is safe to repeat
+  end

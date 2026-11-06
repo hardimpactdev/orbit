@@ -1,0 +1,489 @@
+id: 475b18ba-9a19-4601-a4af-91625eeac1ad
+name: gateway-bootstrap
+description: >-
+  Prepare a fresh machine to become a Gateway (docs/cli/tasks/vm-fleet-build.mmd, "Prepare the Gateway"). The operator runs this once with a local `swamp workflow run`; no step requests a worker, so the binary runs them in-process. Over SSH it puts on the machine the release checkout, the swamp role's pinned Ansible venv, and the pinned Swamp binary. Nothing else; the Swamp key is not in this run (the refresh VM pushes its key file into the machine, as stage 2 does).
+inputs:
+  type: object
+  properties:
+    # intent.ssh: the fresh machine, as the other Node workflows name it: host, port, user, identity_file, host_keys (pins its SSH host key).
+    # intent.release: repository and the 40-hex commit; the Gateway code and this swamp/ folder come from that one commit.
+    # intent.swamp: url and sha256 of the pinned Swamp release in the machine software recipe (recipe.json).
+    # intent.gateway: url, the address of the new Gateway (APP_URL); wireguard_ip and wireguard_subnet, its address in the private network of the fleet it leads.
+    # intent.agent_delivery: the JSON text of the agent delivery manifest ({commit, version, artifacts}), public pins the admitting Gateway sends.
+    # intent.operator: checkout, the release checkout on the operator, with its Gateway dependencies; it renders the plan of the machine.
+    #   Optional wireguard_ip: the operator's address in the fleet's network; the Gateway records the Node `operator` there (orbit:bootstrap --operator-ip).
+    intent: {type: object}
+  required: [intent]
+  additionalProperties: false
+jobs:
+# One apt call: the tools the next jobs need on a stock Ubuntu. apt's own lock wait covers a cloud-init run that still holds it.
+- name: prerequisites
+  steps:
+  - name: Install the prerequisites
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-prereq").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &machine
+        name: '${{ ("gb-" + inputs.intent.ssh.host + "-prereq").split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', port: '${{ inputs.intent.ssh.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', apt-get, -o, 'DPkg::Lock::Timeout=300', install, --yes, --no-install-recommends, ca-certificates, curl, git, python3-pip, python3-venv]
+        timeoutSec: 905
+# The release checkout: its swamp/ folder is the Swamp repository of this Gateway, and its swamp/ansible/ holds the pins.
+- name: release
+  dependsOn: [{job: prerequisites, condition: {type: succeeded}}]
+  steps:
+  - name: Clone the release
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-clone").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-clone").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '600', git, clone, --no-checkout, '${{ inputs.intent.release.repository }}', '/home/${{ inputs.intent.ssh.user }}/orbit']
+        timeoutSec: 610
+  - name: Check out the release
+    writes: true
+    dependsOn: [{step: Clone the release, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-checkout").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-checkout").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '300', git, -C, '/home/${{ inputs.intent.ssh.user }}/orbit', checkout, --detach, '${{ inputs.intent.release.commit }}']
+        timeoutSec: 310
+# The swamp role's Ansible: the venv, the pinned ansible-core and the pinned collections, read from the checkout.
+- name: ansible
+  dependsOn: [{job: release, condition: {type: succeeded}}]
+  steps:
+  - name: Create the Ansible venv
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-venv").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-venv").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '120', python3, -m, venv, /opt/orbit/ansible/venv]
+        timeoutSec: 130
+  - name: Install Ansible
+    writes: true
+    dependsOn: [{step: Create the Ansible venv, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', /opt/orbit/ansible/venv/bin/pip, install, --disable-pip-version-check, -r, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/requirements.txt']
+        timeoutSec: 905
+  - name: Install the Ansible collections
+    writes: true
+    dependsOn: [{step: Install Ansible, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-collections").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-collections").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', /opt/orbit/ansible/venv/bin/ansible-galaxy, collection, install, -r, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/requirements.yml', -p, /opt/orbit/ansible/collections]
+        timeoutSec: 905
+# The pinned Swamp release, by checksum, at a path of its own, then the link the services will run.
+- name: swamp
+  dependsOn: [{job: prerequisites, condition: {type: succeeded}}]
+  steps:
+  - name: Make the Swamp folder
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-folder").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-folder").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [install, -d, -m, '0755', '${{ "/usr/local/lib/orbit-swamp/" + inputs.intent.swamp.sha256 }}']
+        timeoutSec: 30
+  - name: Install Swamp
+    writes: true
+    dependsOn: [{step: Make the Swamp folder, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-binary").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        url: '${{ inputs.intent.swamp.url }}'
+        path: '${{ "/usr/local/lib/orbit-swamp/" + inputs.intent.swamp.sha256 + "/swamp" }}'
+        checksum: '${{ "sha256:" + inputs.intent.swamp.sha256 }}'
+        owner: root
+        group: root
+        mode: '0755'
+      inputs: {}
+  - name: Link Swamp
+    writes: true
+    dependsOn: [{step: Install Swamp, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/link'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-link").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        path: /usr/local/bin/swamp
+        ensure: present
+        target: '${{ "/usr/local/lib/orbit-swamp/" + inputs.intent.swamp.sha256 + "/swamp" }}'
+      inputs: {}
+# The operator renders the prerequisites of the machine from the recipe alone: no database, no network, nothing on the machine.
+- name: plan
+  steps:
+  - name: Render the plan
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: gb-plan
+      methodName: execute
+      inputs:
+        run: timeout 120 php "$ORBIT_CHECKOUT/apps/gateway/artisan" orbit:bootstrap-plan --url "$ORBIT_URL" --home "$ORBIT_HOME" --checkout "$ORBIT_APP"
+        env: &gateway
+          ORBIT_CHECKOUT: '${{ inputs.intent.operator.checkout }}'
+          ORBIT_URL: '${{ inputs.intent.gateway.url }}'
+          ORBIT_HOME: '${{ "/home/" + inputs.intent.ssh.user + "/.orbit" }}'
+          ORBIT_APP: '${{ "/home/" + inputs.intent.ssh.user + "/orbit/apps/gateway" }}'
+# The Gateway's own packages, Caddy and PHP: the plan goes to the machine, and the role prerequisites run there with Ansible's local connection.
+- name: machine
+  dependsOn:
+  - {job: plan, condition: {type: succeeded}}
+  - {job: ansible, condition: {type: succeeded}}
+  steps:
+  - name: Make the bootstrap folder
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-bootstrap-folder").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-bootstrap-folder").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [install, -d, -m, '0755', /opt/orbit/bootstrap]
+        timeoutSec: 30
+  - name: Write the plan
+    writes: true
+    dependsOn: [{step: Make the bootstrap folder, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-plan").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        path: /opt/orbit/bootstrap/vars.yml
+        content: '${{ "{\"intent\": " + steps["Render the plan"].outputs.stdout + "}" }}'
+        owner: root
+        group: root
+        mode: '0644'
+        ensure: present
+      inputs: {}
+  - name: Apply the prerequisites
+    writes: true
+    dependsOn: [{step: Write the plan, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-apply").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-apply").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '1800', env, 'ANSIBLE_CONFIG=/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/ansible.cfg', /opt/orbit/ansible/venv/bin/ansible-playbook, -i, 'localhost,', -e, '@/opt/orbit/bootstrap/vars.yml', --tags, prerequisites, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/gateway-bootstrap.yml']
+        timeoutSec: 1805
+# The Gateway app on the machine: its environment, its dependencies, its database and its application key. The key is made on the machine and stays there.
+- name: app
+  dependsOn: [{job: machine, condition: {type: succeeded}}]
+  steps:
+  - name: Render the environment
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: gb-environment
+      methodName: execute
+      inputs:
+        run: timeout 120 php "$ORBIT_CHECKOUT/apps/gateway/artisan" orbit:bootstrap-plan --environment --url "$ORBIT_URL" --home "$ORBIT_HOME" --checkout "$ORBIT_APP"
+        env: *gateway
+  - name: Write the environment
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-environment-file").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: false
+        path: '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/.env'
+        content: '${{ steps["Render the environment"].outputs.stdout }}'
+        owner: '${{ inputs.intent.ssh.user }}'
+        group: '${{ inputs.intent.ssh.user }}'
+        mode: '0600'
+        ensure: present
+      inputs: {}
+    dependsOn: [{step: Render the environment, condition: {type: succeeded}}]
+  - name: Install the Gateway dependencies
+    writes: true
+    dependsOn: [{step: Write the environment, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-dependencies").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-dependencies").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '900', composer, install, --no-dev, --no-interaction, --prefer-dist, '--working-dir=/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway']
+        timeoutSec: 905
+  - name: Make the state folder
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-state").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-state").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [install, -d, -m, '0700', '/home/${{ inputs.intent.ssh.user }}/.orbit']
+        timeoutSec: 30
+  - name: Create the database
+    writes: true
+    dependsOn: [{step: Make the state folder, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-database-file").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: false
+        path: '/home/${{ inputs.intent.ssh.user }}/.orbit/gateway.sqlite'
+        owner: '${{ inputs.intent.ssh.user }}'
+        group: '${{ inputs.intent.ssh.user }}'
+        mode: '0600'
+        ensure: present
+      inputs: {}
+  - name: Generate the application key
+    writes: true
+    dependsOn: [{step: Write the environment, condition: {type: succeeded}}, {step: Install the Gateway dependencies, condition: {type: succeeded}}, {step: Create the database, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-key").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-key").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', 'key:generate', --force, --no-interaction]
+        timeoutSec: 65
+  - name: Migrate the database
+    writes: true
+    dependsOn: [{step: Generate the application key, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-migrate").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-migrate").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '300', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', migrate, --force, --no-interaction]
+        timeoutSec: 305
+  - name: Make the agent delivery folder
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-delivery-folder").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-delivery-folder").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [install, -d, -m, '0755', '/home/${{ inputs.intent.ssh.user }}/orbit/apps/agent/delivery']
+        timeoutSec: 30
+  - name: Write the agent delivery
+    writes: true
+    dependsOn: [{step: Make the agent delivery folder, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-delivery-file").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: false
+        path: '/home/${{ inputs.intent.ssh.user }}/orbit/apps/agent/delivery/manifest.json'
+        content: '${{ inputs.intent.agent_delivery }}'
+        owner: '${{ inputs.intent.ssh.user }}'
+        group: '${{ inputs.intent.ssh.user }}'
+        mode: '0644'
+        ensure: present
+      inputs: {}
+  - name: Bootstrap the Gateway
+    writes: true
+    dependsOn: [{step: Migrate the database, condition: {type: succeeded}}, {step: Write the agent delivery, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-bootstrap").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-bootstrap").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: '${{ ["timeout", "300", "php", "/home/" + inputs.intent.ssh.user + "/orbit/apps/gateway/artisan", "orbit:bootstrap", inputs.intent.ssh.host, "--wireguard-ip=" + inputs.intent.gateway.wireguard_ip, "--wireguard-subnet=" + inputs.intent.gateway.wireguard_subnet, "--no-interaction"] + (has(inputs.intent.operator.wireguard_ip) ? ["--operator-ip=" + inputs.intent.operator.wireguard_ip] : []) }}'
+        timeoutSec: 305
+# The Swamp control plane of the new Gateway, on its own machine: units, tokens minted there, grants, the swamp.orbit front, then serve and two workers.
+- name: control
+  dependsOn: [{job: app, condition: {type: succeeded}}]
+  steps:
+  - name: Render the control plan
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-control-plan").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-control-plan").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '120', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', 'orbit:bootstrap-control-plan', '--checkout=/home/${{ inputs.intent.ssh.user }}/orbit/swamp']
+        timeoutSec: 125
+  - name: Write the control plan
+    writes: true
+    dependsOn: [{step: Render the control plan, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-control-file").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        path: /opt/orbit/bootstrap/control.yml
+        content: '${{ "{\"control\": " + steps["Render the control plan"].outputs.stdout + "}" }}'
+        owner: root
+        group: root
+        mode: '0644'
+        ensure: present
+      inputs: {}
+  - name: Apply the Swamp control plane
+    writes: true
+    dependsOn: [{step: Write the control plan, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-control-apply").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-control-apply").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', env, 'ANSIBLE_CONFIG=/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/ansible.cfg', /opt/orbit/ansible/venv/bin/ansible-playbook, -i, 'localhost,', -e, '@/opt/orbit/bootstrap/control.yml', --tags, swamp, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/gateway-bootstrap.yml']
+        timeoutSec: 905
+  - name: Read the workers
+    dependsOn: [{step: Apply the Swamp control plane, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-workers").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-workers").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', env, 'SWAMP_API_KEY_FILE=/home/${{ inputs.intent.ssh.user }}/.config/swamp/api-key', swamp, worker, list, --server, 'ws://127.0.0.1:9418', --token-file, '/home/${{ inputs.intent.ssh.user }}/.config/swamp/serve-driver-token', --json]
+        timeoutSec: 65
+  - name: Read the hub address
+    dependsOn: [{step: Apply the Swamp control plane, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-hub").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-hub").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [ip, '-4', -br, addr, show, orbit]
+        timeoutSec: 30
+# The end check: the pinned Swamp runs, the venv runs the pinned Ansible, and the checkout is at the release.
+- name: check
+  dependsOn:
+  - {job: ansible, condition: {type: succeeded}}
+  - {job: swamp, condition: {type: succeeded}}
+  - {job: machine, condition: {type: succeeded}}
+  - {job: app, condition: {type: succeeded}}
+  - {job: control, condition: {type: succeeded}}
+  steps:
+  - name: Read the machine
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-machine").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-machine").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [/bin/bash, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/scripts/gateway-bootstrap-check.sh', '/home/${{ inputs.intent.ssh.user }}/orbit']
+        timeoutSec: 120
+  - name: Check the machine
+    dependsOn: [{step: Read the machine, condition: {type: succeeded}}]
+    task:
+      type: assert
+      expr: 'steps["Read the machine"].outputs.stdout.contains("swamp: swamp ") && steps["Read the machine"].outputs.stdout.contains("ansible: ansible-playbook [core ") && steps["Read the machine"].outputs.stdout.contains("commit: " + inputs.intent.release.commit + "\n") && steps["Read the machine"].outputs.stdout.contains("php: PHP 8.5.") && steps["Read the machine"].outputs.stdout.contains("migrations: ok") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-a") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-b") && steps["Read the hub address"].outputs.stdout.contains(inputs.intent.gateway.wireguard_ip)'
+      severity: high
+      message: The machine is not ready to converge itself.

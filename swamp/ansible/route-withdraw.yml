@@ -1,0 +1,226 @@
+---
+# One Node's part of a Route withdrawal (instance.destroy): read what the Node holds, then apply the composed result.
+# Two tagged parts, one Swamp phase each: `read`, then `apply`. Between them Swamp composes the withdrawal from the
+# captured states and what `read` found, and writes `plan.json` into the run folder. The intent (the connection and what
+# the Node serves) is in the run folder too, read by a file lookup so that text with `{{` reaches the Node unchanged.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.node }}"
+    address_identity: "{{ intent.node.identity_file }}"
+    address_group: route_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Read the Route files of the Node
+  hosts: route_node
+  become: true
+  gather_facts: false
+  tags: [read]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+  tasks:
+    # The account's passwd line: its gid and home place the pools.
+    - name: Read the account
+      ansible.builtin.command:
+        argv: [timeout, "10", getent, passwd, "{{ intent.node.account }}"]
+      register: account
+      changed_when: false
+      check_mode: false
+      when: intent.serves_routes
+    - name: Find the pool files
+      ansible.builtin.find:
+        paths: /etc/php
+        patterns: orbit-scopes.conf
+        recurse: true
+        file_type: file
+      register: found
+      check_mode: false
+      when: intent.serves_routes
+    - name: Read the pool files
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      register: pools
+      loop: "{{ found.files | default([]) | map(attribute='path') | select('match', '^/etc/php/[0-9.]+/fpm/pool.d/orbit-scopes.conf$') | list }}"
+      when: intent.serves_routes
+    # A Node without a Caddyfile reads as an empty one; any other failure fails the phase.
+    - name: Read the Caddyfile
+      ansible.builtin.slurp:
+        src: /etc/caddy/Caddyfile
+      register: caddy
+      when: intent.serves_routes
+      failed_when: caddy is failed and 'file not found' not in (caddy.msg | default('') | lower)
+    # A missing file fails the phase: the Node must hold what the captured states describe.
+    - name: Read the private DNS files
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      register: dns
+      loop: [/etc/dnsmasq.d/orbit-records.conf, /var/lib/orbit/private-dns/catalog.json]
+      when: intent.reads_dns
+    - name: Collect the pool files
+      ansible.builtin.set_fact:
+        pool_files: "{{ pool_files | default({}) | combine({item.item: item.content}) }}"
+      loop: "{{ pools.results | default([]) | selectattr('content', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.item }}"
+    # Into the run folder, where the composition reads it: a Caddyfile is too large for a step output. File contents stay base64.
+    - name: Keep what the Node holds
+      ansible.builtin.copy:
+        content: >-
+          {{ {'account': account.stdout | default(''), 'pools': pool_files | default({}),
+          'caddy': caddy.content | default(''),
+          'records': (dns.results | default([{}]))[0].content | default(''),
+          'catalog': (dns.results | default([{}, {}]))[1].content | default('')} | to_json }}
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/read.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+- name: Apply the withdrawal on the Node
+  hosts: route_node
+  become: true
+  gather_facts: false
+  tags: [apply]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    plan: "{{ lookup('ansible.builtin.file', run ~ '/plan.json') | from_json }}"
+  tasks:
+    - name: Withdraw
+      block:
+        # Composing and applying are seconds apart: a file that changed since the read is not overwritten.
+        - name: Check the files are as they were read
+          ansible.builtin.command:
+            argv: "{{ ['sha256sum', '--'] + (plan.expect | dict2items | map(attribute='key') | list) }}"
+          register: seen
+          when: plan.expect | length > 0
+          changed_when: false
+          failed_when: >-
+            seen.rc != 0 or
+            (seen.stdout_lines | map('split', ' ') | map('first') | list) != (plan.expect | dict2items | map(attribute='value') | list)
+          check_mode: false
+        # Pools first, as the PHP delta did: written, tested, then reloaded. A reload keeps open requests; a stopped unit stays stopped.
+        - name: Write the PHP-FPM pool files
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ item.path }}"
+            owner: root
+            group: root
+            mode: "0644"
+          loop: "{{ plan.pools | selectattr('ensure', 'equalto', 'present') | list }}"
+          loop_control:
+            label: "{{ item.path }}"
+        - name: Remove the emptied PHP-FPM pool files
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ plan.pools | selectattr('ensure', 'equalto', 'absent') | list }}"
+          loop_control:
+            label: "{{ item.path }}"
+        - name: Test the PHP-FPM configuration
+          ansible.builtin.command:
+            argv: [timeout, "30", "/usr/sbin/php-fpm{{ item.version }}", -t]
+          loop: "{{ plan.pools }}"
+          loop_control:
+            label: "{{ item.version }}"
+          changed_when: false
+        - name: Reload PHP-FPM
+          ansible.builtin.command:
+            argv: [timeout, "30", systemctl, try-reload-or-restart, "php{{ item.version }}-fpm"]
+          loop: "{{ plan.pools }}"
+          loop_control:
+            label: "{{ item.version }}"
+          changed_when: true
+        # The Node's whole Caddyfile without the Route; validated, then reloaded. Caddy is never restarted.
+        - name: Publish the Caddyfile
+          when: plan.caddy is not none
+          block:
+            - name: Write the Caddyfile
+              ansible.builtin.copy:
+                content: "{{ plan.caddy.content }}"
+                dest: /etc/caddy/Caddyfile
+                owner: root
+                group: caddy
+                mode: "0640"
+            - name: Validate the Caddyfile
+              ansible.builtin.command:
+                argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+              changed_when: false
+            - name: Reload Caddy
+              ansible.builtin.command:
+                argv: [timeout, "60", systemctl, reload, caddy]
+              changed_when: true
+        - name: Publish the private DNS records
+          when: plan.dns is not none
+          block:
+            - name: Create the catalog folder
+              ansible.builtin.file:
+                path: /var/lib/orbit/private-dns
+                state: directory
+                mode: "0755"
+            - name: Write the records
+              ansible.builtin.copy:
+                content: "{{ plan.dns.records }}"
+                dest: /etc/dnsmasq.d/orbit-records.conf
+                owner: root
+                group: root
+                mode: "0644"
+            - name: Write the catalog
+              ansible.builtin.copy:
+                content: "{{ plan.dns.catalog }}"
+                dest: /var/lib/orbit/private-dns/catalog.json
+                owner: root
+                group: root
+                mode: "0644"
+            - name: Test the DNS configuration
+              ansible.builtin.command:
+                argv: [timeout, "30", dnsmasq, --test]
+              changed_when: false
+            - name: Restart the DNS backend
+              ansible.builtin.command:
+                argv: [timeout, "60", systemctl, restart, dnsmasq]
+              changed_when: true
+            - name: Enable the DNS listener
+              ansible.builtin.command:
+                argv: [timeout, "30", systemctl, enable, --now, orbit-private-dns.socket]
+              changed_when: false
+        # The scopes no site names any more: the Caddy folder, and the account copy under the account's home.
+        - name: Read the accounts of the withdrawn scopes
+          ansible.builtin.command:
+            argv: [timeout, "10", getent, passwd, "{{ item }}"]
+          register: cleanup_accounts
+          loop: "{{ plan.cleanup | map(attribute='user') | unique | list }}"
+          changed_when: false
+          check_mode: false
+        # One command for every folder: each remote task costs about 0.4 s. The scope names are validated by the composition.
+        - name: Remove the certificate folders
+          ansible.builtin.command:
+            argv: "{{ ['rm', '-rf', '--'] + caddy_folders + account_folders }}"
+          vars:
+            scopes: "{{ plan.cleanup | map(attribute='scope') | list }}"
+            passwd: "{{ cleanup_accounts.results | default([]) | items2dict(key_name='item', value_name='stdout') }}"
+            homes: "{{ plan.cleanup | map(attribute='user') | map('extract', passwd) | map('regex_replace', '^(?:[^:]*:){5}([^:]*):.*$', '\\1') | list }}"
+            caddy_folders: "{{ scopes | map('regex_replace', '^', '/etc/caddy/orbit-certificates/') | list }}"
+            account_folders: "{{ homes | zip(scopes) | map('join', '/.orbit/certificates/') | list }}"
+          changed_when: true
+          when: plan.cleanup | length > 0
+      always:
+        - name: Remove the run folder
+          ansible.builtin.file:
+            path: "{{ run }}"
+            state: absent
+          delegate_to: localhost
+          become: false
+          check_mode: false
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"

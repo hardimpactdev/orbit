@@ -15,7 +15,11 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, const: tasks.provision}
+    # The root run of the Operation. A parent run (prep) passes its own; a run the Gateway starts is the root.
+    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
+      type: object
+    converge:
       type: object
     execution_secrets:
       type: object
@@ -45,7 +49,10 @@ jobs:
   labels: {role: swamp}
   steps:
   - name: Create and prepare the VM
+    # Stage 2 "Take a task VM": a claimed ready slot (docs/cli/tasks/vm-slots.mmd) is started; otherwise the VM is cloned and enrolled.
+    # A guard that is true skips its step: this step runs without `intent.slot`, the slot steps below run with it.
     labels: {role: swamp}
+    guard: '${{ has(inputs.intent.slot) }}'
     task:
       type: workflow
       workflowIdOrName: task-vm-provision
@@ -55,6 +62,70 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
+  - name: Start the slot
+    # A slot is enrolled already: a VM that already runs makes `incus start` exit 1 and counts as started; the agent wait proves it.
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !has(inputs.intent.slot) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &slot_host
+        name: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+        # A skipped step's inputs are still evaluated, and an UpCloud clone has no host target.
+        transport:
+          kind: ssh
+          user: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.user : "" }}'
+          port: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.port : 22 }}'
+          identityFile: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.identity_file : "" }}'
+        hosts:
+        - name: target
+          address: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.host : "" }}'
+          transport:
+            hostKeys: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.host_keys : [] }}'
+      inputs:
+        hosts: name:target
+        sudo: true
+        okExitCodes: [0, 1]
+        argv: [timeout, '60', incus, start, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', --, '${{ inputs.intent.name }}']
+  - name: Wait for the slot agent
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.slot) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *slot_host
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '130', incus, wait, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', --timeout, '120', --interval, '1', --, '${{ inputs.intent.name }}', agent]
+    dependsOn:
+    - step: Start the slot
+      condition:
+        type: succeeded
+  - name: Wait for the slot boot
+    # The agent answers before sshd, WireGuard and Pi; the workspace SSHes in next. A degraded boot exits 1 and still counts.
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.slot) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *slot_host
+      inputs:
+        hosts: name:target
+        sudo: true
+        okExitCodes: [0, 1]
+        argv: [timeout, '130', incus, exec, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', '${{ inputs.intent.name }}', --, timeout, '120', systemctl, is-system-running, --wait]
+    dependsOn:
+    - step: Wait for the slot agent
+      condition:
+        type: succeeded
   - name: Set up the workspace
     labels: {role: swamp}
     task:
@@ -65,15 +136,90 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
+        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
     dependsOn:
     - step: Create and prepare the VM
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    - step: Start the slot
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    - step: Wait for the slot agent
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    - step: Wait for the slot boot
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+  - name: Pin the converge
+    labels: {role: swamp}
+    # Stage 2, "Converge once": the task VM role phases on the outer VM (the NFS export of the checkout to the nested network, Incus with the seed pool); a VM at the pins reports no change.
+    guard: '${{ !has(inputs.converge) }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: tp-data-pin-converge
+      methodName: pin
+      inputs:
+        receipt: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
+        guest_node_id: ${{ inputs.intent.guest_node_id }}
+        # The inputs of a skipped step are still evaluated, so a provision without a nested topology (no converge input) needs a value here.
+        intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {} } }}'
+    dependsOn:
+    - step: Set up the workspace
+      condition:
+        type: succeeded
+  - name: Converge once
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !has(inputs.converge) }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-converge
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.guest_node_id }}
+        kind: task_vm.converge
+        intent: '${{ has(inputs.converge) ? steps["Pin the converge"].outputs.converge : {} }}'
+        execution_secrets: '${{ {} }}'
+    dependsOn:
+    - step: Pin the converge
+      condition:
+        type: succeeded
+    # A seed without its three ready copies of the current format has no nested fleet: the one decision for the fleet, and the VM goes on without it.
+    # The result says `nested_fleet: none`, and the refresh of the task image builds the fleet in such a VM.
+  - name: Find the fleet guest
+    labels: {role: swamp}
+    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
+    task: {type: behavior, behaviorType: '@nckrtl/task-provision-data', behaviorName: '${{ "tp-data-guest-fleet" }}', methodName: guest, inputs: {intent: '${{ inputs.intent }}', vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'}}
+    dependsOn:
+    - step: Set up the workspace
+      condition:
+        type: succeeded
+    - step: Converge once
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+  - name: Look for ready copies
+    labels: {role: swamp}
+    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("provision-" + string(inputs.intent.guest_node_id) + "-look-for-ready-copies").split(".").join("-") }}', methodName: exec,
+      globalArgs: {name: '${{ ("provision-" + string(inputs.intent.guest_node_id) + "-look-for-ready-copies").split(".").join("-") }}', transport: {kind: ssh, user: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.user }}', port: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.port }}',
+        identityFile: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.host }}',
+        transport: {hostKeys: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.host_keys }}'}}]},
+      inputs: {hosts: 'name:target', argv: ['incus', 'list', 'fleet-ready-', '${{ "config.user.ready.format=" + inputs.intent.fleet.format }}', '--format', 'csv', '--columns', 'n'], timeoutSec: 40}}
+    dependsOn:
+    - step: Find the fleet guest
       condition:
         type: succeeded
   - name: Start the nested fleet
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
+    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology || steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
     task:
       type: workflow
       workflowIdOrName: task-nested-fleet
@@ -82,11 +228,19 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
     dependsOn:
     - step: Set up the workspace
       condition:
         type: succeeded
+    - step: Converge once
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    - step: Look for ready copies
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     # The Gateway left the guest's SSH targets unpinned; the VM step just pinned its key.
   - name: Bind the workspace keys
     labels: {role: swamp}
@@ -97,7 +251,7 @@ jobs:
       behaviorName: '${{ "tp-data-bind" }}'
       methodName: bind
       inputs:
-        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
         guest_node_id: ${{ inputs.intent.guest_node_id }}
         route: ${{ inputs.intent.route }}
         processes: ${{ inputs.intent.processes }}
@@ -161,13 +315,13 @@ jobs:
           result = json.loads(os.environ["ORBIT_RESULT"])
           route, processes = os.environ["ORBIT_ROUTE"], [p for p in os.environ["ORBIT_PROCESSES"].split(";") if p]
           result["route"], result["processes"] = route, processes
-          result["nested_fleet"] = json.loads(os.environ["ORBIT_FLEET"]).get("nested_fleet", "none")
+          result["nested_fleet"] = "started" if os.environ["ORBIT_FLEET"] == "succeeded" else "none"
           failed = "bind" if os.environ["ORBIT_BIND"] == "failed" else "route" if route == "failed" else "processes" if any(p.endswith("=failed") for p in processes) else None
           if failed and "error_code" not in result:
               result.update(error_code="tasks.provision_failed", failed_step=failed)
           print(json.dumps(result))'
         env:
-          ORBIT_FLEET: '${{ "Start the nested fleet" in steps && "outputs" in steps["Start the nested fleet"] && "result" in steps["Start the nested fleet"].outputs ? steps["Start the nested fleet"].outputs.result.stdout : "{}" }}'
+          ORBIT_FLEET: '${{ "Start the nested fleet" in steps ? steps["Start the nested fleet"].status : "skipped" }}'
           ORBIT_BIND: '${{ "Bind the workspace keys" in steps ? steps["Bind the workspace keys"].status : "skipped" }}'
           ORBIT_ROUTE: '${{ "Route the workspace" in steps ? steps["Route the workspace"].status : "skipped" }}'
           ORBIT_PROCESSES: '${{ steps.filter(k, k.startsWith("Create, start Processes-")).map(k, k + "=" + steps[k].status).join(";") }}'

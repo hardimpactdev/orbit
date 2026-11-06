@@ -9,8 +9,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AgentCommands\AgentInvocation;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -27,9 +25,6 @@ use Illuminate\Support\Str;
 /** The full public template intent at the run start and one terminal projection from Swamp's run data; no UpCloud or guest calls. */
 final readonly class TaskVmUpCloudImageProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
-    /** The recipe phases whose start and completion reads give the phase seconds of an UpCloud template build. */
-    public const array RecipePhases = ['apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi'];
-
     /** The end check: after a successful build, the listed promoted template is the one templatize made. */
     public const string EndCheck = 'Check the template';
 
@@ -47,40 +42,22 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
     {
         $build = $this->build($operation);
         $stored = Arr::except($operation->input, ['caller_node_id']);
-        $pin = ValidatedData::string($stored['agent_sha256']);
         $identity = ValidatedData::string($stored['identity']);
         $stamp = ValidatedData::string($stored['stamp']);
+        $pi = ValidatedData::object($stored['pi']);
         $recipe = ValidatedData::object(json_decode(ValidatedData::string($stored['recipe']), true, flags: JSON_THROW_ON_ERROR));
         $ssh = app(SwampSshExecutionInput::class);
-        $key = static fn (string $phase): array => ['identity' => $identity, 'profile' => 'base', 'phase' => $phase, 'execution' => 'upcloud-'.$build->id];
-        $candidate = '/var/tmp/orbit-agent-candidate-'.$pin;
-        $envelope = static fn (int $seconds, array $input): string => AgentInvocation::envelope($pin, $seconds, $input);
         $gateway = Node::query()->findOrFail($operation->node_id);
-        $intent = [...Arr::except($stored, ['recipe', 'host_key']),
+        $intent = [...Arr::except($stored, ['recipe', 'host_key', 'pi']),
             'recipe' => $recipe,
             'host_key' => $this->bootstrap($build)['public'],
-            'ssh' => Arr::only($ssh->identity(), ['identity_file', 'public_key']),
+            // The server has no address when the Gateway admits the run; the run takes it from the UpCloud answer. 209 reaches it directly with the admitted host key.
+            'ssh' => [...Arr::only($ssh->identity(), ['identity_file', 'public_key']), 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
             // The Pi build lives in the Gateway home; 209 fetches it with the same pinned SSH as every other step.
-            'pi_source' => $ssh->forNode($gateway),
+            'pi' => ['sha256' => ValidatedData::string($pi['sha256']), 'source' => ['ssh' => $ssh->forNode($gateway), 'path' => ValidatedData::string($pi['path'])]],
+            'profile' => 'base', 'image' => true, 'nfs' => null,
             'pinned_templates' => TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud)
                 ->whereNull('provider_id')->whereNotNull('image_fingerprint')->pluck('image_fingerprint')->all(),
-            'candidate' => $candidate,
-            'envelopes' => [
-                'install' => $envelope(180, ['candidate' => $candidate, 'sha256' => $pin]),
-                'cloud_init' => $envelope(45, []),
-                'owner' => $envelope(120, []),
-                'inspect_boot' => $envelope(30, ['key' => $key(self::RecipePhases[0]), 'boot_id' => null]),
-                'marker' => $envelope(120, ['identity' => $identity, 'profile' => 'base']),
-                'verify' => $envelope(120, $recipe),
-                'boot' => $envelope(120, ['lean' => false]),
-                'firewall' => $envelope(120, []),
-                'clean' => $envelope(120, []),
-                'check' => $envelope(120, ['lean_boot' => false, 'firewall' => true]),
-            ],
-            'phase_keys' => array_combine(self::RecipePhases, array_map($key, self::RecipePhases)),
-            // The agent names each phase's retained unit after the first 32 hex of its key's SHA-256.
-            'units' => array_combine(self::RecipePhases, array_map(static fn (string $phase): string => 'orbit-recipe-image-'
-                .substr(hash('sha256', implode(':', $key($phase))), 0, 32).'.service', self::RecipePhases)),
             'template_data' => json_encode(['storage' => ['title' => 'orbit-task-base-'.$stamp.'-unverified']], JSON_THROW_ON_ERROR),
             'promote_data' => json_encode(['storage' => ['title' => 'orbit-task-base-'.$stamp, 'labels' => [
                 ['key' => 'orbit.recipe', 'value' => $identity], ['key' => 'orbit-task-image', 'value' => $stamp]]]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
@@ -133,8 +110,7 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
     {
         $desired = DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail();
 
-        return $desired->identity === $build->recipe_identity && (int) $desired->generation === $operation->input['generation']
-            && app(AgentDelivery::class)->pin(Node::query()->findOrFail($operation->node_id)) === $operation->input['agent_sha256'];
+        return $desired->identity === $build->recipe_identity && (int) $desired->generation === $operation->input['generation'];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -167,14 +143,10 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
         });
     }
 
-    /** A refused agent reply keeps its own public code; other failures take their step's code. */
+    /** The failed step takes its code: an UpCloud request that failed, or any other step. */
     private function errorCode(mixed $failure): string
     {
         $step = is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : '';
-        $detail = is_array($failure) && is_string($failure['detail'] ?? null) ? trim($failure['detail']) : '';
-        if (preg_match('/\A[a-z0-9_]+\.[a-z0-9_.-]{1,80}\z/D', $detail) === 1) {
-            return $detail;
-        }
 
         return in_array($step, self::ProviderSteps, true) ? 'task_vm.upcloud_failed' : 'task_vm.image_build_failed';
     }

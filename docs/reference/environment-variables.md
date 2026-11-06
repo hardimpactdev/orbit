@@ -123,7 +123,7 @@ On `app-prod`, every release links `.env` in its application directory to the pr
 
 Import reads the Instance's `.env`. It never reads `.env.example`. A Swamp run on Node 209 checks the file type, the owner, and the size over SSH, then copies the bytes into the Swamp vault key `instance-env-import.content.<operation>`. A missing, unsafe, or oversized file fails the Operation with `env.import_source_missing`. The run returns only the size and sha256, and removes its private temporary copies after success or failure. The Gateway reads the vault key once, checks the sha256, parses and stores the file, and then deletes the key, also after a failure. A size or sha256 mismatch fails with `env.import_unconfirmed` and stores nothing. The [`env:import` chart](/cli/env/import) shows each step.
 
-The Gateway never reads a workload `.env` through the Node agent for an import; only synchronization reads it, through `instance.inspect-environment-sync`.
+The Gateway never reads a workload `.env` through the Node agent for an import, and the agent has no command that returns its values. Only synchronization reads the file, through `instance.inspect-environment-sync`.
 
 The Operation declaration names the same exact vault key pattern as the intended Gateway grant policy. The registry check verifies that policy against the declarations before release.
 

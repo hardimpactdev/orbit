@@ -3,6 +3,7 @@
 # with it when Swamp or the Gateway cannot run `gateway:release:rollback`. Run it on the Gateway Node with sudo.
 # It switches the application link, and the web link when the release keeps its web build, reloads PHP-FPM so every
 # request runs the release, and restarts each running service that runs from the application, such as the scheduler.
+# A restart of Horizon waits for its running jobs, up to the drain, because the unit carries the stop policy.
 # It changes no schema and restores no snapshot. docs/reference/gateway-recovery.md#roll-back-without-swamp
 set -euo pipefail
 
@@ -34,4 +35,13 @@ systemctl reload php8.5-fpm && echo "gateway-rollback: reloaded php8.5-fpm"
 for unit in $(systemctl list-units --type=service --state=active --plain --no-legend | awk '{print $1}'); do
     directory=$(systemctl show -p WorkingDirectory --value "$unit")
     case $directory in "$application" | "$application"/*) systemctl restart "$unit" && echo "gateway-rollback: restarted $unit" ;; esac
+done
+# Horizon is the Gateway's queue, and a release drains it before the switch, so a stopped Horizon is what a failed release leaves behind: start it.
+# A template such as getty@.service has no properties to show, and a unit that cannot be read is not Horizon.
+for unit in $(systemctl list-unit-files --type=service --state=enabled --plain --no-legend | awk '{print $1}'); do
+    case $unit in *@.service) continue ;; esac
+    directory=$(systemctl show -p WorkingDirectory --value "$unit" 2>/dev/null) || continue
+    case $directory in "$application" | "$application"/*) ;; *) continue ;; esac
+    { systemctl show -p ExecStart --value "$unit" 2>/dev/null || true; } | grep -q 'artisan horizon ;' || continue
+    systemctl is-active --quiet "$unit" || { systemctl start "$unit" && echo "gateway-rollback: started $unit"; }
 done

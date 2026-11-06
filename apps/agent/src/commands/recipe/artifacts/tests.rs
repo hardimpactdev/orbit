@@ -1,6 +1,5 @@
 use super::*;
 use crate::commands::recipe::{Output, WorkDir};
-use serde_json::json;
 use std::{io::Write, time::Duration};
 fn archive(path: &Path, link: Option<&str>, xz: bool) {
     let mut bytes = Vec::new();
@@ -147,65 +146,4 @@ fn mirror_transport_errors_try_upstream_but_digest_corruption_stops() {
             .contains("digest")
     );
     assert_eq!(host.urls.len(), 1);
-}
-
-#[test]
-fn deb_metadata_requires_exact_name_and_epoch_version_and_accepts_architecture_independent_packages(
-) {
-    struct Metadata {
-        output: Output,
-        calls: Vec<Invocation>,
-    }
-    impl Host for Metadata {
-        fn execute(&mut self, call: &Invocation) -> Result<Output, Failure> {
-            self.calls.push(call.clone());
-            Ok(self.output.clone())
-        }
-        fn wait(&mut self, _: Duration) -> Result<(), Failure> {
-            panic!("No retry")
-        }
-    }
-    let input: Input = serde_json::from_value(
-        json!({"user":"orbit","snapshot":"20261022T000000Z","architecture":"amd64","tools":{}}),
-    )
-    .unwrap();
-    let pin: Tool =
-        serde_json::from_value(json!({"source":"artifact","version":"2:1.0-1"})).unwrap();
-    for (name, version, architecture, code, truncated, accepted) in [
-        ("git", "2:1.0-1", "amd64", 0, false, true),
-        ("git", "2:1.0-1", "all", 0, false, true),
-        ("other", "2:1.0-1", "amd64", 0, false, false),
-        ("git", "1.0-1", "amd64", 0, false, false),
-        ("git", "2:1.0-1", "arm64", 0, false, false),
-        ("git", "2:1.0-1", "amd64", 1, false, false),
-        ("git", "2:1.0-1", "amd64", 0, true, false),
-    ] {
-        let mut host = Metadata {
-            output: Output {
-                code,
-                truncated,
-                stdout: format!(
-                    "Package: {name}\nVersion: {version}\nArchitecture: {architecture}\n"
-                ),
-                ..Output::default()
-            },
-            calls: vec![],
-        };
-        assert_eq!(
-            verify_deb(&mut host, Path::new("/candidate.deb"), "git", &pin, &input).is_ok(),
-            accepted
-        );
-        assert_eq!(host.calls.len(), 1);
-        assert_eq!(
-            host.calls[0].argv,
-            [
-                "dpkg-deb",
-                "-f",
-                "/candidate.deb",
-                "Package",
-                "Version",
-                "Architecture"
-            ]
-        );
-    }
 }

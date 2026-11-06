@@ -81,7 +81,7 @@ remote "$web_dir" "$release" <<'REMOTE'
 set -euo pipefail
 web=$1
 release=$2
-test -d "$web/releases" || { printf 'Gateway web directory %s is missing; run orbit:gateway-web.\n' "$web" >&2; exit 1; }
+test -d "$web/releases" || { printf 'Gateway web directory %s is missing; converge the gateway role.\n' "$web" >&2; exit 1; }
 rm -rf -- "$web/releases/$release.partial"
 mkdir -m 0750 -- "$web/releases/$release.partial"
 REMOTE

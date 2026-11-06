@@ -15,6 +15,10 @@ inputs:
       minimum: 1
     kind:
       type: string
+    # The root run of the Operation, which the Gateway checks when it mints the push token.
+    run_id:
+      type: string
+      pattern: ^[a-f0-9-]{36}$
     intent:
       type: object
     execution_secrets:
@@ -41,6 +45,7 @@ inputs:
   - operation_id
   - node_id
   - kind
+  - run_id
   - intent
   - execution_secrets
   additionalProperties: false
@@ -120,6 +125,19 @@ jobs:
     - step: Bundle the approved commit
       condition:
         type: succeeded
+  - name: Mint the push token
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ inputs.run_id }}
+        purpose: publish
+    dependsOn:
+    - step: Copy the bundle
+      condition:
+        type: succeeded
   - name: Push the approved commit
     labels: {role: swamp}
     writes: true
@@ -161,7 +179,7 @@ jobs:
           ORBIT_REMOTE: ${{ inputs.intent.remote }}
           ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
     dependsOn:
-    - step: Copy the bundle
+    - step: Mint the push token
       condition:
         type: succeeded
   - name: Revoke the token
@@ -180,6 +198,7 @@ jobs:
           GH_CONFIG_DIR: ${{ "/tmp/orbit-task-approved-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
+    guard: ${{ !("Mint the push token" in steps && steps["Mint the push token"].status == "succeeded") }}
     allowFailure: true
     dependsOn:
     - step: Push the approved commit

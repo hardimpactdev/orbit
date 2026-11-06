@@ -146,13 +146,11 @@ impl Fixture {
         let fixture = Self {
             host: Host {
                 wireguard: root.join("wireguard"),
-                dns_records: root.join("records.conf"),
                 peer_lock: root.join("peer.lock"),
                 bin: Some(root.join("bin")),
                 root_uid: rustix::process::getuid().as_raw(),
                 root_gid: rustix::process::getgid().as_raw(),
                 lock_wait: Duration::from_millis(200),
-                inspect_lock_wait: Duration::from_millis(200),
                 provider_wait: Duration::from_secs(5),
                 fail_rename: None,
             },
@@ -459,27 +457,6 @@ fn repairs_the_largest_namespace() {
 }
 
 #[test]
-fn refuses_while_another_peer_operation_holds_the_lock() {
-    let fixture = Fixture::new(false, true);
-    let before = fixture.state();
-    let _held = hold(&fixture.host.peer_lock, Duration::ZERO, true)
-        .unwrap()
-        .unwrap();
-    assert_eq!(fixture.repair(&["orbit"]), Err(RepairError::Busy {}));
-    assert_eq!(
-        inspect(
-            &InspectInput {
-                server: "10.43.0.53".into()
-            },
-            &fixture.host
-        ),
-        Err(InspectError::Busy {})
-    );
-    assert_eq!(fixture.state(), before);
-    assert!(fixture.commands().is_empty());
-}
-
-#[test]
 fn refuses_while_peer_convergence_recovery_is_pending() {
     let fixture = Fixture::new(false, true);
     fixture.write(
@@ -654,52 +631,4 @@ fn keeps_an_uplink_snapshot_in_the_transaction_format() {
     assert!(restore_uplink(&fixture.host, &snapshot, true));
     assert_eq!(fixture.link("eth0").unrelated["llmnr"], "yes");
     assert!(capture_uplink(&fixture.host, "orbit").is_none());
-}
-
-#[test]
-fn inspects_saved_and_live_state() {
-    let fixture = Fixture::new(false, true);
-    let state = inspect(
-        &InspectInput {
-            server: "10.43.0.53".into(),
-        },
-        &fixture.host,
-    )
-    .unwrap();
-    assert_eq!(
-        state,
-        PeerDnsState {
-            state: "orbit\n10.43.0.53\norbit".into(),
-            hooks: "PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~orbit".into(),
-            dns: "Link 7 (orbit): 10.43.0.53".into(),
-            domains: "Link 7 (orbit): ~orbit".into(),
-            default_route: "Link 7 (orbit): no".into(),
-            uplink: true,
-        }
-    );
-}
-
-#[test]
-fn answers_each_lookup_or_none() {
-    let fixture = Fixture::new(false, true);
-    assert_eq!(
-        query(
-            &QueryInput {
-                names: domains(&["gateway.orbit", "example.com"])
-            },
-            &fixture.host
-        ),
-        Ok(Answers {
-            answers: vec![Some("gateway.orbit: 10.43.0.1 -- link: orbit".into()), None]
-        })
-    );
-    assert_eq!(
-        query(
-            &QueryInput {
-                names: domains(&["bad name"])
-            },
-            &fixture.host
-        ),
-        Err(QueryError::NameInvalid {})
-    );
 }

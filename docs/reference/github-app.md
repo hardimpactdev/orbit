@@ -81,7 +81,7 @@ Fixed error codes are `dependency_token.forbidden` (403), `project.not_found` (4
 
 The [web build of a Gateway release](/reference/gateway-recovery#web-build) reads CI artifacts. It uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
-[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The shared commit-check read uses it to identify superseded workflow suites and the pull request's own `pull_request` suites for the [merge gate](/reference/tasks#execution-ownership).
+[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The shared commit-check read uses it to identify superseded workflow suites.
 
 The [CI cache setup step](/reference/instance-setup#import-ci-main-caches) instead receives SHA-bound Git refs through the Gateway mirror. Its repository read uses `Contents: read`, not the Actions API. Only the successful main CI publisher needs `Contents: write`; the workspace receives cache objects without a GitHub token.
 
@@ -169,13 +169,23 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 ## How Orbit publishes a task pull request
 
-After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token stays on the Gateway. The Gateway takes the commit out of the task VM into its own mirror, and `git` pushes the stored commit from there as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm).
+A task VM never holds a GitHub credential, neither a token nor a deploy key, except the setup token files below. The App serves every step that needs GitHub. Each step gets its own token when it runs.
+
+- **Clone.** A step on Node 209 asks the Gateway for a read credential (`purpose: clone`). It clones with full history.
+- **Nothing stays on the VM.** The VM receives a bundle with a plain `origin`. `.git/config`, a credential helper and the environment files hold no credential.
+- **Publish, pull request and approved push.** These steps run on Node 209. Each step asks the Gateway for a fresh token at its start (`operation:direct:github-token`).
+- **No admission token.** Admission mints no token for a later step. An installation token lives one hour. A prep run needs 43 to 90 minutes to reach its publish step.
+- **Private dependencies.** The setup steps install them. A step mints a read token for the setup steps only.
+- **Token removal.** A step deletes the token files after the last setup step.
+- **A new private package during a task.** The agent asks through assistance. The orchestrator starts `tasks-package`, whose steps mint the setup token and remove it.
+
+The publish token has `contents: write`, `pull_requests: write` and `workflows: write` for the Project repository. Swamp pushes the checked commit as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Publish from the VM](/reference/compute-drivers#publish-from-the-vm).
 
 A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request. When the task's workspace is removed, the Gateway deletes that branch with `DELETE /repos/{owner}/{repo}/git/refs/heads/task-{id}-handoff` and the same token. A 404 or a 422 for a missing reference counts as deleted. Any other failure asks for assistance once and never holds the workspace removal.
 
-It reads the check runs and check suites of the handoff commit with the `checks: read` token. Suites use `GET /repos/{owner}/{repo}/commits/{sha}/check-suites`. After reading the check runs, the shared read lists workflow runs with the existing `actions: read` token. For each workflow, event, and branch, it keeps the newest run's suite and removes older suites and their jobs. A failed job's log uses the same Actions token, as [Fix a settling pull request](/reference/tasks#execution-ownership) describes. The merge gate, the settling watch, and the handoff share these runs and suites for 60 seconds.
+It reads the check runs of the head commit with the `checks: read` token. After reading them, the shared read lists workflow runs with the existing `actions: read` token. For each workflow, event, and branch, it keeps the newest run's suite and removes older suites and their jobs. A failed job's log uses the same Actions token, as [Fix a settling pull request](/reference/tasks#execution-ownership) describes. The settling watch shares these runs for 60 seconds.
 
-The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this snapshot and conclusion classification inside `tasks.check`; it adds no second GitHub reader. Its persisted evidence uses the existing `GitHubCheckRun::toArray()` and `GitHubCheckSuite::toArray()` records with bounded, redacted text, not raw logs. The operation pins the required check name and branch before push and reads only its recorded commit. Pending, missing or unreadable evidence keeps it waiting; infrastructure/configuration evidence does not silently become a failed-code charge. The orchestrator owns assistance, time budgets and cancellation. This prerequisite does not open external review-and-merge admission or change token permissions.
+The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this snapshot and conclusion classification inside `tasks.check`; it adds no second GitHub reader. Its persisted evidence uses the existing `GitHubCheckRun::toArray()` records with bounded, redacted text, not raw logs. The operation pins the required check name and branch before push and reads only its recorded commit. Pending, missing or unreadable evidence keeps it waiting; infrastructure/configuration evidence does not silently become a failed-code charge. The orchestrator owns assistance, time budgets and cancellation. This prerequisite does not open external review-and-merge admission or change token permissions.
 
 After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
@@ -209,27 +219,20 @@ The Gateway resolves the repository's installation id, caches it, and reuses tha
 
 ## How Orbit reviews and merges a pull request
 
-A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for these calls. Each call asks GitHub for its own token, as the table shows.
+Swamp reviews and merges: the [ready and merge steps](/reference/tasks#ready-and-merge-a-task-pull-request) use the write tokens described above. The Gateway reads the merge check with the two calls below, each with its own token.
 
 | Call | Endpoint | Token |
 | --- | --- | --- |
-| List open pull requests | `GET /repos/{owner}/{repo}/pulls?state=open`, oldest first, at most three pages of 100 | The cached `pull_requests: read` token of the [branch watch](#watch-open-subtasks-branch-pull-requests) |
-| Submit a review | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event` `APPROVE` or `REQUEST_CHANGES` and `commit_id` | The publishing token |
 | Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs`, every page | `checks: read` |
-| Identify superseded and pull request suites | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}`, one page of 100 per shared commit-check snapshot | `actions: read` |
-| Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
+| Identify superseded suites | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}`, one page of 100 per shared commit-check snapshot | `actions: read` |
 
-The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. The merge gate's read of the pull request's own workflow runs uses the App's existing `Actions: read`. So the flow needs no new App permission, no maintainer credential, and no webhook.
-
-A malformed pull request in the list fails the whole list for that minute. A refused review fails the step, and Orbit retries it on the publication backoff. A refused merge is recorded as the task's merge result with GitHub's status and message. A server error or an unreachable GitHub leaves the merge result `waiting`.
-
-GitHub forbids an account to review its own pull request, and that includes the App. So Orbit submits reviews only on pull requests that a person opened. It never reviews a pull request it opened. The merge needs no review: the `sha` parameter makes GitHub refuse the merge when the head moved.
+The read of the workflow runs uses the App's existing `Actions: read`. The flow needs no new App permission, no maintainer credential, and no webhook.
 
 An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
 
 ## Find the newest green commit
 
-The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks once a minute while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 15 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `hardimpactdev/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
+The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks every five minutes while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 5 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `hardimpactdev/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
 
 A commit qualifies when all of these hold.
 
@@ -242,7 +245,7 @@ A commit qualifies when all of these hold.
 - On main, the `Gateway release inputs` check runs for every commit, because a Gateway release also loads Swamp.
 - The commit has not failed a release.
 
-The check name, SHA, completion, and App rules also apply to the [task merge gate](/reference/tasks#execution-ownership). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.
+The check name, SHA, completion, and App rules also apply to the [task merge gate](/reference/tasks#execution-ownership). The release reader and `bin/pr-head-check` count every returned run of the required name.
 
 A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
 
@@ -320,7 +323,7 @@ The Gateway starts every repository read and push itself, so it can create a tok
 
 The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook or `fsmonitor`, would be a child of that process and would see the token. So token-bearing Git turns off hooks, `fsmonitor`, every credential helper, and the alternate-refs command, allows only HTTPS, and fetches from the explicit Project repository URL. It still reads the checkout's `.git/config`, which setup steps, development Processes, and agents running as the managed user can write, so those command-line settings are what keep the token in Git.
 
-Task agents work only in task VMs, and a VM never receives a token: the Gateway [fetches and pushes in its own mirror](/reference/compute-drivers#git-on-a-task-vm).
+Task agents work only in task VMs, and a VM receives no token outside the setup steps: the Gateway [fetches and pushes in its own mirror](/reference/compute-drivers#git-on-a-task-vm).
 
 The node agent reads Git with libgit2, which starts no checkout program. A credential helper on the Node was rejected because it remains callable by any program after the command ends. The token stays in one command's environment.
 

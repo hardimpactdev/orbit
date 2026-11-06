@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Operations;
 
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -19,7 +20,7 @@ final class DirectGitHubTokenRequest extends OperationPeerRequest
         $caller = $this->peerNodeId();
         $issuer = $operation instanceof Operation ? (app(DirectOperation::class)->definition($operation->kind)['github_token_issuer'] ?? null) : null;
         $nativeIssuer = $issuer !== null;
-        if (! $operation instanceof Operation || ($caller !== $operation->node_id && ! ($caller === 209 && ($operation->kind === 'tasks.check' || $nativeIssuer)))) {
+        if (! $operation instanceof Operation || ($caller !== $operation->node_id && ! ($caller === SwampNode::id() && $nativeIssuer))) {
             throw new ResourceOperationException('operation.executor_forbidden', 'This Node cannot mint for this Operation.', 403);
         }
 
@@ -29,14 +30,14 @@ final class DirectGitHubTokenRequest extends OperationPeerRequest
     /** @return array<string,list<string>> */
     public function rules(): array
     {
-        return ['run_id' => ['required', 'uuid']];
+        return ['run_id' => ['required', 'uuid'], 'purpose' => ['sometimes', 'string', 'in:clone,dependencies,publish,pull_request,dependency_merge']];
     }
 
     /** @return list<\Closure(Validator):void> */
     public function after(): array
     {
         return [function (Validator $validator): void {
-            if (array_diff(array_keys($this->all()), ['run_id']) !== []) {
+            if (array_diff(array_keys($this->all()), ['run_id', 'purpose']) !== []) {
                 $validator->errors()->add('request', 'Unexpected request fields.');
             }
         }];

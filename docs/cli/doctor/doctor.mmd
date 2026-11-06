@@ -19,6 +19,12 @@ sequenceDiagram
   loop continuously, on change
     Note over A: Observe the Node<br/>services, Processes, disk, ufw
     A->>GW: Report observations<br/>with observed_at
+    %%> How:
+    %%> - at start, and again when a fact changed
+    %%> - a report the Gateway does not accept is sent again after 1, 2 and 4 seconds, and then every 4 seconds until it is accepted
+    %%> - the same holds for the request that asks what to watch
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06, research thread b8654275):
+    %%> - a Node that boots before the Gateway answers reported only at its next read, up to a minute later; with a prompt report Doctor was healthy 15.8 s after boot
     Note over GW: Store latest facts<br/>per Node, per check
   end
   CLI->>GW: doctor

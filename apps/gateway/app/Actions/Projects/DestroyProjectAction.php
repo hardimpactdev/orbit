@@ -13,9 +13,8 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Project;
 use App\Models\TaskVm;
-use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Container\Attributes\Tag;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 final readonly class DestroyProjectAction
@@ -82,22 +81,10 @@ final readonly class DestroyProjectAction
         }
 
         $taskIds = DB::table('tasks')->whereIn('id', $groupIds)->orWhereIn('parent_id', $groupIds)->pluck('id');
-        $leases = TaskWorkspaceLeaseRecord::query()->where(static function (Builder $query) use ($groupIds, $taskIds): void {
+        // The retired workspace lease tables still hold rows that reference these groups.
+        $leases = DB::table('task_workspace_leases')->where(static function (Builder $query) use ($groupIds, $taskIds): void {
             $query->whereIn('group_id', $groupIds)->orWhereIn('task_id', $taskIds);
         });
-        // A cancelled lease is a withdrawn waiter that never held the workspace.
-        $lease = (clone $leases)->whereNotIn('status', ['released', 'cancelled'])->first();
-
-        if ($lease instanceof TaskWorkspaceLeaseRecord) {
-            throw new ResourceOperationException(
-                errorCode: 'project.task_workspace_lease_active',
-                message: "Project [{$project->slug}] still has workspace lease [{$lease->id}] of kind [{$lease->kind}] in status [{$lease->status}].",
-                status: 409,
-            );
-        }
-
-        $leases->whereIn('status', ['released', 'cancelled']);
-
         DB::table('task_workspace_operations')->whereIn('lease_id', (clone $leases)->select('id'))->delete();
         $leases->delete();
         DB::table('jev_decisions')->whereIn('task_group_id', $groupIds)->orWhereIn('task_id', $taskIds)->delete();

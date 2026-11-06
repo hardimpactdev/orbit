@@ -1,0 +1,202 @@
+---
+# Development Instance create on its app-dev Node. One tagged part per Swamp phase: `checkout`, then `setup`.
+# The intent is the Gateway's admitted intent in the run folder. A file lookup keeps it literal: a Project setup command
+# that holds `{{` must reach the shell unchanged, which `-e @file` would not do. The read token and the .env text come
+# from the environment of the phase, never from argv or the intent. Every task costs about 0.35 s, so a phase holds
+# only the tasks of the common path and lets a single command answer where it can.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: create_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Clone, check out the branch and write .env
+  hosts: create_node
+  gather_facts: false
+  tags: [checkout]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    git: [/usr/bin/git, -c, core.hooksPath=/dev/null, -c, core.fsmonitor=false]
+    checkout: "{{ intent.source.checkout }}"
+    seeded: "{{ intent.source.seed_repository is not none }}"
+    retained: "{{ intent.retained_source is not none }}"
+    network: "{{ intent.resolve.network and not retained }}"
+    branch: "{{ intent.resolve.branch }}"
+    seed_commit: "{{ intent.resolve.seed_commit }}"
+    credential_path: "{{ '/tmp/orbit-git-credential-' ~ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+    node_ids: "{{ [lookup('ansible.builtin.env', 'ORBIT_NODE_ID') | int, lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
+  tasks:
+    # An already created Instance runs no phase: the workflow skips this step.
+    - name: List the worktrees of the seed
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', intent.source.seed_repository, 'worktree', 'list', '--porcelain'] }}"
+      register: worktrees
+      changed_when: false
+      when: seeded and not retained
+    - name: Refuse a branch another worktree holds
+      ansible.builtin.assert:
+        that: >-
+          (worktrees.stdout.split('\n\n')
+          | select('search', '(^|\n)branch refs/heads/' ~ (branch | regex_escape) ~ '(\n|$)')
+          | reject('search', '^worktree ' ~ (checkout | regex_escape) ~ '(\n|$)')
+          | list | length) == 0
+        quiet: true
+        fail_msg: instance.branch_in_use
+      when: seeded and not retained
+    - name: Make the folder
+      ansible.builtin.file:
+        path: "{{ (checkout | dirname) if seeded else checkout }}"
+        state: directory
+        mode: "0755"
+    - name: Add the worktree of the seed
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', intent.source.seed_repository, 'worktree', 'add', '--no-checkout', '--detach', '--', checkout, seed_commit] }}"
+        creates: "{{ checkout }}"
+      when: seeded
+    - name: Initialise the repository
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', checkout, 'init', '--quiet'] }}"
+        creates: "{{ checkout }}/.git"
+      when: not seeded
+    # A checkout that has an origin keeps it: git refuses the second add with exit 3.
+    - name: Add the origin
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', checkout, 'remote', 'add', 'origin', intent.source.repository] }}"
+      register: added
+      changed_when: added.rc == 0
+      failed_when: added.rc not in [0, 3]
+    # The read token is a 0600 file that git reads; it is removed after the fetch, also after a failure.
+    - name: Fetch the origin branches
+      when: network
+      block:
+        - name: Write the read token
+          ansible.builtin.copy:
+            content: "{{ lookup('ansible.builtin.env', 'ORBIT_GIT_CREDENTIAL') }}"
+            dest: "{{ credential_path }}"
+            mode: "0600"
+          no_log: true
+        - name: Fetch
+          ansible.builtin.command:
+            argv: >-
+              {{ ['/usr/bin/timeout', '300', '/usr/bin/env', 'GIT_TERMINAL_PROMPT=0', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_CONFIG_GLOBAL=/dev/null']
+              + git
+              + ['-c', 'credential.helper=', '-c', 'credential.helper=store --file=' ~ credential_path,
+              '-c', 'protocol.allow=never', '-c', 'http.followRedirects=false',
+              '-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/',
+              '-c', 'protocol.' ~ intent.resolve.protocols[0] ~ '.allow=always',
+              '-C', checkout, 'fetch', '--quiet', '--no-tags', '--prune', '--', intent.source.repository,
+              '+refs/heads/*:refs/remotes/origin/*'] }}
+          changed_when: true
+      always:
+        - name: Remove the read token
+          ansible.builtin.file:
+            path: "{{ credential_path }}"
+            state: absent
+    - name: Read the retained branch
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', checkout, 'rev-parse', '--abbrev-ref', 'HEAD'] }}"
+      register: retained_branch
+      changed_when: false
+      when: retained
+    - name: Read the retained commit
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', checkout, 'rev-parse', 'HEAD'] }}"
+      register: retained_commit
+      changed_when: false
+      when: retained
+    - name: Keep the identity of a retained checkout
+      ansible.builtin.assert:
+        that:
+          - retained_branch.stdout == branch
+          - retained_commit.stdout == intent.retained_source.commit
+        quiet: true
+        fail_msg: instance.source_identity_changed
+      when: retained
+    # The requested origin branch, else the existing local branch, else the fetched default branch.
+    - name: Find the branch
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', checkout, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin/' ~ branch, 'refs/heads/' ~ branch] }}"
+      register: refs
+      changed_when: false
+      when: not retained and seed_commit is none
+    - name: Check out the branch
+      ansible.builtin.command:
+        argv: >-
+          {{ git + ['-C', checkout, 'checkout', '--quiet', '--no-track', '-B', branch,
+          seed_commit if seed_commit is not none else
+          ('refs/remotes/origin/' ~ branch if ('refs/remotes/origin/' ~ branch) in refs.stdout_lines else
+          ('refs/heads/' ~ branch if ('refs/heads/' ~ branch) in refs.stdout_lines else 'refs/remotes/origin/' ~ intent.resolve.default_branch))] }}
+      changed_when: true
+      when: not retained
+    - name: Record the baseline commit
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', checkout, 'update-ref', 'refs/worktree/orbit/ci-baseline', seed_commit] }}"
+      changed_when: true
+      when: not retained and seed_commit is not none
+    - name: Read the commit
+      ansible.builtin.command:
+        argv: "{{ git + ['-C', checkout, 'rev-parse', '--verify', 'HEAD^{commit}'] }}"
+      register: head
+      changed_when: false
+    - name: Report the commit
+      ansible.builtin.debug:
+        msg: "orbit-commit={{ head.stdout }}"
+    # The .env is group orbit-env, so the Node agent can report its key names and never the values.
+    - name: Create the environment group
+      ansible.builtin.group:
+        name: orbit-env
+        system: true
+        state: present
+      become: true
+    - name: Write .env
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.env', 'ORBIT_ENVIRONMENT') }}"
+        dest: "{{ intent.environment_directory }}/.env"
+        owner: "{{ intent.ssh_execution.target.user }}"
+        group: orbit-env
+        mode: "0640"
+      become: true
+      no_log: true
+    - name: Write .env.testing
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.env', 'ORBIT_ENVIRONMENT_TESTING') }}"
+        dest: "{{ intent.environment_directory }}/.env.testing"
+        owner: "{{ intent.ssh_execution.target.user }}"
+        group: orbit-env
+        mode: "0640"
+      become: true
+      no_log: true
+      when: intent.environment_testing
+    # The Route's access on this Node, before anything is published and before the setup commands write into the tree: Caddy is denied
+    # the checkout and granted the served roots (what setup creates inherits the default entries), and the .env names its URL. The Route
+    # then runs beside the setup; its own phase skips both for this Node.
+    - name: Set the Route access on this Node
+      ansible.builtin.import_tasks: tasks/route-access.yml
+      vars:
+        access: "{{ intent.route }}"
+      when: intent.route | default(none) is not none
+
+- name: Run the Project setup steps
+  hosts: create_node
+  gather_facts: false
+  tags: [setup]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+  tasks:
+    # One included file per step: the first failure stops the run, and Ansible names the step in the failure.
+    - name: Run the steps in order
+      ansible.builtin.include_tasks: tasks/instance-create-setup-step.yml
+      loop: "{{ intent.setup_steps }}"
+      loop_control:
+        loop_var: step
+        label: "{{ step.name }}"

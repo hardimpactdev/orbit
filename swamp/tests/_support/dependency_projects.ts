@@ -1,4 +1,4 @@
-import { type DependencyProject } from "../../extensions/behaviors/_lib/dependency_projects.ts";
+import { type DependencyProject } from "../../extensions/behaviors/_lib/dependency_project_schema.ts";
 
 export const WEBSITE_PROJECT: DependencyProject = {
     dependencyAutoMerge: false,

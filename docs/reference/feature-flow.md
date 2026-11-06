@@ -49,10 +49,11 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 **Outside pull requests**
 
 - A maintainer approves the pull request and adds the label `run-proofs`.
-- The workflow `proofs-outside.yml` passes the head SHA from the label event to `orbit proof:run`. It reports the verdict as the commit status `Proofs`, then runs the failed `Proofs` job of the pull request again.
+- The label starts the workflow `proof-outside.yml`, which passes the head SHA from the label event to `orbit proof:run`. The verdict is the result of that workflow run.
 - Orbit accepts only the current head, with the label and a maintainer's approval of exactly that commit.
-- A new push removes the label. The new head needs a new approval and the label again.
-- In `ci.yml`, `Proofs` runs on a hosted runner for such a pull request. It fails until the head has that passing status.
+- A new push removes the label and cancels the proof of the old head. The new head needs a new approval and the label again.
+- A label added before the approval fails. Remove the label and add it again after approving.
+- `ci.yml` starts no proof for such a pull request, and `Required checks` does not wait for the proof.
 
 **Guards**
 
@@ -99,7 +100,10 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 - A change to the selection list selects every case. So do a file list that GitHub returns incomplete, and `--all`. A change cannot narrow its own selection.
 - List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
 - List a helper that several commands share with every one of them.
-- The PR of a command change maps the Gateway Action and CLI files of the command. Until then, they stay `skip`.
 - A cases file selects its own command. Charts and pages are `skip`.
+
+The PR that adds the first cases file of a command family maps the files of the family. A family block lists every command of the family. It holds the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, and the CLI and SDK files. Until the first cases file exists, these files stay `skip`.
+
+Code that every command runs through selects `*`. The documentation skips (`**/*.md`, `**/*.mdx`, `**/*.mmd`) come last in the list. A README inside a directory that selects `*` therefore stays `skip`.
 
 A malformed line is refused with `proof.selection_invalid`. A commit without a selection list selects every case.

@@ -1,5 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
-import { placementErrors } from "../bin/lint-workflow-placement.ts";
+import {
+    LocalWorkflows,
+    placementErrors,
+} from "../bin/lint-workflow-placement.ts";
 
 const workflow = (step: Record<string, unknown>, extra = {}) => ({
     ...extra,
@@ -71,4 +74,17 @@ Deno.test("intrinsic steps also declare placement; malformed labels do not place
             1,
         );
     }
+});
+
+Deno.test("only the Gateway bootstrap runs without a worker placement", () => {
+    assertEquals(LocalWorkflows, ["gateway-bootstrap"]);
+    assertEquals(
+        placementErrors(workflow({}, { name: "gateway-bootstrap" }), "fixture"),
+        [],
+    );
+    assertEquals(
+        placementErrors(workflow({}, { name: "operation-other" }), "fixture")
+            .length,
+        1,
+    );
 });

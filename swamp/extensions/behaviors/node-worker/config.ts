@@ -3,7 +3,7 @@ import { z } from "npm:zod@4.4.3";
 export const WorkerConfig = z.object({
     node_id: z.number().int().positive(),
     user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/)
-        .refine((v) => !["root", "orbit-swamp-package"].includes(v)),
+        .refine((v) => v !== "root"),
 }).strict();
 export type WorkerConfig = z.infer<typeof WorkerConfig>;
 export type WorkerCredentials = {

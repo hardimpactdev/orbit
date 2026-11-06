@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Nodes\SwampNode;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Route;
@@ -76,7 +77,7 @@ final readonly class NativeRouteUpdatePlan
         $probes = array_values(array_filter($rows($now, 'probes'), static fn (array $row): bool => ! $edge($row)));
 
         return ['leaves' => $now['leaves'], 'leaf_indexes' => $now['leaf_indexes'], 'nodes' => $now['nodes'], 'probes' => $probes, 'dns' => $dns,
-            'probe_ssh' => $probes === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209)),
+            'probe_ssh' => $probes === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(SwampNode::node()),
             'publish' => NativeRouteTargetPlan::phase($publish, $common, $installs['early']), 'app_url' => NativeRouteTargetPlan::phase($url, $common, []),
             'ingress' => $ingress, 'ingress_ports' => $ports, 'edge_nodes' => $edgeNodes,
             // Resolvers that honor the TTL stop asking for the old name before its site leaves.

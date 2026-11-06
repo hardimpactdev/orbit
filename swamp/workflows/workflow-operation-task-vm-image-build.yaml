@@ -139,7 +139,8 @@ jobs:
   dependsOn:
   - {job: phases, condition: {type: succeeded}}
   steps:
-    # The clone makes its own cloud-init state, machine id and host keys at its first boot. The refresh of an image (stage 6) runs the same workflow on its enrolled VM.
+    # The clone makes its own cloud-init state, machine id and host keys at its first boot.
+    # No `}}` inside the expression below: the closing braces of the map and of the expression are apart.
   - name: Clean and stop
     labels: {role: swamp}
     writes: true
@@ -150,13 +151,13 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        intent: '${{ {"host_ssh_execution": inputs.intent.jump, "vm": {"name": inputs.intent.builder, "project": inputs.intent.project}, "enrolled": false, "nested": {}} }}'
+        intent: '${{ {"host_ssh_execution": inputs.intent.jump, "vm": {"name": inputs.intent.builder, "project": inputs.intent.project} } }}'
 - name: publish
   labels: {role: swamp}
   dependsOn:
   - {job: clean, condition: {type: succeeded}}
   steps:
-    # The output names the fingerprint; the Gateway reads it from this step.
+    # The output names the fingerprint; the Gateway reads it from this step. `--quiet` drops the progress lines, because a result keeps only the first 4 KB.
   - name: Publish the candidate
     labels: {role: swamp}
     writes: true
@@ -179,7 +180,7 @@ jobs:
       inputs:
         hosts: name:host
         sudo: true
-        argv: [timeout, '900', incus, publish, --project, '${{ inputs.intent.project }}', --compression, none, --alias, '${{ inputs.intent.candidate_alias }}', '--', '${{ inputs.intent.builder }}', '${{ "orbit.recipe=" + inputs.intent.identity }}', orbit.profile=base]
+        argv: [timeout, '900', incus, publish, --quiet, --project, '${{ inputs.intent.project }}', --compression, none, --alias, '${{ inputs.intent.candidate_alias }}', '--', '${{ inputs.intent.builder }}', '${{ "orbit.recipe=" + inputs.intent.identity }}', orbit.profile=base]
         timeoutSec: 920
 - name: smoke
   labels: {role: swamp}
@@ -202,10 +203,39 @@ jobs:
   dependsOn:
   - {job: smoke, condition: {type: succeeded}}
   steps:
+    # The build never promotes an image without a seed for it: the stage 6 refresh promotes the image together with its seed.
+    # The seed is `orbit-topology-seed-` and the first 12 hex characters of the fingerprint; `-previous` and `-new` volumes do not count.
+  - name: Check the seed
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-image-seed-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-image-seed-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
+        hosts:
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv: [timeout, '60', incus, storage, volume, list, --project, '${{ inputs.intent.project }}', --format, csv, --columns, n, '--', '${{ inputs.intent.pool }}']
+        timeoutSec: 80
     # The Operation holds the host's lock key, so no other host Operation runs while the alias moves. An alias takes a fingerprint, not another alias; `incus publish` printed it.
+    # Without the seed this step is skipped and the run still succeeds: the candidate stays, and the Gateway records it without a promotion.
   - name: Promote the image
     labels: {role: swamp}
     writes: true
+    dependsOn:
+    - {step: Check the seed, condition: {type: succeeded}}
+    guard: '${{ !steps["Check the seed"].outputs.stdout.split("\n").exists(n, n.startsWith("orbit-topology-seed-") && steps["Publish the candidate"].outputs.stdout.split("fingerprint: ")[1].trim().startsWith(n.split("orbit-topology-seed-")[1])) }}'
     task:
       type: workflow
       workflowIdOrName: task-vm-image-promote

@@ -11,6 +11,7 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -36,19 +37,21 @@ final class RekeyNodeAgentCommand extends Command
         $key = "node-agent-rekey-{$nodeId}-{$attempt}";
         $copy = null;
         try {
-            $identity->kind = 'node.agent_rekey';
-            $identity->key = $key;
-            $identity->fingerprint = hash('sha256', json_encode([$nodeId, $attempt], JSON_THROW_ON_ERROR));
-            $operation = $identity->replay('node.agent_rekey');
-            if ($operation === null) {
-                // The key reaches the Node only through this vault copy; the task keeps its verifier.
-                $secret = bin2hex(random_bytes(32));
-                $copy = $steps->executionCopy('orbit-control-inputs', $key, $secret);
-                // Converge and rekey share one lock per Node.
-                $operation = $operations->execute('node.agent_rekey', 'node', $nodeId, $nodeId,
-                    ['_agent_rekey' => ['node_id' => $nodeId, 'ssh' => $ssh->forNode($node), 'verifier_hash' => hash('sha256', $secret), 'agent_key' => $copy]],
-                    'operator-recovery', null, lockKey: 'node-converge:node:'.$nodeId);
-            }
+            $operation = $identity->under('node.agent_rekey', $key, hash('sha256', json_encode([$nodeId, $attempt], JSON_THROW_ON_ERROR)),
+                function () use ($identity, $operations, $steps, $ssh, $node, $nodeId, $key, &$copy): Operation {
+                    $replayed = $identity->replay('node.agent_rekey');
+                    if ($replayed !== null) {
+                        return $replayed;
+                    }
+                    // The key reaches the Node only through this vault copy; the task keeps its verifier.
+                    $secret = bin2hex(random_bytes(32));
+                    $copy = $steps->executionCopy('orbit-control-inputs', $key, $secret);
+
+                    // Converge and rekey share one lock per Node.
+                    return $operations->execute('node.agent_rekey', 'node', $nodeId, $nodeId,
+                        ['_agent_rekey' => ['node_id' => $nodeId, 'ssh' => $ssh->forNode($node), 'verifier_hash' => hash('sha256', $secret), 'agent_key' => $copy]],
+                        'operator-recovery', null, lockKey: 'node-converge:node:'.$nodeId);
+                });
         } catch (Throwable) {
             if ($copy !== null) {
                 rescue(fn () => $vault->deleteSecret('orbit-control-inputs', $key), report: false);

@@ -1,8 +1,10 @@
-import { readProjectConfiguration } from "../extensions/behaviors/_lib/project_configuration.ts";
+import { projectById, projects } from "./_support/projects.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.11";
-import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
+import {
+    type DependencyProject,
+    DependencyProjectsSchema,
+} from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 
 interface Source {
     slug: string;
@@ -29,17 +31,8 @@ const yaml = async (file: string) =>
     >;
 for (const source of sources) {
     Deno.test(`${source.slug} preserves its current Project settings, configured paths and age policy`, async () => {
-        const { behavior } = await import(
-            new URL(`extensions/behaviors/projects/${source.slug}/mod.ts`, repo)
-                .href
-        );
-        const { context, getWrittenResources } = createModelTestContext();
-        await behavior.methods.configuration.execute({}, context);
-        const config: DependencyProject = readProjectConfiguration(
-            getWrittenResources()[0].data,
-        );
+        const config: DependencyProject = projectById(source.project.id);
         assertEquals(config.dependencyAutoMerge, false);
-        assertEquals(behavior.type, `@nckrtl/project-${source.slug}`);
         assertEquals("script" in config, false);
         assertEquals(config.projectId, source.project.id);
         assertEquals(config.repository, source.project.repository_url);
@@ -111,39 +104,22 @@ for (const source of sources) {
     });
 }
 
-Deno.test("the fleet retains private project configuration without per-project workflows", async () => {
+Deno.test("the fleet retains private project configuration in one data file without per-project workflows", async () => {
     assertEquals(sources.length, 18);
     assertEquals(new Set(sources.map((s) => s.project.id)).size, 18);
     assert(!sources.some((s) => s.slug === "horizon-new-dawn"));
+    const ids = projects.map((p) => p.projectId);
+    assertEquals(new Set(ids).size, ids.length);
+    DependencyProjectsSchema.parse(projects);
     const gateway = await yaml(
         "models/@nckrtl/orbit-gateway/orbit-gateway.yaml",
     ) as {
-        globalArguments: {
-            projectExtensions: { projectId: number; type: string }[];
-            dependencyProjects: unknown[];
-        };
+        globalArguments: Record<string, unknown>;
     };
     assertEquals(gateway.globalArguments.dependencyProjects, []);
-    assertEquals(gateway.globalArguments.projectExtensions.length, 19);
+    assertEquals("projectExtensions" in gateway.globalArguments, false);
     for (const source of sources) {
-        const type = `@nckrtl/project-${source.slug}`;
-        assertEquals(
-            gateway.globalArguments.projectExtensions.filter((p) =>
-                p.projectId === source.project.id
-            ),
-            [{ projectId: source.project.id, type }],
-        );
-        const manifest = await yaml(
-            `extensions/behaviors/projects/${source.slug}/manifest.yaml`,
-        );
-        assertEquals(manifest.name, type);
-        assertEquals(manifest.visibility, "private");
-        assertEquals(manifest.behaviors, [`projects/${source.slug}/mod.ts`]);
-        assertEquals(manifest.dependencies, [
-            "@nckrtl/composer-maintenance",
-            "@nckrtl/js-maintenance",
-        ]);
-        assertEquals(manifest.workflows, []);
+        assert(ids.includes(source.project.id), source.slug);
         for (const mode of ["routine", "detect"]) {
             await Deno.stat(
                 new URL(
@@ -186,13 +162,9 @@ Deno.test("private project config preserves every exception ledger found in the 
     ]);
     for (const row of withLedger) {
         assert(/^[a-f0-9]{40}$/.test(row.fileSha!));
-        const { behavior } = await import(
-            new URL(`extensions/behaviors/projects/${row.name}/mod.ts`, repo)
-                .href
+        const config = projectById(
+            sources.find((source) => source.slug === row.name)!.project.id,
         );
-        const { context, getWrittenResources } = createModelTestContext();
-        await behavior.methods.configuration.execute({}, context);
-        const config = readProjectConfiguration(getWrittenResources()[0].data);
         assertEquals(config.exceptions, row.exceptions);
     }
 });

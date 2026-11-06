@@ -1,27 +1,13 @@
 import { z } from "npm:zod@4.4.3";
-import {
-    agentData,
-    agentReply,
-    envelope,
-    Expect,
-} from "./agent_reply.ts";
-import { recipePhases } from "./images.ts";
 
 /**
  * Pure shaping for the UpCloud template build: UpCloud request bodies in,
- * typed provider answers and agent replies out. No request, guest command,
+ * typed provider answers out. No request, guest command,
  * Gateway call, wait or retry runs here; every effect is one inline curl on
  * 209 or one official SSH step in the workflow.
  */
 const uuid = z.uuid();
-const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const object = z.record(z.string(), z.unknown());
-const Key = z.object({
-    identity: z.string(),
-    profile: z.literal("base"),
-    phase: z.enum(recipePhases),
-    execution: z.string(),
-}).strict();
 export const Slot = z.enum(["builder", "smoke"]);
 export type Slot = z.infer<typeof Slot>;
 
@@ -31,7 +17,6 @@ export const Intent = z.object({
     stamp: z.string().regex(/^[0-9]{14}$/),
     name: z.string(),
     identity: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-    agent_sha256: hash,
     recipe: object,
     upcloud: z.object({
         zone: z.string().regex(/^[a-z]{2}-[a-z]{3}[1-9]$/),
@@ -43,17 +28,12 @@ export const Intent = z.object({
     ),
     ssh: z.object({ public_key: z.string().startsWith("ssh-ed25519 ") })
         .passthrough(),
-    phase_keys: z.record(z.enum(recipePhases), Key),
     pinned_templates: z.array(uuid),
 }).passthrough().superRefine((input, ctx) => {
-    if (
-        input.name !== `tvm-image-${input.stamp}` ||
-        input.recipe.identity !== input.identity ||
-        input.recipe.agent_sha256 !== input.agent_sha256
-    ) {
+    if (input.name !== `tvm-image-${input.stamp}`) {
         ctx.addIssue({
             code: "custom",
-            message: "The recipe differs from its admitted pins",
+            message: "The server name differs from its admitted stamp",
         });
     }
 });
@@ -220,28 +200,6 @@ export function createdServer(raw: unknown, slot: Slot, stdout: string) {
     };
 }
 
-const Observation = z.object({ boot_id: z.uuid() }).passthrough();
-
-/** The builder's boot identity fixes every phase start and completion read. */
-export function phaseEnvelopes(raw: unknown, stdout: string) {
-    const input = Intent.parse(raw);
-    const boot_id = Observation.parse(agentData(stdout)).boot_id;
-    const each = (seconds: number, extra: Record<string, unknown>) =>
-        Object.fromEntries(recipePhases.map((phase) => [
-            phase,
-            envelope(input.agent_sha256, seconds, {
-                key: input.phase_keys[phase],
-                boot_id,
-                ...extra,
-            }),
-        ]));
-    return {
-        boot_id,
-        start: each(120, { recipe: input.recipe }),
-        inspect: each(30, {}),
-    };
-}
-
 /** The templatize answer names the unverified template of this attempt. */
 export function madeTemplate(raw: unknown, stdout: string) {
     const input = Intent.parse(raw);
@@ -361,31 +319,17 @@ const resource = (schema: z.ZodType) => ({
     lifetime: "1d",
     garbageCollection: 1,
 });
-const Envelopes = z.record(z.string(), z.string());
 const write = async (
     ctx: Context,
     spec: string,
     data: Record<string, unknown>,
 ) => ({ dataHandles: [await ctx.writeResource(spec, spec, data)] });
-const ReplyArgs = z.object({
-    stdout: z.string(),
-    expect: Expect,
-    pin: z.string().optional(),
-    boot_id: z.string().optional(),
-});
-
 export const behavior = {
     type: "@nckrtl/task-vm-upcloud-image-build",
-    version: "2026.11.02.1",
+    version: "2026.11.06.1",
     resources: {
         request: resource(z.object({ create_data: z.string() })),
         server: resource(z.object({ uuid, storage: uuid, address: z.ipv4() })),
-        reply: resource(z.object({ ok: z.literal(true) })),
-        phases: resource(z.object({
-            boot_id: z.uuid(),
-            start: Envelopes,
-            inspect: Envelopes,
-        })),
         template: resource(z.object({ template_uuid: uuid })),
         cleanup: resource(z.object({
             promoted: z.boolean(),
@@ -438,21 +382,6 @@ export const behavior = {
                 "server",
                 createdServer(args.intent, args.slot, args.stdout),
             ),
-        },
-        reply: {
-            description:
-                "Check one agent reply; a refusal fails with its public code",
-            arguments: ReplyArgs,
-            execute: (args: z.infer<typeof ReplyArgs>, ctx: Context) =>
-                write(ctx, "reply", agentReply(args)),
-        },
-        phases: {
-            description: "Read the boot id and shape every phase envelope",
-            arguments: z.object({ intent: z.unknown(), stdout: z.string() }),
-            execute: (
-                args: { intent: unknown; stdout: string },
-                ctx: Context,
-            ) => write(ctx, "phases", phaseEnvelopes(args.intent, args.stdout)),
         },
         template: {
             description: "Read the template UUID from the templatize answer",

@@ -1,0 +1,70 @@
+sequenceDiagram
+  %% Target design: the run of one command of proof:run on a proof task VM of its own (Nick + orchestrator, 2026-11-05). The Gateway admits the intent of the run; Orbit's own Swamp runs the provision, the cases and the destruction of the VM as children of the workflow operation-proof-run; the Gateway projects the run once. The cases are the workflow proof-fleet-verify and its batch and case children.
+  %% status: draft
+  %% command: none · started by proof:run
+  %% kind: proof.command
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Proof task VM<br/>reached over ssh
+  Note over GW: Admit the run<br/>group · VM · inputs
+  %%> Requirements:
+  %%> - proof:run selected this command and its cases file, and made a task group for it
+  %%> What it records:
+  %%> - the task provision, the cases file, the pinned SSH target of the VM and the destruction of the VM, all as inputs; no step calls back
+  GW->>SW: Start the parent run<br/>operation-proof-run
+  SW->>VM: Provision the task VM<br/>child · operation-task-provision
+  %%> What it does:
+  %%> - the same provision every task uses; stage 2 of the chart of proof:run is part of it
+  SW->>VM: Pin the host key<br/>of the new VM
+  %%> What it does:
+  %%> - fills the host key that the provision observed into the SSH target of the cases
+  SW->>VM: Run the proof<br/>child · proof-fleet-verify
+  %%> Inputs:
+  %%> - the cases file of the command, the checkout path, the group and the pinned SSH target of the VM
+  %%> - no secret
+  SW->>VM: Select the cases<br/>runner plan --lines
+  %%> What it does:
+  %%> - one line a batch, `BATCH SETUP CASE...`, in the order of `swamp/proof/batches.yaml`; inside a batch, in file order
+  VM-->>SW: Ordered plan<br/>batches · cases
+  loop each batch, one at a time
+    Note over SW: Restore base<br/>built, not passed live
+    %%> Built, not yet passed live:
+    %%> - the restore of `base` before each batch is the workflow `proof-fleet-restore`, a step of the batch workflow; 0 of 2 runs succeeded by 2026-11-06; the old restore was removed
+    opt the batch declares a start state
+      SW->>VM: Set up the batch<br/>runner setup
+      %%> What it does:
+      %%> - runs the setup steps of the batch; a setup that fails or is not built stops the run
+    end
+    loop each case, one at a time, one child workflow
+      SW->>VM: Run one case<br/>runner case ID
+      %%> What it does:
+      %%> - the step allows failure, so a failed case does not stop its batch
+      %%> Returns:
+      %%> - one JSON line of at most 1 KB: the case id, the verdict, the cause, the seconds and the failed checks
+      opt the case did not pass and is not the last of its batch
+        SW->>VM: Set up the batch again<br/>runner setup
+        %%> Why:
+        %%> - a failed case can leave anything behind; the setup of the batch runs again
+        %%> - the last case of a batch skips it
+        %%> Built, not yet passed live:
+        %%> - the restore of `base` before the setup is the workflow `proof-fleet-restore` (0 of 2 runs succeeded by 2026-11-06); the old restore was removed
+      end
+    end
+    Note over SW: Join the batch lines<br/>report
+    %%> What it does:
+    %%> - a case that printed no line is `failed` with cause `infrastructure`; a case that did not run is `unrun` with cause `infrastructure`
+  end
+  SW->>VM: Destroy the task VM<br/>child · always
+  %%> What it does:
+  %%> - runs after success and after failure, so no VM is left behind
+  Note over SW: Join the verdicts<br/>Report step
+  %%> What it does:
+  %%> - every case of the plan has one line, in plan order; the Gateway reads this step once, when the run ends
+  SW-->>GW: Native terminal result<br/>verdict lines
+  Note over GW: Record the run once<br/>one row for each case
+  %%> Result:
+  %%> - the Gateway records the VM, the verdicts and the end of the group, then closes the proof of the CLI when this was its last run

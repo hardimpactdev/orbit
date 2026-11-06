@@ -1,0 +1,300 @@
+# Frozen test fixture for the runner tests, not a real cases file. Spec PRs do not change it.
+# The cases of firewall:list in the case format of docs/reference/verification-cases. `orbit proof:run` selects the command and runs this file.
+# Format and step vocabulary: docs/reference/verification-cases.
+#
+# The list reads Gateway state only. Every case starts the CLI as `gateway` unless it says `as`.
+# Four steps and keys are new here and are proposed in docs/reference/verification-cases:
+#   agent_report, node_down, node_access_remove (steps), and `args`, `section`, `order`, `min` (keys of `record`).
+
+command: firewall:list
+chart: firewall/list          # docs/cli/firewall/list.mmd; `covers` names its `%% path:` ids
+target: app-dev               # the Node under test
+sources: [gateway, app-prod]  # the Nodes that probe it; this command probes nothing
+baseline: [ufw, firewall_records, operations]   # what `unchanged` compares: a list changes none of them
+
+vars:
+  rule: ["${port}", "--node=${app-dev.id}", "--from=${gateway.src}", "--protocol=tcp"]
+  peer_rule: ["${peer-port}", "--node=${app-prod.id}", "--from=${gateway.src}", "--protocol=tcp"]
+
+fixtures:
+  rules-on-two-nodes:
+    summary: One allow on app-dev with a label, and one deny on app-prod with no label and no protocol. Binds port and peer-port.
+    steps:
+      - listener: {on: app-dev, proto: tcp, ports: [port]}
+      - listener: {on: app-prod, proto: tcp, ports: [peer-port]}
+      - cli: {run: [firewall:allow, "@rule", "--label=office web"], expect: {exit: 0, status: succeeded}}
+      - cli: {run: [firewall:deny, "${peer-port}", "--node=${app-prod.id}"], expect: {exit: 0, status: succeeded}}
+
+# Gaps that remain. `bin/check-cases` lists them; each needs a case or a reason.
+uncovered:
+  "match:unverifiable": "No case runs before the agent reported UFW or with a rule Orbit cannot compare. Proposed: a batch that starts the Node agent after the list."
+  "state:provisioning": "A rule in the provisioning or removing status exists only while a write runs. The failed status has its own case."
+
+cases:
+  # Main path: no flags, several Nodes.
+  - id: all-nodes
+    batch: fresh-fleet
+    covers: [main]
+    summary: Without flags the list holds the operator rules of every Node the caller may address, with a Node column.
+    setup:
+      - use: rules-on-two-nodes
+    act:
+      - cli:
+          run: [firewall:list]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: NODE}
+    expect:
+      - record: {list: firewall:list, where: {node: app-dev, port: "${port}", action: allow, protocol: tcp, source: "${gateway.src}", label: office web, status: active}, count: 1}
+      - record: {list: firewall:list, where: {node: app-prod, port: "${peer-port}", action: deny, protocol: any, source: any, label: null, status: active}, count: 1}
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: both-protocols-and-missing-label
+    batch: fresh-fleet
+    covers: [main]
+    summary: A rule with no protocol shows `any`, and a rule with no label shows `—` in the table and null in JSON.
+    setup:
+      - use: rules-on-two-nodes
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-prod.id}"]
+          forms: [human]
+          expect: {exit: 0, human: "—"}
+      - cli:
+          run: [firewall:list, "--node=${app-prod.id}"]
+          forms: [json]
+          expect: {exit: 0}
+    expect:
+      - record: {list: firewall:list, node: app-prod, where: {port: "${peer-port}", protocol: any, label: null}, count: 1}
+
+  - id: empty-list
+    batch: full-list
+    covers: [main]
+    summary: A fleet with no operator rules says `No firewall rules.` and lists no rule in JSON.
+    act:
+      - cli:
+          run: [firewall:list]
+          forms: [human]
+          expect: {exit: 0, human: "No firewall rules."}
+      - cli:
+          run: [firewall:list]
+          forms: [json]
+          expect: {exit: 0}
+    expect:
+      - record: {list: firewall:list, where: {}, count: 0}
+
+  - id: ufw-order
+    batch: full-list
+    covers: [main]
+    summary: The rules come in the order UFW checks them, narrower first, and match the operator rows on the Node.
+    fails_today: Both the Gateway and the CLI sort by port.
+    setup:
+      - listener: {on: app-dev, proto: tcp, ports: [port, other]}
+      - cli: {run: [firewall:allow, "${port}", "--node=${app-dev.id}", "--protocol=tcp"], expect: {exit: 0, status: succeeded}}
+      - cli: {run: [firewall:allow, "${other}", "--node=${app-dev.id}", "--protocol=tcp"], expect: {exit: 0, status: succeeded}}
+      - cli: {run: [firewall:deny, "${port}", "--node=${app-dev.id}", "--protocol=tcp", "--from=10.99.0.0/16"], expect: {exit: 0, status: succeeded}}
+      - cli: {run: [firewall:allow, "${port}", "--node=${app-dev.id}", "--protocol=tcp", "--from=10.99.1.7"], expect: {exit: 0, status: succeeded}}
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0}
+    expect:
+      - record:
+          list: firewall:list
+          node: app-dev
+          order:
+            - {port: "${port}", source: 10.99.1.7}
+            - {port: "${port}", source: 10.99.0.0/16}
+            - {port: "${port}", source: any}
+            - {port: "${other}", source: any}
+      - ufw:
+          on: app-dev
+          family: 4
+          rows:
+            - {to: "${port}/tcp", action: ALLOW, from: 10.99.1.7}
+            - {to: "${port}/tcp", action: DENY, from: 10.99.0.0/16}
+            - {to: "${port}/tcp", action: ALLOW, from: Anywhere}
+            - {to: "${other}/tcp", action: ALLOW, from: Anywhere}
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: failed-rule
+    batch: ufw-fault
+    covers: [main]
+    summary: A rule whose apply failed shows the status `failed`, and JSON names the step and the error code.
+    setup:
+      - listener: {on: app-dev, proto: tcp, ports: [port]}
+      - fault: {on: app-dev, command: ufw, fail_after: {match: allow, count: 0}}
+      - cli: {run: [firewall:allow, "@rule"], expect: {status: failed}}
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0}
+    expect:
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: failed, failed_step: present, error_code: present}, count: 1}
+
+  # Option --node.
+  - id: one-node
+    batch: fresh-fleet
+    covers: [node]
+    summary: With --node the list holds the rules of that Node only, with no Node column.
+    setup:
+      - use: rules-on-two-nodes
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0, request: none}
+    expect:
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}"}, count: 1}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${peer-port}"}, count: 0}
+
+  # Option --managed.
+  - id: managed
+    batch: fresh-fleet
+    covers: [node, managed]
+    summary: With --managed, Orbit's own rules join the list as locked rows that name their role.
+    setup:
+      - use: rules-on-two-nodes
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}", "--managed"]
+          forms: [json, human]
+          expect: {exit: 0, request: none}
+    expect:
+      - record: {list: firewall:list, args: [--managed], node: app-dev, section: managed, where: {name: "orbit:wireguard-members", role: null}, count: 1}
+      - record: {list: firewall:list, args: [--managed], node: app-dev, section: managed, where: {role: app-dev}, min: 1}
+      - record: {list: firewall:list, args: [--managed], node: app-dev, section: rules, where: {port: "${port}"}, count: 1}
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  # Option --live.
+  - id: live-exact
+    batch: fresh-fleet
+    covers: [live, agents-online]
+    summary: With --live, a rule on the Node is `exact`, a rule added by hand is `unmanaged`, and the backend and its time show.
+    setup:
+      - use: rules-on-two-nodes
+      - listener: {on: app-dev, proto: tcp, ports: [stray]}
+      - ufw_rule: {as: stray-rule, on: app-dev, action: allow, proto: tcp, port: "${stray}", from: "${gateway.src}", above: proof-network}
+      - agent_report: {node: [app-dev, app-prod]}
+    act:
+      - cli:
+          run: [firewall:list, "--live"]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: MATCH}
+    expect:
+      - record: {list: firewall:list, args: [--live], section: rules, where: {node: app-dev, port: "${port}", match: exact}, count: 1}
+      - record: {list: firewall:list, args: [--live], section: rules, where: {node: app-prod, port: "${peer-port}", match: exact}, count: 1}
+      - record: {list: firewall:list, args: [--live], node: app-dev, section: unmatched, where: {port: "${stray}", match: unmanaged}, count: 1}
+      - record: {list: firewall:list, args: [--live], node: app-dev, section: live, where: {backend_status: active, possibly_outdated: false, observed_at: present}, count: 1}
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: live-missing
+    batch: fresh-fleet
+    covers: [live, agents-online]
+    summary: A recorded rule whose line is gone from the Node is `missing`, and the list still exits 0.
+    setup:
+      - listener: {on: app-dev, proto: tcp, ports: [port]}
+      - cli: {run: [firewall:allow, "@rule"], expect: {exit: 0, status: succeeded}}
+      - ufw_delete: {on: app-dev, to: "${port}/tcp", from: "${gateway.src}"}
+      - agent_report: {node: [app-dev]}
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}", "--live"]
+          forms: [json, human]
+          expect: {exit: 0}
+    expect:
+      - record: {list: firewall:list, args: [--live], node: app-dev, section: rules, where: {port: "${port}", status: active, match: missing}, count: 1}
+
+  - id: live-drift
+    batch: fresh-fleet
+    covers: [live, agents-online]
+    summary: A line on the Node with the recorded label but another source is `drift`, and the list exits 0.
+    setup:
+      - listener: {on: app-dev, proto: tcp, ports: [port]}
+      - cli: {run: [firewall:allow, "@rule", "--label=drift probe"], expect: {exit: 0, status: succeeded}}
+      - ufw_delete: {on: app-dev, to: "${port}/tcp", from: "${gateway.src}"}
+      - ufw_rule: {as: drifted, on: app-dev, action: allow, proto: tcp, port: "${port}", from: 10.98.0.9, comment: orbit drift probe, above: proof-network}
+      - agent_report: {node: [app-dev]}
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}", "--live"]
+          forms: [json, human]
+          expect: {exit: 0}
+    expect:
+      - record: {list: firewall:list, args: [--live], node: app-dev, section: rules, where: {port: "${port}", match: drift}, count: 1}
+      - record: {list: firewall:list, args: [--live], node: app-dev, section: unmatched, where: {port: "${port}", source: 10.98.0.9, match: drift}, count: 1}
+
+  - id: live-managed
+    batch: fresh-fleet
+    covers: [managed, live, agents-online]
+    summary: With --managed and --live, Orbit's own rules are matched too.
+    setup:
+      - agent_report: {node: [app-dev]}
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}", "--managed", "--live"]
+          forms: [json, human]
+          expect: {exit: 0}
+    expect:
+      - record: {list: firewall:list, args: [--managed, --live], node: app-dev, section: managed, where: {name: "orbit:wireguard-members", match: exact}, count: 1}
+
+  - id: node-down
+    batch: node-down
+    covers: [live, agent-offline]
+    summary: With a Node down, the list answers from records, says the agent is offline since a time, and marks that Node's matches possibly outdated. Other Nodes show as normal.
+    setup:
+      - use: rules-on-two-nodes
+      - agent_report: {node: [app-dev, app-prod]}
+      - node_down: {node: app-dev}
+    act:
+      - cli:
+          run: [firewall:list, "--live"]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: "app-dev: agent offline since"}
+    expect:
+      - record: {list: firewall:list, args: [--live], section: rules, where: {node: app-dev, port: "${port}", status: active}, count: 1}
+      - record: {list: firewall:list, args: [--live], node: app-dev, section: live, where: {possibly_outdated: true}, count: 1}
+      - record: {list: firewall:list, args: [--live], node: app-prod, section: live, where: {possibly_outdated: false}, count: 1}
+
+  # Option --json.
+  - id: json-all-flags
+    batch: fresh-fleet
+    covers: [node, managed, live, agents-online]
+    summary: With --json and every flag, stdout holds only one JSON document with the rules, Orbit's rules and the live comparison.
+    setup:
+      - use: rules-on-two-nodes
+      - agent_report: {node: [app-dev]}
+    act:
+      - cli:
+          run: [firewall:list, "--node=${app-dev.id}", "--managed", "--live"]
+          forms: [json]
+          expect: {exit: 0, request: none}
+    expect:
+      - record: {list: firewall:list, args: [--managed, --live], node: app-dev, section: rules, where: {port: "${port}", match: exact}, count: 1}
+
+  # Errors.
+  - id: node-id-invalid
+    batch: fresh-fleet
+    covers: []
+    summary: A --node that is not a positive integer is refused before any request.
+    act:
+      - cli:
+          run: [firewall:list, "--node=abc"]
+          forms: [human, json]
+          expect: {exit: 1, code: firewall.node_id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: node-access-required
+    batch: no-grant
+    covers: []
+    summary: A Node the calling Node has no access grant to is refused, and nothing is listed.
+    act:
+      - cli:
+          as: app-prod
+          run: [firewall:list, "--node=${app-dev.id}"]
+          forms: [human, json]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}

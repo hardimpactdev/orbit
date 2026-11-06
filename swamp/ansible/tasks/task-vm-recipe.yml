@@ -41,3 +41,7 @@
   ansible.builtin.set_fact:
     shape_venv: "/opt/orbit-shape-gate/venv-{{ pins | hash('sha256') | truncate(16, True, '') }}"
     shape_collections: "/opt/orbit-shape-gate/collections-{{ gate_collections | hash('sha256') | truncate(16, True, '') }}"
+- name: Name the packages that the snapshot pins
+  ansible.builtin.set_fact:
+    # Not in the recipe: the snapshot date is their pin. The shape gate builds its venv with python3-venv, and its Swamp load test pipes through jq.
+    snapshot_packages: [python3-venv, jq]

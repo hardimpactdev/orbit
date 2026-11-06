@@ -12,6 +12,17 @@ use App\Models\TaskCheck;
 /** The same source-derived hosted-CI gate serves reviewer and publisher admission. */
 final readonly class TaskCheckedCandidate
 {
+    /**
+     * Whether a passed handoff check of these tasks on this commit is eligible. The gate check asks it for a draft, and a review round for the head.
+     *
+     * @param  array<mixed>  $tasks  the ids of the tasks
+     */
+    public function onHead(Task $group, array $tasks, string $head): bool
+    {
+        return TaskCheck::query()->whereIn('task_id', $tasks)->where('kind', TaskCheckKind::Handoff->value)
+            ->where('commit_sha', $head)->orderByDesc('id')->get()->contains(fn (TaskCheck $check): bool => $this->eligible($group, $check));
+    }
+
     public function eligible(Task $group, TaskCheck $check): bool
     {
         if ($check->kind !== TaskCheckKind::Handoff || $check->status !== TaskCheckStatus::Passed || $check->commit_sha === null) {
