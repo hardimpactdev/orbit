@@ -775,9 +775,11 @@ The local and data steps of `tasks.turn`, `tasks.prep`, `tasks.prep_fix`, `tasks
 
 The SSH steps keep their node id. An SSH definition holds the host keys and the identity of one VM, and the address returns to the pool for the next VM, so a name on the address would rewrite that definition. The Node id of a task VM is never reused.
 
-Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
+Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. The short preparation steps of a check (`task-check-prepare`, `task-check-candidate` and their neighbors) keep fixed names too. So does the `collect` step of the scheduled check observation, which is one step for every VM.
 
-The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
+The provision of a task VM follows the same rule. The workspace child (`tp-clone`, `tp-bundle` and the other `tp-` names), the provision operation and the UpCloud provider name their local and data steps by the address of the VM. Their SSH steps keep the node id. A few short planning and input steps of the provision (`vm-provision-plan`, `vm-enrollment-input`, `vm-enrollment-result`, `workspace-input` and `vm-known-hosts`) keep fixed names, and two provisions on different VMs share no long step.
+
+The pending handoff check of a group keeps one model instance per group, `task-check-pending-<id>`. The scheduled check step that settles it runs once per pending group, and the Swamp shape gate requires such a step to name a different model for each item, so one fixed model cannot hold them yet.
 
 ## Task workspace
 

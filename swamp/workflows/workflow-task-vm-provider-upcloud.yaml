@@ -48,7 +48,7 @@ jobs:
     task: &list
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "cloud" }}'
+      behaviorName: '${{ ("cloud-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |
@@ -62,7 +62,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "cloud" }}'
+      behaviorName: '${{ ("cloud-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |
@@ -76,7 +76,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: '${{ "cloud-input" }}'
+      behaviorName: '${{ ("cloud-input-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: choose
       inputs:
         intent: ${{ inputs.intent }}
@@ -96,7 +96,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "cloud" }}'
+      behaviorName: '${{ ("cloud-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |
@@ -129,7 +129,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: '${{ "cloud-input" }}'
+      behaviorName: '${{ ("cloud-input-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: choose
       inputs:
         intent: ${{ inputs.intent }}
@@ -145,7 +145,7 @@ jobs:
     task: &detail
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "cloud" }}'
+      behaviorName: '${{ ("cloud-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |
@@ -164,7 +164,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: '${{ "cloud-input" }}'
+      behaviorName: '${{ ("cloud-input-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -180,7 +180,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "cloud" }}'
+      behaviorName: '${{ ("cloud-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |
@@ -211,7 +211,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: '${{ "cloud-input" }}'
+      behaviorName: '${{ ("cloud-input-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: result
       inputs:
         intent: ${{ inputs.intent }}

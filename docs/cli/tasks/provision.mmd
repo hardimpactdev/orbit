@@ -59,7 +59,7 @@ sequenceDiagram
     %%> - the image may predate these phases; a VM at the pins reports no change
     SW->>VM: Find the fleet guest<br/>its address and host key
     %%> What it does:
-    %%> - the behavior `tp-data-guest-fleet` reads the guest's SSH target from the VM step, as the fleet child does
+    %%> - the behavior `tp-data-guest-fleet`, named by the address of the VM, reads the guest's SSH target from the VM step, as the fleet child does
     SW->>VM: Look for ready copies<br/>current format only
     %%> What it does:
     %%> - lists the instances `fleet-ready-*` that carry `user.ready.format` of the current value; the next step starts only when there are three

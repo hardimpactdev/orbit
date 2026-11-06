@@ -82,7 +82,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: tp-data-pin-converge
+      behaviorName: '${{ ("tp-data-pin-converge-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: pin
       inputs:
         receipt: ${{ steps["Create and prepare the VM"].outputs.result }}
@@ -115,7 +115,7 @@ jobs:
   - name: Find the fleet guest
     labels: {role: swamp}
     guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
-    task: {type: behavior, behaviorType: '@nckrtl/task-provision-data', behaviorName: '${{ "tp-data-guest-fleet" }}', methodName: guest, inputs: {intent: '${{ inputs.intent }}', vm: '${{ steps["Create and prepare the VM"].outputs.result }}'}}
+    task: {type: behavior, behaviorType: '@nckrtl/task-provision-data', behaviorName: '${{ ("tp-data-guest-fleet-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}', methodName: guest, inputs: {intent: '${{ inputs.intent }}', vm: '${{ steps["Create and prepare the VM"].outputs.result }}'}}
     dependsOn:
     - step: Set up the workspace
       condition:
@@ -168,7 +168,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-bind" }}'
+      behaviorName: '${{ ("tp-data-bind-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: bind
       inputs:
         vm: ${{ steps["Create and prepare the VM"].outputs.result }}
@@ -226,7 +226,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-result" }}'
+      behaviorName: '${{ ("tp-result-" + string(inputs.intent.wireguard_ip)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: |
