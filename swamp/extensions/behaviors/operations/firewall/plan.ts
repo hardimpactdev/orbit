@@ -28,6 +28,7 @@ export type Row = {
     action: string;
     source: string;
     comment: string;
+    direction?: "in" | "out" | "fwd";
 };
 type Valid = z.infer<typeof Rule> & { protocols: string[] };
 
@@ -53,7 +54,7 @@ function validated(intent: unknown): { rule: Valid; ensure: string } {
     };
 }
 
-/** The rows of `ufw status numbered`, in order; refuses an inactive firewall. */
+/** Keep every UFW action and direction: insert positions count unrelated rows too. Refuses an inactive firewall. */
 export function inventory(stdout: string): Row[] {
     const lines = stdout.split("\n");
     if (lines.filter((line) => line.trim() === "Status: active").length !== 1) {
@@ -61,14 +62,16 @@ export function inventory(stdout: string): Row[] {
     }
     return lines.flatMap((line) => {
         const match = line.trim().match(
-            /^\[\s*(\d+)\]\s+(.+?)\s+(ALLOW|DENY)\s+IN\s+(.+?)(?:\s+#\s*(.*))?$/,
+            /^\[\s*(\d+)\]\s+(.+?)\s+(ALLOW|DENY|REJECT|LIMIT)\s+(IN|OUT|FWD)\s+(.+?)(?:\s+#\s*(.*))?$/,
         );
         return match
             ? [{
                 to: match[2].trim(),
                 action: match[3].toLowerCase(),
-                source: match[4].trim(),
-                comment: (match[5] ?? "").trim(),
+                source: match[5].trim(),
+                comment: (match[6] ?? "").trim(),
+                ...(match[4] === "OUT" ? { direction: "out" as const } :
+                    match[4] === "FWD" ? { direction: "fwd" as const } : {}),
             }]
             : [];
     });
@@ -154,7 +157,7 @@ function lines(rule: Valid, protocol: string): [string, Row][] {
     return [row(rule.source, "", rule.source)];
 }
 
-const key = (row: Row) => `${row.to}\0${row.action}\0${row.source}`;
+const key = (row: Row) => `${row.direction ?? "in"}\0${row.to}\0${row.action}\0${row.source}`;
 const v6 = (row: Row) =>
     row.to.includes("(v6)") || row.source.includes("(v6)") ||
     row.source.includes(":");
@@ -179,6 +182,7 @@ function scope(source: string): Network {
 
 /** `row` must sit below `other`: it is a managed line of the same family, or a broader overlapping operator line. */
 function below(row: Row, other: Row): boolean {
+    if ((row.direction ?? "in") !== "in" || (other.direction ?? "in") !== "in") return false;
     if (managed(row) || managed(other)) {
         return managed(row) && !managed(other) && v6(row) === v6(other);
     }

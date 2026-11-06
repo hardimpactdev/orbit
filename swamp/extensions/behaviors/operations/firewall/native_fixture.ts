@@ -32,7 +32,7 @@ export class UfwDouble {
             this.rows.map((row, index) =>
                 `[${
                     index + 1
-                }] ${row.to} ${row.action.toUpperCase()} IN ${row.source}` +
+                }] ${row.to} ${row.action.toUpperCase()} ${(row.direction ?? "in").toUpperCase()} ${row.source}` +
                 (row.comment ? ` # ${row.comment}` : "")
             ).join("\n");
     }
@@ -69,12 +69,13 @@ export class UfwDouble {
                 comment,
             };
             const same = this.rows.filter((old) =>
-                old.to === row.to && old.source === row.source
+                old.to === row.to && old.source === row.source &&
+                (old.direction ?? "in") === "in"
             );
             if (remove) {
                 this.rows = this.rows.filter((old) =>
                     !(old.to === row.to && old.source === row.source &&
-                        old.action === action)
+                        old.action === action && (old.direction ?? "in") === "in")
                 );
             } else if (same.length) {
                 Object.assign(same[0], { action, comment });
