@@ -11,7 +11,6 @@ use App\Console\Commands\BootstrapGatewayCommand;
 use App\Console\Commands\BootstrapPlanCommand;
 use App\Console\Commands\CaddyBuildCommand;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
-use App\Console\Commands\ConvergeGatewayWebCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
@@ -42,7 +41,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             BootstrapControlPlanCommand::class,
             BootstrapPlanCommand::class,
             CaddyBuildCommand::class,
-            ConvergeGatewayWebCommand::class,
             FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
             ProvisionNodeCommand::class,

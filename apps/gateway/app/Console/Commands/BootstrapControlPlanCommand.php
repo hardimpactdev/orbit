@@ -6,23 +6,27 @@ namespace App\Console\Commands;
 
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewayControlPlan;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\SwampNode;
+use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Console\Command;
 
-/** Prints what the Gateway's own Swamp needs on its machine, issues the certificate of the `swamp.orbit` front, or records the hub key. */
+/** Prints what the Gateway's own Swamp needs on its machine, issues the certificate of the `swamp.orbit` front or of the Gateway site, or records the hub key. */
 final class BootstrapControlPlanCommand extends Command
 {
     #[\Override]
     protected $signature = 'orbit:bootstrap-control-plan
         {--checkout= : The swamp/ folder of the release on this machine}
-        {--certificate : Issue the certificate of swamp.orbit and print its paths}
+        {--certificate= : Issue the certificate of the swamp or gateway site and print its paths}
         {--hub-public-key= : Record the public key of the WireGuard hub the machine made}';
 
     #[\Override]
-    protected $description = 'Print the Swamp control plane plan of this Gateway, or issue the swamp.orbit certificate.';
+    protected $description = 'Print the Swamp control plane plan of this Gateway, or issue the certificate of one of its sites.';
 
-    public function handle(GatewayControlPlan $plan, GatewayCertificateIssuer $certificates): int
+    public function handle(GatewayControlPlan $plan, GatewayCertificateIssuer $certificates, VpnSettings $vpn): int
     {
         $hubKey = $this->option('hub-public-key');
         if (is_string($hubKey) && $hubKey !== '') {
@@ -36,12 +40,39 @@ final class BootstrapControlPlanCommand extends Command
 
             return self::SUCCESS;
         }
-        if ($this->option('certificate')) {
+        $site = $this->option('certificate');
+        if ($site === 'swamp') {
             $node = SwampNode::node();
             $paths = $certificates->issue('swamp.orbit', (string) $node->wireguard_ip);
-            $this->line(json_encode(['certificate' => $paths->certificatePath, 'key' => $paths->privateKeyPath], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            // The folder the site of the `swamp.orbit` Route names for its certificate (DevelopmentSite::certificateDirectory), which the
+            // Gateway's Caddyfile loads after the first publication.
+            $route = Route::query()->where('domain', 'swamp.orbit')->firstOrFail();
+            $this->line(json_encode(['certificate' => $paths->certificatePath, 'key' => $paths->privateKeyPath,
+                'directory' => "/etc/caddy/orbit-certificates/route-{$route->id}/current"], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
             return self::SUCCESS;
+        }
+        if ($site === 'gateway') {
+            // The name and address the Gateway site is published under (GatewayWebCaddySiteSource), signed by this machine's CA.
+            $node = CaddySiteRoles::serving(RoleName::Gateway)[0]->node ?? null;
+            if (! $node instanceof Node || ! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+                $this->error('No Node holds the gateway role with a WireGuard address.');
+
+                return self::FAILURE;
+            }
+            $paths = $certificates->issue($node->name.'.'.$vpn->domain(), $node->wireguard_ip);
+            $this->line(json_encode([
+                'certificate' => $paths->certificatePath,
+                'key' => $paths->privateKeyPath,
+                'root' => dirname($paths->certificatePath, 3).'/root.pem',
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+            return self::SUCCESS;
+        }
+        if ($site !== null) {
+            $this->error('The certificate is of the swamp or gateway site.');
+
+            return self::FAILURE;
         }
         $checkout = $this->option('checkout');
         if (! is_string($checkout) || $checkout === '') {

@@ -85,7 +85,7 @@ final readonly class TopologyGuestPreparer
     /**
      * Makes the mounted worktree's Gateway `.env` name the mounted checkout. Host `bin/bootstrap` writes the
      * file from `.env.example`, whose `ORBIT_GATEWAY_CHECKOUT` names a checkout the guest does not have; the
-     * script rewrites only that line, so `orbit:bootstrap` and `orbit:gateway-web` validate the mounted
+     * script rewrites only that line, so `orbit:bootstrap` validates the mounted
      * checkout. Every other line, the owner, and the mode stay as they were. A missing file fails.
      */
     public const string GATEWAY_ENVIRONMENT_SCRIPT = <<<'SH'

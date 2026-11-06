@@ -8,10 +8,12 @@ use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\SwampNode;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Tests\Support\TestOrbitHome;
@@ -52,7 +54,9 @@ it('records the Gateway, makes its CA and SSH key, and keeps them on a second ru
         ->and(app(VpnSettings::class)->subnet())->toBe('10.45.0.0/24')
         ->and(fileperms($home.'/ca/root.key') & 0o777)->toBe(0o600)
         ->and(fileperms($home.'/ssh/id_ed25519') & 0o777)->toBe(0o600)
-        ->and(is_file($home.'/ssh/id_ed25519.pub'))->toBeTrue();
+        ->and(is_file($home.'/ssh/id_ed25519.pub'))->toBeTrue()
+        ->and(Route::query()->where('domain', 'swamp.orbit')->sole()->only(['node_id', 'status']))->toEqual(['node_id' => $node->id, 'status' => RouteStatus::Active])
+        ->and(Route::query()->where('domain', 'swamp.orbit')->sole()->customProxy->upstream)->toBe('http://127.0.0.1:9418');
     $ca = file_get_contents($home.'/ca/root.pem');
     $key = file_get_contents($home.'/ssh/id_ed25519.pub');
 
@@ -60,7 +64,8 @@ it('records the Gateway, makes its CA and SSH key, and keeps them on a second ru
 
     expect(file_get_contents($home.'/ca/root.pem'))->toBe($ca)
         ->and(file_get_contents($home.'/ssh/id_ed25519.pub'))->toBe($key)
-        ->and(Node::query()->count())->toBe(1);
+        ->and(Node::query()->count())->toBe(1)
+        ->and(Route::query()->count())->toBe(1);
 });
 
 it('refuses an address outside the WireGuard subnet before it changes anything', function (): void {

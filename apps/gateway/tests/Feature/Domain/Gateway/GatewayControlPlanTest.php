@@ -2,8 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\GatewayCertificateIssuer;
+use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Gateway\GatewayControlPlan;
 use App\Domain\Nodes\SwampRoleUnits;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
 
@@ -16,6 +23,7 @@ it('renders the serve and worker units for the checkout of the machine, with the
     $plan = app(GatewayControlPlan::class)->make($checkout);
 
     expect($plan['node_id'])->toBe($node->id)
+        ->and($plan['address'])->toBe($node->wireguard_ip)
         ->and($plan['user'])->toBe('orbit')
         ->and($plan['units']['serve'])->toContain("--repo-dir {$checkout} ")->toContain("WorkingDirectory={$checkout}\n")
         ->and($plan['units']['worker'])->toContain("--label node={$node->id}")
@@ -39,4 +47,22 @@ it('records the public key of the hub the machine made, and refuses anything tha
     $this->artisan("orbit:bootstrap-control-plan --hub-public-key={$key}")->assertSuccessful();
 
     expect($node->fresh()->wireguard_public_key)->toBe($key);
+});
+
+it('names the folder of the swamp.orbit Route for its certificate and refuses another site', function (): void {
+    $node = SwampNodeFixture::ensure();
+    $route = Route::query()->create(['kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => 'swamp.orbit',
+        'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending]);
+    $this->app->instance(GatewayCertificateIssuer::class, new class implements GatewayCertificateIssuer
+    {
+        public function issue(string $hostname, string $wireguardIp): GatewayCertificatePaths
+        {
+            return new GatewayCertificatePaths(privateKeyPath: "/ca/{$hostname}.key", certificatePath: "/ca/{$hostname}.pem");
+        }
+    });
+
+    $this->artisan('orbit:bootstrap-control-plan --certificate=swamp')
+        ->expectsOutputToContain('"directory":"/etc/caddy/orbit-certificates/route-'.$route->id.'/current"')
+        ->assertSuccessful();
+    $this->artisan('orbit:bootstrap-control-plan --certificate=other')->assertFailed();
 });

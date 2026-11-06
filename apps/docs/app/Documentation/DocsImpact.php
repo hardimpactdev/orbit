@@ -42,7 +42,6 @@ final readonly class DocsImpact
         'orbit:runtime-hibernator' => 'docs/reference/gateway-recovery.md',
         'tasks:render-prompt' => 'docs/reference/tasks.md',
         'orbit:private-dns-serve' => 'docs/reference/gateway-trust.md',
-        'orbit:gateway-web' => 'docs/reference/gateway-trust.md',
         'orbit:agent-view-publish' => 'docs/reference/node-agent.md',
         'orbit:activity-redact' => 'docs/cli/activity/index.mdx',
         'orbit:bootstrap' => 'docs/reference/gateway-trust.md',
