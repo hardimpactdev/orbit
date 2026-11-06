@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofRuleKind;
 use App\Domain\Proof\ProofSelection;
 use App\Domain\Proof\ProofSelectionList;
 use App\Domain\Shared\ResourceOperationException;
@@ -211,4 +212,132 @@ it('carries the merge base of the commit into the selection, for the proof of a 
     $everything = ProofSelection::select(PROOF_LIST, proofChanges(['docs/a.md']), true, PROOF_CASES_FILES);
 
     expect($byCommand->mergeBase)->toBe(str_repeat('a', 40))->and($everything->mergeBase)->toBe(str_repeat('a', 40));
+});
+
+const FIREWALL_COMMANDS = ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove'];
+
+/** The family directories whose every file implements the firewall commands; the router LAN ingress files are the exception. */
+const FIREWALL_DIRECTORIES = [
+    'apps/gateway/app/Actions/Firewall/',
+    'apps/gateway/app/Data/Firewall/',
+    'apps/gateway/app/Domain/Firewall/',
+    'apps/gateway/app/Http/Requests/Firewall/',
+    'apps/gateway/app/Infrastructure/Firewall/',
+    'apps/cli/app/Commands/Firewall/',
+    'packages/php-sdk/src/Requests/Firewall/',
+    'packages/php-sdk/src/Responses/Firewall/',
+];
+
+function firewallSelectionList(): ?ProofSelectionList
+{
+    $root = dirname(base_path(), 2);
+
+    return is_file($root.'/swamp/proof/selection.txt') && file_exists($root.'/.git')
+        ? ProofSelectionList::parse((string) file_get_contents($root.'/swamp/proof/selection.txt')) : null;
+}
+
+it('maps the code of the firewall commands to them in the checked-in selection list', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->commands)->toBe(FIREWALL_COMMANDS);
+})->with([
+    'the store action' => ['apps/gateway/app/Actions/Firewall/StoreFirewallRuleAction.php'],
+    'the data' => ['apps/gateway/app/Data/Firewall/FirewallRuleData.php'],
+    'the route file' => ['apps/gateway/routes/api/firewall.php'],
+    'the controller' => ['apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php'],
+    'the managed rule catalog' => ['apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php'],
+    'the rule migration' => ['apps/gateway/database/migrations/2027_01_09_120022_identify_firewall_rules_by_tuple.php'],
+    'the allow CLI command' => ['apps/cli/app/Commands/Firewall/AllowFirewallRuleCommand.php'],
+    'the CLI vocabulary' => ['apps/cli/app/Support/CommandVocabulary/firewall.php'],
+    'the SDK request' => ['packages/php-sdk/src/Requests/Firewall/StoreFirewallRuleRequest.php'],
+]);
+
+it('keeps the router LAN ingress code out of the firewall commands', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Skip);
+})->with([
+    'the domain policy' => ['apps/gateway/app/Domain/Firewall/RouterLanIngressPolicy.php'],
+    'the native reconciler' => ['apps/gateway/app/Infrastructure/Firewall/NativeRouterLanIngressReconciler.php'],
+    'the service provider, which binds only the router LAN classes' => ['apps/gateway/app/Providers/Domains/FirewallServiceProvider.php'],
+]);
+
+it('selects the firewall commands for every tracked file of the firewall directories', function (): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $root = dirname(base_path(), 2);
+    $tracked = array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files')));
+    $files = array_values(array_filter($tracked, static fn (string $path): bool => ! str_contains($path, 'RouterLanIngress')
+        && array_filter(FIREWALL_DIRECTORIES, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
+
+    expect($files)->not->toBeEmpty();
+    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->commands !== FIREWALL_COMMANDS));
+    expect($unselected)->toBe([]);
+});
+
+it('runs every case for the code that every command runs through', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Everything);
+})->with([
+    'the start action' => ['apps/gateway/app/Actions/Operations/StartOperationAction.php'],
+    'the operation store' => ['apps/gateway/app/Domain/Operations/OperationStore.php'],
+    'the operation request' => ['apps/gateway/app/Http/Requests/Operations/StartsOperation.php'],
+    'the operations controller' => ['apps/gateway/app/Http/Controllers/Api/OperationsController.php'],
+    'the operation model' => ['apps/gateway/app/Models/Operation.php'],
+    'the Swamp run starter' => ['apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php'],
+    'a request middleware' => ['apps/gateway/app/Http/Middleware/HandleOperationIdempotency.php'],
+    'the proof runner' => ['swamp/proof/runner/runner.py'],
+    'the CLI base command' => ['apps/cli/app/Commands/GatewayCommand.php'],
+    'the CLI operation follower' => ['apps/cli/app/Commands/Concerns/FollowsOperations.php'],
+    'the CLI connector factory' => ['apps/cli/app/Services/GatewayConnectorFactory.php'],
+    'the CLI failure renderer' => ['apps/cli/app/Support/GatewayFailureRenderer.php'],
+    'the SDK connector' => ['packages/php-sdk/src/GatewayConnector.php'],
+    'the SDK operation response' => ['packages/php-sdk/src/Responses/Operations/OperationResponse.php'],
+]);
+
+it('keeps documentation and the unit tests of the proof tooling out of the shared code', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Skip);
+})->with([
+    'a README in a shared directory' => ['apps/cli/app/Support/Console/README.md'],
+    'a proof runner test' => ['swamp/proof/runner/tests/test_runner.py'],
+    'a firewall extension test' => ['swamp/extensions/behaviors/operations/firewall/firewall_test.ts'],
+]);
+
+it('runs every case when a shared file changes', function (): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $selected = proofSelect(['apps/gateway/app/Domain/Operations/OperationStore.php'], list: (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'));
+
+    expect($selected['because'])->not->toBeNull()->and($selected['files'])->toBe(PROOF_CASES_FILES);
+});
+
+it('names only tracked files in the lines that select every case', function (): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $root = dirname(base_path(), 2);
+    $tracked = array_flip(array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files'))));
+    preg_match_all('~^(\S+)\s+\*$~m', (string) file_get_contents($root.'/swamp/proof/selection.txt'), $lines);
+    $named = array_values(array_filter($lines[1], static fn (string $glob): bool => ! str_contains($glob, '*') && ! str_contains($glob, '?')));
+
+    expect($named)->not->toBeEmpty();
+    $missing = array_values(array_filter($named, static fn (string $path): bool => ! isset($tracked[$path])));
+    expect($missing)->toBe([]);
+});
+
+it('selects every case for every tracked file of the shared directories', function (): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $root = dirname(base_path(), 2);
+    $tracked = array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files')));
+    $directories = [
+        'apps/gateway/app/Actions/Operations/', 'apps/gateway/app/Data/Operations/', 'apps/gateway/app/Domain/Operations/', 'apps/gateway/app/Http/Requests/Operations/',
+        'apps/cli/app/Commands/Operations/', 'apps/cli/app/Console/', 'apps/cli/app/Exceptions/', 'apps/cli/app/Repositories/', 'apps/cli/app/Services/Profile/',
+        'apps/cli/app/Support/Console/', 'apps/cli/app/Support/Operations/', 'packages/php-sdk/src/Support/', 'packages/php-sdk/src/Requests/Operations/',
+        'packages/php-sdk/src/Responses/Operations/',
+    ];
+    $files = array_values(array_filter($tracked, static fn (string $path): bool => ! str_ends_with($path, '.md')
+        && array_filter($directories, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
+
+    expect($files)->not->toBeEmpty();
+    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
+    expect($unselected)->toBe([]);
 });
