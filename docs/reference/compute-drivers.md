@@ -738,6 +738,14 @@ The `tools` phase installs the NFS server and the shape gate linters.
 
 The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, the NFS server active and the export as named.
 
+The `check` phase also asserts that `orbit` has UID and GID 1000. When the intent names a firewall, it asserts that ufw is active with the recovery rule.
+
+The `clean` phase follows an image build and nothing else; it does nothing unless `intent.image` is set. The UpCloud template build runs it. The Incus build cleans through its own child workflow.
+
+The phase refuses a server that was enrolled. It masks the services of a first boot and turns ufw on with only the recovery SSH rule open (`orbit:public-ssh-recovery`). It empties the journal, the logs, the temporary files and the shell histories.
+
+It ends with `cloud-init clean`, the removal of the SSH host keys and the emptying of the authorized keys. The Ansible session stays open through them. The state of Incus stays in the image.
+
 The VM must be `ready` with an active guest Node (`task_vm.converge_refused`). No other Operation may hold it (`operation.target_busy`). The Operation has a provisional budget of 3,300 seconds. A failed phase leaves finished work in place. Run the command again and each phase skips what matches.
 
 ### Park and resume
