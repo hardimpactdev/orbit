@@ -76,7 +76,7 @@ final readonly class TaskCheckIntent
                 'node_id' => $instance->node_id, 'checkout_path' => $instance->checkout_path, 'ssr_port' => $instance->ssr_port,
                 'check_id' => $check->id, 'command' => $group->project->taskCheckCommand(),
                 'setup' => $input->phase === TaskCheckKind::Baseline ? $this->evidence->baselineSetup($group) : [],
-                'deliverables' => $input->phase === TaskCheckKind::Handoff ? ($task->deliverables ?? []) : [],
+                'deliverables' => $input->phase === TaskCheckKind::Handoff ? self::withFailsOnBase($task->deliverables ?? []) : [],
                 'base' => TaskReviewBase::commit($task), 'message' => TaskHandoffCiChecks::message($task),
                 'repository' => $repository === null ? null : $repository->owner.'/'.$repository->name,
                 'check_name' => $ci, 'branch' => TaskRemoteBranch::handoff($group),
@@ -85,5 +85,18 @@ final readonly class TaskCheckIntent
                 'run_budget_seconds' => OperationRunBudgets::historySeconds(OperationKinds::TasksCheck),
             ], $caller, $request);
         });
+    }
+
+    /**
+     * The check workflows read `fails_on_base` of every command deliverable, so the intent states it: an omitted value is false, as the
+     * Tasks reference says. Other deliverables stay as stored.
+     *
+     * @param  array<int, mixed>  $deliverables
+     * @return list<mixed>
+     */
+    public static function withFailsOnBase(array $deliverables): array
+    {
+        return array_values(array_map(static fn (mixed $item): mixed => is_array($item) && ($item['type'] ?? null) === 'command' && ! array_key_exists('fails_on_base', $item)
+            ? [...$item, 'fails_on_base' => false] : $item, $deliverables));
     }
 }

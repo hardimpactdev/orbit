@@ -187,6 +187,8 @@ A command marked `fails_on_base` also runs on its start commit, in separate step
 
 A changed checked tree returns `changed`; failed commands or unmet deliverables return `failed`. A failed Project check keeps its output and leaves skipped command deliverables unmet; it creates no candidate.
 
+The admitted check intent states `fails_on_base` for every command deliverable; a deliverable that omits it is admitted with `false`, which is how the subtask stores it. The check workflows read the value of each command deliverable and never default it.
+
 A passing handoff creates its candidate commit in the VM with `git add --all` and one `git commit` as `Orbit <orbit@users.noreply.github.com>`, with hooks off and the admitted message. TypeScript on Node 209 reads `HEAD`, its tree and its parent back: they must be the checked tree on the checked HEAD, or the check is `changed` and records no candidate. `git update-ref` then records the candidate under `refs/orbit/check-operations/{operation}`. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
 
 For Projects with a handoff check name, separate export, copy, import and push steps publish that exact candidate without force to `task-{group}-handoff`, as [publish](#publish-an-external-group) does. After the candidate is ready, a placed mint step posts to the existing scoped Gateway token primitive with `curl`.
