@@ -106,6 +106,12 @@ Each PHP process keeps one read connection to serve and reuses it across jobs. S
 
 When a read fails on a kept connection, the Gateway drops it and sends the same read once on a new connection. Every read in this file is idempotent. A read that fails on a new connection is final. The error keeps the exception that caused it as its previous exception, so the Gateway log names the cause. A reply that does not match its request is never sent again.
 
+### Step times
+
+Swamp's step events carry no start or end time, so the steps an Operation records while its run goes have none. The terminal history has both for each step. When the Gateway projects the end of a run, for every kind, it reads the history of the root run and of the runs it started, which serve lists with their parent. It then fills the times of the recorded steps.
+
+A step is matched by its job and name, or by its position when a job repeats a name and both lists have the same number. A step that cannot be matched with certainty keeps its empty times. A time the events already carried stays. A failed read leaves the times empty and never fails the projection.
+
 ### Event connection
 
 The existing `orbit:agent-view` Gateway observer keeps the shared native run connection. It joins the private `orbit` record channel; a committed native binding publishes an Operation notice there. At startup and after subscription acknowledgement, it reads active bound Operations once to cover missed notices. It multiplexes `run.attach` requests on its run-authorized socket; receiving events never waits for a workflow to finish.
