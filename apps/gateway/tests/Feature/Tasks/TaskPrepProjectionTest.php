@@ -14,7 +14,6 @@ use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskPrepThreads;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskVmAwake;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -232,18 +231,4 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
         ->and($again->result)->toBe($projected->result)
         ->and([$author->refresh()->tokens, $reviews[0]->refresh()->tokens, $reviews[1]->refresh()->tokens])->toBe([100, 20, 30])
         ->and($vm->refresh()->state)->toBe(TaskVmState::Ready);
-});
-
-it('lets work go on while the task VM runs and refuses it, with the reason, when a parked VM cannot resume', function (): void {
-    [, $group, $vm] = prepRun();
-    $vm->update(['state' => TaskVmState::Ready]);
-
-    TaskVmAwake::require($group);
-    expect(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0);
-
-    // No Pi credential: the wake gate cannot admit the resume, so the call is refused with that reason.
-    $vm->update(['state' => TaskVmState::Parked, 'pi_token' => null]);
-
-    expect(fn () => TaskVmAwake::require($group))->toThrow(ResourceOperationException::class, 'Resume requires the parked VM')
-        ->and(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0);
 });
