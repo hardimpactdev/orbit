@@ -7,9 +7,11 @@ namespace App\Domain\Tasks;
 use App\Actions\Tasks\StartTaskParkAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\NativeRunResult;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -35,11 +37,15 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection
     public function input(Operation $operation): array
     {
         $input = ValidatedData::object($operation->input);
+        $pi = ValidatedData::object(ValidatedData::object($input['execution_secrets'])['pi_token']);
+        $vm = TaskVm::query()->findOrFail(ValidatedData::integer(ValidatedData::object($input['resume'])['task_vm_id']));
 
         return [
             'intent' => ['resume' => $input['resume'], 'author' => $input['author'], 'fix' => $input['fix'], 'reviews' => $input['reviews'], 'publish' => $input['publish'], 'plan' => $input['plan']],
-            'execution_secrets' => $input['execution_secrets'],
-            'resume_secrets' => $input['resume_secrets'],
+            // The run starts now, so the Pi token is written to the vault now, and not when the call was admitted.
+            'execution_secrets' => ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($pi['vault']), ValidatedData::string($pi['key']), ValidatedData::string($vm->pi_token))],
+            // An empty map must reach the workflow as an object, not as an empty JSON list.
+            'resume_secrets' => (object) ValidatedData::object($input['resume_secrets']),
             'publish_secrets' => $input['publish_secrets'],
         ];
     }
@@ -47,7 +53,8 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection
     /** @param array<string,mixed> $data */
     public function apply(Operation $operation, array $data): Operation
     {
-        $projected = DB::transaction(function () use ($operation, $data): Operation {
+        $first = false;
+        $projected = DB::transaction(function () use ($operation, $data, &$first): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $native = ValidatedData::object($data['result'] ?? []);
             $status = ValidatedData::string($data['status']);
@@ -55,9 +62,10 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
+            $first = true;
             $intent = ValidatedData::object($operation->input);
-            $step = $failed ? $this->failedStep($native, $data) : null;
-            $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Push the corrections' ? self::publishCode($data) : 'tasks.turn_failed')) : null;
+            $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
+            $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Push the corrections' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
 
             // The resume step is a child run, not a task_vm.resume Operation, so the VM is recorded as ready here once the step succeeded.
             if (NativeRunResult::stepStatus($native, 'Resume the VM') === 'succeeded') {
@@ -87,14 +95,15 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
-        if ($projected->status->value === 'succeeded') {
+        // Only the first projection of the end parks the group; a replay of the terminal event admits nothing.
+        if ($first && $projected->status->value === 'succeeded') {
             $this->parkAgain($projected);
         }
 
         return $projected;
     }
 
-    /** The corrections are on the pull request, so the group stops its VM again while the spec waits for the owner. */
+    /** The corrections are on the pull request, so the group stops its VM again while the spec waits for the owner. A refusal is kept in the result. */
     private function parkAgain(Operation $operation): void
     {
         $group = Task::topLevel()->find($operation->target_id);
@@ -104,30 +113,7 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection
         try {
             app(StartTaskParkAction::class)->execute($group, 'prep-fix', null);
         } catch (ResourceOperationException $exception) {
-            report($exception);
+            app(OperationStore::class)->change($operation, ['result' => [...ValidatedData::object($operation->result ?? []), 'park_refused' => $exception->errorCode]]);
         }
-    }
-
-    /**
-     * @param  array<string,mixed>  $native
-     * @param  array<string,mixed>  $data
-     */
-    private function failedStep(array $native, array $data): ?string
-    {
-        $failure = ValidatedData::object($data['failure'] ?? []);
-        $steps = ValidatedData::object($native['summary'] ?? [])['failed_steps'] ?? [];
-        $step = $failure['failed_step'] ?? (is_array($steps) ? ($steps[0] ?? null) : null);
-
-        return is_string($step) ? $step : null;
-    }
-
-    /** @param array<string,mixed> $data */
-    private static function publishCode(array $data): string
-    {
-        $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
-        $detail = $failure['detail'] ?? null;
-
-        return in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-            ? $detail : 'tasks.publish_failed';
     }
 }

@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCheckGitHubTokens;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPrepFixIntent;
 use App\Domain\Tasks\TaskPrepIntent;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
@@ -273,11 +274,11 @@ it('fails with the publish code when the App is not installed on the repository'
 
 // A prep run reaches its publish step 43 to 90 minutes after admission, a provision can wait for capacity before it clones, and an installation token lives one hour.
 arch('the admission of a publish, a prep run and a provision mints nothing and writes no vault value for a repository credential')
-    ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskProvisionIntent::class])
+    ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskPrepFixIntent::class, TaskProvisionIntent::class])
     ->not->toUse([RepositoryPullRequestAccess::class, RepositoryReadAccess::class, GitHubApi::class]);
 
 arch('the admission of a publish and of a prep run writes no vault value')
-    ->expect([TaskPublishIntent::class, TaskPrepIntent::class])
+    ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskPrepFixIntent::class])
     ->not->toUse([SwampCommandStep::class]);
 
 arch('the admission of a pull request step and of a cancel mints no token')

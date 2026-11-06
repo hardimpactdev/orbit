@@ -29,6 +29,35 @@ final class TaskPrepResults
         return is_array($result) ? ValidatedData::object($result) : null;
     }
 
+    /**
+     * The step that ended a failed run: the one the failure names, else the first failed step of the summary.
+     *
+     * @param  array<string,mixed>  $native
+     * @param  array<string,mixed>  $data
+     */
+    public static function failedStep(array $native, array $data): ?string
+    {
+        $failure = ValidatedData::object($data['failure'] ?? []);
+        $steps = ValidatedData::object($native['summary'] ?? [])['failed_steps'] ?? [];
+        $step = $failure['failed_step'] ?? (is_array($steps) ? ($steps[0] ?? null) : null);
+
+        return is_string($step) ? $step : null;
+    }
+
+    /**
+     * The public code of a failed publish step.
+     *
+     * @param  array<string,mixed>  $data
+     */
+    public static function publishCode(array $data): string
+    {
+        $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
+        $detail = $failure['detail'] ?? null;
+
+        return in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
+            ? $detail : 'tasks.publish_failed';
+    }
+
     /** @return array{pull_request_number:int,pull_request_url:string}|null */
     public static function pullRequest(mixed $captured): ?array
     {

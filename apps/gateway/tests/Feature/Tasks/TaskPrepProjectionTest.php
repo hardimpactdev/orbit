@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Data\Tasks\StartTaskPrepFixData;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPrepFixIntent;
 use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskStatus;
@@ -133,4 +136,38 @@ it('keeps the VM parked when the run failed before the resume step succeeded', f
 
     expect($projected->error_code)->toBe('task_vm.resume_failed')
         ->and($vm->refresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('refuses the corrections of a group that is busy or has no task VM workspace', function (): void {
+    [$operation, $group] = prepRun();
+    $start = fn () => app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Finding 1.'), 'test', null);
+
+    // The prep run is still running: the group is busy.
+    expect($start)->toThrow(ResourceOperationException::class, 'Another operation');
+
+    // The run ended, but the group holds no workspace of its own yet.
+    $operation->update(['status' => OperationStatus::Succeeded]);
+    expect($start)->toThrow(ResourceOperationException::class, 'owned task VM workspace');
+});
+
+it('records the commit and the rounds of a run that pushed, keeps the park refusal, and does not project the end twice', function (): void {
+    [$operation, $group, $vm] = prepRun();
+    $vm->update(['state' => TaskVmState::Parked]);
+    $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
+        'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-'.$group->id],
+        'author' => ['thread_id' => 11], 'fix' => ['thread_id' => 11], 'reviews' => [['thread_id' => 12], ['thread_id' => 13]],
+    ]]);
+    $end = [
+        'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subMinutes(30)->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => ['Resume the VM' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'head' => str_repeat('a', 40)],
+    ];
+
+    $projected = app(TaskPrepFixProjection::class)->apply($operation, $end);
+
+    // The group is not parked-eligible in this fixture, so the park is refused and the run keeps the reason.
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toMatchArray(['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40), 'rounds' => 0])
+        ->and($projected->result['park_refused'])->toBeString();
+    $again = app(TaskPrepFixProjection::class)->apply($projected, $end);
+    expect($again->result)->toBe($projected->result);
 });

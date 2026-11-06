@@ -19,8 +19,9 @@ use App\Domain\Tasks\TaskPullRequestReadyProjection;
 use App\Domain\Tasks\TaskScriptProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
-$vmProvision = (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.provision'];
-$vmResume = (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.resume'];
+$taskVmKinds = require __DIR__.'/../TaskVms/direct-operations.php';
+$vmProvision = $taskVmKinds['task_vm.provision'];
+$vmResume = $taskVmKinds['task_vm.resume'];
 
 return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'Check the result', 'native' => true, 'captures' => ['maintenance' => ['job' => 'maintenance', 'step' => 'shape', 'field' => 'result_json']]]], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies']], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => [...(require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.provision' => [
     'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,

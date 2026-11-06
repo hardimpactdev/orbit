@@ -73,15 +73,22 @@ final readonly class TaskPrepPrompts
 
     public function review(): string
     {
+        return $this->reviewText('The spec is the commit at HEAD of this workspace. It holds three files:',
+            'Check that the commit holds these three files and nothing else.', '').$this->briefText(false);
+    }
+
+    /** The one review prompt: a first review of the spec commit, or a review after corrections, which adds the owner's review. */
+    private function reviewText(string $scope, string $holds, string $extra): string
+    {
         return <<<TEXT
         You are an independent reviewer of the spec of the Orbit command `{$this->command}`. You did not write it. You edit no file.
 
-        The spec is the commit at HEAD of this workspace. It holds three files:
+        {$scope}
         - chart: `{$this->chart()}`
         - docs page: `{$this->page()}`
         - cases: `{$this->cases()}`
 
-        Check them against `.agents/skills/preparing-commands/SKILL.md`, `.agents/skills/flow-tighten/SKILL.md`, `docs/cli/README.md`, `docs/reference/cli-ux.md`, `docs/reference/verification-cases.mdx` and the sibling command, if there is one. A sibling that is a draft has no approval. Read the code only to learn what exists. Walk every error code, flag, repeat and refusal of the page against the cases. Check that the commit holds these three files and nothing else.
+        Check them against `.agents/skills/preparing-commands/SKILL.md`, `.agents/skills/flow-tighten/SKILL.md`, `docs/cli/README.md`, `docs/reference/cli-ux.md`, `docs/reference/verification-cases.mdx` and the sibling command, if there is one. A sibling that is a draft has no approval. Read the code only to learn what exists. Walk every error code, flag, repeat and refusal of the page against the cases. {$holds}
 
         The author already ran `bin/check-flows`, `composer docs-build` and `composer docs-lint`. Run them again only to check a doubt.
 
@@ -89,10 +96,10 @@ final readonly class TaskPrepPrompts
 
         Also check each of these; a break is a finding. Every case id that runs on the default branch (`git show origin/main:<cases file>`) is still a case with the same batch, and none moved to `uncovered`. `fails_today` is not used for a step the runner refuses. Every behavior the page states as fact exists in the code or has a `fails_today` case. Behavior that is the same for every command is not charted, repeated or cased per command. A rule is said once per page, with a link to the family page. The chart status and header lines follow the skill. No file holds a PR or issue number. A defect copied from the reference text or the sibling is a finding, even though the sibling has it.
 
-        A finding is a place where the spec breaks a rule of those documents, contradicts itself or the sibling, or promises something that no case covers. A matter of taste or an optional improvement is not a finding; mention it in your summary after the findings and still approve. Report at most five findings, the most important first. A review may end with outcome `approved` and notes.
+        {$extra}A finding is a place where the spec breaks a rule of those documents, contradicts itself or the sibling, or promises something that no case covers. A matter of taste or an optional improvement is not a finding; mention it in your summary after the findings and still approve. Report at most five findings, the most important first. A review may end with outcome `approved` and notes.
 
         End with outcome `approved` when you have no finding. Otherwise end with `changes_requested` and put every finding in your summary as a numbered list. Name the file, the problem and the fix for each finding.
-        TEXT.$this->briefText(false);
+        TEXT;
     }
 
     public function fix(): string
@@ -130,32 +137,16 @@ final readonly class TaskPrepPrompts
         The review of the owner:
 
         {$review}
-        TEXT.$this->briefText(false);
+        TEXT;
     }
 
-    /** The review of a round after the corrections: the spec as it stands, and whether each correction is applied. */
+    /** The review of a round after the corrections: the same review as the first, plus whether each correction of the owner is applied. */
     public function reviewCorrections(string $review): string
     {
-        return <<<TEXT
-        You are an independent reviewer of the spec of the Orbit command `{$this->command}`, after its owner asked for corrections. You did not write it. You edit no file.
+        $extra = "This is a review after the owner asked for corrections. The first commit of the branch holds the spec; the commits after it are the corrections. Check with `git log --stat origin/main..HEAD` that the branch changes these three files and nothing else. Then check each correction that the owner asked for: it is applied, or the author's summary or the file gives a reason that a rule or a decision settles. A correction that needs another file or an owner decision may be left out. A requested correction left undone without a reason is a finding.\n\nThe review of the owner:\n\n".$review."\n\n";
 
-        The spec is on this branch: the first commit holds three files, and the commits after it are corrections that the author made after the review of the owner.
-        - chart: `{$this->chart()}`
-        - docs page: `{$this->page()}`
-        - cases: `{$this->cases()}`
-
-        Check the three files as they stand at HEAD against `.agents/skills/preparing-commands/SKILL.md`, `.agents/skills/flow-tighten/SKILL.md`, `docs/cli/README.md`, `docs/reference/cli-ux.md` and `docs/reference/verification-cases.mdx`. Check with `git log --stat` that the branch changes these three files and nothing else. Then check each correction that the owner asked for: it is applied, or the author's summary or the file gives a reason that a rule or a decision settles. A correction that needs another file or an owner decision may be left out.
-
-        Run `{$this->plan()}` yourself. It reads the cases file and runs no case. If it exits with anything but 0, that is a finding: quote the refusal line, and do not approve. Run no other proof.
-
-        A finding is a place where the spec breaks a rule of those documents, contradicts itself, promises something that no case covers, or leaves a requested correction undone without a reason. A matter of taste is not a finding; mention it after the findings and still approve. Report at most five findings, the most important first.
-
-        End with outcome `approved` when you have no finding. Otherwise end with `changes_requested` and put every finding in your summary as a numbered list. Name the file, the problem and the fix for each finding.
-
-        The review of the owner:
-
-        {$review}
-        TEXT;
+        return $this->reviewText('The spec is the branch of this workspace, as it stands at HEAD. It holds three files:',
+            'Check that the branch changes these three files and nothing else.', $extra);
     }
 
     /** The fix turn of a round after the corrections: it keeps the one corrections commit and never touches the pushed ones. */
