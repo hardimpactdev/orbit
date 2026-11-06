@@ -70,9 +70,9 @@ jobs:
     - step: Create and prepare the VM
       condition:
         type: succeeded
-  # Stage 2, "Converge once": the task VM role phases on the outer VM (the NFS export of the checkout to the nested network, Incus with the seed pool); a VM at the pins reports no change.
   - name: Pin the converge
     labels: {role: swamp}
+    # Stage 2, "Converge once": the task VM role phases on the outer VM (the NFS export of the checkout to the nested network, Incus with the seed pool); a VM at the pins reports no change.
     guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
     task:
       type: behavior
