@@ -27,6 +27,9 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class ProofCommandProjection implements DirectOperationProjection, DirectOperationTimeout
 {
+    /** The code of a run whose VM or fleet never got to run its cases. */
+    public const string RunFailed = 'proof.run_failed';
+
     public function __construct(private TaskProvisionProjection $provision, private TaskGroupEnding $ending, private ProofRunSettlement $settlement) {}
 
     /** The run's inputs: the provision and the destruction as the workflows `operation-task-provision` and `operation-task-cancel` take them. */
@@ -90,7 +93,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             if (in_array($status, ['succeeded', 'failed'], true)) {
                 $passed = $status === 'succeeded' && ProofVerdicts::passed($verdicts['cases']);
                 $data['status'] = $passed ? 'succeeded' : 'failed';
-                $data['error_code'] = $passed ? null : ($verdicts['ran'] ? 'proof.cases_failed' : 'proof.run_failed');
+                $data['error_code'] = $passed ? null : ($verdicts['ran'] ? 'proof.cases_failed' : self::RunFailed);
             }
 
             return app(DirectOperation::class)->project($operation, $data, ['commit' => $input['commit'], 'command' => $input['command'], 'file' => $input['file'],

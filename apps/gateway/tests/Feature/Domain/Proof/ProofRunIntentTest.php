@@ -14,8 +14,11 @@ use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
 uses(LazilyRefreshDatabase::class);
@@ -233,5 +236,24 @@ describe('proof:run admission', function (): void {
         $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, true, 'tester', null));
 
         expect($refusal->errorCode)->toBe('proof.execution_disabled')->and($refusal->details['cases'])->toHaveCount(1);
+    });
+
+    it('keeps nothing when a command cannot start: no group, no run, and the proof fails with the reason', function (): void {
+        config(['proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+
+        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null));
+
+        $proof = Operation::query()->where('kind', 'proof.run')->sole();
+        expect($refusal->errorCode)->toBe('tasks.capacity_unavailable')
+            ->and($proof->status)->toBe(OperationStatus::Failed)
+            ->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and(Task::query()->count())->toBe(0)
+            ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
 });
