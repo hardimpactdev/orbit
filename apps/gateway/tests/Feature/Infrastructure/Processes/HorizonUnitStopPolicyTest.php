@@ -6,6 +6,7 @@ use App\Domain\Processes\ProcessTarget;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -38,4 +39,12 @@ it('leaves the stop policy of every other Process alone', function (): void {
     $unit = (new SystemdProcessRenderer)->render($process, $target);
 
     expect($unit)->not->toContain('KillMode')->not->toContain('SendSIGKILL')->not->toContain('TimeoutStopSec');
+});
+
+it('leaves the stop policy to the Gateway: an Instance Horizon unit does not get it', function (): void {
+    [$process, $target] = stopPolicyProcess('horizon', ['/usr/bin/php8.5', 'artisan', 'horizon']);
+
+    $unit = (new SystemdProcessRenderer)->render($process, new ProcessTarget($target->node, 'orbit', '/home/orbit/apps/site', instance: new Instance));
+
+    expect($unit)->not->toContain('KillMode')->not->toContain('TimeoutStopSec');
 });
