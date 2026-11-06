@@ -52,6 +52,7 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
                 'review_2' => ['job' => 'prep', 'step' => 'Review the spec 2'], 'fix_2' => ['job' => 'prep', 'step' => 'Fix the findings 2'],
                 'review_3' => ['job' => 'prep', 'step' => 'Review the spec 3'],
                 'publish' => ['job' => 'prep', 'step' => 'Open a draft PR'],
+                'findings' => ['job' => 'prep', 'step' => 'Settle review 3', 'field' => 'findings'],
             ]],
             'execution_copies' => [...$vmProvision['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-git-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],

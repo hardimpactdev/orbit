@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskPrepPrompts;
 use App\Domain\Tasks\TaskPrepResults;
 use App\Http\Requests\Tasks\StartTaskPrepRequest;
@@ -50,4 +51,18 @@ it('reads the provision receipt, a turn result and the pull request wherever Swa
         ->and(TaskPrepResults::receipt(null))->toBeNull()
         ->and(TaskPrepResults::turn(['shape_result' => ['result_json' => 'not json']]))->toBeNull()
         ->and(TaskPrepResults::pullRequest(['Read PR result' => ['stdout' => '{"pull_request_url": null}']]))->toBeNull();
+});
+
+it('names the thread of each turn from the intent a run recorded, whose reviews are a list', function (): void {
+    $turn = static fn (int $thread): array => ['thread_id' => $thread, 'role' => 'implementer'];
+    $input = ['draft' => $turn(11), 'fix' => $turn(11), 'reviews' => [$turn(12), $turn(13), $turn(14)]];
+
+    expect(TaskPrepProjection::threads($input))->toBe(['draft' => 11, 'review_1' => 12, 'fix_1' => 11, 'review_2' => 13, 'fix_2' => 11, 'review_3' => 14]);
+});
+
+it('limits a review to findings the rules require', function (): void {
+    $review = TaskPrepPrompts::for('firewall:deny')->review();
+
+    expect($review)->toContain('at most five findings', 'A matter of taste', 'run no proof')
+        ->and(TaskPrepPrompts::for('firewall:deny')->fix())->toContain('change nothing else');
 });

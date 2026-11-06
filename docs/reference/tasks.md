@@ -305,7 +305,9 @@ The child workflows gain only inputs that the parent needs. `operation-task-turn
 
 The author commits the three files as one commit. A draft that leaves HEAD where it was ends the run with `tasks.prep_not_committed` before any review. The review runs for at most three rounds. A reviewer receipt with outcome `approved` ends the loop. With `changes_requested`, the reviewer's summary goes into the prompt of a fix turn on the author thread, and a new review follows.
 
-A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`, because the next review would restore a commit that holds none of the fix. A finding left after the last round ends the run with `tasks.prep_review_unresolved`. Nothing is published, and the VM stays for the orchestrator, who cancels the group when done.
+Each review starts a new thread and also reads the findings of the one before, so it checks them instead of finding them again. A reviewer reports at most five findings and approves with notes when only matters of taste remain.
+
+A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`, because the next review would restore a commit that holds none of the fix. A finding left after the last round ends the run with `tasks.prep_review_unresolved`. Nothing is published, the result keeps the findings of the last review, and the VM stays for the orchestrator, who cancels the group when done.
 
 The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
 
