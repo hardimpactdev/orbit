@@ -130,35 +130,6 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
         parent_run_id: ${{ run.id }}
-  - name: Remove DNS records
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Withdraw the Route
-      condition:
-        type: succeeded
-    forEach:
-      item: part
-      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p, p.after.dns != null && p.after.dns != p.prepared.dns) }}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-publish
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.part.node_id }}
-          control_node_id: ${{ self.part.control_node_id }}
-          connection: ${{ self.part.connection }}
-          host_keys: ${{ self.part.host_keys }}
-          before: ${{ inputs.intent.route_mutations.artifacts.dns[self.part.before.dns] }}
-          after: ${{ inputs.intent.route_mutations.artifacts.dns[self.part.after.dns] }}
-          alternatives: ${{ [inputs.intent.route_mutations.artifacts.dns[self.part.before.dns], inputs.intent.route_mutations.artifacts.dns[self.part.prepared.dns], inputs.intent.route_mutations.artifacts.dns[self.part.withdrawn.dns],
-            inputs.intent.route_mutations.artifacts.dns[self.part.after.dns]] }}
-        execution_secrets: {}
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
   - name: Stop, remove Processes
     labels:
       role: swamp
@@ -173,9 +144,6 @@ jobs:
       condition:
         type: always
     - step: Withdraw the Route
-      condition:
-        type: always
-    - step: Remove DNS records
       condition:
         type: always
     guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
@@ -246,9 +214,6 @@ jobs:
     - step: Withdraw the Route
       condition:
         type: always
-    - step: Remove DNS records
-      condition:
-        type: always
     - step: Stop, remove Processes
       condition:
         type: always
@@ -267,9 +232,6 @@ jobs:
       condition:
         type: always
     - step: Withdraw the Route
-      condition:
-        type: always
-    - step: Remove DNS records
       condition:
         type: always
     - step: Stop, remove Processes
@@ -311,9 +273,6 @@ jobs:
       condition:
         type: always
     - step: Withdraw the Route
-      condition:
-        type: always
-    - step: Remove DNS records
       condition:
         type: always
     - step: Stop, remove Processes
@@ -358,9 +317,6 @@ jobs:
     - step: Withdraw the Route
       condition:
         type: always
-    - step: Remove DNS records
-      condition:
-        type: always
     - step: Stop, remove Processes
       condition:
         type: always
@@ -402,9 +358,6 @@ jobs:
       condition:
         type: always
     - step: Withdraw the Route
-      condition:
-        type: always
-    - step: Remove DNS records
       condition:
         type: always
     - step: Stop, remove Processes
