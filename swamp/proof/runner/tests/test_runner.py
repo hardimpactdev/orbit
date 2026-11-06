@@ -1,4 +1,4 @@
-"""One case from the real allow file against the fake fleet: the verdicts, the line, and the commands."""
+"""One case from the fixture copy of the allow file against the fake fleet: the verdicts, the line, and the commands."""
 import contextlib
 import io
 import json
@@ -17,7 +17,7 @@ import steps
 from fakes import BRIDGE, FakeFleet
 
 PROOF = Path(__file__).resolve().parents[2]
-CASES = PROOF / 'firewall' / 'allow.cases.yaml'
+CASES = Path(__file__).resolve().parent / 'fixtures' / 'allow.cases.yaml'
 BATCHES = PROOF / 'batches.yaml'
 CASE = 'new-restricted-allow'
 
