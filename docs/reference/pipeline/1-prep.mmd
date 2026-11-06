@@ -121,9 +121,13 @@ sequenceDiagram
       %%> When:
       %%> - only when Nick asks for corrections
       %%> Result:
-      %%> - the author agent applies them, checks the draft again and pushes
-      %%> Not built:
-      %%> - this step; today an agent applies Nick's corrections by hand on the PR branch
+      %%> - the parked prep group resumes: the author agent gets the review as its prompt and applies it as a new commit, the runner plan and a review round check it, and the App pushes it to the same draft PR
+      %%> - the group then parks again
+      %%> Built or not:
+      %%> - built: `tasks:prep-fix`, with the review of the owner as its input (`docs/cli/tasks/prep-fix.mmd`)
+      %%> - not built: the gate check does not detect the review of the owner yet
+      %%> Decided by the orchestrator, for Nick's review:
+      %%> - the run is admitted with the review as text, so a decision made after the review can go with it; two review rounds follow the corrections
     end
   else automatic mode
     Note over GH: No checkpoint<br/>the flow continues

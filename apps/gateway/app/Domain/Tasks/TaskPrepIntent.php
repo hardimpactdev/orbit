@@ -12,7 +12,6 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
-use App\Infrastructure\Tasks\Pi\PiModel;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -52,10 +51,10 @@ final readonly class TaskPrepIntent
             $instance->loadMissing('node');
             // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
             $ssh = app(PendingSshHostKey::class)->during($instance->node_id, fn (): array => app(SwampSshExecutionInput::class)->forNode($instance->node));
-            $author = $this->thread($group, $subtask, $instance, 'implementer');
+            $author = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
             // A query update: since the review mode column has a default, every subtask row carries `review_mode`, and a model save of a subtask refuses it.
             Task::query()->whereKey($subtask->id)->update(['implementer_agent_thread_id' => $author->id]);
-            $reviewers = array_map(fn (int $round): AgentThread => $this->thread($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
+            $reviewers = array_map(fn (int $round): AgentThread => TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
             $group->update(['reviewer_agent_thread_id' => $reviewers[0]->id]);
             $turn = fn (AgentThread $thread, string $prompt, bool $new): array => [
                 'new_session' => $new, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
@@ -88,16 +87,5 @@ final readonly class TaskPrepIntent
                 'publish_secrets' => ['github_token' => $copy, 'git_authorization' => $authorization],
             ];
         }, $caller, $request);
-    }
-
-    private function thread(Task $group, Task $subtask, Instance $instance, string $role): AgentThread
-    {
-        $model = PiModel::onlyProvider($role === 'implementer' ? $group->implementer_model : $group->reviewer_model, 'orbit-task-vm');
-
-        return AgentThread::query()->create([
-            'task_group_id' => $group->id, 'task_id' => $subtask->id, 'node_id' => $instance->node_id,
-            'driver' => 'pi', 'runtime_key' => 'node:'.$instance->node_id, 'external_id' => (string) Str::uuid(),
-            'role' => $role, 'model' => $model, 'effort' => config('orbit.tasks.'.$role.'_effort', 'high'),
-        ]);
     }
 }

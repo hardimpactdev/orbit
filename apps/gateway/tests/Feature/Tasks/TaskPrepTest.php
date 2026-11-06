@@ -92,3 +92,12 @@ it('puts the runner plan of the cases file in the author, review and fix prompts
         ->and($prompts->review())->toContain($plan, 'that is a finding', 'do not approve')
         ->and($prompts->fix())->toContain($plan);
 });
+
+it('builds the prompts of the corrections around the review of the owner', function (): void {
+    $prompts = TaskPrepPrompts::for('firewall:allow');
+    $review = "Finding 4: keyed replay is generic.\nDecision: link operations.md.";
+
+    expect($prompts->corrections($review))->toContain($review, 'ONE new commit', 'Never amend', 'not yours to make', $prompts->plan())
+        ->and($prompts->reviewCorrections($review))->toContain($review, 'each correction that the owner asked for', $prompts->plan(), 'do not approve')
+        ->and($prompts->fixCorrections())->toContain('amend only your own corrections commit', 'Never amend or rewrite a commit that is already on the branch');
+});

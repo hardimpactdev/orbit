@@ -106,6 +106,11 @@ final class OperationRunBudgets
         // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each, rounded down to 55 min.
         // Replace with the 14-day p95 after the first success.
         'tasks.prep' => 3300,
+        // No run yet. Basis: the task VM resume (about 90 s), one author turn of about 10 minutes, two review rounds of about 4
+        // minutes with the runner plans, and one fix of 4 minutes, so about 25 minutes, x 1.5, rounded to 45 minutes. The push token
+        // is minted when the push step starts, so the hour of an installation token does not limit this run.
+        // Replace with the 14-day p95 after the first success.
+        'tasks.prep_fix' => 2700,
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
