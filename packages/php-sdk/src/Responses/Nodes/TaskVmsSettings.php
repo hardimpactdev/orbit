@@ -6,7 +6,10 @@ namespace Orbit\Sdk\Responses\Nodes;
 
 final readonly class TaskVmsSettings
 {
-    /** @param list<string> $operator_owned */
+    /**
+     * @param  list<string>  $operator_owned
+     * @param  array{count:int,project_id:int,size:string}|null  $slots  the ready slots the host keeps
+     */
     public function __construct(
         public string $cidr,
         public int $max_vms,
@@ -19,6 +22,7 @@ final readonly class TaskVmsSettings
         public ?string $memory = null,
         public ?string $disk = null,
         public ?array $operator_owned = null,
+        public ?array $slots = null,
     ) {}
 
     /** @param array<array-key, mixed> $data */
@@ -33,6 +37,8 @@ final readonly class TaskVmsSettings
             image_alias: $string('image_alias'), zfs_dataset: $string('zfs_dataset'),
             cpus: $integer('cpus'), memory: $string('memory'), disk: $string('disk'),
             operator_owned: is_array($data['operator_owned'] ?? null) ? array_values(array_filter($data['operator_owned'], is_string(...))) : null,
+            slots: is_array($data['slots'] ?? null) && is_int($data['slots']['count'] ?? null) && is_int($data['slots']['project_id'] ?? null) && is_string($data['slots']['size'] ?? null)
+                ? ['count' => $data['slots']['count'], 'project_id' => $data['slots']['project_id'], 'size' => $data['slots']['size']] : null,
         );
     }
 

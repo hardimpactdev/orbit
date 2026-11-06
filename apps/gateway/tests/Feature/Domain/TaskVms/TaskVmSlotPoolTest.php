@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Operations\OperationStatus;
+use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmSlotPool;
+use App\Domain\TaskVms\TaskVmSlotSetting;
+use App\Domain\TaskVms\TaskVmState;
+use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Models\Cluster;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\Project;
+use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+
+uses(LazilyRefreshDatabase::class);
+
+/** A task VM host with a promoted image and, unless `$count` is null, a pool of `$count` large slots of the returned Project. */
+function slotPoolHost(?int $count = 2, int $maxVms = 6): array
+{
+    $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
+    $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']));
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    $slots = $count === null ? null : new TaskVmSlotSetting($count, $project->id, TaskVmSize::Large);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB', slots: $slots)],
+        'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
+        'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)]]]);
+
+    return [$host, $project, $build];
+}
+
+/** A slot row of the host: by default a fresh ready slot of the current image. */
+function slotPoolSlot(Node $host, Project $project, TaskVmImageBuild $build, array $overrides = []): TaskVm
+{
+    static $next = 1;
+    $id = $next++;
+
+    return TaskVm::query()->create([...['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Large, 'name' => 'tvm-slot-'.$id, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.'.(200 + $id),
+        'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => 'recipe-1', 'ready_at' => now()], ...$overrides]);
+}
+
+it('keeps no pool on a host without the slots setting', function (): void {
+    [$host] = slotPoolHost(null);
+
+    expect(app(TaskVmSlotPool::class)->next($host->id))->toBeNull();
+});
+
+it('enrols while the pool is below its count, and waits while a slot enrols', function (): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->next($host->id))->toBe(['enrol', null]);
+
+    $enrolling = slotPoolSlot($host, $project, $build, ['state' => TaskVmState::Provisioning]);
+    expect($pool->next($host->id))->toBeNull();
+
+    $enrolling->update(['state' => TaskVmState::Parked]);
+    expect($pool->next($host->id))->toBe(['enrol', null]);
+
+    slotPoolSlot($host, $project, $build);
+    expect($pool->next($host->id))->toBeNull();
+});
+
+it('destroys a failed slot first, and holds the enrol for 15 minutes after a failed enrol', function (): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $failed = slotPoolSlot($host, $project, $build, ['state' => TaskVmState::Failed]);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->next($host->id)[0])->toBe('destroy')->and($pool->next($host->id)[1]->id)->toBe($failed->id);
+
+    $failed->update(['state' => TaskVmState::Destroyed]);
+    Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $failed->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Failed, 'input' => [], 'finished_at' => now()->subMinutes(5)]);
+    expect($pool->next($host->id))->toBeNull();
+
+    Operation::query()->where('kind', TaskVmSlotPool::EnrolKind)->update(['finished_at' => now()->subMinutes(16)]);
+    expect($pool->next($host->id))->toBe(['enrol', null]);
+});
+
+it('replaces one stale slot at a time once the pool is full', function (): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $old = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-0', 'state' => TaskVmImageBuildState::Succeeded,
+        'promoted_at' => now()->subDay(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('c', 64)]]]);
+    $stale = slotPoolSlot($host, $project, $old);
+    slotPoolSlot($host, $project, $build);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->next($host->id)[0])->toBe('destroy')->and($pool->next($host->id)[1]->id)->toBe($stale->id);
+
+    $stale->update(['state' => TaskVmState::Destroying]);
+    expect($pool->next($host->id))->toBeNull();
+});
+
+it('counts a slot stale by image, age, Project and size', function (): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $pool = app(TaskVmSlotPool::class);
+    $setting = app(TaskVmSettings::class)->host($host->id)->slots;
+    $current = ['build_id' => $build->id, 'fingerprint' => str_repeat('b', 64), 'recipe_identity' => 'recipe-1'];
+
+    expect($pool->stale(slotPoolSlot($host, $project, $build), $setting, $current))->toBeFalse()
+        ->and($pool->stale(slotPoolSlot($host, $project, $build, ['ready_at' => now()->subHours(21)]), $setting, $current))->toBeTrue()
+        ->and($pool->stale(slotPoolSlot($host, $project, $build, ['size' => TaskVmSize::Medium]), $setting, $current))->toBeTrue()
+        ->and($pool->stale(slotPoolSlot($host, $project, $build), $setting, [...$current, 'build_id' => $build->id + 1]))->toBeTrue()
+        ->and($pool->stale(slotPoolSlot($host, $project, $build), null, $current))->toBeTrue();
+});
+
+it('empties the pool when the setting goes, one slot at a time', function (): void {
+    [$host, $project, $build] = slotPoolHost(null);
+    $slot = slotPoolSlot($host, $project, $build);
+
+    expect(app(TaskVmSlotPool::class)->next($host->id)[1]->id)->toBe($slot->id);
+});
+
+it('waits for capacity to enrol, and a ready slot takes none', function (): void {
+    [$host, $project, $build] = slotPoolHost(3, maxVms: 6);
+    $capacity = app(TaskVmCapacity::class);
+    $hosts = $capacity->activeHosts();
+
+    slotPoolSlot($host, $project, $build);
+    slotPoolSlot($host, $project, $build);
+    expect($capacity->freeSlots($hosts)[$host->id])->toBe(6);
+
+    TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+        'name' => 'tvm-busy', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.250']);
+    TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Normal,
+        'name' => 'tvm-busy-2', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.251']);
+    expect($capacity->freeSlots($hosts)[$host->id])->toBe(2)
+        ->and(app(TaskVmSlotPool::class)->next($host->id))->toBeNull();
+});
+
+it('keeps ready slots out of the stray records of the host sweep', function (): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    slotPoolSlot($host, $project, $build, ['updated_at' => now()->subDay()]);
+    $stray = TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Normal,
+        'name' => 'tvm-stray', 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.252']);
+    TaskVm::query()->whereKey($stray->id)->update(['updated_at' => now()->subDay()]);
+
+    expect(array_map(static fn (TaskVm $vm): int => $vm->id, TaskVmHostAudit::strayRecords($host)))->toBe([$stray->id]);
+});
+
+it('reads the slots setting of a host and rejects a bad one', function (): void {
+    $vpn = Ipv4Subnet::from('10.44.0.0/16');
+    $entry = ['node_id' => 9, 'project' => 'orbit-tasks', 'network' => 'orbittask0', 'cidr' => '10.252.7.0/24', 'max_vms' => 6, 'cpus' => 4, 'memory' => '8GiB', 'disk' => '20GiB', 'pool' => 'orbit-tasks'];
+
+    expect(TaskVmHost::fromConfig($entry, 0, $vpn, [])->slots)->toBeNull();
+    $slots = TaskVmHost::fromConfig([...$entry, 'slots' => ['count' => 5, 'project_id' => 46, 'size' => 'large']], 0, $vpn, [])->slots;
+    expect($slots?->toArray())->toBe(['count' => 5, 'project_id' => 46, 'size' => 'large']);
+
+    expect(fn () => TaskVmHost::fromConfig([...$entry, 'slots' => ['count' => 0, 'project_id' => 46, 'size' => 'large']], 0, $vpn, []))
+        ->toThrow(TaskVmException::class)
+        ->and(fn () => TaskVmHost::fromConfig([...$entry, 'slots' => ['count' => 5, 'project_id' => 46, 'size' => 'huge']], 0, $vpn, []))
+        ->toThrow(TaskVmException::class);
+});

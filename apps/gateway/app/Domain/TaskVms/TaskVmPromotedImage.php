@@ -19,8 +19,7 @@ final readonly class TaskVmPromotedImage
     /** @return array{fingerprint:string,recipe_identity:string} */
     public function forHost(Node $host, TaskVmHost $location): array
     {
-        $build = TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('state', TaskVmImageBuildState::Succeeded)
-            ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
+        $build = $this->latest($host);
         $base = $build?->images['base'] ?? null;
         if (! $build instanceof TaskVmImageBuild || $base === null || $base['project'] !== $location->project || $base['type'] !== 'virtual-machine'
             || ! Str::of($base['fingerprint'])->isMatch('/\A[a-f0-9]{12,64}\z/D')) {
@@ -28,5 +27,12 @@ final readonly class TaskVmPromotedImage
         }
 
         return ['fingerprint' => $base['fingerprint'], 'recipe_identity' => (string) $build->recipe_identity];
+    }
+
+    /** The host's latest promoted image build, whatever its recipe. */
+    public function latest(Node $host): ?TaskVmImageBuild
+    {
+        return TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('state', TaskVmImageBuildState::Succeeded)
+            ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
     }
 }
