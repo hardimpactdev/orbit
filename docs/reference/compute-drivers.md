@@ -732,7 +732,9 @@ The `software` phase installs Ubuntu packages and file packages at their pins. I
 
 The `tools` phase installs the NFS server and the shape gate linters.
 
-- With `--nfs-checkout`, `--nfs-subnet` and `--nfs-interface` (default `nested`), the VM makes the checkout folder as `orbit` when it is missing, binds it at `/srv/checkout` (a systemd bind mount), and exports `/srv/checkout` to the nested subnet only, with `rw,async,no_subtree_check`. The path is the same on every task VM, so the ready copies mount it whatever the Project.
+- With `--nfs-checkout`, `--nfs-subnet` and `--nfs-interface` (default `nested`), the VM serves the checkout to the nested subnet only.
+- The VM makes the checkout folder as `orbit`. It binds the folder at `/srv/checkout` with a systemd bind mount.
+- It exports `/srv/checkout` with `rw,async,no_subtree_check`. The path is the same on every task VM, so the ready copies mount it for any Project.
 - UFW then allows TCP 2049 from the nested bridge.
 - Without those options the server runs with no export.
 - The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.

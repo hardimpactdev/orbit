@@ -10,6 +10,7 @@
   ansible.builtin.file: { path: /etc/exports.d, state: directory, owner: root, group: root, mode: "0755" }
 - name: Make the checkout folder
   when: intent.nfs is not none
+  become: true
   become_user: "{{ orbit_user }}"
   ansible.builtin.file: { path: "{{ intent.nfs.checkout }}", state: directory, mode: "0755" }
 - name: Bind the checkout at the export path
