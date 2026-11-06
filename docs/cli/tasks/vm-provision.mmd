@@ -40,9 +40,9 @@ sequenceDiagram
   %%> - UpCloud overflow: the `cloud` step creates the labelled server through the API from 209, with the token from the vault
   %%> Replaces:
   %%> - `observe-vm`, `plan`, `observe-seed`, `seed-plan`, `clone-seed`, `seed-ready`, `initialize-vm`, `read-metadata`, `metadata`, `write-metadata`, `start-vm`, `inspect-created-vm` and `provider`
-  SW->>H: Wait for first boot<br/>incus-first-visit · ipv4, host key
+  SW->>H: Wait for first boot<br/>incus-first-visit · agent, host key
   %%> What it does:
-  %%> - one bounded argv: `incus wait tvm-333 ipv4 --timeout 120`, then `cloud-init status --wait`, then prints the guest's public SSH host key
+  %%> - one bounded argv: `incus wait tvm-333 agent --timeout 120`, then `cloud-init status --wait`, then prints the guest's public SSH host key
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): the first wait is `incus wait tvm-333 agent --timeout 120`, as the slot start does: `cloud-init status --wait` runs through `incus exec`, which fails at once while the VM agent is not running (enrol 12264)
   %%> Why:
   %%> - the provider observation is the trusted source of the guest's host key
