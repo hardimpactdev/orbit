@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/{Providers/ApplicationServiceProvider.php,{Actions,Domain}/Tools/**,Data/Tools/**,Actions/Doctor/Intent/RuntimeDoctorIntent.php}
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table}.php}
-  - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
+  - apps/agent/src/commands/{vp_store,vp_scope,vp_materialize,vp_global,tools_apt,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
 ---
 
@@ -108,7 +108,7 @@ Native cask writes use official SSH queries and separate typed policy checks and
 
 Native Composer package operations use fixed shared-scope arguments through official SSH. The candidate query parses the normal dry-run and resolves an explicit no-op from installed inventory. A typed check applies the admitted version constraint and root ownership before mutation.
 
-The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
+Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
 The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It fetches each pinned artifact, checks its digest, extracts it and writes the managed launchers with official resources. It runs no downloaded installer. A failed step has no rollback; run the install again after you fix the cause. A development deploy runs the same shared setup for the Instance's account.
 
@@ -184,8 +184,6 @@ The recipe records its current Node version in `.orbit-recipe-node.json` under t
 Orbit adopts existing exact runtimes without downloading them again. Missing Node archives are verified against official `SHASUMS256.txt`; npm and pnpm archives are checked against registry integrity before extraction. Registry credentials stay within their configured host and path, including redirects. New versions are staged beside existing versions and published atomically; installed content is never rewritten in place.
 
 Package-manager launchers link to the archive's JavaScript entry points or verified native executable. For native pnpm, Orbit also verifies the exact platform package named by its manifest and records both archive checksums. It never runs the package's install hook or leaves a launcher that downloads its executable during a build. Project scripts and hooks never run as the store owner.
-
-The `tool.read-vp-project` agent command reads manifests and version files as data. Its fixed reader process runs as the Instance account in production and as the enrolled account in development. It reads bounded regular files without following file symlinks or running hooks, confines linked workspace manifests to the Project, and combines the account and Project registry settings.
 
 The Gateway sends each Project deploy script unchanged, with an optional typed Vite+ environment. Instance preparation and the Tool Manager use the same version check: the observed manager must meet the Project's pinned Vite+ version, including the CLI's `vp v1.4.0` output format. The agent validates the store and exact runtime requirements before writing the private script file. It selects the store's `vp env exec` with fixed arguments, sets `VP_HOME`, and runs the whole script with `bash -eu` as the Instance owner. Flags, quoting, pipelines, and multiple build commands keep their meaning. The enrolled account owns the shared store; production builds run as the separate Instance account.
 

@@ -160,10 +160,6 @@ Publication validates the key match before it changes the live pair, then swaps 
 
 [Gateway releases](/reference/gateway-recovery#release-as-a-swamp-run) switch the code and web build without converging Caddy sites.
 
-Metrics convergence publishes the `metrics.orbit` certificate through `metrics.certificate`. The agent keeps each publication in its own version directory under `/etc/caddy/orbit-metrics-cert-versions`, and the `orbit-metrics-cert-current` link selects one. It holds the Caddy publication lock through the switch, the reload, and any rollback. It reads the Caddy service state as the shared certificate commands do, and refuses before a change when it cannot read that state.
-
-Matching bytes leave the current version unchanged. A failed reload selects the previous version again and removes the new one. A publish replaces a directory of its version that an interrupted publish left behind, but refuses to overwrite the current version. A restore selects only a directory inside the versions directory.
-
 Certificate input or staging failures report `gateway.certificate_install_failed`. An invalid certificate, key, or CA reports `gateway.certificate_invalid`. Publication failures report `gateway.certificate_publish_failed`; activation or recovery failures report `gateway.caddy_start_failed`, with the native refusal retained in the operation output.
 
 The Gateway refuses to remove a certificate that a site in its stored state still renders on the Node. A Route certificate removal then fails with `app-dev.certificate_in_use`, names the blocking site's domain, and keeps the certificate, so the command can be retried.

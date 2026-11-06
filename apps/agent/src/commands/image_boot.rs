@@ -191,7 +191,7 @@ fn check(host: &mut impl Host, input: &CheckInput) -> Result<Ready, Error> {
 fn boot(root: &Path, host: &mut impl Host, input: &BootInput) -> Result<Ready, Error> {
     if input.lean {
         for (path, bytes) in [(NETWORK, NETWORK_TEXT), (WAIT, WAIT_TEXT)] {
-            super::image_identity::write_fixed(&root.join(path.trim_start_matches('/')), bytes)
+            write_fixed(&root.join(path.trim_start_matches('/')), bytes)
                 .map_err(|e| failed("network files", e))?;
         }
     }
@@ -306,5 +306,30 @@ impl Command for CheckOwner {
         Ok(Ready { ready: true })
     }
 }
+fn write_fixed(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::{
+        io::Write,
+        os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    };
+    let directory = path.parent().unwrap();
+    let candidate = directory.join(format!(".orbit-{:016x}", rand::random::<u64>()));
+    let result = (|| -> std::io::Result<()> {
+        fs::create_dir_all(directory)?;
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o644)
+            .open(&candidate)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::set_permissions(&candidate, fs::Permissions::from_mode(0o644))?;
+        fs::rename(&candidate, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&candidate);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests;

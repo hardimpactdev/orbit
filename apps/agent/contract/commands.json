@@ -120,19 +120,6 @@
       ]
     },
     {
-      "name": "tool.read-vp-project",
-      "summary": "Read Project runtime requirements as its account without executing hooks.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "owner",
-        "macos": "owner"
-      },
-      "errors": [
-        "tool.project_invalid"
-      ]
-    },
-    {
       "name": "tool.inspect-vp-scope",
       "summary": "Find the enrolled account's existing Vite+ scope without changing it.",
       "mutates": false,
@@ -441,23 +428,6 @@
       ]
     },
     {
-      "name": "tool.inspect-composer-scope",
-      "summary": "Read Composer root requirements from the owned shared scope.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "tool.composer_account_invalid",
-        "tool.composer_scope_absent",
-        "tool.composer_scope_conflict",
-        "tool.composer_scope_unreadable",
-        "tool.composer_materialize_failed"
-      ]
-    },
-    {
       "name": "tool.apt-version",
       "summary": "Read the APT manager version.",
       "mutates": false,
@@ -594,160 +564,6 @@
       ]
     },
     {
-      "name": "image.inspect-phase",
-      "summary": "Observe an image phase's retained service and builder boot.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_build_failed",
-        "task_vm.image_channel_lost",
-        "task_vm.image_builder_rebooted"
-      ]
-    },
-    {
-      "name": "image.start-phase",
-      "summary": "Start an immutable recipe phase under its bounded, retained systemd unit.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_build_failed",
-        "task_vm.image_channel_lost",
-        "task_vm.image_builder_rebooted"
-      ]
-    },
-    {
-      "name": "image.restart-phase",
-      "summary": "Restart only the failed invocation recorded by the image build attempt.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_build_failed",
-        "task_vm.image_channel_lost",
-        "task_vm.image_builder_rebooted"
-      ]
-    },
-    {
-      "name": "image.verify",
-      "summary": "Verify image pins and guest tool access without refreshing indexes or installing packages.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_build_failed"
-      ]
-    },
-    {
-      "name": "pi.receive-artifact",
-      "summary": "Receive a bounded Pi binary chunk into its fixed verified artifact cache.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "pi.artifact_invalid",
-        "pi.artifact_failed"
-      ]
-    },
-    {
-      "name": "pi.install-artifact",
-      "summary": "Publish the verified Pi binary at the managed account's fixed runtime path.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "pi.artifact_invalid",
-        "pi.artifact_failed"
-      ]
-    },
-    {
-      "name": "pi.inspect-artifact",
-      "summary": "Check the managed account's installed Pi digest and executable mode.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "pi.artifact_invalid",
-        "pi.artifact_failed"
-      ]
-    },
-    {
-      "name": "pi.configure-runtime",
-      "summary": "Publish the managed account's private Pi provider settings and token.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "pi.runtime_invalid",
-        "pi.runtime_failed"
-      ]
-    },
-    {
-      "name": "swamp.start-worker",
-      "summary": "Start a Swamp task worker.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "swamp.worker_invalid",
-        "swamp.worker_start_failed"
-      ]
-    },
-    {
-      "name": "swamp.stop-worker",
-      "summary": "Stop a Swamp worker and remove its runtime unit and credentials.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "swamp.worker_stop_failed"
-      ]
-    },
-    {
-      "name": "image.trust-ca",
-      "summary": "Install the public Orbit CA in the task image system trust store.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_build_failed"
-      ]
-    },
-    {
       "name": "caddy.order-after-vpn",
       "summary": "Order Caddy after the managed WireGuard interface.",
       "mutates": true,
@@ -843,22 +659,6 @@
       ]
     },
     {
-      "name": "recipe.verify-delivery",
-      "summary": "Verify the installed agent and CLI under the update lock before recording a recipe.",
-      "mutates": false,
-      "timeout_seconds": 365,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "recipe.delivery_invalid",
-        "recipe.update_busy",
-        "recipe.update_lock_failed",
-        "recipe.delivery_mismatch"
-      ]
-    },
-    {
       "name": "recipe.inspect",
       "summary": "Inspect recipe versions, package origins, and planned ownership changes.",
       "mutates": false,
@@ -908,32 +708,6 @@
       },
       "errors": [
         "recipe.failed"
-      ]
-    },
-    {
-      "name": "image.recipe-marker",
-      "summary": "Record the recipe identity of the base image builder.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_build_failed"
-      ]
-    },
-    {
-      "name": "image.recipe-log",
-      "summary": "Append a sanitized observation to a fixed private image phase log.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_build_failed"
       ]
     },
     {
@@ -1080,20 +854,6 @@
         "task_vm.image_mismatch",
         "task_vm.base_image_missing",
         "task_vm.topology_seed_missing"
-      ]
-    },
-    {
-      "name": "image.clean",
-      "summary": "Remove a never-enrolled image builder's identities before publication.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_identity_present",
-        "task_vm.image_clean_failed"
       ]
     },
     {
@@ -1274,19 +1034,6 @@
       ]
     },
     {
-      "name": "firewall.task-vm-hub",
-      "summary": "Converge the reserved task VM range filter on the WireGuard hub.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.setup_failed"
-      ]
-    },
-    {
       "name": "agent.install",
       "summary": "Install a staged, pinned agent binary and restart its running services.",
       "mutates": true,
@@ -1350,20 +1097,6 @@
       },
       "errors": [
         "node.storage_root_unusable"
-      ]
-    },
-    {
-      "name": "node.publish-tmpfiles",
-      "summary": "Publish Orbit's tmpfiles rule for its scratch directories.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "node.tmpfiles_invalid",
-        "node.tmpfiles_failed"
       ]
     },
     {
@@ -1487,20 +1220,6 @@
       },
       "errors": [
         "node.os_release_unreadable"
-      ]
-    },
-    {
-      "name": "node.install-private-dns-listener",
-      "summary": "Install the private DNS listener release and units without publishing catalog data.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "node.private_dns_listener_invalid",
-        "node.private_dns_listener_failed"
       ]
     },
     {
@@ -2349,33 +2068,6 @@
       ]
     },
     {
-      "name": "http.await-healthy",
-      "summary": "Wait until a service answers its health URL.",
-      "mutates": false,
-      "timeout_seconds": 600,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "http.url_invalid",
-        "http.unhealthy"
-      ]
-    },
-    {
-      "name": "metrics.certificate",
-      "summary": "Publish, restore, or remove the Metrics site's certificate for Caddy.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.certificate_failed"
-      ]
-    },
-    {
       "name": "metrics.node-exporter",
       "summary": "Snapshot, converge, remove, or restore one Metrics exporter.",
       "mutates": true,
@@ -2655,22 +2347,6 @@
       ]
     },
     {
-      "name": "metrics.service-runtime",
-      "summary": "Recover, snapshot, or apply the FPM exporter and service scrape firewall rules.",
-      "mutates": true,
-      "timeout_seconds": 180,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.service_invalid",
-        "metrics.service_ownership",
-        "metrics.service_failed",
-        "metrics.service_recovery_failed"
-      ]
-    },
-    {
       "name": "project.update-source",
       "summary": "Check, change, or restore a development checkout's origin or default branch.",
       "mutates": true,
@@ -2896,38 +2572,6 @@
       "errors": [
         "account.missing"
       ]
-    },
-    {
-      "name": "package.prepare-account",
-      "summary": "Prepare the distinct unprivileged package account and private workspace parent.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "package.worker_invalid",
-        "package.account_invalid",
-        "package.workspace_unsafe",
-        "package.prepare_failed"
-      ]
-    },
-    {
-      "name": "package.session",
-      "summary": "Run package tools in a private UID, filesystem and cgroup.",
-      "mutates": true,
-      "timeout_seconds": 180,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "package.input_invalid",
-        "package.isolation_unavailable",
-        "package.sandbox_failed"
-      ],
-      "input_max_bytes": 268435456
     },
     {
       "name": "process.check-release",

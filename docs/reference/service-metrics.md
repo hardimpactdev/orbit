@@ -6,7 +6,6 @@ covers:
   - apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ServiceMetricsCaddySiteSource.php
   - apps/gateway/app/Infrastructure/Instances/ProductionPhpRuntimeConfigRenderer.php
-  - apps/agent/src/commands/service_metrics*.rs
 ---
 
 # Service metrics
@@ -54,7 +53,7 @@ A nested Laravel [application directory](/reference/projects#application-directo
 
 Status monitoring uses a separate local socket, `<socket>.status`. So busy application workers do not block status collection. Cbox's OPcache helpers run through that socket, outside the web root.
 
-The Gateway renders the PHP-FPM status lines into each production Instance's `pool.conf` and sends that configuration to the Node. The `metrics.service-runtime` agent command does not edit `pool.conf`. When monitoring adds or removes its status lines, Orbit reloads only a changed master that runs. The reload can warm its cache again. A stopped master stays stopped. Orbit never changes `local.conf`. When an operator's own status directive conflicts with monitoring, convergence fails and keeps the directive.
+The Gateway renders the PHP-FPM status lines into each production Instance's `pool.conf` and sends that configuration to the Node. When monitoring adds or removes its status lines, Orbit reloads only a changed master that runs. The reload can warm its cache again. A stopped master stays stopped. Orbit never changes `local.conf`. When an operator's own status directive conflicts with monitoring, convergence fails and keeps the directive.
 
 ## Private access
 
