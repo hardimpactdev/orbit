@@ -27,9 +27,11 @@ use Illuminate\Support\Str;
  * after admission, a provision can wait for capacity before it clones, and an installation token lives one hour. The admitted intent
  * holds only vault key names; the Gateway writes the values here and returns the descriptors.
  *
- * A task VM never receives a token. The clone, the push and the pull request calls run on Node 209, and the VM gets the clone as a bundle.
+ * A task VM receives no token. The clone, the push and the pull request calls run on Node 209, and the VM gets the clone as a bundle.
+ * The one exception is the `dependencies` purpose: its token files live on the VM while the setup steps run.
  *
  * - `clone` writes the Git authorization header of a read of the Project repository, or an empty value for a repository that needs none.
+ * - `dependencies` writes the Composer `auth.json` and the `.npmrc` of the setup steps: a read token of the installation, or an empty configuration.
  * - `publish` writes the write token for the pull request and its Git authorization header. An approved push of a cancel takes the token only.
  * - `pull_request` writes the write token of one pull request step: ready, comment or merge.
  * - `dependency_merge` writes the write and read tokens of a dependency batch squash.
@@ -59,8 +61,23 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
 
         return match ($purpose) {
             'clone' => $this->clone($operation, $group, $callerNodeId, $runId),
+            'dependencies' => $this->dependencies($operation, $group, $callerNodeId, $runId),
             'publish' => $this->publish($operation, $group, $callerNodeId, $runId),
             'pull_request', 'dependency_merge' => $this->scoped($operation, $group, $callerNodeId, $runId, $purpose),
+            default => throw $this->forbidden(),
+        };
+    }
+
+    /**
+     * A provision holds its workspace in its own intent. A prep run, a proof run and an image refresh hold the intent of their provision child.
+     *
+     * @return array<string,mixed>
+     */
+    private function provisionIntent(Operation $operation): array
+    {
+        return match ($operation->kind) {
+            'tasks.provision' => $operation->input,
+            'tasks.prep', 'proof.command', 'task_vm.image_refresh' => ValidatedData::object($operation->input['provision'] ?? []),
             default => throw $this->forbidden(),
         };
     }
@@ -68,12 +85,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     /** @return array<string,array{vault:string,key:string}> */
     private function clone(Operation $operation, Task $group, int $callerNodeId, string $runId): array
     {
-        // A provision holds its workspace in its own intent. A prep run, a proof run and an image refresh hold the intent of their provision child.
-        $intent = match ($operation->kind) {
-            'tasks.provision' => $operation->input,
-            'tasks.prep', 'proof.command', 'task_vm.image_refresh' => ValidatedData::object($operation->input['provision'] ?? []),
-            default => throw $this->forbidden(),
-        };
+        $intent = $this->provisionIntent($operation);
         $repository = ValidatedData::object($intent['workspace'] ?? [])['repository'] ?? null;
         $reference = $intent['git_authorization'] ?? null;
         if (! is_string($repository) || $repository !== $group->project->repository_url || ($intent['project_id'] ?? null) !== $group->project_id || ! is_array($reference)) {
@@ -86,6 +98,42 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         $this->record($operation, 'Issued the scoped clone credential of a Task workspace.', $callerNodeId, $runId, $repository, [['contents' => 'read']]);
 
         return ['git_authorization' => $copy];
+    }
+
+    /**
+     * The Composer and npm configuration of the setup steps: a read token that covers the private packages of the installation.
+     * The token exists in the vault, then in two 0600 files of the setup account, and the workflow removes them.
+     *
+     * @return array<string,array{vault:string,key:string}>
+     */
+    private function dependencies(Operation $operation, Task $group, int $callerNodeId, string $runId): array
+    {
+        $intent = $this->provisionIntent($operation);
+        $references = ValidatedData::object($intent['dependency_auth'] ?? []);
+        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        if (($intent['project_id'] ?? null) !== $group->project_id || $repository === null
+            || array_any(['composer', 'npm'], static fn (string $member): bool => ! is_array($references[$member] ?? null))) {
+            throw $this->forbidden();
+        }
+        try {
+            $token = $this->access->dependencyToken($repository);
+        } catch (GitHubApiException) {
+            // A repository the App does not cover: setup runs without private access.
+            $token = null;
+        }
+        $values = ['composer' => $token === null ? '{}' : json_encode(['github-oauth' => ['github.com' => $token]], JSON_THROW_ON_ERROR),
+            // No empty value: a vault put needs content, and a comment is a valid `.npmrc`.
+            'npm' => $token === null ? "# no private access\n" : '//npm.pkg.github.com/:_authToken='.$token."\n"];
+        $copies = [];
+        foreach ($values as $member => $value) {
+            $reference = ValidatedData::object($references[$member]);
+            $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $value);
+        }
+        if ($token !== null) {
+            $this->record($operation, 'Issued the read token of the setup steps of a Task workspace.', $callerNodeId, $runId, $repository->owner.'/'.$repository->name, [['contents' => 'read']]);
+        }
+
+        return $copies;
     }
 
     /** @return array<string,array{vault:string,key:string}> */
