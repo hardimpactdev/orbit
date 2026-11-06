@@ -35,7 +35,9 @@ sequenceDiagram
   %%> - child `task-vm-upcloud-image-server`: one inline `curl` on 209 reads the plans, TypeScript shapes the body, one `curl` posts it; the token and the private host key reach curl through `--variable`, never argv
   %%> - stock UpCloud Ubuntu 26.04 template, builder user-data with the admitted host key and the `orbit` account at UID and GID 1000, label `orbit-task-image=<stamp>`
   %%> - the create answer holds the UUID and the public IPv4 address
-  %%> - pinned `@swamp/ssh exec` waits for the boot: OpenSSH `ConnectionAttempts` while sshd starts, then `cloud-init status --wait`, all under one literal timeout
+  %%> - pinned `@swamp/ssh exec` waits for the boot: OpenSSH `ConnectionAttempts` while sshd starts, then `cloud-init status --wait --long`, all under one literal timeout
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - exit 2 of `cloud-init status` (done with recoverable errors) is accepted and its detail kept in the output; the check phase is the check of the server
   %%> Returns:
   %%> - the server UUID, its storage and its address
   SW->>G: Run the task image phases<br/>Ansible · same as Nodes
