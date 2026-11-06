@@ -49,10 +49,11 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 **Outside pull requests**
 
 - A maintainer approves the pull request and adds the label `run-proofs`.
-- The workflow `proofs-outside.yml` passes the head SHA from the label event to `orbit proof:run`. It reports the verdict as the commit status `Proofs`, then runs the failed `Proofs` job of the pull request again.
+- The label starts the workflow `proof-outside.yml`, which passes the head SHA from the label event to `orbit proof:run`. The verdict is the result of that workflow run.
 - Orbit accepts only the current head, with the label and a maintainer's approval of exactly that commit.
-- A new push removes the label. The new head needs a new approval and the label again.
-- In `ci.yml`, `Proofs` runs on a hosted runner for such a pull request. It fails until the head has that passing status.
+- A new push removes the label and cancels the proof of the old head. The new head needs a new approval and the label again.
+- A label added before the approval fails. Remove the label and add it again after approving.
+- `ci.yml` starts no proof for such a pull request, and `Required checks` does not wait for the proof.
 
 **Guards**
 
