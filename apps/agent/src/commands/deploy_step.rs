@@ -1,14 +1,12 @@
-//! `instance.run-deploy-step`: runs one production deploy step as the Instance user in its release, and publishes
-//! each line of its output on the deploy operation's Reverb channel while it runs. The result carries the output for
-//! the deployment record. Without Reverb the step still runs; only the live lines are missing.
+//! One production deploy step run as the Instance user in its release. The result carries the redacted output for
+//! the deployment record.
 
 use super::production::valid_name;
 use super::source::{canonical, is_real_directory};
-use crate::command::{identity, Command, Context, Platform, Privilege};
+use crate::command::identity;
 use crate::command_errors;
 use crate::logs::redact::Redactor;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::{
     io::{BufRead, BufReader, Read, Write},
@@ -21,8 +19,6 @@ use std::{
 
 /// The most output the result keeps; older output is dropped first, as the deployment record does.
 const OUTPUT_LIMIT: usize = 131_072;
-/// The longest line one event carries, below Reverb's frame limit.
-const LINE_LIMIT: usize = 8_000;
 
 command_errors! {
     pub enum DeployStepError {
@@ -39,8 +35,6 @@ fn check(condition: bool, what: &str) -> Result<(), DeployStepError> {
     }
 }
 
-pub struct RunDeployStep;
-
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunDeployStepInput {
@@ -51,9 +45,6 @@ pub struct RunDeployStepInput {
     pub script: String,
     #[serde(default)]
     pub vp_environment: Option<super::vp_store::Environment>,
-    /// The deploy operation, whose channel `private-operation.{id}` receives the lines. Without one, no line is live.
-    #[serde(default)]
-    pub operation: Option<u64>,
     pub step: String,
     /// The step's own bound. At its end the step's process group stops, and the step fails with its output.
     pub timeout_seconds: u64,
@@ -106,65 +97,9 @@ fn keep(output: &mut Vec<Chunk>, size: &mut usize, truncated: &mut bool, mut chu
     }
 }
 
-/// Publishes each event on the operation's channel until the sender closes. Failures only end the live view.
-fn publish(channel: String, mut events: tokio::sync::mpsc::UnboundedReceiver<Value>) {
-    let result = (|| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-        runtime.block_on(async {
-            let config = crate::Config::load()?;
-            let secret = crate::AgentSecret::load(crate::SECRET_PATH)?;
-            let client = crate::gateway_client(config.gateway_address, &secret)?;
-            let discovery = crate::realtime::discover(&client, &config.gateway_url).await?;
-            let (Some(url), Some(address), Some(key)) =
-                (discovery.url, discovery.address, discovery.key)
-            else {
-                return Ok(());
-            };
-            let (mut socket, _) = crate::realtime::join(
-                &client,
-                &config.gateway_url,
-                &url,
-                &address,
-                &key,
-                &channel,
-                crate::tls_config()?,
-            )
-            .await?;
-            while let Some(data) = events.recv().await {
-                crate::realtime::send_client(&mut socket, &channel, "client-output", data).await?;
-            }
-            let _ = futures_util::SinkExt::close(&mut socket).await;
-            Ok(())
-        })
-    })();
-    if let Err(error) = result {
-        eprintln!("orbit-agent: live deploy output is off for this step: {error}");
-    }
-}
-
-/// Runs `run` with a sender whose events go out on the operation's channel, when there is an operation.
-pub(super) fn with_live<T>(
-    operation: Option<u64>,
-    run: impl FnOnce(Option<tokio::sync::mpsc::UnboundedSender<Value>>) -> T,
-) -> T {
-    let Some(operation) = operation else {
-        return run(None);
-    };
-    let (events, received) = tokio::sync::mpsc::unbounded_channel();
-    let publisher =
-        std::thread::spawn(move || publish(format!("private-operation.{operation}"), received));
-    let result = run(Some(events));
-    // The sender is gone, so the publisher sends what it has and closes.
-    let _ = publisher.join();
-    result
-}
-
 pub fn run(
     input: &RunDeployStepInput,
     home_root: &Path,
-    live: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
 ) -> Result<RunDeployStepOutput, DeployStepError> {
     check(
         input.home == home_root.join(&input.user),
@@ -212,30 +147,25 @@ pub fn run(
             reason: error.to_string(),
         });
     }
-    let result = run_program(
-        &Program {
-            user: Some(&input.user),
-            directory: &release,
-            command: StepCommand::script(&file, vp.as_ref()),
-            step: &input.step,
-            secrets: &input.secrets,
-            environment: &BTreeMap::new(),
-            timeout: Duration::from_secs(input.timeout_seconds),
-        },
-        live,
-    );
+    let result = run_program(&Program {
+        user: Some(&input.user),
+        directory: &release,
+        command: StepCommand::script(&file, vp.as_ref()),
+        secrets: &input.secrets,
+        environment: &BTreeMap::new(),
+        timeout: Duration::from_secs(input.timeout_seconds),
+    });
     let _ = std::fs::remove_file(&file);
     result
 }
 
 /// Runs a step's program file with `bash -eu` in its own session in `directory`, as `user` when one is given, and
-/// keeps its redacted output. Each line also goes to `live`, when the step publishes its lines.
-/// A step program to run: its account, directory, script file, name, secret values, environment, and bound.
+/// keeps its redacted output.
+/// A step program to run: its account, directory, script file, secret values, environment, and bound.
 pub(super) struct Program<'a> {
     pub user: Option<&'a str>,
     pub directory: &'a Path,
     pub command: StepCommand<'a>,
-    pub step: &'a str,
     pub secrets: &'a [String],
     pub environment: &'a BTreeMap<String, String>,
     pub timeout: Duration,
@@ -277,15 +207,11 @@ pub(super) fn prepare_vp(
         .transpose()
 }
 
-pub(super) fn run_program(
-    program: &Program,
-    live: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
-) -> Result<RunDeployStepOutput, DeployStepError> {
+pub(super) fn run_program(program: &Program) -> Result<RunDeployStepOutput, DeployStepError> {
     let Program {
         user,
         directory,
         command: execution,
-        step,
         secrets,
         environment,
         timeout,
@@ -398,7 +324,7 @@ pub(super) fn run_program(
     });
 
     let mut redactors = (Redactor::default(), Redactor::default());
-    let (mut output, mut size, mut truncated, mut sequence) = (Vec::new(), 0, false, 0u64);
+    let (mut output, mut size, mut truncated) = (Vec::new(), 0, false);
     for (stream, line) in received {
         let redactor = if stream == "stdout" {
             &mut redactors.0
@@ -409,12 +335,6 @@ pub(super) fn run_program(
         let Some(text) = redact(redactor, line.trim_end_matches('\n'), secrets) else {
             continue;
         };
-        if let Some(live) = &live {
-            sequence += 1;
-            let shown: String = text.chars().take(LINE_LIMIT).collect();
-            let _ = live
-                .send(json!({"step": step, "stream": stream, "sequence": sequence, "line": shown}));
-        }
         keep(
             &mut output,
             &mut size,
@@ -447,27 +367,6 @@ pub(super) fn run_program(
     })
 }
 
-impl Command for RunDeployStep {
-    const NAME: &'static str = "instance.run-deploy-step";
-    const SUMMARY: &'static str =
-        "Run a production deploy step as the Instance user and publish its output live.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(3600);
-    type Input = RunDeployStepInput;
-    type Output = RunDeployStepOutput;
-    type Error = DeployStepError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn run(input: RunDeployStepInput, _: &Context) -> Result<RunDeployStepOutput, DeployStepError> {
-        with_live(input.operation, |live| {
-            run(&input, Path::new("/home"), live)
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,7 +385,6 @@ mod tests {
             release: "r1".into(),
             script: "echo building\necho \"key=$SECRET_VALUE\" >&2\npwd\n".into(),
             vp_environment: None,
-            operation: Some(7),
             step: "build".into(),
             timeout_seconds: 60,
             secrets: vec!["s3cret".into()],
@@ -495,11 +393,10 @@ mod tests {
     }
 
     #[test]
-    fn runs_in_the_release_and_publishes_each_redacted_line_in_order() {
+    fn runs_in_the_release_and_keeps_each_redacted_line() {
         let (base, mut input) = fixture();
         input.script = input.script.replace("$SECRET_VALUE", "s3cret");
-        let (live, mut received) = tokio::sync::mpsc::unbounded_channel();
-        let output = run(&input, &base, Some(live)).unwrap();
+        let output = run(&input, &base).unwrap();
         let release = input.home.join("releases/r1");
         assert_eq!(output.exit_code, 0);
         // stdout and stderr are separate pipes, so only each stream keeps its own order.
@@ -520,15 +417,6 @@ mod tests {
             assert!(output.output.contains(&chunk), "{chunk:?}");
         }
         assert_eq!(output.output.len(), 3);
-        let mut events = Vec::new();
-        while let Ok(event) = received.try_recv() {
-            events.push(event);
-        }
-        assert_eq!(events.len(), 3);
-        assert!(events
-            .iter()
-            .all(|event| event["step"] == "build"
-                && !event["line"].as_str().unwrap().contains("s3cret")));
         assert!(std::fs::read_dir(&input.home).unwrap().all(|entry| !entry
             .unwrap()
             .file_name()
@@ -541,7 +429,7 @@ mod tests {
     fn a_failing_step_returns_its_exit_code_and_output() {
         let (base, mut input) = fixture();
         input.script = "echo before\nexit 3\n".into();
-        let output = run(&input, &base, None).unwrap();
+        let output = run(&input, &base).unwrap();
         assert_eq!(output.exit_code, 3);
         assert_eq!(
             output.output,
@@ -558,7 +446,7 @@ mod tests {
         let (base, mut input) = fixture();
         input.release = "../r1".into();
         assert_eq!(
-            run(&input, &base, None),
+            run(&input, &base),
             Err(DeployStepError::Invalid {
                 check: "the release name is valid".into()
             })

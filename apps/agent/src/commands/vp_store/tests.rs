@@ -678,7 +678,6 @@ fi
             release: "r1".into(),
             script: String::new(),
             vp_environment: Some(env),
-            operation: None,
             step: "npm-build".into(),
             timeout_seconds: 5,
             secrets: vec![],
@@ -695,7 +694,7 @@ fi
             );
             let release = input.home.join("releases/r1");
             for attempt in 1..=2 {
-                let output = run(&input, &work.0, None).unwrap();
+                let output = run(&input, &work.0).unwrap();
                 assert_eq!(output.exit_code, 0, "{:?}", output.output);
                 assert_eq!(
                     fs::read_to_string(release.join("build.log")).unwrap(),
@@ -725,7 +724,7 @@ fi
     fn private_store_as_root() {
         let path = PathBuf::from(std::env::var_os("ORBIT_TEST_VP_INPUT").unwrap());
         let input: RunDeployStepInput = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        let output = run(&input, path.parent().unwrap(), None).unwrap();
+        let output = run(&input, path.parent().unwrap()).unwrap();
         assert_eq!(output.exit_code, 0, "{:?}", output.output);
         assert!(output.output.iter().any(|chunk| chunk.value == "nobody\n"));
     }
@@ -840,10 +839,7 @@ fi
                 _ => unreachable!(),
             }
             assert!(
-                matches!(
-                    run(&input, &work.0, None),
-                    Err(DeployStepError::Invalid { .. })
-                ),
+                matches!(run(&input, &work.0), Err(DeployStepError::Invalid { .. })),
                 "{invalid}"
             );
             assert!(!input.home.join("releases/r1/started").exists());

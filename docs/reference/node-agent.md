@@ -267,8 +267,6 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 Gateway releases and desired fleet state use the pinned `cli-v0.9128.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
-`instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
-
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. `orbit:bootstrap` records that identity from the Gateway's own code and runs no agent command; until it has, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
 ```text
@@ -394,14 +392,6 @@ Uncertain infrastructure refusals leave the unfinished intent. If a typed pre-st
 ### Future Mac session execution
 
 Command mode currently runs as the enrolled macOS account. A future LaunchAgent can receive the same envelope in that user's login session and show Touch ID or password confirmation for root work. That path is not built. It must authenticate the SSH-started process beyond its user ID, prevent project code from replacing the executable, and name the command in each prompt. The executing process must still check its own binary digest and declared privilege.
-
-### Live output
-
-A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner. Native Swamp development deployment uses its shared sudo runner as the configured Node account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
-
-While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
-
-SSH stays the repair path. When an agent cannot start or answer, `orbit node:converge` reaches the Node over SSH and installs the pin.
 
 ### Install on mismatch
 
@@ -670,7 +660,7 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and The native convergence result records the drift. |
 
-Commands that no Gateway or Swamp code calls leave the agent in small pull requests, starting with the `gateway.*` release commands. The last action commands leave with their Swamp ports; then one release ships the observer. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
+Commands that no Gateway or Swamp code calls leave the agent in small pull requests, starting with the `gateway.*` release commands. The last action commands leave with their Swamp ports; then one release ships the observer. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). `orbit self-update` itself replaces only the CLI.
 
 The rollout leaves out the Gateway's own Node. Gateway release runs leave its agent unchanged. Its CLI comes from the current release's `apps/cli`.
 

@@ -7,7 +7,6 @@ covers:
   - apps/gateway/app/Infrastructure/{Instances/{RemoteDevelopmentInstanceConfigurator,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/agent/src/commands/{ci_caches.sh,dev_source.rs,dev_source_tests.rs}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
   - swamp/workflows/workflow-operation-instance-{setup-direct,create}.yaml
 ---
