@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Actions\Tasks\StartTaskParkAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -97,18 +98,25 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
         // Only the first projection of the end parks the group; a replay of the terminal event admits nothing.
-        if ($first && $projected->status->value === 'succeeded' && (ValidatedData::object($projected->input)['mode'] ?? null) === TaskReviewMode::Manual->value) {
+        if ($first && $projected->status === OperationStatus::Succeeded) {
             $this->park($projected);
         }
 
         return $projected;
     }
 
-    /** In manual mode the spec waits for the owner, so the group stops its VM. A refusal is kept in the result. */
+    /**
+     * In manual mode the spec waits for the owner, so the group stops its VM. A run admitted before the mode was captured takes
+     * the current mode of the group. A refusal is kept in the result.
+     */
     private function park(Operation $operation): void
     {
         $group = Task::topLevel()->find($operation->target_id);
         if (! $group instanceof Task) {
+            return;
+        }
+        $mode = ValidatedData::object($operation->input)['mode'] ?? $group->review_mode->value;
+        if ($mode !== TaskReviewMode::Manual->value) {
             return;
         }
         try {

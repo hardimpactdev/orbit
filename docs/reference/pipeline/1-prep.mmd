@@ -24,7 +24,6 @@ sequenceDiagram
   GW->>SW: Start the flow<br/>push-token vault key names
   %%> Inputs:
   %%> - the command and its family
-  %%> - the mode, `manual` or `automatic`
   %%> - the vault key names of the push token, never a token
   %%> Built or not:
   %%> - built: `tasks:prep` admits the run and Swamp runs it as the workflow `operation-task-prep`
@@ -104,6 +103,12 @@ sequenceDiagram
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code
   alt manual mode
+    Note over GW: Park the VM<br/>the spec waits for the owner
+    %%> What it does:
+    %%> - when the run ends, the Gateway records the draft PR and admits `tasks:park` for the group, which stops the VM; the workspace stays
+    %%> - a refused park is kept in the result as `park_refused`
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the park follows the mode and needs no step in the run, like the park after `tasks:prep-fix`
     opt spec checkpoint
       opt Nick reviews in an Instance
         NK->>GW: Create an Instance<br/>instance:create --branch=BRANCH
@@ -136,13 +141,11 @@ sequenceDiagram
     Note over GH: No checkpoint<br/>the flow continues
     %%> Why:
     %%> - the review agents' clean pass is the spec approval; the final self-review in stage 4 reads the whole PR
+    %%> What it does:
+    %%> - parks nothing: the VM keeps running
   end
   SW-->>GW: Record the outcome<br/>spec in draft PR
   %%> Result:
   %%> - the Gateway records the draft PR with its spec commit, for the CLI and web
-  %%> - in manual mode, the Gateway then admits `tasks:park`, which stops the VM while the spec waits for the owner; the workspace stays
-  %%> - in automatic mode it parks nothing: the VM keeps running and the flow continues
   %%> - the command is not ready and not merged; building starts in the same PR with stage 2, and stages 3 and 4 follow in it
   %%> - a command already prepared through a docs-only PR stays as it is; when its turn comes, this flow reviews and updates its spec
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - the park follows the mode and needs no step in the run, like the park after `tasks:prep-fix`; a refused park is kept in the result as `park_refused`

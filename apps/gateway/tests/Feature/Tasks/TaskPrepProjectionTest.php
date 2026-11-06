@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskParkIntent;
 use App\Domain\Tasks\TaskPrepFixIntent;
 use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
@@ -208,19 +209,7 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
         'result' => ['steps' => ['Resume the VM' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'head' => str_repeat('a', 40), 'findings' => 'Approved; runner tests pin the old file.',
             'author' => $turn(100), 'review_1' => $turn(20), 'review_2' => $turn(30)],
     ];
-    // A park that counts its calls and is refused, as it is for a group that is not parkable yet.
-    $parks = new class
-    {
-        public int $calls = 0;
-
-        public function execute(Task $group, string $caller, ?string $request): never
-        {
-            $this->calls++;
-
-            throw new ResourceOperationException('tasks.park_refused', 'Refused.', 409);
-        }
-    };
-    app()->instance(StartTaskParkAction::class, $parks);
+    $parks = refusedParks();
 
     $projected = app(TaskPrepFixProjection::class)->apply($operation, $end);
     $again = app(TaskPrepFixProjection::class)->apply($projected, $end);
@@ -305,4 +294,23 @@ it('parks nothing after a manual-mode run that failed', function (): void {
     ]);
 
     expect($parks->calls)->toBe(0);
+});
+
+it('parks a manual-mode group whose run was admitted before the mode was captured', function (): void {
+    [$operation, , $vm] = prepRun();
+    $parks = refusedParks();
+
+    app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
+
+    expect($parks->calls)->toBe(1);
+});
+
+it('leaves the group eligible for the park once a run opened its draft PR', function (): void {
+    [$operation, $group, $vm, $instance] = prepRun();
+    $group->taskable()->associate($instance)->save();
+    refusedParks();
+
+    app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
+
+    expect(TaskParkIntent::requireEligible($group->refresh())->is($vm))->toBeTrue();
 });

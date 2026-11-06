@@ -310,7 +310,7 @@ The group is an external `todo` group, made with `tasks:create`, of a Project th
 - the author thread, and one reviewer thread for each review round, with model, effort, session and Pi address;
 - the prompts of the draft, review and fix turns;
 - the title and body of the draft pull request;
-- the repository, the base and the branch `task-{group}`.
+- the repository, the base and the branch `task-{group}`; and
 - the review mode of the group, `manual` or `automatic`.
 
 It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints no GitHub token. A prep run takes longer than the hour that an installation token lives, so admission only names the vault keys of the push token and its Git authorization header. The publish step asks the Gateway for the token with the run id of the prep run, right before the push. Admission adds no child Operation.

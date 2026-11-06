@@ -81,6 +81,7 @@ sequenceDiagram
       %%> - `tasks:park` refuses a group with an open subtask; with the subtask completed it can stop the VM while the spec waits for review, and the workspace stays
       %%> Decided by the orchestrator, for Nick's review:
       %%> - prep completes its subtask when the App opens the draft PR; park keeps its rule that no subtask is open
+      %%> - the park follows the mode and needs no step in the run, like the park after `tasks:prep-fix`
     else findings are left
       SW--xGW: Native failed result<br/>tasks.prep_review_unresolved
       %%> Result:
