@@ -486,6 +486,6 @@ jobs:
     - {step: Read the migrations, condition: {type: succeeded}}
     task:
       type: assert
-      expr: 'steps["Read the Swamp version"].outputs.stdout.startsWith("swamp ") && steps["Read the Ansible version"].outputs.stdout.contains("ansible-playbook [core ") && steps["Read the release commit"].outputs.stdout.split("\n")[0] == inputs.intent.release.commit && steps["Read the PHP version"].outputs.stdout.startsWith("PHP 8.5.") && steps["Read the migrations"].outputs.stdout.contains("Ran") && !steps["Read the migrations"].outputs.stdout.contains("Pending") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("connected")'
+      expr: 'steps["Read the Swamp version"].outputs.stdout.startsWith("swamp ") && steps["Read the Ansible version"].outputs.stdout.contains("ansible-playbook [core ") && steps["Read the release commit"].outputs.stdout.split("\n")[0] == inputs.intent.release.commit && steps["Read the PHP version"].outputs.stdout.startsWith("PHP 8.5.") && steps["Read the migrations"].outputs.stdout.contains("Ran") && !steps["Read the migrations"].outputs.stdout.contains("Pending") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-a") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-b")'
       severity: high
       message: The machine is not ready to converge itself.

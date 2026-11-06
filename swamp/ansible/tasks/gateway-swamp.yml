@@ -31,13 +31,13 @@
     path: "{{ item.path }}"
     state: directory
     owner: root
-    group: root
+    group: "{{ item.group | default('root') }}"
     mode: "{{ item.mode }}"
   loop:
     - { path: "{{ swamp_credentials }}", mode: "0755" }
     - { path: "{{ swamp_credentials }}/a", mode: "0700" }
     - { path: "{{ swamp_credentials }}/b", mode: "0700" }
-    - { path: "{{ swamp_front }}", mode: "0750" }
+    - { path: "{{ swamp_front }}", mode: "0750", group: caddy }
   loop_control: { label: "{{ item.path }}" }
 - name: Write the units
   ansible.builtin.copy:
