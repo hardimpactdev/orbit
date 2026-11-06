@@ -13,6 +13,7 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Task;
+use App\Models\TaskReviewRound;
 
 /** Read-only evidence for the ready and merge steps. The Gateway reads GitHub here and changes nothing on it. */
 final readonly class TaskPullRequestEvidence
@@ -36,11 +37,27 @@ final readonly class TaskPullRequestEvidence
         return $target;
     }
 
+    /** A review round needs a pull request out of draft, with a green merge check on the exact head. */
+    public function round(Task $group, string $head): TaskPullRequestTarget
+    {
+        $target = $this->target($group, $head);
+        if ($target->pull->draft) {
+            throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft; take it out of draft first.', 409);
+        }
+
+        return $target;
+    }
+
     public function merge(Task $group, string $head): TaskPullRequestTarget
     {
         $target = $this->target($group, $head);
         if ($target->pull->draft) {
             throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft; take it out of draft first.', 409);
+        }
+        if ($group->review_mode === TaskReviewMode::Automatic) {
+            $passed = TaskReviewRound::query()->where('task_group_id', $group->id)->where('head_sha', $head)->where('verdict', TaskReviewRoundVerdict::Pass->value)->exists();
+
+            return $passed ? $target : throw new ResourceOperationException('tasks_pr.approval_missing', 'No review round passed this head.', 409, details: ['state' => 'round_missing']);
         }
         try {
             $reviews = $this->github->reviews($this->access->reviewsToken($target->repository), $target->repository, $target->number);
