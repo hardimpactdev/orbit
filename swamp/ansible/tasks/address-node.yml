@@ -1,0 +1,20 @@
+---
+# Pin the host keys of one Node in the run folder and add the Node to the play as `node`, in the group `address_group`.
+# The importing play sets `run` (the run folder), `address_target` (host, user, port, host_keys) and `address_identity`
+# (the identity file of the Swamp worker). Host keys come from the admitted intent; nothing is scanned.
+- name: Pin the host keys of the Node
+  ansible.builtin.known_hosts:
+    path: "{{ run }}/known_hosts"
+    name: "{{ address_target.host if address_target.port == 22 else '[' ~ address_target.host ~ ']:' ~ address_target.port }}"
+    key: "{{ address_target.host if address_target.port == 22 else '[' ~ address_target.host ~ ']:' ~ address_target.port }} {{ item }}"
+    state: present
+  check_mode: false
+  loop: "{{ address_target.host_keys }}"
+- name: Address the Node
+  ansible.builtin.add_host:
+    name: node
+    groups: ["{{ address_group }}"]
+    ansible_host: "{{ address_target.host }}"
+    ansible_user: "{{ address_target.user }}"
+    ansible_port: "{{ address_target.port }}"
+    ansible_ssh_private_key_file: "{{ address_identity }}"
