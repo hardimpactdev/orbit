@@ -20,6 +20,8 @@ final readonly class TaskVmHubPolicy
 {
     public const string Comment = 'orbit:task-vm-control-ssh';
 
+    public const string WebComment = 'orbit:task-vm-control-web';
+
     public const string Marker = '# Managed by Orbit (task VMs). Filters only the reserved range ';
 
     public const string Unit = "[Unit]\nDescription=Orbit task VM filter on the WireGuard hub\nDefaultDependencies=no\nAfter=local-fs.target nftables.service\nBefore=wg-quick@orbit.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/sbin/nft -f /etc/orbit/task-vms/hub.nft\n\n[Install]\nWantedBy=wg-quick@orbit.service multi-user.target\n";
@@ -42,6 +44,18 @@ final readonly class TaskVmHubPolicy
 
         return new UfwManagedRule(new UfwRuleShape(self::Comment, 'allow', 'fwd', $source, $destination, '22', 'tcp', 'orbit', 'orbit', 'v4'),
             ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', '22', 'comment', self::Comment]);
+    }
+
+    /**
+     * The control Node also reaches a task VM's routed workspace site on 443: the Route create probes it over TLS from there.
+     */
+    public function controlWebRule(UfwManagedRule $control): UfwManagedRule
+    {
+        $source = $control->shape->source;
+        $destination = $control->shape->destination;
+
+        return new UfwManagedRule(new UfwRuleShape(self::WebComment, 'allow', 'fwd', $source, $destination, '443', 'tcp', 'orbit', 'orbit', 'v4'),
+            ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', '443', 'comment', self::WebComment]);
     }
 
     /** Recorded candidates need web access before the Router selection changes.
@@ -92,7 +106,9 @@ final readonly class TaskVmHubPolicy
 
         $range = TaskVmConfig::wireguardRange(config('task_vms.wireguard_range'))->value();
 
-        return [...array_filter([$this->controlRule()]), ...$this->routerRules($this->routerAddresses($clusterId), $range)];
+        $control = $this->controlRule();
+
+        return [...($control === null ? [] : [$control, $this->controlWebRule($control)]), ...$this->routerRules($this->routerAddresses($clusterId), $range)];
     }
 
     /**
@@ -107,7 +123,7 @@ final readonly class TaskVmHubPolicy
         $range = TaskVmConfig::wireguardRange($input['range'])->value();
 
         return array_map(static fn (UfwManagedRule $rule): string => 'ip saddr '.$rule->shape->source.' ip daddr '.$range
-            .' tcp dport '.$rule->shape->port.' accept comment "'.$rule->shape->comment.'"', [$control, ...$this->routerRules($input['routers'], $range)]);
+            .' tcp dport '.$rule->shape->port.' accept comment "'.$rule->shape->comment.'"', [$control, $this->controlWebRule($control), ...$this->routerRules($input['routers'], $range)]);
     }
 
     /** Render the admitted endpoints using the same rules as the managed catalog.
