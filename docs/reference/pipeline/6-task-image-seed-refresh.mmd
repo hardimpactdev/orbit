@@ -70,7 +70,7 @@ sequenceDiagram
     SW->>VM: Clean the refresh VM<br/>identity out · stop
     %%> Decided by the orchestrator, for Nick's review:
     %%> - one explicit clean step before the publication, the workflow `task-vm-image-clean`; the image build's `Clean and stop` calls the same workflow for its builder (`enrolled: false`), so there is one clean step and not two
-    %%> - it removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout, resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
+    %%> - it removes the nested guests and network, the WireGuard key, the observer identity and secret, the Pi token, the model key, the Club key and the checkout, resets the firewall (enrollment denies SSH except from Node 209 over the VPN, so the first smoke could not reach its VM), cloud-init, the machine-id and the SSH host keys, trims the disk and stops the VM
     SW->>H: Publish the image<br/>image · seed
     %%> What it does:
     %%> - stops the nested VMs and copies them into a clone of the seed as the new ready copies, key-free: the proof Club key is deleted, every file is scanned for it, and freed blocks are trimmed
