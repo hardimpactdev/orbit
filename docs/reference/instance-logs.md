@@ -21,7 +21,7 @@ The web app shows this log on the Instance page. [`orbit instance:logs`](/cli/in
 
 ## Follow the log live
 
-A viewer can follow the log as the application writes it with a [live log stream](/reference/live-logs). The Node agent reads the same file with the same rules, and the Gateway relays new lines to that viewer only. The web app's log pane and `orbit instance:logs --follow` use a stream. When the Gateway cannot open one, they fall back to this one-shot read.
+A viewer can follow the log as the application writes it with a [live log stream](/reference/live-logs). The Node agent reads the same file with the same rules, and the Gateway relays new lines to that viewer only. The web app's log pane and `orbit instance:logs --follow` use a stream. The one-shot read uses the same path and is refused with `logs.live_unavailable` when the Gateway cannot open a stream.
 
 ## Know which file the Gateway reads
 

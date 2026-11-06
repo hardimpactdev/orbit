@@ -14,7 +14,7 @@ covers:
 
 A live log stream shows new lines of one Instance log or one Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance or Process.
 
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads of a Process or a Schedule, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines. The one-shot read of an Instance, `GET /api/v1/instances/{instance}/logs`, still reads over SSH.
+The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
 
 ## How a stream works
 
@@ -167,15 +167,14 @@ The Gateway refuses to open a stream with `logs.live_unavailable` (409) when it 
 
 | Reason | Meaning |
 | --- | --- |
-| `ssh_only` | The record is a production Instance. Its log is outside the directory the agent may read, so it is read over SSH only. |
 | `realtime_not_configured` | No `websocket` role is active. |
 | `subscriber_down` | The agent view subscriber is not running or not connected. |
 | `agent_unavailable` | The Gateway has no fresh [view](/reference/node-agent#freshness) of the serving Node, for example because its agent is stopped. |
 | `agent_not_joined` | The Node has a fresh agent view, but the agent has not joined its log channel yet, for example while it reconnects during a `websocket` move. |
 
-Clients then use one-shot reads over SSH: the web app polls every 10 seconds, and `--follow` in the CLI polls every 5 seconds. A one-shot read returns at most 4 MiB of whole lines. They do the same when the Gateway refuses a stream with `logs.stream_limit`.
+The one-shot read is refused with the same code and reason, because it uses the same path. The CLI prints the error and exits with status 1. The web app pane shows the reason.
 
-Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_not_joined`, `logs.stream_limit`, and the ends `agent_left` and `relay_behind`. For these, the web app and the CLI try to open a stream again every 30 seconds while they poll. They keep polling for `ssh_only`, `realtime_not_configured`, and `source_unavailable`.
+Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_not_joined`, `logs.stream_limit`, and the ends `agent_left` and `relay_behind`. For these, a follow and a web app pane try to open a stream again every 30 seconds. `realtime_not_configured` and `source_unavailable` end them.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -215,13 +214,15 @@ The observer is visibility-only. The only program it runs is read-only `journalc
 
 Reading the journal through `libsystemd` is not possible, because the agent is a static musl binary and cannot load it. An earlier agent read the journal files with its own reader. It was rejected, because it had to follow the file format, its compression, and file rotation, and it still printed some rare entries differently from `journalctl`. The agent reads Instance log files itself and never starts `tail`.
 
-### Production Instances stay on SSH
+### Production Instances read through a read-only group
 
-A production Instance lives in its own home, and the agent's unit hides every home except the development Instance root. Widening that unit would expose every production `.env` file that its owner left readable. A tail runs only while someone watches, so SSH reads are enough for production.
+Decided by the orchestrator, for Nick's review (2026-11-06). A production Instance lives in its own home, and the agent's unit hides every home except the development Instance root and the production homes it binds back read-only for `.env` key names. The unit joins one more group, `orbit-logs`. A deploy gives that group a read ACL on the release's `storage/logs` and its files, and traverse on the directories above. The agent reads the log file itself and starts no program.
 
-### One-shot reads of Processes and Schedules use the stream path
+Widening the read to the whole home is rejected, because production `.env` files that their owner left readable would be exposed. Changing the production apps to log elsewhere is rejected, because it changes what runs in production.
 
-A one-shot read of a Process or a Schedule opens a tail on the same typed source as a follow, waits at most 5 seconds for its first lines, and closes it. The agent then needs no command for these reads, and the one-shot and the follow select the same lines. An Instance one-shot read stays on SSH, because the agent may not read production homes.
+### One-shot reads use the stream path
+
+A one-shot read opens a tail on the same typed source as a follow, waits at most 5 seconds for its first lines, and closes it. The agent then needs no command for these reads, and the one-shot and the follow select the same lines.
 
 ### Stream state in a cache, not SQLite
 

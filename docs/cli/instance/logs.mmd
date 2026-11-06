@@ -1,0 +1,56 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-06, agent strip (a): a log read is a typed source of the agent's log streaming. No SSH, no agent command, no Swamp run (R1).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): a production Instance's log is read through a read-only group, `orbit-logs`, that the agent's unit joins. Production apps and the observer's read-only rule stay unchanged.
+  %% status: draft
+  %% command: instance:logs
+  %% kind: instance.logs
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
+  CLI->>GW: instance:logs 12
+  %%> Command:
+  %%> - `orbit instance:logs 12`
+  %%> - syntax: `instance:logs <instance> [--lines=COUNT] [--follow] [--json]`
+  %%> Input:
+  %%> - the numeric Instance ID from `instance:list`
+  %%> Optional:
+  %%> - `--lines` sets the count from 1 through 1,000; `--follow` keeps the tail open (see the live logs page); neither adds a step here
+  %%> Who can call it:
+  %%> - the `orbit` CLI, the web app and the MCP tool send the same request
+  Note over GW: Validate, open a tail<br/>source: Instance 12 log
+  %%> Requirements:
+  %%> - your Node has an access grant to the Node that serves Instance 12
+  %%> - the agent of that Node has a fresh view and has joined its log channel
+  %%> Result:
+  %%> - a tail is recorded in the stream cache with the source the Gateway derives from the Instance: `storage/logs/laravel.log` in its application directory, or the newest `laravel-*.log` when that file is absent
+  %%> - the caller names no path
+  GW->>A: log-streams.changed
+  %%> What it does:
+  %%> - prompts the agent to fetch its stream list; the event carries no data
+  A->>GW: Fetch the stream list
+  Note over A: Read the newest lines<br/>log file, read-only
+  %%> What it does:
+  %%> - the agent reads the file itself and starts no program
+  %%> - a development Instance: the file is readable under the development Instance root
+  %%> - a production Instance: its release `storage/logs` carries a read ACL for the group `orbit-logs`, which the agent's unit joins; the unit binds the production home back read-only, as it does for `.env` key names
+  %%> - it refuses a file that root owns and a link at `storage/logs` or at the file
+  %%> - each line is redacted
+  A->>GW: Lines<br/>log channel
+  Note over GW: Redact, close the tail<br/>stored environment values
+  alt lines arrive within 5 s
+    GW-->>CLI: 200 lines<br/>truncated flag
+    %%> Result:
+    %%> - at most `--lines` newest lines and 4 MiB of whole lines; `truncated` is set when older lines were left out
+    %%> - an Instance without a log file returns an empty list
+  else agent cannot answer
+    GW--xCLI: 409 logs.live_unavailable<br/>reason
+    %%> When:
+    %%> - the agent view is stale, the agent has not joined its log channel, no line arrives within 5 s, or the file cannot be read
+    %%> Result:
+    %%> - there is no SSH fallback and nothing to clean up; read again once the agent is back
+    %%> - a production release created before the ACL step carries no read ACL until its next deploy; the read then ends with reason `source_unavailable`
+  end
