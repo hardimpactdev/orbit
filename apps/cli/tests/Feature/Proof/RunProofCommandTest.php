@@ -144,6 +144,14 @@ describe('proof:run', function (): void {
             ->and($keys[1])->not->toBe($keys[0]);
     });
 
+    it('sends report_only only when the run yields capacity', function (): void {
+        $mock = proof_run_gateway([proof_run_operation('passed')]);
+
+        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--report-only' => true, '--json' => true]);
+
+        $mock->assertSent(static fn ($request): bool => $request instanceof RunProofRequest && $request->body()->all() === ['commit' => PROOF_RUN_SHA, 'report_only' => true]);
+    });
+
     it('sends the given idempotency key unchanged', function (): void {
         $mock = proof_run_gateway([proof_run_operation('passed')]);
 

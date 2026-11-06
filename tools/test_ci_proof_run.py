@@ -90,6 +90,13 @@ class RunTest(unittest.TestCase):
         self.assertIn(f'proof:run {SHA} --json --idempotency-key ci-proof.7.2', done.stderr)
         self.assertIn('passed', summary)
 
+    def test_the_report_only_job_asks_to_yield_capacity(self):
+        body = 'printf "%s\\n" "$*" >&2\ncat <<\'JSON\'\n' + document('passed') + '\nJSON\n'
+        done, _ = self.run_script(body, {'PROOF_REPORT_ONLY': '1'})
+        self.assertIn(f'proof:run {SHA} --report-only --json --idempotency-key ci-proof.7.2', done.stderr)
+        done, _ = self.run_script(body, {'PROOF_REPORT_ONLY': '0'})
+        self.assertNotIn('--report-only', done.stderr)
+
     def test_a_failed_case_fails_the_job(self):
         done, _ = self.run_script('cat <<\'JSON\'\n' + document('failed') + '\nJSON\n')
         self.assertNotEqual(0, done.returncode)

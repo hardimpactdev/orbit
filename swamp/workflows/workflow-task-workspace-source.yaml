@@ -1112,6 +1112,6 @@ jobs:
     allowFailure: true
   labels: {role: swamp}
 name: task-workspace-source
-# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationRunBudgets::SecondsByKind).
+# Each SSH step is limited to 3900 s, the run budget of the largest Operation that calls it (OperationBudgetTable::SecondsByKind).
 vaults:
 - orbit-control-inputs

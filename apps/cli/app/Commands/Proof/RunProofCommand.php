@@ -28,6 +28,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
     protected $signature = 'proof:run
         {commit? : Full 40 or 64 character lowercase commit SHA}
         {--all : Run every case, not only the cases that the commit selects}
+        {--report-only : Yield capacity to task and proof work}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -73,7 +74,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         $connector = $connectors->make($profile);
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'proof.run.'.Str::uuid();
-        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $key), OperationResponse::class);
+        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $this->option('report-only') === true, $key), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, 'Prove commit '.substr($commit, 0, 12), 'Proof')

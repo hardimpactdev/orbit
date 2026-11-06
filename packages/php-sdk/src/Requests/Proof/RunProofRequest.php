@@ -23,6 +23,7 @@ final class RunProofRequest extends GatewayRequest implements HasBody
     public function __construct(
         public readonly string $commit,
         private readonly bool $all,
+        private readonly bool $reportOnly,
         private readonly string $idempotencyKey,
     ) {
         if (preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/D', $commit) !== 1) {
@@ -46,9 +47,9 @@ final class RunProofRequest extends GatewayRequest implements HasBody
         return ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{commit: string, all?: true} */
+    /** @return array{commit: string, all?: true, report_only?: true} */
     protected function defaultBody(): array
     {
-        return ['commit' => $this->commit, ...($this->all ? ['all' => true] : [])];
+        return ['commit' => $this->commit, ...($this->all ? ['all' => true] : []), ...($this->reportOnly ? ['report_only' => true] : [])];
     }
 }

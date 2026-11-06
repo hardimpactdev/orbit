@@ -64,11 +64,12 @@ final readonly class TaskProvisionIntent
      * that runs provision as one step of a larger run, such as `tasks.prep`, adds its own intent through `$extend`,
      * which receives the provision intent, the group, its workspace Instance and its VM, and returns the whole input of
      * the Operation; the node of the Operation stays the VM host of the provision intent. `$host` pins the VM to one task VM
-     * host, and `$size` sets its size, as the refresh of that host's task image does.
+     * host, and `$size` sets its size, as the refresh of that host's task image does. `$reserveSlots` makes the VM yield: it
+     * claims no ready slot, never overflows to UpCloud and is placed only where that many slots stay free after it.
      *
      * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
      */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, ?int $host = null, ?TaskVmSize $size = null): Operation
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, ?int $host = null, ?TaskVmSize $size = null, int $reserveSlots = 0): Operation
     {
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
@@ -78,7 +79,7 @@ final readonly class TaskProvisionIntent
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit, $kind, $extend, $host, $size): Operation {
+        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit, $kind, $extend, $host, $size, $reserveSlots): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
@@ -96,9 +97,9 @@ final readonly class TaskProvisionIntent
                 throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
             }
             try {
-                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) always clones.
-                $slot = $host === null ? $this->slots->claim($group) : null;
-                $vm = $slot ?? $this->allocate->capture($group, $host, $size);
+                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) and a report-only one always clone.
+                $slot = $host === null && $reserveSlots === 0 ? $this->slots->claim($group) : null;
+                $vm = $slot ?? $this->allocate->capture($group, $host, $size, $reserveSlots);
             } catch (TaskCapacityException $exception) {
                 throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
                     previous: $exception, details: ['reason' => $exception->wait->value]);
