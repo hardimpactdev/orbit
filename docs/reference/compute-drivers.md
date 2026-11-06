@@ -1285,6 +1285,8 @@ The step `Pin the converge` fills the guest host key that the VM step pinned, an
 
 The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. It makes an empty `.env` in the shared checkout as the mount point, from each guest. It starts the three bind mount units of the Gateway and of app-dev, which put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the NFS checkout. It runs the migrations of the checked-out code on the nested Gateway, restarts its queue worker, agent-view subscriber and Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
+The fleet child then checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one stateful snapshot `base` of the three nested VMs with memory.
+
 The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
 
 ##### The ready copies
