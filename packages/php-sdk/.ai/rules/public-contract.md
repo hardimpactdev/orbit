@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 242 concrete public Gateway API operations:
+The SDK models exactly 243 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -27,7 +27,7 @@ The SDK models exactly 242 concrete public Gateway API operations:
 - ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.
 - Vault: status, setup, sync, and teardown.
 - Tasks: enable, disable, status, group list, show, create, update, provision, check, script, turn, publish, park, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.
-- Proof: run the cases that a commit selects.
+- Proof: run the cases that a commit selects, and verify the cases of one command on the task VM that calls.
 
 The five abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.

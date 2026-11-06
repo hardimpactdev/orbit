@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Proof\\VerifyProofRequest",
+    "route": "POST /api/v1/proof/verify",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.no_workspace",
+            "message": "The group requires its owned task VM workspace.",
+            "details": {}
+        }
+    }
+}

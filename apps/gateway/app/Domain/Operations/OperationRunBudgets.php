@@ -70,6 +70,10 @@ final class OperationRunBudgets
         // 180 s; 14 cases x 120 s plus 2 batch restores is about 1,800 s, then the destruction of the VM (about 2 minutes); the sum x 1.5,
         // rounded up to five minutes. Replace with the 14-day p95 after the first success.
         'proof.command' => 3600,
+        // No run yet. Basis: the cases of firewall:allow on the author's own VM, with no provision and no destruction: 14 cases x 120 s,
+        // the restores before the first batch, between batches and after the last (about 16 s each), and a re-mint with its readiness check and
+        // the new `base` (about 150 s); about 1,900 s x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first success.
+        'proof.verify' => 3000,
         'node.converge' => 3900,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.

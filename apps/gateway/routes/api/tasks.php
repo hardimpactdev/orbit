@@ -64,6 +64,7 @@ Route::middleware([
         Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
         Route::post('proof/run', [ProofRunsController::class, 'store'])->name('proof:run');
+        Route::post('proof/verify', [ProofRunsController::class, 'verify'])->name('proof');
         Route::post('task-groups/{group}/park', [TaskGroupsController::class, 'park'])
             ->whereNumber('group')->name('tasks:park');
         Route::post('task-groups/{group}/sync', [TaskGroupsController::class, 'sync'])

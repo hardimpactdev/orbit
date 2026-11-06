@@ -77,3 +77,40 @@ describe('proof contract', function (): void {
         'proof/proof-run/refused-extension-disabled',
     ]);
 });
+
+describe('proof verify contract', function (): void {
+    it('renders a followed proof from the Gateway contract in human and JSON modes', function (string $read, int $exitCode): void {
+        foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
+            run_contract(
+                ['proof/proof-verify/queued', $read, 'realtime/realtime-show/unconfigured'],
+                'proof',
+                ['orbit-command' => 'firewall:allow', '--idempotency-key' => 'proof.fixture', ...$mode],
+                'proof/proof/'.basename($read).".{$extension}",
+                $exitCode,
+            );
+        }
+    })->with([
+        'every case passed' => ['proof/proof-verify/passed', 0],
+        'a case failed and one did not run' => ['proof/proof-verify/failed', 1],
+        'the test fleet is not ready' => ['proof/proof-verify/run-failed', 1],
+        'the last restore failed' => ['proof/proof-verify/restore-failed', 1],
+    ]);
+
+    it('renders a refusal from the Gateway contract in human and JSON modes', function (string $refusal): void {
+        foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
+            run_contract(
+                $refusal,
+                'proof',
+                ['orbit-command' => 'firewall:allow', '--idempotency-key' => 'proof.refused', ...$mode],
+                'proof/proof/'.basename($refusal).".{$extension}",
+                1,
+            );
+        }
+    })->with([
+        'proof/proof-verify/refused-no-task-vm',
+        'proof/proof-verify/refused-wrong-project',
+        'proof/proof-verify/refused-no-workspace',
+        'proof/proof-verify/refused-target-busy',
+        'proof/proof-verify/refused-extension-disabled',
+    ]);
+});
