@@ -18,8 +18,9 @@ sequenceDiagram
   %%> Triggers:
   %%> - a release that went live and passed its check (stage 5), only when it changed what the images carry: playbooks, pins or lock files; a code-only release needs no refresh, because a task mounts its own checkout
   %%> - a daily schedule, so a seed never gets older than a day: the Swamp tokens in the ready copies last 24 hours and a ready copy expires after 20
-  %%> Not built:
-  %%> - both triggers (B8); today an operator runs `php artisan task-vms:refresh-image HOST`
+  %%> Built:
+  %%> - both triggers: the release projection admits the run of every Linux task VM host when the release that went live changed playbooks, pins or lock files (a digest over `swamp/ansible`, the recipe folder and the lock files of the release it replaced and of the new one), and a daily Gateway schedule admits every host; an operator runs `php artisan task-vms:refresh-image HOST` or `task-vms:refresh-images`
+  %%> - a host with a refresh open returns it, so the two triggers and a retry never start a second run; a host that refuses (an image build runs, no capacity) is skipped until the next trigger
   %%> Built (task_vm.image_refresh, workflow `operation-task-vm-image-refresh`):
   %%> - the run of one host, admitted like `tasks:prep`: a group of its own in the proof Project, placed on that host only, with the whole intent captured in the admission of provision; no step calls the Gateway
   %%> - a repeat admission for a host returns the open run
@@ -43,6 +44,7 @@ sequenceDiagram
     %%> What it does:
     %%> - checks out the release commit in the refresh VM, with `composer install` and `bun install` where a lock file changed
     %%> - starts the nested fleet from the current ready copies, mounts that checkout over NFS and runs the apply step, as in stage 2
+    %%> Built: all of it is the child `task-nested-fleet` of `operation-task-provision` (the mount and apply, the readiness check with Doctor, and the `base` snapshot), so the refresh saves ready copies only from a fleet that passed its readiness check
     opt no usable ready copies
       SW->>VM: Build the fleet<br/>task_vm.fleet_build
       %%> Decided by the orchestrator, for Nick's review:

@@ -14,7 +14,7 @@ sequenceDiagram
   participant VM as Refresh VM<br/>a task VM
   Note over GW: Admit the refresh<br/>one run per host
   %%> Started by:
-  %%> - the operator command `php artisan task-vms:refresh-image HOST`; the release projection and the daily schedule are not built
+  %%> - the release projection, when the release that went live changed playbooks, pins or lock files; a daily Gateway schedule; and the operator commands `php artisan task-vms:refresh-image HOST` and `task-vms:refresh-images`
   %%> Requirements:
   %%> - an active, configured task VM host with a promoted image and no image build running, and a Gateway release with a commit
   %%> Result:

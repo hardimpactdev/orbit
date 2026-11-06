@@ -1219,7 +1219,7 @@ A new task image comes from the recipe build only for a new host or a new base O
 
 The seed that the image build leaves holds only the stopped `node-template`. A refresh adds the ready nested topology of the running release. That is three stopped VMs: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They run on the nested WireGuard network 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
 
-Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway. There is no CLI command of its own. The release projection and the daily schedule of the chart are not built yet.
+Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway. There is no CLI command of its own. Two triggers admit every Linux host: a release that went live and changed playbooks, pins or lock files, and a daily schedule at 03:20. A host with a refresh open returns it, and a host that refuses is skipped until the next trigger.
 
 The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. It keeps the root disk of the host's base VM: a published image is as large as its VM's root disk, and no VM can be smaller than its image.
 
@@ -1259,10 +1259,9 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 The chart lists what the run still lacks:
 
 - The first refresh of a host whose seed holds no ready copies. The run calls `task_vm.fleet_build` as a child once that kind exists. Until then the run skips the save, and the result says `ready_copies: false`.
-- The NFS mount of the checkout over the nested Nodes with its apply step, and the converge of the nested Nodes through the nested Orbit. Stage 2 builds them.
+- The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
 - The re-mint of the nested Swamp tokens. It is the product command that the fleet build uses.
 - The replacement of old ready slots. Ready slots do not exist yet.
-- The release projection and the daily schedule that start one run per host.
 
 ##### Save the ready copies
 
