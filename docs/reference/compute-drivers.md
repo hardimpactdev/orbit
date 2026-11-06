@@ -1293,7 +1293,7 @@ The new Gateway then does the rest through its own Orbit. It converges its own N
 
 The Gateway and app-dev guests then take their checkout from the outer VM, as they do when a task VM starts from ready copies. The Gateway stops its services and moves its state to `/var/lib/orbit-checkout-state` on its own disk: `.env`, `storage`, `bootstrap/cache` and the state of the Swamp repository. It drops the checkout it built, and the stock systemd mount units mount the NFS export of the outer VM and the state over it. The services start again on the shared checkout.
 
-The outer VM must export its checkout to the nested network: the converge of the task VM role does that, with the NFS settings of a task VM. The end check passes when Doctor of the nested Gateway has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
+The outer VM must export its checkout to the nested network: the converge of the task VM role does that, with the NFS settings of a task VM. The end check waits until Doctor of the nested Gateway answers healthy for the whole fleet, not only for one Node, and passes when it has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
 
 ##### Start the nested fleet
 
