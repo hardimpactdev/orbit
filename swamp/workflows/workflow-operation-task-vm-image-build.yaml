@@ -157,7 +157,7 @@ jobs:
   dependsOn:
   - {job: clean, condition: {type: succeeded}}
   steps:
-    # The output names the fingerprint; the Gateway reads it from this step.
+    # The output names the fingerprint; the Gateway reads it from this step. `--quiet` drops the progress lines, because a result keeps only the first 4 KB.
   - name: Publish the candidate
     labels: {role: swamp}
     writes: true
@@ -180,7 +180,7 @@ jobs:
       inputs:
         hosts: name:host
         sudo: true
-        argv: [timeout, '900', incus, publish, --project, '${{ inputs.intent.project }}', --compression, none, --alias, '${{ inputs.intent.candidate_alias }}', '--', '${{ inputs.intent.builder }}', '${{ "orbit.recipe=" + inputs.intent.identity }}', orbit.profile=base]
+        argv: [timeout, '900', incus, publish, --quiet, --project, '${{ inputs.intent.project }}', --compression, none, --alias, '${{ inputs.intent.candidate_alias }}', '--', '${{ inputs.intent.builder }}', '${{ "orbit.recipe=" + inputs.intent.identity }}', orbit.profile=base]
         timeoutSec: 920
 - name: smoke
   labels: {role: swamp}
