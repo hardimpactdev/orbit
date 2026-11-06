@@ -46,6 +46,9 @@ inputs:
           additionalProperties: false
       required: [provision, verify, cancel]
       additionalProperties: false
+    # The converge intent of the provision (stage 2, "Converge once"), which the provision takes as an input of its own.
+    converge:
+      type: object
     execution_secrets:
       type: object
       additionalProperties: *reference
@@ -54,6 +57,7 @@ inputs:
   - node_id
   - kind
   - intent
+  - converge
   - execution_secrets
   additionalProperties: false
 jobs:
@@ -71,6 +75,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: tasks.provision
         intent: ${{ inputs.intent.provision }}
+        converge: ${{ inputs.converge }}
         execution_secrets: ${{ inputs.execution_secrets }}
   # The Gateway left the guest's SSH target unpinned; the VM step just pinned its key.
   - name: Pin the VM

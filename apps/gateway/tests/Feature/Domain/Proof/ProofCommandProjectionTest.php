@@ -75,6 +75,14 @@ function proofEnded(string $status, array $steps, string $report = ''): array
 const PROOF_PASSED = '{"id": "main", "verdict": "passed", "secs": 9.5}';
 const PROOF_FAILED = '{"id": "deny", "verdict": "failed", "cause": "assertion", "secs": 4, "failed": ["ufw"]}';
 
+describe('the inputs of one run', function (): void {
+    it('refuses a provision without the converge intent that the workflow takes as an input of its own', function (): void {
+        [, [[$run]]] = proofRuns(['firewall:allow']);
+
+        expect(fn () => app(ProofCommandProjection::class)->input($run))->toThrow(ResourceOperationException::class, 'nested topology');
+    });
+});
+
 describe('the record of one run', function (): void {
     it('fails the run, with one unrun row, when the VM never became ready, and cancels the group the normal way', function (): void {
         Queue::fake();
