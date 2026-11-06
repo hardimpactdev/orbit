@@ -34,14 +34,6 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositorySquashToken($credentials, $installation, $repository);
     }
 
-    /** Disposable VMs never borrow a shared GitHub CLI login or fall back anonymously. */
-    public function readToken(GitHubRepository $repository): string
-    {
-        [$credentials, $installation] = $this->installation($repository);
-
-        return $this->github->repositoryReadToken($credentials, $installation, $repository);
-    }
-
     public function metadataToken(GitHubRepository $repository): string
     {
         [$credentials, $installation] = $this->installation($repository);

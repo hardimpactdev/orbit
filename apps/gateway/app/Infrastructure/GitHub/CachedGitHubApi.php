@@ -147,11 +147,6 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->checkRuns($token, $repository, $sha, $checkName);
     }
 
-    public function checkSuites(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
-    {
-        return $this->github->checkSuites($token, $repository, $sha);
-    }
-
     public function branchCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): array
     {
         return $this->github->branchCommits($token, $repository, $branch);

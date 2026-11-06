@@ -7,7 +7,6 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubCheckRun;
-use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -20,14 +19,13 @@ use Closure;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Reads the check runs of a commit through the Project's App installation (ADR 0203). Uncached commit snapshots use
- * separate `checks: read` and `actions: read` tokens.
+ * Reads the check runs of a commit through the Project's App installation (ADR 0203). Uncached reads use separate
+ * `checks: read` and `actions: read` tokens.
  */
 final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerger
 {
     /**
-     * Every reader of one commit's checks shares one read of each part for this long: the merge gate, the handoff CI,
-     * and the settling watch. The scheduler ticks every few seconds, and each read costs a token and a list call.
+     * The settling watch shares one read of a commit's checks for this long. Each read costs a token and a list call.
      * Only check data is cached, never a token. A new push has a new commit, so it reads fresh.
      */
     private const int ReadSeconds = 60;
@@ -38,64 +36,38 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         private GitHubActionsReader $actions,
     ) {}
 
+    /** A missing `checks: read` permission is not cached, so the next read checks it again. */
     public function checkRuns(Task $group, string $sha): ?array
     {
-        return $this->commitChecks($group, $sha)['runs'] ?? null;
-    }
-
-    /**
-     * Check runs, check suites, and workflow identities share one snapshot. A missing `checks: read` permission is
-     * not cached, so the next read checks it again.
-     *
-     * @return array{runs: list<GitHubCheckRun>, suites: list<GitHubCheckSuite>, pull_request_suites: list<int>}|null
-     */
-    private function commitChecks(Task $group, string $sha): ?array
-    {
         $repository = $this->githubRepository($group);
-        $key = 'tasks:commit-checks:v3:'.$repository->owner.'/'.$repository->name.'@'.$sha;
-        $cached = Cache::get($key);
-        if (is_array($cached)) {
-            $runs = self::decoded($cached['runs'] ?? null, GitHubCheckRun::fromArray(...));
-            $suites = self::decoded($cached['suites'] ?? null, GitHubCheckSuite::fromArray(...));
-            $pullRequestSuites = $cached['pull_request_suites'] ?? null;
-            if ($runs !== null && $suites !== null && is_array($pullRequestSuites) && array_is_list($pullRequestSuites) && array_all($pullRequestSuites, static fn (mixed $id): bool => is_int($id))) {
-                return ['runs' => $runs, 'suites' => $suites, 'pull_request_suites' => $pullRequestSuites];
-            }
+        $key = 'tasks:commit-checks:v4:'.$repository->owner.'/'.$repository->name.'@'.$sha;
+        $cached = self::decoded(Cache::get($key), GitHubCheckRun::fromArray(...));
+        if ($cached !== null) {
+            return $cached;
         }
         $token = $this->access->checksToken($repository);
         if ($token === null) {
             return null;
         }
         try {
-            // Suites first: GitHub completes a suite only after its runs, so a completed suite always comes with its final runs.
-            $suites = $this->github->checkSuites($token, $repository, $sha);
-            $snapshot = ['runs' => $this->github->checkRuns($token, $repository, $sha), 'suites' => $suites];
+            $runs = $this->github->checkRuns($token, $repository, $sha);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('Orbit could not read the checks of '.$sha.': '.$exception->getMessage(), previous: $exception);
         }
-        $workflows = $this->workflowSuites($repository, $sha);
-        $superseded = $workflows['superseded'];
-        $snapshot = [
-            'runs' => array_values(array_filter($snapshot['runs'], static fn (GitHubCheckRun $run): bool => ! in_array($run->checkSuiteId, $superseded, true))),
-            'suites' => array_values(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => ! in_array($suite->id, $superseded, true))),
-            'pull_request_suites' => $workflows['pull_request'],
-        ];
-        Cache::put($key, [
-            'runs' => array_map(static fn (GitHubCheckRun $run): array => $run->toArray(), $snapshot['runs']),
-            'suites' => array_map(static fn (GitHubCheckSuite $suite): array => $suite->toArray(), $snapshot['suites']),
-            'pull_request_suites' => $snapshot['pull_request_suites'],
-        ], self::ReadSeconds);
+        $superseded = $this->supersededSuites($repository, $sha);
+        $runs = array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => ! in_array($run->checkSuiteId, $superseded, true)));
+        Cache::put($key, array_map(static fn (GitHubCheckRun $run): array => $run->toArray(), $runs), self::ReadSeconds);
 
-        return $snapshot;
+        return $runs;
     }
 
     /**
-     * Older suites of the same workflow, event, and branch cannot decide a commit's checks. The same workflow read
-     * identifies the pull request's suites. At most one page of 100 runs is read; an incomplete list fails the read.
+     * Older suites of the same workflow, event, and branch cannot decide a commit's checks. At most one page of
+     * 100 runs is read; an incomplete list fails the read.
      *
-     * @return array{superseded: list<int>, pull_request: list<int>}
+     * @return list<int>
      */
-    private function workflowSuites(GitHubRepository $repository, string $sha): array
+    private function supersededSuites(GitHubRepository $repository, string $sha): array
     {
         try {
             $read = $this->actions->json(GitHubActionsReader::repositoryPath($repository).'/actions/runs?'.http_build_query([
@@ -129,11 +101,7 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
             }
         }
 
-        return [
-            'superseded' => array_values(array_unique($superseded)),
-            'pull_request' => array_values(array_map(static fn (array $row): int => $row['check_suite_id'],
-                array_filter($latest, static fn (array $row): bool => $row['event'] === 'pull_request'))),
-        ];
+        return array_values(array_unique($superseded));
     }
 
     /** @throws TaskPullRequestException */

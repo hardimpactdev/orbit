@@ -15,7 +15,7 @@ interface TaskPullRequestMerger
 {
     /**
      * The check runs on exactly this commit after the merger removes superseded workflow suites.
-     * The merge gate, handoff CI, and settling watch share one read per repository and commit for a minute.
+     * The settling watch shares one read per repository and commit for a minute.
      * Null when the installation has not granted `checks: read`. Uncached reads also need `actions: read`.
      *
      * @return list<GitHubCheckRun>|null

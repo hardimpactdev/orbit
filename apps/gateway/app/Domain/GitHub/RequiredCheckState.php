@@ -17,7 +17,6 @@ enum RequiredCheckState: string
     case Pending = 'pending';
     case Missing = 'missing';
     case Failed = 'failed';
-    case Unreadable = 'unreadable';
 
     /** @param list<GitHubCheckRun> $runs */
     public static function of(array $runs, string $sha, string $checkName): self
