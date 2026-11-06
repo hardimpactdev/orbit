@@ -159,7 +159,6 @@ pub fn all() -> Vec<Entry> {
         entry::<metrics_exporter::Cadvisor>(),
         entry::<metrics_runtime::MetricsRuntime>(),
         entry::<metrics_publication::Publication>(),
-        entry::<metrics_runtime::MetricsHealth>(),
         entry::<metrics_runtime::MetricsCredentials>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<hibernation::PrepareDirectories>(),

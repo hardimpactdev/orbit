@@ -144,11 +144,6 @@ enum Operation {
 }
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HealthInput {
-    service: Service,
-}
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct CredentialInput {
     address: String,
     action: CredentialAction,
@@ -168,7 +163,6 @@ enum CredentialAction {
 #[serde(untagged)]
 pub enum Output {
     Changed { changed: bool },
-    Healthy { healthy: bool },
     Verified { verified: bool },
 }
 
@@ -979,27 +973,6 @@ impl Command for MetricsRuntime {
             Operation::Remove { purge_data } => runtime.remove(purge_data)?,
         }
         Ok(Output::Changed { changed: true })
-    }
-}
-pub struct MetricsHealth;
-impl Command for MetricsHealth {
-    const NAME: &'static str = "metrics.runtime-health";
-    const SUMMARY: &'static str = "Observe the health of an owned Metrics container.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = HealthInput;
-    type Output = Output;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn run(input: HealthInput, _: &Context) -> Result<Output> {
-        let mut runtime = native();
-        let healthy = runtime
-            .inspect(input.service, false, false)
-            .is_ok_and(|state| state.is_some())
-            && runtime.healthy(input.service, false).unwrap_or(false);
-        Ok(Output::Healthy { healthy })
     }
 }
 pub struct MetricsCredentials;

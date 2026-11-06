@@ -10,15 +10,11 @@ use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsFleetRuntimeMaterial;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
-use App\Infrastructure\Metrics\AgentMetricsExporterRuntime;
-use App\Infrastructure\Metrics\MetricsExporterRuntime;
-use App\Infrastructure\Metrics\MetricsRuntimeCommands;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
@@ -37,9 +33,7 @@ final class MetricsServiceProvider extends ServiceProvider
         MetricsExporterLifecycle::class => NativeMetricsExporterLifecycle::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
         MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,
-        MetricsExporterRuntime::class => AgentMetricsExporterRuntime::class,
         ServiceMetricsProjection::class => ServiceMetricsProjection::class,
-        MetricsRuntimeLifecycle::class => MetricsRuntimeCommands::class,
         MetricsStatusReader::class => NativeMetricsStatusReader::class,
     ];
 

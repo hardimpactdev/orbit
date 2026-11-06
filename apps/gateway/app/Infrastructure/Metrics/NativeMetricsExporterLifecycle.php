@@ -6,32 +6,12 @@ namespace App\Infrastructure\Metrics;
 
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
-use App\Models\NodeRole;
 
 final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLifecycle
 {
-    public function __construct(
-        private MetricsExporterRuntime $executor,
-        private MetricsExporterProjection $projection,
-    ) {}
-
-    public function actual(Node $node): string
-    {
-        $assignments = NodeRole::query()
-            ->where('role', RoleName::Metrics->value)
-            ->with('node')
-            ->limit(2)
-            ->get();
-
-        if ($assignments->count() !== 1) {
-            return $assignments->isEmpty() ? 'inactive' : 'drift';
-        }
-
-        return $this->executor->actual($node, $assignments->sole()->node);
-    }
+    public function __construct(private MetricsExporterProjection $projection) {}
 
     public function targets(Node $metricsNode): array
     {
