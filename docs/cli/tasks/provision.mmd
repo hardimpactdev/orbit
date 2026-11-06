@@ -44,7 +44,10 @@ sequenceDiagram
   %%> Private dependencies:
   %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` (`http-basic` for `github.com`, user `x-access-token`) and the `.npmrc` of the task account from it, mode 0600
   %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
-  %%> - then it revokes the token (best effort), so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - then it revokes the token (`DELETE installation/token`), so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - the revoke reports what became of the token in the receipt, as `dependency_token`: `revoked` (GitHub answered 204), `none` (GitHub answered 401: no token was minted, or it had expired or been revoked) or `unrevoked` with the reason (any other answer, or no answer)
+  %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the provision. The files are already gone from the VM, the token reads for at most an hour, and a failed provision would not shorten that hour; the receipt and the operation result name the reason instead
+  %%> - when no setup step runs, nothing is written, removed or revoked
   %%> - a cancelled or timed-out run keeps them until the token expires, within the hour, or until `tasks:cancel` removes the VM
   %%> - the token is minted for these steps only, reads the repositories that the GitHub App installation covers, and expires within the hour
   %%> - when the App cannot supply a token, both files hold an empty configuration and setup runs without private access

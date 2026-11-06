@@ -1,6 +1,6 @@
 id: dc32f69a-523e-5c03-b850-1c03af924afa
 name: task-dependency-auth-remove
-description: Delete the Composer and npm configuration of the task account that the write workflow created, then revoke the token it held.
+description: Delete the Composer and npm configuration of the task account that the write workflow created, revoke the token it held, and report what became of the token.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -51,7 +51,8 @@ jobs:
         - ${{ "/home/" + inputs.user + "/.config/composer/auth.json" }}
         - ${{ "/home/" + inputs.user + "/.npmrc" }}
   # The token is revoked as soon as the files are gone. It expires within the hour either way, but a failed command can echo it into its output.
-  # A run whose mint did not run, or minted none, holds no live token here: GitHub refuses and the step is allowed to fail.
+  # curl prints the HTTP status instead of failing on it, so `result` can tell a revoked token (204) from one that GitHub does not know (401, none minted
+  # or already expired) and from a revoke that failed. The step itself fails only when GitHub could not be reached.
   - name: Revoke
     labels: {role: swamp}
     queueTimeout: 30
@@ -61,33 +62,26 @@ jobs:
       behaviorName: ${{ "tp-deps-revoke" }}
       methodName: execute
       inputs:
-        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
+        run: "curl --silent --show-error --proto =https --max-time 30 --request DELETE \\\n  --variable %ORBIT_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_TOKEN}}' \\\n  --header 'Accept: application/vnd.github+json' \\\n  --output /dev/null --write-out '%{http_code}' https://api.github.com/installation/token\n"
         env:
-          GH_TOKEN: ${{ vault.get(inputs.dependency_auth.token.vault, inputs.dependency_auth.token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-deps-revoke-" + run.id + "-gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_TOKEN: ${{ vault.get(inputs.dependency_auth.token.vault, inputs.dependency_auth.token.key) }}
     dependsOn:
     - step: Remove
       condition:
         type: always
     writes: true
     allowFailure: true
-  - name: Remove CLI config
+  - name: result
     labels: {role: swamp}
     queueTimeout: 30
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "tp-deps-revoke-cleanup" }}
-      methodName: execute
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-revoke" }}
+      methodName: revoke
       inputs:
-        run: timeout 10 rm -rf -- "$ORBIT_GH_DIRECTORY"
-        env:
-          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-deps-revoke-" + run.id + "-gh" }}
+        steps: ${{ steps }}
     dependsOn:
     - step: Revoke
       condition:
         type: always
-    writes: true
-    allowFailure: true

@@ -60,19 +60,34 @@ it('refuses a package install for a group that has ended, has no workspace or is
         ->and($start($busy))->toThrow(ResourceOperationException::class, 'Another Task Operation');
 });
 
-it('records the manager and the package of a finished install, and a fixed code for a failed one', function (): void {
+it('records the manager, the package and the token outcome of a finished install, and a fixed code for a failed one', function (): void {
     $operation = Operation::query()->create(['kind' => 'tasks.package', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'], 'input' => ['manager' => 'composer', 'package' => 'acme/ui']]);
     $failed = Operation::query()->create(['kind' => 'tasks.package', 'target_type' => 'task_group', 'target_id' => 2, 'node_id' => null,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'], 'input' => ['manager' => 'npm', 'package' => '@acme/ui']]);
     $times = ['started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'];
 
-    $done = app(TaskPackageProjection::class)->apply($operation, [...$times, 'status' => 'succeeded', 'result' => []]);
+    $done = app(TaskPackageProjection::class)->apply($operation, [...$times, 'status' => 'succeeded', 'result' => ['dependency_token' => ['state' => 'revoked']]]);
     $broken = app(TaskPackageProjection::class)->apply($failed, [...$times, 'status' => 'failed', 'result' => [], 'failure' => ['failed_step' => 'Install the package', 'detail' => 'exit 1', 'stderr_recorded' => false]]);
 
-    expect($done->status)->toBe(OperationStatus::Succeeded)->and($done->result)->toBe(['manager' => 'composer', 'package' => 'acme/ui'])
+    expect($done->status)->toBe(OperationStatus::Succeeded)->and($done->result)->toBe(['manager' => 'composer', 'package' => 'acme/ui', 'dependency_token' => ['state' => 'revoked']])
         ->and($broken->status)->toBe(OperationStatus::Failed)->and($broken->error_code)->toBe('tasks.package_failed');
 });
+
+it('names the reason of a token that was not revoked, and never reads a missing report as a success', function (string $case, array $reported, array $expected): void {
+    $operation = Operation::query()->create(['kind' => 'tasks.package', 'target_type' => 'task_group', 'target_id' => 3, 'node_id' => null,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'], 'input' => ['manager' => 'composer', 'package' => 'acme/ui']]);
+    $times = ['started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'];
+
+    $done = app(TaskPackageProjection::class)->apply($operation, [...$times, 'status' => 'succeeded', 'result' => $reported]);
+
+    expect($done->status)->toBe(OperationStatus::Succeeded)->and($done->result['dependency_token'])->toBe($expected);
+})->with([
+    'GitHub answered 401' => ['none', ['dependency_token' => ['state' => 'none', 'reason' => 'GitHub holds no valid setup token.']], ['state' => 'none', 'reason' => 'GitHub holds no valid setup token.']],
+    'the revoke failed' => ['unrevoked', ['dependency_token' => ['state' => 'unrevoked', 'reason' => 'GitHub answered HTTP 503 to the revoke.']], ['state' => 'unrevoked', 'reason' => 'GitHub answered HTTP 503 to the revoke.']],
+    'nothing reported' => ['missing', [], ['state' => 'unrevoked', 'reason' => 'The revoke result was not recorded.']],
+    'an unknown state' => ['unknown', ['dependency_token' => ['state' => 'fine']], ['state' => 'unrevoked', 'reason' => 'The revoke result was not recorded.']],
+]);
 
 // The admission names the vault keys of the dependency configuration and mints nothing.
 arch('the admission of a package install uses no GitHub access')

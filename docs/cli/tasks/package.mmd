@@ -42,18 +42,19 @@ sequenceDiagram
   %%> What it does:
   %%> - one official `@swamp/ssh exec` argument list in the checkout: `composer require --no-scripts` or `npm install --ignore-scripts`, with the package after `--`
   %%> - the package manager updates `composer.json` and its lock file, or `package.json` and its lock file, in the workspace; nothing is committed
-  SW->>VM: Remove the dependency auth<br/>then revoke the token
+  SW->>VM: Remove the dependency auth
   %%> When:
   %%> - always, after the install, on success and on failure; a failed removal fails the run
   %%> What it does:
   %%> - the shared child workflow deletes both files, then revokes the token (`DELETE installation/token`) so a command that echoed it holds a dead token
-  %%> - a failed revoke does not fail the run; the token expires within the hour
+  %%> - it reports the outcome as `dependency_token` in the result: `revoked`, `none` (GitHub answered 401) or `unrevoked` with the reason
+  %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the run; the files are gone and the token expires within the hour
   Note over SW: Confirm the package<br/>install and removal succeeded
   alt the install and the removal passed
     SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Record the result<br/>manager · package
+    Note over GW: Record the result<br/>package · token outcome
     %%> Result:
-    %%> - task #5170 succeeds; the orchestrator resolves the assistance, and the agent gets a new turn with the package installed
+    %%> - task #5170 succeeds with `manager`, `package` and `dependency_token`; the orchestrator resolves the assistance, and the agent gets a new turn with the package installed
   else a step fails
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Mark the task failed<br/>`tasks.package_failed`

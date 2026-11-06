@@ -542,6 +542,8 @@ jobs:
     - step: setup-${{ self._index }}
       condition:
         type: always
+    # A skipped write step wrote nothing: there is no file to remove and no token to revoke.
+    guard: ${{ !("deps_write" in steps) }}
     allowFailure: true
   - name: setup_copy
     labels: {role: swamp}

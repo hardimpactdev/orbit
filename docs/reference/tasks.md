@@ -243,7 +243,7 @@ An agent that cannot resolve a private package ends its turn `blocked` with the 
 
 Admission needs an open external group with its owned task VM workspace and refuses other active work on the group. It records the request and names the vault keys of the dependency configuration. It mints no token. The run asks the Gateway for a read token (`purpose: dependencies`), writes the Composer and npm configuration of the task account from it, runs one `composer require --no-scripts` or `npm install --ignore-scripts` in the checkout, and removes both files. The package is `$0` of a fixed command, so no shell parses it.
 
-The package manager changes the manifest and the lock file in the workspace; nothing is committed. A failed install, or a failed removal, fails the run with `tasks.package_failed`. The removal step also revokes the token, so a command that echoed it holds a dead one; a failed revoke does not fail the run. A cancelled run keeps the files until the token expires or `tasks:cancel` removes the VM.
+The package manager changes the manifest and the lock file in the workspace; nothing is committed. A failed install, or a failed removal, fails the run with `tasks.package_failed`. The removal step also revokes the token, so a command that echoed it holds a dead one. The result names the outcome in `dependency_token`: `revoked`, `none` (GitHub answered 401) or `unrevoked` with the reason. An `unrevoked` token does not fail the run. A cancelled run keeps the files until the token expires or `tasks:cancel` removes the VM.
 
 #### Run an external turn
 
