@@ -155,7 +155,7 @@ final class OperationRunBudgets
         'tool.update' => 1500,
     ];
 
-    /** The longest fixed budget. Serve cuts a run at this length, so it must not be shorter than a run the Gateway still allows. */
+    /** The longest fixed budget. Serve cuts a run at this length, so it must not be shorter than a fixed budget below. */
     public static function longestFixedSeconds(): int
     {
         return max(array_filter(self::SecondsByKind, is_int(...)));
