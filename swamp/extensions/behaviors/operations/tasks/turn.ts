@@ -435,6 +435,63 @@ export function settle(
     return { approved, head, tree, findings };
 }
 
+/**
+ * The verdict of one review round, from the reviewer turn that judged the head: `pass` for the outcome `approved`,
+ * `findings` for `changes_requested`, and `failed` for any other end, such as a turn that left no result. The body is the comment of the App on the pull request.
+ */
+export function round(
+    raw: { result_json: string; round: number; head: string },
+) {
+    const result = raw.result_json === ""
+        ? undefined
+        : OutcomeResult.parse(JSON.parse(raw.result_json));
+    const ended = result?.state === "done"
+        ? result.receipt?.outcome
+        : undefined;
+    const verdict = ended === "approved"
+        ? "pass"
+        : ended === "changes_requested"
+        ? "findings"
+        : "failed";
+    const summary = redactTurnText(result?.receipt?.summary ?? "").slice(
+        0,
+        8000,
+    );
+    const label = verdict === "failed" ? "no verdict" : verdict;
+    return {
+        verdict,
+        findings: verdict === "findings" ? summary : "",
+        body:
+            `**Review round ${raw.round}** of \`${
+                raw.head.slice(0, 7)
+            }\`: **${label}**` +
+            (summary === "" ? "" : "\n\n" + summary),
+    };
+}
+
+/** The candidate commit that the local check of a fix made: it passed, and it names the commit and the tree to push. */
+export function checked(raw: { result_json: string }) {
+    const result = raw.result_json === "" ? {} : z.object({
+        outcome: z.string().optional(),
+        error_code: z.string().optional(),
+        commit: z.string().nullable().optional(),
+        tree: z.string().optional(),
+    }).passthrough().parse(JSON.parse(raw.result_json));
+    const commit = Sha.safeParse(result.commit).success
+        ? String(result.commit)
+        : "";
+    const passed = result.outcome === "passed" &&
+        result.error_code === undefined &&
+        commit !== "" && Sha.safeParse(result.tree).success;
+    return {
+        passed,
+        outcome: result.outcome ?? "",
+        commit: passed ? commit : "",
+        tree: passed ? String(result.tree) : "",
+        result_json: raw.result_json,
+    };
+}
+
 type PublicContext = {
     writeResource(
         spec: string,
@@ -490,6 +547,28 @@ export const turnDataResources = {
             head: z.union([Sha, z.literal("")]),
             tree: z.union([Sha, z.literal("")]),
             findings: z.string(),
+        }),
+    },
+    roundVerdict: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        description: "The verdict and the comment of one review round",
+        schema: z.object({
+            verdict: z.string(),
+            findings: z.string(),
+            body: z.string(),
+        }),
+    },
+    checkedFix: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        description: "Whether the local check of a fix made a candidate commit",
+        schema: z.object({
+            passed: z.boolean(),
+            outcome: z.string(),
+            commit: z.union([Sha, z.literal("")]),
+            tree: z.union([Sha, z.literal("")]),
+            result_json: z.string(),
         }),
     },
     turnResult: {
@@ -623,6 +702,32 @@ export const turnDataMethods = {
         ) => ({
             dataHandles: [
                 await ctx.writeResource("reviewState", "state", settle(args)),
+            ],
+        }),
+    },
+    round: {
+        description: "Judge one review round from the finished reviewer turn",
+        arguments: z.object({
+            result_json: z.string(),
+            round: z.number().int().positive(),
+            head: z.string(),
+        }),
+        execute: async (
+            args: { result_json: string; round: number; head: string },
+            ctx: PublicContext,
+        ) => ({
+            dataHandles: [
+                await ctx.writeResource("roundVerdict", "verdict", round(args)),
+            ],
+        }),
+    },
+    checked: {
+        description:
+            "Read the candidate commit that the local check of a fix made",
+        arguments: z.object({ result_json: z.string() }),
+        execute: async (args: { result_json: string }, ctx: PublicContext) => ({
+            dataHandles: [
+                await ctx.writeResource("checkedFix", "fix", checked(args)),
             ],
         }),
     },

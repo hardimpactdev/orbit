@@ -78,7 +78,6 @@ final readonly class TaskPrepFixIntent
         $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
         $reviewers = array_map(static fn (int $round): AgentThread => TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
         $turn = static fn (AgentThread $thread, string $prompt, bool $new): array => TaskPrepThreads::turn($thread, $prompt, $new, $group, $subtask, $instance, $ssh);
-        $branch = 'task-'.$group->id;
 
         return [
             'command' => $prompts->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $resume['intent']['node_id'],
@@ -88,12 +87,7 @@ final readonly class TaskPrepFixIntent
             'fix' => $turn($author, $prompts->fixCorrections(), false),
             'reviews' => array_map(static fn (AgentThread $thread): array => $turn($thread, $prompts->reviewCorrections($data->corrections), true), $reviewers),
             'plan' => ['cases_file' => $prompts->cases()],
-            'publish' => [
-                'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
-                'checkout_path' => $instance->checkout_path, 'repository' => $repository->owner.'/'.$repository->name,
-                'base' => $group->project->default_branch, 'branch' => $branch, 'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
-                'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => $ssh,
-            ],
+            'publish' => TaskPublishIntent::destination($group, $instance, $repository, $ssh),
             // Only vault key names are admitted. The Pi token is written when the run starts ({@see TaskPrepFixProjection::workflowInput()}),
             // and the push step mints its token when it runs ({@see TaskGitHubTokens}).
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]],

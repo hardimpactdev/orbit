@@ -15,16 +15,14 @@ use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskPullRequestEvidence;
 use App\Domain\Tasks\TaskPullRequestTarget;
-use App\Domain\Tasks\TaskReviewRoundComment;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskReviewRound;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Admits the ready, comment and merge steps of a task pull request. The Gateway reads GitHub with read-only tokens and records
+ * Admits the ready and merge steps of a task pull request. The Gateway reads GitHub with read-only tokens and records
  * the intent with the vault key name of the write token. The step asks the Gateway for the token when it runs, and Swamp calls GitHub with it.
  */
 final readonly class StartTaskPullRequestStepAction
@@ -37,13 +35,6 @@ final readonly class StartTaskPullRequestStepAction
         return $this->admit(OperationKinds::TasksPrReady, $group, 'pr-ready', $caller, $request,
             fn (): TaskPullRequestTarget => $this->evidence->ready($group, $head, $mode),
             ['head_sha' => $head, 'mode' => $mode, 'reviewer' => TaskPullRequestEvidence::reviewer()]);
-    }
-
-    public function comment(Task $group, string $head, TaskReviewRound $round, string $caller, string $request): Operation
-    {
-        return $this->admit(OperationKinds::TasksPrComment, $group, 'pr-comment', $caller, $request,
-            fn (): TaskPullRequestTarget => $this->evidence->comment($group, $head),
-            ['head_sha' => $head, 'body' => TaskReviewRoundComment::body($round)]);
     }
 
     public function merge(Task $group, string $head, string $caller, string $request): Operation

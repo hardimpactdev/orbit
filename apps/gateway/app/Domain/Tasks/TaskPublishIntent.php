@@ -90,6 +90,25 @@ final readonly class TaskPublishIntent
         });
     }
 
+    /**
+     * Where a run pushes: the checkout, the repository and the branch of the pull request, with the SSH target. A prep fix and a review
+     * round hold it in their intent and publish with it; the commit and the tree come from their own steps.
+     *
+     * @param  array<string,mixed>  $ssh
+     * @return array<string,mixed>
+     */
+    public static function destination(Task $group, Instance $instance, GitHubRepository $repository, array $ssh): array
+    {
+        $branch = 'task-'.$group->id;
+
+        return [
+            'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+            'checkout_path' => $instance->checkout_path, 'repository' => $repository->owner.'/'.$repository->name,
+            'base' => $group->project->default_branch, 'branch' => $branch, 'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
+            'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => $ssh,
+        ];
+    }
+
     private function assertIdle(Task $group): void
     {
         if (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)

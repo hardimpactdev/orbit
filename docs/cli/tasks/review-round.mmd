@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit a review round"): one Swamp run per round. The pattern of tasks:prep-fix: one admission, one parent Swamp run, existing workflows as children. It replaces the gate check driving the reviewer turn, the comment and the fix one admission at a time. Decided by the orchestrator, for Nick's review.
+  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit a review round"): one Swamp run per round. The pattern of tasks:prep-fix: one admission, one parent Swamp run, existing workflows as children. It replaces the gate check driving the reviewer turn, the comment and the fix one admission at a time (about 60 s per hop). The comment steps are steps of this run; the standalone `tasks.pr_comment` operation and its chart are gone. Decided by the orchestrator, for Nick's review.
   %% status: draft
   %% kind: tasks.review_round
   autonumber
@@ -16,16 +16,17 @@ sequenceDiagram
   %%> - the gate check `tasks:pr-gate`, once for each head of a group in automatic mode; there is no command, route or MCP tool
   %%> Requirements:
   %%> - the group is an open external group of a review-and-merge Project, with a published PR that is out of draft, and no running operation
-  %%> - the PR head is eligible: a passed handoff candidate of the current subtask, or a head that an earlier round of this group pushed
+  %%> - the PR head is eligible: a passed handoff candidate of the current subtask, or the `pushed_commit` of an earlier round of this group; a pushed fix has no handoff check on its commit, because the PR's own CI is the merge check below
   %%> - the group used fewer than 3 rounds, and the merge check of the PR is green on the head
+  %%> - the task VM of the group is parked or running, and its Pi credential is there
   %%> What it does:
-  %%> - captures, in one transaction, the resume of the VM, the reviewer turn in a new thread, and the comment
+  %%> - captures, in one transaction, the resume of the VM and the reviewer turn in a new thread, with the repository and PR number of the comment
   %%> - in rounds 1 and 2 it also captures the fix: the author turn, the local check and the push. Round 3 captures no fix, so findings in round 3 end the run
   %%> - creates the check row of the fix as `running` and puts its id in the intent; the check has no hosted CI, so it needs no CI token
   %%> - the row belongs to the current open subtask of the group, as `tasks:check` does today; the base, the deliverables and the empty setup come from that subtask
   %%> - names the vault keys of the Pi token, the comment token and the push token; the run writes the Pi token when it starts, and each GitHub step mints its token when it runs
-  %%> - records the round (group, head, round number), so a repeat tick on the same head replays this Operation
-  %%> - the round row gets two new columns, the pushed commit and the check row; the three `fix_*_operation_id` columns go
+  %%> - records the round (group, head, round number, operation, check row) in the same transaction; the round row has the new columns `pushed_commit` and `check_id`, and the three `fix_*_operation_id` columns are gone
+  %%> - a repeat tick on the same head replays this Operation; the gate check admits nothing else for a round: no comment, no fix turn, no check and no push
   %%> Not captured:
   %%> - the findings: the fix prompt, the comment body and the pushed commit are built by the run from the settled review
   GW->>SW: Start one run, full intent<br/>operation-task-review-round
@@ -44,7 +45,7 @@ sequenceDiagram
   VM-->>SW: Pass<br/>or findings
   Note over SW: Settle the review<br/>verdict · findings
   %%> What it does:
-  %%> - a new `verdict` method of `@nckrtl/task-turn-data` turns the outcome of the reviewer into a verdict: pass, findings, or failed
+  %%> - the new `round` method of `@nckrtl/task-turn-data` turns the outcome of the reviewer into a verdict: pass, findings, or failed (a turn that left no result is failed)
   %%> - the findings become the end of the prompt of the fix turn and the body of the comment
   SW->>GW: Mint the comment token<br/>operation:direct:github-token
   %%> What it does:
@@ -66,12 +67,15 @@ sequenceDiagram
     %%> What it does:
     %%> - the author thread of the group gets the findings as its prompt and fixes them in the workspace
     %%> Refuses:
-    %%> - a turn that does not end with the outcome `ready_for_review`: nothing is checked or pushed
+    %%> - a turn that does not end with the outcome `ready_for_review`, read by the `outcome` method of `@nckrtl/task-turn-data` and checked by the step `Check the fix turn` (`tasks.review_fix_not_ready`): nothing is checked or pushed
     SW->>VM: Check the fix<br/>operation-task-check
     %%> What it does:
-    %%> - the handoff check of the Project on the workspace, as `tasks:check` runs it, without hosted CI: the PR runs its own CI on the pushed head
+    %%> - the handoff check of the Project on the workspace, as `tasks:check` runs it, without hosted CI (`check_name` is null): the PR runs its own CI on the pushed head
+    Note over SW: Settle the check<br/>commit · tree
+    %%> What it does:
+    %%> - the new `checked` method of `@nckrtl/task-turn-data` reads the output of the check: passed, and the commit and tree to push
     %%> Refuses:
-    %%> - a check that did not pass, or that ends `changed`, because the author must make the commit: nothing is pushed
+    %%> - a check that did not pass, or that ends `changed`, because the author must make the commit, with `tasks.review_fix_not_passed`: nothing is pushed
     SW->>GW: Mint the push token<br/>operation:direct:github-token
     SW->>GH: Push the fix<br/>operation-task-publish
     %%> What it does:
@@ -86,17 +90,19 @@ sequenceDiagram
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Record the round<br/>verdict · check row
     %%> Result:
-    %%> - the Gateway records the verdict and the findings of that head and round, updates the check row from the output of the check, and records the pushed commit on the round, so that `eligible()` accepts it as the next head
-    %%> - a pass, or round 3, leaves no fix: the check row is set to `cancelled`
+    %%> - the Gateway records the verdict and the findings of that head and round, updates the check row from the output of the check, and records the pushed commit on the round, so that the next admission accepts it as a head
+    %%> - a pass leaves no fix: the check row is set to `cancelled`; round 3 captured none
     %%> - a pass lets the gate check admit the merge step
+    %%> - findings with a pushed commit leave the group in automatic mode: the head moves, and the gate check admits the next round on it
   else the run failed, was cancelled or was interrupted
     SW--xGW: Native failed result<br/>error_code · failed step · verdict
     %%> The Gateway reads:
-    %%> - which step failed and its error code; the result keeps the verdict when the review ended, even if the fix did not pass
+    %%> - which step failed and its error code; the result keeps `findings` when the review ended with findings, even if the fix did not pass, and never keeps a `pass`: a run that ended in error is `failed`, so the merge step cannot follow it
     Note over GW: Record the round<br/>failed · fall back
     %%> Result:
     %%> - every end records the round: the verdict the run reached, or `failed` when it reached none, so the gate never waits on a round that ended; the check row is closed as `failed` or `cancelled`
     %%> - after round 3 with findings, a failed round, or a failed fix, the gate check switches the group to manual mode; the ready step then requests the review of Nick
-    %%> - the same holds when the merge check is red on a head that a round pushed
+    %%> Not built:
+    %%> - the same switch when the merge check is red on a head that a round pushed: the gate check keeps skipping that head, as it did before this run existed
     %%> - a group that is cancelled or completed stops the run as `tasks:cancel` stops any operation of the group, and nothing falls back
   end

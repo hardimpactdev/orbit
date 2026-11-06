@@ -262,7 +262,7 @@ Use the kind and target type to start or find the work of a command.
 | `POST task-groups/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
 | `POST projects/{project}/pr-merge` | `project.pr_merge` | `project` | Gateway |
-| the gate check `tasks:pr-gate` (no route) | `tasks.pr_comment` | `task_group` | Gateway |
+| the gate check `tasks:pr-gate` (no route) | `tasks.review_round` | `task_group` | Gateway |
 | the gate check `tasks:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.

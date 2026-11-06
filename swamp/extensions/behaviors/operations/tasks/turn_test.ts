@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import {
+    checked,
     checkReceipt,
     difference,
     finish,
@@ -7,6 +8,7 @@ import {
     outcome,
     prepare,
     receipt,
+    round,
     settle,
     terminal,
 } from "./turn.ts";
@@ -642,4 +644,104 @@ Deno.test("a refused runner plan comes first in the findings and no review appro
         });
         assertEquals([kept.approved, kept.findings], [true, "Clean."]);
     }
+});
+
+const turnJson = (state: string, receipt: unknown) =>
+    JSON.stringify({ state, receipt, before: null, after: null });
+
+Deno.test("a review round is judged from the outcome of the reviewer turn", () => {
+    const pass = round({
+        result_json: turnJson("done", {
+            outcome: "approved",
+            summary: "Nothing to fix.",
+        }),
+        round: 1,
+        head,
+    });
+    assertEquals(pass.verdict, "pass");
+    assertEquals(pass.findings, "");
+    assertEquals(
+        pass.body,
+        "**Review round 1** of `aaaaaaa`: **pass**\n\nNothing to fix.",
+    );
+    const findings = round({
+        result_json: turnJson("done", {
+            outcome: "changes_requested",
+            summary: "docs/a.md: missing case",
+        }),
+        round: 2,
+        head,
+    });
+    assertEquals(findings.verdict, "findings");
+    assertEquals(findings.findings, "docs/a.md: missing case");
+    assertEquals(
+        findings.body,
+        "**Review round 2** of `aaaaaaa`: **findings**\n\ndocs/a.md: missing case",
+    );
+});
+
+Deno.test("a review round without a finished approving or requesting turn has no verdict", () => {
+    for (
+        const json of [
+            turnJson("failed", { outcome: "approved", summary: "x" }),
+            turnJson("done", { outcome: "ready_for_review", summary: "x" }),
+            turnJson("done", null),
+        ]
+    ) {
+        const failed = round({ result_json: json, round: 3, head });
+        assertEquals(failed.verdict, "failed");
+        assertEquals(failed.findings, "");
+        assertEquals(
+            failed.body.startsWith(
+                "**Review round 3** of `aaaaaaa`: **no verdict**",
+            ),
+            true,
+        );
+    }
+});
+
+Deno.test("the local check of a fix names the commit to push only when it passed", () => {
+    const commit = "c".repeat(40);
+    const made = JSON.stringify({ outcome: "passed", commit, tree, head });
+    assertEquals(checked({ result_json: made }), {
+        passed: true,
+        outcome: "passed",
+        commit,
+        tree,
+        result_json: made,
+    });
+    for (
+        const result of [{ outcome: "changed", commit: null, tree }, {
+            outcome: "failed",
+            commit: null,
+            tree,
+        }, {
+            outcome: "passed",
+            commit,
+            tree,
+            error_code: "tasks.repository_execution_unknown",
+        }, { outcome: "passed", commit: null, tree }]
+    ) {
+        assertEquals(
+            checked({ result_json: JSON.stringify(result) }).passed,
+            false,
+        );
+    }
+    assertEquals(checked({ result_json: "" }), {
+        passed: false,
+        outcome: "",
+        commit: "",
+        tree: "",
+        result_json: "",
+    });
+});
+
+Deno.test("a review round whose reviewer turn left no result has no verdict", () => {
+    const failed = round({ result_json: "", round: 1, head });
+    assertEquals(failed.verdict, "failed");
+    assertEquals(failed.findings, "");
+    assertEquals(
+        failed.body,
+        "**Review round 1** of `aaaaaaa`: **no verdict**",
+    );
 });

@@ -13,7 +13,6 @@ use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\PullRequestGate;
 use App\Domain\Tasks\TaskBuildIntent;
@@ -41,7 +40,7 @@ use Illuminate\Support\Str;
  * the mode of the group; a draft without one stays a draft, except the spec of a prep group whose build has not started, which
  * gets the build step once the owner approved its head. Until then the owner's request for changes on that head gets the corrections
  * (`tasks:prep-fix`, keyed by group and review). A pull request out of draft gets the merge step in manual mode; in
- * automatic mode it gets one review round per head, and the merge step once the round on that exact head passed. Admission makes the other reads: the CI result of the head,
+ * automatic mode it gets one review round per head, one Swamp run with the reviewer, the comment, and for findings the fix and the push, and the merge step once the round on that exact head passed. Admission makes the other reads: the CI result of the head,
  * and for the manual merge the reviewer's approval of that exact head. A pending check, a missing approval, a running
  * round, a busy group or a failed read is a quiet skip; the next tick reads again.
  *
@@ -55,7 +54,7 @@ final readonly class RunTaskPullRequestGateAction
 {
     public const string Caller = 'gateway:pr-gate';
 
-    public function __construct(private StartTaskPullRequestStepAction $steps, private StartTaskReviewRoundAction $rounds, private StartTaskReviewFixAction $fixes, private StartTaskPrepFixAction $prepFixes, private TaskCheckedCandidate $candidates,
+    public function __construct(private StartTaskPullRequestStepAction $steps, private StartTaskReviewRoundAction $rounds, private StartTaskPrepFixAction $prepFixes, private TaskCheckedCandidate $candidates,
         private RepositoryPullRequestAccess $access, private GitHubApi $github, private OperationIdempotency $idempotency, private StartTaskBuildAction $builds) {}
 
     /** @return list<Result> */
@@ -165,76 +164,30 @@ final readonly class RunTaskPullRequestGateAction
             ->where('commit_sha', $head)->orderByDesc('id')->get()->contains(fn (TaskCheck $check): bool => $this->candidates->eligible($group, $check));
     }
 
-    /** @return Result */
-    private function automatic(Task $group, int $number, string $head, string $request): array
-    {
-        $round = TaskReviewRound::query()->where('task_group_id', $group->id)->where('head_sha', $head)->first();
-        $used = TaskReviewRound::query()->where('task_group_id', $group->id)->count();
-        if ($round === null) {
-            return $used >= TaskReviewRound::Limit
-                ? $this->fallBack($group, $number, $head, $request)
-                : $this->admit($group, $number, 'review', OperationKinds::TasksTurn, $head, fn () => $this->rounds->execute($group, $head, self::Caller, $request));
-        }
-
-        if ($round->verdict !== null && ($pending = $this->comment($group, $number, $head, $round, $request)) !== null) {
-            return $pending;
-        }
-
-        return match ($round->verdict) {
-            null => $this->result($group, $number, 'review', 'skipped', 'tasks_pr.round_running'),
-            TaskReviewRoundVerdict::Pass => $this->merge($group, $number, $head, $request),
-            TaskReviewRoundVerdict::Findings => $used >= TaskReviewRound::Limit
-                ? $this->fallBack($group, $number, $head, $request)
-                : $this->fix($group, $number, $head, $round, $request),
-            TaskReviewRoundVerdict::Failed => $this->fallBack($group, $number, $head, $request),
-        };
-    }
-
     /**
-     * The verdict goes to the pull request as a comment of the App, once for each head. The result holds the comment while it is
-     * admitted, busy or running, and is null once the comment ended, so the gate goes on.
-     *
-     * @return Result|null
-     */
-    private function comment(Task $group, int $number, string $head, TaskReviewRound $round, string $request): ?array
-    {
-        $result = $this->admit($group, $number, 'comment', OperationKinds::TasksPrComment, $head, fn () => $this->steps->comment($group, $head, $round, self::Caller, $request));
-        if ($result['result'] !== 'replayed') {
-            return $result;
-        }
-        $operation = Operation::query()->find($result['operation']);
-
-        return $operation instanceof Operation && ! $operation->status->terminal() ? $this->result($group, $number, 'comment', 'skipped', 'tasks_pr.round_commenting', $operation->id) : null;
-    }
-
-    /**
-     * The fix after the findings of a round, one admission for each tick: the author turn, the handoff check, then the push.
-     * A step that failed, or a turn or check that did not end well, sends the group back to manual mode. After the push the
-     * head of the pull request moves, and the next tick admits the next round on the new head.
+     * One admission for each head: the round runs as one Swamp run, with the comment and the fix inside it. The gate waits for the
+     * verdict, admits the merge step after a pass, and sends the group back to manual mode after findings that no push followed.
      *
      * @return Result
      */
-    private function fix(Task $group, int $number, string $head, TaskReviewRound $round, string $request): array
+    private function automatic(Task $group, int $number, string $head, string $request): array
     {
-        $steps = [
-            ['fix-turn', OperationKinds::TasksTurn, 'fix_turn_operation_id', fn () => $this->fixes->turn($group, $round, self::Caller, $request), static fn (Operation $operation): bool => data_get($operation->result, 'receipt.outcome') === 'ready_for_review'],
-            ['fix-check', OperationKinds::TasksCheck, 'fix_check_operation_id', fn () => $this->fixes->check($group, $round, self::Caller, $request), static fn (Operation $operation): bool => data_get($operation->result, 'outcome') === 'passed'],
-            ['fix-publish', OperationKinds::TasksPublish, 'fix_publish_operation_id', fn () => $this->fixes->publish($group, $round, self::Caller, $request), static fn (): bool => true],
-        ];
-        foreach ($steps as [$step, $kind, $column, $start, $ended]) {
-            if ($round->{$column} === null) {
-                return $this->admit($group, $number, $step, $kind, $head, $start);
-            }
-            $operation = Operation::query()->find($round->{$column});
-            if (! $operation instanceof Operation || ! $operation->status->terminal()) {
-                return $this->result($group, $number, $step, 'skipped', 'tasks_pr.fix_running', $operation?->id);
-            }
-            if ($operation->status !== OperationStatus::Succeeded || ! $ended($operation)) {
-                return $this->fallBack($group, $number, $head, $request);
-            }
+        $round = TaskReviewRound::query()->where('task_group_id', $group->id)->where('head_sha', $head)->first();
+        if ($round === null) {
+            return TaskReviewRound::query()->where('task_group_id', $group->id)->count() >= TaskReviewRound::Limit
+                ? $this->fallBack($group, $number, $head, $request)
+                : $this->admit($group, $number, 'review', OperationKinds::TasksReviewRound, $head, fn () => $this->rounds->execute($group, $head, self::Caller, $request));
         }
 
-        return $this->result($group, $number, 'fix-publish', 'skipped', 'tasks_pr.fix_pushed');
+        return match ($round->verdict) {
+            null => $this->result($group, $number, 'review', 'skipped', 'tasks_pr.round_running', $round->operation_id),
+            TaskReviewRoundVerdict::Pass => $this->merge($group, $number, $head, $request),
+            // The push moves the head of the pull request; a tick that still reads the old head waits for the new one.
+            TaskReviewRoundVerdict::Findings => $round->pushed_commit !== null
+                ? $this->result($group, $number, 'review', 'skipped', 'tasks_pr.fix_pushed', $round->operation_id)
+                : $this->fallBack($group, $number, $head, $request),
+            TaskReviewRoundVerdict::Failed => $this->fallBack($group, $number, $head, $request),
+        };
     }
 
     /**

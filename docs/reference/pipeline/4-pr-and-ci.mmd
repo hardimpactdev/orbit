@@ -133,15 +133,14 @@ sequenceDiagram
       %%> - the mode of the group, set at creation and shown by `tasks:show` as `review`
       %%> - the admission, keyed by group and head, with the round number recorded on the group; it needs a green merge check and a passed handoff candidate on the head
       %%> - the fall back to manual mode after round 3 with findings, or when a round fails
-      %%> Not built:
-      %%> - the one Swamp run per round, as the chart in docs/cli/tasks/review-round.mmd shows it: the reviewer turn, the comment, and the fix with its check and push are steps of one run; today they are separate admissions of the gate check
+      %%> - the one Swamp run per round, `tasks.review_round`, as the chart in docs/cli/tasks/review-round.mmd shows it: the reviewer turn, the comment, and the fix with its check and push are steps of that run, and the gate check admits nothing else for a round
       SW->>AG: Review the PR head<br/>fresh reviewer turn
       %%> What it does:
       %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds
       %%> - it runs in the task VM, which the run resumes if it was parked; it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the same review rules as Nick
       %%> - the verdict is pass, or findings with file and reason; it is posted as a PR comment by the App so Nick can read it
       %%> Built:
-      %%> - the comment, as the operation `tasks.pr_comment` with its chart; the gate check admits it once for each round, after the reviewer turn ended, and the merge step or the fall back waits until it ended
+      %%> - the comment, as steps of the round run: it mints its own token when it runs, and a comment that GitHub refuses does not fail the run
       %%> Why:
       %%> - the App opened the PR, and GitHub does not let an author approve its own PR, so the pass is recorded by the Gateway, not as a GitHub approval
       AG-->>SW: Pass<br/>or findings
@@ -151,7 +150,7 @@ sequenceDiagram
         %%> - a child run of the turn workflow with the role `implementer`, in the author's thread, with the findings as its prompt
         %%> - then the handoff check and a push to the same branch, as the publish step does; the new head gets a new CI run, and the gate check admits the next round once it is green
         %%> Built:
-        %%> - the three steps, as the existing operations `tasks.turn`, `tasks.check` and `tasks.publish`; the gate check admits one for each tick and reads the end of the one before; a step that fails or ends without a pass sends the group back to manual mode
+        %%> - the three steps, as child runs of the round run (the turn, check and publish workflows); a step that fails or ends without a pass leaves findings without a pushed commit, and the gate check sends the group back to manual mode
       end
       SW-->>GW: Round result<br/>terminal event
       %%> Result:
