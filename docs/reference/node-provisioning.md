@@ -75,7 +75,7 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | Network | Phase `tunnel` creates and checks the WireGuard key, writes the tunnel files and applies peers. A native step reads the public key. Phase `hub` adds the peer. |
 | Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
 | Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
-| Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort. Exporters require explicit enablement. |
+| Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort. Exporters require explicit enablement. Each role names its execution copies as a record, `{}` for a role without any. |
 | DNS | Ansible phase `dns` writes the dnsmasq backend of a new VPN hub; native child workflows install its listener and publish private DNS. |
 | End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
 
