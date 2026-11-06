@@ -94,6 +94,12 @@ The shared Gateway cache stores the time of the last successful read, keyed by n
 
 A fire of a Schedule's own workflow is recorded as a task when its run ends, not when it starts. The job also tells each projection about its declared workflow every ten minutes, which the feed did when it connected. There is no timer on history reads of one run and no fallback to a family search.
 
+### Catch-all for Operation runs
+
+The observer can lose an Operation's root run. It drops a refused attach, a run that ends before it follows it, or a projection job that failed. The minute poll covers this. It already lists the root runs that finished in the last hour. For each one whose Operation is still unfinished 45 seconds after the run ended, it queues the same `ProjectSwampTerminal` job. The job reads the exact history, so the list is only a hint. A queued Operation is not queued again for 15 minutes.
+
+A history that is not terminal yet is read again, like an unreadable one, until the run deadline. Serve can announce the end of a run before it writes the history.
+
 ### Kept read connection
 
 Each PHP process keeps one read connection to serve and reuses it across jobs. Serve can close that connection while it sits idle, and PHP cannot see this before the connection is used. The first read on a kept connection then fails on a dead socket.

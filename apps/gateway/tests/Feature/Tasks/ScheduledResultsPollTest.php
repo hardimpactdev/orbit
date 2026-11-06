@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampScheduledResults;
 use App\Jobs\Operations\ProjectSwampScheduledTerminal;
 use App\Jobs\Operations\ProjectSwampScheduleFire;
+use App\Jobs\Operations\ProjectSwampTerminal;
+use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -174,4 +177,56 @@ it('goes back ten minutes on a first read', function (): void {
 
     $since = Carbon\Carbon::parse($socket->frames[0]['payload']['since']);
     expect((int) $since->diffInMinutes(now(), true))->toBe(10);
+});
+
+/** @return array<string,mixed> */
+function rootRun(string $run, int $endedSecondsAgo, array $extra = []): array
+{
+    return ['runId' => $run, 'workflowId' => '44444444-5555-4666-8777-888888888888', 'workflowName' => 'operation-task-provision', 'status' => 'failed',
+        'startedAt' => now()->subSeconds($endedSecondsAgo + 10)->toIso8601ZuluString('millisecond'),
+        'completedAt' => now()->subSeconds($endedSecondsAgo)->toIso8601ZuluString('millisecond'), ...$extra];
+}
+
+function boundOperation(string $run, OperationStatus $status = OperationStatus::Running): Operation
+{
+    return Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null, 'status' => $status,
+        'state' => ['swamp_run_id' => $run], 'input' => []]);
+}
+
+it('projects an unfinished Operation whose root run ended and the observer did not follow', function (): void {
+    Bus::fake();
+    $run = '986bc349-54dc-4dea-9f22-76e3353d1c90';
+    $operation = boundOperation($run);
+    pollSocket([[rootRun($run, 120)], [rootRun($run, 180)]]);
+
+    app(SwampScheduledResults::class)->poll();
+    app(SwampScheduledResults::class)->poll();
+
+    Bus::assertDispatchedTimes(ProjectSwampTerminal::class, 1);
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn (ProjectSwampTerminal $job): bool => $job->operationId === $operation->id
+        && $job->runId === $run && $job->status === 'failed');
+});
+
+it('leaves a run that just ended to the observer', function (): void {
+    Bus::fake();
+    $run = '986bc349-54dc-4dea-9f22-76e3353d1c91';
+    boundOperation($run);
+    pollSocket([[rootRun($run, 5)]]);
+
+    app(SwampScheduledResults::class)->poll();
+
+    Bus::assertNotDispatched(ProjectSwampTerminal::class);
+});
+
+it('does not project a finished Operation or a child run', function (): void {
+    Bus::fake();
+    $done = '986bc349-54dc-4dea-9f22-76e3353d1c92';
+    $child = '986bc349-54dc-4dea-9f22-76e3353d1c93';
+    boundOperation($done, OperationStatus::Failed);
+    boundOperation($child);
+    pollSocket([[rootRun($done, 300), rootRun($child, 300, ['parentRun' => ['runId' => '986bc349-54dc-4dea-9f22-76e3353d1c94']])]]);
+
+    app(SwampScheduledResults::class)->poll();
+
+    Bus::assertNotDispatched(ProjectSwampTerminal::class);
 });

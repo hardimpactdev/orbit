@@ -133,7 +133,8 @@ final readonly class SwampCommandStep
         if (! in_array($run['status'], $terminalStatuses, true)) {
             $deadline = OperationRunBudgets::deadline($operation);
             if (! $atDeadline || $deadline === null || $deadline->isFuture()) {
-                throw $this->unavailable();
+                // The notice that the run ended can come before serve writes its history; the job reads again.
+                throw new SwampTerminalReadUnavailable;
             }
 
             return app(ExpireOperationAction::class)->execute($operation);
