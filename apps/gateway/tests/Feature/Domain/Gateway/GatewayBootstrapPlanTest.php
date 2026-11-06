@@ -36,5 +36,5 @@ it('renders the environment from the example with production values and an empty
 
     expect($environment)->toBe("APP_ENV=production\nAPP_KEY=\nAPP_URL=https://10.45.0.1\nORBIT_HOME=/home/orbit/.orbit\nCACHE_STORE=file\n# APP_URL=ignored\n");
     $plan = GatewayBootstrapPlan::make('https://10.45.0.1', '/home/orbit/.orbit', '/home/orbit/orbit/apps/gateway');
-    expect($plan['environment'])->toContain("APP_ENV=production\n", "APP_DEBUG=false\n", "APP_URL=https://10.45.0.1\n", "APP_KEY=\n");
+    expect($plan['environment'])->toContain("APP_ENV=production\n", "APP_DEBUG=false\n", "APP_URL=https://10.45.0.1\n", "APP_KEY=\n", "DB_DATABASE=/home/orbit/.orbit/gateway.sqlite\n");
 });

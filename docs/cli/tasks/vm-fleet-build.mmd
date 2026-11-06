@@ -40,7 +40,7 @@ sequenceDiagram
   %%> - so the same local run also applies the Ansible `prerequisites` phase of the role playbook with Ansible's local connection; the operator renders its intent from the recipe alone with `php artisan` (no database), so the machine gets its pinned PHP, Caddy and WireGuard packages
   NG->>NG: Converge itself<br/>gateway · websocket · swamp
   %%> What it does:
-  %%> - on the machine, in this order: Composer install, the Gateway `.env` and application key, migrations, then `orbit:bootstrap`: its CA, SSH key and WireGuard hub; the Gateway records itself and the operator
+  %%> - on the machine, in this order: Composer install, the Gateway `.env` (it names its database, which the ready copies and stage 2 read) and application key, migrations, then `orbit:bootstrap`: its CA, SSH key and WireGuard hub; the Gateway records itself and the operator
   %%> - then the Gateway's own `node:role:add --converge` for gateway, websocket and swamp: its own API admits them and its own Swamp runs the normal role phases with Ansible's local connection, starting its Swamp serve and worker
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), built and proven live in #2798, #2813, #2792, #2819, #2822 and #2828:
   %%> - `orbit:bootstrap` is the Gateway's own code and runs no agent command: the Node and role records, the VPN settings, the root CA, the SSH key and the host key of the machine; it writes nothing under `/etc` and starts no service
