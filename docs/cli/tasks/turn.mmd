@@ -24,13 +24,13 @@ sequenceDiagram
   %%> - a reviewer has an eligible check on the admitted candidate
   %%> What it does:
   %%> - composes the prompt the VM receives: the title, brief and deliverables of the subtask, then the prompt of the caller, for every role
-  %%> - records the composed prompt as the admitted intent; the caller no longer pastes the brief into the prompt
+  %%> - records the composed prompt as the admitted intent
+  %%> - refuses a composed prompt longer than the workflow accepts, 100000 characters, with `tasks.prompt_too_large`
   %%> Decided by the orchestrator, for Nick's review:
-  %%> - the agent in the VM sees only what the admission sends, so the subtask the Gateway holds must reach it from the Gateway, not from the driver
-  %%> - Swamp is unchanged: it sends the admitted prompt as it always did
+  %%> - the agent in the VM sees only what the admission sends, so the subtask the Gateway holds reaches it from the Gateway, not from the driver
   GW->>SW: Start one run<br/>operation-task-turn
   %%> Inputs:
-  %%> - the admitted prompt (composed as above), role, session, candidate, SSH identity and vault key names
+  %%> - the admitted prompt, role, session, candidate, SSH identity and vault key names
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Result:
   %%> - follow the Operation while Swamp runs the turn
