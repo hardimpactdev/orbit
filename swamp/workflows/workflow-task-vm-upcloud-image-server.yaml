@@ -1,6 +1,6 @@
 id: ea09deaa-6bb5-4728-8ff5-7cc21159170c
 name: task-vm-upcloud-image-server
-description: Launch one UpCloud server from 209 with inline curl and wait for it to boot over pinned official SSH; TypeScript shapes bodies and reads answers only.
+description: Launch one UpCloud server from 209 with inline curl; TypeScript shapes the body and reads the answer only. The task VM role waits for its boot.
 version: 1
 queueTimeout: 60
 vaults:
@@ -89,34 +89,3 @@ jobs:
         intent: ${{ inputs.intent }}
         slot: ${{ inputs.slot }}
         stdout: ${{ steps.create.outputs.stdout }}
-  - name: boot
-    # OpenSSH retries the connection while the server boots; one literal timeout bounds the boot and cloud-init.
-    labels: {role: swamp}
-    dependsOn:
-    - {step: server, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("image-upcloud-boot-" + steps.server.outputs.address).split(".").join("-") }}
-      methodName: exec
-      globalArgs:
-        name: ${{ ("image-upcloud-boot-" + steps.server.outputs.address).split(".").join("-") }}
-        transport:
-          kind: ssh
-          user: orbit
-          port: 22
-          identityFile: ${{ inputs.intent.ssh.identity_file }}
-          connectTimeoutSec: 10
-          extraOptions: [ConnectionAttempts=90]
-          controlMaster: {enabled: false}
-        hosts:
-        - name: target
-          address: ${{ steps.server.outputs.address }}
-          transport:
-            hostKeys: ${{ [inputs.intent.host_key] }}
-      inputs:
-        hosts: name:target
-        # Exit 2 is cloud-init done with recoverable errors; the server is usable and the check phase judges it. `--long` puts the detail in the output.
-        okExitCodes: [0, 2]
-        argv: [timeout, '900', /usr/bin/sudo, -n, --, /usr/bin/cloud-init, status, --wait, --long]
-        timeoutSec: 1200

@@ -23,6 +23,7 @@
       ansible.builtin.command: exportfs -ra
       changed_when: true
   tasks:
+    - { name: Wait for a new server, ansible.builtin.import_tasks: tasks/task-vm-ready.yml, tags: [always] }
     - { name: Resolve the recipe, ansible.builtin.import_tasks: tasks/task-vm-recipe.yml, tags: [always] }
     - { name: Software, ansible.builtin.import_tasks: tasks/task-vm-software.yml, tags: [software] }
     - { name: Tools, ansible.builtin.import_tasks: tasks/task-vm-tools.yml, tags: [tools] }
