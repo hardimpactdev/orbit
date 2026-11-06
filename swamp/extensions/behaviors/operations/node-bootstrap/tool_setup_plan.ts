@@ -54,10 +54,13 @@ export async function toolSetupPlan(raw: unknown, home: string) {
     let aptArgs: string[] = [], aptOptions: string[] = [];
     if (apt !== null) {
         const source = cache + "/sources.list";
+        // Through a package cache the Node speaks plain http to it and the cache fetches over https; apt still checks the signatures.
+        const proxy = apt.proxy ?? null;
         file(
             source,
             ["resolute", "resolute-updates", "resolute-security"].map((suite) =>
-                "deb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/" +
+                "deb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] " +
+                (proxy === null ? "https" : "http") + "://snapshot.ubuntu.com/ubuntu/" +
                 apt.snapshot + "/ " + suite +
                 " main restricted universe multiverse\n"
             ).join(""),
@@ -73,6 +76,13 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             "Dir::State::Lists=" + cache + "/lists",
             "-o",
             "APT::Get::List-Cleanup=false",
+            // The cache answers a revalidation of a stored index with a 5xx now and then; the next try is served.
+            ...(proxy === null ? [] : [
+                "-o",
+                "Acquire::http::Proxy=" + proxy,
+                "-o",
+                "Acquire::Retries=5",
+            ]),
         ];
         aptArgs = apt.packages.map((pkg, index) =>
             pkg.artifact === null

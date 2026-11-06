@@ -43,6 +43,25 @@ Deno.test("Composer setup preserves its scope and installs exact snapshot packag
         true,
     );
 });
+Deno.test("Composer setup reads the snapshot over https by itself and through a package cache over http", async () => {
+    const direct = await toolSetupPlan(composer, "/home/orbit");
+    const content = (plan: typeof direct) =>
+        plan.files.filter((f) => String(f.path).endsWith("/sources.list")).map((
+            f,
+        ) => String(f.content)).join("");
+    assertEquals(content(direct).includes("] https://snapshot.ubuntu.com/"), true);
+    assertEquals(direct.apt_update.some((a) => a.startsWith("Acquire::http::Proxy")), false);
+    const cached = await toolSetupPlan({
+        ...composer,
+        apt: { ...composer.apt, proxy: "http://10.232.2.1:3142" },
+    }, "/home/orbit");
+    assertEquals(content(cached).includes("] http://snapshot.ubuntu.com/"), true);
+    assertEquals(content(cached).includes("https://"), false);
+    for (const argv of [cached.apt_update, cached.apt_install_prefix]) {
+        assertEquals(argv.includes("Acquire::http::Proxy=http://10.232.2.1:3142"), true);
+        assertEquals(argv.includes("Acquire::Retries=5"), true);
+    }
+});
 Deno.test("Homebrew setup describes one pinned repository and retains other package managers", async () => {
     const plan = await toolSetupPlan({
         manager: "homebrew",
