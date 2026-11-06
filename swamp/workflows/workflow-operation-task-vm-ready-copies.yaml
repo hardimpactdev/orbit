@@ -144,7 +144,7 @@ jobs:
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-complete-the-set" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-complete-the-set" + "-" + self.role).split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'set', '${{ "fleet-ready-" + self.role }}', '${{ "user.ready.complete=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}'], timeoutSec: 40}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'set', '${{ "fleet-ready-" + self.role }}', '${{ "user.ready.complete=" + steps["Read the time"].outputs.stdout.split("\n")[0] }}', '${{ "user.ready.format=" + inputs.intent.fleet.format }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Record the network', condition: {type: succeeded}}]
 - name: check
   labels: {role: swamp}
