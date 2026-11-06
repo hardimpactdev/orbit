@@ -26,7 +26,7 @@ sequenceDiagram
   %%> - captures, in one transaction, the resume of the VM, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
   %%> - names the vault keys of the Pi token and the push token; the run writes the Pi token when it starts, and the push step mints its GitHub token when it runs
   %%> Decided by the orchestrator, for Nick's review:
-  %%> - the review of the owner is an input of the call; the gate check does not detect it yet, so a person or the orchestrator admits the run
+  %%> - the review of the owner is an input of the call. The gate check of stage 4 makes the call when the owner's latest review requests changes on the current head of the draft PR, with the review text and his inline comments as `corrections`, keyed by group and review (`pr-gate:prep-fix:42:REVIEW`). A person or the orchestrator can still make the call
   GW->>SW: Start one run, full intent<br/>operation-task-prep-fix
   %%> Inputs:
   %%> - the whole intent above and the vault key names of the Pi and push-token credentials, never their values
