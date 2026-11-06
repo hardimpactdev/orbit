@@ -5,7 +5,7 @@
   ansible.builtin.package_facts: { manager: apt }
 - name: Find the tool packages that are missing
   ansible.builtin.set_fact:
-    tool_packages_missing: "{{ ['nfs-kernel-server', 'python3-venv'] | reject('in', ansible_facts.packages) | list }}"
+    tool_packages_missing: "{{ (['nfs-kernel-server'] + snapshot_packages) | reject('in', ansible_facts.packages) | list }}"
 - name: Install the tool packages
   when: tool_packages_missing | length > 0
   block:

@@ -722,7 +722,7 @@ The Gateway puts these in the Operation:
 
 No task file names a version.
 
-The `software` phase installs Ubuntu packages and file packages at their pins. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
+The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
 
 The `tools` phase installs the NFS server and the shape gate linters.
 
