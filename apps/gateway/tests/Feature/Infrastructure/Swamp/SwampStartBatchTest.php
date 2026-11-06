@@ -427,3 +427,21 @@ it('makes a run that was never sent unavailable, not uncertain, when the exchang
 
     expect($results['a'])->toBeInstanceOf(ResourceOperationException::class)->and($results['a']->errorCode)->toBe('swamp.start_unavailable')->and($socket->log)->toBe([]);
 });
+
+it('starts the other runs and throws nothing raw when the Gateway cannot record the outcome of one run', function (): void {
+    [$a, $b] = [batchOperation(), batchOperation()];
+    $socket = batchSwamp([(string) $a->id => ['after' => 1.0, 'reply' => batchStarted(BATCH_RUN_A, 'operation-task-pr-merge')],
+        (string) $b->id => ['after' => 2.0, 'reply' => batchStarted(BATCH_RUN_B, 'operation-task-pr-merge')]]);
+    batchUse($socket);
+    // The Gateway database refuses every write that would bind or fail the first run.
+    Operation::saving(static function (Operation $operation) use ($a): void {
+        if ($operation->id === $a->id && ($operation->isDirty('dispatched_at') || $operation->isDirty('error_code'))) {
+            throw new RuntimeException('The write failed.');
+        }
+    });
+
+    app(StartSwampRun::class)->startMany([$a, $b]);
+
+    expect($b->refresh()->state['swamp_run_id'])->toBe(BATCH_RUN_B)->and($b->status)->toBe(OperationStatus::Running)
+        ->and($a->refresh()->status)->toBe(OperationStatus::Running);
+});

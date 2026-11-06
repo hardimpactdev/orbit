@@ -130,8 +130,14 @@ final readonly class StartSwampRun
         }
         // A run without an outcome was sent, or its outcome could not be recorded, so its Swamp run may exist.
         foreach ($byId as $id => $operation) {
-            if (! isset($outcomes[$id])) {
+            if (isset($outcomes[$id])) {
+                continue;
+            }
+            try {
                 $fail($operation, $this->uncertain(), true);
+            } catch (Throwable $exception) {
+                // Failing one run must not leave the others without their sweep.
+                report($exception);
             }
         }
         Log::info('Swamp direct start batch', ['count' => count($operations), 'sent' => count($payloads),
@@ -299,8 +305,13 @@ final readonly class StartSwampRun
 
             $results = array_map(static fn (): ResourceOperationException => $refusal, $payloads);
             foreach ($results as $key => $result) {
-                if ($settled !== null) {
+                if ($settled === null) {
+                    continue;
+                }
+                try {
                     $settled($key, $result);
+                } catch (Throwable $exception) {
+                    report($exception);
                 }
             }
 
