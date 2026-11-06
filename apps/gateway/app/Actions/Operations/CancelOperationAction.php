@@ -9,6 +9,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Infrastructure\Swamp\CancelSwampRun;
@@ -39,6 +40,10 @@ final readonly class CancelOperationAction
         });
 
         $operation->refresh();
+        // A kind that left the registry has no run to stop and no reconciler read: the request ends it here.
+        if (! $operation->status->terminal() && RetiredOperationSettlement::retired($operation)) {
+            return app(RetiredOperationSettlement::class)->settle($operation);
+        }
         // A proof owns a task group with a VM for each of its runs; cancelling the proof without the groups would leave the VMs running.
         if ($operation->kind === OperationKinds::ProofRun && $operation->status === OperationStatus::Cancelled) {
             foreach (ProofRunSettlement::children($operation->id) as $run) {
