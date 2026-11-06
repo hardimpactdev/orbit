@@ -3,7 +3,10 @@ import {
     assertRejects,
     assertThrows,
 } from "jsr:@std/assert@1.0.19";
+import { parse } from "jsr:@std/yaml@1.0.12";
+import { ROOT } from "../../../../../bin/gate-test-support.ts";
 import {
+    behavior,
     composeCaddy,
     composePhp,
     composeWithdrawal as compose,
@@ -262,23 +265,6 @@ Deno.test("a Caddyfile that is missing while the captured state served routes is
     );
 });
 
-Deno.test("later Caddy states apply in order only when they differ", async () => {
-    const a = await section(config(block("one", "a")), true);
-    const b = await section(config(block("one", "a"), block("two", "a")), true);
-    const c = await section(config(block("two", "a")), true);
-    const plan = await composeWithdrawal({
-        ...placement,
-        plan_path: planPath,
-        read: read({ caddy: a.content }),
-        php: {},
-        caddy: { before: a, prepared: b, withdrawn: c, after: c },
-        dns: {},
-        cleanup: [],
-    });
-    assertEquals(plan.caddy?.content, c.content);
-    assertEquals(plan.caddy?.version, c.version);
-});
-
 Deno.test("DNS records leave once and the catalog keeps unrelated names", async () => {
     const before = await dnsState(["gone.test", "kept.test"]);
     const after = await dnsState(["kept.test"]);
@@ -301,5 +287,210 @@ Deno.test("DNS records leave once and the catalog keeps unrelated names", async 
     assertEquals(
         JSON.parse(plan.dns!.catalog).records["kept.test"],
         "10.44.0.7",
+    );
+});
+
+Deno.test("four distinct Caddy states apply in order against the live file", async () => {
+    const a = await section(config(block("one", "a")), true);
+    const b = await section(config(block("one", "a"), block("two", "a")), true);
+    const c = await section(config(block("two", "a")), true);
+    const d = await section(
+        config(block("two", "a"), block("three", "a")),
+        true,
+    );
+    const live = config(block("one", "a"), block("extra", "z"));
+    const plan = await composeWithdrawal({
+        ...placement,
+        plan_path: planPath,
+        read: read({ caddy: live }),
+        php: {},
+        caddy: { before: a, prepared: b, withdrawn: c, after: d },
+        dns: {},
+        cleanup: [],
+    });
+    const chain = [a, b, c, d];
+    let content = live;
+    for (let i = 0; i < 3; i++) {
+        content = (await composeCaddy({
+            ...placement,
+            direction: "forward",
+            before: chain[i],
+            after: chain[i + 1],
+            current: content,
+            alternatives: chain,
+            retain_removed: false,
+        })).caddy.content;
+    }
+    assertEquals(plan.caddy?.content, content);
+    for (const name of ["two", "three", "extra"]) {
+        assertEquals(content.includes(`${name}.test`), true, name);
+    }
+    assertEquals(content.includes("one.test"), false);
+});
+
+Deno.test("four distinct DNS states apply in order, and a step that changes only the records is not skipped", async () => {
+    const a = await dnsState(["x.test"]);
+    const b = await dnsState(["x.test", "y.test"]);
+    const c = { ...(await dnsState(["y.test"])), catalog: b.catalog };
+    const d = await dnsState(["y.test", "z.test"]);
+    const live = await dnsState(["x.test", "extra.test"]);
+    const plan = await composeWithdrawal({
+        ...placement,
+        plan_path: planPath,
+        read: read({ records: live.records, catalog: live.catalog }),
+        php: {},
+        caddy: {},
+        dns: { before: a, prepared: b, withdrawn: c, after: d },
+        cleanup: [],
+    });
+    const chain = [a, b, c, d];
+    let current: { records: string; catalog: string } = live;
+    for (let i = 0; i < 3; i++) {
+        current = mergeDns(chain[i], chain[i + 1], current, chain);
+    }
+    assertEquals(plan.dns, current);
+    assertEquals(plan.dns?.records.includes("extra.test"), true);
+    assertEquals(plan.dns?.records.includes("x.test"), false);
+});
+
+Deno.test("the plan records what was read, so the phase can refuse a file that changed since", async () => {
+    const before = await section(config(block("gone", "a")), true);
+    const after = await section(config(), false);
+    const dns = await dnsState(["gone.test"]);
+    const plan = await composeWithdrawal({
+        ...placement,
+        plan_path: planPath,
+        read: read({
+            account,
+            pools: { [poolPath]: resolved(pool(1, 5)) },
+            caddy: before.content,
+            records: dns.records,
+            catalog: dns.catalog,
+        }),
+        php: {
+            before: {
+                account_user: "orbit",
+                configurations: { "8.4": pool(1, 5) },
+            },
+            after: { account_user: "orbit", configurations: [] },
+        },
+        caddy: { before, prepared: after, withdrawn: after, after },
+        dns: { before: dns, prepared: dns, withdrawn: dns, after: dns },
+        cleanup: [],
+    });
+    assertEquals(
+        Object.keys(plan.expect).sort(),
+        [
+            "/etc/caddy/Caddyfile",
+            "/etc/dnsmasq.d/orbit-records.conf",
+            poolPath,
+            "/var/lib/orbit/private-dns/catalog.json",
+        ].sort(),
+    );
+    assertEquals(
+        plan.expect["/etc/caddy/Caddyfile"],
+        await sha(before.content),
+    );
+    assertEquals(plan.expect[poolPath], await sha(resolved(pool(1, 5))));
+});
+
+Deno.test("the withdraw method reads read.json, writes plan.json and records a summary", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    await Deno.mkdir(folder, { mode: 0o700 });
+    try {
+        const before = await section(config(block("gone", "a")), true);
+        const after = await section(config(), false);
+        await Deno.writeTextFile(
+            `${folder}/read.json`,
+            read({ caddy: before.content }),
+        );
+        const written: unknown[][] = [];
+        await behavior.methods.withdraw.execute({
+            ...placement,
+            plan_path: `${folder}/plan.json`,
+            read_path: `${folder}/read.json`,
+            php: {},
+            caddy: { before, prepared: after, withdrawn: after, after },
+            dns: {},
+            cleanup: [{ scope: "route-1-router", user: "orbit" }],
+        }, {
+            writeResource: (spec: string, name: string, value: unknown) => {
+                written.push([spec, name, value]);
+                return Promise.resolve({});
+            },
+        });
+        const plan = JSON.parse(await Deno.readTextFile(`${folder}/plan.json`));
+        assertEquals(plan.caddy.content, after.content);
+        assertEquals(plan.cleanup, [{
+            scope: "route-1-router",
+            user: "orbit",
+        }]);
+        assertEquals(written, [["withdrawal", "withdrawal", {
+            pools: [],
+            caddy: after.version,
+            dns: false,
+            cleanup: 1,
+        }]]);
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});
+
+Deno.test("the withdrawal workflows require every contribution, and destroy calls them without secrets", async () => {
+    type Flow = {
+        jobs: {
+            steps: {
+                name: string;
+                dependsOn?: { step: string }[];
+                task: {
+                    methodName?: string;
+                    inputs?: { required?: Record<string, string> };
+                };
+            }[];
+        }[];
+    };
+    const load = async (name: string) =>
+        parse(
+            await Deno.readTextFile(`${ROOT}/workflows/workflow-${name}.yaml`),
+        ) as Flow;
+    const steps = (await load("route-withdraw")).jobs.flatMap((job) =>
+        job.steps
+    );
+    const names = steps.map((step) => step.name);
+    const required = Object.keys(
+        steps.find((step) => step.name === "forward")!.task.inputs!.required!,
+    );
+    for (const name of required.filter((n) => n !== "withdraw_unsupported")) {
+        assertEquals(names.includes(name), true, name);
+    }
+    // The count of work a destroy never has is required under a step that does not exist: it fails closed.
+    assertEquals(names.includes("withdraw_unsupported"), false);
+    assertEquals(required.includes("withdraw_unsupported"), true);
+    for (const step of steps) {
+        for (const dependency of step.dependsOn ?? []) {
+            assertEquals(names.includes(dependency.step), true, step.name);
+        }
+    }
+    const node = (await load("route-withdraw-node")).jobs.flatMap((job) =>
+        job.steps
+    );
+    assertEquals(node.map((step) => step.name), [
+        "input",
+        "read",
+        "compose",
+        "apply",
+        "cleanup",
+    ]);
+    assertEquals(
+        node.find((step) => step.name === "compose")!.task.methodName,
+        "withdraw",
+    );
+    const destroy = await Deno.readTextFile(
+        `${ROOT}/workflows/workflow-operation-instance-destroy.yaml`,
+    );
+    assertEquals(
+        /workflowIdOrName: route-withdraw\n\s+inputs:[\s\S]*?execution_secrets: \{\}/
+            .test(destroy),
+        true,
     );
 });

@@ -100,6 +100,17 @@
   tasks:
     - name: Withdraw
       block:
+        # Composing and applying are seconds apart: a file that changed since the read is not overwritten.
+        - name: Check the files are as they were read
+          ansible.builtin.stat:
+            path: "{{ item.key }}"
+            checksum_algorithm: sha256
+          register: seen
+          loop: "{{ plan.expect | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          failed_when: not seen.stat.exists or seen.stat.checksum != item.value
+          check_mode: false
         # Pools first, as the PHP delta did: written, tested, then reloaded. A reload keeps open requests.
         - name: Write the PHP-FPM pool files
           ansible.builtin.copy:

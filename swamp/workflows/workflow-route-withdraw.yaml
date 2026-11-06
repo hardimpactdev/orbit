@@ -3,8 +3,6 @@ name: route-withdraw
 queueTimeout: 30
 labels: {role: swamp}
 description: "instance.destroy: withdraw a Route from every Node it touches, one Ansible read, one composition and one Ansible apply per Node, and prove every contribution."
-vaults:
-- orbit-control-inputs
 inputs:
   type: object
   properties:
@@ -21,21 +19,17 @@ inputs:
     execution_secrets:
       type: object
       additionalProperties: false
-    parent_run_id:
-      type: string
-      format: uuid
   required:
   - operation_id
   - node_id
   - kind
   - intent
   - execution_secrets
-  - parent_run_id
   additionalProperties: false
 jobs:
 - name: withdraw
   steps:
-    # The firewall rules and ingress a destroy still opens are applied first, as the mutation applies them.
+    # The firewall rules and ingress that stay open during the withdrawal are applied before it.
   - name: withdraw_lan
     forEach:
       item: part

@@ -1,5 +1,5 @@
 manifestVersion: 1
-name: "@nckrtl/route-publication-command"
+name: '@nckrtl/route-publication-command'
 version: 2026.11.06.1
 visibility: private
 license: MIT

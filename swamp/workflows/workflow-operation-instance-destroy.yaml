@@ -128,8 +128,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        parent_run_id: ${{ run.id }}
+        execution_secrets: {}
   - name: Stop, remove Processes
     labels:
       role: swamp

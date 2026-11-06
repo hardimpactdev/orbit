@@ -308,11 +308,41 @@ export async function composeWithdrawal(raw: unknown, readText: string) {
         ];
         dns = { records: read.records, catalog: read.catalog };
         for (let i = 0; i < 3; i++) {
-            if (i > 0 && chain[i].digest === chain[i + 1].digest) continue;
-            dns = mergeDns(chain[i], chain[i + 1], dns, chain);
+            const [from, to] = [chain[i], chain[i + 1]];
+            if (
+                i > 0 && from.records === to.records &&
+                from.catalog === to.catalog
+            ) continue;
+            dns = mergeDns(from, to, dns, chain);
         }
     }
-    return { pools, caddy, dns, cleanup: value.cleanup };
+    // What the phase finds on the Node must still be what was read: composing and applying are seconds apart.
+    const expect: Record<string, string> = {};
+    const hash = async (text: string) =>
+        Array.from(
+            new Uint8Array(
+                await crypto.subtle.digest(
+                    "SHA-256",
+                    new TextEncoder().encode(text),
+                ),
+            ),
+            (b) => b.toString(16).padStart(2, "0"),
+        ).join("");
+    if (caddy && read.caddy) {
+        expect["/etc/caddy/Caddyfile"] = await hash(read.caddy);
+    }
+    for (const pool of pools) {
+        if (read.pools[pool.version]) {
+            expect[pool.path] = await hash(read.pools[pool.version]);
+        }
+    }
+    if (dns) {
+        expect["/etc/dnsmasq.d/orbit-records.conf"] = await hash(read.records);
+        expect["/var/lib/orbit/private-dns/catalog.json"] = await hash(
+            read.catalog,
+        );
+    }
+    return { pools, caddy, dns, cleanup: value.cleanup, expect };
 }
 const Withdrawal = z.object({
     pools: z.array(z.string()),

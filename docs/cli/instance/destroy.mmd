@@ -111,6 +111,7 @@ sequenceDiagram
   %%> How:
   %%> - Swamp runs the Ansible phases from 209 over SSH; the playbook ships with the run, and nothing is copied to the Node
   %%> - a live file that matches none of the captured states stops the phase before it writes (`owned_revision_conflict`)
+  %%> - the apply refuses a file that changed since the read
   %%> Why first:
   %%> - unpublish before removing, so no request reaches a half-removed Instance
   %%> - accepted: a failed teardown leaves Instance 42 without its site until a rerun completes the removal
