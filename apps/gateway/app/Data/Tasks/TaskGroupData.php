@@ -8,6 +8,7 @@ use App\Domain\Compute\VmPower;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Task;
@@ -55,6 +56,7 @@ final class TaskGroupData extends Data
         public ?VmPower $vmPower = null,
         public bool $preview = false,
         public bool $currentRecipe = false,
+        public TaskReviewMode $review = TaskReviewMode::Manual,
         public ?TaskReviewAndMergeData $reviewAndMerge = null,
         public TaskOrchestration $orchestration = TaskOrchestration::External,
     ) {}
@@ -81,6 +83,7 @@ final class TaskGroupData extends Data
             vmPower: self::vmPower($group),
             preview: $group->preview ?? false,
             currentRecipe: $group->current_recipe ?? false,
+            review: $group->review_mode,
             reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
 
             id: $group->id,

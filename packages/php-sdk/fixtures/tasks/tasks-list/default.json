@@ -65,6 +65,7 @@
                 "vm_power": null,
                 "preview": false,
                 "current_recipe": false,
+                "review": "manual",
                 "review_and_merge": null,
                 "orchestration": "external"
             },
@@ -182,6 +183,7 @@
                 "vm_power": null,
                 "preview": false,
                 "current_recipe": false,
+                "review": "manual",
                 "review_and_merge": null,
                 "orchestration": "external"
             }

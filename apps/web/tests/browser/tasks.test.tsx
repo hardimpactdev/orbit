@@ -13,6 +13,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         orchestration: "external",
         capacity_wait_reason: null,
         current_recipe: false,
+        review: "manual",
         vm_power: null,
         preview: false,
         review_and_merge: null,

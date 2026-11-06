@@ -59,6 +59,7 @@ final readonly class CreateTaskGroupAction
 
         $group = Task::topLevel()->create([
             'orchestration' => $data->orchestration,
+            'review_mode' => $data->review,
             'created_by_node_id' => $creator?->id,
             'project_id' => $data->projectId,
             'implementer_agent_driver' => $implementerDriver,

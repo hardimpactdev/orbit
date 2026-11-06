@@ -352,7 +352,7 @@ Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-cr
 
 Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` records work for Swamp to admit. Create accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `tasks:create --orchestration`, and MCP expose this field. Update cannot change it.
 
-Create also accepts a strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) for a task that needs the current machine recipe; update cannot change it. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
+Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. Create also accepts a strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) for a task that needs the current machine recipe; update cannot change it. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. Status updates start no work.
 

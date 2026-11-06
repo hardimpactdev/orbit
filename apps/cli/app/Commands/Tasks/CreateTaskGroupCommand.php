@@ -28,6 +28,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--subtasks= : JSON file with an ordered array of objects that each hold a title, a brief, and optional deliverables}
         {--preview : Keep the sandbox running during review}
         {--current-recipe : Wait for the current machine recipe image; never start from a fallback image}
+        {--review= : manual (default; Nick approves the head) or automatic (a fresh reviewer passes the head)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -38,6 +39,10 @@ final class CreateTaskGroupCommand extends TaskCommand
         $orchestration = $this->option('orchestration');
         if ($orchestration !== null && ! in_array($orchestration, ['external'], true)) {
             return $this->renderGatewayFailure('tasks.orchestration_invalid', 'Orchestration must be external.');
+        }
+        $review = $this->option('review');
+        if ($review !== null && ! in_array($review, ['manual', 'automatic'], true)) {
+            return $this->renderGatewayFailure('tasks.review_invalid', 'Review must be manual or automatic.');
         }
         $status = $this->option('status');
 
@@ -95,6 +100,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 preview: $this->option('preview') === true ? true : null,
                 orchestration: is_string($orchestration) ? $orchestration : null,
                 currentRecipe: $this->option('current-recipe') === true ? true : null,
+                review: is_string($review) ? $review : null,
             ),
             TaskGroupResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],

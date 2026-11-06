@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskQuestions;
+use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
@@ -100,6 +101,7 @@ use LogicException;
  * @property string|null $watched_pr_completion
  * @property bool|null $preview
  * @property bool|null $current_recipe
+ * @property TaskReviewMode $review_mode
  * @property string $implementer_model
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
@@ -155,6 +157,7 @@ final class Task extends Model
         'pr_url',
         'preview',
         'current_recipe',
+        'review_mode',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -287,6 +290,7 @@ final class Task extends Model
         'merged_at',
         'preview',
         'current_recipe',
+        'review_mode',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -595,6 +599,7 @@ final class Task extends Model
             'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
             'current_recipe' => 'boolean',
+            'review_mode' => TaskReviewMode::class,
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
@@ -664,6 +669,7 @@ final class Task extends Model
                 'reviewer_agent_driver' => 'pi',
                 'preview' => false,
                 'current_recipe' => false,
+                'review_mode' => TaskReviewMode::Manual->value,
                 'assistance_requested' => false,
                 'implementer_model' => TaskAgentDefaults::ImplementerModel,
                 'reviewer_model' => TaskAgentDefaults::ReviewerModel,
