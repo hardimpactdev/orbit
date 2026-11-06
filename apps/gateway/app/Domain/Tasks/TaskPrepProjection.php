@@ -63,11 +63,8 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             $this->provision->record(self::provisionView($operation), ['status' => $receipt !== null ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
                 'error_code' => $receipt !== null ? null : ($code ?? 'tasks.provision_failed')], $receipt ?? ['failed_step' => 'provision'], static fn (): Operation => $operation);
 
-            // The draft and the fixes run on the author thread, and each review on a thread of its own.
             $intent = ValidatedData::object($operation->input);
-            $author = ValidatedData::integer(ValidatedData::object($intent['draft'])['thread_id']);
-            $reviews = array_map(static fn (mixed $turn): int => ValidatedData::integer(ValidatedData::object($turn)['thread_id']), array_values(ValidatedData::object($intent['reviews'])));
-            $threads = ['draft' => $author, 'review_1' => $reviews[0], 'fix_1' => $author, 'review_2' => $reviews[1], 'fix_2' => $author, 'review_3' => $reviews[2]];
+            $threads = self::threads($intent);
             $rounds = 0;
             foreach ($threads as $name => $thread) {
                 $result = TaskPrepResults::turn($native[$name] ?? null);
@@ -77,7 +74,9 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
                 }
             }
 
-            $result = ['error_code' => $code, 'failed_step' => $step];
+            // What the last review still asked for, so the orchestrator can read why the loop did not end.
+            $findings = $native['findings'] ?? null;
+            $result = ['error_code' => $code, 'failed_step' => $step, ...($step === 'Review has no findings' && is_string($findings) ? ['findings' => mb_strcut($findings, 0, 4000, 'UTF-8')] : [])];
             if ($status === 'succeeded') {
                 $pull = TaskPrepResults::pullRequest($native['publish'] ?? null)
                     ?? throw new ResourceOperationException('operation.invalid_result', 'The prep run reports no pull request.', 422);
@@ -91,6 +90,22 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * The thread each turn of the run takes its metrics from: the draft and the fixes run on the author thread, and each
+     * review on a thread of its own.
+     *
+     * @param  array<string,mixed>  $input
+     * @return array<string,int>
+     */
+    public static function threads(array $input): array
+    {
+        $thread = static fn (mixed $turn): int => ValidatedData::integer(ValidatedData::object($turn)['thread_id']);
+        $author = $thread($input['draft']);
+        $reviews = array_map($thread, array_values(is_array($input['reviews'] ?? null) ? $input['reviews'] : []));
+
+        return ['draft' => $author, 'review_1' => $reviews[0], 'fix_1' => $author, 'review_2' => $reviews[1], 'fix_2' => $author, 'review_3' => $reviews[2]];
     }
 
     /**

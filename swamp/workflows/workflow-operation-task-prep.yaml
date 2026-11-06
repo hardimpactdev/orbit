@@ -229,6 +229,7 @@ jobs:
         intent: '${{ steps["Pin the VM"].outputs.reviews[1] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Settle fix 1"].outputs.head }}'
+        prompt_append: '${{ "Findings of the previous review, which the author has since tried to fix. Check each one and report only what is still wrong or new:\n" + steps["Settle review 1"].outputs.findings }}'
   - name: Settle review 2
     labels: {role: swamp}
     dependsOn:
@@ -301,6 +302,7 @@ jobs:
         intent: '${{ steps["Pin the VM"].outputs.reviews[2] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Settle fix 2"].outputs.head }}'
+        prompt_append: '${{ "Findings of the previous review, which the author has since tried to fix. Check each one and report only what is still wrong or new:\n" + steps["Settle review 2"].outputs.findings }}'
   - name: Settle review 3
     labels: {role: swamp}
     dependsOn:

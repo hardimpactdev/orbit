@@ -72,16 +72,20 @@ final readonly class TaskPrepPrompts
 
         Check them against `.agents/skills/preparing-commands/SKILL.md`, `.agents/skills/flow-tighten/SKILL.md`, `docs/cli/README.md`, `docs/reference/cli-ux.md`, `docs/reference/verification-cases.mdx` and the approved sibling command, if there is one. Read the code only to learn what exists. Walk every error code, flag, repeat and refusal of the page against the cases. Check that the commit holds these three files and nothing else.
 
-        End with outcome `approved` only when you have no finding. Otherwise end with `changes_requested` and put every finding in your summary as a numbered list. Name the file, the problem and the fix for each finding.
+        The author already ran `bin/check-flows`, `composer docs-build` and `composer docs-lint`. Run them again only to check a doubt, and run no proof.
+
+        A finding is a place where the spec breaks a rule of those documents, contradicts itself or the sibling, or promises something that no case covers. A matter of taste or an optional improvement is not a finding; mention it in your summary after the findings and still approve. Report at most five findings, the most important first. A review may end with outcome `approved` and notes.
+
+        End with outcome `approved` when you have no finding. Otherwise end with `changes_requested` and put every finding in your summary as a numbered list. Name the file, the problem and the fix for each finding.
         TEXT;
     }
 
     public function fix(): string
     {
         return <<<TEXT
-        An independent review of your spec of `{$this->command}` found the problems listed below. Fix every one that the skill and the Recall decisions settle, in the same three files. If you disagree with a finding, say why in your receipt summary.
+        An independent review of your spec of `{$this->command}` found the problems listed below. Fix every one that the skill and the Recall decisions settle, in the same three files, and change nothing else. If you disagree with a finding, say why in your receipt summary.
 
-        Keep the spec as ONE commit: make the fixes, then run `git add -A && git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit --amend --no-edit`. Run the checks again as before. Do not fetch or push.
+        Keep the spec as ONE commit: make the fixes, then run `git add -A && git -c user.name=Orbit -c user.email=orbit@users.noreply.github.com commit --amend --no-edit`. Run the three checks once, after the last fix. Do not fetch or push.
         TEXT;
     }
 
