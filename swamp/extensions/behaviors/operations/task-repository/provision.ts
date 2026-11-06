@@ -270,6 +270,58 @@ function nativeOutputs(steps: Record<string, unknown>, name: string) {
         z.record(z.string(), z.unknown()).safeParse(step.outputs).data ?? {};
     return { step, outputs };
 }
+const DependencyToken = z.object({
+    state: z.enum(["revoked", "none", "unrevoked"]),
+    reason: z.string().max(200).optional(),
+});
+/**
+ * What became of the setup token, from the `Revoke` step of the remove child: curl prints the HTTP status of the
+ * revoke. 204 is a revoked token; 401 means GitHub holds no such token (none was minted, or it had expired or been
+ * revoked), so there is nothing to revoke; anything else, or no answer, leaves a token that may still be valid.
+ */
+export function revokeOutcome(steps: Record<string, unknown>) {
+    const { step, outputs } = nativeOutputs(steps, "Revoke");
+    if (step.status === undefined || step.status === "skipped") {
+        return {
+            state: "none" as const,
+            reason: "No setup token was revoked.",
+        };
+    }
+    if (step.status !== "succeeded") {
+        return {
+            state: "unrevoked" as const,
+            reason: "The revoke request did not reach GitHub.",
+        };
+    }
+    const code = String(outputs.stdout ?? "").trim();
+    if (code === "204") return { state: "revoked" as const };
+    if (code === "401") {
+        return {
+            state: "none" as const,
+            reason:
+                "GitHub holds no valid setup token: none was minted, or it had expired or been revoked.",
+        };
+    }
+    return {
+        state: "unrevoked" as const,
+        reason: `GitHub answered HTTP ${
+            /^[0-9]{3}$/.test(code) ? code : "an unknown status"
+        } to the revoke.`,
+    };
+}
+/** The token outcome for the receipt, from the remove child's `result` output. */
+export function dependencyToken(steps: Record<string, unknown>) {
+    if (!("deps_write" in steps)) {
+        return { state: "none" as const, reason: "No setup step ran." };
+    }
+    const reported = DependencyToken.safeParse(
+        nativeOutputs(steps, "deps_remove").outputs.result,
+    );
+    return reported.success ? reported.data : {
+        state: "unrevoked" as const,
+        reason: "The revoke result was not recorded.",
+    };
+}
 export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     const intent = Intent.parse(raw);
     const profile = nativeOutputs(steps, "profile").outputs;
@@ -349,6 +401,7 @@ export function result(
     return {
         ...ready,
         source: observed,
+        dependency_token: dependencyToken(steps),
         instance_id: intent.instance_id,
         node_id: intent.guest_node_id,
         starting_commit: observed.commit,
@@ -356,7 +409,7 @@ export function result(
 }
 export const behavior = {
     type: "@nckrtl/task-provision-data",
-    version: "2026.11.05.1",
+    version: "2026.11.06.1",
     resources: {
         public: {
             schema: z.record(z.string(), z.unknown()),
@@ -373,6 +426,15 @@ export const behavior = {
                 args: { intent: z.infer<typeof Intent>; root: string },
                 ctx: Context,
             ) => data(ctx, { setup: setupArgv(args.intent, args.root) }),
+        },
+        revoke: {
+            description:
+                "Name what became of the setup token after the revoke step: revoked, none to revoke, or unrevoked with the reason",
+            arguments: z.object({ steps: z.record(z.string(), z.unknown()) }),
+            execute: (
+                args: { steps: Record<string, unknown> },
+                ctx: Context,
+            ) => data(ctx, revokeOutcome(args.steps)),
         },
         setup_output: {
             description:
@@ -398,7 +460,10 @@ export const behavior = {
             description:
                 "Pin the guest targets of the named intents of a run (prep, image refresh) to the host key the VM step observed",
             arguments: z.object({
-                receipt: z.union([z.string(), z.record(z.string(), z.unknown())]),
+                receipt: z.union([
+                    z.string(),
+                    z.record(z.string(), z.unknown()),
+                ]),
                 guest_node_id: z.number().int().positive(),
                 intents: z.record(z.string(), z.unknown()),
             }),
