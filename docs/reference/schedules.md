@@ -114,7 +114,7 @@ Serve fires the trigger and starts one root run of `schedule-<uuid>`. Serve runs
 
 The command arrives on stdin from `vault.get` and runs in the user's shell, or the Schedule's fixed shell. `systemd-cat` sends output to the Node journal under `orbit-schedule-{uuid}`; it stays out of native history. A failed setup, transport or command records `schedule.run_failed`, with the native failed-step diagnostic. Admission still refuses a missing or moved target with `schedule.target_unavailable`.
 
-The Gateway's shared reader records a running `schedule.run` Operation when a root `schedule-<uuid>` run starts. Its trigger is `schedule`, and its budget is the Schedule timeout plus 120 seconds. When it ends, the Gateway reads the nested command's native history and updates the same Operation, `last_run_at` and `last_run_status`. A manual run starts `task-command-run` directly with its Operation ID. Swamp never reports the result back to the Gateway.
+A Gateway job asks Swamp once a minute which root runs finished. For each finished `schedule-<uuid>` run it reads the nested command's native history and records one `schedule.run` Operation, `last_run_at` and `last_run_status`. Its trigger is `schedule`, its start is the run's start, and its budget is the Schedule timeout plus 120 seconds. A fire becomes a task when it ends, up to about a minute later, not when it starts. Swamp's commit feed would show a start at once, but it needs a v3 datastore (decided by the orchestrator, for Nick's review: polling replaces the commit feed until a v3 datastore is planned). A manual run starts `task-command-run` directly with its Operation ID. Swamp never reports the result back to the Gateway.
 
 ## Enable
 
