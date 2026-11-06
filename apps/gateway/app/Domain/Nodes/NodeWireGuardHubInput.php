@@ -52,6 +52,18 @@ final readonly class NodeWireGuardHubInput
             'peer_keys' => ValidatedData::stringList($peers->pluck('wireguard_public_key')->values()->all())];
     }
 
+    /**
+     * What a run that removes one Node needs: the shape of a rewrite with nothing to write and only that Node's file to delete. The
+     * intent is a snapshot from admission, so a removal that listed the other Nodes would write back, or keep, the peer of a Node that
+     * a removal admitted at the same time takes away. The apply step loads the files that remain.
+     *
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
+     */
+    public static function removal(Node $hub, Node $removed): array
+    {
+        return [...self::intent($hub), 'peers' => [], 'prune_argv' => ['rm', '-f', '--', self::peerFile($removed->id)], 'peer_keys' => []];
+    }
+
     /** The hub's wg-quick file. It holds no peer and no key: it reads the key file, and wg-quick loads every peer file. */
     public static function config(Node $hub): string
     {
