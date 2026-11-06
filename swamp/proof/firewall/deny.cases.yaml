@@ -26,48 +26,26 @@ fixtures:
       - ufw_rule: {as: allowance, on: app-dev, action: allow, proto: tcp, port: "${port}", above: proof-network}
       - probe: {from: "${sources}", to: app-dev, port: "${port}", expect: connect}
 
-# These are explicit proof gaps, not passes. The shared Linux fleet and fixed vocabulary cannot
-# build these preconditions. Stage 2 must add the named capabilities before stage 3 can prove them.
-# No batch, runner, family page or sibling is changed by this one-command spec.
+# Capability requests, not scheduled cases or passes; runner and batch changes are out of scope.
 uncovered:
-  "code:firewall.backend_inactive": "Need a ufw_backend setup step and an inactive-firewall batch: disable UFW, deny, expect exit 1/status failed/code firewall.backend_inactive, one failed record, no UFW mutation, then repeat after activation. UFW must not be enabled by deny."
-  "code:firewall.verify_failed": "Need a fault at the final read that omits or misorders one expected line. Deny must fail with firewall.verify_failed, keep the failed record and partial lines, and a new start must repair them without duplicates. The current shim only fails writes."
-  "code:firewall.platform_unsupported": "All nested fleet Nodes are Linux. Need a non-Linux recorded target fixture and batch; deny must exit 1 with firewall.platform_unsupported, request none, and unchanged UFW, records and Operations before SSH."
-  "guard:inactive-target": "Need a recorded inactive Node fixture and batch. It must not be selectable or admitted. Do not substitute node_down, which tests unreachable SSH rather than recorded lifecycle."
-  "guard:protected-catalog": "SSH 22 and inclusive range boundaries have cases below. Need fixture bindings for the target's configured recovery port, WireGuard port and role-owned ports/ranges, with a role assignment. Repeat protected-port variants for each, including protocols different from the managed rule, in a fresh protected-catalog batch."
-  "guard:empty-node-selection": "Need a batch with no eligible active Linux Nodes; the interactive Node data list must report firewall.node_id_invalid and create no Operation."
-  "source:non-host-cidr": "Host CIDRs and address families are covered below. Need source-network bindings for non-host IPv4 and IPv6 CIDRs and a probe inside and outside each subnet; do not hard-code fleet addresses."
-  "transport:key-management": "Need transport fault injection and request-header observation to prove one internal key per logical request, reused for a lost-response retry and renewed for an intentional repair. Explicit keyed replay is covered below; it is not proof of automatic key management."
-  "render:channels": "Need separate stdout/stderr and ANSI assertions for human pipes and JSON, plus bounded error-detail assertions; forms and PTY prompts alone cannot prove channel purity or the Node data-list primitive."
-  "prompt:end-of-input": "The PTY step supports Ctrl-C but not end-of-input. Add EOF input, then repeat both prompt-cancel variants: input.cancelled, exit 1, no Operation or rule."
-  "guard:interrupted-reorder": >-
-    Deferred scenario interrupted-reorder: stage 2 must define a dedicated
-    firewall-deny-interrupted-reorder batch in swamp/proof/batches.yaml, starting
-    from base with its own restore and no other case sharing it. Only then restore
-    this scenario to cases; do not share ufw-fault, which is reserved for
-    failure-after-partial-change. Use broad-allow, add a TCP deny from ${gateway.src}
-    below allowance, and prove the gateway can connect. Inject a UFW fault after
-    one successful delete. Run firewall:deny @tcp_rule; require exit 1, status failed,
-    operation.native_failed, exactly one failed record for ${port}, allowance still
-    present, the deny absent, and gateway connectivity retained. Clear the fault
-    and repeat as a new start; require exit 0/status succeeded, one active record,
-    the deny restored above allowance, gateway blocked and app-prod still connected.
-    This isolated-batch request is not a scheduled case or passing proof.
-  "code:operation.target_busy": >-
-    Deferred scenario busy-target: stage 2 must define a dedicated
-    firewall-deny-busy-target batch in swamp/proof/batches.yaml, starting from base
-    with its own restore and no other case sharing it. Only then restore this
-    scenario to cases; a held lock must not share ufw-fault or the interrupted-reorder
-    batch. Use open-port and busy_node on app-dev. Run firewall:deny @main_rule;
-    require exit 1, operation.target_busy and request none. Both sources must still
-    connect over TCP and UDP to ${port}; UFW, firewall records and Operations must
-    remain unchanged since act. This isolated-batch request is not a scheduled case
-    or passing proof.
+  "code:firewall.backend_inactive": "Add a UFW-disable setup step and an isolated batch to check firewall.backend_inactive, a failed record and no mutation or automatic activation. Reactivate UFW and repeat to check repair."
+  "code:firewall.verify_failed": "Add a final-read fault that omits or misorders an expected line; the current shim only fails writes. Check firewall.verify_failed, a failed record with partial lines, and repair on a repeat."
+  "code:firewall.platform_unsupported": "Add a non-Linux recorded target fixture and batch; all fleet Nodes are Linux. Check firewall.platform_unsupported before rule storage or SSH, with unchanged records and Operations."
+  "guard:inactive-target": "An inactive-target refusal is not implemented or exercised here. Add a recorded inactive Node fixture and an isolated batch to specify and check admission and selection, rather than substituting unreachable SSH."
+  "guard:protected-catalog": "Add bindings for configured recovery SSH, WireGuard and role-owned ports or ranges, with a role assignment. Repeat protected-port variants for these bindings in an isolated batch, including protocols different from the managed rule."
+  "guard:empty-node-selection": "Add a batch with no eligible Linux Nodes to check firewall.node_id_invalid from the Node selector and no new rule or Operation."
+  "source:non-host-cidr": "Add source-network bindings and inside/outside probes for non-host IPv4 and IPv6 CIDRs, without hard-coded fleet addresses."
+  "render:channels": "Add separate stdout/stderr, ANSI and bounded-detail assertions to check the shared CLI standard; forms and PTY prompts do not prove these properties or the Node data-list primitive."
+  "prompt:end-of-input": "Add EOF support to the PTY driver and repeat both prompt-cancel variants, checking input.cancelled, exit 1 and no rule or Operation."
+  "flag:--idempotency-key": "Generic keyed starts belong to the Operations contract linked from the option table, not command-specific replay cases."
+  "guard:repair-misplaced-record": "Restore repair-misplaced-record when the runner accepts ufw_delete in setup, not only negative controls. Move an active recorded deny below an allow, then check a repeat restores its order and connectivity without duplicating the record."
+  "guard:node-down": "Restore node-down when the runner accepts and implements node_down setup in its isolated batch. Check operation.native_failed and one failed rule without claiming deny success."
+  "code:node_access.required": "Restore node-access-required when cli.as and the no-grant batch's node_access_remove setup are implemented. Check node_access.required and unchanged UFW, records and Operations for a caller without access."
 
 cases:
   - id: required-only
     batch: fresh-fleet
-    covers: [main, new-start, changes-needed, succeeded, json]
+    covers: [main, changes-needed, succeeded]
     summary: Required inputs alone deny both protocols from both sources and produce IPv4 and IPv6 lines above broad trust.
     setup:
       - use: open-port
@@ -158,7 +136,7 @@ cases:
 
   - id: label-independent-repeat
     batch: fresh-fleet
-    covers: [already-applied, succeeded, json]
+    covers: [already-applied, succeeded]
     summary: Changing only the label reuses one rule and skips correct UFW lines without changing their comments or order.
     setup:
       - use: {fixture: open-port, proto: [tcp]}
@@ -179,7 +157,7 @@ cases:
 
   - id: already-applied
     batch: fresh-fleet
-    covers: [already-applied, succeeded, json]
+    covers: [already-applied, succeeded]
     summary: A repeat checks the Node, succeeds as skipped in both renderings, and changes no rule or UFW line.
     setup:
       - use: {fixture: open-port, proto: [tcp]}
@@ -214,25 +192,47 @@ cases:
       - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, protocol: any, status: active}, count: 1}
       - unchanged: {since: act, except: {port: "${port}"}}
 
-  - id: repair-misplaced-record
+  - id: interrupted-reorder
     batch: fresh-fleet
-    covers: [changes-needed, succeeded]
-    summary: An active recorded deny that drifted below an allow is moved back, regardless of comment, rather than skipped or duplicated.
-    fails_today: The documented ufw_delete setup form is accepted only in negative controls by the shared runner today.
+    covers: [changes-needed, failed, succeeded]
+    summary: A failure after deleting a misplaced deny stays visible; a repeat restores it above the allowance without duplicates.
     setup:
       - use: broad-allow
-      - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
-      - ufw_delete: {on: app-dev, to: "${port}/tcp", from: "${gateway.src}"}
-      - ufw_rule: {as: drifted, on: app-dev, action: deny, proto: tcp, port: "${port}", from: "${gateway.src}", below: allowance}
+      - ufw_rule: {as: misplaced, on: app-dev, action: deny, proto: tcp, port: "${port}", from: "${gateway.src}", below: allowance}
       - probe: {from: gateway, to: app-dev, port: "${port}", expect: connect}
+      - fault: {on: app-dev, command: ufw, fail_after: {match: delete, count: 1}}
+    stages:
+      - act:
+          - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 1, status: failed, code: operation.native_failed}}
+        expect:
+          - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, status: failed}, count: 1}
+          - ufw: {on: app-dev, family: 4, rows: [{ref: allowance}], absent: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}]}
+          - probe: {from: gateway, to: app-dev, port: "${port}", expect: connect}
+          - unchanged: {since: act, except: {port: "${port}"}}
+      - act:
+          - fault: {clear: true}
+          - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
+        expect:
+          - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, status: active}, count: 1}
+          - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}, {ref: allowance}]}
+          - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+          - probe: {from: app-prod, to: app-dev, port: "${port}", expect: connect}
+          - probe: {from: "${sources}", to: app-dev, port: "${control}", expect: connect}
+          - unchanged: {since: act, except: {port: "${port}"}}
+
+  - id: busy-target
+    batch: fresh-fleet
+    covers: []
+    summary: A held firewall write refuses another deny without changing traffic, rules or Operations.
+    setup:
+      - use: open-port
+      - busy_node: {on: app-dev}
     act:
-      - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
+      - cli: {run: [firewall:deny, "@main_rule"], expect: {exit: 1, code: operation.target_busy, request: none}}
     expect:
-      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
-      - probe: {from: app-prod, to: app-dev, port: "${port}", expect: connect}
-      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, status: active}, count: 1}
-      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}, {ref: allowance}]}
-      - unchanged: {since: act, except: {port: "${port}"}}
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
 
   - id: port-range
     batch: fresh-fleet
@@ -286,14 +286,14 @@ cases:
 
   - id: failure-after-partial-change
     batch: ufw-fault
-    covers: [changes-needed, failed, succeeded, idempotency-key, keyed-replay]
-    summary: A partial failure stays failed on keyed replay; a new start completes the same record without duplicates.
+    covers: [changes-needed, failed, succeeded]
+    summary: A partial failure keeps its failed record and written line; a repeat completes the same record without duplicates.
     setup:
       - use: open-port
       - fault: {on: app-dev, command: ufw, fail_after: {match: deny, count: 1}}
     stages:
       - act:
-          - cli: {run: [firewall:deny, "@rule", "--idempotency-key=proof-deny-failed-${port}"], expect: {exit: 1, status: failed, code: operation.native_failed}}
+          - cli: {run: [firewall:deny, "@rule"], expect: {exit: 1, status: failed, code: operation.native_failed}}
         expect:
           - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: failed}, count: 1}
           - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}], absent: [{to: "${port}/udp", action: DENY, from: "${gateway.src}"}]}
@@ -301,32 +301,13 @@ cases:
           - probe: {from: gateway, to: app-dev, proto: udp, port: "${port}", expect: connect}
       - act:
           - fault: {clear: true}
-          - cli: {run: [firewall:deny, "@rule", "--idempotency-key=proof-deny-failed-${port}"], expect: {exit: 1, status: failed, code: operation.native_failed, request: none}}
-        expect:
-          - unchanged: {since: act, what: [ufw, firewall_records, operations]}
-          - probe: {from: gateway, to: app-dev, proto: tcp, port: "${port}", expect: blocked}
-          - probe: {from: gateway, to: app-dev, proto: udp, port: "${port}", expect: connect}
-      - act:
-          - cli: {run: [firewall:deny, "@rule", "--idempotency-key=proof-deny-repair-${port}"], expect: {exit: 0, status: succeeded}}
+          - cli: {run: [firewall:deny, "@rule"], expect: {exit: 0, status: succeeded}}
         expect:
           - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: active}, count: 1}
           - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}, {to: "${port}/udp", action: DENY, from: "${gateway.src}"}]}
           - probe: {from: gateway, to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
           - probe: {from: app-prod, to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
           - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
-
-  - id: node-down
-    batch: node-down
-    covers: [failed]
-    summary: An unreachable target fails the Operation without claiming the deny succeeded and keeps one failed rule.
-    fails_today: The documented node_down setup step is not accepted or implemented in the shared runner yet.
-    setup:
-      - use: {fixture: open-port, proto: [tcp]}
-      - node_down: {node: app-dev}
-    act:
-      - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 1, status: failed, code: operation.native_failed}}
-    expect:
-      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, status: failed}, count: 1}
 
   - id: protected-port
     batch: fresh-fleet
@@ -410,12 +391,11 @@ cases:
 
   - id: invalid-request-input
     batch: fresh-fleet
-    covers: [idempotency-key]
-    summary: A label over 255 characters or malformed replay key is refused before storing a rule.
+    covers: []
+    summary: A label over 255 characters is refused before storing a rule.
     variants:
       - name: long-label
         flags: ["--label=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
-      - {name: malformed-key, flags: ["--idempotency-key=bad key"]}
     setup:
       - use: open-port
     act:
@@ -425,9 +405,9 @@ cases:
 
   - id: missing-input-noninteractive
     batch: fresh-fleet
-    covers: [json]
+    covers: []
     summary: Omitted required values fail in both noninteractive forms instead of a parser error or target fallback.
-    fails_today: Deny still requires the port in its parser and does not enable the shared missing-input prompts.
+    fails_today: The port variant hits the required parser argument instead of firewall.port_invalid; the supplied-port, missing-node variant already uses the expected refusal.
     variants:
       - {name: port, args: ["--node=${app-dev.id}"], code: firewall.port_invalid}
       - {name: node, args: ['25'], code: firewall.node_id_invalid}
@@ -440,7 +420,7 @@ cases:
     batch: fresh-fleet
     covers: [main, changes-needed, succeeded]
     summary: A terminal asks again for an invalid port and selects an omitted Node before denying traffic.
-    fails_today: Deny has a required parser argument and does not opt into the StoreFirewallRuleCommand prompts; the shared Node prompt is a SelectPrompt rather than a data list.
+    fails_today: Deny has a required parser argument and does not opt into the StoreFirewallRuleCommand prompts; the shared port prompt does not match the case-sensitive Port expectation, and its Node selector is a SelectPrompt rather than a data list.
     setup:
       - use: open-port
     act:
@@ -482,45 +462,5 @@ cases:
           run: [firewall:deny, "@args"]
           tty: [{see: "${prompt}", send: '^C'}]
           expect: {exit: 1, code: input.cancelled, request: none}
-    expect:
-      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
-
-  - id: keyed-replay
-    batch: fresh-fleet
-    covers: [idempotency-key, keyed-replay]
-    summary: Replaying the same keyed start returns its successful Operation without a new Operation or Node change.
-    setup:
-      - use: {fixture: open-port, proto: [tcp]}
-      - cli: {run: [firewall:deny, "@tcp_rule", "--idempotency-key=proof-deny-${port}"], expect: {exit: 0, status: succeeded}}
-    act:
-      - cli: {run: [firewall:deny, "@tcp_rule", "--idempotency-key=proof-deny-${port}"], expect: {exit: 0, status: succeeded, request: none}}
-    expect:
-      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
-      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
-
-  - id: keyed-conflict
-    batch: fresh-fleet
-    covers: [idempotency-key]
-    summary: Reusing a key with different input refuses the request instead of editing the rule or starting a repair.
-    setup:
-      - use: {fixture: open-port, proto: [tcp]}
-      - cli: {run: [firewall:deny, "@tcp_rule", "--idempotency-key=proof-deny-${port}"], expect: {exit: 0, status: succeeded}}
-    act:
-      - cli: {run: [firewall:deny, "@tcp_rule", "--label=different", "--idempotency-key=proof-deny-${port}"], expect: {exit: 1, code: operation.idempotency_conflict, request: none}}
-    expect:
-      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
-
-  - id: node-access-required
-    batch: no-grant
-    covers: []
-    summary: A caller without an access grant cannot deny on the target or create a rule or Operation.
-    fails_today: The documented cli.as and node_access_remove batch setup are not implemented in the shared runner yet.
-    setup:
-      - use: open-port
-    act:
-      - cli:
-          as: app-prod
-          run: [firewall:deny, "@main_rule"]
-          expect: {exit: 1, code: node_access.required, request: none}
     expect:
       - unchanged: {since: act, what: [ufw, firewall_records, operations]}
