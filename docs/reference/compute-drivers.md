@@ -1252,7 +1252,7 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 
 The chart lists what the run still lacks:
 
-- The first refresh of a host whose seed holds no ready copies. The run calls `task_vm.fleet_build` as a child once that kind exists. Until then the run skips the save of ready copies and its result says `ready_copies: false`.
+- The first refresh of a host whose seed holds no ready copies. The run calls `task_vm.fleet_build` as a child once that kind exists. Until then the run skips the save, and the result says `ready_copies: false`.
 - The NFS mount of the checkout over the nested Nodes with its apply step, and the converge of the nested Nodes through the nested Orbit. Stage 2 builds them.
 - The re-mint of the nested Swamp tokens. It is the product command that the fleet build uses.
 - The replacement of old ready slots. Ready slots do not exist yet.
