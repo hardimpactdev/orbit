@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-pr-comment,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/{public_output,gateway_stage}.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks}.php"
 ---
 
 # Tasks
