@@ -14,7 +14,8 @@ use App\Models\Project;
  * Whether the topology seed of a task VM host holds usable ready copies of the nested fleet. The Gateway keeps no report of the
  * seed and asks no host: it infers the fact from its own records. The seed follows the image a VM boots from, and it holds the
  * copies when the latest refresh run of the host promoted that image and saved copies of the current format. A run with
- * `seed=keep` saves none, so it never counts. A provision lists the copies by format alone, so their age does not matter here.
+ * `seed=keep` saves none, so it never counts. A provision lists the copies by format alone, so their age does not matter here. It also
+ * answers which Project gets the fleet at all ({@see forProject()}).
  */
 final readonly class TaskVmFleetSeed
 {

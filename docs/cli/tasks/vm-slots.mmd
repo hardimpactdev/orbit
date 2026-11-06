@@ -15,7 +15,7 @@ sequenceDiagram
   Note over GW,VM: Enrol (pool size per host)
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - a host keeps slots only when its task VM settings name them: `task_vms.slots` = `{count, project_id, size}`, for example `{"count": 5, "project_id": 46, "size": "large"}`; without it, the host has no pool and every provision clones, as today
-  %%> - a slot serves one Project and one size: the enrol converge exports that Project's checkout path to the nested network, and the claim needs that size
+  %%> - a slot serves one Project and one size: the enrol converge makes that Project's checkout folder, binds it at `/srv/checkout` and exports that path to the nested network, and the claim needs that size
   %%> - the checkout path is fixed per Project on a task VM (`<apps root>/<project slug>/workspace`, as `tasks:provision` computes it today), so the enrol export and the claim's workspace name the same folder
   %%> - a slot is a task VM row with no group and with `slot_project_id` set
   %%> - a stopped slot that no group holds takes no capacity (`max_vms`), because it holds disk, not memory; an enrolling slot runs, so it takes capacity
@@ -27,11 +27,11 @@ sequenceDiagram
   GW->>SW: Enrol a slot<br/>today's tasks:provision, no task
   %%> Exactly today's path: clone the current task image, boot, enrol (keys, WireGuard, observer), model key, Pi. Runs in the background whenever the pool is below its size.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - kind `task_vm.slot_enrol`, workflow `operation-task-vm-slot-enrol`: the VM child of tasks:provision, which also attaches a clone of the host's topology seed, then "Converge once" (task VM role phases: nested Incus with the seed pool, the NFS export of the checkout path)
+  %%> - kind `task_vm.slot_enrol`, workflow `operation-task-vm-slot-enrol`: the VM child of tasks:provision, which also attaches a clone of the host's topology seed, then "Converge once" (task VM role phases: nested Incus with the seed pool, the checkout folder, its bind at `/srv/checkout` and the NFS export)
   %%> - no workspace, nested fleet, Route or Processes: the claim makes them for the task
   %%> - the slot gets its own Pi token and model key at enrol, as a task VM does today
   %%> - the Gateway records on the slot the digest of what a task image carries in the current release (playbooks, pins, lock files), which the converge applied
-  %%> Time, measured on beast 2026-11-06 (op 11948, large slot): 240 s: VM child 136 s, checkout folder 1 s, converge 96 s, stop and check 5 s
+  %%> Time, measured on beast 2026-11-06 (op 11948, large slot): 240 s: VM child 136 s, checkout folder 1 s (a dispatched step then; now a task of the converge), converge 96 s, stop and check 5 s
   SW->>H: Stop the VM<br/>incus stop
   %%> A stopped VM costs disk, not memory. The Gateway records it as a ready slot.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
