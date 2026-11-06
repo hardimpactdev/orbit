@@ -42,8 +42,8 @@ sequenceDiagram
   SW->>VM: Check out the commit<br/>git fetch · task token
   %%> What it does:
   %%> - checks out the commit or branch the task works on, with a read token from the vault
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06), GAPS 9p:
-  %%> - nothing here or later brings the task branch up to date with main. `tasks:sync` fetches refs only and the author merges. The proof (stage 3) refuses a head that lacks a platform change, with `proof.head_behind_platform`, before it restores or runs any case
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - no step brings the task branch up to date with main. `tasks:sync` fetches refs only and the author merges, as stage 4 asks for a conflict. The proof (stage 3) refuses a head that lacks a platform change, with `proof.head_behind_platform`, before it restores or runs any case
   SW->>VM: Start the nested fleet<br/>from the ready copies
   %%> What it does:
   %%> - creates the nested network from the subnet stored with the ready copies

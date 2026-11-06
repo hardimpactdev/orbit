@@ -27,19 +27,25 @@ sequenceDiagram
   GW->>SW: Start the proof<br/>cases file · this VM
   SW->>VM: Check the head<br/>behind a platform change?
   %%> What it does:
-  %%> - the first step of the run, before any restore or case, in the task VM's workspace: `git merge-base HEAD origin/main`, then `git diff --name-only` from that merge base to `origin/main`, matched against the platform list `swamp/proof/platform.txt`, read from `origin/main` (the same glob syntax as `selection.txt`)
-  %%> - the Gateway puts the commit of the default branch, read from GitHub, in the intent. A workspace whose `origin/main` is another commit is refused with `proof.sync_needed`: run `tasks:sync` (it fetches refs only), then prove again
+  %%> - the first step of the run, before any restore or case, in the task VM's workspace: `git merge-base HEAD origin/main`, then `git diff --name-only` from that merge base to `origin/main`, limited to the platform list `swamp/proof/platform.txt` (the glob syntax of `selection.txt`), read from `origin/main` and passed to git as pathspecs, so no matcher of ours runs
+  %%> - `origin/main` is the clone of main that a proof VM already holds (CI, see "Name the new cases" below) or the ref that `tasks:sync` fetched (the author's own VM). The check does not read the live main: main moves every few minutes, and a change that landed after the last sync is not seen
   %%> - a head that lacks a platform change is refused with `proof.head_behind_platform`. The error names the merge base, the commit of main and the first platform paths that main changed, and tells the author to merge `origin/main` and prove again
-  %%> - a head that has every platform change goes on to the restore; nothing in the workspace changes
+  %%> - a workspace with no `origin/main`, or none that shares a merge base with the head, is refused with `proof.sync_needed`: run `tasks:sync`. An `origin/main` without a platform list passes
+  %%> - a head that has every platform change goes on; the workspace is not changed
   %%> Why:
   %%> - the proof applies the head's own code to a fleet that was built from main. A head that branched before a platform change runs the old platform on the new fleet and fails for reasons that are not its own. Measured: the proof of a head that branched before #3054 (nested fleet in Incus containers) failed because the nested `orbit-swamp-worker@a` was not active after the restart, found only after the provision and the restore
-  %%> - this check takes seconds and stops the run before the restore; no case is `unrun` and no proof VM is spent on it
-  %%> Built or not:
-  %%> - not built (GAPS 9p). Build it after the M5 proof has passed
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06), GAPS 9p:
-  %%> - refuse a head that is behind a platform change; do not bring the task branch up to date before the proof. A merge step moves the head, which voids the owner's approval and starts CI again; it needs a judgment when files conflict; and it covers only heads that a task flow owns, while the proof CI also proves heads that people push. `tasks:sync` stays refs only, as its chart says: the author merges. A refusal costs one author turn and names what to merge
-  %%> - not every merge of main is refused: main moves every few minutes, and only a change of the platform list makes a head too old
-  %%> - the platform list is a file in the repository, not a rule in code, so a review sees what counts. Start with the paths that build or run the nested fleet and the task images: `swamp/ansible/**`, `swamp/workflows/workflow-task-*` and `workflow-proof-*`, `apps/gateway/app/Domain/TaskVms/**`, `apps/gateway/app/Actions/TaskVms/**`, `apps/gateway/app/Domain/Nodes/SwampRoleUnits.php`, `apps/gateway/app/Infrastructure/WebSocket/**`, `apps/gateway/resources/machine-software/**` and the lock files. The list of the task image inputs (playbooks, pins, lock files) is not enough: #3054 changed Gateway code, not those files
+  %%> - this check takes seconds and stops the run before the restore; no case is `unrun`
+  %%> Not built.
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - refuse a head that is behind a platform change; do not bring the task branch up to date before the proof. A merge needs a judgment when files conflict, and a merge of main before every proof would be churn, because main moves every few minutes and only a platform change makes a head too old. The author's merge happens once, when the check asks, and the author sees what conflicts. `tasks:sync` stays refs only, as its chart says. A merge step in the task flow would also cover only the heads a task flow owns, while the proof CI proves heads that people push
+  %%> - the platform list is a file in the repository, not a rule in code, so a review sees what counts. It starts from the inputs of the task image (`swamp/ansible/**`, `apps/gateway/resources/machine-software/**`), which the seed refresh already treats as a platform change (#3054 changed nine playbooks there), and adds the code that builds or runs the nested fleet, which the image digest ignores: the `TaskVms` code and `Nodes/SwampRoleUnits.php` of the Gateway, its WebSocket unit renderer, the Swamp workflows of the task VM, the provision and the proof, and `swamp/manifest.yaml`. Lock files stay out: the head installs its own dependencies in the checkout. The exact list is agreed when the check is built
+  alt the head has every platform change
+    Note over SW: Go on<br/>restore the base snapshot
+  else the head is behind a platform change
+    SW--xGW: Refuse the proof<br/>proof.head_behind_platform
+    %%> Result:
+    %%> - no restore, no case and no verdict; the task VM stays as it is and the author merges `origin/main`
+  end
   SW->>NT: Restore the base snapshot<br/>a reboot · 5–16 s
   %%> What it does:
   %%> - restores the task's Incus snapshot `base` (stage 2) of the three containers in parallel, then starts them
