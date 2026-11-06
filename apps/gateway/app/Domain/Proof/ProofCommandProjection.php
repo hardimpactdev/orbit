@@ -36,7 +36,11 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
         $provision = $this->provision->input(self::provisionView($operation));
         $cancel = ValidatedData::object($input['cancel']);
 
+        // A proof needs the nested fleet, so its provision always has the converge intent that the workflow takes as an input of its own.
+        $converge = $provision['converge'] ?? throw new ResourceOperationException('tasks.provision_refused', 'A proof requires a task VM with a nested topology.', 422);
+
         return [
+            'converge' => $converge,
             'intent' => ['provision' => $provision['intent'], 'verify' => $input['verify'],
                 'cancel' => ['node_id' => ValidatedData::integer($cancel['node_id']), ...TaskVmProviderWorkflowInput::envelope($cancel)]],
             'execution_secrets' => $provision['execution_secrets'],
