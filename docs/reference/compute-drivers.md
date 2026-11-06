@@ -1277,7 +1277,9 @@ The chart lists what the run still lacks:
 
 The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. A step for each nested VM runs once per role with `forEach`, and Swamp names its steps `<name>-<role>`. Each step has its own behavior name, per task VM, so steps that run together do not wait for each other's model lock. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub file. It deletes the proof Swamp Club key and searches every file of the three guests for it. It trims the disks and stops the guests.
 
-Before the stop, the step `Order the state mounts` sets `_netdev` on the bind-mount units of the state in the Gateway and app-dev guests. As local mounts they close an ordering cycle with the NFS mount of the checkout and systemd drops them at boot; as network mounts they come up in order. The end check fails a stored copy whose unit lacks `_netdev`.
+Before the stop, the step `Order the state mounts` sets `_netdev` on the NFS mount of the checkout and on the bind-mount units of the state in the Gateway and app-dev guests.
+
+The step edits the unit files in `/etc/systemd/system` and leaves the links in `multi-user.target.wants` alone: an edit through a link would replace it with a regular file, and the unit would count as disabled. Without `_netdev` on the NFS mount itself, the guest hangs at shutdown on the unmount, and it fails to mount the checkout at boot. As local mounts they close an ordering cycle with the NFS mount of the checkout and systemd drops them at boot; as network mounts they come up in order. The end check fails a stored copy whose NFS mount or state unit lacks `_netdev`.
 
 It then deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy and stores the subnet of the network, the MAC and the address on it. A throwaway copy of each ready copy then boots and is checked. It holds no Club key and no file of a checkout.
 
