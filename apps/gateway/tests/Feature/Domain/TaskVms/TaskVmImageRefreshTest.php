@@ -2,15 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -40,8 +45,8 @@ afterEach(function (): void {
     Process::run(['rm', '-rf', $this->base]);
 });
 
-/** A configured task VM host with a promoted image. */
-function imageRefreshHost(): Node
+/** A configured task VM host with a promoted image; 6 slots hold a refresh VM and one more large task VM. */
+function imageRefreshHost(int $maxVms = 6): Node
 {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $host = Node::withoutEvents(fn (): Node => Node::query()->create([
@@ -49,7 +54,7 @@ function imageRefreshHost(): Node
         'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
     ]));
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
-        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB')],
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', $maxVms, 4, '8GiB', '40GiB')],
         'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
         'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
@@ -143,4 +148,36 @@ it('refuses a seed that is neither build nor keep, before it creates a group', f
 it('names the seed of an image from its fingerprint, so the refreshed image has a seed of its own', function (): void {
     expect(TaskVmVolumes::seed(ImageRefreshImage))->toBe('orbit-topology-seed-c1c2cf4051fb')
         ->and(TaskVmVolumes::SeedPrefix.substr(ImageRefreshImage, 0, 12))->toBe(TaskVmVolumes::seed(ImageRefreshImage));
+});
+
+it('refuses a refresh while its host has no room for one more large task VM, before it creates a group', function (): void {
+    // Proofs and tasks come first: with one slot taken, 6 slots hold the refresh VM (3) but not a large task VM after it.
+    $host = imageRefreshHost();
+    TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Normal,
+        'name' => 'tvm-busy-0', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.249']);
+
+    expect(imageRefreshRefusal(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test', null)))->toBe('tasks.capacity_unavailable');
+    expect(Task::topLevel()->count())->toBe(0);
+});
+
+it('keeps the reserved slots of a host free under the placement lock', function (): void {
+    $host = imageRefreshHost(maxVms: 5);
+    $recipe = $this->base.'/orbit/apps/gateway/resources/machine-software';
+    mkdir($recipe, 0700, true);
+    copy(base_path('resources/machine-software/recipe.json'), $recipe.'/recipe.json');
+    $project = Project::query()->forceCreate(['id' => 62, 'name' => 'swamp-proof', 'slug' => 'swamp-proof', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Refresh', 'brief' => 'Brief', 'status' => TaskGroupStatus::Reserved]);
+    $allocate = app(AllocateTaskVmAction::class);
+
+    // A large VM fits the 5 free slots, but not with 3 more kept free.
+    expect(fn () => $allocate->capture($group, $host->id, TaskVmSize::Large, 3))->toThrow(TaskCapacityException::class);
+    expect(TaskVm::query()->count())->toBe(0);
+    expect($allocate->capture($group, $host->id, TaskVmSize::Large)->size)->toBe(TaskVmSize::Large);
+});
+
+it('refuses a host that can never hold the refresh VM and one more large task VM, instead of letting it wait', function (): void {
+    $host = imageRefreshHost(maxVms: 5);
+
+    expect(imageRefreshRefusal(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test', null)))->toBe('task_vm.host_unavailable');
+    expect(Task::topLevel()->count())->toBe(0);
 });

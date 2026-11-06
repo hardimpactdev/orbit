@@ -15,6 +15,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
+use App\Domain\Tasks\TaskWait;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
@@ -45,9 +46,17 @@ final readonly class TaskVmImageRefreshIntent
     /** The image part alone: no fleet is built and no ready copies are saved, and the seed that the refresh VM cloned is copied as it is. */
     public const string SeedKeep = 'keep';
 
+    /**
+     * The room a refresh leaves on its host for one more large task VM: proofs and tasks come before a refresh for capacity.
+     */
+    public static function reservedSlots(): int
+    {
+        return TaskVmSize::Large->slots();
+    }
+
     public function __construct(private TaskProvisionIntent $provision, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
         private SwampSshExecutionInput $ssh, private ProofSettings $proof, private RecipeImageBuilds $recipes,
-        private TaskVmReadyCopiesIntent $copies, private TaskVmFleetBuildIntent $fleet) {}
+        private TaskVmReadyCopiesIntent $copies, private TaskVmFleetBuildIntent $fleet, private TaskVmCapacity $capacity) {}
 
     /**
      * The refresh that is open on `$host`, if any: a second admission returns it.
@@ -97,16 +106,32 @@ final readonly class TaskVmImageRefreshIntent
         $location = $this->assertCanRefresh($host);
         $image = $this->images->forHost($host, $location);
         $commit = $this->releaseCommit();
+        // A host that can never hold the refresh VM and one more large task VM can never refresh.
+        if ($location->maxVms < TaskVmSize::Large->slots() + self::reservedSlots()) {
+            throw new ResourceOperationException('task_vm.host_unavailable', 'A refresh needs a host with room for two large task VMs.', 409);
+        }
+        // Checked before the group exists, so a refused refresh creates nothing; the placement checks it again under its lock.
+        if (! $this->hasRoom($host)) {
+            throw new ResourceOperationException('tasks.capacity_unavailable', 'A refresh needs room on its host for the refresh VM and one more large task VM; try again when a task VM ends.', 409, details: ['reason' => TaskWait::Capacity->value]);
+        }
         $group = app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->proof->projectId(), 'Refresh the task image of '.$host->name,
             'Bring the task image and the topology seed of '.$host->name.' up to commit '.$commit.'.', TaskGroupStatus::Todo, [new TaskInputData('Refresh the image',
                 'The Swamp run task_vm.image_refresh refreshes the image and the seed of the host.', [['id' => 'refreshed', 'type' => 'review', 'description' => 'The host promotes a new image and seed.']])]));
         try {
-            return $this->provision->admit($group, $commit, self::Kind, fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->input($input, $group, $instance, $vm, $host, $location, $image, $commit, $seed), $caller, $request, $host->id, TaskVmSize::Large);
+            return $this->provision->admit($group, $commit, self::Kind, fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->input($input, $group, $instance, $vm, $host, $location, $image, $commit, $seed), $caller, $request, $host->id, TaskVmSize::Large, self::reservedSlots());
         } catch (\Throwable $exception) {
             app(CancelTaskGroupAction::class)->execute($group);
 
             throw $exception;
         }
+    }
+
+    /** Whether `$host` has room for the refresh VM and one more large task VM. */
+    private function hasRoom(Node $host): bool
+    {
+        $hosts = array_values(array_filter($this->capacity->activeHosts(), static fn (array $entry): bool => $entry[0]->nodeId === $host->id));
+
+        return ($this->capacity->freeSlots($hosts)[$host->id] ?? 0) >= TaskVmSize::Large->slots() + self::reservedSlots();
     }
 
     /**

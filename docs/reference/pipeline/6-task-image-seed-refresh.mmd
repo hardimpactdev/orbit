@@ -40,7 +40,9 @@ sequenceDiagram
     %%> - the refresh VM keeps the root disk of the host's base VM (20 GiB), not the larger disk of a topology VM, because a published image is as large as its VM's root disk and no VM can be smaller than its image; the first smoke of a 40 GiB image failed on it
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the refresh VM is always a large task VM (12 GiB, 6 CPUs, 3 slots), because it holds the nested fleet (10 GiB of VMs) and builds it when the seed has no ready copies; the Gateway sets the size at the admission of the refresh, so no Project size list decides it (a group cannot declare a topology, so the size is passed to the placement, not declared); a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer in two runs on beast
-    %%> - a refresh therefore needs 3 free slots of its host and is refused with `tasks.capacity_unavailable` otherwise; the operator tries again
+    %%> - a refresh therefore takes 3 slots of its host
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - proofs and tasks come first: a refresh is admitted only while its host keeps 3 more slots for one large task VM (6 free slots), checked before the group exists and again under the placement lock; it is refused with `tasks.capacity_unavailable` otherwise and the operator tries again; a host with fewer than 6 slots is refused with `task_vm.host_unavailable`
     SW->>VM: Start and mount<br/>the release commit
     %%> What it does:
     %%> - checks out the release commit in the refresh VM, with `composer install` and `bun install` where a lock file changed

@@ -1221,7 +1221,9 @@ Each task VM host refreshes its own image and seed. Nothing is copied between ho
 
 The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. It keeps the root disk of the host's base VM: a published image is as large as its VM's root disk, and no VM can be smaller than its image.
 
-The Gateway captures the whole intent in the admission transaction of provision, so no step of the run calls the Gateway. A second admission for a host returns the open Operation. The Gateway refuses a host that is not an active, configured task VM host. It also refuses a host with an image build running or no promoted image, and a Gateway whose release has no commit.
+The Gateway captures the whole intent in the admission transaction of provision, so no step of the run calls the Gateway. A second admission for a host returns the open Operation.
+
+The Gateway refuses a host that is not an active, configured task VM host. It also refuses a host with an image build running or no promoted image, and a Gateway whose release has no commit. Proofs and tasks come first: a host without room for one more large task VM after the refresh VM (6 free slots) is refused with `tasks.capacity_unavailable` before a group is made, and a host with fewer than 6 slots with `task_vm.host_unavailable`.
 
 The workflow `operation-task-vm-image-refresh` runs from Node 209.
 

@@ -49,15 +49,16 @@ final readonly class AllocateTaskVmAction
 
     /**
      * State-only placement for an owning Task admission transaction. Starts no Operation or job. An admission that needs a size sets it
-     * in `$size`, as the refresh of a task image does for a large VM; otherwise the group's topology and Project decide it.
+     * in `$size`, as the refresh of a task image does for a large VM; otherwise the group's topology and Project decide it. `$reserve` keeps that
+     * many slots of the host free after the placement, so a refresh never takes the last room a proof or task needs.
      */
-    public function capture(Task $group, ?int $hostNodeId = null, ?TaskVmSize $size = null): TaskVm
+    public function capture(Task $group, ?int $hostNodeId = null, ?TaskVmSize $size = null, int $reserve = 0): TaskVm
     {
-        return $this->allocate($group, null, $hostNodeId, $size);
+        return $this->allocate($group, null, $hostNodeId, $size, $reserve);
     }
 
     /** @param null|Closure(TaskVm):mixed $admit */
-    private function allocate(Task $group, ?Closure $admit = null, ?int $hostNodeId = null, ?TaskVmSize $size = null): TaskVm
+    private function allocate(Task $group, ?Closure $admit = null, ?int $hostNodeId = null, ?TaskVmSize $size = null, int $reserve = 0): TaskVm
     {
         $existing = TaskVm::forGroup($group);
         if ($existing instanceof TaskVm) {
@@ -66,7 +67,7 @@ final readonly class AllocateTaskVmAction
         }
         $size ??= TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
         try {
-            $vm = $this->place($group, $size, $admit, $hostNodeId);
+            $vm = $this->place($group, $size, $admit, $hostNodeId, $reserve);
         } catch (Throwable $exception) {
             if (! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception)) {
                 throw $exception;
@@ -83,7 +84,7 @@ final readonly class AllocateTaskVmAction
      *
      * @param  null|Closure(TaskVm):mixed  $admit
      */
-    private function place(Task $group, TaskVmSize $size, ?Closure $admit, ?int $hostNodeId): TaskVm
+    private function place(Task $group, TaskVmSize $size, ?Closure $admit, ?int $hostNodeId, int $reserve = 0): TaskVm
     {
         $resolvedIdentity = $this->images->currentRecipe()->identity;
         $template = null;
@@ -96,7 +97,7 @@ final readonly class AllocateTaskVmAction
             // Admission rechecks capacity under the row lock.
         }
 
-        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit, $hostNodeId): TaskVm {
+        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit, $hostNodeId, $reserve): TaskVm {
             // Serialize admission with desired-recipe changes and image promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $existing = TaskVm::forGroup($group);
@@ -105,7 +106,8 @@ final readonly class AllocateTaskVmAction
             }
             $recipe = $this->images->currentRecipe();
             $hosts = array_values(array_filter($this->capacity->activeHosts(), static fn (array $entry): bool => $hostNodeId === null || $entry[0]->nodeId === $hostNodeId));
-            $free = $this->capacity->freeSlots($hosts);
+            // The slots the admission keeps free count as taken.
+            $free = array_map(static fn (int $slots): int => max(0, $slots - $reserve), $this->capacity->freeSlots($hosts));
             $images = [];
             $waiting = [];
             $unseeded = [];

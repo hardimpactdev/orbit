@@ -20,15 +20,18 @@ sequenceDiagram
   %%> - `build` (the default): the refresh VM builds or starts the nested fleet, and its disk becomes the new seed
   %%> - Decided by the orchestrator, for Nick's review: `keep` is the image part alone, milestone M1: an image refresh passes on one host, alone. `Build the fleet` and `Save the ready copies` are skipped, so no nested VM is built or saved
   %%> - Decided by the orchestrator, for Nick's review: `keep` still starts the refresh VM. The check VM enrolls with the intent of a task VM, and the seed copy needs a seed disk, which is the refresh VM's clone of the host's current seed. An earlier draft of this chart promised no VM and no slots; the build showed it cannot
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - proofs and tasks come first: a refresh is admitted only when its host keeps room for one more large task VM after the refresh VM takes its own 3 slots, so 6 free slots; it is checked before the group exists and again under the placement lock (`reserve`), and refused with `tasks.capacity_unavailable` otherwise
+  %%> - a host with fewer than 6 slots can never hold both and is refused with `task_vm.host_unavailable`
   %%> Requirements:
-  %%> - an active, configured task VM host with a promoted image and no image build running, and a Gateway release with a commit
+  %%> - an active, configured task VM host with a promoted image and no image build running, room for two large task VMs, and a Gateway release with a commit
   %%> - `keep` also needs the seed of the host's current image, which the refresh VM clones; a host without it fails at the clone
   %%> Result:
   %%> - a group of its own in the proof Project, placed on this host only, and the full intent recorded with its `seed`; a second admission for the host returns the open run
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
   SW->>VM: Create the VM<br/>image · seed · checkout
   %%> What it does:
-  %%> - the VM is large (12 GiB, 6 CPUs, 3 slots): the admission sets the size, so the refresh needs 3 free slots of its host
+  %%> - the VM is large (12 GiB, 6 CPUs, 3 slots): the admission sets the size, so the refresh takes 3 slots of its host and leaves 3 more free
   %%> - the child `operation-task-provision`: a task VM from the image the host promoted last, with a clone of its seed, the checkout of the release commit, the converge of the outer VM and the nested fleet from the ready copies
   SW->>VM: Pin the VM<br/>guest host key
   %%> What it does:
