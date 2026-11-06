@@ -50,6 +50,7 @@ sequenceDiagram
       SW->>VM: Review the spec<br/>operation-task-turn
       %%> What it does:
       %%> - a new reviewer thread restores the commit under review, reads the spec as it stands and checks that each correction is applied or has its reason
+      %%> - a point that the owner's review reserves for a separate change or decision, such as the runner tests, is a note and not a finding, so the loop can end
       VM-->>SW: Findings or none
       SW->>VM: Fix the findings<br/>operation-task-turn
       %%> When:

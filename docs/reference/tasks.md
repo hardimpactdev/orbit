@@ -357,7 +357,9 @@ The native `operation-task-prep-fix` workflow is one parent run, with existing w
 
 - `Resume the VM` runs `operation-task-vm-resume`.
 - `Apply the corrections` runs the author turn on the author thread of the prep run. The author changes only the three files of the spec, in one new commit. It never amends a pushed commit.
-- `Plan the cases` and the review follow as in the prep run, for at most two rounds. The reviewer also checks that each correction is applied or has a reason.
+- `Plan the cases` and the review follow as in the prep run, for at most two rounds.
+  - The reviewer also checks that each correction is applied or has a reason.
+  - A point that the owner's review reserves for a separate change or decision is a note, not a finding. An example is a change of the runner tests.
 - `Push the corrections` runs `operation-task-publish` without a pull request body, so the same draft PR gets the commit.
 
 A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
