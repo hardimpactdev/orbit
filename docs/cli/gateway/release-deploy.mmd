@@ -29,9 +29,14 @@ sequenceDiagram
   %%> What it does:
   %%> - at run start, mints one read token (contents, actions) into the vault
   GW-->>TR: 202 Accepted<br/>running release record
+  SW->>GN: Fetch the commit<br/>shared repository
+  %%> What it does:
+  %%> - fetches the commit with the read token when the shared repository lacks it; the token reaches git only in its environment
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the fetch is its own step, so that the build runs its script from the commit being released, not from the live release
   SW->>GN: Build the release<br/>worktree · composer · REVISION
   %%> What it does:
-  %%> - fetches the commit, refuses one that does not descend from the current release
+  %%> - refuses a commit that does not descend from the current release
   %%> - links shared env and storage, installs dependencies, seals with `REVISION` and a cached config
   %%> - a sealed release of the commit is reused
   SW->>GN: Install the web build<br/>artifact · digest · rename

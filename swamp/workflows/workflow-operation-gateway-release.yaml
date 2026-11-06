@@ -54,16 +54,15 @@ jobs:
 - name: release
   labels: {role: swamp}
   steps:
-    # One script, as the agent's prepare, finish and forward check: resolve and fetch the commit, add the worktree,
-    # link shared env and storage, install dependencies, write the agent manifest, seal it with REVISION and a cached
-    # configuration. A sealed release of the same commit is reused. Prints the release's rendered Swamp grants.
-  - name: Build the release
+    # Fetches the commit into the shared repository when it is not there yet. The GitHub token arrives on stdin and reaches git only in its
+    # environment, never in argv.
+  - name: Fetch the commit
     labels: {role: swamp}
     writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "gateway-release-build-" + string(inputs.node_id) }}'
+      behaviorName: '${{ "gateway-release-fetch-" + string(inputs.node_id) }}'
       methodName: exec
       globalArgs: &ssh
         name: '${{ "gateway-release-ssh-" + string(inputs.node_id) }}'
@@ -78,18 +77,53 @@ jobs:
           transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
       inputs:
         hosts: name:target
-        timeoutSec: 2460
+        timeoutSec: 360
         stdin: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+        argv:
+        - /usr/bin/timeout
+        - '330'
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          sha=$1 repo=/home/orbit/shared/orbit.git
+          fail() { echo "$1: $2" >&2; exit 1; }
+          basic=$(printf 'x-access-token:%s' "$(cat)" | base64 -w0)
+          if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
+            GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
+              GIT_CONFIG_VALUE_0="Authorization: Basic $basic" \
+              timeout 300 git -C "$repo" fetch --quiet --no-tags origin "$sha" || fail gateway.release_fetch_failed "git fetch of $sha failed"
+            git -C "$repo" cat-file -e "$sha^{commit}" || fail gateway.release_commit_unknown "$sha is not in origin"
+          fi
+        - bash
+        - ${{ inputs.intent.sha }}
+    # Resolves the current release, adds the worktree of the fetched commit, links shared env and storage, installs dependencies, writes the agent
+    # manifest and seals the release with REVISION and a cached configuration. A sealed release of the same commit is reused. Its script is read
+    # from the commit being released, so a release never runs the scripts of another. Prints the release's rendered Swamp grants.
+  - name: Build the release
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Fetch the commit, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-build-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 2460
         argv:
         - /usr/bin/timeout
         - '2400'
         - /bin/bash
-        - /home/orbit/orbit/swamp/scripts/gateway-release-build.sh
+        - -c
+        - 'set -o pipefail; git -C "$1" show "$2:swamp/scripts/gateway-release-build.sh" | bash -s -- "$2" "$3" "$4"'
+        - bash
+        - /home/orbit/shared/orbit.git
         - ${{ inputs.intent.sha }}
         - ${{ string(inputs.intent.force) }}
         - ${{ inputs.intent.manifest }}
-    # The web build of the commit from its CI artifact, as the agent's install: checked against the artifact digest,
-    # extracted with safe names only, published by one rename. Nothing serves it before the web switch.
   - name: Install the web build
     labels: {role: swamp}
     writes: true
@@ -110,7 +144,7 @@ jobs:
         - /usr/bin/timeout
         - '900'
         - /bin/bash
-        - /home/orbit/orbit/swamp/scripts/gateway-release-web.sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-web.sh
         - ${{ inputs.intent.id }}
         - ${{ inputs.intent.repository }}
         - ${{ string(inputs.intent.web.artifact_id) }}
@@ -134,7 +168,7 @@ jobs:
         - /usr/bin/timeout
         - '900'
         - /bin/bash
-        - /home/orbit/orbit/swamp/scripts/gateway-release-snapshot.sh
+        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-snapshot.sh
         - ${{ inputs.intent.id }}
     # Always runs, as the legacy runner; from here a failure pauses automatic releases with the old release live.
   - name: Migrate

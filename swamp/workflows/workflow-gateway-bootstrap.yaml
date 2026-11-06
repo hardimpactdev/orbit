@@ -477,12 +477,12 @@ jobs:
       globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-machine").split(".").join("-") }}'}
       inputs:
         hosts: name:target
-        argv: [/bin/bash, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/scripts/gateway-bootstrap-check.sh']
+        argv: [/bin/bash, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/scripts/gateway-bootstrap-check.sh', '/home/${{ inputs.intent.ssh.user }}/orbit']
         timeoutSec: 120
   - name: Check the machine
     dependsOn: [{step: Read the machine, condition: {type: succeeded}}]
     task:
       type: assert
-      expr: 'steps["Read the machine"].outputs.stdout.contains("swamp: swamp ") && steps["Read the machine"].outputs.stdout.contains("ansible: ansible-playbook [core ") && steps["Read the machine"].outputs.stdout.contains("commit: " + inputs.intent.release.commit + "\n") && steps["Read the machine"].outputs.stdout.contains("php: PHP 8.5.") && steps["Read the machine"].outputs.stdout.contains("migrations: ok\n") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-a") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-b") && steps["Read the hub address"].outputs.stdout.contains(inputs.intent.gateway.wireguard_ip)'
+      expr: 'steps["Read the machine"].outputs.stdout.contains("swamp: swamp ") && steps["Read the machine"].outputs.stdout.contains("ansible: ansible-playbook [core ") && steps["Read the machine"].outputs.stdout.contains("commit: " + inputs.intent.release.commit + "\n") && steps["Read the machine"].outputs.stdout.contains("php: PHP 8.5.") && steps["Read the machine"].outputs.stdout.contains("migrations: ok") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-a") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-b") && steps["Read the hub address"].outputs.stdout.contains(inputs.intent.gateway.wireguard_ip)'
       severity: high
       message: The machine is not ready to converge itself.

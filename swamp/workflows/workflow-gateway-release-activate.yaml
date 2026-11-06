@@ -104,7 +104,14 @@ jobs:
         - /usr/bin/timeout
         - '150'
         - /bin/sh
-        - /home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-verify.sh
+        - -c
+        - |
+          set -eu
+          get() { curl -fsS --cacert /etc/caddy/orbit-cert-current/root-ca.pem --max-time 15 --retry 5 --retry-delay 4 --retry-all-errors "https://gateway.orbit$1"; }
+          get /up >/dev/null || { echo "gateway.release_verify_failed: /up does not answer" >&2; exit 1; }
+          get /api/v1/gateway/status | jq -e --arg sha "$1" '(.data // .) | .status == "ok" and (.version == $sha or .version == $sha[0:12])' >/dev/null \
+            || { echo "gateway.release_verify_failed: status is not ok on $1" >&2; exit 1; }
+        - sh
         - ${{ inputs.intent.sha }}
     # After a failed check, the same script from the new release puts the previous release back: links, PHP-FPM and
     # running services. It then fails the run with its marker; a switch-back that fails reports its own error instead.

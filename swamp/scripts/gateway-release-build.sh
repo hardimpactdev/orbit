@@ -1,21 +1,15 @@
 #!/bin/bash
-# Resolves and fetches the commit, adds its worktree, installs dependencies, seals it with REVISION and a cached configuration; prints the release's Swamp grants. Arguments: sha, force, agent manifest. The GitHub token arrives on stdin.
-# Run by the step "Build the release" of swamp/workflows/workflow-operation-gateway-release.yaml.
+# Adds the worktree of a fetched commit, installs its dependencies, seals it with REVISION and a cached configuration, and prints the release's Swamp grants.
+# Arguments: sha, force, agent manifest. The commit is in the shared repository already (the step "Fetch the commit").
+# Run by the step "Build the release" of swamp/workflows/workflow-operation-gateway-release.yaml, from the commit it builds.
 set -euo pipefail
 sha=$1 force=$2 manifest=$3
 id=${sha:0:12} base=/home/orbit
 repo=$base/shared/orbit.git release=$base/releases/$id app=$base/releases/$id/apps/gateway
 fail() { echo "$1: $2" >&2; exit 1; }
-current=$(readlink "$base/orbit") && current=${current#releases/} || fail gateway.release_not_adopted "$base/orbit is no release link"
+current=$(readlink "$base/orbit") || fail gateway.release_not_adopted "$base/orbit is no release link"
+current=${current#releases/}
 current_sha=$(cat "$base/releases/$current/REVISION") || fail gateway.release_current_incomplete "release $current has no REVISION"
-# The GitHub token arrives on stdin and reaches git only in its environment, never in argv.
-basic=$(printf 'x-access-token:%s' "$(cat)" | base64 -w0)
-if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
-  GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
-    GIT_CONFIG_VALUE_0="Authorization: Basic $basic" \
-    timeout 300 git -C "$repo" fetch --quiet --no-tags origin "$sha" || fail gateway.release_fetch_failed "git fetch of $sha failed"
-  git -C "$repo" cat-file -e "$sha^{commit}" || fail gateway.release_commit_unknown "$sha is not in origin"
-fi
 # As the legacy guard, for a reused release too: a release moves forward unless forced.
 if [ "$force" != true ] && [ "$sha" != "$current_sha" ]; then
   git -C "$repo" merge-base --is-ancestor "$current_sha" "$sha" || fail gateway.release_downgrade "$sha does not descend from the current $current_sha"
@@ -31,6 +25,8 @@ if [ "$(cat "$release/REVISION" 2>/dev/null || true)" = "$sha" ]; then
   cache || fail gateway.release_configuration_failed "config:cache failed"
 else
   [ "$current" != "$id" ] || fail gateway.release_current_incomplete "the current release $id is not sealed"
+  # The PHP code is in single quotes on purpose.
+  # shellcheck disable=SC2016
   database=$(php8.5 -r '$c = require $argv[1]; echo $c["database"]["connections"]["sqlite"]["database"];' "$base/releases/$current/apps/gateway/bootstrap/cache/config.php")
   need=$(( $(stat -c %s "$database") + 1073741824 ))
   [ "$(df --output=avail -B1 "$base" | tail -1)" -ge "$need" ] || fail gateway.release_disk_low "less than $need bytes free on $base"
@@ -69,5 +65,6 @@ else
   chmod u-w "$release"
 fi
 # The new code renders its own grants; the load step splits the two files at the separator line.
+# shellcheck disable=SC2016
 php8.5 -r 'require $argv[1]."/vendor/autoload.php"; $g = (new App\Infrastructure\GatewayReleases\SwampGrantRenderer)->render($argv[2]);
   echo $g["grants/orbit-gateway.yaml"], "---\n", $g["grants/orbit-serve.yaml"];' "$app" "$release/swamp"
