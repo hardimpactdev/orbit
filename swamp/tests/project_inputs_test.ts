@@ -4,6 +4,9 @@ import {
     assertRejects,
 } from "jsr:@std/assert@1.0.19";
 import { behavior as metadata } from "../extensions/behaviors/operations/project-maintenance/metadata.ts";
+import projects from "../extensions/behaviors/operations/project-maintenance/projects.json" with {
+    type: "json",
+};
 import { fixture, original } from "./_support/project_scheduler.ts";
 
 const routineInput = {
@@ -163,9 +166,38 @@ Deno.test("native schedule tick takes the Project policy from the data file and 
             launch.keys.observe,
             /^\d+-observe-\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,
         );
-        assertEquals(f.posts(), 0);
-        assertEquals(f.starts(), 0);
+        // The Gateway compares these three with the Project it holds, so they are the ones of the source file.
+        const source = projects.find((entry) =>
+            entry.projectId === original.projectId
+        )!;
+        assertEquals(launch.default_branch, source.defaultBranch);
+        assertEquals(launch.check, source.check);
+        assertEquals(
+            launch.repository,
+            source.repository.replace(
+                /^(?:git@github\.com:|https:\/\/github\.com\/)/,
+                "github.com/",
+            )
+                .replace(/\.git$/, "").toLowerCase(),
+        );
     } finally {
         await f.close();
     }
+});
+
+Deno.test("the maintenance workflow keeps its id, which is the key of its pause on serve, and puts no pause or input in its file", async () => {
+    // Serve keeps a pause in a file named by the workflow id (.swamp/_control/schedule-pauses), apart from the trigger and its inputs.
+    const text = await Deno.readTextFile(
+        new URL(
+            "../workflows/workflow-maintenance-projects.yaml",
+            import.meta.url,
+        ),
+    );
+    assertEquals(
+        text.split("\n")[0],
+        "id: a37dfa1b-1633-475f-90c7-dfd9c83008ca",
+    );
+    assertMatch(text, /^name: maintenance-projects$/m);
+    assertMatch(text, /^trigger:\n {2}schedule: '40 17 \* \* \* \*'\n/m);
+    assertEquals(/paus|resum|disabled|inputs:\s*\n\s+type/i.test(text), false);
 });

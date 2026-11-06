@@ -236,3 +236,17 @@ it('admits nothing for a result in the retired format, and still records the run
     expect($starts->calls)->toBe([])
         ->and(maintenanceState()['terminal'])->toMatchArray(['run_id' => 'run-old', 'status' => 'recorded']);
 });
+
+it('matches the repository as Swamp does: exactly the two supported forms, without .git, in lower case', function (string $url, string $identity, bool $admitted): void {
+    $starts = recordedStarts();
+    $project = maintainedProject(['repository_url' => $url]);
+
+    fireTick([tickEntry($project, ['repository' => $identity])]);
+
+    expect($starts->calls)->toBe($admitted ? [[$project->id, 'routine']] : []);
+})->with([
+    'upper case and .git' => ['https://github.com/NckRtl/Case-One.git', 'github.com/nckrtl/case-one', true],
+    'the ssh form' => ['git@github.com:nckrtl/ssh-two.git', 'github.com/nckrtl/ssh-two', true],
+    'a trailing slash' => ['https://github.com/nckrtl/slash-three/', 'github.com/nckrtl/slash-three', false],
+    'ssh://' => ['ssh://git@github.com/nckrtl/url-six.git', 'github.com/nckrtl/url-six', false],
+]);

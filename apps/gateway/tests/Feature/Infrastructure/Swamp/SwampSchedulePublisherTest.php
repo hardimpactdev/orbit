@@ -123,3 +123,18 @@ it('sends the definition again after a day, in case serve lost it', function ():
 
     expect($socket->frames)->toHaveCount(2);
 });
+
+it('sends only a trigger set with a workflow, a cadence and inputs, so a paused schedule keeps its pause', function (): void {
+    $socket = triggerSocket();
+    $publisher = app(SwampSchedulePublisher::class);
+
+    $publisher->publish(ScheduledProjectMaintenance::Workflow, '40 17 * * * *', []);
+    $publisher->publish(ScheduledProjectMaintenance::Workflow, '0 17 * * * *', ['revision' => 2]);
+    $publisher->publish(ImageReaper::Workflow, '40 17 * * * *', []);
+
+    // Serve keeps a pause apart from the trigger, in a file named by the workflow id. The only way this frame could touch a pause is a field
+    // for it, or another kind of frame, and there is neither.
+    expect(array_column($socket->frames, 'type'))->toBe(['workflow.trigger.set', 'workflow.trigger.set', 'workflow.trigger.set'])
+        ->and(array_map(static fn (array $frame): array => array_keys($frame['payload']), $socket->frames))
+        ->each->toBe(['workflowName', 'schedule', 'inputs']);
+});

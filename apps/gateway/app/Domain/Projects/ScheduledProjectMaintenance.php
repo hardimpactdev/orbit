@@ -140,7 +140,12 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
         return $due;
     }
 
-    /** @return iterable<Project> the opted-in Projects, locked for the rest of the transaction so a settings change cannot slip in after the match */
+    /**
+     * The opted-in Projects. The transaction keeps a settings change from slipping in between the match and the admission: SQLite takes the write
+     * lock when it begins, and `lockForUpdate` locks these rows on a server database.
+     *
+     * @return iterable<Project>
+     */
     private function projects(): iterable
     {
         return Project::query()->lockForUpdate()->where('maintenance', true)->where('source_access', ProjectSourceAccess::GitHubApp)->whereNotNull('task_check')
