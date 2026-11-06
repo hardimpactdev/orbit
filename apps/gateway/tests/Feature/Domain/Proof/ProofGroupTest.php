@@ -31,14 +31,17 @@ function proofRunning(): Operation
         'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
 }
 
-it('cancels the group of a proof that is cancelled', function (): void {
+it('cancels the group of each run of a proof that is cancelled', function (): void {
     Queue::fake();
-    $proof = proofRunning();
+    $run = proofRunning();
+    $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $run->node_id, 'node_id' => $run->node_id,
+        'input' => ['commit' => str_repeat('a', 40), 'uncovered' => [], 'runs' => [['command' => 'a:one', 'file' => 'swamp/proof/a/one.cases.yaml', 'group_id' => $run->target_id, 'operation_id' => $run->id]]],
+        'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
 
     app(CancelOperationAction::class)->execute($proof);
 
     expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled);
-    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $proof->id);
+    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
 });
 
 it('does not touch the group when another operation is cancelled', function (): void {

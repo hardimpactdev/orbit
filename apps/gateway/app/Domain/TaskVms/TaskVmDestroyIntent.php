@@ -59,7 +59,7 @@ final readonly class TaskVmDestroyIntent
         $operation = Operation::query()->find($operationId);
         $this->assertCaptured($vm, $captured);
         if (! $operation instanceof Operation || $operation->status->terminal()
-            || ! in_array($operation->kind, ['tasks.cancel', 'tasks.maintenance_finish'], true)
+            || ! in_array($operation->kind, ['tasks.cancel', 'tasks.maintenance_finish', 'proof.command'], true)
             || $operation->target_type !== 'task_group' || $operation->target_id !== $vm->group_id
             || $operation->node_id !== ($captured['node_id'] ?? null)
             || ($captured['instance_id'] ?? null) !== $workspace?->id
