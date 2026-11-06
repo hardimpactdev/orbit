@@ -750,12 +750,6 @@ The Gateway retains task state, workspace leases, operation recovery, provider j
 
 The group execution lock waits at most five seconds for every waiting caller, including HTTP actions, operation workers and VM jobs. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
 
-### Start a group
-
-Run `swamp workflow run group-start --input workItem=tg-<group> --server wss://swamp.orbit` to start the work item. The factory runs provision, baseline, implement, handoff and review in order. A passed handoff goes directly to review; changes requested return to implementation. After the final approval it publishes the checked commit.
-
-Each run is one bounded generation. While an operation runs, the next generation waits 60 seconds before reading it again. A human gate holds no run; `group-approve` records the decision and wakes the group.
-
 ## Workspace lease
 
 This section describes the retained lease consumers. Script, turn and publication operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.

@@ -1,5 +1,5 @@
 import { type Job } from "../../_lib/gateway_stage.ts";
-import { PackageTargetSchema } from "../../_lib/package_target.ts";
+import { PackageTargetSchema } from "../../_lib/package_target_schema.ts";
 
 /** Keep batch Instances live until merge, including major batches awaiting hand-testing. */
 export async function batchReviewWait(job: Job, deps: {

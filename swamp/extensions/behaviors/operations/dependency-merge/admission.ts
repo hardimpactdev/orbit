@@ -4,7 +4,7 @@ import {
     PrSchema,
     repositoryIdentity,
 } from "../../_lib/dependency_results_schema.ts";
-import { PackageTargetSchema } from "../../_lib/package_target.ts";
+import { PackageTargetSchema } from "../../_lib/package_target_schema.ts";
 import { type Http } from "../../_lib/gateway_stage.ts";
 
 export const Admission = z.object({

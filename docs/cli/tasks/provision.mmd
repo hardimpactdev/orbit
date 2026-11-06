@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4.
-  %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; the group-run driver composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
+  %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; Swamp composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
   %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route and Processes through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
   %% status: reviewed
   %% command: tasks:provision
