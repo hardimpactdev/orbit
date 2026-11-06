@@ -60,7 +60,7 @@ sequenceDiagram
       %%> - the same step as in the proof CI (stage 4)
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
-    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) as the child `task-nested-converge`, which the fleet start of a provision calls before `base`; the refresh group is a proof group, so the refresh runs it too
+    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) as the child `task-nested-converge`, which the fleet start of a provision calls before `base`
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):
     %%> - nothing more to build when the fleet starts from ready copies: the refresh group is a proof group (the provision of a refresh carries a commit, `TaskProvisionIntent`), so its VM already holds the proof Swamp Club key and runs the fleet start, the re-mint and `Converge the nested Nodes` like a proof task
     %%> - when there are no usable copies, the fleet build makes the Nodes from stock at the release, so they are at the playbooks of the release and need no converge

@@ -22,21 +22,21 @@ jobs:
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-dev").split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-dev").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh_execution.target.user }}', port: '${{ inputs.ssh_execution.target.port }}', identityFile: '${{ inputs.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', '${{ inputs.fleet.guests["app-dev"] }}', '--json'], timeoutSec: 1210}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', '${{ inputs.fleet.guests["app-dev"] }}', '--json'], timeoutSec: 610}}
   - name: 'Converge app-prod'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-prod").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-prod").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', '${{ inputs.fleet.guests["app-prod"] }}', '--json'], timeoutSec: 1210}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', '${{ inputs.fleet.guests["app-prod"] }}', '--json'], timeoutSec: 610}}
     dependsOn: [{step: 'Converge app-dev', condition: {type: succeeded}}]
   # The Gateway comes last, after the Nodes it serves; a real Gateway converges itself, and the fleet build runs `node:converge` on it too. It runs through its own Orbit and Swamp, so its agent pin and role playbooks are proven.
   - name: 'Converge the Gateway'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-the-gateway").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-the-gateway").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', 'gateway', '--json'], timeoutSec: 1210}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', 'gateway', '--json'], timeoutSec: 610}}
     dependsOn: [{step: 'Converge app-prod', condition: {type: succeeded}}]
-  # The Gateway converge rewrites the hub from its records, and the VM joined it as operator. Three pings through `wg-nested` fail the step when the operator can no longer reach the hub, so a dropped tunnel stops the run here and not at the readiness check.
+  # The Gateway converge rewrites the hub from its records, and the VM joined it as operator. Three pings through `wg-nested` fail the step when none is answered, that is when the operator can no longer reach the hub, so a dropped tunnel stops the run here and not at the readiness check.
   - name: 'Check the tunnel'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-check-the-tunnel").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-check-the-tunnel").split(".").join("-") }}'},

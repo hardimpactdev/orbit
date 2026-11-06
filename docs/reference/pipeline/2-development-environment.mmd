@@ -102,16 +102,19 @@ sequenceDiagram
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):
     %%> - the nested half is the child `task-nested-converge`: the candidate CLI on the outer VM runs `node:converge` through the CLI profile `nested` for `nested-app-dev`, `nested-app-prod` and then `gateway` (the Node names of the fleet build); each command follows its own Operation and fails the step when the converge fails
     %%> - one Node after the other, because the nested Gateway locks the target and the hub for each converge
-    %%> - the nested Gateway comes last (Nick ruled 2026-11-06): a real Gateway converges itself, and a PR that changes the Gateway role playbooks or the agent pin must be proven; the fleet build already runs `node:converge gateway` on it. If that converge breaks the run, the failure is shown and the alternative is Ansible phases from the outer VM as operator, not a skip
-    %%> - the operator tunnel joins the nested hub with a runtime peer, and the Gateway converge rewrites the hub from its records, so the child pings the hub through `wg-nested` three times at the end; a dropped tunnel fails the step there, not at the readiness check
+    %%> - it runs in the fleet child after the apply step and the CLI profile, and before the readiness check and `base`, so `base` keeps what it converged; the outer VM half runs earlier, in the provision, because it creates the NFS export that the fleet mounts
+    %%> - it needs the nested Swamp, so it runs for a task with the proof Swamp Club key only (a refresh is one, stage 6)
+    %%> - the run always converges, as the outer half does: a Node at the pins reports no change, so the Gateway needs no check of what changed
+    %%> - the operator tunnel joins the nested hub with a runtime peer and the Gateway converge rewrites the hub from its records, so the child pings the hub through `wg-nested` three times at the end; the step fails when none is answered, not later at the readiness check
+    %%> Decided by Nick (2026-11-06):
+    %%> - the nested Gateway converges too, last: a real Gateway converges itself, and a PR that changes the Gateway role playbooks or the agent pin must be proven; the fleet build already runs `node:converge` on it
     %%> Risks the first live run accepts:
     %%> - the Gateway converge runs through the nested Caddy, PHP-FPM and Swamp that it may reload; the CLI can lose its poll of the Operation while the converge succeeds, and a rerun then meets `operation.target_busy` until it ends. If the run shows this, the alternative is Ansible phases from the outer VM as operator, not a skip
+    %%> - the operator's access to the three Nodes for `node:converge` is not yet proven live
     %%> Time:
-    %%> - not yet measured; the step budget is 1200 s per Node, recorded here when the first provision with it has run
-    %%> - it runs in the fleet child after the apply step and the CLI profile, and before the readiness check and `base`, so `base` keeps what it converged; the outer VM half runs earlier, in the provision, because it creates the NFS export that the fleet mounts
-    %%> - it needs the nested Swamp, so it runs for a task with the proof Swamp Club key only
-    %%> - the run always converges, as the outer half does: a Node at the pins reports no change, so the Gateway needs no check of what changed
+    %%> - not yet measured; each Node has a 600 s limit, and the first provision with the step records the real time here
     %%> Built: the child `task-nested-converge`, called by the step `Converge the nested Nodes` of `task-nested-fleet`
+    %%> Not built: the converge of a running task after a rebase onto main (stage 3, the author's own VM) and `Take base again` after it; the proof-run lane calls the same child for it
   end
   VM->>NT: Check readiness<br/>agents · Swamp · Doctor
   %%> What it does:

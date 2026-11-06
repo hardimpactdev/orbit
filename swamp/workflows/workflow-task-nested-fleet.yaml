@@ -205,7 +205,6 @@ jobs:
     task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}', club: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}', remint: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}'}}
     dependsOn: [{step: 'Push the Club key', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # The nested half of `Converge once` (stage 2). It needs the nested Swamp, so it runs for a task with the proof Club key only, and it comes before `base`, so `base` keeps what it converged.
-  # Hook: a later converge of a fleet that already has a `base` (stage 3, `Take base again`) calls `task-nested-converge` and then takes `base` again. Not built here; the proof-run lane owns it.
   - name: 'Converge the nested Nodes'
     labels: {role: swamp}
     writes: true
@@ -217,7 +216,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}'}}
-    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}, {step: 'Converge the nested Nodes', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Converge the nested Nodes', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # One stateful snapshot `base` of the three nested VMs, memory included; every proof batch starts from it. It holds the proof Club key, and is destroyed with this VM.
   - name: 'Take the base snapshot'
     labels: {role: swamp}
