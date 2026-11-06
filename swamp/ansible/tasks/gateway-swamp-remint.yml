@@ -36,7 +36,7 @@
 # The rotation is its own task with a short command, so a failure shows the CLI's error in the few hundred characters that the run keeps.
 - name: Rotate the serve driver token
   ansible.builtin.shell:
-    cmd: swamp access token rotate serve-driver --duration 30d --json >/dev/null
+    cmd: umask 077 && swamp access token rotate serve-driver --duration 30d --json >/dev/null
     chdir: "{{ swamp_repository }}"
     executable: /bin/bash
   become_user: "{{ swamp_user }}"
