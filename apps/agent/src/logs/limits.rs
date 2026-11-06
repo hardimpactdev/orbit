@@ -105,6 +105,7 @@ struct QueueState {
     ended: Option<&'static str>,
     sequence: u64,
     last_sent: Option<Instant>,
+    first_pending: bool,
 }
 
 /// The queue between a stream's source and the realtime connection. It outlives reconnects.
@@ -140,14 +141,17 @@ impl StreamQueue {
                 ended: None,
                 sequence: 0,
                 last_sent: None,
+                first_pending: false,
             }),
             agent,
         }
     }
 
-    /// Queues the first lines of a stream. They are bounded by `FIRST_LINES_BYTES` instead of the rates.
+    /// Queues the first lines of a stream, also an empty batch, which the next flush marks as complete. They are
+    /// bounded by `FIRST_LINES_BYTES` instead of the rates.
     pub fn push_first(&self, lines: Vec<String>) {
         let mut state = lock(&self.state);
+        state.first_pending = true;
         for line in lines {
             let size = cost(&line);
             if state.bytes + size > QUEUE_BYTES {
@@ -228,16 +232,25 @@ impl StreamQueue {
             return Ok(Flush::default());
         }
         let mut flush = Flush::default();
-        if !state.lines.is_empty() || state.dropped > 0 || state.skipped > 0 {
+        if !state.lines.is_empty() || state.dropped > 0 || state.skipped > 0 || state.first_pending
+        {
             let lines = std::mem::take(&mut state.lines).into_iter().collect();
             let (dropped, skipped) = (state.dropped, state.skipped);
             let mut sequence = state.sequence;
-            flush.frames =
-                events::log_frames(channel, &self.id, &mut sequence, lines, dropped, skipped)?;
+            flush.frames = events::log_frames(
+                channel,
+                &self.id,
+                &mut sequence,
+                lines,
+                dropped,
+                skipped,
+                state.first_pending,
+            )?;
             state.sequence = sequence;
             state.bytes = 0;
             state.dropped = 0;
             state.skipped = 0;
+            state.first_pending = false;
             state.last_sent = Some(now);
         }
         if let Some(reason) = state.ended {
@@ -511,7 +524,9 @@ mod tests {
         ]);
         // The window starts inside the block, so its body stays hidden.
         let flush = q.flush("c", Instant::now()).unwrap();
-        assert!(flush.frames.is_empty());
+        assert_eq!(flush.frames.len(), 1);
+        assert_eq!(flush.frames[0].data["lines"], serde_json::json!([]));
+        assert_eq!(flush.frames[0].data["first_done"], true);
         let q = queue();
         let mut sink = LineSink::new(q.clone(), 3);
         sink.first(vec!["1".into(), "2".into(), "API_KEY=x".into(), "4".into()]);
@@ -520,5 +535,19 @@ mod tests {
             flush.frames[0].data["lines"],
             serde_json::json!(["2", "API_KEY=[REDACTED]", "4"])
         );
+    }
+
+    #[test]
+    fn an_empty_first_batch_is_flushed_once_as_the_end_of_the_first_lines() {
+        let queue = StreamQueue::new("0123456789abcdef0123456789abcdef".into(), agent_bucket());
+        let now = Instant::now();
+        assert!(queue.flush("c", now).unwrap().frames.is_empty());
+        queue.push_first(vec![]);
+        let flush = queue.flush("c", now).unwrap();
+        assert_eq!(flush.frames.len(), 1);
+        queue.push(String::from("later"));
+        let later = queue.flush("c", now + BATCH_INTERVAL * 2).unwrap();
+        assert_eq!(later.frames.len(), 1);
+        assert!(later.frames[0].data.get("first_done").is_none());
     }
 }

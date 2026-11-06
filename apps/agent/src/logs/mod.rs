@@ -70,8 +70,22 @@ fn process_name(value: &str) -> Option<&str> {
 /// `orbit-process-{id}-{name}.service`.
 pub fn valid_journal_unit(unit: &str) -> bool {
     unit.strip_suffix(".service")
-        .and_then(process_name)
-        .is_some()
+        .is_some_and(|name| process_name(name).is_some() || schedule_name(name))
+}
+
+/// `orbit-schedule-{id}` where the ID is a lowercase UUID, the form of a Schedule's service unit.
+fn schedule_name(value: &str) -> bool {
+    let Some(id) = value.strip_prefix("orbit-schedule-") else {
+        return false;
+    };
+    let groups: Vec<&str> = id.split('-').collect();
+    groups.len() == 5
+        && groups.iter().zip([8, 4, 4, 4, 12]).all(|(part, len)| {
+            part.len() == len
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
 }
 
 /// `orbit-process-{id}-{name}` whose ID equals `process_id`.
@@ -195,6 +209,9 @@ mod tests {
         assert!(valid_journal_unit("orbit-process-1-a.service"));
         assert!(valid_journal_unit("orbit-process-10-web-api-2.service"));
         assert!(valid_journal_unit("orbit-process-10-a--b.service"));
+        assert!(valid_journal_unit(
+            "orbit-schedule-123e4567-e89b-42d3-a456-426614174000.service"
+        ));
         for bad in [
             "orbit-process-41-queue",
             "orbit-process-0-queue.service",
@@ -209,6 +226,12 @@ mod tests {
             "ssh.service",
             "orbit-process-4a-queue.service",
             "orbit-process-41-queue.service.service",
+            "orbit-schedule-123e4567-e89b-42d3-a456-426614174000",
+            "orbit-schedule-123E4567-e89b-42d3-a456-426614174000.service",
+            "orbit-schedule-123e4567-e89b-42d3-a456.service",
+            "orbit-schedule-123e4567-e89b-42d3-a456-42661417400.service",
+            "orbit-schedule-123e4567-e89b-42d3-a456-426614174000.timer",
+            "orbit-schedule-../x.service",
         ] {
             assert!(!valid_journal_unit(bad), "{bad}");
         }

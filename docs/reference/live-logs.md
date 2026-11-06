@@ -26,7 +26,7 @@ A client follows five steps, and the Gateway and the Node agent do the rest.
 4. When the subscription succeeds, the client renews the stream once. This first renewal starts the stream, so no line arrives before the client listens.
 5. The client receives the first lines and then each new line. It renews the stream every 20 seconds and closes it at the end.
 
-The Gateway lists the stream for the Node's agent. The agent reads the source, redacts each line, and sends the lines to the Gateway. The Gateway redacts them again and publishes them on the stream's channel. [Node agent](/reference/node-agent#log-tails) describes the agent's part.
+The Gateway lists the stream for the Node's agent. The agent reads the source, redacts each line, and sends the lines to the Gateway. It sends the first lines as one batch, also when the log is empty, and marks its end with `first_done`, which a [one-shot read](#one-shot-reads-use-the-stream-path) waits for. The Gateway redacts them again and publishes them on the stream's channel. [Node agent](/reference/node-agent#log-tails) describes the agent's part.
 
 ## Open a stream
 
