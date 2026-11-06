@@ -79,7 +79,11 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 
-The agent sends a fact when it changed, and again every 10 minutes. The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+The agent sends a fact when it changed, and again every 10 minutes.
+
+A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. The retry sends the data of the failed read and reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
+
+The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
 
 ### Packages
 
@@ -138,7 +142,7 @@ The agent reports the Git state of each [task](/reference/tasks) checkout on its
 
 ### Watch list
 
-The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 seconds:
+The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 seconds. A request the Gateway does not answer is repeated after 1, 2 and 4 seconds, and then every 4 seconds:
 
 ```json
 {
@@ -657,6 +661,7 @@ The agent recovers from each failure below without an operator.
 | Reverb is down, or no `websocket` role is active | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
 | The subscriber stops | systemd restarts it after 2 seconds. Meanwhile the view turns stale, and Gateway reads use Prometheus and SSH. |
 | A snapshot is lost | The subscriber asks for a new one within about 10 seconds. |
+| The Gateway does not accept a fact report or does not answer the watch list request | The agent tries again after 1, 2 and 4 seconds, and then every 4 seconds. |
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits, and systemd restarts it. |
 | The secret differs from the Gateway's hash, such as after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`. A converge verifies the stored secret and writes a new one when needed. |
