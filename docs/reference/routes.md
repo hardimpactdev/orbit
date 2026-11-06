@@ -146,7 +146,7 @@ Creation reserves a `pending`, unpublished Route and starts one native Swamp wor
 
 The workflow, `operation-route-create`, has the seven steps of the [route:create chart](/cli/route/create). Each Node makes its key and CSR, and 209 has each CSR signed. A Cluster Route then allows the Router on LAN. One `route-create-site` child per Node installs the certificate and publishes the site. Then 209 probes the site over TLS, and a public Route opens the Ingress edge. A domain outside the TLD gets its private DNS beside the site install, because it needs nothing from the site.
 
-Each Node's `route-create-site` child is one Ansible phase, `site`, of `swamp/ansible/route-create-site.yml`: the account, the Caddy access ACLs, PHP-FPM pools (each pool unit is reloaded, or started when it is not running), certificate, trust store, Caddyfile, APP_URL lines and awake markers. A production `.env` is written by its own steps after it. The other Node changes are official `@swamp/cfgmgmt` behaviors or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
+Each Node's `route-create-site` child is one Ansible phase, `site`, of `swamp/ansible/route-create-site.yml`: the account, the Caddy access ACLs, PHP-FPM pools (each unit is reloaded and enabled; a stopped one starts), certificate, trust store, Caddyfile, APP_URL lines and awake markers. A production `.env` is written by its own steps after it. The other Node changes are official `@swamp/cfgmgmt` behaviors or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
 
 The phase updates the system trust store only when it wrote a new Orbit root.
 

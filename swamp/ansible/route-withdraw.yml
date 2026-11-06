@@ -108,7 +108,7 @@
             seen.rc != 0 or
             (seen.stdout_lines | map('split', ' ') | map('first') | list) != (plan.expect | dict2items | map(attribute='value') | list)
           check_mode: false
-        # Pools first, as the PHP delta did: written, tested, then reloaded. A reload keeps open requests.
+        # Pools first, as the PHP delta did: written, tested, then reloaded. A reload keeps open requests; a stopped unit stays stopped.
         - name: Write the PHP-FPM pool files
           ansible.builtin.copy:
             content: "{{ item.content }}"
@@ -135,7 +135,7 @@
           changed_when: false
         - name: Reload PHP-FPM
           ansible.builtin.command:
-            argv: [timeout, "30", systemctl, reload, "php{{ item.version }}-fpm"]
+            argv: [timeout, "30", systemctl, try-reload-or-restart, "php{{ item.version }}-fpm"]
           loop: "{{ plan.pools }}"
           loop_control:
             label: "{{ item.version }}"
