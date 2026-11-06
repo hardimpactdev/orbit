@@ -31,6 +31,7 @@ sequenceDiagram
   %%> - no workspace, nested fleet, Route or Processes: the claim makes them for the task
   %%> - the slot gets its own Pi token and model key at enrol, as a task VM does today
   %%> - the Gateway records on the slot the digest of what a task image carries in the current release (playbooks, pins, lock files), which the converge applied
+  %%> Time, measured on beast 2026-11-06 (op 11948, large slot): 240 s: VM child 136 s, checkout folder 1 s, converge 96 s, stop and check 5 s
   SW->>H: Stop the VM<br/>incus stop
   %%> A stopped VM costs disk, not memory. The Gateway records it as a ready slot.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
@@ -49,6 +50,7 @@ sequenceDiagram
   SW->>H: Start the VM<br/>incus start
   %%> Seconds: the VM is already enrolled.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): two pinned host steps, `incus start` and `incus wait … agent`, as in today's resume; the access of Node 209 is unchanged since the enrol, so no SSH converge runs
+  %%> Time, measured on beast 2026-11-06 on ready slot tvm-741 with the claim's three commands: 20.4 s and 19.3 s (`incus start` 1.5–1.9 s, agent 17.4–17.8 s, boot 0.4–0.6 s); Swamp adds about 1 s per step, so about 23 s; today's clone path spends about 156 s in its VM step and 57 s in the converge (op 11752)
   SW->>VM: Fetch the task branch<br/>bundle from 209 · task token
   %%> Decided by the orchestrator, for Nick's review (2026-11-06): today's workspace child, unchanged: Node 209 clones with the task token and the VM imports the bundle, then the Project setup steps run. Another lane makes this step fast; the claim measures it on its own, and the claim is correct with or without that change.
   SW->>VM: Reset the nested topology<br/>from the seed's ready copies
