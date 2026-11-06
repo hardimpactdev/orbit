@@ -20,7 +20,6 @@ additionalFiles:
   - ansible/operation-node-add.yml
   - ansible/operation-gateway-release.yml
   - ansible/library/orbit_web_build.py
-  - ansible/tasks/gateway-release-cache.yml
   - ansible/gateway-bootstrap.yml
   - ansible/tasks/role-prerequisites.yml
   - ansible/tasks/gateway-swamp.yml
