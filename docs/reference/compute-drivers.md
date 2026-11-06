@@ -8,7 +8,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-role-run,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -718,7 +718,7 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-`php artisan task-vms:converge VM` brings a ready task VM to the pins of the release. It records the `task_vm.converge` Operation on the VM's guest Node. Swamp runs the three phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH: `software`, `tools` and `check`. The [image build](#build-the-base-image) runs the same playbook on its builder, so an image and a converged VM end in the same state.
+`php artisan task-vms:converge VM` brings a ready task VM to the pins of the release. It records the `task_vm.converge` Operation on the VM's guest Node. Swamp runs the three phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH: `software`, `tools` and `check`. Each phase is one call of the child `task-vm-role-run`, which the image builds use too. The [image build](#build-the-base-image) runs the same playbook on its builder, so an image and a converged VM end in the same state.
 
 The Gateway puts these in the Operation:
 
@@ -748,7 +748,7 @@ The phase refuses a server that was enrolled. It masks the services of a first b
 
 It ends with `cloud-init clean`, the removal of the SSH host keys and the emptying of the authorized keys. The Ansible session stays open through them. The state of Incus stays in the image.
 
-The VM must be `ready` with an active guest Node (`task_vm.converge_refused`). No other Operation may hold it (`operation.target_busy`). The Operation has a provisional budget of 3,300 seconds. A failed phase leaves finished work in place. Run the command again and each phase skips what matches.
+The VM must be `ready` with an active guest Node (`task_vm.converge_refused`). No other Operation may hold it (`operation.target_busy`). The Operation has a provisional budget of 3,300 seconds, and each call of the child runs under one literal timeout of 3,300 seconds. A failed phase leaves finished work in place. Run the command again and each phase skips what matches.
 
 ### Park and resume
 
@@ -1166,7 +1166,7 @@ Each Node action is one official `@swamp/ssh` step with pinned host keys and the
 1. **Remove earlier attempts.** `incus delete --force` for the builder and the smoke VM. A missing instance is fine.
 2. **Launch the builder.** `incus init` reads the cloud-init config from standard input. `incus start` boots the stock Ubuntu VM. The config makes the `orbit` account and installs `openssh-server`, which the stock image lacks.
 3. **Wait for the builder.** `incus wait agent`, then `cloud-init status --wait`.
-4. **Run the task image phases.** The child workflow `task-vm-image-ansible` runs the `software`, `tools` and `check` phases of the [task VM role playbook](#converge-a-running-task-vm) through the host.
+4. **Run the task image phases.** The child workflow `task-vm-role-run` runs the `software`, `tools` and `check` phases of the [task VM role playbook](#converge-a-running-task-vm) through the host.
 
 The child reads the builder's bridge address and host key from the host before it runs Ansible. The playbook knows it builds an image through `intent.image`. It removes its downloads and the snapshot apt configuration at the end of the `tools` phase.
 
@@ -1233,7 +1233,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | `Build the image` | Runs `task-vm-image-builder` as a child: a builder cloned from the image the refresh VM started from, the phases `software`, `tools` and `check`, `task-vm-image-clean`, then `incus publish` of the stopped builder under a candidate alias. |
 | `Smoke the candidate` | Runs `task-vm-image-smoke`, the smoke of the image build: a throwaway VM from the candidate and the check phase of the task VM role on it. |
 | `Enroll the check VM` | Runs `task-vm-bootstrap`, the bootstrap steps of an enrollment, on the smoke VM: the account, the key, the sudoers file and the observer install with their checks. |
-| `Converge the check VM` | Runs `task-vm-image-ansible` on the smoke VM with the phases `software`, `tools` and `check`, as the converge of a provision does. |
+| `Converge the check VM` | Runs `task-vm-role-run` on the smoke VM with the phases `software`, `tools` and `check`, as the converge of a provision does. |
 | `Copy the seed`, `Detach the seed` | Copy the seed disk of the stopped refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
 | `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
 
@@ -1594,7 +1594,7 @@ At admission the Gateway generates one ed25519 host key pair for the build serve
 | Step | What it does |
 | --- | --- |
 | Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`, with the `orbit` account at UID and GID 1000 |
-| Run the task image phases | The child `task-vm-upcloud-image-ansible` copies the pinned Pi build from the Gateway Node to 209 and checks its SHA-256. It then runs the `software`, `tools` and `check` phases against the public address of the builder |
+| Run the task image phases | The child `task-vm-role-run` copies the pinned Pi build from the Gateway Node to 209 and checks its SHA-256. It then runs the `software`, `tools` and `check` phases against the public address of the builder |
 | Prepare and clean | The same child with the `clean` phase: masks, ufw with only the public SSH rule `orbit:public-ssh-recovery`, identity files, `cloud-init clean` |
 | Make the template, Read the template | Stops the builder, turns its disk into the template `orbit-task-base-<stamp>-unverified` and reads its UUID |
 | Smoke the template | The child `task-vm-upcloud-image-smoke` creates a server from the template with the same host key, waits as the role does (`wait_for_connection`, then cloud-init), and runs the `check` and `template` phases |

@@ -44,13 +44,15 @@ jobs:
     - {step: Launch the builder, condition: {type: succeeded}}
     task:
       type: workflow
-      workflowIdOrName: task-vm-upcloud-image-ansible
+      workflowIdOrName: task-vm-role-run
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
+        guest: ''
         address: ${{ steps["Launch the builder"].outputs.server.address }}
+        host_key: ${{ inputs.intent.host_key }}
         tags: software,tools,check
         with_pi: true
   - name: Prepare and clean
@@ -59,13 +61,15 @@ jobs:
     - {step: Run the task image phases, condition: {type: succeeded}}
     task:
       type: workflow
-      workflowIdOrName: task-vm-upcloud-image-ansible
+      workflowIdOrName: task-vm-role-run
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
+        guest: ''
         address: ${{ steps["Launch the builder"].outputs.server.address }}
+        host_key: ${{ inputs.intent.host_key }}
         tags: clean
         with_pi: false
   - name: Make the template

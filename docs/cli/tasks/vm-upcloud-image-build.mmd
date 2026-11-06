@@ -39,7 +39,7 @@ sequenceDiagram
   %%> - the server UUID, its storage and its address
   SW->>G: Run the task image phases<br/>Ansible · same as Nodes
   %%> What it does:
-  %%> - child `task-vm-upcloud-image-ansible`: Swamp on 209 runs `ansible-playbook` straight to the public address of the server with the admitted host key pinned in a known-hosts file; there is no jump host
+  %%> - child `task-vm-role-run`: Swamp on 209 runs `ansible-playbook` straight to the public address of the server with the admitted host key pinned in a known-hosts file; there is no jump host
   %%> - it starts with the wait for the new server: Ansible's `wait_for_connection` until SSH answers, then `cloud-init status --wait --long` under a literal timeout
   %%> Decided by the orchestrator, for Nick's review:
   %%> - exit 2 of `cloud-init status` (done with recoverable errors) passes, and the check phase is the check of the server; the wait moved here from the launch because OpenSSH retries only a failed connect, and a banner exchange that fails with "No route to host" ended the third build
@@ -70,7 +70,7 @@ sequenceDiagram
   SW->>UC: Smoke the template<br/>launch from template · checks
   %%> How:
   %%> - child `task-vm-upcloud-image-smoke`: the same server child with the task VM user-data and the same host key; the create waits with curl's bounded retry while UpCloud still prepares the template
-  %%> - boots as in step 3, then the child `task-vm-upcloud-image-ansible` runs the `check` phase and the `template` phase against it; the `template` phase asserts that ufw is on, denies incoming connections by default and has the recovery rule
+  %%> - boots as in step 3, then the child `task-vm-role-run` runs the `check` phase and the `template` phase against it; the `template` phase asserts that ufw is on, denies incoming connections by default and has the recovery rule
   %%> - the builder stays until the cleanup removes it
   %%> Result:
   %%> - a failed smoke check stops the build before promotion

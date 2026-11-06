@@ -114,7 +114,7 @@ Basis of `proof.command`: `firewall:allow` has 16 cases of about 85 seconds each
 
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
 
-`task_vm.converge` has a provisional 3,300 seconds: the software phase at its 1,800-second bound, the tools phase at 900 and the check at 300, plus the short input steps. A VM at its pins takes about a minute. A 14-day p95 replaces it after the first successes.
+`task_vm.converge` has a provisional 3,300 seconds: three calls of the shared role child, one per phase, each under one literal timeout of 3,300 seconds, with the run folder and the Pi copy of the first call. A VM at its pins takes one to two minutes. A 14-day p95 replaces it after the first successes.
 
 `task_vm.fill_package_cache` has a provisional 2,100 seconds: the legacy fill's single 1,700-second budget plus margin for the run start and the end check. Each batch is bounded on the host by `timeout 1530`. A first success replaces it with a p95.
 

@@ -166,13 +166,15 @@ jobs:
     dependsOn: [{step: 'Enroll the check VM', condition: {type: succeeded}}]
     task:
       type: workflow
-      workflowIdOrName: task-vm-image-ansible
+      workflowIdOrName: task-vm-role-run
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: task_vm.image_build
         intent: '${{ inputs.intent.refresh.candidate }}'
         guest: '${{ inputs.intent.refresh.candidate.smoke }}'
+        address: ''
+        host_key: ''
         tags: software,tools,check
         with_pi: true
   - name: 'Copy the seed'

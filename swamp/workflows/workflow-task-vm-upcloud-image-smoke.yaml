@@ -44,12 +44,14 @@ jobs:
     - {step: Launch the smoke server, condition: {type: succeeded}}
     task:
       type: workflow
-      workflowIdOrName: task-vm-upcloud-image-ansible
+      workflowIdOrName: task-vm-role-run
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
+        guest: ''
         address: ${{ steps["Launch the smoke server"].outputs.server.address }}
+        host_key: ${{ inputs.intent.host_key }}
         tags: check,template
         with_pi: false
