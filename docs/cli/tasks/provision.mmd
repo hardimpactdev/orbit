@@ -1,4 +1,5 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; Swamp composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
   %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route and Processes through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
@@ -97,11 +98,21 @@ sequenceDiagram
     %%> - the guest's host key exists only after the VM step pins it; the Gateway leaves only the guest's targets unpinned
   end
   opt Project serves a web root and task_workspace_routed is on
+    SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
+    %%> What it does:
+    %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
+    %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
+    %%> - a Node that another Route write holds is waited for, up to 20 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+    %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
     SW->>VM: Route the workspace<br/>operation-route-create child
     %%> With access rows in the workspace intent, the Route gets `prepared` with the guest and skips them there; a Route with an APP_URL line on the guest keeps both, so the workspace step gets no rows
     %%> Why a child:
     %%> - the same Route child instance:create runs; its signing authorizes against this root run
     %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the signing accepts the leaf of the new guest while its Node is still `provisioning` as well as `active`. On the plain VM create path the Gateway activates that Node only when it applies the provision result, after this Route step, so the guest's admitted leaf was never signable and the step failed with `certificate.intent_mismatch` (409), as group 3780 (op 12284) showed. A claimed slot is already active and never met it
+    SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
+    %%> What it does:
+    %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
+    %%> - runs beside the next step, so it adds no time
   end
   opt Project has Process definitions
     SW->>VM: Create, start Processes<br/>operation-process-create · forEach

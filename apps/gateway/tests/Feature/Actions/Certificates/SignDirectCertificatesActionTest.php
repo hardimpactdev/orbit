@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Certificates\SignDirectCertificatesAction;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;

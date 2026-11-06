@@ -1,7 +1,8 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task, DECISIONS R2-R4, same shape as cluster.router_set. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
   %% Tightened: flow-tighten 2026-11-02, rules 1, 22 (no empty DNS note step; cfgmgmt file for the sites).
-  %% status: reviewed
+  %% status: draft
   %% command: cluster:router:unset
   %% kind: cluster.router_unset
   autonumber
@@ -55,6 +56,12 @@ sequenceDiagram
   %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
+  %%> What it does:
+  %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
+  %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
+  %%> - a Node that another Route write holds is waited for, up to 20 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+  %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
   SW->>N: Withdraw the Router sites<br/>@swamp/cfgmgmt/file · reload
   %%> How:
   %%> - over SSH with `@swamp/ssh` and `@swamp/cfgmgmt/file`; `caddy validate`, then a reload
@@ -63,6 +70,10 @@ sequenceDiagram
   %%> What it does:
   %%> - removes the Router sites and their certificates, validates the rest, and reloads Caddy; no restart
   %%> - Caddy and the packages stay, as for every role removal that keeps shared packages
+  SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
+  %%> What it does:
+  %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
+  %%> - runs beside the next step, so it adds no time
   SW->>M: Remove the LAN rules<br/>@swamp/cfgmgmt/firewall apply
   %%> What it does:
   %%> - on the Router: removes the 443 and 53 allows for member LAN addresses

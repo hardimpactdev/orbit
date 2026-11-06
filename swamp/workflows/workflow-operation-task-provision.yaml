@@ -259,6 +259,25 @@ jobs:
     - step: Set up the workspace
       condition:
         type: succeeded
+  - name: Hold the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '${{ inputs.intent.route == null }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-acquire" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 5 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Set up the workspace
+      condition:
+        type: succeeded
   - name: Route the workspace
     labels: {role: swamp}
     writes: true
@@ -279,6 +298,31 @@ jobs:
     - step: Bind the workspace keys
       condition:
         type: succeeded
+    - step: Hold the Route Nodes
+      condition:
+        type: succeeded
+  - name: Release the Route Nodes
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    guard: '!("Hold the Route Nodes" in steps)'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-release" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    dependsOn:
+    - step: Route the workspace
+      condition:
+        type: always
+    - step: Hold the Route Nodes
+      condition:
+        type: always
   - name: Create, start Processes
     labels: {role: swamp}
     writes: true
@@ -302,6 +346,10 @@ jobs:
       condition:
         type: or
         conditions: [{type: succeeded}, {type: skipped}]
+    - step: Hold the Route Nodes
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
   - name: Check the workspace
     labels: {role: swamp}
     # Prints the whole receipt, workspace Route and Processes included; `accepted` fails the run on its error code.
@@ -318,13 +366,14 @@ jobs:
           route, processes = os.environ["ORBIT_ROUTE"], [p for p in os.environ["ORBIT_PROCESSES"].split(";") if p]
           result["route"], result["processes"] = route, processes
           result["nested_fleet"] = "started" if os.environ["ORBIT_FLEET"] == "succeeded" else "none"
-          failed = "bind" if os.environ["ORBIT_BIND"] == "failed" else "route" if route == "failed" else "processes" if any(p.endswith("=failed") for p in processes) else None
+          failed = "bind" if os.environ["ORBIT_BIND"] == "failed" else "route" if route == "failed" or os.environ["ORBIT_HOLD"] == "failed" else "processes" if any(p.endswith("=failed") for p in processes) else None
           if failed and "error_code" not in result:
               result.update(error_code="tasks.provision_failed", failed_step=failed)
           print(json.dumps(result))'
         env:
           ORBIT_FLEET: '${{ "Start the nested fleet" in steps ? steps["Start the nested fleet"].status : "skipped" }}'
           ORBIT_BIND: '${{ "Bind the workspace keys" in steps ? steps["Bind the workspace keys"].status : "skipped" }}'
+          ORBIT_HOLD: '${{ "Hold the Route Nodes" in steps ? steps["Hold the Route Nodes"].status : "skipped" }}'
           ORBIT_ROUTE: '${{ "Route the workspace" in steps ? steps["Route the workspace"].status : "skipped" }}'
           ORBIT_PROCESSES: '${{ steps.filter(k, k.startsWith("Create, start Processes-")).map(k, k + "=" + steps[k].status).join(";") }}'
           ORBIT_RESULT: '${{ "Set up the workspace" in steps && "outputs" in steps["Set up the workspace"] && "result" in steps["Set up the workspace"].outputs ? steps["Set up the workspace"].outputs.result.result_json : "{\"error_code\":\"tasks.provision_failed\",\"failed_step\":\"vm\"}" }}'
@@ -339,6 +388,12 @@ jobs:
       condition:
         type: always
     - step: Route the workspace
+      condition:
+        type: always
+    - step: Hold the Route Nodes
+      condition:
+        type: always
+    - step: Release the Route Nodes
       condition:
         type: always
     - step: Create, start Processes

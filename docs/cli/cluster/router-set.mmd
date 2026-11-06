@@ -1,4 +1,5 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
   %% Tightened: flow-tighten 2026-11-02, rules 17, 18, 22 (certificates installed in the publish step, as route:create does; cfgmgmt behaviors named).
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
@@ -72,10 +73,20 @@ sequenceDiagram
     %%> - on each workload member: allows the candidate's LAN address to its Route ports
     %%> - identical lines are left as they are
     %%> - one `forEach` over the members; it runs after the certificates are signed
+    SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
+    %%> What it does:
+    %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
+    %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
+    %%> - a Node that another Route write holds is waited for, up to 20 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+    %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
     SW->>N: Install certs, publish<br/>child route-create-site · Ansible
     %%> What it does:
     %%> - installs the signed certificates next to their keys and writes the Router site list with `@swamp/cfgmgmt/file`, in one step as `route:create` does
     %%> - validates the full Router site list, then reloads the running Caddy; no restart
+    SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
+    %%> What it does:
+    %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
+    %%> - runs beside the next step, so it adds no time
     SW->>M: Probe the workloads<br/>TLS from the Router over the LAN
     %%> What it does:
     %%> - checks from the candidate that every Cluster Route's workload answers with a valid certificate
@@ -87,6 +98,12 @@ sequenceDiagram
     %%> How:
     %%> - over SSH to the VPN Node, with the `swamp` role's key
     opt a Router is replaced
+      SW->>GW: Hold the Nodes to retire<br/>operation:direct:route-hold
+      %%> What it does:
+      %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
+      %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
+      %%> - a Node that another Route write holds is waited for, up to 20 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
+      %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
       SW->>M: Retire the old Router<br/>withdraw sites · LAN rules
       %%> When:
       %%> - only when the run replaces a Router, after the DNS grace
@@ -95,6 +112,10 @@ sequenceDiagram
       %%> - removes the LAN rules that only the old Router needed; it never removes WireGuard baseline rules
       %%> If it fails:
       %%> - the candidate stays the Router; the old assignment stays recorded as unfinished, and a rerun finishes it
+      SW->>GW: Release the retired Nodes<br/>operation:direct:route-release
+      %%> What it does:
+      %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
+      %%> - runs beside the next step, so it adds no time
     end
     alt every step passes
       SW-->>GW: Run succeeded<br/>terminal event
