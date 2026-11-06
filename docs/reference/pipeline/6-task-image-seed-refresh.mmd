@@ -69,23 +69,26 @@ sequenceDiagram
     SW->>VM: Stop the refresh VM<br/>its seed disk is complete
     %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
     %%> - the refresh VM yields only its seed disk and is never published; it is stopped so that the copy of the disk is consistent
-    %%> - this removes what existed because an enrolled VM was published: the withdraw step, the identity check, the `enrolled` branch of `task-vm-image-clean`, and the `incus admin sql` surgery in the seed attach (an image published from a VM that had the seed pool attached held stale pool records)
+    %%> - the seed disk holds only the `node-template` and the `fleet-ready-*` copies; the running nested guests are on the VM's own disk and go with the VM
+    %%> - this removes what existed because an enrolled VM was published: the withdraw step, the identity check and the `enrolled` branch of `task-vm-image-clean`
     SW->>H: Build the image<br/>clean builder · phases
     %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
-    %%> - the image is published from a builder: a clone of the current image, never enrolled, never attached to a seed, brought to the pins of the release by the phases `software`, `tools` and `check` (the child `task-vm-image-ansible`, as the image build runs them)
-    %%> - the child `task-vm-image-clean` then cleans it as in the image build (cloud-init, machine-id, SSH host keys, trim, stop), so there is one clean step and it has no enrolled branch
+    %%> - the image is published from a builder: a clone of the image the refresh VM started from (its fingerprint, `candidate.source`), named `candidate.builder`, never enrolled, with no seed attached
+    %%> - the builder is brought to the pins of the release by the phases `software`, `tools` and `check`, then cleaned by `task-vm-image-clean` (cloud-init, machine-id, SSH host keys, trim, stop), which has no enrolled branch
+    %%> - the sequence from the launch to the publication is one child workflow, `task-vm-image-builder`, shared with the image build (`task_vm.image_build`), so the two cannot drift apart; the child returns the fingerprint
+    %%> - before the publication one assert checks that the builder has no `topology-seed` pool: an image must never carry the seed pool of the VM it came from
     %%> What it does:
-    %%> - clones the builder from the alias of the current image, waits for its guest agent and cloud-init, runs the phases, cleans and stops it
-    SW->>H: Publish the image<br/>image from the builder
-    %%> What it does:
-    %%> - publishes the stopped builder under a candidate alias and reads its fingerprint
+    %%> - clones the builder, waits for its guest agent and cloud-init, runs the phases, asserts the pools, cleans and stops it, publishes it under a candidate alias and reads its fingerprint
+    %%> Risks the run accepts:
+    %%> - the ready copies are made on the refresh VM from the old image, and the image comes from the builder; the next provision is the check of the pair, and `-previous` (image and old seed) is the rollback
+    %%> - the `incus admin sql` surgery in the seed attach stays until every host serves an image whose lineage never held the seed pool, for example one rebuilt from stock with `task_vm.image_build`; the pool assert keeps that lineage clean, and a later PR deletes the surgery
     SW->>H: Enroll, converge check VM<br/>on the boot-check VM
     %%> Decided by the orchestrator, for Nick's review:
     %%> - a release can trigger a refresh with nobody watching, and a refresh starts from the image the host serves, so one bad image would reach every later provision; the candidate is therefore enrolled and converged before it is promoted
     %%> - on the throwaway VM of the boot check, after its check phase, the run enrolls the guest with the same bootstrap steps as an enrollment (account, key, sudoers file, observer install and verify), then converges it to the pins with the phases `software`, `tools` and `check`
     %%> - the bootstrap steps are one child workflow, `task-vm-bootstrap`, which `task-vm-enrollment` calls too, so the check and a real enrollment cannot drift apart
     %%> - the promotion waits for both steps; a candidate that cannot be enrolled or converged promotes nothing
-    %%> Built: the steps `Enroll the check VM` (the child `task-vm-bootstrap`, which `task-vm-enrollment` calls too) and `Converge the check VM` (the child `task-vm-image-ansible`, phases `software`, `tools` and `check`), after the identity check and before the seed copy
+    %%> Built: the steps `Enroll the check VM` (the child `task-vm-bootstrap`, which `task-vm-enrollment` calls too) and `Converge the check VM` (the child `task-vm-image-ansible`, phases `software`, `tools` and `check`), before the seed copy; the enrollment of the check VM is the guard against enrollment files left in an image
     %%> Not covered:
     %%> - the WireGuard peer, the observer start and the nested fleet: they need a Gateway-admitted Node, so the next provision is their check
     SW->>H: Boot-check, promote<br/>under the host lock
@@ -97,8 +100,6 @@ sequenceDiagram
     %%> - boots a throwaway copy of each ready copy and of the image to check them, then promotes both and destroys the refresh VM
     %%> - keeps the old image and seed as `-previous`, the rollback copy; cleanup always runs
     %%> - a failed step keeps the old image and seed: the builder, and with it the publication and the promotion, run only after the VM step and the save of the ready copies passed, so a VM whose fleet failed its readiness check promotes nothing
-    %%> Not built:
-    %%> - the whole refresh from a running task VM; today the seed refresh boots a builder from the image and has no topology build or ready copies (the old reset was removed), and the image is built from the recipe
     SW->>SL: Replace old ready slots<br/>one at a time
     %%> Target, not built:
     %%> - destroys a ready slot made from the old image, enrols a new one from the new image, then takes the next
