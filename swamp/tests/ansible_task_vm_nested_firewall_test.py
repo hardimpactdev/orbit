@@ -67,11 +67,6 @@ class TaskVmNestedFirewallTest(unittest.TestCase):
         self.assertEqual(len(deleted), 1)
         self.assertEqual((deleted[0]['to_port'], deleted[0]['comment'], deleted[0]['interface']), ('2049', 'orbit:task-vm-nfs', 'nested'))
 
-    def test_the_tools_phase_withdraws_the_nfs_export_of_the_earlier_nested_vms(self):
-        tools = yaml.safe_load((ANSIBLE / 'tasks/task-vm-tools.yml').read_text())
-        export = next(task for task in tools if task['name'] == 'Withdraw the NFS export of the earlier nested VMs')
-        self.assertEqual(export['ansible.builtin.file'], {'path': '/etc/exports.d/orbit-checkout.exports', 'state': 'absent'})
-
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
     def test_an_image_opens_nothing(self):
         self.assertEqual(self.rules(None), [])

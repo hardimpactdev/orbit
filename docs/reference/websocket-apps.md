@@ -174,7 +174,7 @@ Changes to PHP code still require a process restart. Announce a reconnect window
 
 The agent's `websocket.converge-runtime` builds, checks, and activates a release, and `websocket.remove-runtime` removes it. After a successful server activation, the agent keeps the active release and its immediate predecessor and deletes older staged releases. Activation waits up to 30 seconds for the local listener on the configured port. The server opens it only after loading a fresh registry snapshot. A timeout fails with `websocket.runtime_convergence_failed`, skips publication, and keeps the staged releases for recovery. A failed preparation or restart does not prune releases.
 
-The unit `orbit-websocket.service` starts after `network-online.target` and waits for the Gateway API before Reverb starts. Its `ExecStartPre` probes `https://gateway.orbit/up` up to 120 times, a quarter of a second apart, and the unit starts either way. Reverb loads its registry at start, so when the machines of a fleet boot together, Reverb accepts connections about 5 seconds after the boot and not at its next reconcile, about 35 seconds later. A converge writes the unit; a running Reverb takes it at its next restart.
+The unit `orbit-websocket.service` starts after `network-online.target` and waits for the Gateway API before Reverb starts. Its `ExecStartPre` is a stock `curl` that retries `https://gateway.orbit/up` up to 30 times, one second apart. The unit starts either way. Reverb loads its registry at start, so when the machines of a fleet boot together, Reverb accepts connections about 5 seconds after the boot and not at its next reconcile, about 35 seconds later. A converge writes the unit; a running Reverb takes it at its next restart.
 
 ## Deploy and recover
 

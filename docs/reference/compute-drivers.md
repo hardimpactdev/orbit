@@ -1227,7 +1227,7 @@ The fleet build runs only in a large task VM (12 GiB, 6 CPUs), because the three
 
 Every wait of the build for the nested Gateway is one run of the playbook `task-vm-fleet-wait.yml` from Node 209 against the refresh VM. A task with `until`, `retries` and `delay` checks with one `incus exec` every 5 seconds. A check that finds the Gateway guest not running ends the wait at once. The playbook then lists the nested containers, fails naming any that is not running, and asserts the end state. An Operation that did not succeed fails with its failed step and error code. The last wait is the step `Check the nested fleet`, which the Gateway reads as the end of the run.
 
-The build reads the checkout of the refresh VM's own workspace, which its intent names as `operator_checkout`. A task VM keeps it under `/home/orbit/apps/<project>/workspace`. The nested guests mount the export of that path at `/home/orbit/orbit`, so their mount units name the export path as `What=`.
+The build reads the checkout of the refresh VM's own workspace, which its intent names as `operator_checkout`. A task VM keeps it under `/home/orbit/apps/<project>/workspace`. The nested containers have that path as the disk device `checkout` at `/home/orbit/orbit`.
 
 The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM and the builder. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The builder starts only after the VM step and the save of the ready copies passed, so a VM whose fleet failed its readiness check promotes nothing.
 
@@ -1314,7 +1314,7 @@ The VM then joins as operator. It makes its own WireGuard key and writes the pub
 
 One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the role, when the copy was made, the MAC, the IP and the subnet. ``user.ready.complete` is written last.
 
-The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 3 carry the control plan that the play reads; copies of another format are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
+The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 4 carry the control plan that the play reads; copies of another format are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
 
 The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
 

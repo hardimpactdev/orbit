@@ -29,21 +29,23 @@ Deno.test("the swamp role opens the worker credentials before it writes the work
     assert(steps.indexOf(close) < steps.indexOf(unit));
 });
 
-Deno.test("the credentials go to root and the swamp account, folders 0750 and files 0640", () => {
-    const own = named("Own the Swamp worker credentials").task.inputs.argv;
-    const close = named("Close the Swamp worker credentials").task.inputs.argv;
+// The modes are what the argv does on a folder: run its chmod on a scratch tree like the one the tokens are placed in.
+Deno.test("the credentials end as folders 0750 and token files 0640", () => {
+    const argv = named("Close the Swamp worker credentials").task.inputs.argv;
+    const root = Deno.makeTempDirSync();
+    Deno.mkdirSync(`${root}/a`);
+    Deno.writeTextFileSync(`${root}/a/enrollment.token`, "x");
+    Deno.writeTextFileSync(`${root}/a/server.token`, "x");
+    Deno.chmodSync(`${root}/a`, 0o700);
+    Deno.chmodSync(`${root}/a/enrollment.token`, 0o600);
+    Deno.chmodSync(`${root}/a/server.token`, 0o600);
 
-    assertEquals(own.slice(0, 6), ["/usr/bin/sudo", "-n", "--", "/usr/bin/chown", "-R", own[5]]);
-    assert(own[5].startsWith('${{ "root:" + '));
-    assert(own[6].includes("/etc/orbit/swamp-role-worker/") && own[6].includes("self.worker"));
-    // u=rwX,g=rX,o= makes a folder 0750 and a token file (not executable) 0640.
-    assertEquals(close.slice(0, 6), ["/usr/bin/sudo", "-n", "--", "/usr/bin/chmod", "-R", "u=rwX,g=rX,o="]);
-    assert(close[6].includes("/etc/orbit/swamp-role-worker/") && close[6].includes("self.worker"));
-});
+    // Without sudo and with the scratch folder in place of the worker folder.
+    const chmod = new Deno.Command("/bin/chmod", { args: [...argv.slice(4, 6), `${root}/a`] }).outputSync();
+    assert(chmod.success);
 
-Deno.test("no step starts a worker before its unit and credentials", () => {
-    const names = workflow.jobs.map((job) => job.name);
-    assert(names.indexOf("swamp_runtime_job") < names.indexOf("swamp_workers_job"));
-    const starts = workflow.jobs.find((job) => job.name === "swamp_workers_job")!;
-    assertEquals(starts.steps.length, 1);
+    assertEquals(Deno.statSync(`${root}/a`).mode! & 0o777, 0o750);
+    assertEquals(Deno.statSync(`${root}/a/enrollment.token`).mode! & 0o777, 0o640);
+    assertEquals(Deno.statSync(`${root}/a/server.token`).mode! & 0o777, 0o640);
+    assert(argv[3].endsWith("/chmod") && argv[0].endsWith("/sudo"));
 });

@@ -27,7 +27,7 @@ final class ConvergeTaskVmCommand extends Command
         }
         $subnet = $this->option('nested-subnet');
         $interface = $this->option('nested-interface');
-        if ($subnet !== null && (! is_string($subnet) || preg_match('#\A(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\z#', $subnet) !== 1
+        if ($subnet !== null && (preg_match('#\A(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\z#', $subnet) !== 1
             || ! is_string($interface) || preg_match('/\A[a-z][a-z0-9_-]{0,14}\z/', $interface) !== 1)) {
             $this->error('The nested subnet or interface is not valid.');
 

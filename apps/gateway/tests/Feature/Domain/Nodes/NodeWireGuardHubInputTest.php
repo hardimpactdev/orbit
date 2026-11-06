@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmFleetBuildIntent;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
@@ -52,12 +53,17 @@ it('removes one Node from the hub by deleting its own file, and writes or keeps 
     expect(array_column(NodeWireGuardHubInput::intent($hub)['peers'], 'node_id'))->toBe([$other->id]);
 });
 
-it('renders a peer section in the form the nested fleet start writes for the operator, and the hub loads its folder at start', function (): void {
+it('writes the operator peer in the nested fleet start in the form the hub rendering uses', function (): void {
     $hub = SwampNodeFixture::ensure();
-    $key = base64_encode(str_repeat('k', 32));
+    $workflow = file_get_contents(base_path('../../swamp/workflows/workflow-task-nested-fleet.yaml'));
 
-    // swamp/workflows/workflow-task-nested-fleet.yaml writes this file for the operator, so a restore of `base` keeps the peer.
-    expect(NodeWireGuardHubInput::section('operator', $key, '10.45.0.10/32'))->toBe("[Peer]\n# operator\nPublicKey = {$key}\nAllowedIPs = 10.45.0.10/32\n")
-        ->and(NodeWireGuardHubInput::peerFile(7))->toBe('/etc/wireguard/orbit-peers.d/7.conf')
-        ->and(NodeWireGuardHubInput::config($hub))->toContain('for f in /etc/wireguard/orbit-peers.d/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done');
+    // The step "Write the operator peer" pushes `"<head>" + <the key> + "<tail>"` to the peer file of the operator.
+    preg_match('/stdin: \'\$\{\{ "(\[Peer\][^"]*)" \+ steps\["Make the operator key"\]\.outputs\.stdout\.split\("\\\\n"\)\[0\] \+ "([^"]*)" \}\}\'/', $workflow, $text);
+    preg_match('/"(\/etc\/wireguard\/[^"]*)" \+ steps\["Read the operator id"\]\.outputs\.stdout\.split\("\\\\n"\)\[0\] \+ "(\.conf)"/', $workflow, $path);
+
+    expect($text)->toHaveCount(3)->and($path)->toHaveCount(3);
+    $section = stripcslashes($text[1]).'@KEY@'.stripcslashes($text[2]);
+    expect($section)->toBe(NodeWireGuardHubInput::section('operator', '@KEY@', TaskVmFleetBuildIntent::OperatorAddress.'/32'))
+        ->and($path[1].'7'.$path[2])->toBe(NodeWireGuardHubInput::peerFile(7))
+        ->and(NodeWireGuardHubInput::config($hub))->toContain('for f in '.NodeWireGuardHubInput::PeerDirectory.'/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done');
 });
