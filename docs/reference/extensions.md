@@ -31,7 +31,7 @@ The Gateway has five extensions. This table shows where each one's code lives to
 
 Analytics is still a core role, not a sixth extension. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) keeps its persisted role identity in core and moves behavior through narrow typed contributions, after explicit Process ownership is proved. Its proposed disabled behavior preserves serving and data; no Analytics switch or migration is delivered by the proposal.
 
-Task agent turns and checkout operations share the [workspace lease](/reference/tasks#workspace-lease). Task drivers and remote operations use that ownership rule regardless of which caller starts the work. A disabled extension does not erase an existing holder or its recovery evidence.
+Task work on one group runs one operation at a time through the group's Operation lock. A disabled extension does not erase an existing operation record.
 
 ## Layout
 

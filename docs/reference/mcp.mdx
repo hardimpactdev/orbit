@@ -117,7 +117,7 @@ The `tasks-*` tools belong to the Gateway-switched [tasks](/reference/tasks) ext
 
 `tasks-group-comment-create` and `tasks-group-comment-list` use a numeric `group` and require Gateway access. Create accepts only `type` (`assistance_requested` or `resolution`), nonblank `body`, and `author`; list accepts optional `type` and `limit` filters and returns an array. These are [group-owned assistance comments](/reference/tasks#group-assistance-after-all-children-end), separate from child comments, with the same guards and no-work semantics as the API. A successful create returns 201, not an exact-retry 200 receipt.
 
-`tasks-status` returns the API `workspace_leases` list with each holder, queued actor, and uncertainty flag. Use these records to explain why work waits. The tool does not grant a new lease or reset an unknown owner; [workspace lease reconciliation](/reference/tasks#workspace-lease) stays in the scheduler.
+`tasks-status` returns whether the extension is on, the groups asking for assistance and the open review-and-merge groups.
 
 ## Connect a client
 

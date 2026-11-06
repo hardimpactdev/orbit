@@ -5,9 +5,9 @@ covers:
   - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/{swamp,task_pull_requests}.php}"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
-  - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-pr-comment,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "apps/gateway/app/Console/Commands/{CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-pr-comment,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks}.php"
 ---
@@ -28,13 +28,12 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction and model-key revocation finish before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
 
-Project removal also requires every associated workspace lease to be `released` or `cancelled`, a withdrawn waiter. A `held`, `queued`, or unknown lease status returns HTTP 409 and `project.task_workspace_lease_active`. The message names the Project, lease id, kind, and status. All records, including lease operations, remain unchanged. A missing Instance does not prove release. Project deletion does not release leases and removes only released and cancelled leases and their operations.
 
 ## Extension switch and status
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), `merges`, and `workspace_leases`. `merges` lists the stored open review-and-merge records. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), and `merges`. `merges` lists the stored open review-and-merge records. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -90,9 +89,9 @@ Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-
 
 `POST /api/v1/task-groups/{group}/park`, CLI `tasks:park GROUP --idempotency-key=KEY`, and MCP `tasks-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
 
-Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and no other unfinished operation or workspace owner. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
+Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and and no other unfinished operation. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
 
-A subtask that is still `todo` does not block the park: a prep run opens the spec PR and leaves its subtask `todo`, because the code follows. Such a subtask counts as idle only while no turn, check or prep run of the group is running and no workspace lease is held. A subtask that runs or waits for review refuses the park. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
+A subtask that is still `todo` does not block the park: a prep run opens the spec PR and leaves its subtask `todo`, because the code follows. Such a subtask counts as idle only while no turn, check or prep run of the group is running. A subtask that runs or waits for review refuses the park. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
 
 The operation checks eligibility under the group execution lock. Swamp stops the existing VM through the canonical provider child and checks its stopped state. The Gateway reads native provider completion and retains the IDs captured at admission; no shell prints them again. It checks eligibility again after the stop and moves the group to `waiting_for_review` only if that check still passes. A child or assistance change during shutdown refuses the operation and preserves the previous group status. It preserves the checkout and disk. It neither allocates another VM nor merges the PR.
 
@@ -236,7 +235,7 @@ Cancellation uses native Swamp cancel and official SSH session teardown. It does
 
 `tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
-The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a workspace lease or cross-step lock.
+The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a cross-step lock.
 
 Pi HTTP actions run as bounded native curl commands on the Swamp worker. curl reads the Pi token from its own environment, never from argv, and redirects fail. The worker needs only `sh`, `curl` and `awk`: `awk` keeps the first terminal event of the turn in the run's private worker directory, and a TypeScript step reads only its state and finite nonnegative usage.
 
@@ -752,79 +751,11 @@ A failure in one source does not skip the others. The dispatch command exits suc
 
 Swamp drives each group through the API and MCP operations documented above. `tasks:tick` and tick orchestration are removed. Creating a todo group records intent; only Swamp starts its work.
 
-The Gateway retains task state, workspace leases, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase.
+The Gateway retains task state, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase.
 
 The group execution lock waits at most five seconds for every waiting caller, including HTTP actions, operation workers and VM jobs. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
 
-## Workspace lease
-
-This section describes the retained lease consumers. Script, turn and publication operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.
-
-One durable workspace lease coordinates the retained actors that read a task checkout for a verdict or write it. The lease belongs to the Instance. Candidate and handoff checks, deliverable commands, workspace fast-forwards, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
-
-A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. The merge-ready gate uses GitHub state and recorded review evidence, so it does not acquire a workspace lease or join its queue. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
-
-After release, the oldest eligible waiter is admitted when its durable scheduler workflow retries. A synchronous request that fails before it owns such a workflow withdraws its unconsumed waiter. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
-
-A handoff check starts inside its implementer's receipt scope and takes over that lease for its detached process. It never queues a separate check lease ahead of the receipt that must admit it. A baseline check starts inside its own admitted check scope.
-
-Agent turns keep ownership until Orbit observes that the turn stopped. Detached checks keep ownership until Orbit records their remote result. A timeout or an unavailable runtime never proves that a holder stopped. After authoritative completion, replaying the same keyed command acknowledges its durable result without opening another turn or lease.
-
-Before admitting workspace work, Orbit reconciles completed checks and stopped turns under the execution lock. A stale or unreachable holder stays visible and prevents another actor from entering the checkout. A missing check supervisor does not prove its child commands stopped, so a lost reading retains ownership.
-
-A stopped Gateway retains its synchronous lease when remote completion is unknown; there is no timeout reset. Synchronous SSH operations record an operation ID before dispatch and a remote completion receipt outside the checkout.
-
-Each operation runs as the managed user in a dedicated systemd service with a retained terminal state. The service receives command arguments unchanged, including literal dollar expressions; only the invoked program interprets them. Recovery verifies the exact operation binding, host boot, terminal service state, and empty cgroup, including descendants that closed inherited descriptors. A changed boot ends an old operation with an unknown exit status; it never establishes a successful command or an attributable resulting tree. An unavailable system manager or passwordless managed sudo refuses the operation; Orbit never falls back to an uncontained mutation.
-
-Recovery queries that exact ID. An absent ID is atomically tombstoned before it can count as not started, so a delayed original request cannot start afterward. A running or unreadable record retains ownership, even when its supervisor is missing. Proven local process death permits recovery only after every dispatched operation has a terminal receipt or tombstone. Gateway process identity includes its host, boot, PID, and process start ticks.
-
-On the Gateway, `php artisan tasks:lease:release LEASE_ID --reason="operator investigation"` requests guarded recovery of one exact held lease. It does not stop a process, discard a waiter, delete a checkout, or publish a verdict. Admission is sealed in the database and on every recorded remote binding before quiescence is checked. Late operation IDs and delayed service starts honor the same durable seal.
-
-Recovery reads the managed-unit inventory and proves terminal state and empty cgroups for this lease’s operation binding and journaled check run ID. A readable, consistently identified unit for another lease or check run does not block recovery.
-
-A listed unit with no unit file does not block recovery only when it is inactive, has no cgroup, and has no pending job. A `not-found` load state alone does not prove that its processes stopped. Every other `not-found` state, a failed state read, any other non-loaded state, or inconsistent unit identity retains the fence. Any separate check or agent turn still needs authoritative completion.
-
-A live or unreadable actor, unmanaged legacy ownership, uncertain provider destruction, or an unverifiable Node remains held. A missing Instance row is not termination evidence. Cross-host synchronous ownership can recover after sealing every recorded endpoint; a local live owner cannot be displaced. The command records its reason, proof and result in Activity. Operator release never credits an unknown tree change to Orbit.
-
-For an owner recorded on another Gateway host, pass `--gateway-node=ID`. Orbit uses that Node’s pinned SSH transport and verifies the exact recorded hostname, boot and process start identity. A live or unreadable owner is refused. On that pinned Node and matching hostname, a changed boot proves the recorded process ended, just as it does for a local Gateway. With the original boot, Orbit requires the exact PID and process start identity to prove death. An unreadable boot or mismatched hostname does not prove death.
-
-Remote operations and separate turns still need their own terminal evidence. A rebooted managed check ends as interrupted and failed; a result from its previous boot cannot pass a gate or establish a causal after-tree.
-
-Before an opening turn, Orbit journals its request key and forwards that same key to the driver, including when Orbit generates it. A dispatched keyed turn completes its lease only when Pi reports `done` or `failed` for that exact key. `idle`, an unreadable prior observation, and terminal state for another key prove no completion. This preserves the fence while a delayed request may still arrive.
-
-A pre-existing turn adopted without a dispatch journal has no request key to match. Orbit retains that owner until it observes a nonempty turn ID in `idle`, `done`, or `failed`.
-
-A permanently lost Pi runtime can leave a dispatched turn without terminal evidence. The lease remains held, and the operator release command refuses it. There is no supported force-release or expiry for that turn; restoring authoritative runtime evidence or a separately reviewed recovery procedure is required. A ghost teardown with no Instance, saved endpoint, or authoritative provider destruction has the same evidence limit.
-
-Remote receipts, operation lock files and binding seals are retained. Removing a tombstone or seal could admit a delayed original; unlinking a lock while an old process holds its inode could create a second lock. Orbit has no automatic pruning procedure yet. Storage must remain available; age alone never permits deleting recovery evidence.
-
-A protocol-level turn refusal retires that exact released scope before cleanup or replacement. Cleanup inspects the existing reservation and never acquires a new lease. A sealed scope or uncertain dispatch still refuses new work.
-
-Orbit records the review HEAD and working tree after it acquires the reviewer lease and prepares the turn, immediately before it sends the review packet. A review that waited therefore reads the current tree. Review outcomes and publication use the same ownership rule.
-
-Every completed Orbit mutation records its before and after HEAD and tree under its lease. A failed after-snapshot leaves a completed holder pending that read; recovery retries the snapshot without repeating the mutation. The delayed snapshot cannot distinguish an intervening outside edit. A Gateway death before finalization leaves the same observation gap. Orbit marks these causal intervals uncertain and does not use it to clear assistance, even when ownership can safely end. A terminal check with its own durable final snapshot retains that exact evidence.
-
-Detached check starts have a durable run ID before dispatch. Their separate retained system service checks the start tombstone before running. A check result is terminal only after the service and all descendants stop; a later tree change fails the gate and records the final snapshot as causally uncertain. Each run stores its result and output by run ID, so an old status request cannot consume or overwrite a newer result. A lost start reply retains its check row; recovery adopts that exact run or atomically fences a start that never arrived.
-
-A durable mutation marker distinguishes executed Orbit commands from read-only verdicts; a changed snapshot under a read-only lease is not ownership proof.
-
-A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open. A running subtask whose direction relay waits for the workspace keeps its assistance request and the answer linked to its question. Swamp reads that answer and decides when to send it.
-
-The causal chain starts after the lease that captured the review baseline, using admission order rather than queue creation order. A matching mutation from an earlier review cannot excuse a later edit. Fetches, pushes, and receipt-file cleanup do not prove a checkout mutation.
-
-An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. In a review-and-merge Project, it reopens the handoff instead, as [Handoff CI](#handoff-ci) describes. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
-
-Existing assistance stays open until an operator resolves it. A review without a recorded baseline lease cannot inherit proof from merge or check records created before leases existed.
-
-### Why the workspace has one lease
-
-Separate guards for reviewers, checks, and workspace fast-forwards leave other actor pairs free to overlap. One durable lease gives every actor the same ownership rule and preserves detached ownership after a Gateway restart. Process locks alone end before an agent turn or detached check ends. Expiring locks could admit a second writer while the first still runs, so ownership ends only after authoritative reconciliation. Treating every changed HEAD as an Orbit mutation would allow an outside edit to bypass review protection. Exact recorded ownership keeps automatic recovery narrow.
-
-System services retain completion evidence after an SSH client or Gateway process dies. Orbit verifies that the exact service is terminal and its cgroup is empty before it releases ownership. A raw SSH exit status or a missing supervisor PID cannot prove that descendants stopped. Atomic tombstones exclude requests that reach the remote host after recovery. Missing or unreadable evidence keeps the fence; no elapsed-time expiry or blind release command bypasses it.
-
-A garbage-collected unit (`not-found`) with a `running` receipt keeps the lease held until an operator releases it, because Orbit cannot distinguish it from a unit that has not yet been created.
-
-Task work requires systemd 250 or newer, cgroup v2, and the managed account's passwordless sudo prerequisite. Unsupported supervision refuses remote operations. The remote receipt stores operation identity and completion, without commands, credentials, or output. Lease and operation history survives task or Instance removal because an older review can still refer to it. Operations restrict deletion of their lease; a retention policy must preserve referenced baselines before history can be removed.
+A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
 
 ## Task workspace
 
@@ -1234,7 +1165,7 @@ The read writes no thread state. Activity samples it like any other [read](/cli/
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
+Cancel runs under the group execution lock before it pushes approved work or removes the checkout. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
 Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
 
@@ -1336,9 +1267,9 @@ A push that started can reach GitHub even after its client stops. Native cancell
 
 These reasons explain the design. Check them before you propose a change.
 
-### External checks own their lease and commit
+### External checks are their own operation and own their commit
 
-A turn and its check are separate operations. The check waits for the turn to release the workspace, so a receipt scope cannot lend it the implementer's lease. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit. A lost check retains ownership because a missing supervisor does not prove its children stopped.
+A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit.
 
 The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
 

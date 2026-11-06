@@ -48,7 +48,6 @@ final readonly class TaskCheckEvidence
         $updated = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
             ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);
         $check->refresh();
-        app(TaskWorkspaceLease::class)->finishedCheck($check, $reading);
         $groupId = Task::query()->whereKey($check->task_id)->value('parent_id');
         if ($updated === 1 && is_int($groupId)) {
             $this->broadcasts->groupChanged($groupId);

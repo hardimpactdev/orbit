@@ -88,7 +88,6 @@ describe('tasks contract', function (): void {
     it('renders tasks status', function (): void {
         run_task_contract('tasks/tasks-status/enabled', 'tasks:status', [], 0);
         run_task_contract('tasks/tasks-status/assistance', 'tasks:status', [], 0);
-        run_task_contract('tasks/tasks-status/workspace-leases', 'tasks:status', [], 0);
         run_task_contract('tasks/tasks-status/merges', 'tasks:status', [], 0);
     });
 
