@@ -50,12 +50,20 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-remove-the-earlier-fleet").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-remove-the-earlier-fleet").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'delete', '--force', '${{ inputs.intent.fleet.guests.gateway }}', '${{ inputs.intent.fleet.guests["app-dev"] }}', '${{ inputs.intent.fleet.guests["app-prod"] }}'], okExitCodes: any, timeoutSec: 200}}
+  # The earlier Gateway had another host key at the same address; the bootstrap's file steps trust the operator's known_hosts on first use, so the operator forgets it. A VM without known_hosts exits 255.
+  - name: 'Forget the earlier host key'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-forget-the-earlier-host-key").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-forget-the-earlier-host-key").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['ssh-keygen', '-f', '${{ "/home/" + inputs.intent.ssh_execution.target.user + "/.ssh/known_hosts" }}', '-R', '${{ inputs.intent.fleet.layout["gateway"].address }}'], okExitCodes: [0, 255], timeoutSec: 30}}
+    dependsOn: [{step: 'Remove the earlier fleet', condition: {type: succeeded}}]
   - name: 'Read the operator key'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-operator-key").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-operator-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['cat', '${{ "/home/" + inputs.intent.ssh_execution.target.user + "/.ssh/id_ed25519.pub" }}'], timeoutSec: 30}}
-    dependsOn: [{step: 'Remove the earlier fleet', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Forget the earlier host key', condition: {type: succeeded}}]
   # Stock Ubuntu with cloud-init: the orbit account and the key of this VM. Stateful, with the state disk the memory needs, as the ready copies require.
   - name: 'Create the VMs'
     labels: {role: swamp}
