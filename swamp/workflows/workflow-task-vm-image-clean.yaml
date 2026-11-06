@@ -1,7 +1,7 @@
-id: d7613a2f-778a-4c5e-922f-98b5bc3a761d
+id: 49c3f5db-edf5-458b-a5db-b64215d9c6ba
 name: task-vm-image-clean
 description: >-
-  Clean and stop a VM so that its disk can be published as a task image: no nested guests, no WireGuard key, observer identity or secret, no Pi token, model key or Club key, no checkout, no SSH host keys, a reset machine-id and cloud-init. One argv per step over official SSH to the Incus host, through `incus exec`. The refresh of a task image (stage 6) runs it on its enrolled refresh VM; the image build runs it on its builder with `enrolled: false` and `nested: {}`.
+  Clean and stop a VM so that its disk can be published as a task image: no nested guests, no WireGuard key, observer identity or secret, no Pi token, model key or Club key, no checkout, no enrollment firewall rules, no SSH host keys, a reset firewall, machine-id and cloud-init. One argv per step over official SSH to the Incus host, through `incus exec`. The refresh of a task image (stage 6) runs it on its enrolled refresh VM; the image build runs it on its builder with `enrolled: false` and `nested: {}`.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -35,7 +35,7 @@ jobs:
       behaviorName: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-guests").split(".").join("-") }}'
       methodName: exec
       globalArgs: {name: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-guests").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'delete', '--force', '${{ "guests" in inputs.intent.nested ? inputs.intent.nested.guests["gateway"] : "" }}', '${{ "guests" in inputs.intent.nested ? inputs.intent.nested.guests["app-dev"] : "" }}', '${{ "guests" in inputs.intent.nested ? inputs.intent.nested.guests["app-prod"] : "" }}'], okExitCodes: any, timeoutSec: 200}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'delete', '--force', '${{ inputs.intent.nested.guests["gateway"] }}', '${{ inputs.intent.nested.guests["app-dev"] }}', '${{ inputs.intent.nested.guests["app-prod"] }}'], okExitCodes: any, timeoutSec: 200}
   - name: 'Remove the nested network'
     labels: {role: swamp}
     writes: true
@@ -47,7 +47,7 @@ jobs:
       behaviorName: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-network").split(".").join("-") }}'
       methodName: exec
       globalArgs: {name: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-nested-network").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'network', 'delete', '${{ "network" in inputs.intent.nested ? inputs.intent.nested.network : "" }}'], okExitCodes: any, timeoutSec: 60}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'incus', 'network', 'delete', '${{ inputs.intent.nested.network }}'], okExitCodes: any, timeoutSec: 60}
   - name: 'Stop the services'
     labels: {role: swamp}
     writes: true
@@ -72,11 +72,23 @@ jobs:
       methodName: exec
       globalArgs: {name: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-identity").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'rm', '-rf', '/etc/orbit/agent', '/etc/wireguard/orbit.conf', '/etc/wireguard/orbit.key', '/etc/wireguard/orbit.dns-link', '/etc/wireguard/wg-nested.key', '/home/orbit/.pi/agent/models.json', '/home/orbit/.pi/agent/orbit-token', '/home/orbit/.config/swamp/club-api-key'], timeoutSec: 60}
-  - name: 'Delete the checkout'
+  - name: 'Reset the firewall'
     labels: {role: swamp}
     writes: true
     guard: '${{ !inputs.intent.enrolled }}'
     dependsOn: [{step: 'Delete the identity', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-firewall").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-clean-" + string(inputs.intent.host_ssh_execution.target.node_id) + "-" + inputs.intent.vm.name + "-firewall").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.host_ssh_execution.target.user }}', port: '${{ inputs.intent.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.vm.project }}', 'exec', '${{ inputs.intent.vm.name }}', '--', 'ufw', '--force', 'reset'], timeoutSec: 60}
+  - name: 'Delete the checkout'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !inputs.intent.enrolled }}'
+    dependsOn: [{step: 'Reset the firewall', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
