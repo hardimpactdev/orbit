@@ -100,7 +100,7 @@ final readonly class SwampCommandStep
 
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true,data?:string}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
     {
@@ -316,7 +316,7 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector
+     * @param  array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true,data?:string}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
@@ -341,6 +341,10 @@ final readonly class SwampCommandStep
                 if (($step['name'] ?? null) === $selector['step']) {
                     $outputs = $step['outputs'] ?? [];
                     $stdout = is_array($outputs) ? ($outputs['stdout'] ?? null) : null;
+                    // Swamp inlines only a small step output in the run history; a larger one is read as its data artifact.
+                    if ($stdout === null && isset($selector['data'])) {
+                        $stdout = $this->artifactStdout($selector['data'], $step);
+                    }
                     $selected ??= $step['status'] ?? null;
                 } elseif (in_array($step['name'] ?? null, $selector['alternatives'] ?? [], true) && ($step['status'] ?? 'skipped') !== 'skipped') {
                     // The alternative that ran is the end check.
@@ -391,6 +395,27 @@ final readonly class SwampCommandStep
         }
 
         return $result;
+    }
+
+    /** The `stdout` of the `output` data artifact a step wrote, for a step whose output the run history did not inline.
+     * @param  array<string,mixed>  $step
+     */
+    private function artifactStdout(string $behavior, array $step): ?string
+    {
+        $versions = [];
+        foreach (is_array($step['dataArtifacts'] ?? null) ? $step['dataArtifacts'] : [] as $artifact) {
+            if (is_array($artifact) && ($artifact['name'] ?? null) === 'output' && is_int($artifact['version'] ?? null) && $artifact['version'] > 0) {
+                $versions[] = $artifact['version'];
+            }
+        }
+        if (count($versions) !== 1) {
+            return null;
+        }
+        $reply = $this->read('data.get', ['modelIdOrName' => $behavior, 'dataName' => 'output', 'version' => $versions[0]]);
+        $content = is_array($reply['data'] ?? null) ? ($reply['data']['content'] ?? null) : null;
+        $decoded = is_string($content) ? json_decode($content, true) : $content;
+
+        return is_array($decoded) && is_string($decoded['stdout'] ?? null) ? $decoded['stdout'] : null;
     }
 
     /** One request following a native terminal event. Receiving its response is not status polling.

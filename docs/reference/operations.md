@@ -140,6 +140,8 @@ A failed or interrupted root retains its first causal step as `failed_step` and 
 
 When a kind's workflow has no result-reporting step, the kind declares its terminal result as `native`. Its projector then reads Swamp's own run data keyed by step name ([Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step)). `node.converge` uses each native step outcome to record the footprint parts that succeeded, including the network part and its handshake assertion.
 
+A terminal result declaration can also name `data`, the data behavior of its terminal step. When Swamp does not inline a large step output in the run history, the projector reads the step's `output` data artifact from that behavior ([Swamp command steps](/reference/swamp-command-steps#scheduled-observations)).
+
 A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
 
 The shared extractor redacts known Instance and Process environment values, configured Swamp credentials and credential-shaped text before retaining the last 4 KiB. It drops a truncated first line whose identifying prefix may be missing, then redacts the retained text again. Budget expiry omits `error.stderr_recorded`, because that result makes no claim about native stderr. Native family scripts still own safe output preservation; this projection does not change their placement or execution.
