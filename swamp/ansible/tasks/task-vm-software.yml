@@ -1,4 +1,5 @@
 ---
+- { name: Install the package cache, ansible.builtin.import_tasks: task-vm-apt-cache.yml }
 - { name: Install the apt packages, ansible.builtin.import_tasks: task-vm-apt.yml }
 - { name: Install JavaScript, ansible.builtin.import_tasks: task-vm-javascript.yml }
 - { name: Install Rust, ansible.builtin.import_tasks: task-vm-rust.yml }

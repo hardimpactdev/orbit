@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Node;
@@ -12,16 +11,15 @@ it('reads the Ubuntu snapshot through the package cache of the task VM for a nes
 
     $input = app(ToolManagerIntent::class)->nativeInput($node, ToolManagerName::Composer);
 
-    expect($input['apt']['proxy'])->toBe('http://10.232.2.1:3142')
-        ->and(TaskVmReadyCopiesIntent::aptCache($node))->toBe('http://10.232.2.1:3142');
+    expect($input['apt']['proxy'])->toBe('http://10.232.2.1:3142');
 });
 
-it('reads the Ubuntu snapshot directly for every other Node', function (?string $host): void {
+it('names no package cache for every other Node', function (?string $host): void {
     $node = new Node(['platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => $host]);
 
     $input = app(ToolManagerIntent::class)->nativeInput($node, ToolManagerName::Composer);
 
-    expect($input['apt']['proxy'])->toBeNull();
+    expect($input['apt'])->not->toHaveKey('proxy')->and($input['apt'])->toHaveKeys(['snapshot', 'packages']);
 })->with([
     'a Node on the network of its host' => '10.251.78.178',
     'a Node on the WireGuard network' => '10.44.0.131',

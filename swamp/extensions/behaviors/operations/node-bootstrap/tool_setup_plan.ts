@@ -60,7 +60,8 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             source,
             ["resolute", "resolute-updates", "resolute-security"].map((suite) =>
                 "deb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] " +
-                (proxy === null ? "https" : "http") + "://snapshot.ubuntu.com/ubuntu/" +
+                (proxy === null ? "https" : "http") +
+                "://snapshot.ubuntu.com/ubuntu/" +
                 apt.snapshot + "/ " + suite +
                 " main restricted universe multiverse\n"
             ).join(""),
@@ -76,10 +77,14 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             "Dir::State::Lists=" + cache + "/lists",
             "-o",
             "APT::Get::List-Cleanup=false",
-            // The cache answers a revalidation of a stored index with a 5xx now and then; the next try is served.
+            // Through the cache the Node asks for the index files the image build asked for (it ignores the drop-ins of
+            // apt.conf.d, which add the appstream and command-not-found files), and tries a failed download again at once, five times:
+            // the snapshot service answers 502 now and then while the cache fills.
             ...(proxy === null ? [] : [
                 "-o",
                 "Acquire::http::Proxy=" + proxy,
+                "-o",
+                "Dir::Etc::parts=-",
                 "-o",
                 "Acquire::Retries=5",
             ]),

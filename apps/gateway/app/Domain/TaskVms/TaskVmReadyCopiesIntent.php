@@ -12,7 +12,6 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
-use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
  * Renders "Save the new images" of the seed refresh (docs/cli/tasks/vm-ready-copies.mmd) as the full workflow input: the
@@ -29,20 +28,6 @@ final readonly class TaskVmReadyCopiesIntent
 
     /** The subnet of the nested network. The ready copies store the MAC and address of each Node inside it, so a converge and the fleet steps use this one. */
     public const string Subnet = '10.232.2.0/24';
-
-    /** The address of the task VM on the nested network, where the nested Nodes reach its package cache (`apt-cacher-ng`, docs/cli/tasks/vm-fleet-build.mmd). */
-    public const string Bridge = '10.232.2.1';
-
-    /** The port of that package cache. The task VM role opens it on the nested bridge only (task-vm-nested-firewall.yml). */
-    public const int AptCachePort = 3142;
-
-    /** The package cache a Node reads the Ubuntu snapshot through: the task VM's, for a Node inside the nested subnet; null for any other Node. */
-    public static function aptCache(Node $node): ?string
-    {
-        $host = $node->public_ssh_host;
-
-        return is_string($host) && IpUtils::checkIp($host, self::Subnet) ? 'http://'.self::Bridge.':'.self::AptCachePort : null;
-    }
 
     /**
      * The format of the ready copies, written to each copy as `user.ready.format`. A copy of another format, or none, is not usable: the
