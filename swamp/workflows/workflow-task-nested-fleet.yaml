@@ -177,6 +177,28 @@ jobs:
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'ping', '-c', '1', '-w', '20', '10.45.0.1'], timeoutSec: 40}}
     dependsOn: [{step: 'Bring up the tunnel', condition: {type: succeeded}}]
   # The nested Gateway runs its own Swamp as part of the Orbit under test. The ready copies are key-free; the VM holds the proof Swamp Club key from the workspace step.
+  # The candidate CLI on the outer VM talks to the nested Gateway as the operator: a profile `nested` by address, with the CA of the nested Gateway pinned. The proof runner calls this CLI.
+  - name: 'Make the CLI home'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['install', '-d', '-m', '0700', '/home/orbit/.orbit'], timeoutSec: 40}}
+    dependsOn: [{step: 'Check the tunnel', condition: {type: succeeded}}]
+  - name: 'Pin the nested CA'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-pin-the-nested-ca").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-pin-the-nested-ca").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'file', 'pull', '${{ inputs.intent.fleet.guests.gateway }}/home/orbit/.orbit/ca/root.pem', '/home/orbit/.orbit/nested-ca.pem'], timeoutSec: 70}}
+    dependsOn: [{step: 'Make the CLI home', condition: {type: succeeded}}]
+  - name: 'Add the CLI profile'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-cli-profile").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-add-the-cli-profile").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.intent.workspace.checkout_path }}/apps/cli/orbit', 'gateway:add', 'https://10.45.0.1', '--name=nested', '--use', '--accept-ca-change', '--ca=/home/orbit/.orbit/nested-ca.pem', '--json'], timeoutSec: 130}}
+    dependsOn: [{step: 'Pin the nested CA', condition: {type: succeeded}}]
   # `incus file push --create-dirs` makes the folders as root, which breaks the orbit user of the nested Gateway; the folders exist before the push, owned by orbit.
   - name: 'Make the Club key folder'
     labels: {role: swamp}
@@ -204,7 +226,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
-    task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}'}}
+    task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}', club: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}'}}
     dependsOn: [{step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, which every restore of `base` reuses).
   - name: 'Check readiness'

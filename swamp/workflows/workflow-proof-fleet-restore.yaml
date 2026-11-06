@@ -39,5 +39,5 @@ jobs:
   - name: 'Apply the checkout'
     labels: {role: swamp}
     writes: true
-    task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {guest_node_id: '${{ inputs.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.ssh_execution }}', fleet: '${{ {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}, "network": "oe-nested"} }}'}}
+    task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {guest_node_id: '${{ inputs.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.ssh_execution }}', fleet: '${{ {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}, "network": "oe-nested"} }}', club: '${{ true }}'}}
     dependsOn: [{step: 'Check readiness', condition: {type: succeeded}}]
