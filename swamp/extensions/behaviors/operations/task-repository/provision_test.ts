@@ -123,8 +123,11 @@ Deno.test("source result requires every ordered setup step before exposing the s
             "inspect",
             "composer",
             "profile",
-            "deps_write",
-            "deps_remove",
+            "deps_mint",
+            "deps_clear",
+            "deps_write_composer",
+            "deps_write_npm",
+            "deps_remove_files",
         ].map((name) => [name, { status: "succeeded", outputs: {} }]),
     );
     assertEquals(sourceResult(input, steps), {
@@ -144,7 +147,7 @@ Deno.test("source result requires every ordered setup step before exposing the s
         source,
     });
     // The private-dependency steps are part of the receipt: a failed mint, write or removal fails the provision.
-    for (const name of ["deps_write", "deps_remove"]) {
+    for (const name of ["deps_mint", "deps_clear", "deps_write_composer", "deps_write_npm", "deps_remove_files"]) {
         const before = steps[name].status;
         steps[name].status = "failed";
         assertEquals(sourceResult(input, steps), { error_code: "tasks.provision_failed", failed_step: name });
@@ -182,8 +185,11 @@ Deno.test("proof provision requires private delivery before group readiness but 
                 "identity",
                 "inspect",
                 "composer",
-                "deps_write",
-                "deps_remove",
+                "deps_mint",
+                "deps_clear",
+                "deps_write_composer",
+                "deps_write_npm",
+                "deps_remove_files",
             ].map((name) => [name, { status: "succeeded", outputs: {} }]),
         ),
         profile: {
@@ -531,37 +537,31 @@ Deno.test("the revoke outcome tells a revoked token from one GitHub does not kno
     assertEquals(revokeOutcome({}), { state: "unrevoked", reason: "The revoke step could not run." });
 });
 Deno.test("the receipt names what became of the setup token, and a missing report is never a success", () => {
-    const reported = { state: "revoked" };
+    const minted = { deps_mint: { status: "succeeded" } };
+    assertEquals(dependencyToken({ ...minted, deps_revoke: { status: "succeeded", outputs: { stdout: "204" } } }), { state: "revoked" });
     assertEquals(
-        dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: { result: reported } } }),
-        reported,
-    );
-    assertEquals(
-        dependencyToken({
-            deps_write: { status: "succeeded" },
-            deps_remove: { status: "succeeded", outputs: { result: { state: "unrevoked", reason: "GitHub answered HTTP 503 to the revoke." } } },
-        }),
+        dependencyToken({ ...minted, deps_revoke: { status: "succeeded", outputs: { stdout: "503" } } }),
         { state: "unrevoked", reason: "GitHub answered HTTP 503 to the revoke." },
     );
-    // The write step ran and nothing was reported back.
-    assertEquals(dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: {} } }).state, "unrevoked");
-    assertEquals(
-        dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: { result: { state: "fine" } } } }).state,
-        "unrevoked",
-    );
-    // The write step was skipped: nothing was written, so nothing needed revoking.
+    // The mint ran and the revoke step never did, or said nothing: nothing says the token is gone.
+    assertEquals(dependencyToken({ ...minted }).state, "unrevoked");
+    assertEquals(dependencyToken({ ...minted, deps_revoke: { status: "succeeded", outputs: {} } }).state, "unrevoked");
+    // The mint was skipped: no token was asked for, so nothing needed revoking.
     assertEquals(dependencyToken({}), { state: "none", reason: "No setup step ran." });
 
     const source = { branch: "task-30", commit: "a".repeat(40), php_version: null, laravel: false };
     const steps: Record<string, { status: string; outputs?: unknown }> = Object.fromEntries(
-        ["prepare", "directory", "control", "mint_clone", "clone", "bundle", "prepare_remote", "copy_bundle", "import", "origin", "branch", "identity", "inspect", "composer", "profile", "deps_write"]
+        ["prepare", "directory", "control", "mint_clone", "clone", "bundle", "prepare_remote", "copy_bundle", "import", "origin", "branch", "identity", "inspect", "composer", "profile", "deps_mint", "deps_clear", "deps_write_composer", "deps_write_npm", "deps_remove_files"]
             .map((name) => [name, { status: "succeeded", outputs: {} }]),
     );
     steps.guest = { status: "succeeded" };
     steps.profile.outputs = { source };
-    steps.deps_remove = { status: "succeeded", outputs: { result: { state: "none", reason: "GitHub holds no valid setup token." } } };
+    steps.deps_revoke = { status: "succeeded", outputs: { stdout: "401" } };
 
     const receipt = result(intent, vm, steps);
-    assertEquals(receipt.dependency_token, { state: "none", reason: "GitHub holds no valid setup token." });
+    assertEquals(receipt.dependency_token, {
+        state: "none",
+        reason: "GitHub holds no valid setup token: none was minted, or it had expired or been revoked.",
+    });
     assertEquals(receipt.source, source);
 });

@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; Swamp composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
   %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route and Processes through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
-  %% status: reviewed
+  %% status: draft
   %% command: tasks:provision
   %% kind: tasks.provision
   autonumber
@@ -44,7 +44,9 @@ sequenceDiagram
   %%> Private dependencies:
   %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` (`http-basic` for `github.com`, user `x-access-token`) and the `.npmrc` of the task account from it, mode 0600
   %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
-  %%> - then it revokes the token (`DELETE installation/token`), so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - beside the removal, not after it, it revokes the token (`DELETE installation/token`): a revoked token is dead whether or not the files are gone, so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the dependency steps stay off the critical path. The token is asked for beside the clone credential, right after the control step, and the old files are cleared early. The two files are written by two parallel steps in one stage, and the removal and the revoke are two parallel steps in one stage. All are plain argv steps, not child workflows and not an Ansible phase: a phase costs three dispatches (input, vars, playbook), each about 1.3 s, more than the two parallel steps it would replace
+  %%> - measured in op 12083: the write took 6 s and the removal 4.3 s on the critical path; the target is one dispatch each, under 4 s together
   %%> - the revoke reports what became of the token in the receipt, as `dependency_token`: `revoked` (GitHub answered 204), `none` (GitHub answered 401: no token was minted, or it had expired or been revoked) or `unrevoked` with the reason (any other answer, or no answer)
   %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the provision. The files are already gone from the VM, the token reads for at most an hour, and a failed provision would not shorten that hour; the receipt and the operation result name the reason instead
   %%> - when no setup step runs, nothing is written, removed or revoked
