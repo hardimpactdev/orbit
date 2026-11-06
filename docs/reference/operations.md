@@ -104,7 +104,9 @@ The other task VM workflows (`task-workspace-source`, `task-vm-workspace`, `task
 
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, `composer install` where lock files differ from the seed (31 to 35 seconds for five) and the memory snapshot `base` (about 19 seconds); 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
-`proof.verify` has a provisional 2,700 seconds. It has no run yet. A run executes the cases of one command in the task VM through the workflow `proof-fleet-verify`. Basis: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; with 1.5 times margin and rounded up to five minutes it is 2,700. Replace it with the 14-day p95 after the first success.
+`proof.command` has a provisional 3,600 seconds, and `proof.run` 3,900. They have no run yet. A run proves one command in its own task VM through the workflow `operation-proof-run`: the task provision, then the cases through `proof-fleet-verify`, then the destruction of the VM.
+
+Basis of `proof.command`: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; the provision takes about 300 and the destruction about 120; with 1.5 times margin and rounded up to five minutes it is 3,600. The `proof.run` that the CLI follows adds five minutes, because it closes when its last run has ended. Replace both with the 14-day p95 after the first success.
 
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
 
@@ -361,7 +363,7 @@ Admission records the intent, the idempotency key and the target hold in one tra
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
 
-the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) and `proof.run` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when the task operations of its proof group (`tasks.provision`, `tasks.script`, `proof.verify` and `tasks.cancel`) have ended.
+the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) and `proof.run` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when its runs have ended. Each run is an Operation `proof.command` with a Swamp run of its own; its provision, cases and destruction are children of that run.
 
 ### One operation per target
 

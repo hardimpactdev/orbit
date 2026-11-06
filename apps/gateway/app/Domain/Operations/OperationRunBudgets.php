@@ -63,14 +63,13 @@ final class OperationRunBudgets
         // Horizon drain, which waits for running jobs up to the longest supervisor timeout + 30 s (1,730 s); x 1.5 = 2,783 s,
         // rounded up to five minutes. An expiry pauses releases. Replace with the 14-day p95 after the first success.
         'gateway.release' => 3000,
-        // No run yet. Basis: the case budget of 1,800 s that docs/cli/proof/run.mdx sets, the test fleet reset (about 60 s,
-        // 300 s allowed), the fleet release (600 s) and a margin, rounded up to five minutes. Replace with the 14-day p95
-        // after the first success.
-        'proof.run' => 3000,
-        // No run yet. Basis: the runner cases of firewall:allow, 16 cases, each about 85 s with its restore (65 s of it the wait for Doctor in
-        // the main case only) and at most 180 s; 14 cases x 120 s plus 2 batch restores is about 1,800 s, x 1.5, rounded up to five minutes.
-        // Replace with the 14-day p95 after the first success.
-        'proof.verify' => 2700,
+        // No run yet. The proof the CLI follows closes when its last run ends, so its budget is the one of a run and five minutes.
+        'proof.run' => 3900,
+        // No run yet. Basis: the task provision (a task VM clone, enrolment and checkout, about 5 minutes with the nested fleet), the runner
+        // cases of firewall:allow, 16 cases, each about 85 s with its restore (65 s of it the wait for Doctor in the main case only) and at most
+        // 180 s; 14 cases x 120 s plus 2 batch restores is about 1,800 s, then the destruction of the VM (about 2 minutes); the sum x 1.5,
+        // rounded up to five minutes. Replace with the 14-day p95 after the first success.
+        'proof.command' => 3600,
         'node.converge' => 3900,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.

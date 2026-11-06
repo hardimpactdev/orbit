@@ -9,9 +9,11 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Proof\ProofRunSettlement;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Cancels unstarted intent; a bound native workflow owns its terminal result, and Swamp stops it. */
@@ -37,9 +39,12 @@ final readonly class CancelOperationAction
         });
 
         $operation->refresh();
-        // A proof owns a task group with a VM; cancelling the proof without the group would leave the VM running.
+        // A proof owns a task group with a VM for each of its runs; cancelling the proof without the groups would leave the VMs running.
         if ($operation->kind === OperationKinds::ProofRun && $operation->status === OperationStatus::Cancelled) {
-            DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id));
+            foreach (ProofRunSettlement::runs($operation) as $run) {
+                $run = ValidatedData::object($run);
+                DB::afterCommit(static fn () => CancelProofGroup::dispatch(ValidatedData::integer($run['operation_id'])));
+            }
         }
         if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
             if (DirectOperation::owns($operation) && app(DirectOperation::class)->usesNativeTerminal($operation)) {
