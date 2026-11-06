@@ -225,7 +225,7 @@ function firewallSelectionList(): ?ProofSelectionList
 {
     $root = dirname(base_path(), 2);
 
-    return is_file($root.'/swamp/proof/selection.txt')
+    return is_file($root.'/swamp/proof/selection.txt') && file_exists($root.'/.git')
         ? ProofSelectionList::parse((string) file_get_contents($root.'/swamp/proof/selection.txt')) : null;
 }
 
@@ -299,9 +299,22 @@ it('keeps documentation and the unit tests of the proof tooling out of the share
 ]);
 
 it('runs every case when a shared file changes', function (): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $selected = proofSelect(['apps/gateway/app/Domain/Operations/OperationStore.php'], list: (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'));
 
     expect($selected['because'])->not->toBeNull()->and($selected['files'])->toBe(PROOF_CASES_FILES);
+});
+
+it('names only tracked files in the lines that select every case', function (): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $root = dirname(base_path(), 2);
+    $tracked = array_flip(array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files'))));
+    preg_match_all('~^(\S+)\s+\*$~m', (string) file_get_contents($root.'/swamp/proof/selection.txt'), $lines);
+    $named = array_values(array_filter($lines[1], static fn (string $glob): bool => ! str_contains($glob, '*') && ! str_contains($glob, '?')));
+
+    expect($named)->not->toBeEmpty();
+    $missing = array_values(array_filter($named, static fn (string $path): bool => ! isset($tracked[$path])));
+    expect($missing)->toBe([]);
 });
 
 it('selects every case for every tracked file of the shared directories', function (): void {
