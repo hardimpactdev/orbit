@@ -45,7 +45,9 @@ sequenceDiagram
       SW->>VM: Build the fleet<br/>task_vm.fleet_build
       %%> Decided by the orchestrator, for Nick's review:
       %%> - the first refresh of a host whose seed holds no ready copies calls the nested fleet build as a child (chart `docs/cli/tasks/vm-fleet-build.mmd`), which ends by saving ready copies; the refresh then goes on
-      %%> Not built: the child is wired when `task_vm.fleet_build` lands; until then the first refresh needs ready copies in the seed
+      %%> Not built: the child is wired when `task_vm.fleet_build` lands
+      %%> Decided by the orchestrator, for Nick's review:
+      %%> - until then a seed without usable ready copies is refreshed without them: the provision child records `nested_fleet: none`, the run skips the save of ready copies, and the result says `ready_copies: false`; the image still converges to the release and is promoted, and the seed is the copy of the old one
     end
     opt playbooks or pins changed since the current image
       SW->>VM: Converge once<br/>outer VM · nested Nodes

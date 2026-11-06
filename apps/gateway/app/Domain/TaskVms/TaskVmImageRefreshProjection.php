@@ -71,7 +71,8 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
 
             $result = ['error_code' => $code];
             if ($fingerprint !== null) {
-                $result = $this->record($operation, $fingerprint);
+                // A seed without usable ready copies is refreshed without them until the fleet build exists; the result says which.
+                $result = [...$this->record($operation, $fingerprint), 'ready_copies' => NativeRunResult::stepStatus($native, 'Save the ready copies') === 'succeeded'];
             }
             $data['result'] = $result;
             $data['error_code'] = $code;
