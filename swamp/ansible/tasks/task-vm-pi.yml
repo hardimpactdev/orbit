@@ -1,5 +1,5 @@
 ---
-# The Pi server is an internal artifact: the run copies it to the controller, and the pin names its digest.
+# The Pi server is an internal artifact: the run copies it to the controller (pi_path), and the pin names its digest.
 - name: Read the Pi server
   when: "'pi' in tool_by_name"
   ansible.builtin.stat: { path: "{{ orbit_home }}/.local/bin/pi-server", checksum_algorithm: sha256 }
@@ -9,7 +9,7 @@
   block:
     - name: Require the Pi artifact
       ansible.builtin.assert:
-        that: [intent.pi is not none]
+        that: [pi_path is defined]
         fail_msg: The Pi server differs from its pin and the run brought no artifact.
         quiet: true
     - name: Create the Pi folder
@@ -21,7 +21,7 @@
         mode: "0755"
     - name: Copy the Pi server
       ansible.builtin.copy:
-        src: "{{ intent.pi.path }}"
+        src: "{{ pi_path }}"
         dest: "{{ orbit_home }}/.local/bin/pi-server"
         owner: "{{ orbit_user }}"
         group: "{{ orbit_user }}"
