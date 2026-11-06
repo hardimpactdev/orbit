@@ -193,13 +193,7 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 ### Deploy step output
 
-While a production deploy step runs, the [Node agent](/reference/node-agent#live-output) that runs it publishes its output on `private-operation.{id}` as Pusher client events. These events carry no `{type, id, at, data}` envelope.
-
-| Event | When | Data |
-| --- | --- | --- |
-| `client-output` | The step writes one line. | `{ step, stream, sequence, line }` |
-
-`step` is the deploy step's name. `stream` is `stdout` or `stderr`. `sequence` counts the step's lines from 1. `line` is redacted, without its newline. The events are live only: a client that missed one reads the step's output tail from the operation once the step ends.
+No component publishes `client-output` events now: the agent command that did was removed. A deploy step's output stays on the Node.
 
 
 ### Tasks

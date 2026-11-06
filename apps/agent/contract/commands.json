@@ -34,21 +34,6 @@
   ],
   "commands": [
     {
-      "name": "analytics.configure-clickhouse",
-      "summary": "Publish Plausible's four fixed ClickHouse configuration files.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "analytics.clickhouse_config_unsafe",
-        "analytics.clickhouse_config_failed",
-        "analytics.clickhouse_recovery_failed"
-      ]
-    },
-    {
       "name": "task-vm.start-topology",
       "summary": "Start one bounded topology preparation as the managed account.",
       "mutates": true,
@@ -1454,20 +1439,6 @@
       ]
     },
     {
-      "name": "database.write-valkey-acl",
-      "summary": "Write the ACL file into a Valkey Database server's volume.",
-      "mutates": true,
-      "timeout_seconds": 300,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "database.valkey_acl_invalid",
-        "database.valkey_acl_failed"
-      ]
-    },
-    {
       "name": "cli.inspect",
       "summary": "Say whether the Orbit CLI on the Node is missing, current, older, or foreign.",
       "mutates": false,
@@ -1503,21 +1474,6 @@
         "cli.checksum_mismatch",
         "cli.candidate_invalid",
         "cli.install_failed"
-      ]
-    },
-    {
-      "name": "cli.self-update",
-      "summary": "Run the trusted CLI self-update with root's managed Node profile.",
-      "mutates": true,
-      "timeout_seconds": 600,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "cli.self_update_invalid",
-        "cli.self_update_unavailable",
-        "cli.self_update_failed"
       ]
     },
     {
@@ -1801,66 +1757,6 @@
       ]
     },
     {
-      "name": "instance.prepare-development-source",
-      "summary": "Create a development Instance's checkout, or check the one an earlier attempt made.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.source_invalid",
-        "instance.source_busy",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.inspect-development-source",
-      "summary": "Check a development Instance's prepared checkout and read its origin, branch, and commit.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.source_invalid",
-        "instance.source_busy",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.resolve-development-source",
-      "summary": "Fetch a development Instance's origin and check out its branch.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.source_invalid",
-        "instance.source_busy",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.read-development-environment-template",
-      "summary": "Read the committed environment template of the resolved development source.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.source_invalid",
-        "instance.source_busy",
-        "instance.git_failed"
-      ]
-    },
-    {
       "name": "instance.prepare-release",
       "summary": "Clone a new production release of a branch and link its environment and shared paths.",
       "mutates": true,
@@ -2005,20 +1901,6 @@
       ]
     },
     {
-      "name": "instance.run-deploy-step",
-      "summary": "Run a production deploy step as the Instance user and publish its output live.",
-      "mutates": true,
-      "timeout_seconds": 3600,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.deploy_step_invalid",
-        "instance.deploy_step_start_failed"
-      ]
-    },
-    {
       "name": "instance.read-application-log",
       "summary": "Read the newest lines of an Instance's Laravel log.",
       "mutates": false,
@@ -2125,174 +2007,6 @@
         "instance.caddy_access_failed",
         "instance.caddy_access_recovery_failed"
       ]
-    },
-    {
-      "name": "instance.inspect-clone-candidate",
-      "summary": "Check that a clone candidate's source is clean and its repository holds its commit.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.clone_candidate_release_missing",
-        "instance.clone_candidate_source_invalid",
-        "instance.clone_candidate_release_changed",
-        "instance.clone_candidate_branch_invalid",
-        "instance.clone_candidate_dirty",
-        "instance.clone_candidate_repository_unavailable",
-        "instance.clone_candidate_commit_unavailable",
-        "instance.clone_target_branch_missing"
-      ]
-    },
-    {
-      "name": "instance.copy-sqlite",
-      "summary": "Copy, export, install, or remove a development SQLite database.",
-      "mutates": true,
-      "timeout_seconds": 600,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.sqlite_copy_refused",
-        "instance.sqlite_copy_failed"
-      ]
-    },
-    {
-      "name": "instance.read-sqlite-snapshot",
-      "summary": "Stream a verified private SQLite snapshot to the Gateway.",
-      "mutates": false,
-      "timeout_seconds": 1800,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.sqlite_transfer_invalid",
-        "instance.sqlite_transfer_refused",
-        "instance.sqlite_transfer_failed"
-      ],
-      "output_max_bytes": 1099511627776
-    },
-    {
-      "name": "instance.receive-sqlite-snapshot",
-      "summary": "Receive a verified SQLite snapshot into its prepared account-owned file.",
-      "mutates": true,
-      "timeout_seconds": 1800,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.sqlite_transfer_invalid",
-        "instance.sqlite_transfer_refused",
-        "instance.sqlite_transfer_failed"
-      ],
-      "input_max_bytes": 1099511627776
-    },
-    {
-      "name": "database.query-sqlite",
-      "summary": "Query an existing SQLite database read-only as its selected owner.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "owner",
-        "macos": "owner"
-      },
-      "errors": [
-        "database.sqlite_unreadable",
-        "database.query_failed"
-      ]
-    },
-    {
-      "name": "database.write-sqlite",
-      "summary": "Run an authorized write against an existing SQLite database as its selected owner.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "owner",
-        "macos": "owner"
-      },
-      "errors": [
-        "database.sqlite_unreadable",
-        "database.query_failed"
-      ]
-    },
-    {
-      "name": "instance.prepare-sqlite-seed",
-      "summary": "Take or clean up the source snapshot of a SQLite seed.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "instance.sqlite_seed_refused",
-        "instance.sqlite_seed_failed",
-        "instance.sqlite_seed_unconfirmed"
-      ]
-    },
-    {
-      "name": "instance.install-sqlite-seed",
-      "summary": "Prepare, install, or clean up the target of a SQLite seed.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "instance.sqlite_seed_refused",
-        "instance.sqlite_seed_failed",
-        "instance.sqlite_seed_unconfirmed"
-      ]
-    },
-    {
-      "name": "instance.transfer-source",
-      "summary": "Capture, discard, or clean up a development Instance transfer.",
-      "mutates": true,
-      "timeout_seconds": 600,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.transfer_archive_invalid",
-        "instance.transfer_source_failed"
-      ]
-    },
-    {
-      "name": "instance.read-transfer-archive",
-      "summary": "Stream a private captured checkout archive to the Gateway.",
-      "mutates": false,
-      "timeout_seconds": 1800,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.transfer_archive_invalid",
-        "instance.transfer_source_failed"
-      ],
-      "output_max_bytes": 1099511627776
-    },
-    {
-      "name": "instance.materialize-transfer",
-      "summary": "Materialize a received checkout archive as the managed account.",
-      "mutates": true,
-      "timeout_seconds": 1800,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.transfer_archive_invalid",
-        "instance.transfer_source_failed"
-      ],
-      "input_max_bytes": 1099511627776
     },
     {
       "name": "vite.select-port",
@@ -2526,23 +2240,6 @@
         "task_vm.git_input_invalid",
         "task_vm.git_unreadable"
       ]
-    },
-    {
-      "name": "task-vm.export-git-pack",
-      "summary": "Stream a thin pack of the approved checkout commit to the Gateway.",
-      "mutates": false,
-      "timeout_seconds": 1800,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.git_export_invalid",
-        "task_vm.git_commit_missing",
-        "task_vm.git_export_failed",
-        "task_vm.git_pack_too_large"
-      ],
-      "output_max_bytes": 2147483648
     },
     {
       "name": "task-vm.import-git-pack",
@@ -2984,21 +2681,6 @@
       },
       "errors": [
         "project.source_failed"
-      ]
-    },
-    {
-      "name": "database.server-admin",
-      "summary": "Run the admin client of a Database server's container, or copy a database inside it.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "database.server_admin_invalid",
-        "database.server_admin_failed",
-        "database.server_not_ready"
       ]
     },
     {
@@ -3529,19 +3211,6 @@
       },
       "errors": [
         "certificate.leaf_failed"
-      ]
-    },
-    {
-      "name": "instance.inspect-deploy-step",
-      "summary": "Prove whether an Operation/run-bound deploy step runner is gone without changing the Node.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "deployment.runner_probe_unconfirmed"
       ]
     },
     {

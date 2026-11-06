@@ -358,27 +358,6 @@ mod tests {
 
     const PIN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    #[test]
-    fn binary_producer_finishes_before_dispatch_returns_its_result() {
-        let entry = Box::leak(Box::new(Entry {
-            run: |_, context| {
-                std::thread::sleep(context.remaining() + Duration::from_millis(10));
-                Outcome::refused(
-                    "producer.stopped",
-                    "The producer stopped its children.",
-                    json!({}),
-                )
-            },
-            ..registry::entry::<crate::commands::task_git_export::ExportPack>()
-        }));
-        let result = run_in_process(
-            entry,
-            json!({}),
-            Context::new(Platform::Linux, Instant::now() + Duration::from_millis(10)),
-        );
-        assert_eq!(code(&result), "producer.stopped");
-    }
-
     fn host(euid: u32) -> Host {
         Host {
             platform: Platform::Linux,

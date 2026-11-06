@@ -443,26 +443,22 @@ fn ci_caches(input: &LifecycleInput) -> Result<RunDeployStepOutput, DeployStepEr
             "CI caches cold: no recorded code baseline.\n",
         ));
     };
-    run_program(
-        &Program {
-            user: None,
-            directory: &input.checkout,
-            command: StepCommand::Fixed {
-                executable: "/usr/bin/python3",
-                arguments: &[
-                    "bin/ci-cache-ref".as_ref(),
-                    "import".as_ref(),
-                    "--commit".as_ref(),
-                    commit.as_ref(),
-                ],
-            },
-            step: &input.step,
-            secrets: &[],
-            environment: &input.environment,
-            timeout: Duration::from_secs(input.timeout_seconds),
+    run_program(&Program {
+        user: None,
+        directory: &input.checkout,
+        command: StepCommand::Fixed {
+            executable: "/usr/bin/python3",
+            arguments: &[
+                "bin/ci-cache-ref".as_ref(),
+                "import".as_ref(),
+                "--commit".as_ref(),
+                commit.as_ref(),
+            ],
         },
-        None,
-    )
+        secrets: &[],
+        environment: &input.environment,
+        timeout: Duration::from_secs(input.timeout_seconds),
+    })
 }
 
 /// Runs one Project setup or teardown step with the lifecycle lock held and not inherited. Another step in the checkout refuses it at once with `instance.lifecycle_busy`.
@@ -483,18 +479,14 @@ pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, Dev
         .open(&file)
         .and_then(|mut handle| handle.write_all(script.as_bytes()))
         .map_err(|_| failed("write the step"))?;
-    let result = run_program(
-        &Program {
-            user: None,
-            directory: &input.checkout,
-            command: StepCommand::Script(&file),
-            step: &input.step,
-            secrets: &[],
-            environment: &input.environment,
-            timeout: Duration::from_secs(input.timeout_seconds),
-        },
-        None,
-    );
+    let result = run_program(&Program {
+        user: None,
+        directory: &input.checkout,
+        command: StepCommand::Script(&file),
+        secrets: &[],
+        environment: &input.environment,
+        timeout: Duration::from_secs(input.timeout_seconds),
+    });
     let _ = fs::remove_file(&file);
     result.map_err(lifecycle_error)
 }
