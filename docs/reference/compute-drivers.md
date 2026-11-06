@@ -1282,7 +1282,7 @@ A booted guest makes mount point directories there and writes a Laravel log, and
 
 The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and makes three VMs from the stock image with cloud-init, the key of the VM, and the state disk that stateful copies need. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
 
-Each VM has a 20 GiB root disk and a state volume as large as its memory, set as two device options, so that its copies can be stateful.
+Each VM has a 20 GiB root disk and a state volume as large as its memory, set as two device options, so that its copies can be stateful. The VMs live in the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed.
 
 The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
 

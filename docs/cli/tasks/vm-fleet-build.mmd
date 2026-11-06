@@ -22,7 +22,7 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-vm-fleet-build
   SW->>VM: Create the nested network<br/>subnet · three stock VMs
   %%> What it does:
-  %%> - in the refresh VM: the nested Incus network from the intent's subnet, then three VMs from the stock Ubuntu image, each with cloud-init for the `orbit` account and the key that reaches it, a 20 GiB root disk and a state volume as large as its memory (the copies are stateful)
+  %%> - in the refresh VM: the nested Incus network from the intent's subnet, then three VMs from the stock Ubuntu image, each with cloud-init for the `orbit` account and the key that reaches it, a 20 GiB root disk and a state volume as large as its memory (the copies are stateful), all on the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed
   %%> - every action one `@swamp/ssh exec` argv on the refresh VM
   VM->>NG: Prepare the Gateway<br/>local Swamp · one run
   %%> What it does:
