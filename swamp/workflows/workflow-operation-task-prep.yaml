@@ -358,4 +358,5 @@ jobs:
           pull_head: ${{ inputs.intent.publish.pull_head }}
           pull_request: ${{ inputs.intent.publish.pull_request }}
           ssh_execution: ${{ steps["Pin the VM"].outputs.publish.ssh_execution }}
+        run_id: ${{ run.id }}
         execution_secrets: '${{ {"github_token": inputs.publish_secrets.github_token, "git_authorization": inputs.publish_secrets.git_authorization} }}'

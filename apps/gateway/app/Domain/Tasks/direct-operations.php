@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskPublishProjection;
 use App\Domain\Tasks\TaskPullRequestCommentProjection;
 use App\Domain\Tasks\TaskPullRequestMergeProjection;
 use App\Domain\Tasks\TaskPullRequestReadyProjection;
+use App\Domain\Tasks\TaskPushGitHubTokens;
 use App\Domain\Tasks\TaskScriptProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
@@ -25,7 +26,7 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
     'execution_copies' => [...$vmProvision['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-git-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']],
-], 'tasks.publish' => ['workflow' => 'operation-task-publish', 'projection' => TaskPublishProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm publication', 'native' => true, 'captures' => ['pull_receipt' => ['job' => 'publish', 'step' => 'Read PR result', 'field' => 'stdout']]], 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.check' => ['workflow' => 'operation-task-check', 'projection' => TaskCheckProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the result', 'native' => true,
+], 'tasks.publish' => ['workflow' => 'operation-task-publish', 'projection' => TaskPublishProjection::class, 'github_token_issuer' => TaskPushGitHubTokens::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm publication', 'native' => true, 'captures' => ['pull_receipt' => ['job' => 'publish', 'step' => 'Read PR result', 'field' => 'stdout']]], 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.check' => ['workflow' => 'operation-task-check', 'projection' => TaskCheckProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the result', 'native' => true,
     'captures' => ['receipt' => ['job' => 'check', 'step' => 'Push the candidate', 'field' => 'finish']]],
     'scheduled_result' => ['workflow' => 'task-check-ci', 'workflow_id' => '4a2d9dd5-9f83-41d4-b8df-8e46367ed230',
         'terminal_result' => ['job' => 'checks', 'step' => 'collect', 'data' => 'task-check-ci-data'], 'rows' => 'checks'], 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-check-write-[a-f0-9-]{36}$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-check-read-[a-f0-9-]{36}$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-check-git-[a-f0-9-]{36}$']]], 'tasks.script' => ['workflow' => 'operation-task-script', 'projection' => TaskScriptProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'script', 'step' => 'outcome', 'native' => true, 'captures' => ['program' => ['job' => 'script', 'step' => 'shape', 'field' => 'result_json']]]], 'tasks.turn' => ['workflow' => 'operation-task-turn', 'projection' => TaskTurnProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'turn', 'step' => 'outcome', 'native' => true, 'captures' => ['turn' => ['job' => 'turn', 'step' => 'shape_result', 'field' => 'result_json']]], 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$']]], 'tasks.dependency_merge' => [
@@ -49,7 +50,7 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the comment step', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'comment', 'step' => 'Post the comment', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-comment-write-[a-f0-9-]{36}$']],
         ], 'tasks.prep' => [
-            'workflow' => 'operation-task-prep', 'projection' => TaskPrepProjection::class,
+            'workflow' => 'operation-task-prep', 'projection' => TaskPrepProjection::class, 'github_token_issuer' => TaskPushGitHubTokens::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'prep', 'step' => 'Review has no findings', 'native' => true, 'captures' => [
                 'provision' => ['job' => 'prep', 'step' => 'Create the VM'],

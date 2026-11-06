@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Data\Tasks\StartTaskPrepData;
-use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Swamp\PendingSshHostKey;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\Tasks\Pi\PiModel;
@@ -32,7 +29,7 @@ final readonly class TaskPrepIntent
     /** The review rounds of the parent workflow `operation-task-prep`; its steps are written out, so this number is part of it. */
     public const int Rounds = 3;
 
-    public function __construct(private TaskProvisionIntent $provision, private OperationIdempotency $idempotency, private SwampCommandStep $shared) {}
+    public function __construct(private TaskProvisionIntent $provision, private OperationIdempotency $idempotency) {}
 
     public function start(Task $group, StartTaskPrepData $data, string $caller, ?string $request): Operation
     {
@@ -50,13 +47,8 @@ final readonly class TaskPrepIntent
         if (! $subtask instanceof Task || ($subtask->deliverables ?? []) === []) {
             throw new ResourceOperationException('tasks.subtask_deliverables_missing', 'The group needs a subtask with a deliverable for the review agent to confirm.', 422);
         }
-        try {
-            $token = app(RepositoryPullRequestAccess::class)->token($repository);
-        } catch (GitHubApiException) {
-            throw new ResourceOperationException('tasks.publish_failed', 'The GitHub App cannot publish to this repository.', 503);
-        }
 
-        return $this->provision->admit($group, null, 'tasks.prep', function (array $input, Task $group, Instance $instance, TaskVm $vm) use ($prompts, $repository, $base, $subtask, $token, $data): array {
+        return $this->provision->admit($group, null, 'tasks.prep', function (array $input, Task $group, Instance $instance, TaskVm $vm) use ($prompts, $repository, $base, $subtask, $data): array {
             $instance->loadMissing('node');
             // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
             $ssh = app(PendingSshHostKey::class)->during($instance->node_id, fn (): array => app(SwampSshExecutionInput::class)->forNode($instance->node));
@@ -74,8 +66,9 @@ final readonly class TaskPrepIntent
                 'deliverables' => $subtask->deliverables ?? [], 'ssh_execution' => $ssh,
             ];
             $branch = 'task-'.$group->id;
-            $copy = $this->shared->executionCopy('orbit-control-inputs', 'task-publish-token-'.Str::uuid(), $token);
-            $authorization = $this->shared->executionCopy('orbit-control-inputs', 'task-publish-token-'.Str::uuid(), 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token));
+            // Only the vault key names are admitted. The publish step is minutes to hours away, so it mints the token when it runs ({@see TaskPushGitHubTokens}).
+            $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
+            $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
             return [
                 'command' => $data->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],

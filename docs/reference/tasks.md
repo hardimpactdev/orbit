@@ -260,7 +260,9 @@ Direct turn cancellation uses native Swamp cancellation and official SSH session
 
 `tasks:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
-The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work before minting. It mints the existing GitHub installation token for that repository and supplies two small execution copies: the token for GitHub API calls and its Git authorization header. Intent contains only their vault descriptors.
+The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
+
+A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and writes the two values. The reply holds vault descriptors only.
 
 A worker on Node 209 uses official SSH to verify HEAD and the whole working tree against the checked candidate. Each VM read and command is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Four reads take `git read-tree HEAD`, `git add --all` and `git write-tree` on a per-run index file, and `git rev-parse HEAD`. A moved candidate fails with `tasks.head_moved` before a push.
 
@@ -272,7 +274,7 @@ Swamp pushes the exact candidate to `task-{id}` without force. Git pushes nothin
 
 Without `pull_request`, publication only pushes. With it, a `gh api` step looks for an open pull request from the admitted branch. TypeScript on 209 plans one update of its title and body when found, or one creation against the admitted default branch, and a second `gh api` step sends it from a private JSON input file. A lost reply fails the operation.
 
-After cleanup removes scratch, start a fresh command. It obtains a fresh token, pushes again and repeats the PR lookup before another mutation. Native resume cannot recreate scratch from a completed step, and it cannot reopen a terminal Operation.
+After cleanup removes scratch, start a fresh command. Its push step mints a fresh token, pushes again and repeats the PR lookup before another mutation. Native resume cannot recreate scratch from a completed step, and it cannot reopen a terminal Operation.
 
 Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields without changing board status or settle metrics. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
 
@@ -293,7 +295,7 @@ The group is an external `todo` group, made with `tasks:create`, of a Project th
 - the title and body of the draft pull request;
 - the repository, the base and the branch `task-{group}`.
 
-It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints the GitHub installation token for the pull request. The token and its Git authorization header travel as vault key names, never as values. Admission adds no child Operation. No step of the run calls the Gateway.
+It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints no GitHub token. A prep run takes longer than the hour that an installation token lives, so admission only names the vault keys of the push token and its Git authorization header. The publish step asks the Gateway for the token with the run id of the prep run, right before the push. Admission adds no child Operation. That mint is the one call a step of the run makes to the Gateway.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 

@@ -13,6 +13,8 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, enum: [tasks.publish]}
+    # The root run of the Operation, which the Gateway checks when it mints. A parent run passes its own; a run started by the Gateway is the root.
+    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
       type: object
       properties:
@@ -524,6 +526,24 @@ jobs:
     - step: Read bundle contents
       condition:
         type: succeeded
+  - name: Mint the push token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-mint-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_MINT_REQUEST\" \"$ORBIT_MINT_URL\"\n"
+        env:
+          ORBIT_MINT_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}
+          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + (has(inputs.run_id) ? inputs.run_id : run.id) + "\"}" }}'
+    dependsOn:
+    - step: Check imported commit
+      condition:
+        type: succeeded
   - name: Push the branch
     labels:
       role: swamp
@@ -555,7 +575,7 @@ jobs:
           ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
         ignoreExitCode: true
     dependsOn:
-    - step: Check imported commit
+    - step: Mint the push token
       condition:
         type: succeeded
     writes: true
@@ -688,6 +708,7 @@ jobs:
           GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
+    guard: ${{ !("Mint the push token" in steps && steps["Mint the push token"].status == "succeeded") }}
     allowFailure: true
     writes: true
   - name: Remove remote scratch
