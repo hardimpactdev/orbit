@@ -10,7 +10,7 @@ use App\Models\Operation;
 
 /**
  * Admits the refresh of one task VM host's image and seed as one run. A refresh that is open on the host is returned
- * instead of a second one, so the release projection and the daily schedule can both ask.
+ * instead of a second one, so a repeated operator command starts nothing new.
  */
 final readonly class StartTaskVmImageRefreshAction
 {
