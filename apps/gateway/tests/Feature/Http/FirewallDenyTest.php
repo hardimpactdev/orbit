@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -43,6 +44,7 @@ function denyHttpComplete(Operation $operation, string $status): Operation
 }
 
 beforeEach(function (): void {
+    SwampNodeFixture::ensure();
     Http::preventStrayRequests();
     $this->caller = denyHttpNode('operator', '10.44.0.9');
     $this->denyNode = denyHttpNode('target', '10.44.0.2');
