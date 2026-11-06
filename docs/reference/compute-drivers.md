@@ -1158,7 +1158,7 @@ The last five steps follow:
 5. **Clean and stop.** `cloud-init clean`, an empty `/etc/machine-id`, removed SSH host keys, then `incus stop`.
 6. **Publish the candidate.** `incus publish` with the properties `orbit.recipe` and `orbit.profile`. The Gateway reads the fingerprint from its output.
 7. **Smoke the candidate.** The child workflow `task-vm-image-smoke` boots a throwaway VM from the candidate and runs the `check` phase on it.
-8. **Promote the image.** The child workflow `task-vm-image-promote` moves the base alias to the candidate. It keeps the old image as the `-previous` alias.
+8. **Promote the image.** The child workflow `task-vm-image-promote` moves the base alias to the fingerprint of the candidate. It keeps the old image as the `-previous` alias.
 9. **Remove builder and smoke.** This step always runs. A failed removal does not fail the run.
 
 A clone makes its own cloud-init state, machine id and host keys at its first boot. The Operation holds the host lock key for the whole run, so no other host Operation runs while the alias moves. A later attempt removes a stray builder first.

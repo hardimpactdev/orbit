@@ -10,7 +10,8 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, enum: [task_vm.image_build]}
     intent: {type: object}
-  required: [operation_id, node_id, kind, intent]
+    fingerprint: {type: string, pattern: '^[a-f0-9]{64}$'}
+  required: [operation_id, node_id, kind, intent, fingerprint]
   additionalProperties: false
 jobs:
 - name: promote
@@ -77,5 +78,5 @@ jobs:
       inputs:
         hosts: name:host
         sudo: true
-        argv: [timeout, '60', incus, image, alias, create, --project, '${{ inputs.intent.project }}', '--', '${{ inputs.intent.base_alias }}', '${{ inputs.intent.candidate_alias }}']
+        argv: [timeout, '60', incus, image, alias, create, --project, '${{ inputs.intent.project }}', '--', '${{ inputs.intent.base_alias }}', '${{ inputs.fingerprint }}']
         timeoutSec: 80
