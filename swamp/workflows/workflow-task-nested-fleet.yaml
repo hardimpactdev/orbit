@@ -199,8 +199,15 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-restart-the-nested-swamp").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-restart-the-nested-swamp").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'restart', 'orbit-swamp-serve', 'orbit-node-worker'], timeoutSec: 70}}
     dependsOn: [{step: 'Push the Club key', condition: {type: succeeded}}]
+  # The checkout and the state of the Gateway and app-dev, the migrations and the restart of the long-running services (child `task-nested-apply`, which the restore of the base snapshot reuses).
+  - name: 'Apply the checkout'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
+    task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}'}}
+    dependsOn: [{step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   - name: result
     labels: {role: swamp}
     task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "nested-fleet-result-" + string(inputs.intent.guest_node_id) }}', methodName: execute,
       inputs: {run: 'printf ''{"nested_fleet":"%s"}\n'' "$ORBIT_FLEET"', env: {ORBIT_FLEET: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 ? "none" : "started" }}'}}}
-    dependsOn: [{step: 'Check the tunnel', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Check the tunnel', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Apply the checkout', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
