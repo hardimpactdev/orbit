@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -132,6 +131,13 @@ it('places the VM of a refresh in a large size that the admission sets, whatever
     }
 
     expect($sizes)->toBe([TaskVmSize::Large]);
+});
+
+it('refuses a seed that is neither build nor keep, before it creates a group', function (): void {
+    $host = imageRefreshHost();
+
+    expect(imageRefreshRefusal(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test', null, 'both')))->toBe('task_vm.seed_invalid');
+    expect(Task::topLevel()->count())->toBe(0);
 });
 
 it('names the seed of an image from its fingerprint, so the refreshed image has a seed of its own', function (): void {

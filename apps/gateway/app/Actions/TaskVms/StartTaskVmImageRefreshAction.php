@@ -16,8 +16,8 @@ final readonly class StartTaskVmImageRefreshAction
 {
     public function __construct(private TaskVmImageRefreshIntent $intent) {}
 
-    public function execute(Node $host, string $caller = 'task-vm'): Operation
+    public function execute(Node $host, string $caller = 'task-vm', string $seed = TaskVmImageRefreshIntent::SeedBuild): Operation
     {
-        return $this->intent->start($host, $caller, null);
+        return $this->intent->start($host, $caller, null, $seed);
     }
 }
