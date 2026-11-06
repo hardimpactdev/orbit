@@ -251,6 +251,7 @@ Use the kind and target type to start or find the work of a command.
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `POST task-groups/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
 | `POST task-groups/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
+| `POST task-groups/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
 | `POST task-groups/{group}/package` | `tasks.package` | `task_group` | Gateway |
