@@ -177,7 +177,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: ${{ inputs.intent.provider != "incus" }}
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-m","0440","-o","root","-g","root","/dev/stdin","/etc/sudoers.d/" + inputs.intent.user] : ["/usr/bin/install","-m","0440","-o","root","-g","root","/dev/stdin","/etc/sudoers.d/" + inputs.intent.user] }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/bin/sh","-c","rm -f \"$1\" && exec /usr/bin/install -m 0440 -o root -g root /dev/stdin \"$1\"","sh","/etc/sudoers.d/" + inputs.intent.user] : ["/bin/sh","-c","rm -f \"$1\" && exec /usr/bin/install -m 0440 -o root -g root /dev/stdin \"$1\"","sh","/etc/sudoers.d/" + inputs.intent.user] }}'
         stdin: ${{ inputs.intent.user + " ALL=(ALL) NOPASSWD:ALL\n" }}
     dependsOn:
     - step: bootstrap-authorized_key
