@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - the Gateway has the release commit, GitHub App read access to the repository, and the proof Swamp Club key
   GW->>SW: Start one run per host<br/>all in parallel
   %%> Why:
-  %%> - each host refreshes its own image and seed, and builds its own fleet when it has none: copying them between hosts is not a supported flow, so it needs no continuous proof (Nick, 2026-11-06)
+  %%> - each host refreshes its own image and seed, and builds its own fleet when it has none: copying them between hosts is not a supported flow, because every supported flow has to be proven again and again (Nick, 2026-11-06)
   %%> - a second admission for a host returns the open task
   loop each task VM host, in parallel
     SW->>H: Start a refresh VM<br/>current image · seed
@@ -40,7 +40,7 @@ sequenceDiagram
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the refresh VM keeps the root disk of the host's base VM (20 GiB), not the larger disk of a topology VM, because a published image is as large as its VM's root disk and no VM can be smaller than its image; the first smoke of a 40 GiB image failed on it
     %%> Decided by the orchestrator, for Nick's review:
-    %%> - the refresh VM is always a large task VM (12 GiB, 6 CPUs, 3 slots), because it holds the nested fleet (10 GiB of VMs) and builds it when the seed has no ready copies; the Gateway sets the size at the admission of the refresh, so no Project size list decides it (a group cannot declare a topology, so the size is passed to the placement, not declared); a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer in two runs on beast
+    %%> - the refresh VM is always a large task VM (12 GiB, 6 CPUs, 3 slots), because it holds the nested fleet (containers limited to 10 GiB) and builds it when the seed has no ready copies; the Gateway sets the size at the admission of the refresh, so no Project size list decides it (a group cannot declare a topology, so the size is passed to the placement, not declared); a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer in two runs on beast
     %%> - a refresh therefore needs 3 free slots of its host and is refused with `tasks.capacity_unavailable` otherwise; the operator tries again
     SW->>VM: Start the fleet<br/>container copies · release
     %%> What it does:
@@ -48,14 +48,14 @@ sequenceDiagram
     %%> - starts the nested fleet from the current ready copies with that checkout as their disk device, and runs the apply step (state binds, token re-mint, migrations, restarts), as in stage 2
     %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
     %%> - a release is boot, converge, save; nothing is built. Measured on shark (`ebe3e67` to `3046d25`): 3 min 6 s in all; start 4 s, apply about 30 s, `node:converge` 30-41 s per Node, save 17 s
-    %%> Built: all of it is the child `task-nested-fleet` of `operation-task-provision` (the mount and apply, the readiness check with Doctor, and the `base` snapshot), so the refresh saves ready copies only from a fleet that passed its readiness check
+    %%> Built: all of it is the child `task-nested-fleet` of `operation-task-provision` (the start with the checkout disk device, the apply, the readiness check with Doctor, and the `base` snapshot), so the refresh saves ready copies only from a fleet that passed its readiness check
     opt no usable ready copies
       SW->>VM: Build the fleet<br/>task_vm.fleet_build
       %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
       %%> - a refresh of a host whose seed holds no usable ready copies (a new host, a new image or copies of an older format) runs the nested fleet build as a child in the refresh VM (chart `docs/cli/tasks/vm-fleet-build.mmd`), automatically and with no flag; the save of the ready copies follows
       %%> - the step is skipped when the provision started the fleet from ready copies; the run needs no check of its own, because a failed build fails the run before the save
       %%> - the refresh admits the fleet-build intent with the rest of its intent, before its VM exists: the host keys of the guest are pinned by the VM step, as for the ready copies, and the build takes the proof Club key as the save does
-      %%> - the waits of the build stop at once when the nested Gateway guest is not running (an Ansible task with `until` and `retries`, chart `docs/cli/tasks/vm-fleet-build.mmd`), and then name every nested VM that is not running; a dead app VM ends the Operation it enrolls
+      %%> - the waits of the build stop at once when the nested Gateway guest is not running (an Ansible task with `until` and `retries`, chart `docs/cli/tasks/vm-fleet-build.mmd`), and then name every nested container that is not running; a dead app VM ends the Operation it enrolls
       %%> Built: the step `Build the fleet`, the child `operation-task-vm-fleet-build`
     end
     opt playbooks or pins changed since the current image
@@ -65,12 +65,12 @@ sequenceDiagram
       %%> - the same step as in the proof CI (stage 4)
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
-    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) are the last piece, with the NFS child of stage 2
+    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` on the checkout disk device) are the last piece
     end
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):
     %%> - the refresh has no token step: every provision that starts a fleet renews the Swamp tokens of the nested Gateway (stage 2), so the age of the copies does not matter
-    %%> - the copies carry format 3: the control plan the renewal reads is on the nested Gateway; copies of an older format are not used
+    %%> - the copies carry format 4 (containers): the control plan the renewal reads is on the nested Gateway; copies of an older format are not used
     %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
     SW->>VM: Stop the refresh VM<br/>its seed disk is complete
     %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):

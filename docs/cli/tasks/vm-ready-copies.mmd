@@ -39,7 +39,6 @@ sequenceDiagram
   SW->>VM: Stop the nested containers<br/>incus stop
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
   %%> - the copies are system containers (chart `vm-fleet-build.mmd`); the `_netdev` ordering step is gone with the NFS mount it ordered
-  %%> - the copies carry a new `user.ready.format`, so code for containers never starts VM copies of format 3
   %%> What it does:
   %%> - one clean stop of the three guests, so a copy holds finished file systems
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
@@ -47,7 +46,7 @@ sequenceDiagram
   SW->>VM: Copy the guests<br/>incus copy --instance-only
   %%> What it does:
   %%> - deletes the earlier `fleet-ready-*` copies, then copies each guest to `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`, without the `base` snapshot of the earlier fleet
-  %%> - removes the NIC from each copy
+  %%> - removes the NIC and the checkout disk device from each copy, so a copy holds no device of the VM that saved it
   %%> Self-contained:
   %%> - a copy keeps its `.env`, `storage`, `bootstrap/cache` and database on its own disk and holds no checkout; every task VM attaches its own as a disk device (stage 2)
   SW->>VM: Record the network<br/>incus config set
@@ -55,6 +54,8 @@ sequenceDiagram
   %%> - stores on each copy `user.ready.subnet`, `user.ready.hwaddr` and `user.ready.ipv4`, its role and the time; a task VM creates the network from the subnet
   %%> - writes `user.ready.complete` last, on all three: a set without it is half made
   %%> - writes `user.ready.format` with it, the format of the copies; a provision starts a fleet only from copies of the current format
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - container copies carry format 4, so code for containers never starts the VM copies of format 3
   SW->>VM: Boot-check the copies<br/>incus copy, start, exec
   %%> What it does:
   %%> - starts a throwaway copy of each ready copy, waits for its agent, and checks it: no Club key, no file of a checkout but a log, the state on its own disk, no operator key in the record or on the hub

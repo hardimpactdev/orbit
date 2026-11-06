@@ -21,7 +21,7 @@ sequenceDiagram
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
   %%> Built, not yet passed live:
   %%> - the command `orbit proof COMMAND` ([chart](/cli/proof/proof)): the Gateway finds the VM by the calling Node and admits the operation `proof.verify`; Swamp starts `proof-fleet-verify` with this VM as input, with `restore_first` and `final_restore` set; `proof:run` is the CI path on a VM of its own
-  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores `base`, sets the clocks, restarts the NFS server, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
+  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
   %%> - the runner finds the fleet by the guest names of `task-nested-fleet`, `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
   GW->>SW: Start the proof<br/>cases file · this VM
@@ -36,12 +36,12 @@ sequenceDiagram
   %%> What it does:
   %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
   %%> - the code itself needs no step: the nested containers have the task VM's checkout as a disk device (stage 2), and PHP reads changed files on the next request
-  %%> - also runs after every restore below: a memory restore brings back processes that loaded older code
+  %%> - also runs after every restore below: the restored containers boot the state of `base`, whose database may predate the checkout's migrations
   opt playbooks or pins changed
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
     %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
-    %%> - the nested Orbit reads the playbooks from the mounted checkout
+    %%> - the nested Orbit reads the playbooks from the checkout disk device
     %%> Why:
     %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
     %%> - the base images are not touched; only the merge and the seed refresh change them
@@ -52,7 +52,7 @@ sequenceDiagram
     %%> - the nested Gateway renews the tokens of its own Swamp with the step of the provision (stage 2, `Re-mint the Swamp tokens`)
     %%> Built, not yet passed live:
     %%> - the Swamp workflow `proof-fleet-verify` reads the age of the tokens first: `incus exec nested-gateway -- find` on the file that the provision and the re-mint write (`serve-driver-token`), which prints the path only when the file is older than 20 days
-    %%> - then it calls the child `task-nested-apply` with `remint` set, which runs the step of the provision unchanged between its mounts and its migrations and restart; the same call serves a proof in CI and a proof in the author's own VM
+    %%> - then it calls the child `task-nested-apply` with `remint` set, which runs the step of the provision unchanged between its migrations and its restart; the same call serves a proof in CI and a proof in the author's own VM
     %%> - a step that fails stops the run: every case is `unrun` with cause `infrastructure`
     %%> Why:
     %%> - the provision renews the tokens for 30 days and `base` inherits them, so a task older than that would otherwise prove with an expired nested Swamp
@@ -61,10 +61,10 @@ sequenceDiagram
   opt the converge or the re-mint changed something
     SW->>NT: Take base again<br/>parallel · under 1 s
     %%> What it does:
-    %%> - skipped when nothing converged and no token was re-minted; a code change alone never needs a new `base`, because the code is read from the mount
+    %%> - skipped when nothing converged and no token was re-minted; a code change alone never needs a new `base`, because the code is read from the checkout disk device
     %%> - `incus snapshot create --reuse base` on the three containers at once; `--reuse` replaces the old `base`; no memory is saved
     %%> - the containers keep running
-    %%> - `base` holds the proof Swamp Club key, on the nested Gateway's disk and in its Swamp serve's memory; accepted because `base` belongs to one task, never leaves its task VM and is destroyed with it; ready copies stay key-free
+    %%> - `base` holds the proof Swamp Club key, on the nested Gateway's disk; accepted because `base` belongs to one task, never leaves its task VM and is destroyed with it; ready copies stay key-free
     %%> Built, not yet passed live:
     %%> - the Swamp workflow `proof-fleet-verify` takes it, after the re-mint and before the first batch: one step with `forEach` over the three roles, guarded by the same token age as the re-mint, so it is skipped when nothing was re-minted
     %%> - the converge of the nested Nodes is not built (stage 2); it joins the condition of this step when it lands
@@ -72,7 +72,7 @@ sequenceDiagram
     %%> - a readiness check runs first, with the child `task-nested-ready` that the provision runs before its first `base` (agents online, Doctor healthy), under the same condition; the apply of the re-mint has just restarted the services, and every batch restores what this step keeps; the check adds about 7 s (measured 6 s median) to the 19 s below
     %%> - the first batch then starts from the new `base` without a restore, because the fleet is still at it
     %%> Time, measured on tvm-554:
-    %%> - about 19 s; the Gateway's 660 MB memory state sets it (app-dev 12 s, app-prod 7 s)
+    %%> - under 1 s for the three containers (0.3 s measured on shark)
     %%> Why:
     %%> - every batch starts from it
     %%> - the task VM keeps its own state until the task merges; changes flow back only as code, through the release and the seed refresh

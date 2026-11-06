@@ -51,12 +51,12 @@ sequenceDiagram
   %%> - no memory snapshot of the outer VM (Nick, option 3): a cold start of the outer VM plus the containers was as fast as its memory restore (beast 35 s, shark 27 s against 34 s), and a memory snapshot would need retaking per host and per release
   %%> - measured on shark (rvm-2): copies to a healthy fleet 8–11 s
   %%> - each ready copy is self-contained: its own `.env`, storage, `bootstrap/cache` and database on its own disk (stage 6 saves them so); the code comes from the outer VM's checkout
-  %%> - needs no earlier fleet in this VM and no state from the outer VM; the task owns the network and the three VMs
+  %%> - needs no earlier fleet in this VM and no state from the outer VM; the task owns the network and the three containers
   %%> - then pushes the proof Swamp Club key into the nested Gateway, as today
   %%> Proposed 2026-11-05:
   %%> - replaces today's reset, which takes `.env`, storage, the agent manifest and the lease from an earlier fleet in the same VM, so it fails on a fresh VM
   %%> Time:
-  %%> - about 75 seconds to a checked fleet, of which the boot is about 50
+  %%> - about 10 seconds to a healthy fleet from the copies (8–11 s on shark); Doctor reads healthy once every agent has reported, about a minute after the boot
   SW->>NT: Join as operator<br/>this VM's WireGuard key
   %%> What it does:
   %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested containers, so this needs no network yet)
@@ -75,9 +75,9 @@ sequenceDiagram
     %%> Time:
     %%> - about 230 seconds; the build ends by making the ready copies for the next reset
   end
-  SW->>NT: Apply the code<br/>state binds · migrate · restart
+  SW->>NT: Apply the code<br/>migrate · restart
   %%> What it does:
-  %%> - starts the bind-mount units that put `.env`, `storage` and `bootstrap/cache` (each guest's own disk) over the shared checkout
+  %%> - the bind-mount units of the copies put `.env`, `storage` and `bootstrap/cache` (each guest's own disk) over the shared checkout at boot
   %%> - then the re-mint below, migrations and a restart of the long-running services (queue worker, scheduler, agent-view subscriber), so they run the checked-out code
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
   %%> - the checkout is the disk device of the fleet start; there is no NFS export, NFS mount or mount ordering step any more
@@ -86,7 +86,7 @@ sequenceDiagram
   SW->>NT: Re-mint the Swamp tokens<br/>nested Gateway · 30 days
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> What it does:
-  %%> - runs the play `remint` of the Gateway bootstrap playbook on the nested Gateway, from the mounted checkout, with the control plan the build left on that machine (`/opt/orbit/bootstrap/control.yml`)
+  %%> - runs the play `remint` of the Gateway bootstrap playbook on the nested Gateway, from the checkout disk device, with the control plan the build left on that machine (`/opt/orbit/bootstrap/control.yml`)
   %%> - the Swamp CLI renews the tokens by the names and into the files the build used: `access token rotate` for the serve driver, the two workers and the Gateway's run and read tokens, a new enrollment token for each worker; each lasts 30 days
   %%> - a worker gets a new enrollment token under a new name; the old one was used once and expires with the task VM, so nothing revokes it
   %%> - stops serve and both workers while the tokens change, then starts them; the apply step that follows restarts the Gateway's own services, which read the new tokens
@@ -94,7 +94,7 @@ sequenceDiagram
   %%> - measured on shark: ok=15 failed=0, about 20 s
   %%> Why:
   %%> - the tokens of the ready copies are as old as the copies, so a fleet started from them would otherwise run a Swamp whose tokens expired; this step makes the age of the copies irrelevant, and the seed refresh needs no step for it
-  %%> - the same fleet start does it every time, from the same mounted code the apply uses; it needs no key from the real Gateway, because these tokens belong to the nested Orbit
+  %%> - the same fleet start does it every time, from the same checkout the apply uses; it needs no key from the real Gateway, because these tokens belong to the nested Orbit
   %%> - runs only when the VM has the proof Swamp Club key (a proof task): the Swamp CLI needs it, the start pushes it to `~/.config/swamp/api-key` of the nested Gateway before this step, and this step restarts serve and the workers so they read it
   %%> - the certificates last 397 days and are issued again by the seed refresh; nothing else in the fleet expires within the life of a task
   %%> Time:
