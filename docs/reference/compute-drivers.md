@@ -1223,7 +1223,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 |---|---|
 | `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and seed, the release checkout, the converge of the outer VM, and the nested fleet from the ready copies. |
 | `Pin the VM` | Fills the host key of the new guest into the ready copies intent and the fleet build intent. |
-| `Build the fleet` | Runs `operation-task-vm-fleet-build` as a child, only when the VM step started no nested fleet because the seed has no usable ready copies. It builds the fleet from stock Ubuntu in the refresh VM. A fleet that started from ready copies skips it. |
+| `Build the fleet` | Runs `operation-task-vm-fleet-build` as a child when the VM step started no fleet, because the seed has no usable ready copies. A fleet that started from ready copies skips it. |
 | `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
 | `Stop the refresh VM` | Runs `incus stop` on the refresh VM. It yields only its seed disk and is never published. |
 | `Build the image` | Runs `task-vm-image-builder` as a child: a builder cloned from the image the refresh VM started from, the phases `software`, `tools` and `check`, `task-vm-image-clean`, then `incus publish` of the stopped builder under a candidate alias. |
