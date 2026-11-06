@@ -1051,6 +1051,8 @@ Swamp reads the pull request again, refuses a moved head, and merges with a squa
 The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extension is on. The command only reads GitHub and admits steps; it changes nothing on GitHub, and Swamp steps never call back to the Gateway. It looks at each open external group that has a published pull request and belongs to a Project with [review and merge](/reference/projects#review-and-merge) enabled. For each one it reads the pull request with a read-only App token and then:
 
 - A pull request in draft gets the ready step in the review mode of the group. Admission requires a green merge check on the head.
+- The ready step also requires a passed handoff check of the group on that commit.
+- A spec-only pull request, such as the one `tasks:prep` opens, has no such check and stays a draft.
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
