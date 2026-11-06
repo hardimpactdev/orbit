@@ -151,7 +151,6 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: '${{ {"host_ssh_execution": inputs.intent.jump, "vm": {"name": inputs.intent.builder, "project": inputs.intent.project}, "enrolled": false, "nested": {}} }}'
-        execution_secrets: '${{ {} }}'
 - name: publish
   labels: {role: swamp}
   dependsOn:
