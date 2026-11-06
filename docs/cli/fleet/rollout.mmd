@@ -12,8 +12,14 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   Note over GW: Pick Nodes when no Node<br/>IDs are given
   %%> When:
-  %%> - when an operator runs `orbit fleet:rollout`, while `ORBIT_FLEET_ROLLOUT=true`; no schedule starts it
-  %%> - only for a commit whose Gateway release is verified
+  %%> - when the Gateway records a release `verified`: it queues one admission
+  %%> - once a day at 03:05 Europe/Amsterdam, when the window of the other Nodes opens; the schedule only queues the admission
+  %%> - when an operator runs `orbit fleet:rollout`
+  %%> - always while `ORBIT_FLEET_ROLLOUT=true`, and only for a commit whose Gateway release is verified
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the verified release admits the rollout, as `gateway:release:deploy` says; the deleted `fleet-maintenance` schedule did it each minute until 2026-11-06
+  %%> - most releases land outside the window, so a daily pass at window open visits the Nodes they deferred
+  %%> - the admission waits a minute at a time while CI has not published the commit's CLI release yet, or another rollout runs
   %%> Picks:
   %%> - a Node whose last visit for this commit did not converge it, a drifted Node, or a Node not visited yet
   %%> - at most once per 5 minutes per Node; the last visit is read from earlier rollout results
@@ -44,6 +50,6 @@ sequenceDiagram
     %%> - later Nodes are not visited, so one bad release breaks at most one Node
     Note over GW: Alert once<br/>rollout_halted
     %%> Retry:
-    %%> - fix the cause; the next pass, 5 minutes later, starts again at this Node
+    %%> - fix the cause; the next pass (a verified release, the daily window pass or an operator) starts again at this Node
     %%> - retries raise no new alert for the same Node, commit and error
   end

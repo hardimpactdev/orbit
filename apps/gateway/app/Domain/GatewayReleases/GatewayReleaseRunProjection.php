@@ -18,6 +18,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
@@ -144,6 +145,13 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
                 } catch (Throwable $failure) {
                     // The daily trigger asks again; a release is never held by it.
                     Log::warning('The task image refresh after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
+                }
+                try {
+                    // Stage 8: the verified release is the fleet's desired state, so its footprint rollout follows.
+                    GatewaySchedule::dispatch(new AdmitFleetRollout);
+                } catch (Throwable $failure) {
+                    // The daily window trigger asks again; a release is never held by it.
+                    Log::warning('The fleet rollout after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
                 }
             });
         }

@@ -76,6 +76,8 @@ sequenceDiagram
   alt every step succeeded
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record verified<br/>fleet rollout follows
+    %%> Next:
+    %%> - the Gateway queues one `fleet.rollout` admission for the Nodes behind this commit (`fleet:rollout`)
   else a step before Migrate fails
     SW--xGW: Run failed<br/>failed step
     Note over GW: Mark failed<br/>nothing changed · rerun safe
