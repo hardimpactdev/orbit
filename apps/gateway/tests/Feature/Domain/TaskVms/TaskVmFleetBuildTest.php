@@ -189,7 +189,7 @@ it('never starts the state mounts with their requirements, whose device no udev 
     $build = file_get_contents(base_path('../../swamp/workflows/workflow-operation-task-vm-fleet-build.yaml'));
 
     // Stage 2 starts the containers with the checkout attached, so the boot mounts the state and the apply step only checks it.
-    expect($apply)->toContain("'systemctl', 'is-active', '".implode("', '", $binds)."'")
+    expect($apply)->toContain("'sh', '-c', 'for u; do systemctl is-active --quiet \"\$u\" || { echo \"\$u is not active\" >&2; exit 1; }; done', 'sh', '".implode("', '", $binds)."'")
         ->and(preg_match("/'systemctl', 'start', 'home-orbit-orbit-/", $apply))->toBe(0)
         // The fleet build attaches the checkout to running containers and starts the units by name, without their requirements.
         ->and($build)->toContain('"systemctl", "start", "--job-mode=ignore-requirements"] + inputs.intent.fleet.checkout.binds[self.role]')
