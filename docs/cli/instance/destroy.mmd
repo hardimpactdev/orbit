@@ -1,4 +1,5 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
   %% Decided: Nick 2026-11-02, the Route is withdrawn first, before teardown; a failed teardown leaves the site down and a rerun completes.
@@ -70,6 +71,15 @@ sequenceDiagram
     %%> Not needed:
     %%> - with `--force`, or for a public repository
   end
+  Note over GW: Hold the Route Nodes
+  %%> What it does:
+  %%> - holds each Node that serves this Route's site (Caddy and PHP) from admission to the terminal state
+  %%> - a second Route write on one of those Nodes waits (task status `waiting`) and starts when the Node is free, oldest first
+  %%> Not held:
+  %%> - the DNS Node: its records are keyed, and the apply phase refuses a file that changed since the read
+  %%> Limit:
+  %%> - two Route writes on one Node run one after the other, so each waits for the other's whole run
+  %%> - a task that waits starts from the Node's live files; a site block that matches none of its captured states still stops it with `owned_revision_conflict`
   GW->>SW: Start run, full intent<br/>operation-instance-destroy
   %%> What it does:
   %%> - starts one run of `operation-instance-destroy` on Swamp serve (Node 209)

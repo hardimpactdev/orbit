@@ -1,8 +1,9 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call), DNS hold retired (PR #2443); tightened by flow-tighten 2026-11-02 (rules 3, 6, 8, 13); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
   %% Tightened: flow-tighten 2026-11-02, rules 5, 17, 22 (destination preflight from recorded state; cfgmgmt file/systemd, Route publish as in route:create).
   %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, written by the same file step.
-  %% status: migrated
+  %% status: draft
   %% Interim: the run signs inside the Route child, and SQLite copies stay refused. The Swamp steps below are the real workflow steps.
   %% command: instance:transfer
   %% kind: instance.transfer
@@ -67,6 +68,15 @@ sequenceDiagram
   %%> - `.env` can hold secrets, which travel only through the vault
   %%> Result:
   %%> - the run reads it with `vault.get`; no step asks the Gateway for it
+  Note over GW: Hold the Route Nodes
+  %%> What it does:
+  %%> - holds each Node that serves this Route's site (Caddy and PHP) from admission to the terminal state
+  %%> - a second Route write on one of those Nodes waits (task status `waiting`) and starts when the Node is free, oldest first
+  %%> Not held:
+  %%> - the DNS Node: its records are keyed, and the apply phase refuses a file that changed since the read
+  %%> Limit:
+  %%> - two Route writes on one Node run one after the other, so each waits for the other's whole run
+  %%> - a task that waits starts from the Node's live files; a site block that matches none of its captured states still stops it with `owned_revision_conflict`
   GW->>SW: Start run, full intent<br/>operation-instance-transfer
   %%> What it does:
   %%> - starts one run of `operation-instance-transfer` on Swamp serve (Node 209)

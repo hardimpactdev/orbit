@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Operation;
 
@@ -26,7 +27,8 @@ final readonly class StartOperationAction
             return $existing;
         }
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey);
-        if ($operation->wasRecentlyCreated) {
+        // A Route write that finds one of its Nodes held waits (status waiting) and starts when the Nodes are free.
+        if ($operation->wasRecentlyCreated && app(RoutePublicationHolds::class)->admit($operation)) {
             app(SwampDispatch::class)->start($operation);
         }
 
