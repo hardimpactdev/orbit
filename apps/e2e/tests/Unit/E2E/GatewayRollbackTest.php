@@ -31,11 +31,12 @@ function gatewayRollbackFixture(bool $web = true, bool $horizon = true): array
     file_put_contents($tools.'/systemctl', <<<BASH
         #!/usr/bin/env bash
         case "\$1" in
-            list-unit-files) printf '%s\n' 'orbit-process-1-horizon.service enabled enabled' 'orbit-process-2-schedule-work.service enabled enabled' 'orbit-process-3-other.service enabled enabled' ;;
+            list-unit-files) printf '%s\n' 'getty@.service enabled enabled' 'orbit-process-1-horizon.service enabled enabled' 'orbit-process-2-schedule-work.service enabled enabled' 'orbit-process-3-other.service enabled enabled' ;;
             is-active) [ "\$3" = orbit-process-1-horizon.service ] && {$horizonActive} ;;
             start) echo "\$1 \$2" >> {$root}/restarted ;;
             list-units) [ "\$3" = --state=active ] && printf '%s\n' {$horizonListed}'orbit-process-2-schedule-work.service loaded active running' 'orbit-agent-view.service loaded active running' 'orbit-process-3-other.service loaded active running' 'php8.5-fpm.service loaded active running' ;;
-            show) [ "\$3" = ExecStart ] && { case "\$5" in *horizon*) echo '{ path=/usr/bin/php8.5 ; argv[]=/usr/bin/php8.5 artisan horizon ; ignore_errors=no }' ;; *) echo '{ path=/usr/bin/php8.5 ; argv[]=/usr/bin/php8.5 artisan schedule:work ; ignore_errors=no }' ;; esac; exit 0; }
+            show) case "\$5" in *@.service) echo 'Failed to get properties: Unit name is not valid' >&2; exit 1 ;; esac
+                [ "\$3" = ExecStart ] && { case "\$5" in *horizon*) echo '{ path=/usr/bin/php8.5 ; argv[]=/usr/bin/php8.5 artisan horizon ; ignore_errors=no }' ;; *) echo '{ path=/usr/bin/php8.5 ; argv[]=/usr/bin/php8.5 artisan schedule:work ; ignore_errors=no }' ;; esac; exit 0; }
                 case "\$5" in *other*) echo /srv/other ;; php*) echo ;; *horizon*) echo {$base}/orbit/apps/gateway ;; *) echo {$base}/orbit/apps/gateway/ ;; esac ;;
             restart | reload) echo "\$1 \$2" >> {$root}/restarted ;;
         esac
