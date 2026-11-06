@@ -1260,7 +1260,6 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 The chart lists what the run still lacks:
 
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
-- The re-mint of the nested Swamp tokens in a proof run (stage 3). The provision already renews them.
 - The replacement of old ready slots. Ready slots do not exist yet.
 
 ##### Save the ready copies

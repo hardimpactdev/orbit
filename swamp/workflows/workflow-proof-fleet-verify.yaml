@@ -61,11 +61,32 @@ jobs:
         - --lines
         - --file
         - ${{ inputs.intent.checkout_path + "/" + inputs.intent.file }}
+# Before the first batch (3-proof.mmd): the fleet is made ready for the cases. A step that fails stops the run, and every case is unrun with cause infrastructure.
+- name: prepare
+  labels: {role: swamp}
+  dependsOn:
+  - job: plan
+    condition: {type: succeeded}
+  steps:
+  # `base` holds the Swamp tokens of its nested Gateway; the file that the provision and the re-mint write is the witness of their age. `find` prints the path only when the file is older than 20 days (28,800 minutes), so no output means the tokens are fresh.
+  - name: 'Read the token age'
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-token-age").split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-token-age").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', 'nested-gateway', '--', 'find', '/home/orbit/.config/swamp/serve-driver-token', '-mmin', '+28800'], timeoutSec: 70}}
+  # The step of the provision, not a copy: the child `task-nested-apply` with `remint` set runs its step `Re-mint the Swamp tokens`, between its mounts and its migrations and restart, so the services run with the new tokens.
+  - name: 'Re-mint the Swamp tokens'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Read the token age"].outputs.stdout.trim() == "" }}'
+    task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {guest_node_id: '${{ inputs.intent.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.intent.ssh_execution }}', fleet: '${{ {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}, "network": "oe-nested"} }}', club: '${{ true }}', remint: '${{ true }}'}}
+    dependsOn: [{step: 'Read the token age', condition: {type: succeeded}}]
 - name: batches
   labels: {role: swamp}
   concurrency: 1
   dependsOn:
   - job: plan
+    condition: {type: succeeded}
+  - job: prepare
     condition: {type: succeeded}
   steps:
   # One child per batch, one at a time, in plan order. A batch that stopped on its setup stops the run.
@@ -91,6 +112,8 @@ jobs:
 - name: report
   labels: {role: swamp}
   dependsOn:
+  - job: prepare
+    condition: {type: completed}
   - job: batches
     condition: {type: completed}
   steps:
@@ -106,4 +129,4 @@ jobs:
         run: |
           printf '%s\n' "$LINES"
         env:
-          LINES: '${{ [steps.filter(k, k.startsWith("batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("").trim()).filter(x, x != "")].map(x, (x + [x.join("\n")].map(e, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'
+          LINES: '${{ [steps.filter(k, k.startsWith("batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("").trim()).filter(x, x != "")].map(x, (x + [x.join("\n")].map(e, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: the fleet or the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'
