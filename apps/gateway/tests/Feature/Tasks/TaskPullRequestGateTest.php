@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Tasks\RunTaskPullRequestGateAction;
 use App\Actions\Tasks\StartTaskPullRequestStepAction;
 use App\Domain\GitHub\GitHubApi;
-use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCheckRun;
@@ -50,7 +49,6 @@ function gateWorld(GitHubPullRequest $pull, bool $reviewAndMerge = true, bool $g
         $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
         $github->shouldReceive('repositoryChecksToken')->andReturn('checks-token');
         $github->shouldReceive('pullRequest')->andReturn($pull);
-        $github->shouldReceive('scopedRepositoryToken')->andThrow(GitHubApiException::unavailable());
         $github->shouldReceive('checkRuns')->andReturn($green ? [new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: GATE_HEAD, appSlug: 'github-actions')] : []);
         $github->shouldReceive('reviews')->andReturn([]);
     }));
@@ -127,7 +125,7 @@ it('tries the ready step for a checked draft with a green merge check', function
     $group = gateWorld(gatePull(true), green: true);
     gateChecked($group);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
 });
 
 it('admits no merge step while the check has not passed or the reviewer has not approved', function (): void {
@@ -161,9 +159,11 @@ it('registers the gate check on the Gateway schedule every minute', function ():
 /** The comment of the round on the head already ended, as the key of the head records it. */
 function gateCommented(Task $group, string $head = GATE_HEAD): void
 {
-    Operation::query()->create(['kind' => OperationKinds::TasksPrComment, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
-        'idempotency_key' => 'pr-gate:comment:'.$group->id.':'.$head, 'idempotency_fingerprint' => hash('sha256', OperationKinds::TasksPrComment.'|'.$group->id.'|'.$head),
-        'input' => ['head_sha' => $head], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
+    // An earlier gate pass may have admitted the comment under the same key and failed to start it; the comment ended on this head now.
+    Operation::query()->updateOrCreate(['kind' => OperationKinds::TasksPrComment, 'idempotency_key' => 'pr-gate:comment:'.$group->id.':'.$head],
+        ['target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+            'idempotency_fingerprint' => hash('sha256', OperationKinds::TasksPrComment.'|'.$group->id.'|'.$head),
+            'input' => ['head_sha' => $head], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
 }
 
 function gateRound(Task $group, int $round, ?TaskReviewRoundVerdict $verdict, string $head = GATE_HEAD): TaskReviewRound
@@ -192,7 +192,7 @@ it('waits for a round that runs and starts the fix for findings that are not the
 
     $round->update(['verdict' => TaskReviewRoundVerdict::Findings]);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
 
     gateCommented($group);
 
@@ -204,11 +204,11 @@ it('tries the merge step once the round on the exact head passed', function (): 
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     gateRound($group, 1, TaskReviewRoundVerdict::Pass);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'comment', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
 
     gateCommented($group);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge', 'result' => 'skipped', 'code' => 'tasks_pr.github_unreadable']);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
 });
 
 it('refuses the automatic merge when no round passed the head', function (): void {
@@ -227,7 +227,7 @@ it('falls back to manual mode after round 3 with findings and runs the ready ste
     gateRound($group, 3, TaskReviewRoundVerdict::Findings);
     gateCommented($group);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'code' => 'tasks_pr.github_unreadable'])
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'code' => 'swamp.start_unavailable'])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
 });
 

@@ -76,6 +76,20 @@ jobs:
   labels:
     role: swamp
   steps:
+  - name: Mint the token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "pr-merge-mint" }}
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_MINT_REQUEST\" \"$ORBIT_MINT_URL\"\n"
+        env:
+          ORBIT_MINT_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}
+          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\",\"purpose\":\"pull_request\"}" }}'
   - name: Read the PR
     labels:
       role: swamp
@@ -94,6 +108,10 @@ jobs:
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
           ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) }}
+    dependsOn:
+    - step: Mint the token
+      condition:
+        type: succeeded
   - name: Check the PR head
     labels:
       role: swamp
@@ -158,6 +176,7 @@ jobs:
           GH_CONFIG_DIR: ${{ "/tmp/orbit-pr-merge-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
+    guard: ${{ !("Mint the token" in steps && steps["Mint the token"].status == "succeeded") }}
     writes: true
     allowFailure: true
   - name: Remove CLI config

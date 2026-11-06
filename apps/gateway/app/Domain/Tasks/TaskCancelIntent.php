@@ -7,7 +7,6 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\SwampNode;
@@ -20,7 +19,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -72,7 +70,7 @@ final readonly class TaskCancelIntent
                 throw new ResourceOperationException('operation.target_busy', 'The current Task root must settle before maintenance cleanup.', 409);
             }
 
-            // The push token is minted before the transaction: no network I/O runs inside it.
+            // The push token is named here and minted by the push step.
             $token = $kind === 'tasks.cancel' && self::pushable($group->refresh()) ? $this->pushToken($group) : null;
 
             return DB::transaction(function () use ($group, $caller, $request, $kind, $token): Operation {
@@ -176,8 +174,8 @@ final readonly class TaskCancelIntent
     {
         $repository = GitHubRepository::fromOrigin($group->project->repository_url)
             ?? throw new ResourceOperationException('tasks.push_failed', 'The Project requires a GitHub repository to push approved work.', 422);
-        $copy = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-publish-token-'.Str::uuid(),
-            app(RepositoryPullRequestAccess::class)->token($repository));
+        // Only the vault key name is admitted. The approved push mints the token when it runs ({@see TaskGitHubTokens}).
+        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
         return ['remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'copy' => $copy];
     }

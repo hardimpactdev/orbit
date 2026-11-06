@@ -1052,7 +1052,7 @@ Both steps hold the group execution lock and refuse a second task on the group w
 
 The check follows the rule of the [review-and-merge gate](#handoff-ci): a missing, pending or failed run refuses. GitHub refuses a review request from the author of the pull request, so the author check refuses early.
 
-The Gateway then mints one token with only `pull_requests: write`, stores it in the vault as `pr-ready-write-<uuid>` and records `tasks.pr_ready` with the full intent.
+The Gateway then records `tasks.pr_ready` with the full intent and the vault key `pr-ready-write-<uuid>`. It mints no token. The first step of the run asks the Gateway for a token with only `pull_requests: write` (`operation:direct:github-token`, `purpose: pull_request`), so the token is fresh when the step uses it.
 
 Swamp takes the pull request out of draft with the GraphQL `markPullRequestReadyForReview` mutation. In manual mode it also requests the review of `task_pull_requests.reviewer` (`nckrtl`). If the pull request is already out of draft, Swamp skips the first step, so a rerun after a refused review request is safe. The result holds the pull request number, head, draft flag and requested reviewers.
 
@@ -1062,7 +1062,7 @@ Swamp takes the pull request out of draft with the GraphQL `markPullRequestReady
 
 The gate is the reviewer's latest review that approves, requests changes or is dismissed. It passes only when that review is an approval whose commit is exactly `head_sha`. A comment changes no decision, and an approval of an older head does not count. A failed gate refuses with `tasks_pr.approval_missing`, and `error.details.state` is `waiting`, `changes_requested` or `head_moved`. The Gateway has no webhooks, so a caller that polls the command sees the approval. A refusal starts no task.
 
-After the gate, the Gateway mints a new token with `contents: write` and `pull_requests: write`. An approval can take longer than the hour that a token lives, so the merge never reuses the ready token. The token goes to the vault as `pr-merge-write-<uuid>` and the Gateway records `tasks.pr_merge`.
+After the gate, the Gateway records `tasks.pr_merge` with the vault key `pr-merge-write-<uuid>`. The first step of the run asks for a token with `contents: write` and `pull_requests: write`. An approval can take longer than the hour that a token lives, so the merge never reuses the ready token.
 
 Swamp reads the pull request again, refuses a moved head, and merges with a squash merge that carries the expected `sha`. If the head moved or the pull request conflicts with the base branch, the merge is refused and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
 
@@ -1216,7 +1216,7 @@ Cancel removes the task's workspace, then marks the task and its open subtasks `
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
-- **Approved work not on origin.** The cancel run first pushes the latest approved commit to `task-{id}` without force. You can then open a pull request from it. The Gateway mints the push token at admission.
+- **Approved work not on origin.** The cancel run pushes the latest approved commit to `task-{id}` without force. You can open a pull request from it. The VM never holds the push token.
 - **Failed push.** The run fails before any removal. The task and its VM stay.
 - **Parked VM with approved work.** A parked VM cannot push. Cancel refuses with HTTP 409 `tasks.push_failed`; publish the work first.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
@@ -1463,7 +1463,7 @@ The Gateway reads Swamp's own run history rather than recording a second run led
 
 Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a direct `tasks.dependency_merge` Operation on the Swamp configuration Node (209). Swamp owns the GitHub checks, dependency content and version policy, then runs the expected-head squash request. The Gateway records its bounded public result.
 
-Admission holds the group execution lock and mints two repository-scoped tokens: Contents and Pull requests write, and Contents, Pull requests, Checks and Actions read. Their vault descriptors enter the full run intent; the Gateway stores the execution copies after commit. Native `gh api` commands read tokens from the environment. No execution step reads credentials or reports results through a Gateway callback.
+Admission holds the group execution lock and mints two repository-scoped tokens: Contents and Pull requests write, and Contents, Pull requests, Checks and Actions read. Their vault descriptors enter the full run intent; the Gateway stores the execution copies after commit. This merge still mints at admission. Native `gh api` commands read tokens from the environment. No execution step reads credentials or reports results through a Gateway callback.
 
 All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission verifies the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
 
