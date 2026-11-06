@@ -771,9 +771,11 @@ A resolution clears group assistance only when its kind, question, and reason ma
 
 ### Behavior names
 
-The task workflows that run on Node 209 name their local and SSH steps by the task VM: the name ends in the VM node id, never in a run or a group. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
+The local and SSH steps of `tasks.turn`, `tasks.prep`, `tasks.prep_fix`, `tasks.script` and `tasks.check` are named by the task VM: the name ends in the VM node id. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
 
-Two kinds of step keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. The `collect` step of the scheduled check observation is one step for every VM.
+Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. The token mint and the check preparation steps are short, and the `collect` step of the scheduled check observation is one step for every VM.
+
+The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
 
 ## Task workspace
 
