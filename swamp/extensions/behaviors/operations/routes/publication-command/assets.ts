@@ -5,6 +5,7 @@ import {
     prepareCaddyInput,
     PublicationConnection,
 } from "../caddy-input.ts";
+import { mergeDns } from "../mutation-command/dns.ts";
 import { mergeCaddy, mergePhp, phpSections } from "./sections.ts";
 const Name = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 const Version = z.string().regex(/^[1-9][0-9]*\.[0-9]+$/);
@@ -170,6 +171,155 @@ export function composePhp(raw: unknown) {
     });
     return { files };
 }
+const DnsState = z.object({
+    records: z.string(),
+    catalog: z.string(),
+    digest: z.string(),
+}).passthrough();
+const none = z.object({}).strict();
+const states = <T extends z.ZodType>(state: T) =>
+    z.union([
+        z.object({
+            before: state,
+            prepared: state,
+            withdrawn: state,
+            after: state,
+        }).strict(),
+        none,
+    ]);
+const WithdrawArgs = z.object({
+    node_id: z.number().int().positive(),
+    user: Name,
+    control_node_id: z.number().int().positive(),
+    host_keys: z.array(z.string().min(1)).min(1),
+    connection: PublicationConnection,
+    // The phase reads the plan from its run folder: a Caddyfile can exceed the limit of one environment value.
+    plan_path: z.string().regex(
+        /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/plan\.json$/,
+    ),
+    read_path: z.string().regex(
+        /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/read\.json$/,
+    ),
+    php: z.union([z.object({ before: Php, after: Php }).strict(), none]),
+    caddy: states(Section),
+    dns: states(DnsState),
+    cleanup: z.array(
+        z.object({
+            scope: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+            user: Name,
+        }).strict(),
+    ),
+}).strict();
+const Read = z.object({
+    account: z.string(),
+    pools: z.record(z.string(), z.string()),
+    caddy: z.string(),
+    records: z.string(),
+    catalog: z.string(),
+}).strict();
+const decode = (text: string) =>
+    new TextDecoder().decode(
+        Uint8Array.from(atob(text), (c) => c.charCodeAt(0)),
+    );
+/** The read phase writes its findings as JSON into the run folder; file contents inside stay base64 until here. */
+export function parseRead(text: string) {
+    const read = Read.parse(JSON.parse(text));
+    const pools: Record<string, string> = {};
+    for (const [path, content] of Object.entries(read.pools)) {
+        const version =
+            /^\/etc\/php\/([1-9][0-9]*\.[0-9]+)\/fpm\/pool\.d\/orbit-scopes\.conf$/
+                .exec(path)?.[1];
+        if (version) pools[version] = decode(content);
+    }
+    return {
+        account: read.account,
+        pools,
+        caddy: decode(read.caddy),
+        records: decode(read.records),
+        catalog: decode(read.catalog),
+    };
+}
+/**
+ * One Node's withdrawal: the captured states applied in order to what the Node holds now, so each file is written once.
+ * The first step of Caddy and DNS always runs, as the prepare step of a mutation does; a later step runs only when its
+ * states differ, as the withdraw and live steps do for a destroy. Every step keeps the three-way revision checks.
+ */
+export async function composeWithdrawal(raw: unknown, readText: string) {
+    const value = WithdrawArgs.parse(raw);
+    const read = parseRead(readText);
+    const placement = {
+        node_id: value.node_id,
+        user: value.user,
+        control_node_id: value.control_node_id,
+        host_keys: value.host_keys,
+        connection: value.connection,
+        direction: "forward" as const,
+    };
+    let pools: z.infer<typeof File>[] = [];
+    if ("before" in value.php) {
+        const fields = read.account.split(":");
+        const account = { user: fields[0], group: fields[3], home: fields[5] };
+        const { versions } = planPhp({ ...placement, ...value.php });
+        pools = composePhp({
+            ...placement,
+            ...value.php,
+            current: JSON.stringify(
+                Object.fromEntries(
+                    versions.map((
+                        version,
+                    ) => [version, read.pools[version] ?? ""]),
+                ),
+            ),
+            account: JSON.stringify(account),
+        }).files;
+    }
+    let caddy: { content: string; version: string } | null = null;
+    if ("before" in value.caddy) {
+        const chain = [
+            value.caddy.before,
+            value.caddy.prepared,
+            value.caddy.withdrawn,
+            value.caddy.after,
+        ];
+        let content = read.caddy;
+        let version = "";
+        for (let i = 0; i < 3; i++) {
+            if (i > 0 && chain[i].version === chain[i + 1].version) continue;
+            const composed = await composeCaddy({
+                ...placement,
+                before: chain[i],
+                after: chain[i + 1],
+                current: content,
+                alternatives: chain,
+                retain_removed: false,
+            });
+            content = composed.caddy.content;
+            version = composed.caddy.version;
+        }
+        caddy = { content, version };
+    }
+    let dns: { records: string; catalog: string } | null = null;
+    if ("before" in value.dns) {
+        const chain = [
+            value.dns.before,
+            value.dns.prepared,
+            value.dns.withdrawn,
+            value.dns.after,
+        ];
+        dns = { records: read.records, catalog: read.catalog };
+        for (let i = 0; i < 3; i++) {
+            if (i > 0 && chain[i].digest === chain[i + 1].digest) continue;
+            dns = mergeDns(chain[i], chain[i + 1], dns, chain);
+        }
+    }
+    return { pools, caddy, dns, cleanup: value.cleanup };
+}
+const Withdrawal = z.object({
+    pools: z.array(z.string()),
+    caddy: z.string().nullable(),
+    dns: z.boolean(),
+    cleanup: z.number().int().nonnegative(),
+});
 type Context = {
     writeResource: (
         spec: string,
@@ -179,7 +329,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-publication-command",
-    version: "2026.11.01.1",
+    version: "2026.11.06.1",
     resources: {
         caddy: {
             schema: CaddyPublication,
@@ -196,6 +346,11 @@ export const behavior = {
         },
         php: {
             schema: z.object({ files: z.array(File) }),
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
+        withdrawal: {
+            schema: Withdrawal,
             lifetime: "infinite",
             garbageCollection: 10,
         },
@@ -223,6 +378,35 @@ export const behavior = {
                     await ctx.writeResource("plan", "plan", planPhp(args)),
                 ],
             }),
+        },
+        withdraw: {
+            description:
+                "Compose one Node's whole Route withdrawal against what it holds now and write the plan for its phase",
+            arguments: WithdrawArgs,
+            execute: async (args: unknown, ctx: Context) => {
+                const value = WithdrawArgs.parse(args);
+                const plan = await composeWithdrawal(
+                    value,
+                    await Deno.readTextFile(value.read_path),
+                );
+                await Deno.writeTextFile(
+                    value.plan_path,
+                    JSON.stringify(plan),
+                    {
+                        mode: 0o600,
+                    },
+                );
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("withdrawal", "withdrawal", {
+                            pools: plan.pools.map((pool) => pool.path),
+                            caddy: plan.caddy?.version ?? null,
+                            dns: plan.dns !== null,
+                            cleanup: plan.cleanup.length,
+                        }),
+                    ],
+                };
+            },
         },
         php: {
             description:
