@@ -17,7 +17,7 @@ STUB = '''from ansible.module_utils.basic import AnsibleModule
 
 def main():
     module = AnsibleModule(argument_spec={key: {'type': 'raw'} for key in (
-        'rule', 'direction', 'interface', 'interface_in', 'proto', 'to_port', 'route', 'comment')})
+        'rule', 'direction', 'interface', 'interface_in', 'proto', 'to_port', 'route', 'comment', 'from_ip', 'delete')})
     with open(__import__('os').environ['RULES'], 'a') as handle:
         handle.write(__import__('json').dumps(module.params, sort_keys=True) + '\\n')
     module.exit_json(changed=True)
@@ -53,13 +53,24 @@ class TaskVmNestedFirewallTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
     def test_the_bridge_gets_dhcp_dns_the_package_cache_and_a_way_out_only(self):
-        rules = self.rules({'subnet': '10.232.2.0/24', 'interface': 'nested'})
+        rules = [rule for rule in self.rules({'subnet': '10.232.2.0/24', 'interface': 'nested'}) if not rule['delete']]
         ports = sorted((rule['proto'], rule['to_port']) for rule in rules if not rule['route'])
         self.assertEqual(ports, [('tcp', '3142'), ('tcp', '53'), ('udp', '53'), ('udp', '67')])
         self.assertTrue(all(rule['interface'] == 'nested' and rule['direction'] == 'in' for rule in rules if not rule['route']))
         routed = [rule for rule in rules if rule['route']]
         self.assertEqual(len(routed), 1)
         self.assertEqual(routed[0]['interface_in'], 'nested')
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
+    def test_the_nfs_rule_of_the_earlier_nested_vms_is_withdrawn(self):
+        deleted = [rule for rule in self.rules({'subnet': '10.232.2.0/24', 'interface': 'nested'}) if rule['delete']]
+        self.assertEqual(len(deleted), 1)
+        self.assertEqual((deleted[0]['to_port'], deleted[0]['comment'], deleted[0]['interface']), ('2049', 'orbit:task-vm-nfs', 'nested'))
+
+    def test_the_tools_phase_withdraws_the_nfs_export_of_the_earlier_nested_vms(self):
+        tools = yaml.safe_load((ANSIBLE / 'tasks/task-vm-tools.yml').read_text())
+        export = next(task for task in tools if task['name'] == 'Withdraw the NFS export of the earlier nested VMs')
+        self.assertEqual(export['ansible.builtin.file'], {'path': '/etc/exports.d/orbit-checkout.exports', 'state': 'absent'})
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
     def test_an_image_opens_nothing(self):

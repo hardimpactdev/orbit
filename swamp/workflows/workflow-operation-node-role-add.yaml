@@ -575,10 +575,34 @@ jobs:
           : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
           : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-serve.service, unitFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
           : inputs.intent.runtime.swamp).units.serve }}', enabled: true, ensure: running}, inputs: {}}
+  # The workers run as the swamp account and read their token files themselves (no systemd credential: it does nothing in a container). The folders go
+  # to root:<account> 0750 and the files to 0640 BEFORE the unit that reads them is written, in this play, so a converge never leaves a unit that a worker
+  # cannot start from. Tokens placed by hand as root 0600 are repaired here.
+  - name: Own the Swamp worker credentials
+    writes: true
+    labels:
+      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    forEach:
+      item: worker
+      in: '${{ inputs.intent.runtime.swamp == null ? [] : (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).workers }}'
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("swamp-credentials-own-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("swamp-credentials-own-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', transport: {kind: ssh, user: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.user }}', port: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.port }}', identityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host }}', transport: {hostKeys: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host_keys }}'}}]},
+      inputs: {hosts: 'name:target', argv: [/usr/bin/sudo, -n, --, /usr/bin/chown, -R, '${{ "root:" + (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).user }}', '${{ "/etc/orbit/swamp-role-worker/" + self.worker }}'], timeoutSec: 40}}
+  - name: Close the Swamp worker credentials
+    writes: true
+    labels:
+      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    forEach:
+      item: worker
+      in: '${{ inputs.intent.runtime.swamp == null ? [] : (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).workers }}'
+    dependsOn: [{step: Own the Swamp worker credentials, condition: {type: succeeded}}]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("swamp-credentials-close-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("swamp-credentials-close-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', transport: {kind: ssh, user: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.user }}', port: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.port }}', identityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host }}', transport: {hostKeys: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host_keys }}'}}]},
+      inputs: {hosts: 'name:target', argv: [/usr/bin/sudo, -n, --, /usr/bin/chmod, -R, 'u=rwX,g=rX,o=', '${{ "/etc/orbit/swamp-role-worker/" + self.worker }}'], timeoutSec: 40}}
   - name: Apply Swamp worker unit
     writes: true
-    # The unit runs /usr/local/bin/swamp, so it starts only after the link names the pinned release.
-    dependsOn: [{step: Link Swamp, condition: {type: succeeded}}]
+    # The unit runs /usr/local/bin/swamp, so it starts only after the link names the pinned release and the credentials are readable.
+    dependsOn: [{step: Link Swamp, condition: {type: succeeded}}, {step: Close the Swamp worker credentials, condition: {type: succeeded}}]
     labels:
       role: swamp
     guard: ${{ inputs.intent.runtime.swamp == null }}

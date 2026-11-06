@@ -1302,7 +1302,7 @@ The behavior name of `Check the services` carries the index of the unit, not its
 
 The fleet child then calls the child `task-nested-ready`, which checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. It first waits up to 120 seconds, with one Ansible task, until Doctor of the nested Gateway is healthy, because the agents read online only after their next heartbeats. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one plain snapshot `base` of the three nested containers.
 
-The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested containers with a limit of 45 seconds and no retry, which is a reboot, starts any that is not running, and calls `task-nested-ready` and then `task-nested-apply`.
+The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested containers with a limit of 45 seconds and no retry, which is a reboot, starts them, fails unless all three are `RUNNING`, and calls `task-nested-ready` and then `task-nested-apply`.
 
 The batch workflow calls it before every batch but the first. The case workflow calls it after a case that did not pass and is not the last of its batch, so the next case starts from a clean fleet. A restore that fails stops the rest of the batch.
 

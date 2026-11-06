@@ -25,3 +25,15 @@
     route: true
     interface_in: "{{ intent.nested.interface }}"
     comment: orbit:task-vm-nested
+# The nested VMs of earlier images mounted the checkout over NFS. Their rule goes; absent is the end state.
+- name: Withdraw the NFS rule of the earlier nested VMs
+  when: intent.nested is not none
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: "{{ intent.nested.interface }}"
+    from_ip: "{{ intent.nested.subnet }}"
+    to_port: "2049"
+    proto: tcp
+    comment: orbit:task-vm-nfs
+    delete: true

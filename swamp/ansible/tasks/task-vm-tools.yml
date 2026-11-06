@@ -22,6 +22,9 @@
       until: apt_install is succeeded
       retries: "{{ apt_retries }}"
       delay: "{{ apt_delay }}"
+# Images of the nested VMs exported the checkout over NFS. The export goes; absent is the end state, and the installed server may stay.
+- name: Withdraw the NFS export of the earlier nested VMs
+  ansible.builtin.file: { path: /etc/exports.d/orbit-checkout.exports, state: absent }
 - { name: Initialise Incus, ansible.builtin.import_tasks: task-vm-incus.yml }
 - { name: Open the firewall to the nested bridge, ansible.builtin.import_tasks: task-vm-nested-firewall.yml }
 - { name: Build the shape gate tools, ansible.builtin.import_tasks: task-vm-shape-gate.yml }
