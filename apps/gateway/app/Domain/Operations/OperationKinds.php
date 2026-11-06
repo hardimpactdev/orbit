@@ -58,6 +58,8 @@ final readonly class OperationKinds
 
     public const string ProofRun = 'proof.run';
 
+    public const string ProofVerify = 'proof.verify';
+
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';
 

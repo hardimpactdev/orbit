@@ -9,6 +9,7 @@
           "group": "proof",
           "pages": [
             "cli/proof/index",
+            "cli/proof/proof",
             "cli/proof/run"
           ]
         }

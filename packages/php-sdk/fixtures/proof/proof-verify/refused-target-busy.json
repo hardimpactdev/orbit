@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Proof\\VerifyProofRequest",
+    "route": "POST /api/v1/proof/verify",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "operation.target_busy",
+            "message": "Another operation on this task group has not ended.",
+            "details": {}
+        }
+    }
+}

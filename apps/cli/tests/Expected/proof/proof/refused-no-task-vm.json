@@ -1,0 +1,1 @@
+{"error":{"code":"proof.no_task_vm","message":"The proof runs on the task VM that calls it. This Node is not a task VM.","request_id":null}}
