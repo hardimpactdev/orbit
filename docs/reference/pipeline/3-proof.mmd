@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 3 of the command development pipeline. The author proves the command in the development environment it already works in (task VM with its nested fleet). The nested VMs mount the task VM's checkout over NFS, so edits reach them at once and Incus memory snapshots still work. Each run restores the task's base snapshot and applies the code (migrations, service restart); base is taken again only after a converge or a token re-mint. Each batch restores base once; its cases use their own resources and need no undo. A failed case triggers a restore before the next. Cases come from the command's cases file; each names its batch from swamp/proof/batches.yaml, which sets the order. One shared runner; the same cases and runner run in CI (stage 4, proof:run on a fresh VM).
+  %% Target design: stage 3 of the command development pipeline. The author proves the command in the development environment it already works in (task VM with its nested fleet). The nested Nodes are system containers with the task VM's checkout as a disk device, so edits reach them at once; a restore of base is a container reboot. Each run restores the task's base snapshot and applies the code (migrations, service restart); base is taken again only after a converge or a token re-mint. Each batch restores base once; its cases use their own resources and need no undo. A failed case triggers a restore before the next. Cases come from the command's cases file; each names its batch from swamp/proof/batches.yaml, which sets the order. One shared runner; the same cases and runner run in CI (stage 4, proof:run on a fresh VM).
   %% status: draft
   %% command: development pipeline stage 3 · proof
   %% kind: pipeline.3-proof
@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>authorizes only
   participant SW as Swamp<br/>owns flow · state
   participant VM as Task VM<br/>outer VM
-  participant NT as Nested fleet<br/>Gateway · 2 Nodes
+  participant NT as Nested fleet<br/>3 containers
   AG->>GW: Prove the command<br/>orbit proof COMMAND
   %%> What it does:
   %%> - runs the command's cases on the author's own development VM; no new VM
@@ -25,23 +25,17 @@ sequenceDiagram
   %%> - the runner finds the fleet by the guest names of `task-nested-fleet`, `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
   GW->>SW: Start the proof<br/>cases file · this VM
-  SW->>NT: Restore the base snapshot<br/>memory included · about 16 s
+  SW->>NT: Restore the base snapshot<br/>a reboot · 5–16 s
   %%> What it does:
-  %%> - restores the task's Incus stateful snapshot `base` (stage 2), all three VMs in parallel
-  %%> - sets each guest clock from the outer VM as soon as that VM's agent answers; a restore puts the clocks back to snapshot time
-  %%> - restarts the NFS server of the task VM, so the restored guests open new connections to the checkout
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - a stateful restore brings back each guest's TCP state from the snapshot while the NFS server has moved on, so the guest firewall drops the server's packets as invalid and the hard mount hangs every process that reads the checkout (proof 12000, VM 748); a restart of the server ends the old connections, and the guests reconnect (about 10 s once on VM 748; to be measured over more restores)
-  %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat (every 5 s) and Doctor is healthy
-  %%> - every restore of the snapshots has a 45 s limit, and readiness then waits at most 120 s for a healthy Doctor (one Ansible task, decided by the orchestrator, for Nick's review); a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
-  %%> Built, not yet passed live:
-  %%> - the Swamp workflow `proof-fleet-verify` runs this restore first, in its job `prepare`, when the intent sets `restore_first` (`orbit proof`); the proof in CI starts from the `base` that the provision has just taken and leaves it unset
-  %%> Time, measured on tvm-554:
-  %%> - stock Incus restore and agent wait, no tuning: restore about 9 s, healthy about 16 s
+  %%> - restores the task's Incus snapshot `base` (stage 2) of the three containers in parallel, then starts them
+  %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat and Doctor is healthy; every restore has a 45 s limit, and readiness then waits at most 120 s for a healthy Doctor; a restore that fails or is not healthy in time stops the run
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - a container snapshot holds no memory, so the restore is a reboot: no guest clock to set, no NFS server to restart, no stale TCP state; the operator peer comes back from the hub's peer file (stage 2)
+  %%> - measured on shark: the 16 firewall:allow cases passed on containers, each batch restore 14–16 s to healthy; on the VM copies the same cases passed 0 (the Gateway hung on its NFS checkout after the stateful restore)
   SW->>NT: Apply the code<br/>migrate · restart services
   %%> What it does:
   %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
-  %%> - the code itself needs no step: the nested VMs mount the task VM's checkout over NFS (stage 2), and PHP reads changed files on the next request
+  %%> - the code itself needs no step: the nested containers have the task VM's checkout as a disk device (stage 2), and PHP reads changed files on the next request
   %%> - also runs after every restore below: a memory restore brings back processes that loaded older code
   opt playbooks or pins changed
     SW->>VM: Converge once<br/>outer VM · nested Nodes
@@ -65,11 +59,11 @@ sequenceDiagram
     %%> - these tokens belong to the nested Orbit; the real Gateway mints nothing for them
   end
   opt the converge or the re-mint changed something
-    SW->>NT: Take base again<br/>parallel · about 19 s
+    SW->>NT: Take base again<br/>parallel · under 1 s
     %%> What it does:
     %%> - skipped when nothing converged and no token was re-minted; a code change alone never needs a new `base`, because the code is read from the mount
-    %%> - `incus snapshot create --stateful --reuse base` on the three nested VMs at once; `--reuse` replaces the old `base`
-    %%> - the VMs keep running; their clocks lose about 1 s while memory is saved, which the normal time sync corrects
+    %%> - `incus snapshot create --reuse base` on the three containers at once; `--reuse` replaces the old `base`; no memory is saved
+    %%> - the containers keep running
     %%> - `base` holds the proof Swamp Club key, on the nested Gateway's disk and in its Swamp serve's memory; accepted because `base` belongs to one task, never leaves its task VM and is destroyed with it; ready copies stay key-free
     %%> Built, not yet passed live:
     %%> - the Swamp workflow `proof-fleet-verify` takes it, after the re-mint and before the first batch: one step with `forEach` over the three roles, guarded by the same token age as the re-mint, so it is skipped when nothing was re-minted
@@ -84,7 +78,7 @@ sequenceDiagram
     %%> - the task VM keeps its own state until the task merges; changes flow back only as code, through the release and the seed refresh
   end
   loop each batch, in the order of swamp/proof/batches.yaml
-    SW->>NT: Restore base<br/>about 16 s
+    SW->>NT: Restore base<br/>a reboot · 5–16 s
     %%> What it does:
     %%> - one restore per batch, followed by the apply step; skipped when the fleet is still at `base`, as for the first batch
     %%> - 45 s limit, as for every restore; a failed restore stops the run
@@ -127,10 +121,10 @@ sequenceDiagram
     SW->>VM: Switch the checkout<br/>merge base · new cases file
     %%> What it does:
     %%> - the one checkout of the proof VM switches to the merge base, with only the cases file of the command and `swamp/proof/batches.yaml` taken from the head
-    %%> - the nested VMs mount that checkout over NFS, so they need no second export; a step reads `git rev-parse HEAD` in the nested Gateway and the run stops unless it is the merge base
+    %%> - the nested containers have that checkout as their disk device, so they need nothing else; a step reads `git rev-parse HEAD` in the nested Gateway and the run stops unless it is the merge base
     SW->>NT: Restore base<br/>then apply
     %%> What it does:
-    %%> - the restore of `base` that every batch uses: restore, clocks, NFS server restart, readiness, then the apply step, now on the merge-base code
+    %%> - the restore of `base` that every batch uses: restore and start, readiness, then the apply step, now on the merge-base code
     SW->>NT: Run the new cases<br/>only them, in their batches
     %%> What it does:
     %%> - the batches of the plan that hold a new case, in order; the first starts from the restore above, each later one restores `base` itself
@@ -150,7 +144,7 @@ sequenceDiagram
   %%> Why:
   %%> - the author keeps developing on a clean fleet that already runs the latest code; nothing switches back
   %%> Built, not yet passed live:
-  %%> - the Swamp workflow `proof-fleet-verify` runs this restore in its job `finish`, with the child `proof-fleet-restore` (restore, clocks, NFS server restart, readiness, apply), after the batches end, also when a case failed or a step stopped the run
+  %%> - the Swamp workflow `proof-fleet-verify` runs this restore in its job `finish`, with the child `proof-fleet-restore` (restore and start, readiness, apply), after the batches end, also when a case failed or a step stopped the run
   %%> - it belongs to the author's own command: it runs when the intent sets `final_restore`; the proof in CI (stage 4) destroys its VM and leaves it unset
   %%> - `orbit proof COMMAND` sets `final_restore`; it also sets `restore_first`, which makes the workflow restore `base` before the first batch, because the author's fleet may have moved (CI leaves it unset: its VM has just taken `base`)
   %%> - it has the 45 s limit of every restore; one that fails or is not healthy in time fails the run, and the verdicts of the cases stay in the report
