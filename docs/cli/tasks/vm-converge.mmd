@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: the task VM role phases (software, tools, check), the same Ansible phases that build the task image (docs/cli/tasks/vm-image-build.mmd), applied to a running task VM. Stage 2 of the command development pipeline runs it once when a change holds playbooks or pins; stage 6 runs it on the refresh VM.
+  %% Target design: the task VM role phases (software, tools, check), the same Ansible phases that build the task image (docs/cli/tasks/vm-image-build.mmd), applied to a running task VM. Stage 2 of the command development pipeline runs it once when a change holds playbooks or pins; stage 6 runs it on the refresh VM. This chart converges the outer VM only. The nested Nodes are converged by the nested Orbit's `node:converge`, in the child `task-nested-converge` that the fleet start calls (stage 2, `Converge once`).
   %% status: draft
   %% command: none · task-vms:converge on the Gateway host
   %% kind: task_vm.converge

@@ -46,6 +46,8 @@ sequenceDiagram
     %%> Why:
     %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
     %%> - the base images are not touched; only the merge and the seed refresh change them
+    %%> Built: the nested half is the child `task-nested-converge` (stage 2). The provision of a fresh VM already runs it before `base` is taken, so a proof on a fresh VM (stage 4) starts from a converged `base`
+    %%> Not built, owned by the proof-run lane: the call from the proof run on the author's own VM, and `Take base again` after it. The hook is this child, which that run calls with the VM's `ssh_execution` and checkout path
   end
   opt the tokens in base are older than 20 days
     SW->>NT: Re-mint Swamp tokens<br/>in the nested Gateway

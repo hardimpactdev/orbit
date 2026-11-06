@@ -204,12 +204,20 @@ jobs:
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}', club: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}', remint: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}'}}
     dependsOn: [{step: 'Push the Club key', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+  # The nested half of `Converge once` (stage 2): the nested Orbit brings app-dev and app-prod to the playbooks and pins of the mounted checkout with `node:converge` (child `task-nested-converge`). It needs the nested Swamp, so it runs only for a task with the proof Club key, and it comes before the readiness check and `base`, so `base` keeps what it converged.
+  # Hook, not built here: a caller that converges a fleet that already has a `base` (the proof run on the author's VM, stage 3 `Take base again`) calls `task-nested-converge` itself and then takes `base` again; that call is owned by the proof-run lane.
+  - name: 'Converge the nested Nodes'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required }}'
+    task: {type: workflow, workflowIdOrName: task-nested-converge, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', checkout_path: '${{ inputs.intent.workspace.checkout_path }}'}}
+    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}, {step: 'Add the CLI profile', condition: {type: succeeded}}]
   # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, which every restore of `base` reuses).
   - name: 'Check readiness'
     labels: {role: swamp}
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}'}}
-    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Converge the nested Nodes', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # One stateful snapshot `base` of the three nested VMs, memory included; every proof batch starts from it. It holds the proof Club key, and is destroyed with this VM.
   - name: 'Take the base snapshot'
     labels: {role: swamp}

@@ -1,0 +1,31 @@
+id: fbfe0126-de99-42a6-be00-a8f1996126a9
+name: task-nested-converge
+description: >-
+  Bring the nested Nodes of a task VM to the playbooks and pins of the checkout (the nested half of `Converge once`, stage 2 of the command development pipeline): the candidate CLI on the task VM asks the nested Gateway, through the CLI profile `nested`, to run `node:converge` for each workload Node. The nested Orbit reads the playbooks from the NFS-mounted checkout. Each step is one command over official SSH to the task VM. A caller that changes the fleet after the first `base` (the proof run on the author's VM) takes `base` again after this child; see the hook in the fleet child.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    guest_node_id: {type: integer, minimum: 1}
+    ssh_execution: {type: object}
+    checkout_path: {type: string, minLength: 1}
+  required: [guest_node_id, ssh_execution, checkout_path]
+  additionalProperties: false
+jobs:
+- name: converge
+  labels: {role: swamp}
+  steps:
+  # `node:converge` follows its own Operation to the end and exits nonzero when it fails, so one command is one step. The nested Gateway locks the target and the hub for each converge, so the Nodes go one after the other.
+  # The nested Gateway is the release of the checkout and comes from the mount and the apply step; the workload Nodes are the ones whose software and roles the playbooks own.
+  - name: 'Converge app-dev'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-dev").split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-dev").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh_execution.target.user }}', port: '${{ inputs.ssh_execution.target.port }}', identityFile: '${{ inputs.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.ssh_execution.target.host_keys }}'}}]},
+      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', 'app-dev', '--json'], timeoutSec: 1210}}
+  - name: 'Converge app-prod'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-prod").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-converge-" + string(inputs.guest_node_id) + "-converge-app-prod").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '1200', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit', 'php', '${{ inputs.checkout_path }}/apps/cli/orbit', 'node:converge', 'app-prod', '--json'], timeoutSec: 1210}}
+    dependsOn: [{step: 'Converge app-dev', condition: {type: succeeded}}]
