@@ -1,6 +1,6 @@
 ---
-# The task VM role, in the phases of a Node converge: software, tools, check.
-# One playbook, two callers: the image build runs it on the builder VM, a converge runs it on a running task VM.
+# The task VM role, in the phases of a Node converge: software, tools, check. The clean phase follows an image build only.
+# One playbook, two callers: the image builds (Incus and UpCloud) run it on the builder, a converge runs it on a running task VM.
 # Versions come from intent.recipe, the recipe.json of the release; this file names none.
 - name: Task VM role
   hosts: task_vm
@@ -26,3 +26,4 @@
     - { name: Software, ansible.builtin.import_tasks: tasks/task-vm-software.yml, tags: [software] }
     - { name: Tools, ansible.builtin.import_tasks: tasks/task-vm-tools.yml, tags: [tools] }
     - { name: Check, ansible.builtin.import_tasks: tasks/task-vm-check.yml, tags: [check] }
+    - { name: Clean, ansible.builtin.import_tasks: tasks/task-vm-clean.yml, tags: [clean] }

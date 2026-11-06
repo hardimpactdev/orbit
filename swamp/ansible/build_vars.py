@@ -5,7 +5,7 @@ import shlex
 import sys
 from pathlib import Path
 
-TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build')
+TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build', 'task_vm.upcloud_image_build')
 
 
 def unsafe(value):
