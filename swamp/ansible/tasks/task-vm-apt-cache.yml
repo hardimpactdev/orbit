@@ -14,7 +14,7 @@
   retries: "{{ apt_retries }}"
   delay: "{{ apt_delay }}"
 # The snapshot service answers a check of a stored index with a 5xx now and then; the cache asks it again before it answers the client.
-# Measured: a restarted cache with warm indexes failed 2 of 6 updates with the default of 2 tries, and none of 6 with 10.
+# Measured: a restarted cache with warm indexes failed 2 of 6 updates with the default of 2 tries, and none of 8 with 10.
 - name: Let the package cache ask the snapshot service again
   ansible.builtin.copy:
     dest: /etc/apt-cacher-ng/zz_orbit.conf

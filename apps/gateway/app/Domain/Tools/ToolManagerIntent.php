@@ -50,8 +50,11 @@ final readonly class ToolManagerIntent
                     'artifact' => $artifactInput];
             }
 
+            // A package cache is named only for a Node of a task VM's nested fleet; other Nodes read the snapshot directly.
+            $proxy = TaskVmAptCache::for($node);
+
             return ['manager' => 'composer', 'packages' => [], 'input' => ['user' => $node->user, 'version' => $recipe->tools['composer']->version],
-                'apt' => ['snapshot' => $recipe->snapshot, ...(($proxy = TaskVmAptCache::for($node)) === null ? [] : ['proxy' => $proxy]), 'packages' => $packages]];
+                'apt' => ['snapshot' => $recipe->snapshot, ...($proxy === null ? [] : ['proxy' => $proxy]), 'packages' => $packages]];
         }
 
         return ['manager' => 'homebrew', 'packages' => ['build-essential', 'procps', 'curl', 'file', 'git', 'ca-certificates'],

@@ -61,17 +61,11 @@ Deno.test("the cache installs from the own sources of the VM and keeps indexes, 
         "{{ apt_retries }}",
         "{{ apt_delay }}",
     ]);
-    // The cache serves the indexes only: no rule for packages, no pattern for static files (both broke the answers); it asks the
-    // snapshot service again before it answers with an error.
     const content =
         byName["Let the package cache ask the snapshot service again"][
             "ansible.builtin.copy"
         ].content;
-    assertStringIncludes(content, "DlMaxRetries: 10");
-    assertEquals(
-        content.includes("DontCache") || content.includes("SPfilePatternEx"),
-        false,
-    );
+    assertEquals(content, "DlMaxRetries: 10\n");
     const service = byName["Run the package cache"]["ansible.builtin.systemd"];
     assertEquals([service.name, service.enabled], [
         "apt-cacher-ng.service",

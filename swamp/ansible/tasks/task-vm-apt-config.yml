@@ -29,10 +29,10 @@
     owner: root
     group: root
     mode: "0644"
-# The package cache of the VM (task-vm-apt-cache.yml) serves the indexes only: apt talks plain http to it and it fetches over https. The
+# The package cache of the VM (task-vm-apt-cache.yml) serves the indexes only: apt talks plain http to it and it follows the redirect of the snapshot service to https. The
 # signatures are still checked. The packages stay a direct download: through the cache most of them failed (a 503 without a length, or a
-# closed connection). apt does not pipeline its requests to the cache: it answers some of several requests in flight with the body of
-# another file (a hash mismatch).
+# closed connection). apt does not pipeline its requests to the cache: the cache answers some of several requests in flight with the body
+# of another file (a hash mismatch).
 - name: Point the index read at the package cache
   ansible.builtin.copy:
     dest: "{{ apt_directory }}/ubuntu-cache.sources"

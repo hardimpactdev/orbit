@@ -40,7 +40,7 @@ sequenceDiagram
   %%> - the cache stays in the image: every task VM starts with the indexes of the recipe's snapshot, and the nested Nodes of its fleet read them from the VM (fleet build, `Add app-dev and app-prod`)
   %%> - the end check reads that the cache is active
   %%> Why:
-  %%> - measured 2026-11-06 (fleet build, VM 714): each nested Node spent 11 min (app-dev) and 4 min (app-prod) refreshing 30 MB of indexes from snapshot.ubuntu.com; from a warm cache the same refresh takes about 30 s
+  %%> - measured 2026-11-06 (fleet build, VM 714): each nested Node spent 11 min (app-dev) and 4 min (app-prod) refreshing 30 MB of indexes from snapshot.ubuntu.com; from a warm cache the same index refresh took 24 to 37 s on a task VM (measured with the cache tasks on a throwaway VM; a fleet build on an image that holds the cache is the next proof)
   SW->>H: Clean and stop<br/>cloud-init · host keys
   %%> What it does:
   %%> - `cloud-init clean`, an empty machine-id, removed SSH host keys, then stop; each one `@swamp/ssh exec` argv

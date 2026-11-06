@@ -77,7 +77,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
         ];
         aptOptions = lists(source);
         aptUpdateOptions = aptOptions;
-        // A package cache serves the indexes only. The Node speaks plain http to it and it fetches over https; apt still checks the
+        // A package cache serves the indexes only. The Node speaks plain http to it and it follows the redirect of the service to https; apt still checks the
         // signatures. The packages stay a direct download: through the cache most of them failed. The Node asks for the index files
         // the image build asked for (it ignores the drop-ins of apt.conf.d, which add the appstream and command-not-found files),
         // and one request at a time: the cache answers some of several requests in flight with the body of another file.
