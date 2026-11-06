@@ -72,8 +72,11 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `packages` | One Tool Manager's packages, named by the manager in `subject`. See [Packages](#packages). | every 60 seconds |
 | `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
 | `env_keys` | One Instance `.env`, named by its path in `subject`: its `kind`, its key names in `keys`, and `testing_tracked`. See [Environment key names](#environment-key-names). | every 60 seconds |
+| `accounts` | The local accounts of the Node: each `user`, `uid`, primary `group`, `home` and `shell`, as `/etc/passwd` and `/etc/group` hold them. See below. | every 60 seconds |
 
 `ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
+
+`accounts` lists the accounts of `/etc/passwd` in uid order, at most 512, each with the name of its primary group from `/etc/group`. The agent leaves out an entry that has no group, a name that is not a plain account name, or a home or shell that is not an absolute path without control characters. It reads two files and starts no program. The Gateway answers a lookup of an account, such as a Process user or the Node's managed user, from this fact; a Node that has not reported it yet has no answer.
 
 `units` lists each `orbit-process-*` unit, each Process container, and each role service and Process unit from the [watch list](#watch-list). `docker` is `available` or `absent`. A systemd unit also has its `load` and `sub` state; one that is not installed reads `not-found`. `awake` lists the watched awake markers that exist. Agents before 0.10.0 send neither `load`, `sub` nor `awake`.
 
