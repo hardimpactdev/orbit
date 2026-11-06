@@ -51,6 +51,7 @@ sequenceDiagram
   SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
   %%> What it does:
   %%> - the role's repositories and packages, at the pins of the release
+  %%> - a Node of a task VM's nested fleet reads its apt packages through the VM's package cache (`apt_proxy` in the intent, else the archive)
   %%> Downloads:
   %%> - a pinned package comes from the mirror first; only a transport failure falls back to upstream, and a checksum failure stops the run and removes the staged file
   opt role needs Tool Managers

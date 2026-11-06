@@ -102,7 +102,8 @@ it('renders the whole public intent of the fleet build, with the layout of the n
         ->and($input['execution_secrets']['proof_club'])->toMatchArray(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key'])
         ->and(json_encode($input))->not->toContain('proof-club-key');
     $members = json_decode('{'.$input['bootstrap']['fragment'].'}', true, flags: JSON_THROW_ON_ERROR);
-    expect(array_keys($members))->toBe(['swamp', 'gateway', 'operator', 'agent_delivery'])
+    expect(array_keys($members))->toBe(['swamp', 'apt_proxy', 'gateway', 'operator', 'agent_delivery'])
+        ->and($members['apt_proxy'])->toBe('http://10.232.2.1:3142')
         ->and($members['swamp']['sha256'])->toMatch('/^[a-f0-9]{64}$/')
         ->and($members['operator']['checkout'])->toBe('/home/orbit/apps/orbit/workspace')
         ->and($members['operator']['wireguard_ip'])->toBe('10.45.0.10')

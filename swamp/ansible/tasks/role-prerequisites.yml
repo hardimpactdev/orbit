@@ -1,6 +1,10 @@
 ---
 # The prerequisites of a role: Caddy, the role packages, folders, Bun and the pinned PHP packages. Everything comes from intent.
 # Two playbooks import it: the role add (operation-node-role-add.yml) and the Gateway bootstrap (gateway-bootstrap.yml).
+# A Node of a task VM's nested fleet reads its apt packages through the VM's package cache (apt-proxy.yml); every other Node reads the archive.
+- name: Point apt at the package cache
+  ansible.builtin.import_tasks: apt-proxy.yml
+  vars: { apt_proxy: "{{ intent.apt_proxy | default(none) }}" }
 - name: Install Caddy
   when: intent.caddy_package is not none
   block:

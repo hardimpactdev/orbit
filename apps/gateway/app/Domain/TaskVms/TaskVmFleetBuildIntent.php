@@ -171,6 +171,8 @@ final readonly class TaskVmFleetBuildIntent
         $swamp = new RecipeLoader()->load()->tools['swamp']->artifacts['amd64'];
         $static = [
             'swamp' => ['url' => $swamp->location, 'sha256' => $swamp->digest],
+            // The package cache of this VM for the apt runs of the nested Gateway, named the way every nested Node gets it.
+            'apt_proxy' => TaskVmAptCache::forAddress(self::Layout['gateway']['address']),
             'gateway' => ['url' => 'https://'.self::Layout['gateway']['wireguard'], 'wireguard_ip' => self::Layout['gateway']['wireguard'],
                 'wireguard_subnet' => self::WireGuardSubnet],
             'operator' => ['checkout' => $workspace, 'wireguard_ip' => self::OperatorAddress],

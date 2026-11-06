@@ -30,9 +30,10 @@ final readonly class GatewayBootstrapPlan
      * @param  string  $url  The Gateway's own address, `APP_URL`.
      * @param  string  $home  `ORBIT_HOME`, the folder of its state.
      * @param  string  $checkout  `ORBIT_GATEWAY_CHECKOUT`, the `apps/gateway` folder of the release.
+     * @param  ?string  $aptProxy  The package cache of the task VM that runs a nested fleet (`TaskVmAptCache`); null reads the archive directly.
      * @return array<string,mixed>
      */
-    public static function make(string $url, string $home, string $checkout): array
+    public static function make(string $url, string $home, string $checkout, ?string $aptProxy = null): array
     {
         $catalog = new NodeBootstrapPackageCatalog;
         $node = new Node;
@@ -48,6 +49,7 @@ final readonly class GatewayBootstrapPlan
 
         return [
             'packages' => array_values(array_unique(array_diff($packages, ['caddy']))),
+            'apt_proxy' => $aptProxy,
             'caddy_package' => NativeCaddyPackageInput::make(),
             'directories' => [['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755']],
             'bun' => null,

@@ -1,4 +1,7 @@
 ---
+- name: Point apt at the package cache
+  ansible.builtin.import_tasks: apt-proxy.yml
+  vars: { apt_proxy: "{{ exporter.apt_proxy | default(none) }}" }
 - name: Install the node exporter
   ansible.builtin.apt: { name: prometheus-node-exporter, state: "{{ 'present' if exporter.enabled else 'absent' }}" }
   environment: { NEEDRESTART_MODE: l }
