@@ -96,6 +96,10 @@
   become_user: "{{ swamp_user }}"
   environment: "{{ swamp_cli }}"
   no_log: true
+- name: Look for the worker tokens
+  ansible.builtin.stat: { path: "{{ swamp_credentials }}/{{ item }}/server.token" }
+  loop: [a, b]
+  register: worker_tokens
 - name: Mint the worker tokens
   ansible.builtin.shell:
     cmd: |
@@ -106,11 +110,11 @@
       swamp access token mint orbit-worker-{{ item }}-access --principal worker:{{ item }} --duration 30d --json >/dev/null
       swamp access token reveal orbit-worker-{{ item }}-access --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > "$stage.server"
     chdir: "{{ swamp_repository }}"
-    creates: "{{ swamp_credentials }}/{{ item }}/server.token"
     executable: /bin/bash
   become_user: "{{ swamp_user }}"
   environment: "{{ swamp_cli }}"
   loop: [a, b]
+  when: not (worker_tokens.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first)
   no_log: true
 - name: Place the worker tokens
   ansible.builtin.copy:
@@ -147,7 +151,7 @@
         printf 'ORBIT_SWAMP_RUN_TOKEN=%s\n' "$(swamp access token reveal orbit-gateway-run --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
         printf 'ORBIT_SWAMP_READ_TOKEN=%s\n' "$(swamp access token reveal orbit-gateway-read --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
         printf 'ORBIT_SWAMP_ADDRESS=127.0.0.1\n'
-        printf 'ORBIT_SWAMP_SSH_PUBLIC_KEY=%s\n' "{{ gateway_public_key.content | b64decode | trim }}"
+        printf 'ORBIT_SWAMP_SSH_PUBLIC_KEY="%s"\n' "{{ gateway_public_key.content | b64decode | trim }}"
       } >> "$env_file"
     chdir: "{{ swamp_repository }}"
     executable: /bin/bash
