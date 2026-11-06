@@ -100,10 +100,11 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 Each pass reads every open Operation of a direct kind against Swamp:
 
-- A bound run gets one exact history read. A terminal history is projected through `SwampCommandStep::projectTerminal`. A history that is not terminal yet, or a read that fails, changes nothing, and the next pass reads again. Serve can announce the end of a run before it writes the history.
+- A bound run gets one exact history read. A terminal history is projected through `SwampCommandStep::projectTerminal`.
+- A history that is not terminal yet changes nothing. Serve can announce the end of a run before it writes the history. A read that fails changes nothing either. The next pass reads again.
 - An Operation past its budget is expired. A history that shows the run ended within its budget wins.
-- An unbound Operation marked `swamp.start_uncertain`, or one that timed out and still holds its target, gets the exact lookup of its start on every pass until the lookup binds it or the hold ends.
-- A recorded cancel that Swamp has not confirmed is forwarded for up to an hour after the request. Cancels go after the reads of the pass and stop 150 seconds into it.
+- An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. So does a timed-out one that still holds its target. The lookup repeats each pass until it binds the run or the hold ends.
+- A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 
 The pass has no retry, backoff or per-Operation job. Only one pass runs at a time.
