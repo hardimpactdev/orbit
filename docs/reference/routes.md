@@ -397,7 +397,7 @@ When the preparation fails, the walk restores the saved ACLs, and the deny on th
 
 ### Cluster scope
 
-Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets.
+Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets. A Route change names a Route in those answers only while the fleet it captures has a site for it. So a withdrawn Route, or a failed create that is undone, loses its answer in the same Operation.
 
 A Router unset whose Router left no site, certificate or LAN rule on any Node ends at admission with no run. [Native Cluster Router](/reference/native-cluster-router#unset-a-router) has the steps.
 

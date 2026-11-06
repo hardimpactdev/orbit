@@ -8,12 +8,14 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteCertificateStaging;
+use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\StoredInteger;
+use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -340,6 +342,13 @@ final readonly class ClusterRouterDnsSelection
             })
             ->orderBy('id')
             ->get();
+
+        // A Route change captures the fleet as it will be. A Route without a site in it has left, as its host record has, so its name leaves too.
+        $prospective = app(RoutePublicationSites::class)->isCompleteFleet() ? app(RoutePublicationSites::class)->current() : null;
+        if ($prospective !== null) {
+            $served = $prospective->map(fn (DevelopmentSite $site): string => $this->normalizeName($site->domain))->all();
+            $routes = $routes->filter(fn (Route $route): bool => in_array($this->normalizeName($route->domain), $served, true));
+        }
 
         foreach ($routes as $route) {
             $names[] = $this->normalizeName($route->domain);

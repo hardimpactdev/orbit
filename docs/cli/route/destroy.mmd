@@ -1,4 +1,5 @@
 sequenceDiagram
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): a withdrawal clears the Router answers of the Route from the private DNS catalog in the same step, not only its records.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task, one Swamp run, official cfgmgmt behaviors and SSH argv commands. docs/reference/routes.md#remove-a-route.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
