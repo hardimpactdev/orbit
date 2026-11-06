@@ -42,8 +42,14 @@ final readonly class SwampStartBatch
         $pending = [];
         $settle = static function (int|string $key, SwampStartReply|ResourceOperationException $result) use (&$results, $settled): void {
             $results[$key] = $result;
-            if ($settled !== null) {
+            if ($settled === null) {
+                return;
+            }
+            try {
                 $settled($key, $result);
+            } catch (Throwable $exception) {
+                // The caller owns what it does with an outcome. Its failure must not drop the replies that are already read.
+                report($exception);
             }
         };
         try {

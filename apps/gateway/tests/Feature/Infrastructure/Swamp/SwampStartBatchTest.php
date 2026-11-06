@@ -377,7 +377,7 @@ it('fails every run when the connection cannot be made', function (): void {
 
     $code = batchThrown(fn () => app(StartSwampRun::class)->startMany([$a, $b]));
 
-    expect($code)->not->toBeNull()->and($a->refresh()->status)->toBe(OperationStatus::Failed)->and($b->refresh()->status)->toBe(OperationStatus::Failed)
+    expect($code)->toBe('swamp.start_unavailable')->and($a->refresh()->status)->toBe(OperationStatus::Failed)->and($b->refresh()->status)->toBe(OperationStatus::Failed)
         ->and($a->error_code)->toBe($code)->and($b->error_code)->toBe($code);
 });
 
@@ -403,4 +403,27 @@ it('fails every run with the unavailable code when the Swamp start is not config
 
     expect($code)->toBe('swamp.start_unavailable')->and($socket->log)->toBe([])
         ->and($a->refresh()->error_code)->toBe('swamp.start_unavailable')->and($b->refresh()->error_code)->toBe('swamp.start_unavailable');
+});
+
+it('goes on with the replies it has read when the caller fails to take one outcome', function (): void {
+    $socket = batchSwamp(['a' => ['after' => 1.0, 'reply' => batchStarted(BATCH_RUN_A)], 'b' => ['after' => 1.0, 'reply' => batchStarted(BATCH_RUN_B)]]);
+    $taken = [];
+
+    $results = batchRun($socket, ['a' => batchPayload('a'), 'b' => batchPayload('b')], null, static function (string $key) use (&$taken): void {
+        $taken[] = $key;
+
+        throw new RuntimeException('The outcome could not be recorded.');
+    });
+
+    expect($taken)->toBe(['a', 'b'])->and($results['a'])->toEqual(new SwampStartReply(BATCH_RUN_A, false))->and($results['b'])->toEqual(new SwampStartReply(BATCH_RUN_B, false));
+});
+
+it('makes a run that was never sent unavailable, not uncertain, when the exchange fails before the first send', function (): void {
+    $socket = batchSwamp([]);
+    $endpoint = new WebSocketEndpoint('swamp.test', 443, 'swamp.orbit', '/', '/tmp/ca.pem', 'run-token');
+    $batch = new SwampStartBatch(static fn (): float => throw new LogicException('The clock failed.'));
+
+    $results = $batch->run($socket, $endpoint, ['a' => batchPayload('a')]);
+
+    expect($results['a'])->toBeInstanceOf(ResourceOperationException::class)->and($results['a']->errorCode)->toBe('swamp.start_unavailable')->and($socket->log)->toBe([]);
 });

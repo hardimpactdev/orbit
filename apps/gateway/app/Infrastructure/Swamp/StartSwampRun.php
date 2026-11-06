@@ -125,12 +125,13 @@ final readonly class StartSwampRun
             try {
                 $this->requestMany($endpoint, $payloads, $settled);
             } catch (Throwable $exception) {
-                // The requests were sent, so a run without an outcome may exist.
-                foreach ($byId as $id => $operation) {
-                    if (! isset($outcomes[$id])) {
-                        $fail($operation, $exception, true);
-                    }
-                }
+                report($exception);
+            }
+        }
+        // A run without an outcome was sent, or its outcome could not be recorded, so its Swamp run may exist.
+        foreach ($byId as $id => $operation) {
+            if (! isset($outcomes[$id])) {
+                $fail($operation, $this->uncertain(), true);
             }
         }
         Log::info('Swamp direct start batch', ['count' => count($operations), 'sent' => count($payloads),
