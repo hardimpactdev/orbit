@@ -85,7 +85,7 @@ jobs:
         receipt: ${{ steps["Create and prepare the VM"].outputs.result }}
         guest_node_id: ${{ inputs.intent.guest_node_id }}
         # The inputs of a skipped step are still evaluated, so a provision without a nested topology (no converge input) needs a value here.
-        intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {}} }}'
+        intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {} } }}'
     dependsOn:
     - step: Set up the workspace
       condition:
